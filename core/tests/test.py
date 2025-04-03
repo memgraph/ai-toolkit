@@ -1,42 +1,33 @@
-
-from api.tool import BaseTool
-from api.toolkit import Toolkit
-
-from typing import Dict, List
+from neo4j import GraphDatabase
+from typing import Dict, List, Any
+from core.api.tool import BaseTool
+from core.tools.schema import ShowSchemaInfo
 import asyncio
-
-
-class CalculateSumTool(BaseTool):
-    def __init__(self):
-        input_schema = {
-            "type": "object",
-            "properties": {
-                "a": {"type": "number"},
-                "b": {"type": "number"}
-            },
-            "required": ["a", "b"]
-        }
-        super().__init__(name="calculate_sum", description="Add two numbers together", input_schema=input_schema)
-
-    async def call(self, arguments: Dict[str, any]) -> List[any]:
-        a = arguments.get("a")
-        b = arguments.get("b")
-        result = a + b
-        return [result]
+from core.api.toolkit import Toolkit
 
 async def main():
+    # Initialize the Neo4j driver
+    uri = "bolt://localhost:7687"  # Default Memgraph URI
+    user = "memgraph"  # Default Memgraph user
+    password = "memgraph"  # Default Memgraph password
+    
+    driver = GraphDatabase.driver(uri, auth=(user, password))
     
     toolkit = Toolkit()
-
-    calc_tool = CalculateSumTool()
-
-    toolkit.add(calc_tool)
+    
+    # Create and add the schema info tool
+    schema_tool = ShowSchemaInfo(uri=uri, db=driver)
+    toolkit.add(schema_tool)
     
     print("Added tools:", toolkit.list_tools())
     
-    tool = toolkit.get_tool("calculate_sum")
-    result = await tool.call({"a": 10, "b": 5})
-    print(f"Result from '{tool.name}':", result)
+    # Get and call the schema tool
+    tool = toolkit.get_tool("show_schema_info")
+    result = await tool.call({})
+    print(f"Schema information from '{tool.name}':", result)
+    
+    # Clean up
+    schema_tool.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
