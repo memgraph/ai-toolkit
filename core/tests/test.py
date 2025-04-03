@@ -16,7 +16,7 @@ async def main():
     toolkit = Toolkit()
     
     # Create and add the schema info tool
-    schema_tool = ShowSchemaInfo(uri=uri, db=driver)
+    schema_tool = ShowSchemaInfo(db=driver)
     toolkit.add(schema_tool)
     
     print("Added tools:", toolkit.list_tools())

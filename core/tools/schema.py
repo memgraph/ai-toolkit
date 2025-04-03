@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 from core.api.tool import BaseTool
 
 class ShowSchemaInfo(BaseTool):
-    def __init__(self, uri: str, db: GraphDatabase.driver):
+    def __init__(self, db: GraphDatabase.driver):
         super().__init__(
             name="show_schema_info",
             description="Shows schema information from a Memgraph database",
