@@ -1,4 +1,4 @@
-from neo4j import GraphDatabase
+from core.api.memgraph import MemgraphClient
 from typing import Dict, List, Any
 from core.api.tool import BaseTool
 from core.tools.schema import ShowSchemaInfo
@@ -10,13 +10,13 @@ async def main():
     uri = "bolt://localhost:7687"  # Default Memgraph URI
     user = "memgraph"  # Default Memgraph user
     password = "memgraph"  # Default Memgraph password
-    
-    driver = GraphDatabase.driver(uri, auth=(user, password))
+
+    memgraph_client = MemgraphClient(uri, user, password)
     
     toolkit = Toolkit()
     
     # Create and add the schema info tool
-    schema_tool = ShowSchemaInfo(db=driver)
+    schema_tool = ShowSchemaInfo(memgraph_client=memgraph_client)
     toolkit.add(schema_tool)
     
     print("Added tools:", toolkit.list_tools())

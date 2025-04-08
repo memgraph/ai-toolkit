@@ -19,9 +19,10 @@ disallow_untyped_defs = "True"
 "Release Notes" = "https://github.com/langchain-ai/langchain/releases?q=tag%3A%22memgraph%3D%3D0%22&expanded=true"
 
 [tool.poetry.dependencies]
-python = ">=3.9,<4.0"
+python = ">=3.13,<4.0"
 langchain-core = "^0.3.15"
 neo4j = "^5.28.1"
+core = { path = "../../core", develop = true }
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "T201"]
@@ -60,7 +61,10 @@ pytest = "^7.4.3"
 pytest-asyncio = "^0.23.2"
 pytest-socket = "^0.7.0"
 pytest-watcher = "^0.3.4"
-langchain-tests = "^0.3.5"
+langchain-tests = "0.3.17"
+langchain-experimental = "^0.3.4"
+langchain-core = "^0.3.51"
+langchain-openai = "^0.3.12"
 
 [tool.poetry.group.codespell.dependencies]
 codespell = "^2.2.6"

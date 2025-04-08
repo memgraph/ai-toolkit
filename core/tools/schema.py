@@ -1,10 +1,11 @@
 # This is SHOW SCHEMA INFO tool from Memgraph 
-from neo4j import GraphDatabase
 from typing import Any, Dict, List
 from core.api.tool import BaseTool
+from core.api.memgraph import MemgraphClient
+
 
 class ShowSchemaInfo(BaseTool):
-    def __init__(self, db: GraphDatabase.driver):
+    def __init__(self, db: MemgraphClient):
         super().__init__(
             name="show_schema_info",
             description="Shows schema information from a Memgraph database",
@@ -14,11 +15,10 @@ class ShowSchemaInfo(BaseTool):
                 "required": []
             }
         )
-        self.driver: GraphDatabase.driver = db
+        self.db = db
 
     async def call(self, arguments: Dict[str, Any]) -> List[Any]:
-        # Get the schema information from the database
-        schema_info = self.driver.session().run("SHOW SCHEMA INFO")
+        schema_info = self.db.query("SHOW SCHEMA INFO")
         
         # Convert the schema information to a list of dictionaries
         schema_info_list = [dict(record) for record in schema_info]
@@ -27,5 +27,5 @@ class ShowSchemaInfo(BaseTool):
         return schema_info_list
 
     def close(self):
-        self.driver.close()
+        self.db.close()
 

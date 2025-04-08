@@ -8,15 +8,15 @@ from langchain_core.callbacks import (
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
-from langchain_memgraph.graphs.memgraph import Memgraph
-
+from core.api.memgraph import MemgraphClient
+from core.tools.schema import ShowSchemaInfo
 
 class BaseMemgraphTool(BaseModel):
     """
     Base tool for interacting with Memgraph.
     """
 
-    db: Memgraph = Field(exclude=True)
+    db: MemgraphClient = Field(exclude=True)
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -44,6 +44,7 @@ class QueryMemgraphTool(BaseMemgraphTool, BaseTool):  # type: ignore[override]
         .. code-block:: python
 
             tool = QueryMemgraphTool(
+                memgraph_client=memgraph_client
             )
 
     Invocation with args:
@@ -77,13 +78,69 @@ class QueryMemgraphTool(BaseMemgraphTool, BaseTool):  # type: ignore[override]
     args_schema: Type[BaseModel] = _QueryMemgraphToolInput
     """The schema that is passed to the model when performing tool calling."""
 
-    # TODO: Add any other init params for the tool.
-    # param1: Optional[str]
-    # """param1 determines foobar"""
-
     def _run(
         self,
         query: str,
         run_manager: Optional[CallbackManagerForToolRun] = None,
     ) -> List[Dict[str, Any]]:
         return self.db.query(query)
+
+
+class ShowSchemaInfoTool(BaseMemgraphTool, BaseTool):  # type: ignore[override]
+    """Tool for retrieving schema information from Memgraph.
+
+    Setup:
+        Install ``langchain-memgraph`` and make sure Memgraph is running.
+
+        .. code-block:: bash
+            pip install -U langchain-memgraph
+
+    Instantiation:
+        .. code-block:: python
+
+            tool = ShowSchemaInfoTool(
+                db=memgraph_client
+            )
+
+    Invocation:
+        .. code-block:: python
+
+            result = tool.invoke({})
+
+        .. code-block:: python
+
+            # Output of invocation
+            # List[Dict[str, Any]]
+            [
+                {
+                    "node_labels": ["Person", "Movie"],
+                    "edge_types": ["ACTED_IN", "DIRECTED"],
+                    "node_properties": ["name", "age", "title"],
+                    "edge_properties": ["role", "year"]
+                }
+            ]
+    """  # noqa: E501
+
+    name: str = "memgraph_show_schema"
+    """The name that is passed to the model when performing tool calling."""
+
+    description: str = (
+        "Tool is used to retrieve schema information from Memgraph database."
+    )
+    """The description that is passed to the model when performing tool calling."""
+
+    args_schema: Type[BaseModel] = BaseModel
+    """The schema that is passed to the model when performing tool calling."""
+
+    def _run(
+        self,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> List[Dict[str, Any]]:
+        """Run the tool to get schema information."""
+
+        schema_info = ShowSchemaInfo(
+            db=self.db,
+        )
+        result = schema_info.call({})
+
+        return result
