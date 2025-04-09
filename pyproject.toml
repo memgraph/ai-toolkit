@@ -1,0 +1,21 @@
+[project]
+name = "memgraph-ai-toolkit"
+version = "0.1.0"
+description = "Memgraph ai-toolkit"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "core"
+]
+
+[tool.uv.sources]
+core = { workspace = true}
+
+
+
+[tool.uv.workspace] 
+members = [
+    "core/",
+    "integrations/langchain-memgraph/",
+    "integrations/mcp-memgraph/",
+]

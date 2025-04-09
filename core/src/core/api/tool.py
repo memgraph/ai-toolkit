@@ -17,7 +17,7 @@ class BaseTool(ABC):
 
 
     @abstractmethod
-    async def call(self, arguments: Dict[str, Any]) -> List[Any]:
+    def call(self, arguments: Dict[str, Any]) -> List[Any]:
         """
         Execute the tool with the provided arguments.
         

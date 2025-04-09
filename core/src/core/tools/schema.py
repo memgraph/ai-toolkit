@@ -17,7 +17,7 @@ class ShowSchemaInfo(BaseTool):
         )
         self.db = db
 
-    async def call(self, arguments: Dict[str, Any]) -> List[Any]:
+    def call(self, arguments: Dict[str, Any]) -> List[Any]:
         schema_info = self.db.query("SHOW SCHEMA INFO")
         
         # Convert the schema information to a list of dictionaries

@@ -23,6 +23,9 @@ class MemgraphClient:
             result = session.run(query)
             return [dict(record) for record in result]
 
+
+
+
     def close(self) -> None:
         """
         Close the database connection.

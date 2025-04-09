@@ -3,5 +3,18 @@ name = "core"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
+authors = [
+  { name = "antejavor", email = "ante.javor@memgraph.io" }
+]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = []  # Add runtime deps here if needed
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.3.5",
+  "pytest-asyncio>=0.26.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
