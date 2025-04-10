@@ -5,7 +5,8 @@ description = "Memgraph ai-toolkit"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "core"
+    "core",
+    "neo4j>=5.28.1",
 ]
 
 [tool.uv.sources]

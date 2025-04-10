@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from neo4j import GraphDatabase
 
 
@@ -6,10 +6,30 @@ class MemgraphClient:
     """
     Base Memgraph client for interacting with Memgraph database.
     """
-    def __init__(self, uri: str, user: str, password: str):
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+    def __init__(self, uri: str, username: str, password: str,  driver_config: Optional[Dict] = None):
+        self.driver = GraphDatabase.driver(uri, auth=(username, password), **(driver_config or {}))
+        try:
+            import neo4j
+        except ImportError:
+            raise ImportError(
+                "Could not import neo4j python package. "
+                "Please install it with `pip install neo4j`."
+            )
+        try:
+            self.driver.verify_connectivity()
+        except neo4j.exceptions.ServiceUnavailable:
+            raise ValueError(
+                "Could not connect to Memgraph database. "
+                "Please ensure that the url is correct"
+            )
+        except neo4j.exceptions.AuthError:
+            raise ValueError(
+                "Could not connect to Memgraph database. "
+                "Please ensure that the username and password are correct"
+            )
+        
 
-    def query(self, query: str) -> List[Dict[str, Any]]:
+    def query(self, query: str, params: dict = {}) -> List[Dict[str, Any]]:
         """
         Execute a Cypher query and return results as a list of dictionaries.
         
@@ -19,12 +39,48 @@ class MemgraphClient:
         Returns:
             List of dictionaries containing query results
         """
+        from neo4j.exceptions import Neo4jError
+
+        try:
+            data, _, _ = self.driver.execute_query(
+                query,
+                parameters_=params,
+            )
+            json_data = [r.data() for r in data]
+            return json_data
+        except Neo4jError as e:
+            if not (
+                (
+                    (  # isCallInTransactionError
+                        e.code == "Neo.DatabaseError.Statement.ExecutionFailed"
+                        or e.code
+                        == "Neo.DatabaseError.Transaction.TransactionStartFailed"
+                    )
+                    and "in an implicit transaction" in e.message
+                )
+                or (  # isPeriodicCommitError
+                    e.code == "Neo.ClientError.Statement.SemanticError"
+                    and (
+                        "in an open transaction is not possible" in e.message
+                        or "tried to execute in an explicit transaction" in e.message
+                    )
+                )
+                or (
+                    e.code == "Memgraph.ClientError.MemgraphError.MemgraphError"
+                    and ("in multicommand transactions" in e.message)
+                )
+                or (
+                    e.code == "Memgraph.ClientError.MemgraphError.MemgraphError"
+                    and "SchemaInfo disabled" in e.message
+                )
+            ):
+                raise
+
+        # fallback to allow implicit transactions
         with self.driver.session() as session:
-            result = session.run(query)
-            return [dict(record) for record in result]
-
-
-
+            data = session.run(query, params)
+            json_data = [r.data() for r in data]
+            return json_data
 
     def close(self) -> None:
         """

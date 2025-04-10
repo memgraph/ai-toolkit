@@ -6,7 +6,7 @@ from langchain_core.documents import Document
 from langchain_experimental.graph_transformers import LLMGraphTransformer
 from langchain_openai import ChatOpenAI
 
-from langchain_memgraph.graphs.memgraph import Memgraph
+from langchain_memgraph.graphs.memgraph import MemgraphLangchain
 
 # Load environment variables from .env
 load_dotenv()
@@ -19,7 +19,7 @@ def memgraph_connection():
     username = os.getenv("MEMGRAPH_USERNAME", "")
     password = os.getenv("MEMGRAPH_PASSWORD", "")
 
-    graph = Memgraph(
+    graph = MemgraphLangchain(
         url=url, username=username, password=password, refresh_schema=False
     )
     yield graph

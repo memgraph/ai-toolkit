@@ -5,7 +5,8 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
 from langchain_memgraph.chains.graph_qa import MemgraphQAChain
-from langchain_memgraph.graphs.memgraph import Memgraph
+from langchain_memgraph.graphs.memgraph import MemgraphLangchain
+
 
 # Load environment variables from .env
 load_dotenv()
@@ -14,12 +15,12 @@ load_dotenv()
 @pytest.fixture(scope="module")
 def memgraph_connection():
     """Setup Memgraph connection fixture."""
-    url = os.getenv("MEMGRAPH_URI", "bolt://localhost:7687")
+    uri = os.getenv("MEMGRAPH_URI", "bolt://localhost:7687")
     username = os.getenv("MEMGRAPH_USERNAME", "")
     password = os.getenv("MEMGRAPH_PASSWORD", "")
 
-    graph = Memgraph(
-        url=url, username=username, password=password, refresh_schema=False
+    graph = MemgraphLangchain(
+        url=uri, username=username, password=password
     )
     yield graph
 

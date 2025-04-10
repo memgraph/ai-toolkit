@@ -675,10 +675,14 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "core" },
+    { name = "neo4j" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "core", editable = "core" }]
+requires-dist = [
+    { name = "core", editable = "core" },
+    { name = "neo4j", specifier = ">=5.28.1" },
+]
 
 [[package]]
 name = "multidict"

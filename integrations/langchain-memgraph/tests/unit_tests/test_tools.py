@@ -2,7 +2,7 @@ from typing import Type
 
 from langchain_tests.unit_tests import ToolsUnitTests
 
-from langchain_memgraph.graphs.memgraph import Memgraph
+from core.api.memgraph import MemgraphClient
 from langchain_memgraph.tools import QueryMemgraphTool
 
 
@@ -16,7 +16,7 @@ class TestMemgraphIntegration(ToolsUnitTests):
         # if your tool constructor instead required initialization arguments like
         # `def __init__(self, some_arg: int):`, you would return those here
         # as a dictionary, e.g.: `return {'some_arg': 42}`
-        return {"db": Memgraph("bolt://localhost:7687", "", "")}
+        return {"db": MemgraphClient("bolt://localhost:7687", "", "")}
 
     @property
     def tool_invoke_params_example(self) -> dict:

@@ -12,7 +12,7 @@ def test_show_schema_info():
     user = "memgraph"
     password = "memgraph"
 
-    memgraph_client = MemgraphClient(uri, user, password)
+    memgraph_client = MemgraphClient(uri=uri, username=user, password=password)
 
     schema_tool = ShowSchemaInfo(db=memgraph_client)
     assert "show_schema_info" in schema_tool.name

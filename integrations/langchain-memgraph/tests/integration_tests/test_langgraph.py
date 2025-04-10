@@ -7,7 +7,7 @@ from langchain.chat_models import init_chat_model
 from langgraph.prebuilt import create_react_agent
 
 from langchain_memgraph import MemgraphToolkit
-from langchain_memgraph.graphs.memgraph import Memgraph
+from core.api.memgraph import MemgraphClient
 
 # Load environment variables
 load_dotenv()
@@ -16,12 +16,12 @@ load_dotenv()
 @pytest.fixture(scope="module")
 def memgraph_connection():
     """Setup Memgraph connection fixture."""
-    url = os.getenv("MEMGRAPH_URI", "bolt://localhost:7687")
+    uri = os.getenv("MEMGRAPH_URI", "bolt://localhost:7687")
     username = os.getenv("MEMGRAPH_USERNAME", "")
     password = os.getenv("MEMGRAPH_PASSWORD", "")
 
-    graph = Memgraph(
-        url=url, username=username, password=password, refresh_schema=False
+    graph = MemgraphClient(
+        uri=uri, username=username, password=password
     )
     yield graph
 
@@ -31,7 +31,7 @@ def memgraph_connection():
 
 @pytest.fixture(scope="module")
 def memgraph_agent():
-    url = os.getenv("MEMGRAPH_URI", "bolt://localhost:7687")
+    uri = os.getenv("MEMGRAPH_URI", "bolt://localhost:7687")
     username = os.getenv("MEMGRAPH_USERNAME", "")
     password = os.getenv("MEMGRAPH_PASSWORD", "")
 
@@ -41,7 +41,7 @@ def memgraph_agent():
 
     llm = init_chat_model("gpt-4o-mini", model_provider="openai")
 
-    db = Memgraph(url=url, username=username, password=password)
+    db = MemgraphClient(uri=uri, username=username, password=password)
     toolkit = MemgraphToolkit(db=db, llm=llm)
 
     agent_executor = create_react_agent(
@@ -58,7 +58,6 @@ def test_seed_graph(memgraph_connection):
        CREATE (c:Character {name: 'Jon Snow', house: 'Stark', title: 'King in the North'})
     """
     memgraph_connection.query(query)
-    memgraph_connection.refresh_schema()
 
     # Verify nodes exist
     game_exists = memgraph_connection.query(
@@ -66,7 +65,6 @@ def test_seed_graph(memgraph_connection):
     )
     assert len(game_exists) > 0, "Game node not created!"
 
-    print("✅ Graph seeded successfully")
 
 
 def test_memgraph_agent(memgraph_agent):
@@ -87,4 +85,3 @@ def test_memgraph_agent(memgraph_agent):
         last_event["messages"][-1]
     ), "Expected 'Jon Snow' in the final result!"
 
-    print("✅ Memgraph Agent processed query successfully")

@@ -2,10 +2,12 @@ import logging
 from hashlib import md5
 from typing import Any, Dict, List, Optional
 
+from core.api.memgraph import MemgraphClient
 from langchain_core.utils import get_from_dict_or_env
 
 from langchain_memgraph.graphs.graph_document import GraphDocument, Node, Relationship
 from langchain_memgraph.graphs.graph_store import GraphStore
+
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +257,7 @@ def _transform_relationships(
     return transformed_relationships
 
 
-class Memgraph(GraphStore):
+class MemgraphLangchain(GraphStore, MemgraphClient):
     """Memgraph wrapper for graph operations.
 
     Parameters:
@@ -285,18 +287,12 @@ class Memgraph(GraphStore):
         username: Optional[str] = None,
         password: Optional[str] = None,
         database: Optional[str] = None,
-        refresh_schema: bool = True,
+        refresh_schema: bool = False,
         *,
         driver_config: Optional[Dict] = None,
     ) -> None:
         """Create a new Memgraph graph wrapper instance."""
-        try:
-            import neo4j
-        except ImportError:
-            raise ImportError(
-                "Could not import neo4j python package. "
-                "Please install it with `pip install neo4j`."
-            )
+
 
         url = get_from_dict_or_env({"url": url}, "url", "MEMGRAPH_URI")
 
@@ -314,45 +310,24 @@ class Memgraph(GraphStore):
                 "password",
                 "MEMGRAPH_PASSWORD",
             )
-            auth = (username, password)
+
+        MemgraphClient.__init__(self, url, username, password, driver_config=driver_config)
+
         database = get_from_dict_or_env(
             {"database": database}, "database", "MEMGRAPH_DATABASE", "memgraph"
-        )
-
-        self._driver = neo4j.GraphDatabase.driver(
-            url, auth=auth, **(driver_config or {})
         )
 
         self._database = database
         self.schema: str = ""
         self.structured_schema: Dict[str, Any] = {}
 
-        # Verify connection
-        try:
-            self._driver.verify_connectivity()
-        except neo4j.exceptions.ServiceUnavailable:
-            raise ValueError(
-                "Could not connect to Memgraph database. "
-                "Please ensure that the url is correct"
-            )
-        except neo4j.exceptions.AuthError:
-            raise ValueError(
-                "Could not connect to Memgraph database. "
-                "Please ensure that the username and password are correct"
-            )
 
         # Set schema
         if refresh_schema:
             try:
                 self.refresh_schema()
-            except neo4j.exceptions.ClientError as e:
+            except Exception as e:
                 raise e
-
-    def close(self) -> None:
-        if self._driver:
-            logger.info("Closing the driver connection.")
-            self._driver.close()
-            self._driver = None
 
     @property
     def get_schema(self) -> str:
@@ -364,59 +339,20 @@ class Memgraph(GraphStore):
         """Returns the structured schema of the Graph database"""
         return self.structured_schema
 
-    def query(self, query: str, params: dict = {}) -> List[Dict[str, Any]]:
-        """Query the graph.
+    def query(
+        self, query: str, params: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Execute a Cypher query and return results as a list of dictionaries.
 
         Args:
             query (str): The Cypher query to execute.
-            params (dict): The parameters to pass to the query.
+            params (Optional[Dict[str, Any]]): Parameters for the query.
 
         Returns:
-            List[Dict[str, Any]]: The list of dictionaries containing the query results.
+            List[Dict[str, Any]]: List of dictionaries containing query results.
         """
-        from neo4j.exceptions import Neo4jError
-
-        try:
-            data, _, _ = self._driver.execute_query(
-                query,
-                database_=self._database,
-                parameters_=params,
-            )
-            json_data = [r.data() for r in data]
-            return json_data
-        except Neo4jError as e:
-            if not (
-                (
-                    (  # isCallInTransactionError
-                        e.code == "Neo.DatabaseError.Statement.ExecutionFailed"
-                        or e.code
-                        == "Neo.DatabaseError.Transaction.TransactionStartFailed"
-                    )
-                    and "in an implicit transaction" in e.message
-                )
-                or (  # isPeriodicCommitError
-                    e.code == "Neo.ClientError.Statement.SemanticError"
-                    and (
-                        "in an open transaction is not possible" in e.message
-                        or "tried to execute in an explicit transaction" in e.message
-                    )
-                )
-                or (
-                    e.code == "Memgraph.ClientError.MemgraphError.MemgraphError"
-                    and ("in multicommand transactions" in e.message)
-                )
-                or (
-                    e.code == "Memgraph.ClientError.MemgraphError.MemgraphError"
-                    and "SchemaInfo disabled" in e.message
-                )
-            ):
-                raise
-
-        # fallback to allow implicit transactions
-        with self._driver.session(database=self._database) as session:
-            data = session.run(query, params)
-            json_data = [r.data() for r in data]
-            return json_data
+        return MemgraphClient.query(self, query, params)
 
     def refresh_schema(self) -> None:
         """
@@ -442,7 +378,9 @@ class Memgraph(GraphStore):
             self.structured_schema = structured_schema
             self.schema = transform_schema_to_text(structured_schema)
             return
-        except Neo4jError as e:
+
+        except (Neo4jError, ValueError) as e:
+            logger.info("SHOW SCHEMA INFO query failed or returned no data; falling back: %s", e)
             if (
                 e.code == "Memgraph.ClientError.MemgraphError.MemgraphError"
                 and "SchemaInfo disabled" in e.message

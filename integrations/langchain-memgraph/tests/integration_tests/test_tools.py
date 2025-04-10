@@ -2,7 +2,7 @@ from typing import Type
 
 from langchain_tests.integration_tests import ToolsIntegrationTests
 
-from core.api.memgraph import MemgraphClient   
+from core.api.memgraph import MemgraphClient
 from langchain_memgraph.tools import QueryMemgraphTool, ShowSchemaInfoTool
 
 
