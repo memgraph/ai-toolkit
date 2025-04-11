@@ -675,12 +675,14 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "core" },
+    { name = "mcp", extra = ["cli"] },
     { name = "neo4j" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "core", editable = "core" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.6.0" },
     { name = "neo4j", specifier = ">=5.28.1" },
 ]
 
