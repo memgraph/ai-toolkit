@@ -18,3 +18,7 @@ test = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_level = "INFO"

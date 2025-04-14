@@ -1,10 +1,9 @@
 from mcp.server.fastmcp import FastMCP
 from core.api.memgraph import MemgraphClient
-import logging
+from core.utils.logging import logger_init  # Import centralized logger
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("mcp-memgraph")
+logger = logger_init("mcp-memgraph")
 
 # Initialize FastMCP server
 mcp = FastMCP("mcp-memgraph")

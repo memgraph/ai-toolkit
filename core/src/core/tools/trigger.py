@@ -1,17 +1,16 @@
-# This is SHOW SCHEMA INFO tool from Memgraph 
 from typing import Any, Dict, List
 from core.api.tool import BaseTool
 from core.api.memgraph import MemgraphClient
 
 
-class ShowSchemaInfo(BaseTool):
+class ShowTriggers(BaseTool):
     """
-    Tool for showing schema information from Memgraph.
+    Tool for showing trigger information from Memgraph.
     """
     def __init__(self, db: MemgraphClient):
         super().__init__(
-            name="show_schema_info",
-            description="Shows schema information from a Memgraph database",
+            name="show_triggers",
+            description="Shows trigger information from a Memgraph database",
             input_schema={
                 "type": "object",
                 "properties": {},
@@ -21,9 +20,10 @@ class ShowSchemaInfo(BaseTool):
         self.db = db
 
     def call(self, arguments: Dict[str, Any]) -> List[Dict[str, Any]]:
-        schema_info = self.db.query("SHOW SCHEMA INFO")
-        return schema_info
+        """Execute the SHOW TRIGGERS query and return the results."""
+        trigger_info = self.db.query("SHOW TRIGGERS")
+        return trigger_info
 
     def close(self):
+        """Close the database connection."""
         self.db.close()
-

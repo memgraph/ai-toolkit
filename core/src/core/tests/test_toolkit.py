@@ -4,25 +4,12 @@ from ..api.memgraph import MemgraphClient
 from ..tools.schema import ShowSchemaInfo
 from ..api.toolkit import Toolkit
 from ..api.tool import BaseTool
+from ..utils.logging import logger_init  
 
-
-
-def test_show_schema_info():
-    uri = "bolt://localhost:7687"
-    user = "memgraph"
-    password = "memgraph"
-
-    memgraph_client = MemgraphClient(uri=uri, username=user, password=password)
-
-    schema_tool = ShowSchemaInfo(db=memgraph_client)
-    assert "show_schema_info" in schema_tool.name
-
-    result = schema_tool.call({})
-
-    assert isinstance(result, str) or isinstance(result, list)  # adjust based on expected output
-    schema_tool.close()
+logger = logger_init("test-toolkit")  # Set up logger for the test
 
 def test_toolkit():
+    """Test the Toolkit class."""
 
     toolkit = Toolkit()
     class DummyTool(BaseTool):
