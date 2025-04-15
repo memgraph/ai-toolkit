@@ -4,6 +4,7 @@ from langchain_tests.unit_tests import ToolsUnitTests
 
 from core.api.memgraph import MemgraphClient
 from langchain_memgraph.tools import RunQueryMemgraphTool
+from langchain_memgraph.tools import RunShowStorageInfoTool
 
 
 class TestMemgraphIntegration(ToolsUnitTests):
@@ -27,3 +28,5 @@ class TestMemgraphIntegration(ToolsUnitTests):
         have {"name", "id", "args"} keys.
         """
         return {"query": "MATCH (n) RETURN n LIMIT 1"}
+
+
