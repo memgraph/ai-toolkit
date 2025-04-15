@@ -12,8 +12,8 @@ pip install -U langchain-memgraph
 
 ### Memgraph
 
-The `Memgraph` class is a wrapper around the database client that supports the 
-query operation. 
+The `Memgraph` class is a wrapper around the database client that supports the
+query operation.
 
 ```python
 import os
@@ -30,7 +30,7 @@ print(results)
 
 ### MemgraphQAChain
 
-The `MemgraphQAChain` class enables natural language interactions with a Memgraph database. 
+The `MemgraphQAChain` class enables natural language interactions with a Memgraph database.
 It uses an LLM and the database's schema to translate a user's question into a Cypher query, which is executed against the database.
 The resulting data is then sent along with the user's question to the LLM to generate a natural language response.
 
@@ -60,13 +60,12 @@ print(result)
 
 ### Memgraph toolkit
 
-The `MemgraphToolkit` contains different tools agents can leverage to perform specific tasks the user has given them. Toolkit 
-needs a database object and LLM access since different tools leverage different operations.  
+The `MemgraphToolkit` contains different tools agents can leverage to perform specific tasks the user has given them. Toolkit
+needs a database object and LLM access since different tools leverage different operations.
 
-Currently supported tools: 
+Currently supported tools:
 
 1. **QueryMemgraphTool** - Basic Cypher query execution tool
-
 
 ```python
 import os
@@ -109,15 +108,16 @@ print(last_event)
 ## 🧪 Test
 
 Install the test dependencies to run the tests:
-1. Install dependencies 
+
+1. Install dependencies
 
 ```bash
 poetry install --with test,test_integration
 ```
 
-2. Start Memgraph in the background. 
-   
+2. Start Memgraph in the background.
 3. Create an `.env` file that points to Memgraph and OpenAI API
+
 ```
 MEMGRAPH_URI=bolt://localhost:7687
 MEMGRAPH_USERNAME=
@@ -125,7 +125,7 @@ MEMGRAPH_PASSWORD=
 OPENAI_API_KEY=your_openai_api_key
 ```
 
-### Run tests 
+### Run tests
 
 Run the unit tests using:
 
@@ -133,11 +133,11 @@ Run the unit tests using:
 make tests
 ```
 
-Run the integration test using: 
+Run the integration test using:
 
- ```bash
- make integration_tests
- ```
+```bash
+make integration_tests
+```
 
 ## 🧹 Code Formatting and Linting
 

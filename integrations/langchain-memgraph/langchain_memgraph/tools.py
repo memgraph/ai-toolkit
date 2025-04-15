@@ -40,7 +40,7 @@ class _QueryMemgraphToolInput(BaseModel):
     query: str = Field(..., description="The query to be executed in Memgraph.")
 
 
-class RunQueryMemgraphTool(BaseMemgraphTool, BaseTool): 
+class RunQueryMemgraphTool(BaseMemgraphTool, BaseTool):
     """Tool for querying Memgraph."""
 
     name: str = CypherTool(db=None).get_name()
@@ -62,7 +62,7 @@ class RunQueryMemgraphTool(BaseMemgraphTool, BaseTool):
         ).call({"query": query})
 
 
-class RunShowSchemaInfoTool(BaseMemgraphTool, BaseTool): 
+class RunShowSchemaInfoTool(BaseMemgraphTool, BaseTool):
     """Tool for retrieving schema information from Memgraph."""
 
     name: str = ShowSchemaInfoTool(db=None).get_name()
@@ -88,7 +88,7 @@ class RunShowSchemaInfoTool(BaseMemgraphTool, BaseTool):
         return result
 
 
-class RunShowStorageInfoTool(BaseMemgraphTool, BaseTool): 
+class RunShowStorageInfoTool(BaseMemgraphTool, BaseTool):
     """Tool for retrieving storage information from Memgraph."""
 
     name: str = ShowStorageInfoTool(db=None).get_name()
@@ -118,10 +118,11 @@ class _PageRankMemgraphToolInput(BaseModel):
     """
     Input schema for the PageRank Memgraph tool.
     """
+
     limit: int = Field(10, description="Number of nodes to return.")
 
 
-class RunPageRankMemgraphTool(BaseMemgraphTool, BaseTool): 
+class RunPageRankMemgraphTool(BaseMemgraphTool, BaseTool):
     """Tool for running PageRank on Memgraph."""
 
     name: str = PageRankTool(db=None).get_name()
@@ -143,7 +144,7 @@ class RunPageRankMemgraphTool(BaseMemgraphTool, BaseTool):
         ).call({"limit": limit})
 
 
-class RunShowConstraintInfoTool(BaseMemgraphTool, BaseTool): 
+class RunShowConstraintInfoTool(BaseMemgraphTool, BaseTool):
     """Tool for retrieving constraint information from Memgraph."""
 
     name: str = ShowConstraintInfoTool(db=None).get_name()
@@ -169,7 +170,7 @@ class RunShowConstraintInfoTool(BaseMemgraphTool, BaseTool):
         return result
 
 
-class RunShowIndexInfoTool(BaseMemgraphTool, BaseTool): 
+class RunShowIndexInfoTool(BaseMemgraphTool, BaseTool):
     """Tool for retrieving index information from Memgraph."""
 
     name: str = ShowIndexInfoTool(db=None).get_name()
@@ -195,7 +196,7 @@ class RunShowIndexInfoTool(BaseMemgraphTool, BaseTool):
         return result
 
 
-class RunShowConfigTool(BaseMemgraphTool, BaseTool): 
+class RunShowConfigTool(BaseMemgraphTool, BaseTool):
     """Tool for retrieving configuration information from Memgraph."""
 
     name: str = ShowConfigTool(db=None).get_name()
@@ -221,7 +222,7 @@ class RunShowConfigTool(BaseMemgraphTool, BaseTool):
         return result
 
 
-class RunShowTriggersTool(BaseMemgraphTool, BaseTool): 
+class RunShowTriggersTool(BaseMemgraphTool, BaseTool):
     """Tool for retrieving trigger information from Memgraph."""
 
     name: str = ShowTriggersTool(db=None).get_name()
@@ -251,17 +252,17 @@ class _BetweennessCentralityToolInput(BaseModel):
     """
     Input schema for the Betweenness Centrality Memgraph tool.
     """
+
     isDirectionIgnored: bool = Field(
-        True, 
-        description="Set to false to consider the direction of relationships. Default is true."
+        True,
+        description="Set to false to consider the direction of relationships. Default is true.",
     )
     limit: int = Field(
-        10, 
-        description="Limit the number of nodes to return. Default is 10."
+        10, description="Limit the number of nodes to return. Default is 10."
     )
 
 
-class RunBetweennessCentralityTool(BaseMemgraphTool, BaseTool): 
+class RunBetweennessCentralityTool(BaseMemgraphTool, BaseTool):
     """Tool for running Betweenness Centrality on Memgraph."""
 
     name: str = BetweennessCentralityTool(db=None).get_name()
@@ -281,14 +282,4 @@ class RunBetweennessCentralityTool(BaseMemgraphTool, BaseTool):
     ) -> List[Dict[str, Any]]:
         return BetweennessCentralityTool(
             db=self.db,
-        ).call({
-            "isDirectionIgnored": isDirectionIgnored,
-            "limit": limit
-        })
-
-
-
-
-
-
-
+        ).call({"isDirectionIgnored": isDirectionIgnored, "limit": limit})

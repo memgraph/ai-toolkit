@@ -1,26 +1,27 @@
-
 # AI toolkit
 
+This should be a make file
 
-This should be a make file 
-### Dependencies for running: 
+### Dependencies for running:
+
 ```
 uv pip install -e core
 uv pip install -e integrations/langchain-memgraph
 uv pip install -e integrations/mcp-memgraph
 ```
 
-### Dependencies for tests: 
+### Dependencies for tests:
+
 ```
 uv pip install -e core[test]
 uv pip install -e integrations/langchain-memgraph[test]
 uv pip install -e integrations/mcp-memgraph[test]
-# In zsh it is 
+# In zsh it is
 uv pip install -e core"[test]"
 ```
 
-
 ### Test for core
+
 ```
 uv run pytest core/src/core/tests
 ```

@@ -6,8 +6,17 @@ class MemgraphClient:
     """
     Base Memgraph client for interacting with Memgraph database.
     """
-    def __init__(self, uri: str, username: str, password: str,  driver_config: Optional[Dict] = None):
-        self.driver = GraphDatabase.driver(uri, auth=(username, password), **(driver_config or {}))
+
+    def __init__(
+        self,
+        uri: str,
+        username: str,
+        password: str,
+        driver_config: Optional[Dict] = None,
+    ):
+        self.driver = GraphDatabase.driver(
+            uri, auth=(username, password), **(driver_config or {})
+        )
         try:
             import neo4j
         except ImportError:
@@ -27,15 +36,14 @@ class MemgraphClient:
                 "Could not connect to Memgraph database. "
                 "Please ensure that the username and password are correct"
             )
-        
 
     def query(self, query: str, params: dict = {}) -> List[Dict[str, Any]]:
         """
         Execute a Cypher query and return results as a list of dictionaries.
-        
+
         Args:
             query: The Cypher query to execute
-            
+
         Returns:
             List of dictionaries containing query results
         """
@@ -86,4 +94,4 @@ class MemgraphClient:
         """
         Close the database connection.
         """
-        self.driver.close() 
+        self.driver.close()

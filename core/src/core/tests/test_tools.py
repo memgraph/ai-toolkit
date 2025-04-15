@@ -9,9 +9,9 @@ from ..tools.trigger import ShowTriggersTool
 from ..tools.page_rank import PageRankTool
 from ..tools.cypher import CypherTool
 from ..tools.betweenness_centrality import BetweennessCentralityTool
-from ..utils.logging import logger_init  
+from ..utils.logging import logger_init
 
-logger = logger_init("test-tools") 
+logger = logger_init("test-tools")
 
 
 def test_show_schema_info_tool():
@@ -158,7 +158,7 @@ def test_page_rank():
 
     # Run the PageRank tool
     page_rank_tool = PageRankTool(db=memgraph_client)
-    result = page_rank_tool.call({"limit":20})
+    result = page_rank_tool.call({"limit": 20})
     assert isinstance(result, list)
     assert len(result) > 0
     page_rank_tool.close()
@@ -171,7 +171,7 @@ def test_cypher():
     user = "memgraph"
     password = "memgraph"
     memgraph_client = MemgraphClient(uri=uri, username=user, password=password)
-    
+
     cypher_tool = CypherTool(db=memgraph_client)
     result = cypher_tool.call({"query": "RETURN 0;"})
     assert isinstance(result, list)
@@ -193,7 +193,6 @@ def test_betweenness_centrality_tool():
         """
     )
 
-
     betweenness_tool = BetweennessCentralityTool(db=memgraph_client)
     result = betweenness_tool.call({"isDirectionIgnored": True, "limit": 5})
 
@@ -203,8 +202,3 @@ def test_betweenness_centrality_tool():
     assert "betweenness_centrality" in result[0]
 
     betweenness_tool.close()
-
-
-
-
-

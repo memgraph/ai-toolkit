@@ -7,15 +7,12 @@ class ShowTriggersTool(BaseTool):
     """
     Tool for showing trigger information from Memgraph.
     """
+
     def __init__(self, db: MemgraphClient):
         super().__init__(
             name="show_triggers",
             description="Shows trigger information from a Memgraph database",
-            input_schema={
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
+            input_schema={"type": "object", "properties": {}, "required": []},
         )
         self.db = db
 

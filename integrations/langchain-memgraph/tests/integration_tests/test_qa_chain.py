@@ -19,9 +19,7 @@ def memgraph_connection():
     username = os.getenv("MEMGRAPH_USERNAME", "")
     password = os.getenv("MEMGRAPH_PASSWORD", "")
 
-    graph = MemgraphLangchain(
-        url=uri, username=username, password=password
-    )
+    graph = MemgraphLangchain(url=uri, username=username, password=password)
     yield graph
 
     # Cleanup: clear the database after test

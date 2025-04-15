@@ -293,7 +293,6 @@ class MemgraphLangchain(GraphStore, MemgraphClient):
     ) -> None:
         """Create a new Memgraph graph wrapper instance."""
 
-
         url = get_from_dict_or_env({"url": url}, "url", "MEMGRAPH_URI")
 
         # if username and password are "", assume auth is disabled
@@ -311,7 +310,9 @@ class MemgraphLangchain(GraphStore, MemgraphClient):
                 "MEMGRAPH_PASSWORD",
             )
 
-        MemgraphClient.__init__(self, url, username, password, driver_config=driver_config)
+        MemgraphClient.__init__(
+            self, url, username, password, driver_config=driver_config
+        )
 
         database = get_from_dict_or_env(
             {"database": database}, "database", "MEMGRAPH_DATABASE", "memgraph"
@@ -320,7 +321,6 @@ class MemgraphLangchain(GraphStore, MemgraphClient):
         self._database = database
         self.schema: str = ""
         self.structured_schema: Dict[str, Any] = {}
-
 
         # Set schema
         if refresh_schema:
@@ -380,7 +380,9 @@ class MemgraphLangchain(GraphStore, MemgraphClient):
             return
 
         except (Neo4jError, ValueError) as e:
-            logger.info("SHOW SCHEMA INFO query failed or returned no data; falling back: %s", e)
+            logger.info(
+                "SHOW SCHEMA INFO query failed or returned no data; falling back: %s", e
+            )
             if (
                 e.code == "Memgraph.ClientError.MemgraphError.MemgraphError"
                 and "SchemaInfo disabled" in e.message

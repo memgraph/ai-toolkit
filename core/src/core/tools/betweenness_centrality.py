@@ -7,6 +7,7 @@ class BetweennessCentralityTool(BaseTool):
     """
     Tool for calculating betweenness centrality on a graph in Memgraph.
     """
+
     def __init__(self, db: MemgraphClient):
         super().__init__(
             name="run_betweenness_centrality",
@@ -22,16 +23,16 @@ class BetweennessCentralityTool(BaseTool):
                     "isDirectionIgnored": {
                         "type": "boolean",
                         "description": "Set to false to consider the direction of relationships. Default is true.",
-                        "default": True
+                        "default": True,
                     },
                     "limit": {
                         "type": "integer",
                         "description": "Limit the number of nodes to return. Default is 10.",
-                        "default": 10
-                    }
+                        "default": 10,
+                    },
                 },
-                "required": []
-            }
+                "required": [],
+            },
         )
         self.db = db
 
@@ -47,10 +48,7 @@ class BetweennessCentralityTool(BaseTool):
             "ORDER BY betweenness_centrality DESC "
             "LIMIT $limit"
         )
-        params = {
-            "directed": not is_direction_ignored,
-            "limit": limit
-        }
+        params = {"directed": not is_direction_ignored, "limit": limit}
 
         results = self.db.query(query, params)
 

@@ -7,6 +7,7 @@ class CypherTool(BaseTool):
     """
     Tool for running arbitrary Cypher queries on Memgraph.
     """
+
     def __init__(self, db: MemgraphClient):
         super().__init__(
             name="run_cypher",
@@ -16,11 +17,11 @@ class CypherTool(BaseTool):
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "The Cypher query to execute"
+                        "description": "The Cypher query to execute",
                     }
                 },
-                "required": ["query"]
-            }
+                "required": ["query"],
+            },
         )
         self.db = db
 

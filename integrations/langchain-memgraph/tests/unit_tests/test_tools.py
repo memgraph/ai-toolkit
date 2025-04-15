@@ -28,5 +28,3 @@ class TestMemgraphIntegration(ToolsUnitTests):
         have {"name", "id", "args"} keys.
         """
         return {"query": "MATCH (n) RETURN n LIMIT 1"}
-
-

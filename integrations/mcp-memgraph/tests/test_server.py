@@ -1,1 +1,1 @@
-#TODO @antejavor implement MCP tests via custom Python client: https://modelcontextprotocol.io/quickstart/client 
+# TODO @antejavor implement MCP tests via custom Python client: https://modelcontextprotocol.io/quickstart/client

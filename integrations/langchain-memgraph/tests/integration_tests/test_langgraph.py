@@ -20,9 +20,7 @@ def memgraph_connection():
     username = os.getenv("MEMGRAPH_USERNAME", "")
     password = os.getenv("MEMGRAPH_PASSWORD", "")
 
-    graph = MemgraphClient(
-        uri=uri, username=username, password=password
-    )
+    graph = MemgraphClient(uri=uri, username=username, password=password)
     yield graph
 
     # Cleanup: clear the database after test
@@ -66,7 +64,6 @@ def test_seed_graph(memgraph_connection):
     assert len(game_exists) > 0, "Game node not created!"
 
 
-
 def test_memgraph_agent(memgraph_agent):
     """Test Memgraph agent executes a Cypher query correctly."""
     example_query = "MATCH (n) WHERE n.name = 'Jon Snow' RETURN n"
@@ -84,4 +81,3 @@ def test_memgraph_agent(memgraph_agent):
     assert "Jon Snow" in str(
         last_event["messages"][-1]
     ), "Expected 'Jon Snow' in the final result!"
-

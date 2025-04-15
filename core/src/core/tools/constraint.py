@@ -7,15 +7,12 @@ class ShowConstraintInfoTool(BaseTool):
     """
     Tool for showing constraint information from Memgraph.
     """
+
     def __init__(self, db: MemgraphClient):
         super().__init__(
             name="show_constraint_info",
             description="Shows constraint information from a Memgraph database",
-            input_schema={
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
+            input_schema={"type": "object", "properties": {}, "required": []},
         )
         self.db = db
 

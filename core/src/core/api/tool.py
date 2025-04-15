@@ -6,6 +6,7 @@ class BaseTool(ABC):
     """
     Base class for all tools.
     """
+
     name: str
     description: str
     input_schema: Dict[str, Any]
@@ -15,15 +16,14 @@ class BaseTool(ABC):
         self.description = description
         self.input_schema = input_schema
 
-
     @abstractmethod
     def call(self, arguments: Dict[str, Any]) -> List[Any]:
         """
         Execute the tool with the provided arguments.
-        
+
         Parameters:
             arguments (dict): A dictionary of arguments as defined by the input schema.
-            
+
         Returns:
             List containing one or more output values.
         """
@@ -31,20 +31,20 @@ class BaseTool(ABC):
 
     def __repr__(self):
         return f"Tool(name={self.name}, description={self.description})"
-    
+
     def get_name(self) -> str:
         """
         Get the name of the tool.
-        
+
         Returns:
             str: The name of the tool.
         """
         return self.name
-    
+
     def get_description(self) -> str:
         """
         Get the description of the tool.
-        
+
         Returns:
             str: The description of the tool.
         """

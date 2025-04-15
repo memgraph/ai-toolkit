@@ -1,23 +1,25 @@
 import pytest
-from typing import Dict, Any, List  
+from typing import Dict, Any, List
 from ..api.memgraph import MemgraphClient
 from ..tools.schema import ShowSchemaInfoTool
 from ..api.toolkit import Toolkit
 from ..api.tool import BaseTool
-from ..utils.logging import logger_init  
+from ..utils.logging import logger_init
 
 logger = logger_init("test-toolkit")  # Set up logger for the test
+
 
 def test_toolkit():
     """Test the Toolkit class."""
 
     toolkit = Toolkit()
+
     class DummyTool(BaseTool):
         def __init__(self):
             super().__init__(
                 name="dummy_tool",
                 description="A dummy tool for testing",
-                input_schema={}
+                input_schema={},
             )
 
         def call(self, arguments: Dict[str, Any]) -> List[Any]:

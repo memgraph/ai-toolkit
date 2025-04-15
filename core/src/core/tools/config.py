@@ -7,15 +7,12 @@ class ShowConfigTool(BaseTool):
     """
     Tool for showing configuration information from Memgraph.
     """
+
     def __init__(self, db: MemgraphClient):
         super().__init__(
             name="show_config",
             description="Shows configuration information from a Memgraph database",
-            input_schema={
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
+            input_schema={"type": "object", "properties": {}, "required": []},
         )
         self.db = db
 

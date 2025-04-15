@@ -1,5 +1,6 @@
 import logging
 
+
 def logger_init(name: str) -> logging.Logger:
     """Set up a logger with a consistent configuration."""
     logger = logging.getLogger(name)
