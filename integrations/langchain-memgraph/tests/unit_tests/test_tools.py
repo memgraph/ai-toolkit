@@ -3,13 +3,13 @@ from typing import Type
 from langchain_tests.unit_tests import ToolsUnitTests
 
 from core.api.memgraph import MemgraphClient
-from langchain_memgraph.tools import QueryMemgraphTool
+from langchain_memgraph.tools import RunQueryMemgraphTool
 
 
 class TestMemgraphIntegration(ToolsUnitTests):
     @property
-    def tool_constructor(self) -> Type[QueryMemgraphTool]:
-        return QueryMemgraphTool
+    def tool_constructor(self) -> Type[RunQueryMemgraphTool]:
+        return RunQueryMemgraphTool
 
     @property
     def tool_constructor_params(self) -> dict:

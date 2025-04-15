@@ -5,7 +5,8 @@ from langchain_memgraph.document_loaders import MemgraphLoader
 from langchain_memgraph.graphs.memgraph import MemgraphLangchain
 from langchain_memgraph.retrievers import MemgraphRetriever
 from langchain_memgraph.toolkits import MemgraphToolkit
-from langchain_memgraph.tools import QueryMemgraphTool
+from langchain_memgraph.tools import RunQueryMemgraphTool
+from langchain_memgraph.tools import RunShowSchemaInfoTool
 
 try:
     __version__ = metadata.version(__package__)
@@ -20,6 +21,7 @@ __all__ = [
     "MemgraphLangchain",
     "MemgraphRetriever",
     "MemgraphToolkit",
-    "QueryMemgraphTool",
+    "RunQueryMemgraphTool",
+    "RunShowSchemaInfoTool",
     "__version__",
 ]

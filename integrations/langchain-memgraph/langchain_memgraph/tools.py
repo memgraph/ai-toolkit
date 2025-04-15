@@ -10,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from core.api.memgraph import MemgraphClient
 from core.tools.schema import ShowSchemaInfoTool
+from core.tools.cypher import CypherTool
+
 
 class BaseMemgraphTool(BaseModel):
     """
@@ -31,48 +33,13 @@ class _QueryMemgraphToolInput(BaseModel):
     query: str = Field(..., description="The query to be executed in Memgraph.")
 
 
-class QueryMemgraphTool(BaseMemgraphTool, BaseTool):  # type: ignore[override]
-    """Tool for querying Memgraph.
+class RunQueryMemgraphTool(BaseMemgraphTool, BaseTool): 
+    """Tool for querying Memgraph."""
 
-    Setup:
-        Install ``langchain-memgraph`` and make sure Memgraph is running.
-
-        .. code-block:: bash
-            pip install -U langchain-memgraph
-
-    Instantiation:
-        .. code-block:: python
-
-            tool = QueryMemgraphTool(
-                memgraph_client=memgraph_client
-            )
-
-    Invocation with args:
-        .. code-block:: python
-
-            tool.invoke({"query" : "MATCH (n) RETURN n LIMIT 1"})
-
-        .. code-block:: python
-
-            # Output of invocation
-            # List[Dict[str, Any]
-            [
-                {
-                    "n": {
-                        "name": "Alice",
-                        "age": 30
-                    }
-                }
-            ]
-
-    """  # noqa: E501
-
-    name: str = "memgraph_cypher_query"
+    name: str = CypherTool(db=None).get_name()
     """The name that is passed to the model when performing tool calling."""
 
-    description: str = (
-        "Tool is used to query Memgraph via Cypher query and returns the result."
-    )
+    description: str = CypherTool(db=None).get_description()
     """The description that is passed to the model when performing tool calling."""
 
     args_schema: Type[BaseModel] = _QueryMemgraphToolInput
@@ -83,50 +50,18 @@ class QueryMemgraphTool(BaseMemgraphTool, BaseTool):  # type: ignore[override]
         query: str,
         run_manager: Optional[CallbackManagerForToolRun] = None,
     ) -> List[Dict[str, Any]]:
-        return self.db.query(query)
+        return CypherTool(
+            db=self.db,
+        ).call({"query": query})
 
 
-class ShowSchemaInfoTool(BaseMemgraphTool, BaseTool):  # type: ignore[override]
-    """Tool for retrieving schema information from Memgraph.
+class RunShowSchemaInfoTool(BaseMemgraphTool, BaseTool): 
+    """Tool for retrieving schema information from Memgraph."""
 
-    Setup:
-        Install ``langchain-memgraph`` and make sure Memgraph is running.
-
-        .. code-block:: bash
-            pip install -U langchain-memgraph
-
-    Instantiation:
-        .. code-block:: python
-
-            tool = ShowSchemaInfoTool(
-                db=memgraph_client
-            )
-
-    Invocation:
-        .. code-block:: python
-
-            result = tool.invoke({})
-
-        .. code-block:: python
-
-            # Output of invocation
-            # List[Dict[str, Any]]
-            [
-                {
-                    "node_labels": ["Person", "Movie"],
-                    "edge_types": ["ACTED_IN", "DIRECTED"],
-                    "node_properties": ["name", "age", "title"],
-                    "edge_properties": ["role", "year"]
-                }
-            ]
-    """  # noqa: E501
-
-    name: str = "memgraph_show_schema"
+    name: str = ShowSchemaInfoTool(db=None).get_name()
     """The name that is passed to the model when performing tool calling."""
 
-    description: str = (
-        "Tool is used to retrieve schema information from Memgraph database."
-    )
+    description: str = ShowSchemaInfoTool(db=None).get_description()
     """The description that is passed to the model when performing tool calling."""
 
     args_schema: Type[BaseModel] = BaseModel
@@ -144,3 +79,6 @@ class ShowSchemaInfoTool(BaseMemgraphTool, BaseTool):  # type: ignore[override]
         result = schema_info.call({})
 
         return result
+
+
+

@@ -172,7 +172,7 @@ def test_cypher():
     password = "memgraph"
     memgraph_client = MemgraphClient(uri=uri, username=user, password=password)
     
-    cypher_tool = Cypher(db=memgraph_client)
+    cypher_tool = CypherTool(db=memgraph_client)
     result = cypher_tool.call({"query": "RETURN 0;"})
     assert isinstance(result, list)
     assert len(result) == 1
@@ -193,7 +193,7 @@ def test_betweenness_centrality_tool():
         """
     )
 
-=
+
     betweenness_tool = BetweennessCentralityTool(db=memgraph_client)
     result = betweenness_tool.call({"isDirectionIgnored": True, "limit": 5})
 

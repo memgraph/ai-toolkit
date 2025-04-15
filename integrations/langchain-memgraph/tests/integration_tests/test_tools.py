@@ -3,13 +3,13 @@ from typing import Type
 from langchain_tests.integration_tests import ToolsIntegrationTests
 
 from core.api.memgraph import MemgraphClient
-from langchain_memgraph.tools import QueryMemgraphTool, ShowSchemaInfoTool
+from langchain_memgraph.tools import RunQueryMemgraphTool, RunShowSchemaInfoTool
 
 
 class TestMemgraphIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> Type[QueryMemgraphTool]:
-        return QueryMemgraphTool
+    def tool_constructor(self) -> Type[RunQueryMemgraphTool]:
+        return RunQueryMemgraphTool
 
     @property
     def tool_constructor_params(self) -> dict:
@@ -31,8 +31,8 @@ class TestMemgraphIntegration(ToolsIntegrationTests):
 
 class TestSchemaInfoIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> Type[ShowSchemaInfoTool]:
-        return ShowSchemaInfoTool
+    def tool_constructor(self) -> Type[RunShowSchemaInfoTool]:
+        return RunShowSchemaInfoTool
 
     @property
     def tool_constructor_params(self) -> dict:
@@ -44,3 +44,17 @@ class TestSchemaInfoIntegration(ToolsIntegrationTests):
         Returns empty dict since ShowSchemaInfoTool doesn't require any parameters
         """
         return {}
+    
+
+class TestCypherIntegration(ToolsIntegrationTests):
+    @property
+    def tool_constructor(self) -> Type[RunQueryMemgraphTool]:
+        return RunQueryMemgraphTool
+
+    @property
+    def tool_constructor_params(self) -> dict:
+        return {"db": MemgraphClient("bolt://localhost:7687", "", "")}
+
+    @property
+    def tool_invoke_params_example(self) -> dict:
+        return {"query": "MATCH (n) RETURN n LIMIT 1"}

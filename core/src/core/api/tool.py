@@ -31,3 +31,21 @@ class BaseTool(ABC):
 
     def __repr__(self):
         return f"Tool(name={self.name}, description={self.description})"
+    
+    def get_name(self) -> str:
+        """
+        Get the name of the tool.
+        
+        Returns:
+            str: The name of the tool.
+        """
+        return self.name
+    
+    def get_description(self) -> str:
+        """
+        Get the description of the tool.
+        
+        Returns:
+            str: The description of the tool.
+        """
+        return self.description

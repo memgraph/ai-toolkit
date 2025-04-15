@@ -9,7 +9,7 @@ from pydantic import ConfigDict, Field
 from core.api.memgraph import MemgraphClient
 
 from langchain_memgraph.tools import (
-    QueryMemgraphTool,
+    RunQueryMemgraphTool,
 )
 
 
@@ -62,5 +62,5 @@ class MemgraphToolkit(BaseToolkit):
     def get_tools(self) -> List[BaseTool]:
         """Return the list of tools in the toolkit."""
         return [
-            QueryMemgraphTool(db=self.db),
+            RunQueryMemgraphTool(db=self.db),
         ]
