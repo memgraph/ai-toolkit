@@ -9,7 +9,7 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.api.memgraph import MemgraphClient
-from core.tools.schema import ShowSchemaInfo
+from core.tools.schema import ShowSchemaInfoTool
 
 class BaseMemgraphTool(BaseModel):
     """
@@ -138,7 +138,7 @@ class ShowSchemaInfoTool(BaseMemgraphTool, BaseTool):  # type: ignore[override]
     ) -> List[Dict[str, Any]]:
         """Run the tool to get schema information."""
 
-        schema_info = ShowSchemaInfo(
+        schema_info = ShowSchemaInfoTool(
             db=self.db,
         )
         result = schema_info.call({})

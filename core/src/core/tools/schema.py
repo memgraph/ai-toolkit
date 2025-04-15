@@ -4,7 +4,7 @@ from core.api.tool import BaseTool
 from core.api.memgraph import MemgraphClient
 
 
-class ShowSchemaInfo(BaseTool):
+class ShowSchemaInfoTool(BaseTool):
     """
     Tool for showing schema information from Memgraph.
     """

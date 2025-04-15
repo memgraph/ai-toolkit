@@ -3,7 +3,7 @@ from core.api.tool import BaseTool
 from core.api.memgraph import MemgraphClient
 
 
-class ShowTriggers(BaseTool):
+class ShowTriggersTool(BaseTool):
     """
     Tool for showing trigger information from Memgraph.
     """

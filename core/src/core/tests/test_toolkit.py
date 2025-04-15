@@ -1,7 +1,7 @@
 import pytest
 from typing import Dict, Any, List  
 from ..api.memgraph import MemgraphClient
-from ..tools.schema import ShowSchemaInfo
+from ..tools.schema import ShowSchemaInfoTool
 from ..api.toolkit import Toolkit
 from ..api.tool import BaseTool
 from ..utils.logging import logger_init  

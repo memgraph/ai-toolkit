@@ -3,7 +3,7 @@ from core.api.tool import BaseTool
 from core.api.memgraph import MemgraphClient
 
 
-class ShowConstraintInfo(BaseTool):
+class ShowConstraintInfoTool(BaseTool):
     """
     Tool for showing constraint information from Memgraph.
     """

@@ -3,7 +3,7 @@ from core.api.tool import BaseTool
 from core.api.memgraph import MemgraphClient
 
 
-class ShowStorageInfo(BaseTool):
+class ShowStorageInfoTool(BaseTool):
     """
     Tool for showing storage information from Memgraph.
     """

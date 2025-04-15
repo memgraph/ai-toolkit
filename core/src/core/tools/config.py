@@ -3,7 +3,7 @@ from core.api.tool import BaseTool
 from core.api.memgraph import MemgraphClient
 
 
-class ShowConfig(BaseTool):
+class ShowConfigTool(BaseTool):
     """
     Tool for showing configuration information from Memgraph.
     """

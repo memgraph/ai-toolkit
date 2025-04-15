@@ -1,14 +1,17 @@
 import pytest
 from ..api.memgraph import MemgraphClient
-from ..tools.schema import ShowSchemaInfo
-from ..tools.config import ShowConfig
-from ..tools.index import ShowIndexInfo
-from ..tools.storage import ShowStorageInfo
-from ..tools.constraint import ShowConstraintInfo
-from ..tools.trigger import ShowTriggers
-from ..utils.logging import logger_init  # Import centralized logger
+from ..tools.schema import ShowSchemaInfoTool
+from ..tools.config import ShowConfigTool
+from ..tools.index import ShowIndexInfoTool
+from ..tools.storage import ShowStorageInfoTool
+from ..tools.constraint import ShowConstraintInfoTool
+from ..tools.trigger import ShowTriggersTool
+from ..tools.page_rank import PageRankTool
+from ..tools.cypher import CypherTool
+from ..tools.betweenness_centrality import BetweennessCentralityTool
+from ..utils.logging import logger_init  
 
-logger = logger_init("test-tools")  # Set up logger for the test
+logger = logger_init("test-tools") 
 
 
 def test_show_schema_info_tool():
@@ -20,7 +23,7 @@ def test_show_schema_info_tool():
 
     memgraph_client = MemgraphClient(uri=uri, username=user, password=password)
 
-    schema_tool = ShowSchemaInfo(db=memgraph_client)
+    schema_tool = ShowSchemaInfoTool(db=memgraph_client)
     assert "show_schema_info" in schema_tool.name
 
     result = schema_tool.call({})
@@ -39,7 +42,7 @@ def test_config_tool():
 
     memgraph_client = MemgraphClient(uri=uri, username=user, password=password)
 
-    config_tool = ShowConfig(db=memgraph_client)
+    config_tool = ShowConfigTool(db=memgraph_client)
     assert "show_config" in config_tool.name
     result = config_tool.call({})
     assert isinstance(result, list)
@@ -60,7 +63,7 @@ def test_index_tool():
 
     memgraph_client.query("CREATE INDEX ON :Person(name)")
 
-    index_tool = ShowIndexInfo(db=memgraph_client)
+    index_tool = ShowIndexInfoTool(db=memgraph_client)
     assert "show_index_info" in index_tool.name
     result = index_tool.call({})
 
@@ -69,7 +72,6 @@ def test_index_tool():
     assert isinstance(result, list)
 
     assert len(result) >= 1
-
 
     index_tool.close()
 
@@ -83,7 +85,7 @@ def test_storage_tool():
 
     memgraph_client = MemgraphClient(uri=uri, username=user, password=password)
 
-    storage_tool = ShowStorageInfo(db=memgraph_client)
+    storage_tool = ShowStorageInfoTool(db=memgraph_client)
     assert "show_storage_info" in storage_tool.name
     result = storage_tool.call({})
 
@@ -101,7 +103,7 @@ def test_show_constraint_info_tool():
     # Create a sample constraint
     memgraph_client.query("CREATE CONSTRAINT ON (n:Person) ASSERT n.id IS UNIQUE")
 
-    constraint_tool = ShowConstraintInfo(db=memgraph_client)
+    constraint_tool = ShowConstraintInfoTool(db=memgraph_client)
     result = constraint_tool.call({})
 
     memgraph_client.query("DROP CONSTRAINT ON (n:Person) ASSERT n.id IS UNIQUE")
@@ -128,7 +130,7 @@ def test_show_triggers_tool():
         """
     )
 
-    trigger_tool = ShowTriggers(db=memgraph_client)
+    trigger_tool = ShowTriggersTool(db=memgraph_client)
     result = trigger_tool.call({})
 
     memgraph_client.query("DROP TRIGGER my_trigger;")
@@ -137,3 +139,72 @@ def test_show_triggers_tool():
     assert len(result) > 0
 
     trigger_tool.close()
+
+
+def test_page_rank():
+    """Test the PageRank tool."""
+
+    uri = "bolt://localhost:7687"
+    user = "memgraph"
+    password = "memgraph"
+    memgraph_client = MemgraphClient(uri=uri, username=user, password=password)
+
+    # Create a sample graph for testing
+    memgraph_client.query(
+        """UNWIND range(1, 10) AS i
+           CREATE (:Test {id: i})-[:LINK]->(:Test {id: i + 1}); 
+        """
+    )
+
+    # Run the PageRank tool
+    page_rank_tool = PageRankTool(db=memgraph_client)
+    result = page_rank_tool.call({"limit":20})
+    assert isinstance(result, list)
+    assert len(result) > 0
+    page_rank_tool.close()
+
+
+def test_cypher():
+    """Test the Cypher tool."""
+
+    uri = "bolt://localhost:7687"
+    user = "memgraph"
+    password = "memgraph"
+    memgraph_client = MemgraphClient(uri=uri, username=user, password=password)
+    
+    cypher_tool = Cypher(db=memgraph_client)
+    result = cypher_tool.call({"query": "RETURN 0;"})
+    assert isinstance(result, list)
+    assert len(result) == 1
+
+
+def test_betweenness_centrality_tool():
+    """Test the RunBetweennessCentralityTool."""
+
+    uri = "bolt://localhost:7687"
+    user = "memgraph"
+    password = "memgraph"
+    memgraph_client = MemgraphClient(uri=uri, username=user, password=password)
+
+    memgraph_client.query(
+        """
+        UNWIND range(1, 5) AS i
+        CREATE (a:Node {id: i})-[:RELATES]->(b:Node {id: i + 1});
+        """
+    )
+
+=
+    betweenness_tool = BetweennessCentralityTool(db=memgraph_client)
+    result = betweenness_tool.call({"isDirectionIgnored": True, "limit": 5})
+
+    assert isinstance(result, list)
+    assert len(result) > 0
+    assert "node" in result[0]
+    assert "betweenness_centrality" in result[0]
+
+    betweenness_tool.close()
+
+
+
+
+

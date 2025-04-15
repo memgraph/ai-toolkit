@@ -3,7 +3,7 @@ from core.api.tool import BaseTool
 from core.api.memgraph import MemgraphClient
 
 
-class ShowIndexInfo(BaseTool):
+class ShowIndexInfoTool(BaseTool):
     """
     Tool for showing index information in Memgraph.
     """
