@@ -1,6 +1,6 @@
 from typing import Any, Dict, List
 
-from core.api.memgraph import MemgraphClient
+from core.api.memgraph import Memgraph
 from core.api.tool import BaseTool
 
 

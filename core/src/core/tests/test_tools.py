@@ -1,6 +1,6 @@
 import pytest
 
-from ..api.memgraph import MemgraphClient
+from ..api.memgraph import Memgraph
 from ..tools.betweenness_centrality import BetweennessCentralityTool
 from ..tools.config import ShowConfigTool
 from ..tools.constraint import ShowConstraintInfoTool

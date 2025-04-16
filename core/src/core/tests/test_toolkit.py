@@ -2,9 +2,7 @@ from typing import Any, Dict, List
 
 import pytest
 
-from ..api.memgraph import MemgraphClient
-from ..tools.schema import ShowSchemaInfoTool
-from ..api.toolkit import Toolkit
+from ..api.toolkit import BaseToolkit
 from ..api.tool import BaseTool
 from ..utils.logging import logger_init
 

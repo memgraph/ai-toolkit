@@ -23,5 +23,8 @@ uv pip install -e core"[test]"
 ### Test for core
 
 ```
-uv run pytest core/src/core/tests
+pytest -s core/src/core/tests
+pytest -s integrations/langchain-memgraph/tests
+pytest -s integrations/mcp-memgraph/tests
+
 ```
