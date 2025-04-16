@@ -100,8 +100,18 @@ async def test_tools_and_resources():
         await client.connect_to_server(server_script_path)
 
         # TODO(@antejavor): Add this dynamically.
-        expected_tools = ["run_query"]
-        expected_resources = ["schema://main"]
+        expected_tools = [
+            "run_query",
+            "get_configuration",
+            "get_index",
+            "get_constraint",
+            "get_schema",
+            "get_storage",
+            "get_triggers",
+            "get_betweenness_centrality",
+            "get_page_rank",
+        ]
+        expected_resources = []
 
         response = await client.session.list_tools()
         available_tools = [tool.name for tool in response.tools]

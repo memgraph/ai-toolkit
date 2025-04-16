@@ -1,6 +1,16 @@
 from mcp.server.fastmcp import FastMCP
 from core.api.memgraph import MemgraphClient
-from core.utils.logging import logger_init  # Import centralized logger
+from core.tools.config import ShowConfigTool
+from core.tools.index import ShowIndexInfoTool
+from core.tools.constraint import ShowConstraintInfoTool
+from core.tools.schema import ShowSchemaInfoTool
+from core.tools.cypher import CypherTool
+from core.tools.storage import ShowStorageInfoTool
+from core.tools.trigger import ShowTriggersTool
+from core.tools.betweenness_centrality import BetweennessCentralityTool
+from core.tools.page_rank import PageRankTool
+from core.utils.logging import logger_init
+from typing import Any, Dict, List
 
 # Configure logging
 logger = logger_init("mcp-memgraph")
@@ -13,7 +23,7 @@ MEMGRAPH_USER = ""
 MEMGRAPH_PASSWORD = ""
 
 # Initialize Memgraph client
-driver = MemgraphClient(
+db = MemgraphClient(
     uri=MEMGRAPH_URI,
     username=MEMGRAPH_USER,
     password=MEMGRAPH_PASSWORD,
@@ -21,41 +31,104 @@ driver = MemgraphClient(
 
 
 @mcp.tool()
-def run_query(query: str) -> list:
-    """Run a query against Memgraph"""
+def run_query(query: str) -> List[Dict[str, Any]]:
+    """Run a Cypher query on Memgraph"""
     logger.info(f"Running query: {query}")
     try:
-        result = driver.query(query)
+        result = CypherTool(db=db).call({"query": query})
         return result
     except Exception as e:
-        return [f"Error: {str(e)}"]
+        return [f"Error running query: {str(e)}"]
 
 
-# Can be used as a tool as well
-# @mcp.tool()
-# def get_schema() -> str:
-#     """Get Memgraph schema information"""
-#     logger.info("Fetching Memgraph schema...")
-#     try:
-#         result = execute_query("SHOW SCHEMA INFO;")
-#         return result
-#     except Exception as e:
-#         return f"Error fetching schema: {str(e)}"
+@mcp.tool()
+def get_configuration() -> List[Dict[str, Any]]:
+    """Get Memgraph configuration information"""
+    logger.info("Fetching Memgraph configuration...")
+    try:
+        config = ShowConfigTool(db=db).call({})
+        return config
+    except Exception as e:
+        return [f"Error fetching configuration: {str(e)}"]
 
 
-# If used as a resource, it needs to be fetched before (not with helper function)
-@mcp.resource("schema://main")
-def get_schema() -> str:
-    """Get Memgraph schema information as a resouce"""
+@mcp.tool()
+def get_index() -> List[Dict[str, Any]]:
+    """Get Memgraph index information"""
+    logger.info("Fetching Memgraph index...")
+    try:
+        index = ShowIndexInfoTool(db=db).call({})
+        return index
+    except Exception as e:
+        return [f"Error fetching index: {str(e)}"]
+
+
+@mcp.tool()
+def get_constraint() -> List[Dict[str, Any]]:
+    """Get Memgraph constraint information"""
+    logger.info("Fetching Memgraph constraint...")
+    try:
+        constraint = ShowConstraintInfoTool(driver).call({})
+        return constraint
+    except Exception as e:
+        return [f"Error fetching constraint: {str(e)}"]
+
+
+@mcp.tool()
+def get_schema() -> List[Dict[str, Any]]:
+    """Get Memgraph schema information"""
     logger.info("Fetching Memgraph schema...")
     try:
-        result = driver.query("SHOW SCHEMA INFO;")
-        return result
+        schema = ShowSchemaInfoTool(db=db).call({})
+        return schema
     except Exception as e:
-        return f"Error fetching schema: {str(e)}"
+        return [f"Error fetching schema: {str(e)}"]
+
+
+@mcp.tool()
+def get_storage() -> List[Dict[str, Any]]:
+    """Get Memgraph storage information"""
+    logger.info("Fetching Memgraph storage...")
+    try:
+        storage = ShowStorageInfoTool(db=db).call({})
+        return storage
+    except Exception as e:
+        return [f"Error fetching storage: {str(e)}"]
+
+
+@mcp.tool()
+def get_triggers() -> List[Dict[str, Any]]:
+    """Get Memgraph triggers information"""
+    logger.info("Fetching Memgraph triggers...")
+    try:
+        triggers = ShowTriggersTool(db=db).call({})
+        return triggers
+    except Exception as e:
+        return [f"Error fetching triggers: {str(e)}"]
+
+
+@mcp.tool()
+def get_betweenness_centrality() -> List[Dict[str, Any]]:
+    """Get betweenness centrality information"""
+    logger.info("Fetching betweenness centrality...")
+    try:
+        betweenness = BetweennessCentralityTool(db=db).call({})
+        return betweenness
+    except Exception as e:
+        return [f"Error fetching betweenness centrality: {str(e)}"]
+
+
+@mcp.tool()
+def get_page_rank() -> List[Dict[str, Any]]:
+    """Get page rank information"""
+    logger.info("Fetching page rank...")
+    try:
+        page_rank = PageRankTool(db=db).call({})
+        return page_rank
+    except Exception as e:
+        return [f"Error fetching page rank: {str(e)}"]
 
 
 if __name__ == "__main__":
-    # Initialize and run the server
     logger.info("Starting FastMCP server...")
     mcp.run(transport="stdio")
