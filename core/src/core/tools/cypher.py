@@ -1,6 +1,7 @@
 from typing import Any, Dict, List
-from core.api.tool import BaseTool
+
 from core.api.memgraph import MemgraphClient
+from core.api.tool import BaseTool
 
 
 class CypherTool(BaseTool):
@@ -8,7 +9,7 @@ class CypherTool(BaseTool):
     Tool for running arbitrary Cypher queries on Memgraph.
     """
 
-    def __init__(self, db: MemgraphClient):
+    def __init__(self, db: Memgraph):
         super().__init__(
             name="run_cypher",
             description="Executes a Cypher query on a Memgraph database",
@@ -30,7 +31,3 @@ class CypherTool(BaseTool):
         query = arguments["query"]
         result = self.db.query(query)
         return [dict(record) for record in result]
-
-    def close(self):
-        """Close the database connection."""
-        self.db.close()

@@ -2,7 +2,7 @@ from typing import Dict, List
 from .tool import BaseTool
 
 
-class Toolkit:
+class BaseToolkit:
     """
     A Toolkit for managing tools.
     """
@@ -10,7 +10,7 @@ class Toolkit:
     def __init__(self):
         self._tools: Dict[str, BaseTool] = {}
 
-    def add(self, tool: BaseTool) -> None:
+    def add_tool(self, tool: BaseTool) -> None:
         """
         Add a new tool in the registry.
 
@@ -34,7 +34,7 @@ class Toolkit:
             raise ValueError(f"Tool with name '{name}' not found.")
         return self._tools[name]
 
-    def list_tools(self) -> List[BaseTool]:
+    def get_all_tools(self) -> List[BaseTool]:
         """
         List all added tools.
         """

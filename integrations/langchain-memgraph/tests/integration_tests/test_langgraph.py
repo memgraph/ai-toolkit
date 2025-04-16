@@ -7,7 +7,7 @@ from langchain.chat_models import init_chat_model
 from langgraph.prebuilt import create_react_agent
 
 from langchain_memgraph import MemgraphToolkit
-from core.api.memgraph import MemgraphClient
+from core.api.memgraph import Memgraph
 
 # Load environment variables
 load_dotenv()
@@ -20,7 +20,7 @@ def memgraph_connection():
     username = os.getenv("MEMGRAPH_USERNAME", "")
     password = os.getenv("MEMGRAPH_PASSWORD", "")
 
-    graph = MemgraphClient(uri=uri, username=username, password=password)
+    graph = Memgraph(uri=uri, username=username, password=password)
     yield graph
 
     # Cleanup: clear the database after test
@@ -39,7 +39,7 @@ def memgraph_agent():
 
     llm = init_chat_model("gpt-4o-mini", model_provider="openai")
 
-    db = MemgraphClient(uri=uri, username=username, password=password)
+    db = Memgraph(uri=uri, username=username, password=password)
     toolkit = MemgraphToolkit(db=db, llm=llm)
 
     agent_executor = create_react_agent(

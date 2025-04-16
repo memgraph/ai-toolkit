@@ -6,10 +6,10 @@ from langchain_core.language_models import BaseLanguageModel
 from langchain_core.tools import BaseTool, BaseToolkit
 from pydantic import ConfigDict, Field
 
-from core.api.memgraph import MemgraphClient
+from core.api.memgraph import Memgraph
 
 from langchain_memgraph.tools import (
-    RunQueryMemgraphTool,
+    RunQueryTool,
 )
 
 
@@ -52,7 +52,7 @@ class MemgraphToolkit(BaseToolkit):
 
     """  # noqa: E501
 
-    db: MemgraphClient = Field(exclude=True)
+    db: Memgraph = Field(exclude=True)
     llm: BaseLanguageModel = Field(exclude=True)
 
     model_config = ConfigDict(
@@ -62,5 +62,5 @@ class MemgraphToolkit(BaseToolkit):
     def get_tools(self) -> List[BaseTool]:
         """Return the list of tools in the toolkit."""
         return [
-            RunQueryMemgraphTool(db=self.db),
+            RunQueryTool(db=self.db),
         ]

@@ -2,22 +2,22 @@ from typing import Type
 
 from langchain_tests.unit_tests import ToolsUnitTests
 
-from core.api.memgraph import MemgraphClient
-from langchain_memgraph.tools import RunQueryMemgraphTool
+from core.api.memgraph import Memgraph
+from langchain_memgraph.tools import RunQueryTool
 from langchain_memgraph.tools import RunShowStorageInfoTool
 
 
 class TestMemgraphIntegration(ToolsUnitTests):
     @property
-    def tool_constructor(self) -> Type[RunQueryMemgraphTool]:
-        return RunQueryMemgraphTool
+    def tool_constructor(self) -> Type[RunQueryTool]:
+        return RunQueryTool
 
     @property
     def tool_constructor_params(self) -> dict:
         # if your tool constructor instead required initialization arguments like
         # `def __init__(self, some_arg: int):`, you would return those here
         # as a dictionary, e.g.: `return {'some_arg': 42}`
-        return {"db": MemgraphClient("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph("bolt://localhost:7687", "", "")}
 
     @property
     def tool_invoke_params_example(self) -> dict:

@@ -1,6 +1,7 @@
 from typing import Any, Dict, List
-from core.api.tool import BaseTool
+
 from core.api.memgraph import MemgraphClient
+from core.api.tool import BaseTool
 
 
 class PageRankTool(BaseTool):
@@ -8,7 +9,7 @@ class PageRankTool(BaseTool):
     Tool for calculating PageRank on a graph in Memgraph.
     """
 
-    def __init__(self, db: MemgraphClient):
+    def __init__(self, db: Memgraph):
         super().__init__(
             name="pagerank",
             description="Calculates PageRank on a graph in Memgraph",
@@ -40,7 +41,3 @@ class PageRankTool(BaseTool):
         pagerank_results = self.db.query(query)
 
         return pagerank_results
-
-    def close(self):
-        """Close the database connection."""
-        self.db.close()

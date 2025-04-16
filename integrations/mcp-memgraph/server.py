@@ -1,5 +1,5 @@
 from mcp.server.fastmcp import FastMCP
-from core.api.memgraph import MemgraphClient
+from core.api.memgraph import Memgraph
 from core.tools.config import ShowConfigTool
 from core.tools.index import ShowIndexInfoTool
 from core.tools.constraint import ShowConstraintInfoTool
@@ -23,7 +23,7 @@ MEMGRAPH_USER = ""
 MEMGRAPH_PASSWORD = ""
 
 # Initialize Memgraph client
-db = MemgraphClient(
+db = Memgraph(
     uri=MEMGRAPH_URI,
     username=MEMGRAPH_USER,
     password=MEMGRAPH_PASSWORD,

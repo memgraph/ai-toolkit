@@ -1,8 +1,9 @@
 from typing import Any, Dict, List, Optional
+
 from neo4j import GraphDatabase
 
 
-class MemgraphClient:
+class Memgraph:
     """
     Base Memgraph client for interacting with Memgraph database.
     """

@@ -2,7 +2,7 @@ import logging
 from hashlib import md5
 from typing import Any, Dict, List, Optional
 
-from core.api.memgraph import MemgraphClient
+from core.api.memgraph import Memgraph
 from langchain_core.utils import get_from_dict_or_env
 
 from langchain_memgraph.graphs.graph_document import GraphDocument, Node, Relationship
@@ -257,7 +257,7 @@ def _transform_relationships(
     return transformed_relationships
 
 
-class MemgraphLangchain(GraphStore, MemgraphClient):
+class MemgraphLangChain(GraphStore, Memgraph):
     """Memgraph wrapper for graph operations.
 
     Parameters:
@@ -310,9 +310,7 @@ class MemgraphLangchain(GraphStore, MemgraphClient):
                 "MEMGRAPH_PASSWORD",
             )
 
-        MemgraphClient.__init__(
-            self, url, username, password, driver_config=driver_config
-        )
+        Memgraph.__init__(self, url, username, password, driver_config=driver_config)
 
         database = get_from_dict_or_env(
             {"database": database}, "database", "MEMGRAPH_DATABASE", "memgraph"
@@ -352,7 +350,7 @@ class MemgraphLangchain(GraphStore, MemgraphClient):
         Returns:
             List[Dict[str, Any]]: List of dictionaries containing query results.
         """
-        return MemgraphClient.query(self, query, params)
+        return Memgraph.query(self, query, params)
 
     def refresh_schema(self) -> None:
         """

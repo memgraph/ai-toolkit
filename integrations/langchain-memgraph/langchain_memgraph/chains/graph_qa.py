@@ -28,7 +28,7 @@ from langchain_memgraph.chains.prompts import (
     MEMGRAPH_GENERATION_PROMPT,
     MEMGRAPH_QA_PROMPT,
 )
-from core.api.memgraph import MemgraphClient
+from core.api.memgraph import Memgraph
 
 INTERMEDIATE_STEPS_KEY = "intermediate_steps"
 
@@ -97,7 +97,7 @@ class MemgraphQAChain(Chain):
         See https://python.langchain.com/docs/security for more information.
     """
 
-    graph: MemgraphClient = Field(exclude=True)
+    graph: Memgraph = Field(exclude=True)
     cypher_generation_chain: Runnable
     qa_chain: Runnable
     graph_schema: str

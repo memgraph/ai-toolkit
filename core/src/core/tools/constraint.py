@@ -1,6 +1,7 @@
 from typing import Any, Dict, List
-from core.api.tool import BaseTool
+
 from core.api.memgraph import MemgraphClient
+from core.api.tool import BaseTool
 
 
 class ShowConstraintInfoTool(BaseTool):
@@ -8,7 +9,7 @@ class ShowConstraintInfoTool(BaseTool):
     Tool for showing constraint information from Memgraph.
     """
 
-    def __init__(self, db: MemgraphClient):
+    def __init__(self, db: Memgraph):
         super().__init__(
             name="show_constraint_info",
             description="Shows constraint information from a Memgraph database",
@@ -20,7 +21,3 @@ class ShowConstraintInfoTool(BaseTool):
         """Execute the SHOW CONSTRAINT INFO query and return the results."""
         constraint_info = self.db.query("SHOW CONSTRAINT INFO")
         return constraint_info
-
-    def close(self):
-        """Close the database connection."""
-        self.db.close()

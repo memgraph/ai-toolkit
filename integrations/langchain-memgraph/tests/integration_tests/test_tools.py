@@ -2,7 +2,7 @@ from typing import Type
 
 from langchain_tests.integration_tests import ToolsIntegrationTests
 from langchain_memgraph.tools import (
-    RunQueryMemgraphTool,
+    RunQueryTool,
     RunShowSchemaInfoTool,
     RunPageRankMemgraphTool,
     RunShowStorageInfoTool,
@@ -12,7 +12,7 @@ from langchain_memgraph.tools import (
     RunShowTriggersTool,
     RunBetweennessCentralityTool,
 )
-from core.api.memgraph import MemgraphClient
+from core.api.memgraph import Memgraph
 
 
 class TestSchemaInfoIntegration(ToolsIntegrationTests):
@@ -22,7 +22,7 @@ class TestSchemaInfoIntegration(ToolsIntegrationTests):
 
     @property
     def tool_constructor_params(self) -> dict:
-        return {"db": MemgraphClient("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph("bolt://localhost:7687", "", "")}
 
     @property
     def tool_invoke_params_example(self) -> dict:
@@ -34,12 +34,12 @@ class TestSchemaInfoIntegration(ToolsIntegrationTests):
 
 class TestCypherIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> Type[RunQueryMemgraphTool]:
-        return RunQueryMemgraphTool
+    def tool_constructor(self) -> Type[RunQueryTool]:
+        return RunQueryTool
 
     @property
     def tool_constructor_params(self) -> dict:
-        return {"db": MemgraphClient("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph("bolt://localhost:7687", "", "")}
 
     @property
     def tool_invoke_params_example(self) -> dict:
@@ -53,7 +53,7 @@ class TestPageRankIntegration(ToolsIntegrationTests):
 
     @property
     def tool_constructor_params(self) -> dict:
-        return {"db": MemgraphClient("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph("bolt://localhost:7687", "", "")}
 
     @property
     def tool_invoke_params_example(self) -> dict:
@@ -67,7 +67,7 @@ class TestStorageInfoIntegration(ToolsIntegrationTests):
 
     @property
     def tool_constructor_params(self) -> dict:
-        return {"db": MemgraphClient("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph("bolt://localhost:7687", "", "")}
 
     @property
     def tool_invoke_params_example(self) -> dict:
@@ -84,7 +84,7 @@ class TestConstraintInfoIntegration(ToolsIntegrationTests):
 
     @property
     def tool_constructor_params(self) -> dict:
-        return {"db": MemgraphClient("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph("bolt://localhost:7687", "", "")}
 
     @property
     def tool_invoke_params_example(self) -> dict:
@@ -101,7 +101,7 @@ class TestIndexInfoIntegration(ToolsIntegrationTests):
 
     @property
     def tool_constructor_params(self) -> dict:
-        return {"db": MemgraphClient("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph("bolt://localhost:7687", "", "")}
 
     @property
     def tool_invoke_params_example(self) -> dict:
@@ -118,7 +118,7 @@ class TestConfigInfoIntegration(ToolsIntegrationTests):
 
     @property
     def tool_constructor_params(self) -> dict:
-        return {"db": MemgraphClient("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph("bolt://localhost:7687", "", "")}
 
     @property
     def tool_invoke_params_example(self) -> dict:
@@ -135,7 +135,7 @@ class TestTriggersIntegration(ToolsIntegrationTests):
 
     @property
     def tool_constructor_params(self) -> dict:
-        return {"db": MemgraphClient("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph("bolt://localhost:7687", "", "")}
 
     @property
     def tool_invoke_params_example(self) -> dict:
@@ -152,7 +152,7 @@ class TestBetweennessCentralityIntegration(ToolsIntegrationTests):
 
     @property
     def tool_constructor_params(self) -> dict:
-        return {"db": MemgraphClient("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph("bolt://localhost:7687", "", "")}
 
     @property
     def tool_invoke_params_example(self) -> dict:

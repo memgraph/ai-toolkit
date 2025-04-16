@@ -8,7 +8,7 @@ from langchain_core.callbacks import (
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.api.memgraph import MemgraphClient
+from core.api.memgraph import Memgraph
 from core.tools.schema import ShowSchemaInfoTool
 from core.tools.cypher import CypherTool
 from core.tools.page_rank import PageRankTool
@@ -25,7 +25,7 @@ class BaseMemgraphTool(BaseModel):
     Base tool for interacting with Memgraph.
     """
 
-    db: MemgraphClient = Field(exclude=True)
+    db: Memgraph = Field(exclude=True)
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -40,7 +40,7 @@ class _QueryMemgraphToolInput(BaseModel):
     query: str = Field(..., description="The query to be executed in Memgraph.")
 
 
-class RunQueryMemgraphTool(BaseMemgraphTool, BaseTool):
+class RunQueryTool(BaseMemgraphTool, BaseTool):
     """Tool for querying Memgraph."""
 
     name: str = CypherTool(db=None).get_name()

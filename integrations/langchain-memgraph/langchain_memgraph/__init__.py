@@ -2,10 +2,10 @@ from importlib import metadata
 
 from langchain_memgraph.chains.graph_qa import MemgraphQAChain
 from langchain_memgraph.document_loaders import MemgraphLoader
-from langchain_memgraph.graphs.memgraph import MemgraphLangchain
+from langchain_memgraph.graphs.memgraph import MemgraphLangChain
 from langchain_memgraph.retrievers import MemgraphRetriever
 from langchain_memgraph.toolkits import MemgraphToolkit
-from langchain_memgraph.tools import RunQueryMemgraphTool
+from langchain_memgraph.tools import RunQueryTool
 from langchain_memgraph.tools import RunShowSchemaInfoTool
 
 try:
@@ -18,10 +18,10 @@ del metadata  # optional, avoids polluting the results of dir(__package__)
 __all__ = [
     "MemgraphLoader",
     "MemgraphQAChain",
-    "MemgraphLangchain",
+    "MemgraphLangChain",
     "MemgraphRetriever",
     "MemgraphToolkit",
-    "RunQueryMemgraphTool",
+    "RunQueryTool",
     "RunShowSchemaInfoTool",
     "__version__",
 ]

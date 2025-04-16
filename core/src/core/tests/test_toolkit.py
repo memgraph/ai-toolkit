@@ -1,5 +1,7 @@
+from typing import Any, Dict, List
+
 import pytest
-from typing import Dict, Any, List
+
 from ..api.memgraph import MemgraphClient
 from ..tools.schema import ShowSchemaInfoTool
 from ..api.toolkit import Toolkit
@@ -12,7 +14,7 @@ logger = logger_init("test-toolkit")  # Set up logger for the test
 def test_toolkit():
     """Test the Toolkit class."""
 
-    toolkit = Toolkit()
+    toolkit = BaseToolkit()
 
     class DummyTool(BaseTool):
         def __init__(self):
@@ -26,10 +28,10 @@ def test_toolkit():
             return ["dummy_result"]
 
     dummy_tool = DummyTool()
-    toolkit.add(dummy_tool)
+    toolkit.add_tool(dummy_tool)
 
     assert toolkit.get_tool("dummy_tool") == dummy_tool
-    assert len(toolkit.list_tools()) == 1
+    assert len(toolkit.get_all_tools()) == 1
 
     with pytest.raises(ValueError):
-        toolkit.add(dummy_tool)
+        toolkit.add_tool(dummy_tool)

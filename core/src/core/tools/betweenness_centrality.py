@@ -1,6 +1,7 @@
 from typing import Any, Dict, List
-from core.api.tool import BaseTool
+
 from core.api.memgraph import MemgraphClient
+from core.api.tool import BaseTool
 
 
 class BetweennessCentralityTool(BaseTool):
@@ -8,7 +9,7 @@ class BetweennessCentralityTool(BaseTool):
     Tool for calculating betweenness centrality on a graph in Memgraph.
     """
 
-    def __init__(self, db: MemgraphClient):
+    def __init__(self, db: Memgraph):
         super().__init__(
             name="run_betweenness_centrality",
             description=(
@@ -54,7 +55,3 @@ class BetweennessCentralityTool(BaseTool):
 
         # Convert the results to a list of dictionaries
         return results
-
-    def close(self):
-        """Close the database connection."""
-        self.db.close()

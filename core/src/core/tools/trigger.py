@@ -1,6 +1,7 @@
 from typing import Any, Dict, List
-from core.api.tool import BaseTool
+
 from core.api.memgraph import MemgraphClient
+from core.api.tool import BaseTool
 
 
 class ShowTriggersTool(BaseTool):
@@ -8,7 +9,7 @@ class ShowTriggersTool(BaseTool):
     Tool for showing trigger information from Memgraph.
     """
 
-    def __init__(self, db: MemgraphClient):
+    def __init__(self, db: Memgraph):
         super().__init__(
             name="show_triggers",
             description="Shows trigger information from a Memgraph database",
@@ -20,7 +21,3 @@ class ShowTriggersTool(BaseTool):
         """Execute the SHOW TRIGGERS query and return the results."""
         trigger_info = self.db.query("SHOW TRIGGERS")
         return trigger_info
-
-    def close(self):
-        """Close the database connection."""
-        self.db.close()

@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
 from langchain_memgraph.chains.graph_qa import MemgraphQAChain
-from langchain_memgraph.graphs.memgraph import MemgraphLangchain
+from langchain_memgraph.graphs.memgraph import MemgraphLangChain
 
 
 # Load environment variables from .env
@@ -19,7 +19,7 @@ def memgraph_connection():
     username = os.getenv("MEMGRAPH_USERNAME", "")
     password = os.getenv("MEMGRAPH_PASSWORD", "")
 
-    graph = MemgraphLangchain(url=uri, username=username, password=password)
+    graph = MemgraphLangChain(url=uri, username=username, password=password)
     yield graph
 
     # Cleanup: clear the database after test
