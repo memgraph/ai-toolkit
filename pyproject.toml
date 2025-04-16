@@ -13,11 +13,10 @@ dependencies = [
 [tool.uv.sources]
 core = { workspace = true}
 
-
-
 [tool.uv.workspace] 
 members = [
     "core/",
     "integrations/langchain-memgraph/",
     "integrations/mcp-memgraph/",
 ]
+=
