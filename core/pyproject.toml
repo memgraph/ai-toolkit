@@ -1,13 +1,25 @@
 [project]
 name = "core"
 version = "0.1.0"
-description = "Add your description here"
+description = "Core library for Memgraph tools and utilities"
 readme = "README.md"
 authors = [
   { name = "antejavor", email = "ante.javor@memgraph.io" }
 ]
-requires-python = ">=3.13"
-dependencies = []  # Add runtime deps here if needed
+license = { text = "MIT" }
+requires-python = ">=3.9"
+
+
+classifiers = [
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
 
 [project.optional-dependencies]
 test = [
