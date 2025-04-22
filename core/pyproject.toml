@@ -1,7 +1,7 @@
 [project]
 name = "core"
 version = "0.1.0"
-description = "Core library for Memgraph tools and utilities"
+description = "Core library for Memgraph AI tools and utilities"
 readme = "README.md"
 authors = [
   { name = "antejavor", email = "ante.javor@memgraph.io" }
