@@ -12,7 +12,7 @@ from langchain_memgraph.tools import (
     RunShowTriggersTool,
     RunBetweennessCentralityTool,
 )
-from core.api.memgraph import Memgraph
+from memgraph_toolbox.api.memgraph import Memgraph
 
 
 class TestSchemaInfoIntegration(ToolsIntegrationTests):

@@ -6,7 +6,7 @@ from langchain_core.language_models import BaseLanguageModel
 from langchain_core.tools import BaseTool, BaseToolkit
 from pydantic import ConfigDict, Field
 
-from core.api.memgraph import Memgraph
+from memgraph_toolbox.api.memgraph import Memgraph
 
 from langchain_memgraph.tools import (
     RunQueryTool,

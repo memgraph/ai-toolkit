@@ -28,7 +28,7 @@ from langchain_memgraph.chains.prompts import (
     MEMGRAPH_GENERATION_PROMPT,
     MEMGRAPH_QA_PROMPT,
 )
-from core.api.memgraph import Memgraph
+from memgraph_toolbox.api.memgraph import Memgraph
 
 INTERMEDIATE_STEPS_KEY = "intermediate_steps"
 

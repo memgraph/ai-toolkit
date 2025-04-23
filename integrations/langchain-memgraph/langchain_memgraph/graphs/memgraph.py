@@ -2,7 +2,7 @@ import logging
 from hashlib import md5
 from typing import Any, Dict, List, Optional
 
-from core.api.memgraph import Memgraph
+from memgraph_toolbox.api.memgraph import Memgraph
 from langchain_core.utils import get_from_dict_or_env
 
 from langchain_memgraph.graphs.graph_document import GraphDocument, Node, Relationship

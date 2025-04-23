@@ -1,21 +1,21 @@
 [project]
-name = "memgraph-ai-toolkit"
+name = "memgraph-ai"
 version = "0.1.0"
-description = "Memgraph ai-toolkit"
+description = "Memgraph AI Toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "core",
+    "memgraph-toolbox",
     "mcp[cli]>=1.6.0",
     "neo4j>=5.28.1",
 ]
 
 [tool.uv.sources]
-core = { workspace = true}
+memgraph-toolbox = { workspace = true }
 
 [tool.uv.workspace] 
 members = [
-    "core/",
+    "memgraph-toolbox/",
     "integrations/langchain-memgraph/",
     "integrations/mcp-memgraph/",
 ]

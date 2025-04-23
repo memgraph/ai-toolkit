@@ -8,16 +8,17 @@ from langchain_core.callbacks import (
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.api.memgraph import Memgraph
-from core.tools.schema import ShowSchemaInfoTool
-from core.tools.cypher import CypherTool
-from core.tools.page_rank import PageRankTool
-from core.tools.storage import ShowStorageInfoTool
-from core.tools.constraint import ShowConstraintInfoTool
-from core.tools.index import ShowIndexInfoTool
-from core.tools.config import ShowConfigTool
-from core.tools.trigger import ShowTriggersTool
-from core.tools.betweenness_centrality import BetweennessCentralityTool
+from memgraph_toolbox.api.memgraph import Memgraph
+from memgraph_toolbox.tools.page_rank import PageRankTool
+from memgraph_toolbox.tools.config import ShowConfigTool
+from memgraph_toolbox.tools.cypher import CypherTool
+from memgraph_toolbox.tools.schema import ShowSchemaInfoTool
+from memgraph_toolbox.tools.storage import ShowStorageInfoTool
+from memgraph_toolbox.tools.trigger import ShowTriggersTool
+from memgraph_toolbox.tools.index import ShowIndexInfoTool
+from memgraph_toolbox.tools.betweenness_centrality import BetweennessCentralityTool
+from memgraph_toolbox.tools.constraint import ShowConstraintInfoTool
+from memgraph_toolbox.utils.logging import logger_init
 
 
 class BaseMemgraphTool(BaseModel):

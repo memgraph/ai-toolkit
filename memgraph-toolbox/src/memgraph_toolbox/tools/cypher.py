@@ -1,7 +1,7 @@
 from typing import Any, Dict, List
 
-from core.api.memgraph import Memgraph
-from core.api.tool import BaseTool
+from ..api.memgraph import Memgraph
+from ..api.tool import BaseTool
 
 
 class CypherTool(BaseTool):

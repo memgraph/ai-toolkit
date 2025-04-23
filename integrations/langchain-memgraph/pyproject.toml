@@ -6,6 +6,7 @@ authors = [{ name = "Ante Javor", email = "ante.javor@memgraph.com" }]
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
+keywords = ["memgraph", "langchain", "integration", "ai"]
 
 classifiers = [
   "Programming Language :: Python :: 3.10",
@@ -16,6 +17,7 @@ classifiers = [
 dependencies = [
     "langchain-core>=0.3.15",
     "neo4j>=5.28.1",
+    "memgraph-toolbox",
 ]
 
 [project.optional-dependencies]
@@ -24,15 +26,19 @@ test = [
   "pytest-asyncio>=0.26.0",
   "langgraph>=0.3.11",
   "python-dotenv>=1.0.1",
-    "pytest-socket>=0.7.0",
-    "pytest-watcher>=0.3.4",
-    "langchain-tests>=0.3.17",
-    "langchain-experimental>=0.3.4",
-    "langchain-core>=0.3.51",
-    "langchain-openai>=0.3.12",
+  "pytest-socket>=0.7.0",
+  "pytest-watcher>=0.3.4",
+  "langchain-tests>=0.3.17",
+  "langchain-experimental>=0.3.4",
+  "langchain-core>=0.3.51",
+  "langchain-openai>=0.3.12",
 ]
 
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_fixture_loop_scope = "function"
+
+[build-system]
+requires = ["hatchling", "build", "setuptools"]
+build-backend = "hatchling.build"

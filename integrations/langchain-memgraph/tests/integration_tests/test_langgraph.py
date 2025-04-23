@@ -7,7 +7,7 @@ from langchain.chat_models import init_chat_model
 from langgraph.prebuilt import create_react_agent
 
 from langchain_memgraph import MemgraphToolkit
-from core.api.memgraph import Memgraph
+from memgraph_toolbox.api.memgraph import Memgraph
 
 # Load environment variables
 load_dotenv()
