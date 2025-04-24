@@ -1,14 +1,14 @@
 [project]
 name = "memgraph-toolbox"
 version = "0.1.0"
-description = "Core library for Memgraph AI tools and utilities"
+description = "Memgraph toolbox library for Memgraph AI tools and utilities"
 readme = "README.md"
 authors = [
   { name = "antejavor", email = "ante.javor@memgraph.io" }
 ]
 license = { text = "MIT" }
 requires-python = ">=3.10"
-url = "https://github.com/memgraph/ai-toolkit"
+
 keywords = ["memgraph", "graph", "ai", "toolkit"]
 
 classifiers = [
@@ -20,11 +20,20 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
 ]
 
+dependencies = [
+  "neo4j>=5.28.1"
+]
+
 [project.optional-dependencies]
 test = [
   "pytest>=8.3.5",
   "pytest-asyncio>=0.26.0",
 ]
+
+[project.urls]
+"Homepage" = "https://github.com/memgraph/ai-toolkit"
+"Source" = "https://github.com/memgraph/ai-toolkit"
+"Issues" = "https://github.com/memgraph/ai-toolkit/issues"
 
 [build-system]
 requires = ["hatchling", "build"]
