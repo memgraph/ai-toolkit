@@ -39,7 +39,7 @@ test = [
 ]
 
 [project.scripts]
-mcp-memgraph = "mcp_memgraph.cli:main"
+mcp-memgraph = "mcp_memgraph.server:main"
 
 [project.urls]
 "Homepage" = "https://github.com/memgraph/ai-toolkit"
