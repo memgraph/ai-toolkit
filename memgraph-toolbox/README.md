@@ -10,15 +10,15 @@ They are made to be easily called from other frameworks such as
 
 Below is a list of tools included in the toolbox, along with their descriptions:
 
-1. `ShowTriggersTool` - Shows trigger information from a Memgraph database.
+1. `ShowTriggersTool` - Shows [trigger](https://memgraph.com/docs/fundamentals/triggers) information from a Memgraph database.
 2. `ShowStorageInfoTool` - Shows storage information from a Memgraph database.
-3. `ShowSchemaInfoTool` - Shows schema information from a Memgraph database.
-4. `PageRankTool` - Calculates PageRank on a graph in Memgraph.
-5. `ShowIndexInfoTool` - Shows index information from a Memgraph database.
-6. `CypherTool` - Executes arbitrary Cypher queries on a Memgraph database.
-7. `ShowConstraintInfoTool` - Shows constraint information from a Memgraph database.
-8. `ShowConfigTool` - Shows configuration information from a Memgraph database.
-9. `BetweennessCentralityTool` - Calculates betweenness centrality for nodes in a graph.
+3. `ShowSchemaInfoTool` - Shows [schema](https://memgraph.com/docs/querying/schema) information from a Memgraph database.
+4. `PageRankTool` - Calculates [PageRank](https://memgraph.com/docs/advanced-algorithms/available-algorithms/pagerank) on a graph in Memgraph.
+5. `BetweennessCentralityTool` - Calculates [betweenness centrality](https://memgraph.com/docs/advanced-algorithms/available-algorithms/betweenness_centrality) for nodes in a graph.
+6. `ShowIndexInfoTool` - Shows [index](https://memgraph.com/docs/fundamentals/indexes) information from a Memgraph database.
+7. `CypherTool` - Executes arbitrary [Cypher queries](https://memgraph.com/docs/querying) on a Memgraph database.
+8. `ShowConstraintInfoTool` - Shows [constraint](https://memgraph.com/docs/fundamentals/constraints) information from a Memgraph database.
+9. `ShowConfigTool` - Shows [configuration](https://memgraph.com/docs/database-management/configuration) information from a Memgraph database.
 
 ## Usage
 
