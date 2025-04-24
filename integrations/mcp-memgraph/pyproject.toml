@@ -1,37 +1,56 @@
 [project]
 name = "mcp-memgraph"
 version = "0.1.0"
-description = "Add your description here"
+description = "MCP integration and utilities for Memgraph MCP server"
 readme = "README.md"
 requires-python = ">=3.10"
 
+authors = [
+  { name = "antejavor", email = "ante.javor@memgraph.io" }
+]
+
+license = { text = "MIT" }
+
+keywords = ["memgraph", "mcp", "graph", "integration", "toolkit"]
+
 classifiers = [
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
 ]
 
 dependencies = [
-    "httpx>=0.28.1",
-    "mcp[cli]>=1.3.0",
-    "neo4j>=5.28.1",
-    "memgraph-toolbox",
+  "httpx>=0.28.1",
+  "mcp[cli]>=1.3.0",
+  "neo4j>=5.28.1",
+  "memgraph-toolbox"
 ]
 
 [project.optional-dependencies]
 test = [
-    "pytest>=8.3.5",
-    "python-dotenv>=1.0.1",
-    "anthropic", 
-    "mcp[cli]>=1.3.0",
-    "pytest-asyncio >= 0.20.3"
+  "pytest>=8.3.5",
+  "python-dotenv>=1.0.1",
+  "anthropic",
+  "mcp[cli]>=1.3.0",
+  "pytest-asyncio>=0.20.3"
 ]
 
+[project.scripts]
+mcp-memgraph = "mcp_memgraph.cli:main"
+
+[project.urls]
+"Homepage" = "https://github.com/memgraph/ai-toolkit"
+"Source" = "https://github.com/memgraph/ai-toolkit/tree/main/integrations/mcp-memgraph"
+"Issues" = "https://github.com/memgraph/ai-toolkit/issues"
 
 [tool.pytest.ini_options]
+pythonpath = ["src"]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 
 [build-system]
 requires = ["hatchling", "build", "setuptools"]
-
+build-backend = "hatchling.build"

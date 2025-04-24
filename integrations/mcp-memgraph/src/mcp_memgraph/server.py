@@ -71,7 +71,7 @@ def get_constraint() -> List[Dict[str, Any]]:
     """Get Memgraph constraint information"""
     logger.info("Fetching Memgraph constraint...")
     try:
-        constraint = ShowConstraintInfoTool(driver).call({})
+        constraint = ShowConstraintInfoTool(db=db).call({})
         return constraint
     except Exception as e:
         return [f"Error fetching constraint: {str(e)}"]

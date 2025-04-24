@@ -56,7 +56,7 @@ class MCPClient:
 
 def test_mcp_client():
     """Test the MCP client connection to the server."""
-    server_script_path = "integrations/mcp-memgraph/server.py"
+    server_script_path = "integrations/mcp-memgraph/src/mcp_memgraph/server.py"
     client = MCPClient()
     asyncio.run(client.connect_to_server(server_script_path))
     print("MCP session:", client.session)
