@@ -46,8 +46,8 @@ print(triggers)
 ## Requirements
 
 - Python 3.10+
-- Memgraph database
-- Memgraph Mage (for certain tools like `pagerank` and `run_betweenness_centrality`)
+- Running [Memgraph instance](https://memgraph.com/docs/getting-started)
+- Memgraph [MAGE library](https://memgraph.com/docs/advanced-algorithms/install-mage) (for certain tools like `pagerank` and `run_betweenness_centrality`)
 
 ## Contributing
 
