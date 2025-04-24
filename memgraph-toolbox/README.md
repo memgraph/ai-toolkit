@@ -3,8 +3,8 @@
 The **Memgraph Toolbox** is a collection of tools designed to interact with a
 Memgraph database. These tools provide functionality for querying, analyzing,
 and managing data within Memgraph, making it easier to work with graph data.
-They are made to be easily called from other framework implementations such as
-**MCP**, **Langchain** or **Lamaindex**.
+They are made to be easily called from other frameworks such as
+**MCP**, **LangChain** or **LlamaIndex**.
 
 ## Available Tools
 
