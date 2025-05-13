@@ -10,6 +10,14 @@ from memgraph_toolbox.api.memgraph import Memgraph
 
 from langchain_memgraph.tools import (
     RunQueryTool,
+    RunPageRankMemgraphTool,
+    RunBetweennessCentralityTool,
+    RunShowIndexInfoTool,
+    RunShowConfigTool,
+    RunShowSchemaInfoTool,
+    RunShowStorageInfoTool,
+    RunShowTriggersTool,
+    RunShowConstraintInfoTool,
 )
 
 
@@ -63,4 +71,12 @@ class MemgraphToolkit(BaseToolkit):
         """Return the list of tools in the toolkit."""
         return [
             RunQueryTool(db=self.db),
+            RunPageRankMemgraphTool(db=self.db),
+            RunBetweennessCentralityTool(db=self.db),
+            RunShowIndexInfoTool(db=self.db),
+            RunShowConfigTool(db=self.db),
+            RunShowSchemaInfoTool(db=self.db),
+            RunShowStorageInfoTool(db=self.db),
+            RunShowTriggersTool(db=self.db),
+            RunShowConstraintInfoTool(db=self.db),
         ]
