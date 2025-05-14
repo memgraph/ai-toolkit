@@ -72,7 +72,7 @@ class RunShowSchemaInfoTool(BaseMemgraphTool, BaseTool):
     description: str = ShowSchemaInfoTool(db=None).get_description()
     """The description that is passed to the model when performing tool calling."""
 
-    args_schema: Type[BaseModel] = BaseModel
+    args_schema: Optional[Type[BaseModel]] = None
     """The schema that is passed to the model when performing tool calling."""
 
     def _run(
@@ -98,7 +98,7 @@ class RunShowStorageInfoTool(BaseMemgraphTool, BaseTool):
     description: str = ShowStorageInfoTool(db=None).get_description()
     """The description that is passed to the model when performing tool calling."""
 
-    args_schema: Type[BaseModel] = BaseModel
+    args_schema: Optional[Type[BaseModel]] = None
     """The schema that is passed to the model when performing tool calling."""
 
     def _run(
@@ -154,7 +154,7 @@ class RunShowConstraintInfoTool(BaseMemgraphTool, BaseTool):
     description: str = ShowConstraintInfoTool(db=None).get_description()
     """The description that is passed to the model when performing tool calling."""
 
-    args_schema: Type[BaseModel] = BaseModel
+    args_schema: Optional[Type[BaseModel]] = None
     """The schema that is passed to the model when performing tool calling."""
 
     def _run(
@@ -180,7 +180,7 @@ class RunShowIndexInfoTool(BaseMemgraphTool, BaseTool):
     description: str = ShowIndexInfoTool(db=None).get_description()
     """The description that is passed to the model when performing tool calling."""
 
-    args_schema: Type[BaseModel] = BaseModel
+    args_schema: Optional[Type[BaseModel]] = None
     """The schema that is passed to the model when performing tool calling."""
 
     def _run(
@@ -206,7 +206,7 @@ class RunShowConfigTool(BaseMemgraphTool, BaseTool):
     description: str = ShowConfigTool(db=None).get_description()
     """The description that is passed to the model when performing tool calling."""
 
-    args_schema: Type[BaseModel] = BaseModel
+    args_schema: Optional[Type[BaseModel]] = None
     """The schema that is passed to the model when performing tool calling."""
 
     def _run(
@@ -232,7 +232,7 @@ class RunShowTriggersTool(BaseMemgraphTool, BaseTool):
     description: str = ShowTriggersTool(db=None).get_description()
     """The description that is passed to the model when performing tool calling."""
 
-    args_schema: Type[BaseModel] = BaseModel
+    args_schema: Optional[Type[BaseModel]] = None
     """The schema that is passed to the model when performing tool calling."""
 
     def _run(

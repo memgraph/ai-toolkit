@@ -965,6 +965,9 @@ requires-dist = [
 name = "memgraph-toolbox"
 version = "0.1.0"
 source = { editable = "memgraph-toolbox" }
+dependencies = [
+    { name = "neo4j" },
+]
 
 [package.optional-dependencies]
 test = [
@@ -974,6 +977,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "neo4j", specifier = ">=5.28.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.3.5" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.26.0" },
 ]
