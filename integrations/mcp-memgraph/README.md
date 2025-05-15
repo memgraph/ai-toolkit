@@ -4,14 +4,11 @@ Memgraph MCP Server is a lightweight server implementation of the Model Context 
 
 ![mcp-server](./mcp-server.png)
 
-## Prerequisites
+## Run Memgraph MCP server
 
 1. Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
-
-### Run Memgraph MCP server
-
-1. Install [Claude for Desktop](https://claude.ai/download).
-2. Add the Memgraph server to Claude config:
+2. Install [Claude for Desktop](https://claude.ai/download).
+3. Add the Memgraph server to Claude config:
 
 **MacOS/Linux**
 
