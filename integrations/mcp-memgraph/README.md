@@ -4,17 +4,11 @@ Memgraph MCP Server is a lightweight server implementation of the Model Context 
 
 ![mcp-server](./mcp-server.png)
 
-## ⚡ Quick start
+## Prerequisites
 
-> 📹 [Memgraph MCP Server Quick Start video](https://www.youtube.com/watch?v=0Tjw5QWj_qY)
+1. Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 
-### 1. Run Memgraph MCP Server
-
-1. Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/) and create `venv` with `uv venv`. Activate virtual environment with `.venv\Scripts\activate`.
-2. Install dependencies: `uv add "mcp[cli]" httpx`
-3. Run Memgraph MCP server: `uv run server.py`.
-
-### 2. Run MCP Client
+### Run Memgraph MCP server
 
 1. Install [Claude for Desktop](https://claude.ai/download).
 2. Add the Memgraph server to Claude config:
@@ -37,12 +31,14 @@ Example config:
 {
     "mcpServers": {
       "mpc-memgraph": {
-        "command": "/Users/katelatte/.local/bin/uv",
+        "command": "uv",
         "args": [
-            "--directory",
-            "/Users/katelatte/projects/mcp-memgraph",
             "run",
-            "server.py"
+            "--with",
+            "mcp-memgraph",
+            "--python"
+            "3.13",
+            "mcp-memgraph",
         ]
      }
    }
@@ -52,7 +48,7 @@ Example config:
 > [!NOTE]  
 > You may need to put the full path to the uv executable in the command field. You can get this by running `which uv` on MacOS/Linux or `where uv` on Windows. Make sure you pass in the absolute path to your server.
 
-### 3. Chat with the database
+### Chat with the database
 
 1. Run Memgraph MAGE:
    ```
@@ -63,15 +59,55 @@ Example config:
 
 ## 🔧Tools
 
-### run_query()
+This integration currently supports the following tools:
+The Memgraph MCP Server exposes the following tools over MCP. Each tool runs a Memgraph‐toolbox operation and returns a list of records (dictionaries).
 
-Run a Cypher query against Memgraph.
+### run_query(query: str)
 
-## 🗃️ Resources
+Run any arbitrary Cypher query against the connected Memgraph database.  
+Parameters:
+
+- `query`: A valid Cypher query string.
+
+### get_configuration()
+
+Fetch the current Memgraph configuration settings.  
+Equivalent to running `SHOW CONFIGURATION`.
+
+### get_index()
+
+Retrieve information about existing indexes.  
+Equivalent to running `SHOW INDEX INFO`.
+
+### get_constraint()
+
+Retrieve information about existing constraints.  
+Equivalent to running `SHOW CONSTRAINT INFO`.
 
 ### get_schema()
 
-Get Memgraph schema information (prerequisite: `--schema-info-enabled=True`).
+Fetch the graph schema (labels, relationships, property keys).  
+Equivalent to running `SHOW SCHEMA INFO`.
+
+### get_storage()
+
+Retrieve storage usage metrics for nodes, relationships, and properties.  
+Equivalent to running `SHOW STORAGE INFO`.
+
+### get_triggers()
+
+List all database triggers.  
+Equivalent to running `SHOW TRIGGERS`.
+
+### get_betweenness_centrality()
+
+Compute betweenness centrality on the entire graph.  
+Uses `BetweennessCentralityTool` under the hood.
+
+### get_page_rank()
+
+Compute PageRank scores for all nodes.  
+Uses `PageRankTool` under the hood.
 
 ## 🗺️ Roadmap
 

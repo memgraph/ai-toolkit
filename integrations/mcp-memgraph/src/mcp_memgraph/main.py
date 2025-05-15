@@ -1,7 +1,8 @@
-from .server import mcp
+from .server import mcp, logger
 
 
 def main():
+    logger.info("Starting MCP server...")
     mcp.run(transport="stdio")
 
 
