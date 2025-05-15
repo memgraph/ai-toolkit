@@ -130,8 +130,3 @@ def get_page_rank() -> List[Dict[str, Any]]:
         return page_rank
     except Exception as e:
         return [f"Error fetching page rank: {str(e)}"]
-
-
-if __name__ == "__main__":
-    logger.info("Starting FastMCP server...")
-    mcp.run(transport="stdio")
