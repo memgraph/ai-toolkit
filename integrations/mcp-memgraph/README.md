@@ -35,9 +35,9 @@ Add the following config config:
             "run",
             "--with",
             "mcp-memgraph",
-            "--python"
+            "--python",
             "3.13",
-            "mcp-memgraph",
+            "mcp-memgraph"
         ]
      }
    }
