@@ -9,7 +9,7 @@ This repository contains the following libraries:
 2. **langchain-memgraph**  
    A LangChain integration package, exposing Memgraph operations as LangChain tools and toolkits.
 
-3. **integrations/mcp-memgraph**  
+3. **mcp-memgraph**  
    An MCP (Model Context Protocol) server implementation, exposing Memgraph tools over a lightweight STDIO protocol.
 
 ## Usage examples
