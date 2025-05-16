@@ -19,11 +19,23 @@ For individual examples on how to use the toolbox, LangChain, or MCP, refer to o
 - [Langchain examples](https://memgraph.com/docs/ai-ecosystem/integrations#langchain)
 - [MCP examples](https://memgraph.com/docs/ai-ecosystem/integrations#model-context-protocol-mcp)
 
-## Running tests locally
+## Developing locally
 
-To run the tests locally, ensure you have a local Memgraph MAGE instance running on port 7687:
+You can build and test each package directly from your repo. First, start a Memgraph MAGE instance with schema info enabled:
 
-`docker run -p 7687:7687 --name memgraph memgraph/memgraph-mage:latest`
+```bash
+docker run -p 7687:7687 \
+  --name memgraph \
+  memgraph/memgraph-mage:latest \
+  --schema-info-enabled=true
+```
+
+Once Memgraph is running, install any package in “editable” mode and run its test suite. For example, to test the core toolbox:
+
+```
+uv pip install -e memgraph-toolbox[test]
+pytest -s memgraph-toolbox/src/memgraph_toolbox/tests
+```
 
 ### Core tests
 
