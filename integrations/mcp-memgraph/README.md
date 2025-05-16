@@ -58,7 +58,6 @@ Add the following config config:
 
 ## 🔧Tools
 
-This integration currently supports the following tools:
 The Memgraph MCP Server exposes the following tools over MCP. Each tool runs a Memgraph‐toolbox operation and returns a list of records (dictionaries).
 
 ### run_query(query: str)
