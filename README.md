@@ -1,7 +1,7 @@
 # Memgraph AI Toolkit
 
 A unified mono-repo for building and integrating AI-powered graph tools on top of [Memgraph](https://memgraph.com/).  
-This repository contains:
+This repository contains the following libraries:
 
 1. **memgraph-toolbox**  
    Core Python utilities and CLI tools for querying and analyzing a Memgraph database.
