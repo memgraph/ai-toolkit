@@ -6,7 +6,7 @@ This repository contains the following libraries:
 1. **memgraph-toolbox**  
    Core Python utilities and CLI tools for querying and analyzing a Memgraph database.
 
-2. **integrations/langchain-memgraph**  
+2. **langchain-memgraph**  
    A LangChain integration package, exposing Memgraph operations as LangChain tools and toolkits.
 
 3. **integrations/mcp-memgraph**  
