@@ -1,6 +1,6 @@
 [project]
 name = "memgraph-toolbox"
-version = "0.1.0"
+version = "0.1.1"
 description = "Memgraph toolbox library for Memgraph AI tools and utilities"
 readme = "README.md"
 authors = [
