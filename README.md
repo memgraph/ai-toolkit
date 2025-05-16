@@ -1,16 +1,16 @@
 # Memgraph AI Toolkit
 
-A unified mono-repo for building and integrating AI-powered graph tools on top of [Memgraph](https://memgraph.com/).  
+A unified mono-repo for integrating AI-powered graph tools on top of [Memgraph](https://memgraph.com/).  
 This repository contains the following libraries:
 
-1. **memgraph-toolbox**  
-   Core Python utilities and CLI tools for querying and analyzing a Memgraph database.
+1. [**memgraph-toolbox**](/memgraph-toolbox/)
+   Core Python utilities and CLI tools for querying and analyzing a Memgraph database. The package is available on the [PyPi](https://pypi.org/project/memgraph-toolbox/)
 
-2. **langchain-memgraph**  
-   A LangChain integration package, exposing Memgraph operations as LangChain tools and toolkits.
+2. [**langchain-memgraph**](/integrations/langchain-memgraph/)
+   A LangChain integration package, exposing Memgraph operations as LangChain tools and toolkits. The package is available on the [PyPi](https://pypi.org/project/langchain-memgraph/)
 
-3. **mcp-memgraph**  
-   An MCP (Model Context Protocol) server implementation, exposing Memgraph tools over a lightweight STDIO protocol.
+3. [**mcp-memgraph**](/integrations/mcp-memgraph/)
+   An MCP (Model Context Protocol) server implementation, exposing Memgraph tools over a lightweight STDIO protocol. The package is available on the [PyPi](https://pypi.org/project/mcp-memgraph/)
 
 ## Usage examples
 
