@@ -10,21 +10,9 @@ Memgraph MCP Server is a lightweight server implementation of the Model Context 
 2. Install [Claude for Desktop](https://claude.ai/download).
 3. Add the Memgraph server to Claude config:
 
-Open the config file in your favorite text editor. The location of the config file depends on your operating system:
-
-**MacOS/Linux**
-
-```
-~/Library/Application\ Support/Claude/claude_desktop_config.json
-```
-
-**Windows**
-
-```
-$env:AppData\Claude\claude_desktop_config.json
-```
-
-Add the following config config:
+Open your Claude desktop app navigate to `Settings` located in the upper-left
+corner. Under the `Developer` section, click on `Edit Config` and add the
+following content:
 
 ```
 {
