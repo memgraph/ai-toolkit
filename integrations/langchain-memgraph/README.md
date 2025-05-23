@@ -19,7 +19,7 @@ query operation.
 import os
 from langchain_memgraph.graphs.memgraph import Memgraph
 
-url = os.getenv("MEMGRAPH_URI", "bolt://localhost:7687")
+url = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
 username = os.getenv("MEMGRAPH_USERNAME", "")
 password = os.getenv("MEMGRAPH_PASSWORD", "")
 
@@ -41,7 +41,7 @@ from langchain_memgraph.chains.graph_qa import MemgraphQAChain
 from langchain_openai import ChatOpenAI
 
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "")
-url = os.getenv("MEMGRAPH_URI", "bolt://localhost:7687")
+url = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
 username = os.getenv("MEMGRAPH_USERNAME", "")
 password = os.getenv("MEMGRAPH_PASSWORD", "")
 
@@ -77,7 +77,7 @@ from langchain_memgraph.graphs.memgraph import Memgraph
 from langgraph.prebuilt import create_react_agent
 
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "")
-url = os.getenv("MEMGRAPH_URI", "bolt://localhost:7687")
+url = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
 username = os.getenv("MEMGRAPH_USERNAME", "")
 password = os.getenv("MEMGRAPH_PASSWORD", "")
 
@@ -119,7 +119,7 @@ poetry install --with test,test_integration
 3. Create an `.env` file that points to Memgraph and OpenAI API
 
 ```
-MEMGRAPH_URI=bolt://localhost:7687
+MEMGRAPH_URL=bolt://localhost:7687
 MEMGRAPH_USERNAME=
 MEMGRAPH_PASSWORD=
 OPENAI_API_KEY=your_openai_api_key

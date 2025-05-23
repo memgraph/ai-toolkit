@@ -1,5 +1,5 @@
 from typing import Any, Dict, List, Optional
-
+import os
 from neo4j import GraphDatabase
 
 
@@ -10,13 +10,33 @@ class Memgraph:
 
     def __init__(
         self,
-        uri: str,
-        username: str,
-        password: str,
+        url: str = None,
+        username: str = None,
+        password: str = None,
         driver_config: Optional[Dict] = None,
     ):
+        """
+        Initialize Memgraph client with connection parameters.
+
+        Connection details can be provided directly or via environment variables:
+        - MEMGRAPH_URL (default: "bolt://localhost:7687")
+        - MEMGRAPH_USERNAME (default: "")
+        - MEMGRAPH_PASSWORD (default: "")
+
+        Args:
+            url: The Memgraph connection URL
+            username: Username for authentication
+            password: Password for authentication
+            driver_config: Additional Neo4j driver configuration
+        """
+
+        # Load from environment variables with fallbacks
+        url = url or os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687")
+        username = username or os.environ.get("MEMGRAPH_USERNAME", "")
+        password = password or os.environ.get("MEMGRAPH_PASSWORD", "")
+
         self.driver = GraphDatabase.driver(
-            uri, auth=(username, password), **(driver_config or {})
+            url, auth=(username, password), **(driver_config or {})
         )
         try:
             import neo4j
@@ -30,12 +50,12 @@ class Memgraph:
         except neo4j.exceptions.ServiceUnavailable:
             raise ValueError(
                 "Could not connect to Memgraph database. "
-                "Please ensure that the url is correct"
+                f"Please ensure the URL '{url}' is correct"
             )
         except neo4j.exceptions.AuthError:
             raise ValueError(
                 "Could not connect to Memgraph database. "
-                "Please ensure that the username and password are correct"
+                f"Authentication failed for user '{username}'"
             )
 
     def query(self, query: str, params: dict = {}) -> List[Dict[str, Any]]:

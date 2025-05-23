@@ -16,11 +16,11 @@ load_dotenv()
 @pytest.fixture(scope="module")
 def memgraph_connection():
     """Setup Memgraph connection fixture."""
-    uri = os.getenv("MEMGRAPH_URI", "bolt://localhost:7687")
+    url = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
     username = os.getenv("MEMGRAPH_USERNAME", "")
     password = os.getenv("MEMGRAPH_PASSWORD", "")
 
-    graph = Memgraph(uri=uri, username=username, password=password)
+    graph = Memgraph(url=url, username=username, password=password)
     yield graph
 
     # Cleanup: clear the database after test
@@ -29,7 +29,7 @@ def memgraph_connection():
 
 @pytest.fixture(scope="module")
 def memgraph_agent():
-    uri = os.getenv("MEMGRAPH_URI", "bolt://localhost:7687")
+    url = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
     username = os.getenv("MEMGRAPH_USERNAME", "")
     password = os.getenv("MEMGRAPH_PASSWORD", "")
 
@@ -39,7 +39,7 @@ def memgraph_agent():
 
     llm = init_chat_model("gpt-4o-mini", model_provider="openai")
 
-    db = Memgraph(uri=uri, username=username, password=password)
+    db = Memgraph(url=url, username=username, password=password)
     toolkit = MemgraphToolkit(db=db, llm=llm)
 
     agent_executor = create_react_agent(

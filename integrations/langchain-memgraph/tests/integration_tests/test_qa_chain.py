@@ -15,7 +15,7 @@ load_dotenv()
 @pytest.fixture(scope="module")
 def memgraph_connection():
     """Setup Memgraph connection fixture."""
-    uri = os.getenv("MEMGRAPH_URI", "bolt://localhost:7687")
+    uri = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
     username = os.getenv("MEMGRAPH_USERNAME", "")
     password = os.getenv("MEMGRAPH_PASSWORD", "")
 
