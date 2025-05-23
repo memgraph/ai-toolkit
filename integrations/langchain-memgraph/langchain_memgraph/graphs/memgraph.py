@@ -293,7 +293,7 @@ class MemgraphLangChain(GraphStore, Memgraph):
     ) -> None:
         """Create a new Memgraph graph wrapper instance."""
 
-        url = get_from_dict_or_env({"url": url}, "url", "MEMGRAPH_URI")
+        url = get_from_dict_or_env({"url": url}, "url", "MEMGRAPH_URL")
 
         # if username and password are "", assume auth is disabled
         if username == "" and password == "":

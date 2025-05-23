@@ -18,11 +18,11 @@ logger = logger_init("test-tools")
 def test_show_schema_info_tool():
     """Test the ShowSchemaInfo tool."""
 
-    uri = "bolt://localhost:7687"
+    url = "bolt://localhost:7687"
     user = "memgraph"
     password = "memgraph"
 
-    memgraph_client = Memgraph(uri=uri, username=user, password=password)
+    memgraph_client = Memgraph(url=url, username=user, password=password)
 
     schema_tool = ShowSchemaInfoTool(db=memgraph_client)
     assert "show_schema_info" in schema_tool.name
@@ -36,11 +36,11 @@ def test_show_schema_info_tool():
 def test_show_config_tool():
     """Test the ShowConfig tool."""
 
-    uri = "bolt://localhost:7687"
+    url = "bolt://localhost:7687"
     user = "memgraph"
     password = "memgraph"
 
-    memgraph_client = Memgraph(uri=uri, username=user, password=password)
+    memgraph_client = Memgraph(url=url, username=user, password=password)
 
     config_tool = ShowConfigTool(db=memgraph_client)
     assert "show_config" in config_tool.name
@@ -52,11 +52,11 @@ def test_show_config_tool():
 def test_index_tool():
     """Test the ShowIndexInfo tool."""
 
-    uri = "bolt://localhost:7687"
+    url = "bolt://localhost:7687"
     user = "memgraph"
     password = "memgraph"
 
-    memgraph_client = Memgraph(uri=uri, username=user, password=password)
+    memgraph_client = Memgraph(url=url, username=user, password=password)
 
     # Create an index for testing
 
@@ -76,11 +76,11 @@ def test_index_tool():
 def test_storage_tool():
     """Test the ShowStorageInfo tool."""
 
-    uri = "bolt://localhost:7687"
+    url = "bolt://localhost:7687"
     user = "memgraph"
     password = "memgraph"
 
-    memgraph_client = Memgraph(uri=uri, username=user, password=password)
+    memgraph_client = Memgraph(url=url, username=user, password=password)
 
     storage_tool = ShowStorageInfoTool(db=memgraph_client)
     assert "show_storage_info" in storage_tool.name
@@ -92,10 +92,10 @@ def test_storage_tool():
 
 def test_show_constraint_info_tool():
     """Test the ShowConstraintInfo tool."""
-    uri = "bolt://localhost:7687"
+    url = "bolt://localhost:7687"
     user = "memgraph"
     password = "memgraph"
-    memgraph_client = Memgraph(uri=uri, username=user, password=password)
+    memgraph_client = Memgraph(url=url, username=user, password=password)
     # Create a sample constraint
     memgraph_client.query("CREATE CONSTRAINT ON (n:Person) ASSERT n.id IS UNIQUE")
 
@@ -111,10 +111,10 @@ def test_show_constraint_info_tool():
 def test_show_triggers_tool():
     """Test the ShowTriggers tool."""
 
-    uri = "bolt://localhost:7687"
+    url = "bolt://localhost:7687"
     user = "memgraph"
     password = "memgraph"
-    memgraph_client = Memgraph(uri=uri, username=user, password=password)
+    memgraph_client = Memgraph(url=url, username=user, password=password)
 
     memgraph_client.query(
         """
@@ -136,10 +136,10 @@ def test_show_triggers_tool():
 def test_page_rank():
     """Test the PageRank tool."""
 
-    uri = "bolt://localhost:7687"
+    url = "bolt://localhost:7687"
     user = "memgraph"
     password = "memgraph"
-    memgraph_client = Memgraph(uri=uri, username=user, password=password)
+    memgraph_client = Memgraph(url=url, username=user, password=password)
 
     # Create a sample graph for testing
     memgraph_client.query(
@@ -158,10 +158,10 @@ def test_page_rank():
 def test_cypher():
     """Test the Cypher tool."""
 
-    uri = "bolt://localhost:7687"
+    url = "bolt://localhost:7687"
     user = "memgraph"
     password = "memgraph"
-    memgraph_client = Memgraph(uri=uri, username=user, password=password)
+    memgraph_client = Memgraph(url=url, username=user, password=password)
 
     cypher_tool = CypherTool(db=memgraph_client)
     result = cypher_tool.call({"query": "RETURN 0;"})
@@ -172,10 +172,10 @@ def test_cypher():
 def test_betweenness_centrality_tool():
     """Test the RunBetweennessCentralityTool."""
 
-    uri = "bolt://localhost:7687"
+    url = "bolt://localhost:7687"
     user = "memgraph"
     password = "memgraph"
-    memgraph_client = Memgraph(uri=uri, username=user, password=password)
+    memgraph_client = Memgraph(url=url, username=user, password=password)
 
     memgraph_client.query(
         """

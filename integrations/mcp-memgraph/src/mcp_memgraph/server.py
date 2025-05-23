@@ -21,13 +21,13 @@ logger = logger_init("mcp-memgraph")
 # Initialize FastMCP server
 mcp = FastMCP("mcp-memgraph")
 
-MEMGRAPH_URI = "bolt://localhost:7687"
+MEMGRAPH_URL = "bolt://localhost:7687"
 MEMGRAPH_USER = ""
 MEMGRAPH_PASSWORD = ""
 
 # Initialize Memgraph client
 db = Memgraph(
-    uri=MEMGRAPH_URI,
+    url=MEMGRAPH_URL,
     username=MEMGRAPH_USER,
     password=MEMGRAPH_PASSWORD,
 )
