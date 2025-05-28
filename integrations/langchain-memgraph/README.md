@@ -4,8 +4,21 @@ This package contains the LangChain integration with [Memgraph](https://memgraph
 
 ## 📦 Installation
 
+In order to start running the examples or tests you need to install the LangChain integration.
+
+You can do it via pip:
+
 ```bash
 pip install -U langchain-memgraph
+```
+
+Before running the examples below, make sure to start Memgraph, you can do it via following command:
+
+```bash
+docker run -p 7687:7687 \
+  --name memgraph \
+  memgraph/memgraph-mage:latest \
+  --schema-info-enabled=true
 ```
 
 ## 💻 Integration features
@@ -17,13 +30,13 @@ query operation.
 
 ```python
 import os
-from langchain_memgraph.graphs.memgraph import Memgraph
+from langchain_memgraph.graphs.memgraph import MemgraphLangChain
 
 url = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
 username = os.getenv("MEMGRAPH_USERNAME", "")
 password = os.getenv("MEMGRAPH_PASSWORD", "")
 
-graph = Memgraph(url=url, username=username, password=password, refresh_schema=False)
+graph = MemgraphLangChain(url=url, username=username, password=password, refresh_schema=False)
 results = graph.query("MATCH (n) RETURN n LIMIT 1")
 print(results)
 ```
@@ -34,9 +47,15 @@ The `MemgraphQAChain` class enables natural language interactions with a Memgrap
 It uses an LLM and the database's schema to translate a user's question into a Cypher query, which is executed against the database.
 The resulting data is then sent along with the user's question to the LLM to generate a natural language response.
 
+For the example below you need to install an extra dependency the `lanchain_openai`, you can do it by running:
+
+```bash
+pip install lanchain_openai
+```
+
 ```python
 import os
-from langchain_memgraph.graphs.memgraph import Memgraph
+from langchain_memgraph.graphs.memgraph import MemgraphLangChain
 from langchain_memgraph.chains.graph_qa import MemgraphQAChain
 from langchain_openai import ChatOpenAI
 
@@ -45,7 +64,7 @@ url = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
 username = os.getenv("MEMGRAPH_USERNAME", "")
 password = os.getenv("MEMGRAPH_PASSWORD", "")
 
-graph = Memgraph(url=url, username=username, password=password, refresh_schema=False)
+graph = MemgraphLangChain(url=url, username=username, password=password, refresh_schema=False)
 
 chain = MemgraphQAChain.from_llm(
     ChatOpenAI(temperature=0),
@@ -73,7 +92,7 @@ import pytest
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from langchain_memgraph import MemgraphToolkit
-from langchain_memgraph.graphs.memgraph import Memgraph
+from langchain_memgraph.graphs.memgraph import MemgraphLangChain
 from langgraph.prebuilt import create_react_agent
 
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "")
@@ -83,7 +102,7 @@ password = os.getenv("MEMGRAPH_PASSWORD", "")
 
 llm = init_chat_model("gpt-4o-mini", model_provider="openai")
 
-db = Memgraph(url=url, username=username, password=password)
+db = MemgraphLangChain(url=url, username=username, password=password)
 toolkit = MemgraphToolkit(db=db, llm=llm)
 
 agent_executor = create_react_agent(

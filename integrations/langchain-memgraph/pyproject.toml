@@ -18,6 +18,7 @@ dependencies = [
     "langchain-core>=0.3.15",
     "neo4j>=5.28.1",
     "memgraph-toolbox",
+    "langchain>=0.3.25",
 ]
 
 [project.optional-dependencies]
