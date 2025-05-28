@@ -47,6 +47,12 @@ The `MemgraphQAChain` class enables natural language interactions with a Memgrap
 It uses an LLM and the database's schema to translate a user's question into a Cypher query, which is executed against the database.
 The resulting data is then sent along with the user's question to the LLM to generate a natural language response.
 
+For the example below you need to install an extra dependency the `lanchain_openai`, you can do it by running:
+
+```bash
+pip install lanchain_openai
+```
+
 ```python
 import os
 from langchain_memgraph.graphs.memgraph import MemgraphLangChain
