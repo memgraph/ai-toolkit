@@ -15,11 +15,11 @@ load_dotenv()
 @pytest.fixture(scope="module")
 def memgraph_connection():
     """Setup Memgraph connection fixture."""
-    uri = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
+    url = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
     username = os.getenv("MEMGRAPH_USERNAME", "")
     password = os.getenv("MEMGRAPH_PASSWORD", "")
 
-    graph = MemgraphLangChain(url=uri, username=username, password=password)
+    graph = MemgraphLangChain(url=url, username=username, password=password)
     yield graph
 
     # Cleanup: clear the database after test

@@ -35,7 +35,7 @@ from memgraph_toolbox.tools.trigger import ShowTriggersTool
 from memgraph_toolbox.api.memgraph import Memgraph
 
 # Connect to Memgraph
-db = Memgraph()
+db = Memgraph(url="bolt://localhost:7687", username="", password="")
 
 # Use the ShowTriggersTool
 tool = ShowTriggersTool(db)
