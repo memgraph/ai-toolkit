@@ -4,8 +4,21 @@ This package contains the LangChain integration with [Memgraph](https://memgraph
 
 ## 📦 Installation
 
+In order to start running the examples or tests you need to install the LangChain integration.
+
+You can do it via pip:
+
 ```bash
 pip install -U langchain-memgraph
+```
+
+Before running the examples below, make sure to start Memgraph, you can do it via following command:
+
+```bash
+docker run -p 7687:7687 \
+  --name memgraph \
+  memgraph/memgraph-mage:latest \
+  --schema-info-enabled=true
 ```
 
 ## 💻 Integration features
