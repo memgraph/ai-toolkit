@@ -17,13 +17,13 @@ query operation.
 
 ```python
 import os
-from langchain_memgraph.graphs.memgraph import Memgraph
+from langchain_memgraph.graphs.memgraph import MemgraphLangChain
 
 url = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
 username = os.getenv("MEMGRAPH_USERNAME", "")
 password = os.getenv("MEMGRAPH_PASSWORD", "")
 
-graph = Memgraph(url=url, username=username, password=password, refresh_schema=False)
+graph = MemgraphLangChain(url=url, username=username, password=password, refresh_schema=False)
 results = graph.query("MATCH (n) RETURN n LIMIT 1")
 print(results)
 ```
@@ -36,7 +36,7 @@ The resulting data is then sent along with the user's question to the LLM to gen
 
 ```python
 import os
-from langchain_memgraph.graphs.memgraph import Memgraph
+from langchain_memgraph.graphs.memgraph import MemgraphLangChain
 from langchain_memgraph.chains.graph_qa import MemgraphQAChain
 from langchain_openai import ChatOpenAI
 
@@ -45,7 +45,7 @@ url = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
 username = os.getenv("MEMGRAPH_USERNAME", "")
 password = os.getenv("MEMGRAPH_PASSWORD", "")
 
-graph = Memgraph(url=url, username=username, password=password, refresh_schema=False)
+graph = MemgraphLangChain(url=url, username=username, password=password, refresh_schema=False)
 
 chain = MemgraphQAChain.from_llm(
     ChatOpenAI(temperature=0),
@@ -73,7 +73,7 @@ import pytest
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from langchain_memgraph import MemgraphToolkit
-from langchain_memgraph.graphs.memgraph import Memgraph
+from langchain_memgraph.graphs.memgraph import MemgraphLangChain
 from langgraph.prebuilt import create_react_agent
 
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "")
@@ -83,7 +83,7 @@ password = os.getenv("MEMGRAPH_PASSWORD", "")
 
 llm = init_chat_model("gpt-4o-mini", model_provider="openai")
 
-db = Memgraph(url=url, username=username, password=password)
+db = MemgraphLangChain(url=url, username=username, password=password)
 toolkit = MemgraphToolkit(db=db, llm=llm)
 
 agent_executor = create_react_agent(
