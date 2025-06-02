@@ -22,7 +22,7 @@ class MemgraphToolbox(BaseToolkit):
     access all Memgraph-related tools.
     """
 
-    def __init__(self, db: Optional[Memgraph] = None):
+    def __init__(self, db: Memgraph):
         """
         Initialize the Memgraph toolbox with all available tools.
 
@@ -33,17 +33,12 @@ class MemgraphToolbox(BaseToolkit):
         super().__init__()
 
         if db is not None:
-            # Initialize and add all tools with the database connection
             self.add_tool(BetweennessCentralityTool(db))
             self.add_tool(ShowConfigTool(db))
             self.add_tool(ShowConstraintInfoTool(db))
             self.add_tool(CypherTool(db))
             self.add_tool(ShowIndexInfoTool(db))
-            self.add_tool(PageRankTool(db)) if hasattr(
-                PageRankTool, "__init__"
-            ) else None
+            self.add_tool(PageRankTool(db))
             self.add_tool(ShowSchemaInfoTool(db))
             self.add_tool(ShowStorageInfoTool(db))
             self.add_tool(ShowTriggersTool(db))
-
-        return self
