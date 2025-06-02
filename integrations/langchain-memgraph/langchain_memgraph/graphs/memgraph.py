@@ -302,7 +302,7 @@ class MemgraphLangChain(GraphStore, Memgraph):
             username = get_from_dict_or_env(
                 {"username": username},
                 "username",
-                "MEMGRAPH_USERNAME",
+                "MEMGRAPH_USER",
             )
             password = get_from_dict_or_env(
                 {"password": password},

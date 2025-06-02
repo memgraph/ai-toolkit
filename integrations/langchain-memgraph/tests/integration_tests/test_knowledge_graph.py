@@ -16,7 +16,7 @@ load_dotenv()
 def memgraph_connection():
     """Setup Memgraph connection fixture."""
     url = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
-    username = os.getenv("MEMGRAPH_USERNAME", "")
+    username = os.getenv("MEMGRAPH_USER", "")
     password = os.getenv("MEMGRAPH_PASSWORD", "")
 
     graph = MemgraphLangChain(

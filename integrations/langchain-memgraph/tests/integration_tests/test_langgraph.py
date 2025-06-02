@@ -17,7 +17,7 @@ load_dotenv()
 def memgraph_connection():
     """Setup Memgraph connection fixture."""
     url = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
-    username = os.getenv("MEMGRAPH_USERNAME", "")
+    username = os.getenv("MEMGRAPH_USER", "")
     password = os.getenv("MEMGRAPH_PASSWORD", "")
 
     graph = Memgraph(url=url, username=username, password=password)
@@ -30,7 +30,7 @@ def memgraph_connection():
 @pytest.fixture(scope="module")
 def memgraph_agent():
     url = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
-    username = os.getenv("MEMGRAPH_USERNAME", "")
+    username = os.getenv("MEMGRAPH_USER", "")
     password = os.getenv("MEMGRAPH_PASSWORD", "")
 
     """Set up Memgraph agent with React pattern."""

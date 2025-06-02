@@ -20,7 +20,7 @@ class Memgraph:
 
         Connection details can be provided directly or via environment variables:
         - MEMGRAPH_URL (default: "bolt://localhost:7687")
-        - MEMGRAPH_USERNAME (default: "")
+        - MEMGRAPH_USER (default: "")
         - MEMGRAPH_PASSWORD (default: "")
 
         Args:
@@ -32,7 +32,7 @@ class Memgraph:
 
         # Load from environment variables with fallbacks
         url = url or os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687")
-        username = username or os.environ.get("MEMGRAPH_USERNAME", "")
+        username = username or os.environ.get("MEMGRAPH_USER", "")
         password = password or os.environ.get("MEMGRAPH_PASSWORD", "")
 
         self.driver = GraphDatabase.driver(
