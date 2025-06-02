@@ -33,6 +33,7 @@ Example:
 ```python
 from memgraph_toolbox.tools.trigger import ShowTriggersTool
 from memgraph_toolbox.api.memgraph import Memgraph
+from memgraph_toolbox.memgraph_toolkit import MemgraphToolkit
 
 # Connect to Memgraph
 db = Memgraph(url="bolt://localhost:7687", username="", password="")

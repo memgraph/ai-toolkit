@@ -11,7 +11,7 @@ class PageRankTool(BaseTool):
 
     def __init__(self, db: Memgraph):
         super().__init__(
-            name="pagerank",
+            name="page_rank",
             description="Calculates PageRank on a graph in Memgraph",
             input_schema={
                 "type": "object",
