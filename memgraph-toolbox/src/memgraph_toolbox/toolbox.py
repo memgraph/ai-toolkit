@@ -15,7 +15,7 @@ from .tools.storage import ShowStorageInfoTool
 from .tools.trigger import ShowTriggersTool
 
 
-class MemgraphToolbox(BaseToolkit):
+class MemgraphToolkit(BaseToolkit):
     """
     A toolbox that contains all available Memgraph tools.
     This class extends the BaseToolkit to provide a convenient way to
