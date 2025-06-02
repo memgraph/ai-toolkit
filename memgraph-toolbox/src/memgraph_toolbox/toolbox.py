@@ -1,5 +1,6 @@
 from typing import Optional
 
+
 from .api.memgraph import Memgraph
 from .api.toolkit import BaseToolkit
 
@@ -42,3 +43,7 @@ class MemgraphToolkit(BaseToolkit):
             self.add_tool(ShowSchemaInfoTool(db))
             self.add_tool(ShowStorageInfoTool(db))
             self.add_tool(ShowTriggersTool(db))
+        else:
+            raise ValueError(
+                "Memgraph database connection is required to initialize tools."
+            )
