@@ -36,7 +36,7 @@ url = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
 username = os.getenv("MEMGRAPH_USER", "")
 password = os.getenv("MEMGRAPH_PASSWORD", "")
 
-graph = MemgraphLangChain(url=url, username=username, password=password, refresh_schema=False)
+graph = MemgraphLangChain(url=url, username=username, password=password)
 results = graph.query("MATCH (n) RETURN n LIMIT 1")
 print(results)
 ```
