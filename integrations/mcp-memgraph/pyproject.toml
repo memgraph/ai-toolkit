@@ -1,6 +1,6 @@
 [project]
 name = "mcp-memgraph"
-version = "0.1.1"
+version = "0.1.2"
 description = "MCP integration and utilities for Memgraph MCP server"
 readme = "README.md"
 requires-python = ">=3.13"

@@ -1,6 +1,6 @@
 [project]
 name = "langchain-memgraph"
-version = "0.1.3"
+version = "0.1.4"
 description = "An integration package connecting Memgraph and LangChain"
 authors = [{ name = "Ante Javor", email = "ante.javor@memgraph.com" }]
 readme = "README.md"
