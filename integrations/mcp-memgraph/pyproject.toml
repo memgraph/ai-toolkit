@@ -24,7 +24,7 @@ dependencies = [
   "httpx>=0.28.1",
   "mcp[cli]>=1.3.0",
   "neo4j>=5.28.1",
-  "memgraph-toolbox"
+  "memgraph-toolbox>=0.1.2",
 ]
 
 [project.optional-dependencies]
