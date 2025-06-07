@@ -1,0 +1,40 @@
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Test files and folders
+tests/
+.pytest_cache/
+*.coverage
+.coverage
+htmlcov/
+*.log
+
+# Virtual environments
+venv/
+.env/
+.env
+.venv/
+
+# Version control
+.git/
+.gitignore
+
+# Editor/project files
+.vscode/
+.idea/
+*.swp
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Docker-related files that shouldn't be in the image
+Dockerfile~
+README.md~
+uv.lock~
+pyproject.toml~

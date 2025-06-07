@@ -12,7 +12,7 @@ from memgraph_toolbox.tools.betweenness_centrality import BetweennessCentralityT
 from memgraph_toolbox.tools.page_rank import PageRankTool
 from memgraph_toolbox.utils.logging import logger_init
 
-
+import os
 from typing import Any, Dict, List
 
 # Configure logging
@@ -21,9 +21,11 @@ logger = logger_init("mcp-memgraph")
 # Initialize FastMCP server
 mcp = FastMCP("mcp-memgraph")
 
-MEMGRAPH_URL = "bolt://localhost:7687"
-MEMGRAPH_USER = ""
-MEMGRAPH_PASSWORD = ""
+MEMGRAPH_URL = os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687")
+MEMGRAPH_USER = os.environ.get("MEMGRAPH_USER", "")
+MEMGRAPH_PASSWORD = os.environ.get("MEMGRAPH_PASSWORD", "")
+
+logger.info(f"Connecting to Memgraph at {MEMGRAPH_URL} with user '{MEMGRAPH_USER}'")
 
 # Initialize Memgraph client
 db = Memgraph(
