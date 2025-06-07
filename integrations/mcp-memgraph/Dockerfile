@@ -1,0 +1,14 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+COPY memgraph-toolbox /app/memgraph-toolbox
+COPY integrations/mcp-memgraph /app/integrations/mcp-memgraph
+
+RUN pip install --upgrade pip uv
+RUN uv pip install --system -e /app/memgraph-toolbox
+RUN uv pip install --system -e /app/integrations/mcp-memgraph
+
+WORKDIR /app/integrations/mcp-memgraph/src
+
+CMD ["python", "-m", "mcp_memgraph.main"]
