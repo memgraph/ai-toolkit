@@ -112,29 +112,78 @@ Uses `PageRankTool` under the hood.
 
 The Memgraph MCP Server is just at its beginnings. We're actively working on expanding its capabilities and making it even easier to integrate Memgraph into modern AI workflows.
 
-## 🐳 Building the Docker image with local memgraph-toolbox
 
-To ensure your Docker image uses your local `memgraph-toolbox` code, build the image from the root of the monorepo:
+## 🐳 Building and Running the Docker Image
+
+To build the Docker image using your local `memgraph-toolbox` code, run from the root of the monorepo:
 
 ```bash
 cd /path/to/ai-toolkit
-docker build -f integrations/mcp-memgraph/Dockerfile \
-  -t mcp-memgraph:latest .
+docker build -f integrations/mcp-memgraph/Dockerfile -t mcp-memgraph:latest .
 ```
 
 This will include your local `memgraph-toolbox` and install it inside the image.
 
-### Running the Docker image in Visual Studio Code
+### Running the Docker image
 
-To provide another example of a client, we can run either the python Memgraph MCP server or the Docker image directly in Visual Studio Code. Here's a sample of the Docker image:
+#### 1. Streamable HTTP mode (recommended for most users)
+
+To connect to local Memgraph containers, by default the MCP server will be available at `http://localhost:8000/mcp/`:
+
+```bash
+docker run --rm --network host mcp-memgraph:latest
+```
+
+#### 2. Stdio mode (for integration with MCP stdio clients)
+
+Configure your MCP host to run the docker command and utilize stdio:
+
+```bash
+docker run --rm --network host -e MCP_TRANSPORT=stdio mcp-memgraph:latest
+```
+
+#### 3. Custom Memgraph connection (external instance, no host network)
+
+To avoid using host networking, or to connect to an external Memgraph instance:
+
+```bash
+docker run --rm \
+  -p 8000:8000 \
+  -e MEMGRAPH_URL=bolt://memgraph:7687 \
+  -e MEMGRAPH_USER=myuser \
+  -e MEMGRAPH_PASSWORD=password \
+  mcp-memgraph:latest
+```
+
+### Connecting from VS Code (HTTP server)
+
+If you are using VS Code MCP extension or similar, your configuration for an HTTP server would look like:
+
+```json
+{
+    "servers": {
+        "mcp-memgraph-http": {
+            "url": "http://localhost:8000/mcp/"
+        }
+    }
+}
+```
+
+> **Note:** The URL must end with `/mcp/`.
+
+---
+
+#### Running the Docker image in Visual Studio Code using stdio
+
+You can also run the server using stdio for integration with MCP stdio clients:
 
 1. Open Visual Studio Code, open Command Palette (Ctrl+Shift+P or Cmd+Shift+P on Mac), and select `MCP: Add server...`.
-1. Choose `Command (stdio)`
-1. Enter `docker` as the command to run - we will enhance this next.
-1. For Server ID enter `mcp-memgraph`.
-1. Choose "User" (will add to user-space `settings.json` for all windows) or "Workspace" (will add for just this local project `.vscode/mcp.json`).
+2. Choose `Command (stdio)`
+3. Enter `docker` as the command to run.
+4. For Server ID enter `mcp-memgraph`.
+5. Choose "User" (adds to user-space `settings.json`) or "Workspace" (adds to `.vscode/mcp.json`).
 
-When the settings open, you'll see something like this. Enhance the args with the following:
+When the settings open, enhance the args as follows:
 
 ```json
 {
@@ -146,6 +195,7 @@ When the settings open, you'll see something like this. Enhance the args with th
                 "run",
                 "--rm",
                 "-i",
+                "-e", "MCP_TRANSPORT=stdio",
                 "mcp-memgraph:latest"
             ]
         }
@@ -153,7 +203,7 @@ When the settings open, you'll see something like this. Enhance the args with th
 }
 ```
 
-If you want to connect to a remote server or an instance with a username/password, add environment variables to the `args` list:
+To connect to a remote Memgraph instance with authentication, add environment variables to the `args` list:
 
 ```json
 {
@@ -165,6 +215,7 @@ If you want to connect to a remote server or an instance with a username/passwor
                 "run",
                 "--rm",
                 "-i",
+                "-e", "MCP_TRANSPORT=stdio",
                 "-e", "MEMGRAPH_URL=bolt://memgraph:7687",
                 "-e", "MEMGRAPH_USER=myuser",
                 "-e", "MEMGRAPH_PASSWORD=mypassword",
@@ -174,5 +225,7 @@ If you want to connect to a remote server or an instance with a username/passwor
     }
 }
 ```
+
+---
 
 Open GitHub Copilot in Agent mode and you'll be able to interact with the Memgraph MCP server.
