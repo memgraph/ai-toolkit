@@ -1,9 +1,13 @@
+
+import os
 from .server import mcp, logger
 
 
+
 def main():
-    logger.info("Starting MCP server...")
-    mcp.run(transport="stdio")
+    transport = os.environ.get("MCP_TRANSPORT", "stdio")
+    logger.info(f"Starting MCP server with transport: {transport}")
+    mcp.run(transport=transport)
 
 
 if __name__ == "__main__":
