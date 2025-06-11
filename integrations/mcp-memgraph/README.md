@@ -128,7 +128,7 @@ This will include your local `memgraph-toolbox` and install it inside the image.
 To connect to local Memgraph containers, by default the MCP server will be available at `http://localhost:8000/mcp/`:
 
 ```bash
-docker run --rm -e MEMGRAPH_URL=bolt://host.docker.internal:7687 mcp-memgraph:latest
+docker run --rm mcp-memgraph:latest
 ```
 
 #### 2. Stdio mode (for integration with MCP stdio clients)
@@ -136,8 +136,10 @@ docker run --rm -e MEMGRAPH_URL=bolt://host.docker.internal:7687 mcp-memgraph:la
 Configure your MCP host to run the docker command and utilize stdio:
 
 ```bash
-docker run --rm -i -e MEMGRAPH_URL=bolt://host.docker.internal:7687 -e MCP_TRANSPORT=stdio mcp-memgraph:latest
+docker run --rm -i -e MCP_TRANSPORT=stdio mcp-memgraph:latest
 ```
+
+> 📄 Note: By default, the server will connect to a Memgraph instance running on localhost docker network `bolt://host.docker.internal:7687`. If you have a Memgraph instance running on a different host or port, you can specify it using environment variables.
 
 #### 3. Custom Memgraph connection (external instance, no host network)
 
