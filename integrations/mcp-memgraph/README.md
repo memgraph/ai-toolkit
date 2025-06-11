@@ -108,12 +108,9 @@ Uses `BetweennessCentralityTool` under the hood.
 Compute PageRank scores for all nodes.  
 Uses `PageRankTool` under the hood.
 
-## 🗺️ Roadmap
+## 🐳 Run Memgraph MCP server with Docker
 
-The Memgraph MCP Server is just at its beginnings. We're actively working on expanding its capabilities and making it even easier to integrate Memgraph into modern AI workflows.
-
-
-## 🐳 Building and Running the Docker Image
+### Building Memgraph MCP image
 
 To build the Docker image using your local `memgraph-toolbox` code, run from the root of the monorepo:
 
@@ -131,7 +128,7 @@ This will include your local `memgraph-toolbox` and install it inside the image.
 To connect to local Memgraph containers, by default the MCP server will be available at `http://localhost:8000/mcp/`:
 
 ```bash
-docker run --rm --network host mcp-memgraph:latest
+docker run --rm -e MEMGRAPH_URL=bolt://host.docker.internal:7687 mcp-memgraph:latest
 ```
 
 #### 2. Stdio mode (for integration with MCP stdio clients)
@@ -139,7 +136,7 @@ docker run --rm --network host mcp-memgraph:latest
 Configure your MCP host to run the docker command and utilize stdio:
 
 ```bash
-docker run --rm --network host -e MCP_TRANSPORT=stdio mcp-memgraph:latest
+docker run --rm -i -e MEMGRAPH_URL=bolt://host.docker.internal:7687 -e MCP_TRANSPORT=stdio mcp-memgraph:latest
 ```
 
 #### 3. Custom Memgraph connection (external instance, no host network)
