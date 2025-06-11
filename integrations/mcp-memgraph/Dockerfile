@@ -13,6 +13,7 @@ WORKDIR /app/integrations/mcp-memgraph/src
 
 ENV FASTMCP_HOST=0.0.0.0
 ENV MCP_TRANSPORT=streamable-http
+ENV MEMGRAPH_HOST=bolt://host.docker.internal:7687
 
 EXPOSE 8000
 
