@@ -1,0 +1,46 @@
+name: CI/CD Pipeline
+
+# on:
+#   push:
+#     branches:
+#       - main
+#   pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      memgraph:
+        image: memgraph/memgraph-mage:latest
+        ports:
+          - 7687:7687
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.10
+
+      - name: Install dependencies with uv
+        run: |
+          python -m pip install --upgrade pip
+          pip install uv
+          uv pip install -e memgraph-toolbox[test]
+          uv pip install -e integrations/langchain-memgraph[test]
+          uv pip install -e integrations/mcp-memgraph[test]
+
+      - name: Run tests in langchain-memgraph
+        working-directory: integrations/langchain-memgraph
+        run: pytest tests
+
+      - name: Run tests in mcp-memgraph
+        working-directory: integrations/mcp-memgraph
+        run: pytest tests
+
+      - name: Run tests in memgraph-toolbox
+        working-directory: memgraph-toolbox/src/memgraph_toolbox
+        run: pytest test
