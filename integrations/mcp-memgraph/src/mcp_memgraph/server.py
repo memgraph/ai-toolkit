@@ -25,14 +25,16 @@ mcp = FastMCP("mcp-memgraph", stateless_http=True)
 MEMGRAPH_URL = os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687")
 MEMGRAPH_USER = os.environ.get("MEMGRAPH_USER", "")
 MEMGRAPH_PASSWORD = os.environ.get("MEMGRAPH_PASSWORD", "")
+MEMGRAPH_DATABASE = os.environ.get("MEMGRAPH_DATABASE", "memgraph")
 
-logger.info(f"Connecting to Memgraph at {MEMGRAPH_URL} with user '{MEMGRAPH_USER}'")
+logger.info(f"Connecting to Memgraph db '{MEMGRAPH_DATABASE}' at {MEMGRAPH_URL} with user '{MEMGRAPH_USER}'")
 
 # Initialize Memgraph client
 db = Memgraph(
     url=MEMGRAPH_URL,
     username=MEMGRAPH_USER,
     password=MEMGRAPH_PASSWORD,
+    database=MEMGRAPH_DATABASE,
 )
 
 
