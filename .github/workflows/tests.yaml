@@ -1,10 +1,10 @@
 name: CI/CD Pipeline
 
-# on:
-#   push:
-#     branches:
-#       - main
-#   pull_request:
+on:
+  push:
+    branches:
+      - main
+  pull_request:
 
 jobs:
   test:
@@ -25,22 +25,38 @@ jobs:
         with:
           python-version: 3.10
 
-      - name: Install dependencies with uv
+      - name: Install dependencies for core package
         run: |
           python -m pip install --upgrade pip
           pip install uv
           uv pip install -e memgraph-toolbox[test]
-          uv pip install -e integrations/langchain-memgraph[test]
+
+      - name: Run tests for core package
+        working-directory: memgraph-toolbox/src/memgraph_toolbox
+        run: pytest test
+
+      - name: Install dependencies for mcp package
+        run: |
+          python -m pip install --upgrade pip
+          pip install uv
           uv pip install -e integrations/mcp-memgraph[test]
 
-      - name: Run tests in langchain-memgraph
-        working-directory: integrations/langchain-memgraph
-        run: pytest tests
-
-      - name: Run tests in mcp-memgraph
+      - name: Run tests for mcp package
         working-directory: integrations/mcp-memgraph
         run: pytest tests
 
-      - name: Run tests in memgraph-toolbox
-        working-directory: memgraph-toolbox/src/memgraph_toolbox
-        run: pytest test
+      - name: Install dependencies for langchain package
+        run: |
+          python -m pip install --upgrade pip
+          pip install uv
+          uv pip install -e integrations/langchain-memgraph[test]
+
+      - name: Set environment variables
+        run: |
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
+
+      - name: Run tests for langchain package
+        working-directory: integrations/langchain-memgraph
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: pytest tests
