@@ -37,7 +37,7 @@ jobs:
 
       - name: Run tests for core package
         working-directory: memgraph-toolbox/src/memgraph_toolbox
-        run: pytest test
+        run: uv run pytest .
 
       - name: Install dependencies for mcp package
         run: |
@@ -45,7 +45,7 @@ jobs:
 
       - name: Run tests for mcp package
         working-directory: integrations/mcp-memgraph
-        run: pytest tests
+        run: uv run pytest .
 
       - name: Install dependencies for langchain package
         run: |
@@ -59,4 +59,4 @@ jobs:
         working-directory: integrations/langchain-memgraph
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: pytest tests
+        run: uv run pytest .
