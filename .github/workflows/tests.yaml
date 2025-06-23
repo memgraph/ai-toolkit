@@ -15,6 +15,7 @@ jobs:
         image: memgraph/memgraph-mage:latest
         ports:
           - 7687:7687
+        command: ["--schema-info-enabled=True"]
 
     steps:
       - name: Checkout code
