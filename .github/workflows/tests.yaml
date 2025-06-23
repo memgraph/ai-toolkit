@@ -31,6 +31,9 @@ jobs:
       - name: Create virtual environment
         run: uv venv
 
+      - name: Activate virtual environment
+        run: source .venv/bin/activate
+
       - name: Install dependencies for core package
         run: |
           uv pip install -e memgraph-toolbox[test]
