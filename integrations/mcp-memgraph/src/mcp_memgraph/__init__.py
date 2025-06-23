@@ -8,6 +8,8 @@ from .server import (
     get_triggers,
     get_betweenness_centrality,
     get_page_rank,
+    mcp,
+    logger,
 )
 
 __all__ = [
@@ -20,4 +22,6 @@ __all__ = [
     "get_triggers",
     "get_betweenness_centrality",
     "get_page_rank",
+    "mcp",
+    "logger",
 ]

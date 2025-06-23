@@ -1,7 +1,5 @@
-
 import os
-from .server import mcp, logger
-
+from mcp_memgraph.server import mcp, logger
 
 
 def main():
