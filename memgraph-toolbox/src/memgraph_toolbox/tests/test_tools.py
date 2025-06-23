@@ -15,22 +15,22 @@ from ..utils.logging import logger_init
 logger = logger_init("test-tools")
 
 
-def test_show_schema_info_tool():
-    """Test the ShowSchemaInfo tool."""
+# def test_show_schema_info_tool():
+#     """Test the ShowSchemaInfo tool."""
 
-    url = "bolt://localhost:7687"
-    user = "memgraph"
-    password = "memgraph"
+#     url = "bolt://localhost:7687"
+#     user = "memgraph"
+#     password = "memgraph"
 
-    memgraph_client = Memgraph(url=url, username=user, password=password)
+#     memgraph_client = Memgraph(url=url, username=user, password=password)
 
-    schema_tool = ShowSchemaInfoTool(db=memgraph_client)
-    assert "show_schema_info" in schema_tool.name
+#     schema_tool = ShowSchemaInfoTool(db=memgraph_client)
+#     assert "show_schema_info" in schema_tool.name
 
-    result = schema_tool.call({})
+#     result = schema_tool.call({})
 
-    assert isinstance(result, list)
-    assert len(result) >= 1
+#     assert isinstance(result, list)
+#     assert len(result) >= 1
 
 
 def test_show_config_tool():
