@@ -15,21 +15,21 @@ from langchain_memgraph.tools import (
 from memgraph_toolbox.api.memgraph import Memgraph
 
 
-# class TestSchemaInfoIntegration(ToolsIntegrationTests):
-#     @property
-#     def tool_constructor(self) -> Type[RunShowSchemaInfoTool]:
-#         return RunShowSchemaInfoTool
+class TestSchemaInfoIntegration(ToolsIntegrationTests):
+    @property
+    def tool_constructor(self) -> Type[RunShowSchemaInfoTool]:
+        return RunShowSchemaInfoTool
 
-#     @property
-#     def tool_constructor_params(self) -> dict:
-#         return {"db": Memgraph("bolt://localhost:7687", "", "")}
+    @property
+    def tool_constructor_params(self) -> dict:
+        return {"db": Memgraph("bolt://localhost:7687", "", "")}
 
-#     @property
-#     def tool_invoke_params_example(self) -> dict:
-#         """
-#         Returns empty dict since ShowSchemaInfoTool doesn't require any parameters
-#         """
-#         return {}
+    @property
+    def tool_invoke_params_example(self) -> dict:
+        """
+        Returns empty dict since ShowSchemaInfoTool doesn't require any parameters
+        """
+        return {}
 
 
 class TestCypherIntegration(ToolsIntegrationTests):
