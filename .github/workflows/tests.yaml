@@ -33,7 +33,7 @@ jobs:
 
       - name: Activate virtual environment
         working-directory: memgraph-toolbox
-        run: source venv/bin/activate
+        run: source .venv/bin/activate
 
       - name: Install dependencies for core package
         working-directory: memgraph-toolbox
@@ -50,7 +50,7 @@ jobs:
 
       - name: Activate virtual environment for mcp package
         working-directory: integrations/mcp-memgraph
-        run: source venv/bin/activate
+        run: source .venv/bin/activate
 
       - name: Install dependencies for mcp package
         working-directory: integrations/mcp-memgraph
@@ -67,7 +67,7 @@ jobs:
 
       - name: Activate virtual environment for langchain package
         working-directory: integrations/langchain-memgraph
-        run: source venv/bin/activate
+        run: source .venv/bin/activate
 
       - name: Install dependencies for langchain package
         working-directory: integrations/langchain-memgraph
