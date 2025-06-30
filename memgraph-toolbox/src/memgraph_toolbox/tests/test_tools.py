@@ -19,8 +19,8 @@ def test_show_schema_info_tool():
     """Test the ShowSchemaInfo tool."""
 
     url = "bolt://localhost:7687"
-    user = "memgraph"
-    password = "memgraph"
+    user = ""
+    password = ""
 
     memgraph_client = Memgraph(url=url, username=user, password=password)
 
@@ -37,8 +37,8 @@ def test_show_config_tool():
     """Test the ShowConfig tool."""
 
     url = "bolt://localhost:7687"
-    user = "memgraph"
-    password = "memgraph"
+    user = ""
+    password = ""
 
     memgraph_client = Memgraph(url=url, username=user, password=password)
 
@@ -53,8 +53,8 @@ def test_index_tool():
     """Test the ShowIndexInfo tool."""
 
     url = "bolt://localhost:7687"
-    user = "memgraph"
-    password = "memgraph"
+    user = ""
+    password = ""
 
     memgraph_client = Memgraph(url=url, username=user, password=password)
 
@@ -77,8 +77,8 @@ def test_storage_tool():
     """Test the ShowStorageInfo tool."""
 
     url = "bolt://localhost:7687"
-    user = "memgraph"
-    password = "memgraph"
+    user = ""
+    password = ""
 
     memgraph_client = Memgraph(url=url, username=user, password=password)
 
@@ -93,8 +93,8 @@ def test_storage_tool():
 def test_show_constraint_info_tool():
     """Test the ShowConstraintInfo tool."""
     url = "bolt://localhost:7687"
-    user = "memgraph"
-    password = "memgraph"
+    user = ""
+    password = ""
     memgraph_client = Memgraph(url=url, username=user, password=password)
     # Create a sample constraint
     memgraph_client.query("CREATE CONSTRAINT ON (n:Person) ASSERT n.id IS UNIQUE")
@@ -112,8 +112,8 @@ def test_show_triggers_tool():
     """Test the ShowTriggers tool."""
 
     url = "bolt://localhost:7687"
-    user = "memgraph"
-    password = "memgraph"
+    user = ""
+    password = ""
     memgraph_client = Memgraph(url=url, username=user, password=password)
 
     memgraph_client.query(
@@ -137,8 +137,8 @@ def test_page_rank():
     """Test the PageRank tool."""
 
     url = "bolt://localhost:7687"
-    user = "memgraph"
-    password = "memgraph"
+    user = ""
+    password = ""
     memgraph_client = Memgraph(url=url, username=user, password=password)
 
     # Create a sample graph for testing
@@ -159,8 +159,8 @@ def test_cypher():
     """Test the Cypher tool."""
 
     url = "bolt://localhost:7687"
-    user = "memgraph"
-    password = "memgraph"
+    user = ""
+    password = ""
     memgraph_client = Memgraph(url=url, username=user, password=password)
 
     cypher_tool = CypherTool(db=memgraph_client)
@@ -173,8 +173,8 @@ def test_betweenness_centrality_tool():
     """Test the RunBetweennessCentralityTool."""
 
     url = "bolt://localhost:7687"
-    user = "memgraph"
-    password = "memgraph"
+    user = ""
+    password = ""
     memgraph_client = Memgraph(url=url, username=user, password=password)
 
     memgraph_client.query(
