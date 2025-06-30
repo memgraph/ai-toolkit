@@ -38,7 +38,7 @@ jobs:
       - name: Install dependencies for core package
         working-directory: memgraph-toolbox
         run: |
-          uv pip install -e .[test]
+          uv pip install --system -e .[test]
 
       - name: Run tests for core package
         working-directory: memgraph-toolbox
@@ -55,7 +55,7 @@ jobs:
       - name: Install dependencies for mcp package
         working-directory: integrations/mcp-memgraph
         run: |
-          uv pip install -e .[test]
+          uv pip install  --system -e .[test]
 
       - name: Run tests for mcp package
         working-directory: integrations/mcp-memgraph
@@ -72,7 +72,7 @@ jobs:
       - name: Install dependencies for langchain package
         working-directory: integrations/langchain-memgraph
         run: |
-          uv pip install -e .[test]
+          uv pip install --system -e .[test]
 
       - name: Run tests for langchain package
         working-directory: integrations/langchain-memgraph
