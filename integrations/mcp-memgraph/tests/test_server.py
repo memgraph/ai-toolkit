@@ -55,7 +55,7 @@ class MCPClient:
 @pytest.mark.asyncio
 async def test_mcp_client():
     """Test the MCP client connection to the server."""
-    server_script_path = "integrations/mcp-memgraph/src/mcp_memgraph/server.py"
+    server_script_path = "src/mcp_memgraph/main.py"
     client = MCPClient()
     try:
         await client.connect_to_server(server_script_path)
@@ -93,7 +93,7 @@ async def test_get_schema():
 @pytest.mark.asyncio
 async def test_tools_and_resources():
     """Test that all tools and resources are present in the MCP server."""
-    server_script_path = "integrations/mcp-memgraph/src/mcp_memgraph/server.py"
+    server_script_path = "src/mcp_memgraph/main.py"
     client = MCPClient()
     try:
         await client.connect_to_server(server_script_path)

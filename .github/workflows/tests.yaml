@@ -1,0 +1,69 @@
+name: Run Integration tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11.0
+
+      - name: Start Memgraph container
+        run: |
+          docker run -d -p 7687:7687 --name memgraph memgraph/memgraph-mage:latest --schema-info-enabled=True --telemetry-enabled=false
+          sleep 5  # Wait for Memgraph to start
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Create virtual environment for memgraph-toolbox
+        working-directory: memgraph-toolbox
+        run: uv venv
+
+      - name: Install dependencies for core package
+        working-directory: memgraph-toolbox
+        run: |
+          uv pip install -e .[test]
+
+      - name: Run tests for core package
+        working-directory: memgraph-toolbox
+        run: uv run pytest .
+
+      - name: Create virtual environment for mcp package
+        working-directory: integrations/mcp-memgraph
+        run: uv venv
+
+      - name: Install dependencies for mcp package
+        working-directory: integrations/mcp-memgraph
+        run: |
+          uv pip install -e .[test]
+
+      - name: Run tests for mcp package
+        working-directory: integrations/mcp-memgraph
+        run: uv run pytest .
+
+      - name: Create virtual environment for langchain package
+        working-directory: integrations/langchain-memgraph
+        run: uv venv
+
+      - name: Install dependencies for langchain package
+        working-directory: integrations/langchain-memgraph
+        run: |
+          uv pip install -e .[test]
+
+      - name: Run tests for langchain package
+        working-directory: integrations/langchain-memgraph
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: uv run pytest .

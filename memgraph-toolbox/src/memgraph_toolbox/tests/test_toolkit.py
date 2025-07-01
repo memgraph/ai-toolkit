@@ -41,8 +41,8 @@ def test_memgraph_toolkit():
     """Test the Memgraph Toolkit."""
 
     url = "bolt://localhost:7687"
-    user = "memgraph"
-    password = "memgraph"
+    user = ""
+    password = ""
 
     memgraph_client = Memgraph(url=url, username=user, password=password)
 
