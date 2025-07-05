@@ -154,6 +154,22 @@ docker run --rm \
   mcp-memgraph:latest
 ```
 
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+The following environment variables can be used to configure the Memgraph MCP Server, whether running with Docker or directly (e.g., with `uv` or `python`).
+
+- `MEMGRAPH_URL`: The Bolt URL of the Memgraph instance to connect to. Default: `bolt://host.docker.internal:7687`
+    - The default value allows you to connect to a Memgraph instance running on your host machine from within the Docker container.
+- `MEMGRAPH_USER`: The username for authentication. Default: `memgraph`
+- `MEMGRAPH_PASSWORD`: The password for authentication. Default: empty
+- `MEMGRAPH_DATABASE`: The database name to connect to. Default: `memgraph`
+- `MCP_TRANSPORT`: The transport protocol to use. Options: `http` (default), `stdio`
+
+You can set these environment variables in your shell, in your Docker run command, or in your deployment environment. 
+
 ### Connecting from VS Code (HTTP server)
 
 If you are using VS Code MCP extension or similar, your configuration for an HTTP server would look like:
