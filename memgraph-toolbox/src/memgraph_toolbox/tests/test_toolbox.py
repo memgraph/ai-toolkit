@@ -2,19 +2,19 @@ from typing import Any, Dict, List
 
 import pytest
 
-from ..api.toolkit import BaseToolkit
-from ..memgraph_toolkit import MemgraphToolkit
+from ..api.toolbox import BaseToolbox
+from ..memgraph_toolbox import MemgraphToolbox
 from ..api.tool import BaseTool
 from ..utils.logging import logger_init
 from ..api.memgraph import Memgraph
 
-logger = logger_init("test-toolkit")  # Set up logger for the test
+logger = logger_init("test-toolbox")  # Set up logger for the test
 
 
-def test_toolkit():
-    """Test the Toolkit class."""
+def test_base_toolbox():
+    """Test the Toolbox class."""
 
-    toolkit = BaseToolkit()
+    toolkit = BaseToolbox()
 
     class DummyTool(BaseTool):
         def __init__(self):
@@ -37,8 +37,8 @@ def test_toolkit():
         toolkit.add_tool(dummy_tool)
 
 
-def test_memgraph_toolkit():
-    """Test the Memgraph Toolkit."""
+def test_memgraph_toolbox():
+    """Test the Memgraph Toolbox."""
 
     url = "bolt://localhost:7687"
     user = ""
@@ -46,7 +46,7 @@ def test_memgraph_toolkit():
 
     memgraph_client = Memgraph(url=url, username=user, password=password)
 
-    toolkit = MemgraphToolkit(db=memgraph_client)
+    toolkit = MemgraphToolbox(db=memgraph_client)
 
     tools = toolkit.get_all_tools()
 

@@ -1,8 +1,5 @@
-from typing import Optional
-
-
 from .api.memgraph import Memgraph
-from .api.toolkit import BaseToolkit
+from .api.toolbox import BaseToolbox
 
 # Import all tool classes
 from .tools.betweenness_centrality import BetweennessCentralityTool
@@ -16,10 +13,10 @@ from .tools.storage import ShowStorageInfoTool
 from .tools.trigger import ShowTriggersTool
 
 
-class MemgraphToolkit(BaseToolkit):
+class MemgraphToolbox(BaseToolbox):
     """
     A toolbox that contains all available Memgraph tools.
-    This class extends the BaseToolkit to provide a convenient way to
+    This class extends the BaseToolbox to provide a convenient way to
     access all Memgraph-related tools.
     """
 

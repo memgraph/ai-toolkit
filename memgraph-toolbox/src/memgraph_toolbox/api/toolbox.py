@@ -2,9 +2,9 @@ from typing import Dict, List
 from .tool import BaseTool
 
 
-class BaseToolkit:
+class BaseToolbox:
     """
-    A Toolkit for managing tools.
+    A Toolbox for managing tools.
     """
 
     def __init__(self):
@@ -15,11 +15,11 @@ class BaseToolkit:
         Add a new tool in the registry.
 
         Raises:
-            ValueError: If a tool with the same name is already toolkit.
+            ValueError: If a tool with the same name is already in toolbox.
         """
         if tool.name in self._tools:
             raise ValueError(
-                f"Tool with name '{tool.name}' is already present in toolkit."
+                f"Tool with name '{tool.name}' is already present in toolbox."
             )
         self._tools[tool.name] = tool
 
