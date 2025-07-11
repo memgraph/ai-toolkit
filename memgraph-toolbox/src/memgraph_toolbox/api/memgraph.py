@@ -13,6 +13,8 @@ class Memgraph:
         url: str = None,
         username: str = None,
         password: str = None,
+        *,
+        memgraph_config: Optional[Dict] = None,
         driver_config: Optional[Dict] = None,
     ):
         """
@@ -22,11 +24,13 @@ class Memgraph:
         - MEMGRAPH_URL (default: "bolt://localhost:7687")
         - MEMGRAPH_USER (default: "")
         - MEMGRAPH_PASSWORD (default: "")
+        - MEMGRAPH_DATABASE (default: "memgraph")
 
         Args:
             url: The Memgraph connection URL
             username: Username for authentication
             password: Password for authentication
+            memgraph_config: Optional dict for Memgraph-specific config (e.g., {"database": "mydb"})
             driver_config: Additional Neo4j driver configuration
         """
 
@@ -38,6 +42,13 @@ class Memgraph:
         self.driver = GraphDatabase.driver(
             url, auth=(username, password), **(driver_config or {})
         )
+
+        # Determine database name: memgraph_config > env > default
+        if memgraph_config and "database" in memgraph_config:
+            self.database = memgraph_config["database"]
+        else:
+            self.database = os.environ.get("MEMGRAPH_DATABASE", "memgraph")
+
         try:
             import neo4j
         except ImportError:
@@ -74,6 +85,7 @@ class Memgraph:
             data, _, _ = self.driver.execute_query(
                 query,
                 parameters_=params,
+                database_=self.database,
             )
             json_data = [r.data() for r in data]
             return json_data
@@ -106,7 +118,7 @@ class Memgraph:
                 raise
 
         # fallback to allow implicit transactions
-        with self.driver.session() as session:
+        with self.driver.session(database=self.database) as session:
             data = session.run(query, params)
             json_data = [r.data() for r in data]
             return json_data
