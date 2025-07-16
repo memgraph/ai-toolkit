@@ -27,9 +27,31 @@ from memgraph_toolbox.api.memgraph import Memgraph
 # Load environment variables
 load_dotenv()
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def validate_environment_variables():
+    """Validate required environment variables."""
+    required_vars = {
+        "OPENAI_API_KEY": "OpenAI API key for migration planning",
+        "MYSQL_PASSWORD": "MySQL database password",
+    }
+
+    missing_vars = []
+    for var, description in required_vars.items():
+        if not os.getenv(var):
+            missing_vars.append(f"{var} ({description})")
+
+    if missing_vars:
+        logger.error("Missing required environment variables:")
+        for var in missing_vars:
+            logger.error(f"  - {var}")
+        logger.error(
+            "Please check your .env file and ensure all required variables are set"
+        )
+        return False
+
+    return True
 
 
 class MigrationState(TypedDict):
@@ -49,13 +71,35 @@ class MigrationState(TypedDict):
 class MySQLToMemgraphAgent:
     """Agent for migrating MySQL databases to Memgraph."""
 
-    def __init__(self):
-        """Initialize the migration agent."""
+    def __init__(self, relationship_naming_strategy: str = "table_based"):
+        """Initialize the migration agent.
+
+        Args:
+            relationship_naming_strategy: Strategy for naming relationships.
+                - "table_based": Use table names directly (default)
+                - "llm": Use LLM to generate meaningful names
+        """
+        # Validate environment variables first
+        if not validate_environment_variables():
+            raise ValueError(
+                "Required environment variables are missing. "
+                "Please check your .env file."
+            )
+
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is required")
+
         self.llm = ChatOpenAI(
-            model="gpt-4o-mini", temperature=0.1, api_key=os.getenv("OPENAI_API_KEY")
+            model="gpt-4o-mini", temperature=0.1, api_key=openai_api_key
         )
         self.mysql_analyzer = None
-        self.cypher_generator = CypherGenerator()
+        self.cypher_generator = CypherGenerator(relationship_naming_strategy)
+
+        # Set LLM for cypher generator if using LLM strategy
+        if relationship_naming_strategy == "llm":
+            self.cypher_generator.set_llm(self.llm)
+
         self.memgraph_client = None
 
         # Build the workflow graph
@@ -121,6 +165,7 @@ class MySQLToMemgraphAgent:
 
         return state
 
+    # TODO: This should be human visible and configurable.
     def _generate_migration_plan(self, state: MigrationState) -> MigrationState:
         """Generate a migration plan using LLM."""
         logger.info("Generating migration plan...")
@@ -137,34 +182,34 @@ class MySQLToMemgraphAgent:
 
             system_message = SystemMessage(
                 content="""
-You are an expert database migration specialist. You need to create a 
-detailed migration plan for moving data from MySQL to Memgraph (a graph database).
+                You are an expert database migration specialist. You need to create a 
+                detailed migration plan for moving data from MySQL to Memgraph (a graph database).
 
-Your task is to:
-1. Analyze the database structure
-2. Identify the optimal order for creating nodes and relationships
-3. Consider dependencies between tables
-4. Suggest any optimizations for graph modeling
-5. Identify potential issues or challenges
+                Your task is to:
+                1. Analyze the database structure
+                2. Identify the optimal order for creating nodes and relationships
+                3. Consider dependencies between tables
+                4. Suggest any optimizations for graph modeling
+                5. Identify potential issues or challenges
 
-Provide a detailed, step-by-step migration plan.
+                Provide a detailed, step-by-step migration plan.
             """
             )
 
             human_message = HumanMessage(
                 content=f"""
-Create a migration plan for the following MySQL database structure:
+                Create a migration plan for the following MySQL database structure:
 
-Tables: {context['tables']}
-Relationships: {context['relationships']}
-Table row counts: {context['table_counts']}
+                Tables: {context['tables']}
+                Relationships: {context['relationships']}
+                Table row counts: {context['table_counts']}
 
-Please provide a detailed migration plan including:
-1. Order of operations
-2. Node creation strategy
-3. Relationship creation strategy
-4. Any potential issues to watch for
-5. Estimated timeline considerations
+                Please provide a detailed migration plan including:
+                1. Order of operations
+                2. Node creation strategy
+                3. Relationship creation strategy
+                4. Any potential issues to watch for
+                5. Estimated timeline considerations
             """
             )
 
@@ -197,13 +242,20 @@ Please provide a detailed migration plan including:
 
         return state
 
+    # TODO: Implement actual validation logic for Cypher queries
     def _validate_queries(self, state: MigrationState) -> MigrationState:
         """Validate generated Cypher queries."""
         logger.info("Validating Cypher queries...")
 
         try:
             # Initialize Memgraph connection for validation
-            self.memgraph_client = Memgraph(**state["memgraph_config"])
+            config = state["memgraph_config"]
+            self.memgraph_client = Memgraph(
+                url=config.get("url"),
+                username=config.get("username"),
+                password=config.get("password"),
+                database=config.get("database"),
+            )
 
             # Test connection
             test_query = "MATCH (n) RETURN count(n) as node_count LIMIT 1"
@@ -226,6 +278,15 @@ Please provide a detailed migration plan including:
             structure = state["database_structure"]
             queries = state["migration_queries"]
 
+            # Clear the database first to avoid constraint violations
+            try:
+                logger.info("Clearing existing data from Memgraph...")
+                self.memgraph_client.query("MATCH (n) DETACH DELETE n")
+                self.memgraph_client.query("DROP CONSTRAINT ON (n) ASSERT exists(n.id)")
+                logger.info("Database cleared successfully")
+            except Exception as e:
+                logger.warning(f"Database clearing failed (might be empty): {e}")
+
             # Execute constraint and index creation queries first
             constraint_queries = [
                 q for q in queries if "CONSTRAINT" in q or "INDEX" in q
@@ -238,26 +299,25 @@ Please provide a detailed migration plan including:
                     except Exception as e:
                         logger.warning(f"Constraint/Index creation failed: {e}")
 
-            # Migrate data for each table
-            for table_name, table_info in structure["tables"].items():
-                logger.info(f"Migrating table: {table_name}")
+            # Migrate data for entity tables only (not join tables)
+            for table_name, table_info in structure["entity_tables"].items():
+                logger.info(f"Migrating entity table: {table_name}")
 
                 # Get data from MySQL
                 data = self.mysql_analyzer.get_table_data(table_name)
 
                 if data:
-                    # Prepare data for Cypher
+                    # Prepare data for Cypher (excluding FK columns)
                     prepared_data = self.cypher_generator.prepare_data_for_cypher(
-                        data, table_info["schema"]
+                        data, table_info["schema"], table_info["foreign_keys"]
                     )
 
                     # Find the node creation query for this table
                     node_query = None
+                    generator = self.cypher_generator
+                    label = generator._table_name_to_label(table_name)
                     for query in queries:
-                        if (
-                            f"Create {self.cypher_generator._table_name_to_label(table_name)} nodes"
-                            in query
-                        ):
+                        if f"Create {label} nodes" in query:
                             node_query = query
                             break
 
@@ -278,7 +338,8 @@ Please provide a detailed migration plan including:
                             )
                             state["completed_tables"].append(table_name)
                             logger.info(
-                                f"Successfully migrated {len(data)} rows from {table_name}"
+                                f"Successfully migrated {len(data)} rows "
+                                f"from {table_name}"
                             )
                         except Exception as e:
                             logger.error(f"Failed to migrate table {table_name}: {e}")
@@ -290,12 +351,76 @@ Please provide a detailed migration plan including:
 
             # Create relationships
             logger.info("Creating relationships...")
-            relationship_queries = [
-                q for q in queries if "CREATE (" in q and ")-[:" in q
-            ]
-            for query in relationship_queries:
-                if query.strip() and not query.startswith("//"):
+
+            # Handle one-to-many relationships (from foreign keys)
+            for rel in structure["relationships"]:
+                if rel["type"] == "one_to_many":
                     try:
+                        # Find the relationship query
+                        rel_query = self.cypher_generator.generate_relationship_query(
+                            rel
+                        )
+                        clean_query = "\n".join(
+                            [
+                                line
+                                for line in rel_query.split("\n")
+                                if not line.strip().startswith("//")
+                            ]
+                        ).strip()
+
+                        self.memgraph_client.query(clean_query)
+                        logger.info(
+                            f"Created one-to-many relationship: "
+                            f"{rel['from_table']} -> {rel['to_table']}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to create relationship: {e}")
+                        state["errors"].append(f"Relationship creation failed: {e}")
+
+            # Handle many-to-many relationships (from join tables)
+            for rel in structure["relationships"]:
+                if rel["type"] == "many_to_many":
+                    try:
+                        join_table_name = rel["join_table"]
+                        join_table_info = structure["join_tables"][join_table_name]
+
+                        # Get join table data
+                        join_data = self.mysql_analyzer.get_table_data(join_table_name)
+
+                        if join_data:
+                            # Prepare join table data
+                            prepared_data = self.cypher_generator.prepare_join_table_data_for_cypher(
+                                join_data, join_table_info["schema"]
+                            )
+
+                            # Generate and execute relationship query
+                            rel_query = (
+                                self.cypher_generator.generate_relationship_query(rel)
+                            )
+                            clean_query = "\n".join(
+                                [
+                                    line
+                                    for line in rel_query.split("\n")
+                                    if not line.strip().startswith("//")
+                                ]
+                            ).strip()
+
+                            self.memgraph_client.query(
+                                clean_query, {"data": prepared_data}
+                            )
+                            logger.info(
+                                f"Created many-to-many relationship: "
+                                f"{rel['from_table']} <-> {rel['to_table']} "
+                                f"via {join_table_name}"
+                            )
+                        else:
+                            logger.info(f"No data in join table {join_table_name}")
+
+                    except Exception as e:
+                        logger.error(f"Failed to create many-to-many relationship: {e}")
+                        state["errors"].append(
+                            f"Many-to-many relationship creation failed: {e}"
+                        )
                         clean_query = "\n".join(
                             [
                                 line
@@ -410,8 +535,65 @@ Please provide a detailed migration plan including:
             }
 
 
+def debug_mysql_connection(mysql_config: Dict[str, str]) -> bool:
+    """Debug MySQL connection specifically."""
+    logger.debug("Starting MySQL connection debug...")
+
+    try:
+        analyzer = MySQLAnalyzer(**mysql_config)
+        logger.debug(f"Created MySQLAnalyzer with config: {mysql_config}")
+
+        if analyzer.connect():
+            logger.debug("✓ MySQL connection successful")
+
+            # Test basic operations
+            tables = analyzer.get_tables()
+            logger.debug(f"✓ Found {len(tables)} tables: {tables}")
+
+            if tables:
+                # Test schema retrieval
+                first_table = tables[0]
+                schema = analyzer.get_table_schema(first_table)
+                logger.debug(
+                    f"✓ Retrieved schema for {first_table}: {len(schema)} columns"
+                )
+
+                # Test data retrieval
+                data = analyzer.get_table_data(first_table, limit=5)
+                logger.debug(f"✓ Retrieved {len(data)} sample rows from {first_table}")
+
+            analyzer.disconnect()
+            logger.debug("✓ MySQL connection closed successfully")
+            return True
+        else:
+            logger.error("✗ MySQL connection failed")
+            return False
+
+    except Exception as e:
+        logger.error(f"✗ MySQL debug failed: {e}", exc_info=True)
+        return False
+
+
 def main():
     """Main function to run the migration agent."""
+
+    print("MySQL to Memgraph Migration Agent")
+    print("=" * 40)
+
+    # Check environment variables first
+    if not validate_environment_variables():
+        print("\n❌ Setup Error: Missing required environment variables")
+        print("\nPlease ensure you have:")
+        print("1. Created a .env file (copy from .env.example)")
+        print("2. Set your OPENAI_API_KEY")
+        print("3. Set your MYSQL_PASSWORD")
+        print("\nExample .env file:")
+        print("OPENAI_API_KEY=your_openai_key_here")
+        print("MYSQL_PASSWORD=your_mysql_password")
+        print("MYSQL_HOST=localhost")
+        print("MYSQL_USER=root")
+        print("MYSQL_DATABASE=sakila")
+        return
 
     # Example configuration for Sakila database
     mysql_config = {
@@ -422,26 +604,35 @@ def main():
         "port": int(os.getenv("MYSQL_PORT", "3306")),
     }
 
-    print("MySQL to Memgraph Migration Agent")
-    print("=" * 40)
+    try:
+        # Create and run the agent
+        agent = MySQLToMemgraphAgent()
+        result = agent.migrate(mysql_config)
 
-    # Create and run the agent
-    agent = MySQLToMemgraphAgent()
-    result = agent.migrate(mysql_config)
+        print(f"\nMigration Result:")
+        print(f"Success: {result['success']}")
+        print(
+            f"Completed Tables: {len(result['completed_tables'])}/{result['total_tables']}"
+        )
 
-    print(f"\nMigration Result:")
-    print(f"Success: {result['success']}")
-    print(
-        f"Completed Tables: {len(result['completed_tables'])}/{result['total_tables']}"
-    )
+        if result["errors"]:
+            print(f"Errors: {len(result['errors'])}")
+            for error in result["errors"]:
+                print(f"  - {error}")
 
-    if result["errors"]:
-        print(f"Errors: {len(result['errors'])}")
-        for error in result["errors"]:
-            print(f"  - {error}")
+        print(f"\nMigration Plan:")
+        print(result["migration_plan"])
 
-    print(f"\nMigration Plan:")
-    print(result["migration_plan"])
+    except ValueError as e:
+        print(f"\n❌ Configuration Error: {e}")
+        print("\nTroubleshooting steps:")
+        print("1. Check your .env file exists and contains required variables")
+        print("2. Verify your OpenAI API key is valid")
+        print("3. Test MySQL connection with: python mysql_troubleshoot.py")
+    except Exception as e:
+        print(f"\n❌ Unexpected Error: {e}")
+        print("Run with debug mode for more details")
+        logger.error(f"Unexpected error in main: {e}", exc_info=True)
 
 
 if __name__ == "__main__":

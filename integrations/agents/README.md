@@ -2,13 +2,32 @@
 
 This agent analyzes MySQL databases, generates appropriate Cypher queries, and migrates data to Memgraph using LangGraph workflow. It's specifically designed to work with the Sakila sample database but can be adapted for other MySQL databases.
 
-## Features
+## Enhanced Features (New!)
+
+### 🔗 Advanced Relationship Handling
+
+- **Foreign Keys to Relationships**: Automatically converts foreign key columns to graph relationships and removes them from node properties
+- **Join Table Detection**: Identifies many-to-many join tables and converts them to relationships with properties
+- **Smart Relationship Naming**: Multiple strategies for generating meaningful relationship names
+
+### 🎯 Configurable Relationship Naming
+
+- **Smart Strategy** (Default): Uses intelligent patterns based on common database conventions
+- **Table-Based Strategy**: Uses table names directly for relationship labels
+- **LLM Strategy**: Uses OpenAI to generate contextually appropriate relationship names
+
+### 📊 Enhanced Schema Analysis
+
+- **Entity vs Join Table Classification**: Automatically categorizes tables as entities or join tables
+- **Relationship Property Mapping**: Converts non-FK columns in join tables to relationship properties
+- **Comprehensive Foreign Key Analysis**: Deep analysis of all foreign key relationships
+
+## Core Features
 
 - **Automatic Schema Analysis**: Connects to MySQL and analyzes table structures, relationships, and constraints
 - **Intelligent Migration Planning**: Uses OpenAI GPT to generate optimal migration strategies
 - **Cypher Query Generation**: Automatically generates Cypher queries for creating nodes, relationships, and constraints
 - **Data Type Mapping**: Maps MySQL data types to appropriate Memgraph/Cypher types
-- **Relationship Detection**: Identifies foreign key relationships and converts them to graph relationships
 - **Progress Tracking**: Provides detailed progress updates and error handling
 - **Verification**: Validates migration results by comparing counts and structures
 
@@ -73,12 +92,12 @@ If you don't have the Sakila database set up:
 
 ## Usage
 
-### Basic Usage
+### Enhanced Usage with Relationship Naming Strategies
 
-Run the migration agent:
+Run the enhanced example with different relationship naming strategies:
 
 ```bash
-uv run python main.py
+uv run python enhanced_example.py
 ```
 
 ### Programmatic Usage
@@ -102,35 +121,66 @@ memgraph_config = {
     "database": "memgraph"
 }
 
-# Create and run the agent
-agent = MySQLToMemgraphAgent()
-result = agent.migrate(mysql_config, memgraph_config)
+# Create agent with different relationship naming strategies
+strategies = ["smart", "table_based", "llm"]
 
-print(f"Success: {result['success']}")
-print(f"Migrated {len(result['completed_tables'])} tables")
+for strategy in strategies:
+    print(f"Using {strategy} strategy...")
+
+    # Create agent with specific strategy
+    agent = MySQLToMemgraphAgent(relationship_naming_strategy=strategy)
+
+    # Define initial state
+    initial_state = {
+        "mysql_config": mysql_config,
+        "memgraph_config": memgraph_config,
+        "database_structure": {},
+        "migration_queries": [],
+        "migration_plan": "",
+        "current_step": "Initializing",
+        "errors": [],
+        "completed_tables": [],
+        "total_tables": 0
+    }
+
+    # Run migration
+    result = agent.workflow.invoke(initial_state)
+
+    print(f"Success: {len(result['errors']) == 0}")
+    print(f"Migrated {len(result['completed_tables'])} tables")
+    if result.get('database_structure'):
+        structure = result['database_structure']
+        print(f"Entity tables: {len(structure.get('entity_tables', {}))}")
+        print(f"Join tables: {len(structure.get('join_tables', {}))}")
+        print(f"Relationships: {len(structure.get('relationships', []))}")
 ```
 
 ## How It Works
 
-The agent follows a multi-step workflow:
+The agent follows an enhanced multi-step workflow:
 
-1. **Schema Analysis**:
+1. **Advanced Schema Analysis**:
 
    - Connects to MySQL database
    - Extracts table schemas, foreign keys, and relationships
+   - **NEW**: Classifies tables as entity tables vs join tables
+   - **NEW**: Detects many-to-many relationships via join tables
    - Counts rows in each table
 
 2. **Migration Planning**:
 
    - Uses OpenAI GPT to analyze the database structure
    - Generates an optimal migration plan considering dependencies
+   - **NEW**: Plans for both entity migration and relationship creation
    - Identifies potential issues and optimizations
 
-3. **Query Generation**:
+3. **Enhanced Query Generation**:
 
    - Maps MySQL data types to Cypher types
-   - Generates node creation queries for each table
-   - Creates relationship queries based on foreign keys
+   - **NEW**: Generates node creation queries excluding foreign key columns
+   - **NEW**: Creates one-to-many relationship queries from foreign keys
+   - **NEW**: Creates many-to-many relationship queries from join tables
+   - **NEW**: Applies configurable relationship naming strategies
    - Generates constraint and index creation queries
 
 4. **Query Validation**:
@@ -138,32 +188,121 @@ The agent follows a multi-step workflow:
    - Tests connection to Memgraph
    - Validates query syntax
 
-5. **Migration Execution**:
+5. **Enhanced Migration Execution**:
 
    - Creates constraints and indexes first
-   - Migrates data table by table
-   - Creates relationships between nodes
-   - Handles errors gracefully
+   - **NEW**: Migrates entity tables only (excludes join tables from node creation)
+   - **NEW**: Removes foreign key columns from node properties
+   - **NEW**: Creates one-to-many relationships from foreign keys
+   - **NEW**: Creates many-to-many relationships from join table data
 
 6. **Verification**:
-   - Compares node and relationship counts
-   - Provides detailed migration summary
+   - Validates migration by comparing node and relationship counts
+   - Checks data integrity and completeness
 
-## Graph Model for Sakila
+## Relationship Naming Strategies
 
-The Sakila database is converted to a graph model with the following approach:
+The agent supports three different strategies for naming relationships:
 
-- **Tables → Node Labels**: Each table becomes a node type (e.g., `film` → `Film`)
-- **Foreign Keys → Relationships**: FK relationships become directed edges
-- **Primary Keys → Node IDs**: Primary keys become unique node identifiers
-- **Data Types**: MySQL types are mapped to Cypher-compatible types
+### 1. Smart Strategy (Default)
+
+Uses intelligent patterns based on common database conventions:
+
+```python
+agent = MySQLToMemgraphAgent(relationship_naming_strategy="smart")
+```
+
+Examples:
+
+- `customer` → `order`: `PLACED`
+- `film` → `actor`: `FEATURES`
+- `film_actor` join table: `ACTED_IN`
+- `user` → `address`: `LOCATED_AT`
+
+### 2. Table-Based Strategy
+
+Uses table names directly for relationship labels:
+
+```python
+agent = MySQLToMemgraphAgent(relationship_naming_strategy="table_based")
+```
+
+Examples:
+
+- `customer` → `order`: `HAS_ORDER`
+- `film_actor` join table: `FILM_ACTOR`
+- `user` → `role`: `HAS_ROLE`
+
+### 3. LLM Strategy
+
+Uses OpenAI to generate contextually appropriate names:
+
+```python
+agent = MySQLToMemgraphAgent(relationship_naming_strategy="llm")
+```
+
+The LLM analyzes table names and context to suggest meaningful relationship names. Falls back to smart strategy if LLM fails.
+
+## Enhanced Database Structure Transformation
+
+The agent performs sophisticated transformations:
+
+### Entity Tables → Nodes
+
+- **Tables → Node Labels**: Each entity table becomes a node type
+- **Primary Keys → Node IDs**: Primary keys become unique identifiers
+- **Non-FK Columns → Properties**: Regular columns become node properties
+- **FK Columns → Removed**: Foreign key columns are excluded from properties
+
+### Join Tables → Relationships
+
+- **Junction Tables → Relationships**: Many-to-many tables become relationships
+- **Additional Columns → Relationship Properties**: Non-FK columns become relationship properties
+- **Table Detection**: Automatically identifies tables with mostly foreign keys
+
+### Foreign Keys → Relationships
+
+- **FK Constraints → Directed Edges**: Foreign keys become graph relationships
+- **Configurable Names**: Relationship labels generated using selected strategy
 
 Example transformations:
 
-- `film` table → `Film` nodes
-- `actor` table → `Actor` nodes
-- `film_actor` junction table → `ACTED_IN` relationships
-- `customer` → `Customer` nodes with `PLACED` relationships to `Rental` nodes
+**Before (MySQL)**:
+
+```sql
+-- Entity tables
+CREATE TABLE film (film_id, title, description, rating);
+CREATE TABLE actor (actor_id, first_name, last_name);
+
+-- Join table
+CREATE TABLE film_actor (
+    film_id INT REFERENCES film(film_id),
+    actor_id INT REFERENCES actor(actor_id),
+    last_update TIMESTAMP
+);
+```
+
+**After (Memgraph)**:
+
+```cypher
+// Entity nodes (FK columns removed)
+CREATE (f:Film {film_id: 1, title: "Movie", description: "...", rating: "PG"})
+CREATE (a:Actor {actor_id: 1, first_name: "John", last_name: "Doe"})
+
+// Relationship with properties from join table
+CREATE (a)-[:ACTED_IN {last_update: "2023-01-01"}]->(f)
+```
+
+## Data Type Mappings
+
+The agent maps MySQL types to Cypher-compatible types:
+
+- `INT` → `Integer`
+- `VARCHAR`/`CHAR` → `String`
+- `TEXT` → `String`
+- `DATE`/`DATETIME` → `LocalDate`/`LocalDateTime`
+- `FLOAT`/`DOUBLE` → `Float`
+- `DECIMAL` → `Decimal`
 
 ## Customization
 

@@ -121,29 +121,145 @@ class MySQLAnalyzer:
         cursor.close()
         return data
 
+    def is_join_table(
+        self,
+        table_name: str,
+        schema: List[Dict[str, Any]],
+        foreign_keys: List[Dict[str, str]],
+    ) -> bool:
+        """Determine if a table is a join table (many-to-many)."""
+        # A join table typically has:
+        # 1. Only foreign key columns (and maybe an ID or timestamp)
+        # 2. At least 2 foreign keys
+        # 3. Small number of total columns
+
+        if len(foreign_keys) < 2:
+            return False
+
+        # Count non-FK columns (excluding common metadata columns)
+        non_fk_columns = []
+        fk_column_names = {fk["column"] for fk in foreign_keys}
+        metadata_columns = [
+            "id",
+            "created_at",
+            "updated_at",
+            "created_on",
+            "updated_on",
+            "timestamp",
+        ]
+
+        for col in schema:
+            field_name = col["field"].lower()
+            if (
+                col["field"] not in fk_column_names
+                and field_name not in metadata_columns
+            ):
+                non_fk_columns.append(col["field"])
+
+        # If most columns are foreign keys, it's likely a join table
+        total_columns = len(schema)
+        fk_ratio = len(foreign_keys) / total_columns
+
+        # Consider it a join table if:
+        # - At least 2 FKs and FK ratio > 0.5, OR
+        # - All columns are FKs or metadata columns
+        return (len(foreign_keys) >= 2 and fk_ratio > 0.5) or len(non_fk_columns) == 0
+
+    def get_table_type(self, table_name: str) -> str:
+        """Determine the type of table: 'entity', 'join', or 'lookup'."""
+        schema = self.get_table_schema(table_name)
+        foreign_keys = self.get_foreign_keys(table_name)
+
+        if self.is_join_table(table_name, schema, foreign_keys):
+            return "join"
+        elif len(foreign_keys) == 0:
+            return "entity"  # Pure entity table with no references
+        else:
+            return "entity"  # Entity table with references
+
     def get_database_structure(self) -> Dict[str, Any]:
         """Get complete database structure including tables, schemas,
         and relationships."""
-        structure = {"tables": {}, "relationships": []}
+        structure = {
+            "tables": {},
+            "relationships": [],
+            "join_tables": {},
+            "entity_tables": {},
+        }
 
         tables = self.get_tables()
 
+        # First pass: categorize tables and collect basic info
         for table in tables:
+            schema = self.get_table_schema(table)
+            foreign_keys = self.get_foreign_keys(table)
+            table_type = self.get_table_type(table)
+
             structure["tables"][table] = {
-                "schema": self.get_table_schema(table),
-                "foreign_keys": self.get_foreign_keys(table),
+                "schema": schema,
+                "foreign_keys": foreign_keys,
+                "type": table_type,
+                "row_count": self.get_table_row_count(table),
             }
 
-            # Add relationships
-            for fk in structure["tables"][table]["foreign_keys"]:
-                structure["relationships"].append(
-                    {
-                        "from_table": table,
-                        "from_column": fk["column"],
-                        "to_table": fk["referenced_table"],
-                        "to_column": fk["referenced_column"],
-                    }
-                )
+            if table_type == "join":
+                structure["join_tables"][table] = structure["tables"][table]
+            else:
+                structure["entity_tables"][table] = structure["tables"][table]
+
+        # Second pass: create relationships
+        for table_name, table_info in structure["tables"].items():
+            if table_info["type"] == "join":
+                # Handle join tables as many-to-many relationships
+                fks = table_info["foreign_keys"]
+                if len(fks) >= 2:
+                    # Create a many-to-many relationship
+                    # For now, take first two FKs as the main relationship
+                    fk1, fk2 = fks[0], fks[1]
+
+                    # Get additional properties from non-FK columns
+                    fk_columns = {fk["column"] for fk in fks}
+                    additional_properties = []
+                    metadata_columns = [
+                        "id",
+                        "created_at",
+                        "updated_at",
+                        "created_on",
+                        "updated_on",
+                        "timestamp",
+                    ]
+                    for col in table_info["schema"]:
+                        if (
+                            col["field"] not in fk_columns
+                            and col["field"].lower() not in metadata_columns
+                        ):
+                            additional_properties.append(col["field"])
+
+                    structure["relationships"].append(
+                        {
+                            "type": "many_to_many",
+                            "join_table": table_name,
+                            "from_table": fk1["referenced_table"],
+                            "from_column": fk1["referenced_column"],
+                            "to_table": fk2["referenced_table"],
+                            "to_column": fk2["referenced_column"],
+                            "join_from_column": fk1["column"],
+                            "join_to_column": fk2["column"],
+                            "additional_properties": additional_properties,
+                        }
+                    )
+            else:
+                # Handle regular foreign key relationships
+                for fk in table_info["foreign_keys"]:
+                    structure["relationships"].append(
+                        {
+                            "type": "one_to_many",
+                            "from_table": table_name,
+                            "from_column": fk["column"],
+                            "to_table": fk["referenced_table"],
+                            "to_column": fk["referenced_column"],
+                        }
+                    )
 
         return structure
 
