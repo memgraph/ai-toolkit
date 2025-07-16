@@ -18,4 +18,5 @@ members = [
     "memgraph-toolbox/",
     "integrations/langchain-memgraph/",
     "integrations/mcp-memgraph/",
+    "integrations/agents",
 ]
