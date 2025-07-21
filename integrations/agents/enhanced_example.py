@@ -45,7 +45,7 @@ def main():
         print(f"{i}. {example['name']}: {example['description']}")
     print()
 
-    # Get user choice
+    # Get user choice for relationship naming strategy
     while True:
         try:
             choice = input("Select strategy (1-2) or 'q' to quit: ").strip()
@@ -61,6 +61,31 @@ def main():
                 print("Invalid choice. Please select 1-2.")
         except ValueError:
             print("Invalid input. Please enter a number or 'q'.")
+
+    print(f"\nUsing {selected_strategy['name']}")
+    print("-" * 30)
+
+    # Get user choice for table selection mode
+    print("\nTable selection mode:")
+    print("1. Interactive mode - manually select tables to migrate")
+    print("2. Automatic mode - migrate all entity tables")
+    print()
+
+    while True:
+        try:
+            mode_choice = input("Select mode (1-2): ").strip()
+            if mode_choice == "1":
+                interactive_mode = True
+                print("Using interactive table selection mode")
+                break
+            elif mode_choice == "2":
+                interactive_mode = False
+                print("Using automatic table selection mode")
+                break
+            else:
+                print("Invalid choice. Please select 1 or 2.")
+        except ValueError:
+            print("Invalid input. Please enter 1 or 2.")
 
     print(f"\nUsing {selected_strategy['name']}")
     print("-" * 30)
@@ -83,12 +108,15 @@ def main():
     }
 
     try:
-        # Create agent with selected strategy
+        # Create agent with selected strategy and table selection mode
         agent = MySQLToMemgraphAgent(
-            relationship_naming_strategy=selected_strategy["strategy"]
+            relationship_naming_strategy=selected_strategy["strategy"],
+            interactive_table_selection=interactive_mode,
         )
 
+        mode_desc = "interactive" if interactive_mode else "automatic"
         print(f"Created migration agent with {selected_strategy['strategy']} strategy")
+        print(f"Table selection mode: {mode_desc}")
 
         # Define migration state
         initial_state = {
@@ -112,7 +140,24 @@ def main():
         print("5. Verify the migration results")
 
         # Run the migration workflow
-        result = agent.workflow.invoke(initial_state)
+        if interactive_mode:
+            # For interactive mode, we need to handle the workflow differently
+            # since it uses interrupts that require special handling
+            print("\nNote: Interactive mode requires manual workflow execution")
+            print("Please use demo_langgraph_interrupt.py for full interactive demo")
+
+            # For now, run in non-interactive mode to show the results
+            print("Running in non-interactive mode for demonstration...")
+            agent_demo = MySQLToMemgraphAgent(
+                relationship_naming_strategy=selected_strategy["strategy"],
+                interactive_table_selection=False,
+            )
+            compiled_workflow = agent_demo.workflow.compile()
+            result = compiled_workflow.invoke(initial_state)
+        else:
+            # Non-interactive mode: compile and run normally
+            compiled_workflow = agent.workflow.compile()
+            result = compiled_workflow.invoke(initial_state)
 
         # Display results
         print("\n" + "=" * 50)
@@ -134,7 +179,15 @@ def main():
             print(f"\nSchema Analysis:")
             print(f"  - Entity tables: {len(structure.get('entity_tables', {}))}")
             print(f"  - Join tables: {len(structure.get('join_tables', {}))}")
+            print(f"  - Views (excluded): {len(structure.get('views', {}))}")
             print(f"  - Relationships: {len(structure.get('relationships', []))}")
+
+            # Show views that were excluded
+            if structure.get("views"):
+                print(f"\n👁️ Excluded view tables:")
+                for table_name, table_info in structure["views"].items():
+                    row_count = table_info.get("row_count", 0)
+                    print(f"  - {table_name}: {row_count} rows (view)")
 
             # Show join tables that were detected
             if structure.get("join_tables"):

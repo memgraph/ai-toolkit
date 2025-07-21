@@ -166,7 +166,11 @@ class MySQLAnalyzer:
         return (len(foreign_keys) >= 2 and fk_ratio > 0.5) or len(non_fk_columns) == 0
 
     def get_table_type(self, table_name: str) -> str:
-        """Determine the type of table: 'entity', 'join', or 'lookup'."""
+        """Determine the type of table: 'entity', 'join', 'view', or 'lookup'."""
+        # Check if it's a view first
+        if self.is_view(table_name):
+            return "view"
+
         schema = self.get_table_schema(table_name)
         foreign_keys = self.get_foreign_keys(table_name)
 
@@ -185,12 +189,16 @@ class MySQLAnalyzer:
             "relationships": [],
             "join_tables": {},
             "entity_tables": {},
+            "views": {},
         }
 
-        tables = self.get_tables()
+        # Get all tables (including views) for completeness
+        all_tables = self.get_tables()
+        # Get only real tables for migration
+        tables = self.get_tables_excluding_views()
 
         # First pass: categorize tables and collect basic info
-        for table in tables:
+        for table in all_tables:
             schema = self.get_table_schema(table)
             foreign_keys = self.get_foreign_keys(table)
             table_type = self.get_table_type(table)
@@ -202,7 +210,10 @@ class MySQLAnalyzer:
                 "row_count": self.get_table_row_count(table),
             }
 
-            if table_type == "join":
+            if table_type == "view":
+                structure["views"][table] = structure["tables"][table]
+                logger.info(f"Skipping view table: {table}")
+            elif table_type == "join":
                 structure["join_tables"][table] = structure["tables"][table]
             else:
                 structure["entity_tables"][table] = structure["tables"][table]
@@ -273,3 +284,40 @@ class MySQLAnalyzer:
         count = cursor.fetchone()[0]
         cursor.close()
         return count
+
+    def is_view(self, table_name: str) -> bool:
+        """Check if a table is actually a view."""
+        if not self.connection:
+            raise ConnectionError("Not connected to database")
+
+        cursor = self.connection.cursor()
+        query = """
+        SELECT TABLE_TYPE 
+        FROM INFORMATION_SCHEMA.TABLES 
+        WHERE TABLE_SCHEMA = %s 
+        AND TABLE_NAME = %s
+        """
+        cursor.execute(query, (self.connection_config["database"], table_name))
+        result = cursor.fetchone()
+        cursor.close()
+
+        if result:
+            return result[0] == "VIEW"
+        return False
+
+    def get_tables_excluding_views(self) -> List[str]:
+        """Get list of all tables in the database, excluding views."""
+        if not self.connection:
+            raise ConnectionError("Not connected to database")
+
+        cursor = self.connection.cursor()
+        query = """
+        SELECT TABLE_NAME 
+        FROM INFORMATION_SCHEMA.TABLES 
+        WHERE TABLE_SCHEMA = %s 
+        AND TABLE_TYPE = 'BASE TABLE'
+        """
+        cursor.execute(query, (self.connection_config["database"],))
+        tables = [table[0] for table in cursor.fetchall()]
+        cursor.close()
+        return tables

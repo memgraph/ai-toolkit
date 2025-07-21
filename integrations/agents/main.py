@@ -16,6 +16,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent / "memgraph-toolbox" / "
 sys.path.append(str(Path(__file__).parent.parent / "langchain-memgraph"))
 
 from langgraph.graph import StateGraph, END
+from langgraph.types import interrupt
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from dotenv import load_dotenv
@@ -71,13 +72,20 @@ class MigrationState(TypedDict):
 class MySQLToMemgraphAgent:
     """Agent for migrating MySQL databases to Memgraph."""
 
-    def __init__(self, relationship_naming_strategy: str = "table_based"):
+    def __init__(
+        self,
+        relationship_naming_strategy: str = "table_based",
+        interactive_table_selection: bool = True,
+    ):
         """Initialize the migration agent.
 
         Args:
             relationship_naming_strategy: Strategy for naming relationships.
                 - "table_based": Use table names directly (default)
                 - "llm": Use LLM to generate meaningful names
+            interactive_table_selection: Whether to prompt user for table selection.
+                - True: Show interactive table selection (default)
+                - False: Migrate all entity tables automatically
         """
         # Validate environment variables first
         if not validate_environment_variables():
@@ -95,6 +103,7 @@ class MySQLToMemgraphAgent:
         )
         self.mysql_analyzer = None
         self.cypher_generator = CypherGenerator(relationship_naming_strategy)
+        self.interactive_table_selection = interactive_table_selection
 
         # Set LLM for cypher generator if using LLM strategy
         if relationship_naming_strategy == "llm":
@@ -111,6 +120,7 @@ class MySQLToMemgraphAgent:
 
         # Add nodes
         workflow.add_node("analyze_mysql", self._analyze_mysql_schema)
+        workflow.add_node("select_tables", self._select_tables_for_migration)
         workflow.add_node("generate_migration_plan", self._generate_migration_plan)
         workflow.add_node("generate_cypher_queries", self._generate_cypher_queries)
         workflow.add_node("validate_queries", self._validate_queries)
@@ -118,7 +128,8 @@ class MySQLToMemgraphAgent:
         workflow.add_node("verify_migration", self._verify_migration)
 
         # Add edges
-        workflow.add_edge("analyze_mysql", "generate_migration_plan")
+        workflow.add_edge("analyze_mysql", "select_tables")
+        workflow.add_edge("select_tables", "generate_migration_plan")
         workflow.add_edge("generate_migration_plan", "generate_cypher_queries")
         workflow.add_edge("generate_cypher_queries", "validate_queries")
         workflow.add_edge("validate_queries", "execute_migration")
@@ -128,7 +139,8 @@ class MySQLToMemgraphAgent:
         # Set entry point
         workflow.set_entry_point("analyze_mysql")
 
-        return workflow.compile()
+        # Return the workflow (not compiled) so caller can add checkpointer
+        return workflow
 
     def _analyze_mysql_schema(self, state: MigrationState) -> MigrationState:
         """Analyze MySQL database schema and structure."""
@@ -151,13 +163,25 @@ class MySQLToMemgraphAgent:
                 structure["table_counts"][table_name] = count
 
             state["database_structure"] = structure
-            state["total_tables"] = len(structure["tables"])
+            # Only count entity tables for migration progress (exclude views and join tables)
+            state["total_tables"] = len(structure["entity_tables"])
             state["current_step"] = "Schema analysis completed"
 
+            # Log detailed analysis
+            views_count = len(structure.get("views", {}))
+            join_tables_count = len(structure.get("join_tables", {}))
+            entity_tables_count = len(structure.get("entity_tables", {}))
+
             logger.info(
-                f"Found {len(structure['tables'])} tables and "
-                f"{len(structure['relationships'])} relationships"
+                f"Found {len(structure['tables'])} total tables: "
+                f"{entity_tables_count} entities, "
+                f"{join_tables_count} join tables, "
+                f"{views_count} views, "
+                f"and {len(structure['relationships'])} relationships"
             )
+
+            if views_count > 0:
+                logger.info(f"Skipping {views_count} view tables from migration")
 
         except Exception as e:
             logger.error(f"Error analyzing MySQL schema: {e}")
@@ -505,8 +529,19 @@ class MySQLToMemgraphAgent:
         )
 
         try:
-            # Execute workflow
-            final_state = self.workflow.invoke(initial_state)
+            # For non-interactive mode, compile workflow without checkpointer
+            if not self.interactive_table_selection:
+                compiled_workflow = self.workflow.compile()
+                final_state = compiled_workflow.invoke(initial_state)
+            else:
+                # For interactive mode, import and use checkpointer
+                from langgraph.checkpoint.memory import MemorySaver
+
+                memory = MemorySaver()
+                compiled_workflow = self.workflow.compile(checkpointer=memory)
+
+                # This will require proper handling of interrupts in calling code
+                final_state = compiled_workflow.invoke(initial_state)
 
             # Cleanup connections
             if self.mysql_analyzer:
@@ -533,6 +568,198 @@ class MySQLToMemgraphAgent:
                 "total_tables": 0,
                 "final_step": "Failed",
             }
+
+    def _select_tables_for_migration(self, state: MigrationState) -> MigrationState:
+        """Allow human to select which tables to migrate using LangGraph interrupt."""
+        logger.info("Starting table selection process...")
+
+        try:
+            structure = state["database_structure"]
+            entity_tables = structure.get("entity_tables", {})
+            join_tables = structure.get("join_tables", {})
+            views = structure.get("views", {})
+
+            if not entity_tables:
+                logger.warning("No entity tables found for migration")
+                state["current_step"] = "No tables available for migration"
+                return state
+
+            # Non-interactive mode: select all entity tables
+            if not self.interactive_table_selection:
+                selected_tables = list(entity_tables.keys())
+                logger.info(
+                    f"Non-interactive mode: selecting all {len(selected_tables)} entity tables"
+                )
+
+                # Update the database structure with all tables
+                structure["selected_tables"] = selected_tables
+                state["database_structure"] = structure
+                state["total_tables"] = len(selected_tables)
+
+                # Keep all relationships as they are
+                state[
+                    "current_step"
+                ] = "All tables selected for migration (non-interactive)"
+                return state
+
+            # Interactive mode: use LangGraph interrupt for human input
+            # Prepare table information for human review
+            table_info = {"entity_tables": [], "join_tables": [], "views": []}
+
+            # Format entity tables with details
+            for i, (table_name, table_data) in enumerate(entity_tables.items(), 1):
+                row_count = table_data.get("row_count", 0)
+                fk_count = len(table_data.get("foreign_keys", []))
+                table_info["entity_tables"].append(
+                    {
+                        "number": i,
+                        "name": table_name,
+                        "row_count": row_count,
+                        "foreign_key_count": fk_count,
+                    }
+                )
+
+            # Format join tables for context
+            for table_name, table_data in join_tables.items():
+                row_count = table_data.get("row_count", 0)
+                fk_count = len(table_data.get("foreign_keys", []))
+                table_info["join_tables"].append(
+                    {
+                        "name": table_name,
+                        "row_count": row_count,
+                        "foreign_key_count": fk_count,
+                    }
+                )
+
+            # Format views for context
+            for table_name, table_data in views.items():
+                row_count = table_data.get("row_count", 0)
+                table_info["views"].append({"name": table_name, "row_count": row_count})
+
+            # Use LangGraph interrupt to pause for human input
+            logger.info("Requesting human input for table selection...")
+            user_response = interrupt(
+                {
+                    "type": "table_selection",
+                    "message": "Please select which tables to migrate",
+                    "table_info": table_info,
+                    "instructions": {
+                        "options": [
+                            "'all' - Migrate all entity tables",
+                            "'1,3,5' - Migrate specific tables by number",
+                            "'1-5' - Migrate range of tables",
+                            "'none' - Skip migration (exit)",
+                        ]
+                    },
+                }
+            )
+
+            # Process the human response
+            if not user_response or "selection" not in user_response:
+                raise ValueError("No table selection received from user")
+
+            selection = user_response["selection"].strip()
+            table_list = [table["name"] for table in table_info["entity_tables"]]
+
+            # Parse user selection
+            if selection.lower() == "none":
+                logger.info("Migration cancelled by user.")
+                state["errors"].append("Migration cancelled by user")
+                state["current_step"] = "Migration cancelled"
+                return state
+
+            elif selection.lower() == "all":
+                selected_tables = list(entity_tables.keys())
+
+            elif "," in selection:
+                # Handle comma-separated list (e.g., "1,3,5")
+                indices = []
+                for part in selection.split(","):
+                    try:
+                        idx = int(part.strip()) - 1
+                        if 0 <= idx < len(table_list):
+                            indices.append(idx)
+                        else:
+                            raise ValueError(f"Invalid table number: {part.strip()}")
+                    except ValueError as e:
+                        raise ValueError(f"Invalid number in selection: {part.strip()}")
+
+                selected_tables = [table_list[i] for i in indices]
+
+            elif "-" in selection:
+                # Handle range (e.g., "1-5")
+                try:
+                    start, end = selection.split("-")
+                    start_idx = int(start.strip()) - 1
+                    end_idx = int(end.strip()) - 1
+
+                    if (
+                        0 <= start_idx < len(table_list)
+                        and 0 <= end_idx < len(table_list)
+                        and start_idx <= end_idx
+                    ):
+                        selected_tables = table_list[start_idx : end_idx + 1]
+                    else:
+                        raise ValueError("Invalid range")
+                except ValueError:
+                    raise ValueError("Invalid range format. Use format like '1-5'")
+
+            else:
+                # Handle single number
+                try:
+                    idx = int(selection) - 1
+                    if 0 <= idx < len(table_list):
+                        selected_tables = [table_list[idx]]
+                    else:
+                        raise ValueError("Invalid table number")
+                except ValueError:
+                    raise ValueError(
+                        f"Invalid selection. Please enter a number between 1 and {len(table_list)}, 'all', or 'none'"
+                    )
+
+            # Filter the structure to only include selected tables
+            filtered_entity_tables = {
+                table_name: table_info
+                for table_name, table_info in entity_tables.items()
+                if table_name in selected_tables
+            }
+
+            # Update the database structure with filtered tables
+            structure["entity_tables"] = filtered_entity_tables
+            structure["selected_tables"] = selected_tables
+            state["database_structure"] = structure
+            state["total_tables"] = len(selected_tables)
+
+            # Filter relationships to only include those involving selected tables
+            filtered_relationships = []
+            for rel in structure.get("relationships", []):
+                if rel["type"] == "many_to_many":
+                    # Include if both tables in the relationship are selected
+                    if (
+                        rel["from_table"] in selected_tables
+                        and rel["to_table"] in selected_tables
+                    ):
+                        filtered_relationships.append(rel)
+                else:
+                    # Include if the from_table is selected
+                    if rel["from_table"] in selected_tables:
+                        filtered_relationships.append(rel)
+
+            structure["relationships"] = filtered_relationships
+
+            logger.info(
+                f"User selected {len(selected_tables)} tables for migration: {', '.join(selected_tables)}"
+            )
+            logger.info(f"{len(filtered_relationships)} relationships will be created")
+
+            state["current_step"] = "Tables selected for migration"
+
+        except Exception as e:
+            logger.error(f"Error in table selection: {e}")
+            state["errors"].append(f"Table selection failed: {e}")
+            state["current_step"] = "Table selection failed"
+
+        return state
 
 
 def debug_mysql_connection(mysql_config: Dict[str, str]) -> bool:
