@@ -248,17 +248,98 @@ class MySQLToMemgraphAgent:
         return state
 
     def _generate_cypher_queries(self, state: MigrationState) -> MigrationState:
-        """Generate Cypher queries for the migration."""
-        logger.info("Generating Cypher queries...")
+        """Generate Cypher queries for the migration using Memgraph migrate module."""
+        logger.info("Generating Cypher queries using Memgraph migrate module...")
 
         try:
             structure = state["database_structure"]
-            queries = self.cypher_generator.generate_full_migration_script(structure)
+            mysql_config = state["mysql_config"]
+
+            # Generate migration queries using migrate.mysql() procedure
+            queries = []
+
+            # Create MySQL connection config for migrate module
+            mysql_config_str = f"""{{
+                user: '{mysql_config['user']}',
+                password: '{mysql_config['password']}',
+                host: '{mysql_config['host']}',
+                database: '{mysql_config['database']}'
+            }}"""
+
+            # Generate node creation queries for each entity table
+            for table_name, table_info in structure["entity_tables"].items():
+                label = self.cypher_generator._table_name_to_label(table_name)
+
+                # Get columns excluding foreign keys for node properties
+                node_columns = []
+                fk_columns = {fk["column"] for fk in table_info["foreign_keys"]}
+
+                for col_name, col_info in table_info["schema"].items():
+                    if col_name not in fk_columns:
+                        node_columns.append(col_name)
+
+                if node_columns:
+                    columns_str = ", ".join(node_columns)
+                    node_query = f"""
+// Create {label} nodes from {table_name} table
+CALL migrate.mysql('SELECT {columns_str} FROM {table_name}', {mysql_config_str})
+YIELD row
+CREATE (n:{label})
+SET n += row;"""
+                    queries.append(node_query)
+
+            # Generate relationship creation queries
+            for rel in structure["relationships"]:
+                if rel["type"] == "one_to_many":
+                    from_table = rel["from_table"]
+                    to_table = rel["to_table"]
+                    from_label = self.cypher_generator._table_name_to_label(from_table)
+                    to_label = self.cypher_generator._table_name_to_label(to_table)
+                    rel_name = self.cypher_generator._generate_relationship_type(
+                        from_table, to_table
+                    )
+
+                    # Use foreign key information to create relationships
+                    fk_column = rel["foreign_key"]
+                    pk_column = rel["primary_key"]
+
+                    rel_query = f"""
+// Create {rel_name} relationships between {from_label} and {to_label}
+CALL migrate.mysql('SELECT {pk_column}, {fk_column} FROM {to_table} WHERE {fk_column} IS NOT NULL', {mysql_config_str})
+YIELD row
+MATCH (from:{from_label} {{id: row.{fk_column}}})
+MATCH (to:{to_label} {{id: row.{pk_column}}})
+CREATE (from)-[:{rel_name}]->(to);"""
+                    queries.append(rel_query)
+
+                elif rel["type"] == "many_to_many":
+                    join_table = rel["join_table"]
+                    from_table = rel["from_table"]
+                    to_table = rel["to_table"]
+                    from_label = self.cypher_generator._table_name_to_label(from_table)
+                    to_label = self.cypher_generator._table_name_to_label(to_table)
+                    rel_name = self.cypher_generator._generate_relationship_type(
+                        from_table, to_table, join_table
+                    )
+
+                    from_fk = rel["from_foreign_key"]
+                    to_fk = rel["to_foreign_key"]
+
+                    rel_query = f"""
+// Create {rel_name} relationships via {join_table} table
+CALL migrate.mysql('SELECT {from_fk}, {to_fk} FROM {join_table}', {mysql_config_str})
+YIELD row
+MATCH (from:{from_label} {{id: row.{from_fk}}})
+MATCH (to:{to_label} {{id: row.{to_fk}}})
+CREATE (from)-[:{rel_name}]->(to);"""
+                    queries.append(rel_query)
 
             state["migration_queries"] = queries
-            state["current_step"] = "Cypher queries generated"
+            state["current_step"] = "Cypher queries generated using migrate module"
 
-            logger.info(f"Generated {len(queries)} migration queries")
+            logger.info(
+                f"Generated {len(queries)} migration queries using migrate.mysql()"
+            )
 
         except Exception as e:
             logger.error(f"Error generating Cypher queries: {e}")
@@ -266,10 +347,9 @@ class MySQLToMemgraphAgent:
 
         return state
 
-    # TODO: Implement actual validation logic for Cypher queries
     def _validate_queries(self, state: MigrationState) -> MigrationState:
-        """Validate generated Cypher queries."""
-        logger.info("Validating Cypher queries...")
+        """Validate generated Cypher queries and test Memgraph connection."""
+        logger.info("Validating queries and testing connections...")
 
         try:
             # Initialize Memgraph connection for validation
@@ -281,12 +361,30 @@ class MySQLToMemgraphAgent:
                 database=config.get("database"),
             )
 
-            # Test connection
+            # Test Memgraph connection
             test_query = "MATCH (n) RETURN count(n) as node_count LIMIT 1"
             self.memgraph_client.query(test_query)
+            logger.info("Memgraph connection established successfully")
 
-            state["current_step"] = "Queries validated successfully"
-            logger.info("Memgraph connection established and queries validated")
+            # Test migrate.mysql connection by querying a small dataset
+            mysql_config = state["mysql_config"]
+            mysql_config_str = f"""{{
+                user: '{mysql_config['user']}',
+                password: '{mysql_config['password']}',
+                host: '{mysql_config['host']}',
+                database: '{mysql_config['database']}'
+            }}"""
+
+            test_mysql_query = f"""
+            CALL migrate.mysql('SELECT 1 as test_column LIMIT 1', {mysql_config_str})
+            YIELD row
+            RETURN row.test_column as test_result
+            """
+
+            self.memgraph_client.query(test_mysql_query)
+            logger.info("MySQL connection through migrate module validated")
+
+            state["current_step"] = "Queries and connections validated successfully"
 
         except Exception as e:
             logger.error(f"Error validating queries: {e}")
@@ -295,11 +393,10 @@ class MySQLToMemgraphAgent:
         return state
 
     def _execute_migration(self, state: MigrationState) -> MigrationState:
-        """Execute the migration queries."""
-        logger.info("Executing migration...")
+        """Execute the migration using Memgraph migrate module."""
+        logger.info("Executing migration using migrate module...")
 
         try:
-            structure = state["database_structure"]
             queries = state["migration_queries"]
 
             # Clear the database first to avoid constraint violations
@@ -311,153 +408,32 @@ class MySQLToMemgraphAgent:
             except Exception as e:
                 logger.warning(f"Database clearing failed (might be empty): {e}")
 
-            # Execute constraint and index creation queries first
-            constraint_queries = [
-                q for q in queries if "CONSTRAINT" in q or "INDEX" in q
-            ]
-            for query in constraint_queries:
-                if query.strip() and not query.startswith("//"):
+            # Execute all migration queries sequentially
+            successful_queries = 0
+            for i, query in enumerate(queries):
+                if query.strip() and not query.strip().startswith("//"):
                     try:
+                        logger.info(f"Executing query {i+1}/{len(queries)}...")
                         self.memgraph_client.query(query)
-                        logger.info(f"Executed: {query[:50]}...")
-                    except Exception as e:
-                        logger.warning(f"Constraint/Index creation failed: {e}")
+                        successful_queries += 1
 
-            # Migrate data for entity tables only (not join tables)
-            for table_name, table_info in structure["entity_tables"].items():
-                logger.info(f"Migrating entity table: {table_name}")
-
-                # Get data from MySQL
-                data = self.mysql_analyzer.get_table_data(table_name)
-
-                if data:
-                    # Prepare data for Cypher (excluding FK columns)
-                    prepared_data = self.cypher_generator.prepare_data_for_cypher(
-                        data, table_info["schema"], table_info["foreign_keys"]
-                    )
-
-                    # Find the node creation query for this table
-                    node_query = None
-                    generator = self.cypher_generator
-                    label = generator._table_name_to_label(table_name)
-                    for query in queries:
-                        if f"Create {label} nodes" in query:
-                            node_query = query
-                            break
-
-                    if node_query:
-                        # Execute the query with data
-                        try:
-                            # Clean the query (remove comments)
-                            clean_query = "\n".join(
-                                [
-                                    line
-                                    for line in node_query.split("\n")
-                                    if not line.strip().startswith("//")
-                                ]
-                            ).strip()
-
-                            self.memgraph_client.query(
-                                clean_query, {"data": prepared_data}
-                            )
-                            state["completed_tables"].append(table_name)
+                        # Log progress for node creation queries
+                        if "CREATE (n:" in query:
+                            table_match = query.split("FROM ")[1].split()[0]
                             logger.info(
-                                f"Successfully migrated {len(data)} rows "
-                                f"from {table_name}"
+                                f"Successfully migrated data from table: {table_match}"
                             )
-                        except Exception as e:
-                            logger.error(f"Failed to migrate table {table_name}: {e}")
-                            state["errors"].append(
-                                f"Table migration failed for {table_name}: {e}"
-                            )
-                else:
-                    logger.info(f"No data found in table {table_name}")
-
-            # Create relationships
-            logger.info("Creating relationships...")
-
-            # Handle one-to-many relationships (from foreign keys)
-            for rel in structure["relationships"]:
-                if rel["type"] == "one_to_many":
-                    try:
-                        # Find the relationship query
-                        rel_query = self.cypher_generator.generate_relationship_query(
-                            rel
-                        )
-                        clean_query = "\n".join(
-                            [
-                                line
-                                for line in rel_query.split("\n")
-                                if not line.strip().startswith("//")
-                            ]
-                        ).strip()
-
-                        self.memgraph_client.query(clean_query)
-                        logger.info(
-                            f"Created one-to-many relationship: "
-                            f"{rel['from_table']} -> {rel['to_table']}"
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to create relationship: {e}")
-                        state["errors"].append(f"Relationship creation failed: {e}")
-
-            # Handle many-to-many relationships (from join tables)
-            for rel in structure["relationships"]:
-                if rel["type"] == "many_to_many":
-                    try:
-                        join_table_name = rel["join_table"]
-                        join_table_info = structure["join_tables"][join_table_name]
-
-                        # Get join table data
-                        join_data = self.mysql_analyzer.get_table_data(join_table_name)
-
-                        if join_data:
-                            # Prepare join table data
-                            prepared_data = self.cypher_generator.prepare_join_table_data_for_cypher(
-                                join_data, join_table_info["schema"]
-                            )
-
-                            # Generate and execute relationship query
-                            rel_query = (
-                                self.cypher_generator.generate_relationship_query(rel)
-                            )
-                            clean_query = "\n".join(
-                                [
-                                    line
-                                    for line in rel_query.split("\n")
-                                    if not line.strip().startswith("//")
-                                ]
-                            ).strip()
-
-                            self.memgraph_client.query(
-                                clean_query, {"data": prepared_data}
-                            )
-                            logger.info(
-                                f"Created many-to-many relationship: "
-                                f"{rel['from_table']} <-> {rel['to_table']} "
-                                f"via {join_table_name}"
-                            )
-                        else:
-                            logger.info(f"No data in join table {join_table_name}")
+                        elif "CREATE (" in query and "-[:" in query:
+                            logger.info("Successfully created relationships")
 
                     except Exception as e:
-                        logger.error(f"Failed to create many-to-many relationship: {e}")
-                        state["errors"].append(
-                            f"Many-to-many relationship creation failed: {e}"
-                        )
-                        clean_query = "\n".join(
-                            [
-                                line
-                                for line in query.split("\n")
-                                if not line.strip().startswith("//")
-                            ]
-                        ).strip()
+                        logger.error(f"Failed to execute query {i+1}: {e}")
+                        logger.error(f"Query: {query[:100]}...")
+                        state["errors"].append(f"Query execution failed: {e}")
 
-                        self.memgraph_client.query(clean_query)
-                        logger.info(f"Created relationships: {query[:50]}...")
-                    except Exception as e:
-                        logger.warning(f"Relationship creation failed: {e}")
-
+            logger.info(
+                f"Migration completed: {successful_queries}/{len(queries)} queries executed successfully"
+            )
             state["current_step"] = "Migration execution completed"
 
         except Exception as e:

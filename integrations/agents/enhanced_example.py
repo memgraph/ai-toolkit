@@ -216,40 +216,5 @@ def main():
         logging.error(f"Migration error: {e}", exc_info=True)
 
 
-def demo_relationship_naming():
-    """Demonstrate different relationship naming strategies."""
-    from cypher_generator import CypherGenerator
-
-    print("\n" + "=" * 50)
-    print("RELATIONSHIP NAMING DEMO")
-    print("=" * 50)
-
-    # Sample relationship data
-    sample_relationships = [
-        ("customer", "order"),
-        ("film", "actor"),
-        ("user", "role"),
-        ("product", "category"),
-        ("order", "order_item"),
-    ]
-
-    strategies = ["table_based"]
-
-    for strategy in strategies:
-        print(f"\n{strategy.upper()} STRATEGY:")
-        print("-" * 20)
-
-        generator = CypherGenerator(strategy)
-
-        for from_table, to_table in sample_relationships:
-            rel_name = generator._generate_relationship_type(from_table, to_table)
-            print(f"  {from_table} -> {to_table}: {rel_name}")
-
-
 if __name__ == "__main__":
     main()
-
-    # Optionally run the naming demo
-    run_demo = input("\nWould you like to see the relationship naming demo? (y/n): ")
-    if run_demo.lower().startswith("y"):
-        demo_relationship_naming()
