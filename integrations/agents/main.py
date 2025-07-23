@@ -385,6 +385,7 @@ SET n += row;"""
 
                     # FK column and what it references
                     fk_column = rel["from_column"]  # FK column name
+                    to_column = rel["to_column"]  # Referenced column name
 
                     # Get the PK of the from_table (assume first column is PK)
                     from_table_info = structure["entity_tables"][from_table]
@@ -394,8 +395,8 @@ SET n += row;"""
 // Create {rel_name} relationships between {from_label} and {to_label}
 CALL migrate.mysql('SELECT {from_pk}, {fk_column} FROM {from_table} WHERE {fk_column} IS NOT NULL', {mysql_config_str})
 YIELD row
-MATCH (from_node:{from_label} {{id: row.{from_pk}}})
-MATCH (to_node:{to_label} {{id: row.{fk_column}}})
+MATCH (from_node:{from_label} {{{from_pk}: row.{from_pk}}})
+MATCH (to_node:{to_label} {{{to_column}: row.{fk_column}}})
 CREATE (from_node)-[:{rel_name}]->(to_node);"""
                     queries.append(rel_query)
 
@@ -409,15 +410,17 @@ CREATE (from_node)-[:{rel_name}]->(to_node);"""
                         from_table, to_table, join_table
                     )
 
-                    from_fk = rel["join_from_column"]  # Changed from "from_foreign_key"
-                    to_fk = rel["join_to_column"]  # Changed from "to_foreign_key"
+                    from_fk = rel["join_from_column"]  # FK column in join table
+                    to_fk = rel["join_to_column"]  # FK column in join table
+                    from_pk = rel["from_column"]  # PK column in from_table
+                    to_pk = rel["to_column"]  # PK column in to_table
 
                     rel_query = f"""
 // Create {rel_name} relationships via {join_table} table
 CALL migrate.mysql('SELECT {from_fk}, {to_fk} FROM {join_table}', {mysql_config_str})
 YIELD row
-MATCH (from:{from_label} {{id: row.{from_fk}}})
-MATCH (to:{to_label} {{id: row.{to_fk}}})
+MATCH (from:{from_label} {{{from_pk}: row.{from_fk}}})
+MATCH (to:{to_label} {{{to_pk}: row.{to_fk}}})
 CREATE (from)-[:{rel_name}]->(to);"""
                     queries.append(rel_query)
 

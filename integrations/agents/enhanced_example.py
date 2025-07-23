@@ -205,7 +205,7 @@ def main():
             for rel_type, rels in relationships_by_type.items():
                 print(f"  - {rel_type}: {len(rels)} relationships")
 
-        print(f"\nFinal status: {result['current_step']}")
+        print(f"\nFinal status: {result.get('final_step', 'Unknown')}")
 
     except (ValueError, ConnectionError, RuntimeError) as e:
         print(f"❌ Migration failed: {e}")
