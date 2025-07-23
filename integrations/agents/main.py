@@ -67,6 +67,8 @@ class MigrationState(TypedDict):
     errors: List[str]
     completed_tables: List[str]
     total_tables: int
+    created_indexes: List[str]
+    created_constraints: List[str]
 
 
 class MySQLToMemgraphAgent:
@@ -114,6 +116,23 @@ class MySQLToMemgraphAgent:
         # Build the workflow graph
         self.workflow = self._build_workflow()
 
+    def _get_mysql_config_for_migrate(self, mysql_config: Dict[str, str]) -> str:
+        """
+        Convert MySQL config for use with migrate module in Memgraph container.
+
+        Adjusts localhost/127.0.0.1 to host.docker.internal for Docker networking.
+        """
+        migrate_host = mysql_config["host"]
+        if migrate_host == "localhost" or migrate_host == "127.0.0.1":
+            migrate_host = "host.docker.internal"
+
+        return f"""{{
+            user: '{mysql_config['user']}',
+            password: '{mysql_config['password']}',
+            host: '{migrate_host}',
+            database: '{mysql_config['database']}'
+        }}"""
+
     def _build_workflow(self) -> StateGraph:
         """Build the LangGraph workflow."""
         workflow = StateGraph(MigrationState)
@@ -122,6 +141,7 @@ class MySQLToMemgraphAgent:
         workflow.add_node("analyze_mysql", self._analyze_mysql_schema)
         workflow.add_node("select_tables", self._select_tables_for_migration)
         workflow.add_node("generate_migration_plan", self._generate_migration_plan)
+        workflow.add_node("create_indexes", self._create_indexes)
         workflow.add_node("generate_cypher_queries", self._generate_cypher_queries)
         workflow.add_node("validate_queries", self._validate_queries)
         workflow.add_node("execute_migration", self._execute_migration)
@@ -130,7 +150,8 @@ class MySQLToMemgraphAgent:
         # Add edges
         workflow.add_edge("analyze_mysql", "select_tables")
         workflow.add_edge("select_tables", "generate_migration_plan")
-        workflow.add_edge("generate_migration_plan", "generate_cypher_queries")
+        workflow.add_edge("generate_migration_plan", "create_indexes")
+        workflow.add_edge("create_indexes", "generate_cypher_queries")
         workflow.add_edge("generate_cypher_queries", "validate_queries")
         workflow.add_edge("validate_queries", "execute_migration")
         workflow.add_edge("execute_migration", "verify_migration")
@@ -247,6 +268,69 @@ class MySQLToMemgraphAgent:
 
         return state
 
+    def _create_indexes(self, state: MigrationState) -> MigrationState:
+        """Create indexes and constraints in Memgraph before migration."""
+        logger.info("Creating indexes and constraints in Memgraph...")
+
+        try:
+            memgraph = Memgraph(**state["memgraph_config"])
+            structure = state["database_structure"]
+
+            # Track created indexes
+            created_indexes = []
+            created_constraints = []
+
+            # Create indexes and constraints for each entity table
+            for table_name, table_info in structure["entity_tables"].items():
+                schema = table_info["schema"]
+
+                # Generate index queries
+                index_queries = self.cypher_generator.generate_index_queries(
+                    table_name, schema
+                )
+
+                # Generate constraint queries
+                constraint_queries = self.cypher_generator.generate_constraint_queries(
+                    table_name, schema
+                )
+
+                # Execute constraint queries first
+                for query in constraint_queries:
+                    try:
+                        logger.info(f"Creating constraint: {query}")
+                        memgraph.query(query)
+                        created_constraints.append(query)
+                    except Exception as e:
+                        # Some constraints might already exist, continue
+                        logger.warning("Constraint creation warning: %s", e)
+
+                # Execute index queries
+                for query in index_queries:
+                    try:
+                        logger.info(f"Creating index: {query}")
+                        memgraph.query(query)
+                        created_indexes.append(query)
+                    except Exception as e:
+                        # Some indexes might already exist, log but continue
+                        logger.warning("Index creation warning: %s", e)
+
+            # Store results in state
+            state["created_indexes"] = created_indexes
+            state["created_constraints"] = created_constraints
+            state["current_step"] = "Indexes and constraints created"
+
+            logger.info(
+                "Created %d constraints and %d indexes",
+                len(created_constraints),
+                len(created_indexes),
+            )
+
+        except Exception as e:
+            logger.error("Error creating indexes: %s", e)
+            state["errors"].append(f"Index creation failed: {e}")
+
+        return state
+
     def _generate_cypher_queries(self, state: MigrationState) -> MigrationState:
         """Generate Cypher queries for the migration using Memgraph migrate module."""
         logger.info("Generating Cypher queries using Memgraph migrate module...")
@@ -259,23 +343,23 @@ class MySQLToMemgraphAgent:
             queries = []
 
             # Create MySQL connection config for migrate module
-            mysql_config_str = f"""{{
-                user: '{mysql_config['user']}',
-                password: '{mysql_config['password']}',
-                host: '{mysql_config['host']}',
-                database: '{mysql_config['database']}'
-            }}"""
+            mysql_config_str = self._get_mysql_config_for_migrate(mysql_config)
 
             # Generate node creation queries for each entity table
-            for table_name, table_info in structure["entity_tables"].items():
+            entity_tables = structure.get("entity_tables", {})
+
+            for table_name, table_info in entity_tables.items():
                 label = self.cypher_generator._table_name_to_label(table_name)
 
                 # Get columns excluding foreign keys for node properties
                 node_columns = []
-                fk_columns = {fk["column"] for fk in table_info["foreign_keys"]}
+                fk_columns = {fk["column"] for fk in table_info.get("foreign_keys", [])}
 
-                for col_name, col_info in table_info["schema"].items():
-                    if col_name not in fk_columns:
+                # Schema is a list of column dictionaries, not a dict
+                schema_list = table_info.get("schema", [])
+                for col_info in schema_list:
+                    col_name = col_info.get("field")
+                    if col_name and col_name not in fk_columns:
                         node_columns.append(col_name)
 
                 if node_columns:
@@ -291,25 +375,28 @@ SET n += row;"""
             # Generate relationship creation queries
             for rel in structure["relationships"]:
                 if rel["type"] == "one_to_many":
-                    from_table = rel["from_table"]
-                    to_table = rel["to_table"]
+                    from_table = rel["from_table"]  # Table with FK
+                    to_table = rel["to_table"]  # Referenced table
                     from_label = self.cypher_generator._table_name_to_label(from_table)
                     to_label = self.cypher_generator._table_name_to_label(to_table)
                     rel_name = self.cypher_generator._generate_relationship_type(
                         from_table, to_table
                     )
 
-                    # Use foreign key information to create relationships
-                    fk_column = rel["foreign_key"]
-                    pk_column = rel["primary_key"]
+                    # FK column and what it references
+                    fk_column = rel["from_column"]  # FK column name
+
+                    # Get the PK of the from_table (assume first column is PK)
+                    from_table_info = structure["entity_tables"][from_table]
+                    from_pk = from_table_info["schema"][0]["field"]
 
                     rel_query = f"""
 // Create {rel_name} relationships between {from_label} and {to_label}
-CALL migrate.mysql('SELECT {pk_column}, {fk_column} FROM {to_table} WHERE {fk_column} IS NOT NULL', {mysql_config_str})
+CALL migrate.mysql('SELECT {from_pk}, {fk_column} FROM {from_table} WHERE {fk_column} IS NOT NULL', {mysql_config_str})
 YIELD row
-MATCH (from:{from_label} {{id: row.{fk_column}}})
-MATCH (to:{to_label} {{id: row.{pk_column}}})
-CREATE (from)-[:{rel_name}]->(to);"""
+MATCH (from_node:{from_label} {{id: row.{from_pk}}})
+MATCH (to_node:{to_label} {{id: row.{fk_column}}})
+CREATE (from_node)-[:{rel_name}]->(to_node);"""
                     queries.append(rel_query)
 
                 elif rel["type"] == "many_to_many":
@@ -322,8 +409,8 @@ CREATE (from)-[:{rel_name}]->(to);"""
                         from_table, to_table, join_table
                     )
 
-                    from_fk = rel["from_foreign_key"]
-                    to_fk = rel["to_foreign_key"]
+                    from_fk = rel["join_from_column"]  # Changed from "from_foreign_key"
+                    to_fk = rel["join_to_column"]  # Changed from "to_foreign_key"
 
                     rel_query = f"""
 // Create {rel_name} relationships via {join_table} table
@@ -368,12 +455,7 @@ CREATE (from)-[:{rel_name}]->(to);"""
 
             # Test migrate.mysql connection by querying a small dataset
             mysql_config = state["mysql_config"]
-            mysql_config_str = f"""{{
-                user: '{mysql_config['user']}',
-                password: '{mysql_config['password']}',
-                host: '{mysql_config['host']}',
-                database: '{mysql_config['database']}'
-            }}"""
+            mysql_config_str = self._get_mysql_config_for_migrate(mysql_config)
 
             test_mysql_query = f"""
             CALL migrate.mysql('SELECT 1 as test_column LIMIT 1', {mysql_config_str})
@@ -403,7 +485,7 @@ CREATE (from)-[:{rel_name}]->(to);"""
             try:
                 logger.info("Clearing existing data from Memgraph...")
                 self.memgraph_client.query("MATCH (n) DETACH DELETE n")
-                self.memgraph_client.query("DROP CONSTRAINT ON (n) ASSERT exists(n.id)")
+                # Skip constraint dropping as it's not critical and has syntax issues
                 logger.info("Database cleared successfully")
             except Exception as e:
                 logger.warning(f"Database clearing failed (might be empty): {e}")
@@ -411,7 +493,13 @@ CREATE (from)-[:{rel_name}]->(to);"""
             # Execute all migration queries sequentially
             successful_queries = 0
             for i, query in enumerate(queries):
-                if query.strip() and not query.strip().startswith("//"):
+                # Skip empty queries, but don't skip queries that contain comments
+                query_lines = [line.strip() for line in query.strip().split("\n")]
+                non_comment_lines = [
+                    line for line in query_lines if line and not line.startswith("//")
+                ]
+
+                if non_comment_lines:  # Has actual Cypher code
                     try:
                         logger.info(f"Executing query {i+1}/{len(queries)}...")
                         self.memgraph_client.query(query)
@@ -502,6 +590,8 @@ CREATE (from)-[:{rel_name}]->(to);"""
             errors=[],
             completed_tables=[],
             total_tables=0,
+            created_indexes=[],
+            created_constraints=[],
         )
 
         try:
@@ -738,45 +828,6 @@ CREATE (from)-[:{rel_name}]->(to);"""
         return state
 
 
-def debug_mysql_connection(mysql_config: Dict[str, str]) -> bool:
-    """Debug MySQL connection specifically."""
-    logger.debug("Starting MySQL connection debug...")
-
-    try:
-        analyzer = MySQLAnalyzer(**mysql_config)
-        logger.debug(f"Created MySQLAnalyzer with config: {mysql_config}")
-
-        if analyzer.connect():
-            logger.debug("✓ MySQL connection successful")
-
-            # Test basic operations
-            tables = analyzer.get_tables()
-            logger.debug(f"✓ Found {len(tables)} tables: {tables}")
-
-            if tables:
-                # Test schema retrieval
-                first_table = tables[0]
-                schema = analyzer.get_table_schema(first_table)
-                logger.debug(
-                    f"✓ Retrieved schema for {first_table}: {len(schema)} columns"
-                )
-
-                # Test data retrieval
-                data = analyzer.get_table_data(first_table, limit=5)
-                logger.debug(f"✓ Retrieved {len(data)} sample rows from {first_table}")
-
-            analyzer.disconnect()
-            logger.debug("✓ MySQL connection closed successfully")
-            return True
-        else:
-            logger.error("✗ MySQL connection failed")
-            return False
-
-    except Exception as e:
-        logger.error(f"✗ MySQL debug failed: {e}", exc_info=True)
-        return False
-
-
 def main():
     """Main function to run the migration agent."""
 
@@ -800,7 +851,7 @@ def main():
 
     # Example configuration for Sakila database
     mysql_config = {
-        "host": os.getenv("MYSQL_HOST", "localhost"),
+        "host": os.getenv("MYSQL_HOST", "host.docker.internal"),
         "user": os.getenv("MYSQL_USER", "root"),
         "password": os.getenv("MYSQL_PASSWORD", "password"),
         "database": os.getenv("MYSQL_DATABASE", "sakila"),

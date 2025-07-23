@@ -26,12 +26,12 @@ def main():
         {
             "name": "Table-Based Naming Strategy",
             "strategy": "table_based",
-            "description": "Uses table names for relationship labels (default)",
+            "description": ("Uses table names for relationship labels " "(default)"),
         },
         {
             "name": "LLM-Based Naming Strategy",
             "strategy": "llm",
-            "description": "Uses LLM to generate meaningful relationship names",
+            "description": ("Uses LLM to generate meaningful relationship " "names"),
         },
     ]
 
@@ -92,7 +92,7 @@ def main():
 
     # MySQL configuration (from environment or defaults)
     mysql_config = {
-        "host": os.getenv("MYSQL_HOST", "localhost"),
+        "host": os.getenv("MYSQL_HOST", "host.docker.internal"),
         "user": os.getenv("MYSQL_USER", "root"),
         "password": os.getenv("MYSQL_PASSWORD", ""),
         "database": os.getenv("MYSQL_DATABASE", "sakila"),
@@ -115,49 +115,38 @@ def main():
         )
 
         mode_desc = "interactive" if interactive_mode else "automatic"
-        print(f"Created migration agent with {selected_strategy['strategy']} strategy")
+        print(
+            f"Created migration agent with " f"{selected_strategy['strategy']} strategy"
+        )
         print(f"Table selection mode: {mode_desc}")
 
         # Define migration state
-        initial_state = {
-            "mysql_config": mysql_config,
-            "memgraph_config": memgraph_config,
-            "database_structure": {},
-            "migration_queries": [],
-            "migration_plan": "",
-            "current_step": "Initializing",
-            "errors": [],
-            "completed_tables": [],
-            "total_tables": 0,
-        }
 
         print("\nStarting migration workflow...")
         print("This will:")
         print("1. Analyze MySQL schema and detect join tables")
         print("2. Generate migration plan with LLM")
-        print("3. Create Cypher queries with enhanced relationship handling")
-        print("4. Execute migration to Memgraph")
-        print("5. Verify the migration results")
+        print("3. Create indexes and constraints automatically")
+        print("4. Generate migration queries using Memgraph migrate module")
+        print("5. Execute migration to Memgraph")
+        print("6. Verify the migration results")
 
         # Run the migration workflow
         if interactive_mode:
-            # For interactive mode, we need to handle the workflow differently
-            # since it uses interrupts that require special handling
-            print("\nNote: Interactive mode requires manual workflow execution")
-            print("Please use demo_langgraph_interrupt.py for full interactive demo")
+            # Interactive mode requires manual workflow execution
+            print("\nNote: Interactive mode requires manual workflow " "execution")
+            print("Please use demo_langgraph_interrupt.py for full " "interactive demo")
 
-            # For now, run in non-interactive mode to show the results
+            # Run in non-interactive mode for demonstration
             print("Running in non-interactive mode for demonstration...")
             agent_demo = MySQLToMemgraphAgent(
                 relationship_naming_strategy=selected_strategy["strategy"],
                 interactive_table_selection=False,
             )
-            compiled_workflow = agent_demo.workflow.compile()
-            result = compiled_workflow.invoke(initial_state)
+            result = agent_demo.migrate(mysql_config, memgraph_config)
         else:
-            # Non-interactive mode: compile and run normally
-            compiled_workflow = agent.workflow.compile()
-            result = compiled_workflow.invoke(initial_state)
+            # Non-interactive mode: run normally
+            result = agent.migrate(mysql_config, memgraph_config)
 
         # Display results
         print("\n" + "=" * 50)
@@ -174,28 +163,35 @@ def main():
         print(f"\nCompleted tables: {len(result['completed_tables'])}")
         print(f"Total tables: {result['total_tables']}")
 
+        # Show index creation results
+        if result.get("created_indexes") is not None:
+            index_count = len(result.get("created_indexes", []))
+            constraint_count = len(result.get("created_constraints", []))
+            print(f"Created indexes: {index_count}")
+            print(f"Created constraints: {constraint_count}")
+
         if result.get("database_structure"):
             structure = result["database_structure"]
-            print(f"\nSchema Analysis:")
-            print(f"  - Entity tables: {len(structure.get('entity_tables', {}))}")
-            print(f"  - Join tables: {len(structure.get('join_tables', {}))}")
-            print(f"  - Views (excluded): {len(structure.get('views', {}))}")
-            print(f"  - Relationships: {len(structure.get('relationships', []))}")
+            print("\nSchema Analysis:")
+            print("  - Entity tables: " f"{len(structure.get('entity_tables', {}))}")
+            print(f"  - Join tables: " f"{len(structure.get('join_tables', {}))}")
+            print("  - Views (excluded): " f"{len(structure.get('views', {}))}")
+            print("  - Relationships: " f"{len(structure.get('relationships', []))}")
 
             # Show views that were excluded
             if structure.get("views"):
-                print(f"\n👁️ Excluded view tables:")
+                print("\n👁️ Excluded view tables:")
                 for table_name, table_info in structure["views"].items():
                     row_count = table_info.get("row_count", 0)
                     print(f"  - {table_name}: {row_count} rows (view)")
 
             # Show join tables that were detected
             if structure.get("join_tables"):
-                print(f"\n🔗 Detected join tables:")
+                print("\n🔗 Detected join tables:")
                 for table_name, table_info in structure["join_tables"].items():
                     fk_count = len(table_info.get("foreign_keys", []))
                     row_count = table_info.get("row_count", 0)
-                    print(f"  - {table_name}: {fk_count} FKs, {row_count} rows")
+                    print(f"  - {table_name}: {fk_count} FKs, " f"{row_count} rows")
 
             # Show relationship types
             relationships_by_type = {}
@@ -205,15 +201,15 @@ def main():
                     relationships_by_type[rel_type] = []
                 relationships_by_type[rel_type].append(rel)
 
-            print(f"\n🔗 Relationship breakdown:")
+            print("\n🔗 Relationship breakdown:")
             for rel_type, rels in relationships_by_type.items():
                 print(f"  - {rel_type}: {len(rels)} relationships")
 
         print(f"\nFinal status: {result['current_step']}")
 
-    except Exception as e:
+    except (ValueError, ConnectionError, RuntimeError) as e:
         print(f"❌ Migration failed: {e}")
-        logging.error(f"Migration error: {e}", exc_info=True)
+        logging.error("Migration error: %s", e, exc_info=True)
 
 
 if __name__ == "__main__":
