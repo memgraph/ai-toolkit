@@ -31,30 +31,6 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-def validate_environment_variables():
-    """Validate required environment variables."""
-    required_vars = {
-        "OPENAI_API_KEY": "OpenAI API key for migration planning",
-        "MYSQL_PASSWORD": "MySQL database password",
-    }
-
-    missing_vars = []
-    for var, description in required_vars.items():
-        if not os.getenv(var):
-            missing_vars.append(f"{var} ({description})")
-
-    if missing_vars:
-        logger.error("Missing required environment variables:")
-        for var in missing_vars:
-            logger.error(f"  - {var}")
-        logger.error(
-            "Please check your .env file and ensure all required variables are set"
-        )
-        return False
-
-    return True
-
-
 class MigrationState(TypedDict):
     """State for the migration workflow."""
 
@@ -85,16 +61,13 @@ class MySQLToMemgraphAgent:
             relationship_naming_strategy: Strategy for naming relationships.
                 - "table_based": Use table names directly (default)
                 - "llm": Use LLM to generate meaningful names
-            interactive_table_selection: Whether to prompt user for table selection.
+            interactive_table_selection: Whether to prompt user for table
+                selection.
                 - True: Show interactive table selection (default)
                 - False: Migrate all entity tables automatically
         """
-        # Validate environment variables first
-        if not validate_environment_variables():
-            raise ValueError(
-                "Required environment variables are missing. "
-                "Please check your .env file."
-            )
+        # Environment validation is now handled by utils.environment module
+        # This makes the agent more modular and reusable
 
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if not openai_api_key:
@@ -832,27 +805,19 @@ CREATE (from)-[:{rel_name}]->(to);"""
 
 
 def main():
-    """Main function to run the migration agent."""
+    """
+    Main function to run the migration agent.
 
+    Note: This is a legacy entry point. For production use,
+    use sql2memgraph_agent.py which has better error handling
+    and environment validation.
+    """
     print("MySQL to Memgraph Migration Agent")
     print("=" * 40)
+    print("⚠️  Note: Use 'uv run sql2memgraph_agent.py' for better experience")
+    print()
 
-    # Check environment variables first
-    if not validate_environment_variables():
-        print("\n❌ Setup Error: Missing required environment variables")
-        print("\nPlease ensure you have:")
-        print("1. Created a .env file (copy from .env.example)")
-        print("2. Set your OPENAI_API_KEY")
-        print("3. Set your MYSQL_PASSWORD")
-        print("\nExample .env file:")
-        print("OPENAI_API_KEY=your_openai_key_here")
-        print("MYSQL_PASSWORD=your_mysql_password")
-        print("MYSQL_HOST=localhost")
-        print("MYSQL_USER=root")
-        print("MYSQL_DATABASE=sakila")
-        return
-
-    # Example configuration for Sakila database
+    # Simple configuration for backward compatibility
     mysql_config = {
         "host": os.getenv("MYSQL_HOST", "host.docker.internal"),
         "user": os.getenv("MYSQL_USER", "root"),
@@ -866,10 +831,11 @@ def main():
         agent = MySQLToMemgraphAgent()
         result = agent.migrate(mysql_config)
 
-        print(f"\nMigration Result:")
+        print("\nMigration Result:")
         print(f"Success: {result['success']}")
         print(
-            f"Completed Tables: {len(result['completed_tables'])}/{result['total_tables']}"
+            f"Completed Tables: "
+            f"{len(result['completed_tables'])}/{result['total_tables']}"
         )
 
         if result["errors"]:
@@ -877,19 +843,19 @@ def main():
             for error in result["errors"]:
                 print(f"  - {error}")
 
-        print(f"\nMigration Plan:")
+        print("\nMigration Plan:")
         print(result["migration_plan"])
 
     except ValueError as e:
         print(f"\n❌ Configuration Error: {e}")
         print("\nTroubleshooting steps:")
-        print("1. Check your .env file exists and contains required variables")
-        print("2. Verify your OpenAI API key is valid")
-        print("3. Test MySQL connection with: python mysql_troubleshoot.py")
-    except Exception as e:
+        print("1. Use 'uv run sql2memgraph_agent.py' for better setup")
+        print("2. Check your .env file exists and contains required variables")
+        print("3. Verify your OpenAI API key is valid")
+    except Exception as e:  # pylint: disable=broad-except
         print(f"\n❌ Unexpected Error: {e}")
-        print("Run with debug mode for more details")
-        logger.error(f"Unexpected error in main: {e}", exc_info=True)
+        print("For better error handling, use: uv run sql2memgraph_agent.py")
+        logger.error("Unexpected error in main: %s", e, exc_info=True)
 
 
 if __name__ == "__main__":
