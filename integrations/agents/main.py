@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 
 from database_analyzer import MySQLAnalyzer
 from cypher_generator import CypherGenerator
+from graph_modeler import HyGM
 from memgraph_toolbox.api.memgraph import Memgraph
 
 # Load environment variables
@@ -156,6 +157,31 @@ class MySQLToMemgraphAgent:
                 count = self.mysql_analyzer.get_table_row_count(table_name)
                 structure["table_counts"][table_name] = count
 
+            # Enhance with intelligent graph modeling
+            logger.info("Applying intelligent graph modeling analysis...")
+            try:
+                graph_modeler = HyGM(llm=self.llm)
+                graph_model = graph_modeler.analyze_and_model_schema(structure)
+
+                # Add graph modeling results to structure
+                structure["graph_model"] = {
+                    "nodes": [node.__dict__ for node in graph_model.nodes],
+                    "relationships": [
+                        rel.__dict__ for rel in graph_model.relationships
+                    ],
+                    "modeling_decisions": graph_model.modeling_decisions,
+                    "optimization_suggestions": graph_model.optimization_suggestions,
+                }
+
+                logger.info(
+                    f"Graph model created with {len(graph_model.nodes)} node types "
+                    f"and {len(graph_model.relationships)} relationship types"
+                )
+
+            except Exception as e:
+                logger.warning(f"Graph modeling enhancement failed: {e}")
+                # Continue without graph modeling enhancement
+
             state["database_structure"] = structure
             # Only count entity tables for migration progress (exclude views and join tables)
             state["total_tables"] = len(structure["entity_tables"])
@@ -198,6 +224,19 @@ class MySQLToMemgraphAgent:
                 "table_counts": structure.get("table_counts", {}),
             }
 
+            # Add graph modeling insights if available
+            graph_model_info = ""
+            if "graph_model" in structure:
+                graph_model = structure["graph_model"]
+                graph_model_info = f"""
+                
+Graph Modeling Analysis Results:
+- Identified {len(graph_model['nodes'])} node types
+- Configured {len(graph_model['relationships'])} relationship types
+- Modeling Decisions: {graph_model['modeling_decisions']}
+- Optimization Suggestions: {graph_model['optimization_suggestions']}
+                """
+
             system_message = SystemMessage(
                 content="""
                 You are an expert database migration specialist. You need to create a 
@@ -220,7 +259,7 @@ class MySQLToMemgraphAgent:
 
                 Tables: {context['tables']}
                 Relationships: {context['relationships']}
-                Table row counts: {context['table_counts']}
+                Table row counts: {context['table_counts']}{graph_model_info}
 
                 Please provide a detailed migration plan including:
                 1. Order of operations
