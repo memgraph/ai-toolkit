@@ -18,12 +18,11 @@ sys.path.append(str(Path(__file__).parent.parent / "langchain-memgraph"))
 from langgraph.graph import StateGraph, END
 from langgraph.types import interrupt
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
 from dotenv import load_dotenv
 
 from database_analyzer import MySQLAnalyzer
 from cypher_generator import CypherGenerator
-from graph_modeler import HyGM
+from hygm import HyGM
 from memgraph_toolbox.api.memgraph import Memgraph
 
 # Load environment variables
@@ -39,7 +38,6 @@ class MigrationState(TypedDict):
     memgraph_config: Dict[str, str]
     database_structure: Dict[str, Any]
     migration_queries: List[str]
-    migration_plan: str
     current_step: str
     errors: List[str]
     completed_tables: List[str]
@@ -114,7 +112,6 @@ class MySQLToMemgraphAgent:
         # Add nodes
         workflow.add_node("analyze_mysql", self._analyze_mysql_schema)
         workflow.add_node("select_tables", self._select_tables_for_migration)
-        workflow.add_node("generate_migration_plan", self._generate_migration_plan)
         workflow.add_node("create_indexes", self._create_indexes)
         workflow.add_node("generate_cypher_queries", self._generate_cypher_queries)
         workflow.add_node("validate_queries", self._validate_queries)
@@ -123,8 +120,7 @@ class MySQLToMemgraphAgent:
 
         # Add edges
         workflow.add_edge("analyze_mysql", "select_tables")
-        workflow.add_edge("select_tables", "generate_migration_plan")
-        workflow.add_edge("generate_migration_plan", "create_indexes")
+        workflow.add_edge("select_tables", "create_indexes")
         workflow.add_edge("create_indexes", "generate_cypher_queries")
         workflow.add_edge("generate_cypher_queries", "validate_queries")
         workflow.add_edge("validate_queries", "execute_migration")
@@ -151,14 +147,32 @@ class MySQLToMemgraphAgent:
             # Get database structure
             structure = self.mysql_analyzer.get_database_structure()
 
-            # Add table counts for progress tracking
+            # Add table counts for progress tracking and collect sample data
             structure["table_counts"] = {}
+            structure["sample_data"] = {}
             for table_name in structure["tables"].keys():
                 count = self.mysql_analyzer.get_table_row_count(table_name)
                 structure["table_counts"][table_name] = count
 
-            # Enhance with intelligent graph modeling
-            logger.info("Applying intelligent graph modeling analysis...")
+                # Get sample data for better graph modeling context
+                try:
+                    sample_data = self.mysql_analyzer.get_table_data(
+                        table_name, limit=3
+                    )
+                    structure["sample_data"][table_name] = sample_data
+                    logger.debug(
+                        f"Collected {len(sample_data)} sample rows from {table_name}"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Could not fetch sample data from {table_name}: {e}"
+                    )
+                    structure["sample_data"][table_name] = []
+
+            # Enhance with intelligent graph modeling (single LLM call)
+            logger.info(
+                "Applying intelligent graph modeling analysis with single LLM call..."
+            )
             try:
                 graph_modeler = HyGM(llm=self.llm)
                 graph_model = graph_modeler.analyze_and_model_schema(structure)
@@ -210,76 +224,6 @@ class MySQLToMemgraphAgent:
         return state
 
     # TODO: This should be human visible and configurable.
-    def _generate_migration_plan(self, state: MigrationState) -> MigrationState:
-        """Generate a migration plan using LLM."""
-        logger.info("Generating migration plan...")
-
-        try:
-            structure = state["database_structure"]
-
-            # Prepare context for LLM
-            context = {
-                "tables": list(structure["tables"].keys()),
-                "relationships": structure["relationships"],
-                "table_counts": structure.get("table_counts", {}),
-            }
-
-            # Add graph modeling insights if available
-            graph_model_info = ""
-            if "graph_model" in structure:
-                graph_model = structure["graph_model"]
-                graph_model_info = f"""
-                
-Graph Modeling Analysis Results:
-- Identified {len(graph_model['nodes'])} node types
-- Configured {len(graph_model['relationships'])} relationship types
-- Modeling Decisions: {graph_model['modeling_decisions']}
-- Optimization Suggestions: {graph_model['optimization_suggestions']}
-                """
-
-            system_message = SystemMessage(
-                content="""
-                You are an expert database migration specialist. You need to create a 
-                detailed migration plan for moving data from MySQL to Memgraph (a graph database).
-
-                Your task is to:
-                1. Analyze the database structure
-                2. Identify the optimal order for creating nodes and relationships
-                3. Consider dependencies between tables
-                4. Suggest any optimizations for graph modeling
-                5. Identify potential issues or challenges
-
-                Provide a detailed, step-by-step migration plan.
-            """
-            )
-
-            human_message = HumanMessage(
-                content=f"""
-                Create a migration plan for the following MySQL database structure:
-
-                Tables: {context['tables']}
-                Relationships: {context['relationships']}
-                Table row counts: {context['table_counts']}{graph_model_info}
-
-                Please provide a detailed migration plan including:
-                1. Order of operations
-                2. Node creation strategy
-                3. Relationship creation strategy
-                4. Any potential issues to watch for
-                5. Estimated timeline considerations
-            """
-            )
-
-            response = self.llm.invoke([system_message, human_message])
-            state["migration_plan"] = response.content
-            state["current_step"] = "Migration plan generated"
-
-        except Exception as e:
-            logger.error(f"Error generating migration plan: {e}")
-            state["errors"].append(f"Migration plan generation failed: {e}")
-
-        return state
-
     def _create_indexes(self, state: MigrationState) -> MigrationState:
         """Create indexes and constraints in Memgraph before migration."""
         logger.info("Creating indexes and constraints in Memgraph...")
@@ -344,8 +288,263 @@ Graph Modeling Analysis Results:
         return state
 
     def _generate_cypher_queries(self, state: MigrationState) -> MigrationState:
-        """Generate Cypher queries for the migration using Memgraph migrate module."""
-        logger.info("Generating Cypher queries using Memgraph migrate module...")
+        """Generate Cypher queries based on HyGM graph model recommendations."""
+        logger.info("Generating Cypher queries based on HyGM graph model...")
+
+        try:
+            structure = state["database_structure"]
+            mysql_config = state["mysql_config"]
+
+            # Check if we have HyGM graph model
+            if "graph_model" not in structure:
+                logger.warning(
+                    "No HyGM graph model found, falling back to basic migration"
+                )
+                return self._generate_cypher_queries_fallback(state)
+
+            graph_model = structure["graph_model"]
+            queries = []
+
+            # Create MySQL connection config for migrate module
+            mysql_config_str = self._get_mysql_config_for_migrate(mysql_config)
+
+            # Generate node creation queries based on HyGM recommendations
+            logger.info(
+                f"Creating nodes based on {len(graph_model['nodes'])} HyGM node definitions"
+            )
+
+            for node_def in graph_model["nodes"]:
+                source_table = node_def["source_table"]
+                node_label = node_def["label"]
+                properties = node_def["properties"]
+
+                # Get table info for column validation
+                table_info = structure.get("entity_tables", {}).get(source_table, {})
+
+                # Validate properties exist in source table
+                valid_properties = self._validate_node_properties(
+                    properties, table_info
+                )
+
+                if valid_properties:
+                    properties_str = ", ".join(valid_properties)
+                    node_query = f"""
+// Create {node_label} nodes from {source_table} table (HyGM optimized)
+// Rationale: {node_def.get('modeling_rationale', 'N/A')}
+CALL migrate.mysql('SELECT {properties_str} FROM {source_table}', {mysql_config_str})
+YIELD row
+CREATE (n:{node_label})
+SET n += row;"""
+                    queries.append(node_query)
+                    logger.info(
+                        f"Added node creation for {node_label} with {len(valid_properties)} properties"
+                    )
+                else:
+                    logger.warning(
+                        f"No valid properties found for node {node_label} from table {source_table}"
+                    )
+
+            # Generate relationship creation queries based on HyGM recommendations
+            logger.info(
+                f"Creating relationships based on {len(graph_model['relationships'])} HyGM relationship definitions"
+            )
+
+            for rel_def in graph_model["relationships"]:
+                rel_query = self._generate_hygm_relationship_query(
+                    rel_def, structure, mysql_config_str
+                )
+                if rel_query:
+                    queries.append(rel_query)
+                    logger.info(f"Added relationship creation: {rel_def['name']}")
+
+            state["migration_queries"] = queries
+            state["current_step"] = "Cypher queries generated using HyGM graph model"
+
+            logger.info(
+                f"Generated {len(queries)} migration queries based on HyGM recommendations"
+            )
+
+        except Exception as e:
+            logger.error(f"Error generating HyGM-based Cypher queries: {e}")
+            state["errors"].append(f"HyGM Cypher generation failed: {e}")
+            # Fallback to basic migration
+            return self._generate_cypher_queries_fallback(state)
+
+        return state
+
+    def _validate_node_properties(
+        self, properties: List[str], table_info: Dict[str, Any]
+    ) -> List[str]:
+        """Validate that properties exist in the source table schema."""
+        if not table_info or not properties:
+            return []
+
+        # Get available columns from table schema
+        available_columns = set()
+        schema_list = table_info.get("schema", [])
+        for col_info in schema_list:
+            col_name = col_info.get("field")
+            if col_name:
+                available_columns.add(col_name)
+
+        # Return only properties that exist in the table
+        valid_properties = [prop for prop in properties if prop in available_columns]
+
+        if len(valid_properties) != len(properties):
+            missing = set(properties) - set(valid_properties)
+            logger.warning(f"Some properties not found in table schema: {missing}")
+
+        return valid_properties
+
+    def _generate_hygm_relationship_query(
+        self, rel_def: Dict[str, Any], structure: Dict[str, Any], mysql_config_str: str
+    ) -> str:
+        """Generate relationship query based on HyGM relationship definition."""
+
+        try:
+            rel_name = rel_def["name"]
+            rel_type = rel_def["type"]
+            from_node = rel_def["from_node"]
+            to_node = rel_def["to_node"]
+            source_info = rel_def.get("source_info", {})
+
+            # Find the corresponding node labels from HyGM
+            from_label = self._find_hygm_node_label(from_node, structure)
+            to_label = self._find_hygm_node_label(to_node, structure)
+
+            if not from_label or not to_label:
+                logger.warning(
+                    f"Could not find node labels for relationship {rel_name}"
+                )
+                return ""
+
+            if rel_type == "one_to_many":
+                return self._generate_one_to_many_hygm_query(
+                    rel_name,
+                    from_label,
+                    to_label,
+                    source_info,
+                    mysql_config_str,
+                    structure,
+                )
+            elif rel_type == "many_to_many":
+                return self._generate_many_to_many_hygm_query(
+                    rel_name,
+                    from_label,
+                    to_label,
+                    source_info,
+                    mysql_config_str,
+                    structure,
+                )
+            else:
+                logger.warning(f"Unsupported relationship type: {rel_type}")
+                return ""
+
+        except Exception as e:
+            logger.error(
+                f"Error generating relationship query for {rel_def.get('name', 'unknown')}: {e}"
+            )
+            return ""
+
+    def _find_hygm_node_label(self, node_name: str, structure: Dict[str, Any]) -> str:
+        """Find the HyGM node label for a given node name."""
+        graph_model = structure.get("graph_model", {})
+        nodes = graph_model.get("nodes", [])
+
+        for node in nodes:
+            if node.get("name") == node_name or node.get("source_table") == node_name:
+                return node.get("label", "")
+
+        # Fallback to original table name transformation
+        return self.cypher_generator._table_name_to_label(node_name)
+
+    def _generate_one_to_many_hygm_query(
+        self,
+        rel_name: str,
+        from_label: str,
+        to_label: str,
+        source_info: Dict[str, Any],
+        mysql_config_str: str,
+        structure: Dict[str, Any],
+    ) -> str:
+        """Generate one-to-many relationship query using HyGM information."""
+
+        from_table = source_info.get("from_table")
+        to_table = source_info.get("to_table")
+        fk_column = source_info.get("from_column")
+        to_column = source_info.get("to_column")
+
+        if not all([from_table, to_table, fk_column, to_column]):
+            logger.warning(f"Missing relationship information for {rel_name}")
+            return ""
+
+        # Get primary key from source table
+        from_table_info = structure.get("entity_tables", {}).get(from_table, {})
+        from_pk = self._get_primary_key(from_table_info)
+
+        if not from_pk:
+            logger.warning(f"Could not determine primary key for table {from_table}")
+            return ""
+
+        return f"""
+// Create {rel_name} relationships (HyGM: {from_label} -> {to_label})
+CALL migrate.mysql('SELECT {from_pk}, {fk_column} FROM {from_table} WHERE {fk_column} IS NOT NULL', {mysql_config_str})
+YIELD row
+MATCH (from_node:{from_label} {{{from_pk}: row.{from_pk}}})
+MATCH (to_node:{to_label} {{{to_column}: row.{fk_column}}})
+CREATE (from_node)-[:{rel_name}]->(to_node);"""
+
+    def _generate_many_to_many_hygm_query(
+        self,
+        rel_name: str,
+        from_label: str,
+        to_label: str,
+        source_info: Dict[str, Any],
+        mysql_config_str: str,
+        structure: Dict[str, Any],
+    ) -> str:
+        """Generate many-to-many relationship query using HyGM information."""
+
+        join_table = source_info.get("join_table")
+        from_table = source_info.get("from_table")
+        to_table = source_info.get("to_table")
+        from_fk = source_info.get("join_from_column")
+        to_fk = source_info.get("join_to_column")
+        from_pk = source_info.get("from_column")
+        to_pk = source_info.get("to_column")
+
+        if not all([join_table, from_table, to_table, from_fk, to_fk, from_pk, to_pk]):
+            logger.warning(
+                f"Missing many-to-many relationship information for {rel_name}"
+            )
+            return ""
+
+        return f"""
+// Create {rel_name} relationships via {join_table} (HyGM: {from_label} <-> {to_label})
+CALL migrate.mysql('SELECT {from_fk}, {to_fk} FROM {join_table}', {mysql_config_str})
+YIELD row
+MATCH (from:{from_label} {{{from_pk}: row.{from_fk}}})
+MATCH (to:{to_label} {{{to_pk}: row.{to_fk}}})
+CREATE (from)-[:{rel_name}]->(to);"""
+
+    def _get_primary_key(self, table_info: Dict[str, Any]) -> str:
+        """Get the primary key column name from table info."""
+        schema_list = table_info.get("schema", [])
+        for col_info in schema_list:
+            if col_info.get("key") == "PRI":
+                return col_info.get("field", "")
+
+        # Fallback: assume first column is primary key
+        if schema_list:
+            return schema_list[0].get("field", "id")
+
+        return "id"  # Default assumption
+
+    def _generate_cypher_queries_fallback(
+        self, state: MigrationState
+    ) -> MigrationState:
+        """Fallback method for generating Cypher queries without HyGM model."""
+        logger.info("Using fallback migration query generation...")
 
         try:
             structure = state["database_structure"]
@@ -377,7 +576,7 @@ Graph Modeling Analysis Results:
                 if node_columns:
                     columns_str = ", ".join(node_columns)
                     node_query = f"""
-// Create {label} nodes from {table_name} table
+// Create {label} nodes from {table_name} table (fallback)
 CALL migrate.mysql('SELECT {columns_str} FROM {table_name}', {mysql_config_str})
 YIELD row
 CREATE (n:{label})
@@ -404,7 +603,7 @@ SET n += row;"""
                     from_pk = from_table_info["schema"][0]["field"]
 
                     rel_query = f"""
-// Create {rel_name} relationships between {from_label} and {to_label}
+// Create {rel_name} relationships between {from_label} and {to_label} (fallback)
 CALL migrate.mysql('SELECT {from_pk}, {fk_column} FROM {from_table} WHERE {fk_column} IS NOT NULL', {mysql_config_str})
 YIELD row
 MATCH (from_node:{from_label} {{{from_pk}: row.{from_pk}}})
@@ -428,7 +627,7 @@ CREATE (from_node)-[:{rel_name}]->(to_node);"""
                     to_pk = rel["to_column"]  # PK column in to_table
 
                     rel_query = f"""
-// Create {rel_name} relationships via {join_table} table
+// Create {rel_name} relationships via {join_table} table (fallback)
 CALL migrate.mysql('SELECT {from_fk}, {to_fk} FROM {join_table}', {mysql_config_str})
 YIELD row
 MATCH (from:{from_label} {{{from_pk}: row.{from_fk}}})
@@ -437,15 +636,15 @@ CREATE (from)-[:{rel_name}]->(to);"""
                     queries.append(rel_query)
 
             state["migration_queries"] = queries
-            state["current_step"] = "Cypher queries generated using migrate module"
+            state["current_step"] = "Cypher queries generated (fallback mode)"
 
             logger.info(
-                f"Generated {len(queries)} migration queries using migrate.mysql()"
+                f"Generated {len(queries)} migration queries using fallback method"
             )
 
         except Exception as e:
-            logger.error(f"Error generating Cypher queries: {e}")
-            state["errors"].append(f"Query generation failed: {e}")
+            logger.error(f"Error generating fallback Cypher queries: {e}")
+            state["errors"].append(f"Fallback Cypher generation failed: {e}")
 
         return state
 
@@ -600,7 +799,6 @@ CREATE (from)-[:{rel_name}]->(to);"""
             memgraph_config=memgraph_config,
             database_structure={},
             migration_queries=[],
-            migration_plan="",
             current_step="Starting migration",
             errors=[],
             completed_tables=[],
@@ -632,7 +830,6 @@ CREATE (from)-[:{rel_name}]->(to);"""
 
             return {
                 "success": len(final_state["errors"]) == 0,
-                "migration_plan": final_state["migration_plan"],
                 "completed_tables": final_state["completed_tables"],
                 "total_tables": final_state["total_tables"],
                 "errors": final_state["errors"],
@@ -644,7 +841,6 @@ CREATE (from)-[:{rel_name}]->(to);"""
             return {
                 "success": False,
                 "errors": [f"Workflow execution failed: {e}"],
-                "migration_plan": "",
                 "completed_tables": [],
                 "total_tables": 0,
                 "final_step": "Failed",
@@ -881,9 +1077,6 @@ def main():
             print(f"Errors: {len(result['errors'])}")
             for error in result["errors"]:
                 print(f"  - {error}")
-
-        print("\nMigration Plan:")
-        print(result["migration_plan"])
 
     except ValueError as e:
         print(f"\n❌ Configuration Error: {e}")
