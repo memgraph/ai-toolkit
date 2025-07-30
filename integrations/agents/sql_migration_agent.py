@@ -51,15 +51,11 @@ class MySQLToMemgraphAgent:
 
     def __init__(
         self,
-        relationship_naming_strategy: str = "table_based",
         interactive_table_selection: bool = True,
     ):
         """Initialize the migration agent.
 
         Args:
-            relationship_naming_strategy: Strategy for naming relationships.
-                - "table_based": Use table names directly (default)
-                - "llm": Use LLM to generate meaningful names
             interactive_table_selection: Whether to prompt user for table
                 selection.
                 - True: Show interactive table selection (default)
@@ -76,12 +72,8 @@ class MySQLToMemgraphAgent:
             model="gpt-4o-mini", temperature=0.1, api_key=openai_api_key
         )
         self.mysql_analyzer = None
-        self.cypher_generator = CypherGenerator(relationship_naming_strategy)
+        self.cypher_generator = CypherGenerator()
         self.interactive_table_selection = interactive_table_selection
-
-        # Set LLM for cypher generator if using LLM strategy
-        if relationship_naming_strategy == "llm":
-            self.cypher_generator.set_llm(self.llm)
 
         self.memgraph_client = None
 

@@ -13,20 +13,9 @@ class SchemaUtilities:
     """Utilities for schema conversion and naming in MySQL to Memgraph
     migration."""
 
-    def __init__(self, relationship_naming_strategy: str = "table_based"):
-        """Initialize the schema utilities.
-
-        Args:
-            relationship_naming_strategy: Strategy for naming relationships.
-                - "table_based": Use table names directly (default)
-                - "llm": Use LLM to generate meaningful names (requires LLM)
-        """
-        self.relationship_naming_strategy = relationship_naming_strategy
-        self.llm = None  # Will be set if using LLM strategy
-
-    def set_llm(self, llm):
-        """Set LLM for relationship naming strategy."""
-        self.llm = llm
+    def __init__(self):
+        """Initialize the schema utilities with table-based naming strategy."""
+        pass
 
     def generate_index_queries(
         self, table_name: str, schema: List[Dict[str, Any]]
@@ -68,80 +57,28 @@ class SchemaUtilities:
         # Convert to PascalCase
         return "".join(word.capitalize() for word in table_name.split("_"))
 
-    def _generate_relationship_type(
+    def generate_relationship_type(
         self, from_table: str, to_table: str, join_table: str = None
     ) -> str:
-        """Generate relationship type name."""
-        if self.relationship_naming_strategy == "llm" and self.llm:
-            return self._generate_relationship_type_with_llm(
-                from_table, to_table, join_table
-            )
+        """Generate relationship type based on table names.
+
+        Args:
+            from_table: Source table name (unused, kept for compatibility)
+            to_table: Target table name
+            join_table: Join table name (for many-to-many relationships)
+
+        Returns:
+            Relationship type in UPPER_CASE format
+        """
+        # Table-based naming strategy
+        if join_table:
+            return self._table_name_to_label(join_table).upper()
         else:
-            # Table-based naming strategy (default)
-            if join_table:
-                return self._table_name_to_label(join_table).upper()
-            else:
-                return f"HAS_{self._table_name_to_label(to_table).upper()}"
+            return f"HAS_{self._table_name_to_label(to_table).upper()}"
 
-    def _generate_relationship_type_with_llm(
-        self, from_table: str, to_table: str, join_table: str = None
-    ) -> str:
-        """Generate relationship type using LLM."""
-        try:
-            from langchain_core.messages import HumanMessage, SystemMessage
 
-            if join_table:
-                prompt = f"""
-                Given a many-to-many relationship between tables '{from_table}'
-                and '{to_table}' via join table '{join_table}', suggest a
-                meaningful relationship name in UPPER_CASE format.
-
-                Examples:
-                - film_actor -> ACTED_IN
-                - customer_rental -> RENTED
-                - user_role -> HAS_ROLE
-
-                Return only the relationship name, nothing else.
-                """
-            else:
-                prompt = f"""
-                Given a one-to-many relationship from table '{from_table}'
-                to table '{to_table}', suggest a meaningful relationship name
-                in UPPER_CASE format.
-
-                Examples:
-                - customer -> order: PLACED
-                - order -> order_item: CONTAINS
-                - film -> language: IN_LANGUAGE
-
-                Return only the relationship name, nothing else.
-                """
-
-            messages = [
-                SystemMessage(content="You are a database modeling expert."),
-                HumanMessage(content=prompt),
-            ]
-
-            response = self.llm.invoke(messages)
-            relationship_name = response.content.strip().upper()
-
-            # Validate the response
-            if relationship_name and relationship_name.replace("_", "").isalpha():
-                return relationship_name
-            else:
-                # Fallback to table-based naming
-                if join_table:
-                    return self._table_name_to_label(join_table).upper()
-                else:
-                    return f"HAS_{self._table_name_to_label(to_table).upper()}"
-
-        except (ImportError, AttributeError, ValueError) as e:
-            logger.warning("LLM relationship naming failed: %s", e)
-            # Fallback to table-based naming
-            if join_table:
-                return self._table_name_to_label(join_table).upper()
-            else:
-                return f"HAS_{self._table_name_to_label(to_table).upper()}"
+# For backward compatibility, alias the new class name
+CypherGenerator = SchemaUtilities
 
 
 # For backward compatibility, alias the new class name

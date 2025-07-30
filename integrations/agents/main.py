@@ -37,44 +37,6 @@ def print_banner() -> None:
     print()
 
 
-def get_migration_strategy() -> str:
-    """
-    Get user choice for relationship naming strategy.
-
-    Returns:
-        Selected strategy name
-    """
-    strategies = [
-        {
-            "name": "table_based",
-            "description": "Use table names for relationship labels (default)",
-        },
-        {
-            "name": "llm",
-            "description": "Use LLM to generate meaningful relationship names",
-        },
-    ]
-
-    print("Relationship naming strategies:")
-    for i, strategy in enumerate(strategies, 1):
-        print(f"  {i}. {strategy['name']}: {strategy['description']}")
-    print()
-
-    while True:
-        try:
-            choice = input("Select strategy (1-2) or press Enter for default: ").strip()
-            if not choice:
-                return strategies[0]["name"]  # Default to table_based
-
-            choice_idx = int(choice) - 1
-            if 0 <= choice_idx < len(strategies):
-                return strategies[choice_idx]["name"]
-            else:
-                print("Invalid choice. Please select 1-2.")
-        except ValueError:
-            print("Invalid input. Please enter a number.")
-
-
 def get_table_selection_mode() -> bool:
     """
     Get user choice for table selection mode.
@@ -106,7 +68,6 @@ def get_table_selection_mode() -> bool:
 def run_migration(
     mysql_config: Dict[str, str],
     memgraph_config: Dict[str, str],
-    strategy: str,
     interactive_mode: bool,
 ) -> Dict[str, Any]:
     """
@@ -115,20 +76,18 @@ def run_migration(
     Args:
         mysql_config: MySQL connection configuration
         memgraph_config: Memgraph connection configuration
-        strategy: Relationship naming strategy
         interactive_mode: Whether to use interactive table selection
 
     Returns:
         Migration result dictionary
     """
-    print(f"🔧 Creating migration agent with {strategy} strategy")
+    print("🔧 Creating migration agent with table_based strategy")
     mode_text = "interactive" if interactive_mode else "automatic"
     print(f"📋 Table selection mode: {mode_text}")
     print()
 
-    # Create agent with selected configuration
+    # Create agent with table-based strategy (default)
     agent = MySQLToMemgraphAgent(
-        relationship_naming_strategy=strategy,
         interactive_table_selection=interactive_mode,
     )
 
@@ -150,7 +109,6 @@ def run_migration(
 
         # For demo purposes, create a non-interactive agent
         demo_agent = MySQLToMemgraphAgent(
-            relationship_naming_strategy=strategy,
             interactive_table_selection=False,
         )
         return demo_agent.migrate(mysql_config, memgraph_config)
@@ -251,13 +209,10 @@ def main() -> None:
         print()
 
         # Get user preferences
-        strategy = get_migration_strategy()
         interactive_mode = get_table_selection_mode()
 
         # Run migration
-        result = run_migration(
-            mysql_config, memgraph_config, strategy, interactive_mode
-        )
+        result = run_migration(mysql_config, memgraph_config, interactive_mode)
 
         # Display results
         print_migration_results(result)
