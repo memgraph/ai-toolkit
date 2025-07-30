@@ -109,7 +109,7 @@ def probe_mysql_connection(mysql_config: Dict[str, str]) -> Tuple[bool, Optional
     """
     try:
         # Import here to avoid circular imports
-        from database_analyzer import MySQLAnalyzer
+        from sql_database_analyzer import MySQLAnalyzer
 
         analyzer = MySQLAnalyzer(**mysql_config)
         if analyzer.connect():

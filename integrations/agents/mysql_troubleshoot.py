@@ -182,7 +182,7 @@ def test_database_analyzer():
         # Add current directory to path
         sys.path.insert(0, str(Path(__file__).parent))
 
-        from database_analyzer import MySQLAnalyzer
+        from sql_database_analyzer import MySQLAnalyzer
 
         config = {
             "host": os.getenv("MYSQL_HOST", "localhost"),

@@ -103,7 +103,7 @@ uv run python enhanced_example.py
 ### Programmatic Usage
 
 ```python
-from main import MySQLToMemgraphAgent
+from sql_migration_agent import MySQLToMemgraphAgent
 
 # Configure your databases
 mysql_config = {

@@ -58,6 +58,8 @@ class HyGM:
     def __init__(self, llm):
         """Initialize with an LLM instance."""
         self.llm = llm
+        self.current_graph_model = None
+        self.iteration_count = 0
 
     def analyze_and_model_schema(
         self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
@@ -95,6 +97,404 @@ class HyGM:
 
         logger.info("Completed intelligent graph modeling analysis")
         return graph_model
+
+    def analyze_and_model_schema_interactive(
+        self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
+    ) -> GraphModel:
+        """
+        Interactive version of schema analysis with user feedback.
+
+        Args:
+            database_structure: Database structure from MySQLAnalyzer
+            domain_context: Optional domain context for better modeling
+
+        Returns:
+            GraphModel refined through user feedback
+        """
+        logger.info("Starting interactive graph modeling with user feedback...")
+
+        # Step 1: Generate initial graph model
+        initial_model = self.analyze_and_model_schema(
+            database_structure, domain_context
+        )
+        self.current_graph_model = initial_model
+        self.iteration_count = 0
+
+        return initial_model
+
+    def get_current_model_presentation(self) -> Dict[str, Any]:
+        """
+        Get a formatted presentation of the current graph model for user review.
+
+        Returns:
+            Dictionary with formatted graph model information
+        """
+        if not self.current_graph_model:
+            return {"error": "No current graph model available"}
+
+        presentation = {
+            "iteration": self.iteration_count,
+            "summary": {
+                "total_nodes": len(self.current_graph_model.nodes),
+                "total_relationships": len(self.current_graph_model.relationships),
+                "modeling_decisions": len(self.current_graph_model.modeling_decisions),
+            },
+            "nodes": [],
+            "relationships": [],
+            "modeling_decisions": self.current_graph_model.modeling_decisions,
+            "optimization_suggestions": self.current_graph_model.optimization_suggestions,
+        }
+
+        # Format nodes for presentation
+        for i, node in enumerate(self.current_graph_model.nodes, 1):
+            node_info = {
+                "number": i,
+                "name": node.name,
+                "label": node.label,
+                "source_table": node.source_table,
+                "properties": node.properties,
+                "primary_key": node.primary_key,
+                "indexes": node.indexes,
+                "constraints": node.constraints,
+                "rationale": node.modeling_rationale[:100] + "..."
+                if len(node.modeling_rationale) > 100
+                else node.modeling_rationale,
+            }
+            presentation["nodes"].append(node_info)
+
+        # Format relationships for presentation
+        for i, rel in enumerate(self.current_graph_model.relationships, 1):
+            rel_info = {
+                "number": i,
+                "name": rel.name,
+                "type": rel.type,
+                "from_node": rel.from_node,
+                "to_node": rel.to_node,
+                "directionality": rel.directionality,
+                "properties": rel.properties,
+                "rationale": rel.modeling_rationale[:100] + "..."
+                if len(rel.modeling_rationale) > 100
+                else rel.modeling_rationale,
+            }
+            presentation["relationships"].append(rel_info)
+
+        return presentation
+
+    def apply_user_feedback(self, feedback: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Apply user feedback to modify the current graph model.
+
+        Args:
+            feedback: Dictionary containing user modifications
+
+        Returns:
+            Result of applying feedback with updated model
+        """
+        if not self.current_graph_model:
+            return {"error": "No current graph model to modify"}
+
+        logger.info(f"Applying user feedback (iteration {self.iteration_count + 1})")
+
+        try:
+            # Apply node modifications
+            if "node_changes" in feedback:
+                self._apply_node_changes(feedback["node_changes"])
+
+            # Apply relationship modifications
+            if "relationship_changes" in feedback:
+                self._apply_relationship_changes(feedback["relationship_changes"])
+
+            # Remove nodes if requested
+            if "remove_nodes" in feedback:
+                self._remove_nodes(feedback["remove_nodes"])
+
+            # Remove relationships if requested
+            if "remove_relationships" in feedback:
+                self._remove_relationships(feedback["remove_relationships"])
+
+            # Add new nodes if requested
+            if "add_nodes" in feedback:
+                self._add_nodes(feedback["add_nodes"])
+
+            # Add new relationships if requested
+            if "add_relationships" in feedback:
+                self._add_relationships(feedback["add_relationships"])
+
+            # Use LLM to validate and improve the changes
+            if feedback.get("llm_refinement", True):
+                self._llm_refine_changes(feedback)
+
+            self.iteration_count += 1
+
+            # Update modeling decisions
+            self.current_graph_model.modeling_decisions.append(
+                f"Iteration {self.iteration_count}: Applied user feedback"
+            )
+
+            return {
+                "success": True,
+                "iteration": self.iteration_count,
+                "changes_applied": len(feedback.keys()),
+                "message": "Feedback applied successfully",
+            }
+
+        except Exception as e:
+            logger.error(f"Error applying user feedback: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Failed to apply feedback",
+            }
+
+    def _apply_node_changes(self, node_changes: List[Dict[str, Any]]):
+        """Apply changes to existing nodes."""
+        for change in node_changes:
+            node_identifier = change.get("node_identifier")  # name or number
+
+            # Find the node to modify
+            target_node = None
+            if isinstance(node_identifier, int):
+                # By number (1-based)
+                if 1 <= node_identifier <= len(self.current_graph_model.nodes):
+                    target_node = self.current_graph_model.nodes[node_identifier - 1]
+            else:
+                # By name
+                target_node = next(
+                    (
+                        n
+                        for n in self.current_graph_model.nodes
+                        if n.name == node_identifier or n.label == node_identifier
+                    ),
+                    None,
+                )
+
+            if target_node:
+                # Apply specific changes
+                if "label" in change:
+                    target_node.label = change["label"]
+                if "properties" in change:
+                    target_node.properties = change["properties"]
+                if "indexes" in change:
+                    target_node.indexes = change["indexes"]
+                if "constraints" in change:
+                    target_node.constraints = change["constraints"]
+
+                logger.info(f"Modified node {target_node.name}")
+
+    def _apply_relationship_changes(self, relationship_changes: List[Dict[str, Any]]):
+        """Apply changes to existing relationships."""
+        for change in relationship_changes:
+            rel_identifier = change.get("relationship_identifier")
+
+            # Find the relationship to modify
+            target_rel = None
+            if isinstance(rel_identifier, int):
+                # By number (1-based)
+                if 1 <= rel_identifier <= len(self.current_graph_model.relationships):
+                    target_rel = self.current_graph_model.relationships[
+                        rel_identifier - 1
+                    ]
+            else:
+                # By name
+                target_rel = next(
+                    (
+                        r
+                        for r in self.current_graph_model.relationships
+                        if r.name == rel_identifier
+                    ),
+                    None,
+                )
+
+            if target_rel:
+                # Apply specific changes
+                if "name" in change:
+                    target_rel.name = change["name"]
+                if "directionality" in change:
+                    target_rel.directionality = change["directionality"]
+                if "properties" in change:
+                    target_rel.properties = change["properties"]
+
+                logger.info(f"Modified relationship {target_rel.name}")
+
+    def _remove_nodes(self, nodes_to_remove: List[Any]):
+        """Remove specified nodes from the model."""
+        nodes_removed = []
+
+        for node_identifier in nodes_to_remove:
+            # Find nodes to remove
+            nodes_to_delete = []
+
+            if isinstance(node_identifier, int):
+                # By number (1-based)
+                if 1 <= node_identifier <= len(self.current_graph_model.nodes):
+                    nodes_to_delete.append(
+                        self.current_graph_model.nodes[node_identifier - 1]
+                    )
+            else:
+                # By name
+                nodes_to_delete.extend(
+                    [
+                        n
+                        for n in self.current_graph_model.nodes
+                        if n.name == node_identifier or n.label == node_identifier
+                    ]
+                )
+
+            # Remove the nodes
+            for node in nodes_to_delete:
+                self.current_graph_model.nodes.remove(node)
+                nodes_removed.append(node.name)
+
+                # Also remove relationships involving this node
+                relationships_to_remove = [
+                    r
+                    for r in self.current_graph_model.relationships
+                    if r.from_node == node.name or r.to_node == node.name
+                ]
+                for rel in relationships_to_remove:
+                    self.current_graph_model.relationships.remove(rel)
+
+        if nodes_removed:
+            logger.info(f"Removed nodes: {', '.join(nodes_removed)}")
+
+    def _remove_relationships(self, relationships_to_remove: List[Any]):
+        """Remove specified relationships from the model."""
+        relationships_removed = []
+
+        for rel_identifier in relationships_to_remove:
+            # Find relationships to remove
+            rels_to_delete = []
+
+            if isinstance(rel_identifier, int):
+                # By number (1-based)
+                if 1 <= rel_identifier <= len(self.current_graph_model.relationships):
+                    rels_to_delete.append(
+                        self.current_graph_model.relationships[rel_identifier - 1]
+                    )
+            else:
+                # By name
+                rels_to_delete.extend(
+                    [
+                        r
+                        for r in self.current_graph_model.relationships
+                        if r.name == rel_identifier
+                    ]
+                )
+
+            # Remove the relationships
+            for rel in rels_to_delete:
+                self.current_graph_model.relationships.remove(rel)
+                relationships_removed.append(rel.name)
+
+        if relationships_removed:
+            logger.info(f"Removed relationships: {', '.join(relationships_removed)}")
+
+    def _add_nodes(self, nodes_to_add: List[Dict[str, Any]]):
+        """Add new nodes to the model."""
+        for node_spec in nodes_to_add:
+            new_node = GraphNode(
+                name=node_spec.get("name", ""),
+                label=node_spec.get("label", ""),
+                properties=node_spec.get("properties", []),
+                primary_key=node_spec.get("primary_key", "id"),
+                indexes=node_spec.get("indexes", []),
+                constraints=node_spec.get("constraints", []),
+                source_table=node_spec.get("source_table", ""),
+                modeling_rationale=node_spec.get("rationale", "User-added node"),
+            )
+            self.current_graph_model.nodes.append(new_node)
+            logger.info(f"Added new node: {new_node.name}")
+
+    def _add_relationships(self, relationships_to_add: List[Dict[str, Any]]):
+        """Add new relationships to the model."""
+        for rel_spec in relationships_to_add:
+            new_rel = GraphRelationship(
+                name=rel_spec.get("name", ""),
+                type=rel_spec.get("type", "one_to_many"),
+                from_node=rel_spec.get("from_node", ""),
+                to_node=rel_spec.get("to_node", ""),
+                properties=rel_spec.get("properties", []),
+                directionality=rel_spec.get("directionality", "directed"),
+                source_info=rel_spec.get("source_info", {}),
+                modeling_rationale=rel_spec.get("rationale", "User-added relationship"),
+            )
+            self.current_graph_model.relationships.append(new_rel)
+            logger.info(f"Added new relationship: {new_rel.name}")
+
+    def _llm_refine_changes(self, feedback: Dict[str, Any]):
+        """Use LLM to validate and refine the changes made."""
+        system_message = SystemMessage(
+            content="""
+You are a graph database expert reviewing user-modified graph models.
+Validate the changes and suggest improvements for consistency and optimization.
+Check for:
+1. Semantic consistency of labels and relationship names
+2. Proper graph database modeling patterns
+3. Performance implications
+4. Missing indexes or constraints that should be added
+"""
+        )
+
+        # Create summary of current model
+        model_summary = self.get_current_model_presentation()
+
+        human_message = HumanMessage(
+            content=f"""
+Review this modified graph model and suggest any improvements:
+
+FEEDBACK APPLIED: {feedback}
+
+CURRENT MODEL:
+Nodes: {len(model_summary['nodes'])}
+Relationships: {len(model_summary['relationships'])}
+
+NODE DETAILS:
+{self._format_nodes_for_llm_review(model_summary['nodes'])}
+
+RELATIONSHIP DETAILS:
+{self._format_relationships_for_llm_review(model_summary['relationships'])}
+
+Provide suggestions for:
+1. Label consistency and naming improvements
+2. Property optimization recommendations  
+3. Index and constraint suggestions
+4. Overall model improvements
+"""
+        )
+
+        try:
+            response = self.llm.invoke([system_message, human_message])
+
+            # Add LLM suggestions to optimization suggestions
+            self.current_graph_model.optimization_suggestions.append(
+                f"LLM Review (Iteration {self.iteration_count + 1}): {response.content[:200]}..."
+            )
+
+        except Exception as e:
+            logger.warning(f"LLM refinement failed: {e}")
+
+    def _format_nodes_for_llm_review(self, nodes: List[Dict[str, Any]]) -> str:
+        """Format nodes for LLM review."""
+        formatted = []
+        for node in nodes:
+            formatted.append(
+                f"- {node['label']} (from {node['source_table']}): "
+                f"{len(node['properties'])} properties, "
+                f"{len(node['indexes'])} indexes"
+            )
+        return "\n".join(formatted)
+
+    def _format_relationships_for_llm_review(
+        self, relationships: List[Dict[str, Any]]
+    ) -> str:
+        """Format relationships for LLM review."""
+        formatted = []
+        for rel in relationships:
+            formatted.append(
+                f"- {rel['name']}: {rel['from_node']} -> {rel['to_node']} "
+                f"({rel['type']}, {rel['directionality']})"
+            )
+        return "\n".join(formatted)
 
     def _analyze_database_context(
         self, database_structure: Dict[str, Any]
