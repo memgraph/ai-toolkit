@@ -11,9 +11,9 @@ import logging
 from dotenv import load_dotenv
 from typing import Dict, Any
 
-from utils.environment import probe_mysql_connection, probe_memgraph_connection
-from utils.config import get_preset_config
-from graph_modeler import HyGM
+from ..utils.environment import probe_mysql_connection, probe_memgraph_connection
+from ..utils.config import get_preset_config
+from ..core.graph_modeling import HyGM
 from langchain_openai import ChatOpenAI
 
 # Load environment variables

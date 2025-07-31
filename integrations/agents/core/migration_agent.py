@@ -14,18 +14,19 @@ from pathlib import Path
 # Add parent directories to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent / "memgraph-toolbox" / "src"))
 sys.path.append(str(Path(__file__).parent.parent / "langchain-memgraph"))
+sys.path.append(str(Path(__file__).parent.parent))  # Add agents root to path
 
 from langgraph.graph import StateGraph, END
 from langgraph.types import interrupt
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 
-from sql_database_analyzer import MySQLAnalyzer  # Backward compatibility
-from cypher_generator import CypherGenerator
-from hygm import HyGM, GraphModel
+from database.adapters.mysql import MySQLAnalyzer  # Backward compatibility
+from query_generation.cypher_generator import CypherGenerator
+from core.graph_modeling import HyGM, GraphModel
 from memgraph_toolbox.api.memgraph import Memgraph
-from database_analyzer_factory import DatabaseAnalyzerFactory
-from hygm_database_adapter import DatabaseDataInterface
+from database.factory import DatabaseAnalyzerFactory
+from database.hygm_adapter import DatabaseDataInterface
 
 # Load environment variables
 load_dotenv()
@@ -319,7 +320,7 @@ class SQLToMemgraphAgent:
 
     def _convert_dict_to_graph_model(self, model_dict: Dict[str, Any]) -> GraphModel:
         """Convert dictionary representation back to GraphModel object."""
-        from hygm import GraphModel, GraphNode, GraphRelationship
+        from .graph_modeling import GraphModel, GraphNode, GraphRelationship
 
         # Convert nodes
         nodes = []

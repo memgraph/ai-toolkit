@@ -9,6 +9,10 @@ Run with: uv run main.py
 import logging
 import sys
 from typing import Dict, Any
+from pathlib import Path
+
+# Add current directory to Python path for absolute imports
+sys.path.insert(0, str(Path(__file__).parent))
 
 from utils import (
     MigrationEnvironmentError,
@@ -18,7 +22,7 @@ from utils import (
     print_environment_help,
     print_troubleshooting_help,
 )
-from sql_migration_agent import SQLToMemgraphAgent
+from core import SQLToMemgraphAgent
 
 # Configure logging
 logging.basicConfig(

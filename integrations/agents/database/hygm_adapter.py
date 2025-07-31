@@ -7,7 +7,7 @@ standardized data structures.
 """
 
 from typing import Dict, Any
-from database_analyzer_interface import (
+from .interface import (
     DatabaseStructure,
     TableInfo,
     ColumnInfo,

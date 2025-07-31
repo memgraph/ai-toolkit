@@ -109,7 +109,15 @@ def probe_mysql_connection(mysql_config: Dict[str, str]) -> Tuple[bool, Optional
     """
     try:
         # Import here to avoid circular imports
-        from sql_database_analyzer import MySQLAnalyzer
+        import sys
+        from pathlib import Path
+
+        # Add agents root to path for absolute imports
+        agents_root = Path(__file__).parent.parent
+        if str(agents_root) not in sys.path:
+            sys.path.insert(0, str(agents_root))
+
+        from database.adapters.mysql import MySQLAnalyzer
 
         analyzer = MySQLAnalyzer(**mysql_config)
         if analyzer.connect():

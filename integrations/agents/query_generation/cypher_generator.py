@@ -1,5 +1,5 @@
 """
-Schema utilities for MySQL to Memgraph migration.
+Cypher query generation utilities for SQL to Memgraph migration.
 Provides label naming, relationship naming, and index generation.
 """
 
@@ -9,13 +9,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class SchemaUtilities:
-    """Utilities for schema conversion and naming in MySQL to Memgraph
-    migration."""
+class CypherGenerator:
+    """Utilities for Cypher query generation in SQL to Memgraph migration."""
 
     def __init__(self):
-        """Initialize the schema utilities with table-based naming strategy."""
-        pass
+        """Initialize the Cypher query generator."""
 
     def generate_index_queries(
         self, table_name: str, schema: List[Dict[str, Any]]
@@ -70,16 +68,9 @@ class SchemaUtilities:
         Returns:
             Relationship type in UPPER_CASE format
         """
+        # pylint: disable=unused-argument
         # Table-based naming strategy
         if join_table:
             return self._table_name_to_label(join_table).upper()
         else:
             return f"HAS_{self._table_name_to_label(to_table).upper()}"
-
-
-# For backward compatibility, alias the new class name
-CypherGenerator = SchemaUtilities
-
-
-# For backward compatibility, alias the new class name
-CypherGenerator = SchemaUtilities
