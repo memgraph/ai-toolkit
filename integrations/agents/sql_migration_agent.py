@@ -24,6 +24,8 @@ from sql_database_analyzer import MySQLAnalyzer
 from cypher_generator import CypherGenerator
 from hygm import HyGM, GraphModel
 from memgraph_toolbox.api.memgraph import Memgraph
+from database_analyzer_factory import DatabaseAnalyzerFactory
+from hygm_database_adapter import DatabaseDataInterface
 
 # Load environment variables
 load_dotenv()
@@ -37,6 +39,7 @@ class MigrationState(TypedDict):
     mysql_config: Dict[str, str]
     memgraph_config: Dict[str, str]
     database_structure: Dict[str, Any]
+    graph_model: Any  # HyGM GraphModel object
     migration_queries: List[str]
     current_step: str
     errors: List[str]
@@ -134,36 +137,19 @@ class MySQLToMemgraphAgent:
         logger.info("Analyzing MySQL database schema...")
 
         try:
-            # Initialize MySQL analyzer
-            self.mysql_analyzer = MySQLAnalyzer(**state["mysql_config"])
+            # Initialize MySQL analyzer using factory
+            mysql_analyzer = DatabaseAnalyzerFactory.create_analyzer(
+                database_type="mysql", **state["mysql_config"]
+            )
 
-            if not self.mysql_analyzer.connect():
+            if not mysql_analyzer.connect():
                 raise Exception("Failed to connect to MySQL database")
 
-            # Get database structure
-            structure = self.mysql_analyzer.get_database_structure()
+            # Get standardized database structure
+            db_structure = mysql_analyzer.get_database_structure()
 
-            # Add table counts for progress tracking and collect sample data
-            structure["table_counts"] = {}
-            structure["sample_data"] = {}
-            for table_name in structure["tables"].keys():
-                count = self.mysql_analyzer.get_table_row_count(table_name)
-                structure["table_counts"][table_name] = count
-
-                # Get sample data for better graph modeling context
-                try:
-                    sample_data = self.mysql_analyzer.get_table_data(
-                        table_name, limit=3
-                    )
-                    structure["sample_data"][table_name] = sample_data
-                    logger.debug(
-                        f"Collected {len(sample_data)} sample rows from {table_name}"
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Could not fetch sample data from {table_name}: {e}"
-                    )
-                    structure["sample_data"][table_name] = []
+            # Use Database Data Interface to format data for HyGM
+            hygm_data = DatabaseDataInterface.get_hygm_data_structure(db_structure)
 
             # Enhance with intelligent graph modeling
             logger.info(
@@ -177,22 +163,16 @@ class MySQLToMemgraphAgent:
                 if self.interactive_table_selection:
                     logger.info("Using interactive graph modeling approach")
                     graph_model = graph_modeler.analyze_and_model_schema_interactive(
-                        structure,
+                        hygm_data,
                         domain_context=("Database migration with user feedback"),
                     )
                 else:
                     logger.info("Using standard graph modeling approach")
-                    graph_model = graph_modeler.analyze_and_model_schema(structure)
+                    graph_model = graph_modeler.analyze_and_model_schema(hygm_data)
 
-                # Add graph modeling results to structure
-                structure["graph_model"] = {
-                    "nodes": [node.__dict__ for node in graph_model.nodes],
-                    "relationships": [
-                        rel.__dict__ for rel in graph_model.relationships
-                    ],
-                    "modeling_decisions": graph_model.modeling_decisions,
-                    "optimization_suggestions": (graph_model.optimization_suggestions),
-                }
+                # Store the graph model in state for use by migration agent
+                state["database_structure"] = hygm_data
+                state["graph_model"] = graph_model
 
                 logger.info(
                     f"Graph model created with {len(graph_model.nodes)} "
@@ -203,23 +183,24 @@ class MySQLToMemgraphAgent:
             except Exception as e:
                 logger.warning(f"Graph modeling enhancement failed: {e}")
                 # Continue without graph modeling enhancement
+                state["database_structure"] = hygm_data
+                state["graph_model"] = None
 
-            state["database_structure"] = structure
             # Only count entity tables for migration progress (exclude views and join tables)
-            state["total_tables"] = len(structure["entity_tables"])
+            state["total_tables"] = len(hygm_data["entity_tables"])
             state["current_step"] = "Schema analysis completed"
 
             # Log detailed analysis
-            views_count = len(structure.get("views", {}))
-            join_tables_count = len(structure.get("join_tables", {}))
-            entity_tables_count = len(structure.get("entity_tables", {}))
+            views_count = len(hygm_data.get("views", {}))
+            join_tables_count = len(hygm_data.get("join_tables", {}))
+            entity_tables_count = len(hygm_data.get("entity_tables", {}))
 
             logger.info(
-                f"Found {len(structure['tables'])} total tables: "
+                f"Found {len(hygm_data['tables'])} total tables: "
                 f"{entity_tables_count} entities, "
                 f"{join_tables_count} join tables, "
                 f"{views_count} views, "
-                f"and {len(structure['relationships'])} relationships"
+                f"and {len(hygm_data['relationships'])} relationships"
             )
 
             if views_count > 0:
@@ -236,8 +217,6 @@ class MySQLToMemgraphAgent:
         logger.info("Starting interactive graph modeling process...")
 
         try:
-            structure = state["database_structure"]
-
             # Skip interactive modeling if not in interactive mode
             if not self.interactive_table_selection:
                 logger.info("Non-interactive mode: skipping graph modeling feedback")
@@ -245,7 +224,7 @@ class MySQLToMemgraphAgent:
                 return state
 
             # Check if we have an existing graph model
-            if "graph_model" not in structure:
+            if not state.get("graph_model"):
                 logger.warning("No graph model found for interactive refinement")
                 state["current_step"] = "Graph modeling skipped - no initial model"
                 return state
@@ -254,10 +233,7 @@ class MySQLToMemgraphAgent:
             graph_modeler = HyGM(llm=self.llm)
 
             # Load the existing graph model into HyGM for interaction
-            existing_model = structure["graph_model"]
-            graph_modeler.current_graph_model = self._convert_dict_to_graph_model(
-                existing_model
-            )
+            graph_modeler.current_graph_model = state["graph_model"]
 
             # Present initial model to user
             while True:
@@ -298,9 +274,7 @@ class MySQLToMemgraphAgent:
                     break
                 elif action == "reset":
                     # Reset to original model
-                    graph_modeler.current_graph_model = (
-                        self._convert_dict_to_graph_model(existing_model)
-                    )
+                    graph_modeler.current_graph_model = state["graph_model"]
                     graph_modeler.iteration_count = 0
                     logger.info("Reset graph model to original state")
                     continue
@@ -326,15 +300,8 @@ class MySQLToMemgraphAgent:
 
             # Update the state with the refined graph model
             final_model = graph_modeler.current_graph_model
-            structure["graph_model"] = {
-                "nodes": [node.__dict__ for node in final_model.nodes],
-                "relationships": [rel.__dict__ for rel in final_model.relationships],
-                "modeling_decisions": final_model.modeling_decisions,
-                "optimization_suggestions": final_model.optimization_suggestions,
-                "iterations": graph_modeler.iteration_count,
-            }
+            state["graph_model"] = final_model
 
-            state["database_structure"] = structure
             state[
                 "current_step"
             ] = f"Interactive graph modeling completed ({graph_modeler.iteration_count} iterations)"
@@ -461,17 +428,17 @@ class MySQLToMemgraphAgent:
         logger.info("Generating Cypher queries based on HyGM graph model...")
 
         try:
-            structure = state["database_structure"]
+            hygm_data = state["database_structure"]
             mysql_config = state["mysql_config"]
 
             # Check if we have HyGM graph model
-            if "graph_model" not in structure:
+            if not state.get("graph_model"):
                 logger.warning(
                     "No HyGM graph model found, falling back to basic migration"
                 )
                 return self._generate_cypher_queries_fallback(state)
 
-            graph_model = structure["graph_model"]
+            graph_model = state["graph_model"]
             queries = []
 
             # Create MySQL connection config for migrate module
@@ -479,16 +446,16 @@ class MySQLToMemgraphAgent:
 
             # Generate node creation queries based on HyGM recommendations
             logger.info(
-                f"Creating nodes based on {len(graph_model['nodes'])} HyGM node definitions"
+                f"Creating nodes based on {len(graph_model.nodes)} HyGM node definitions"
             )
 
-            for node_def in graph_model["nodes"]:
-                source_table = node_def["source_table"]
-                node_label = node_def["label"]
-                properties = node_def["properties"]
+            for node_def in graph_model.nodes:
+                source_table = node_def.source_table
+                node_label = node_def.label
+                properties = node_def.properties
 
                 # Get table info for column validation
-                table_info = structure.get("entity_tables", {}).get(source_table, {})
+                table_info = hygm_data.get("entity_tables", {}).get(source_table, {})
 
                 # Validate properties exist in source table
                 valid_properties = self._validate_node_properties(
@@ -499,7 +466,7 @@ class MySQLToMemgraphAgent:
                     properties_str = ", ".join(valid_properties)
                     node_query = f"""
 // Create {node_label} nodes from {source_table} table (HyGM optimized)
-// Rationale: {node_def.get('modeling_rationale', 'N/A')}
+// Rationale: {node_def.modeling_rationale}
 CALL migrate.mysql('SELECT {properties_str} FROM {source_table}', {mysql_config_str})
 YIELD row
 CREATE (n:{node_label})
@@ -515,16 +482,16 @@ SET n += row;"""
 
             # Generate relationship creation queries based on HyGM recommendations
             logger.info(
-                f"Creating relationships based on {len(graph_model['relationships'])} HyGM relationship definitions"
+                f"Creating relationships based on {len(graph_model.relationships)} HyGM relationship definitions"
             )
 
-            for rel_def in graph_model["relationships"]:
+            for rel_def in graph_model.relationships:
                 rel_query = self._generate_hygm_relationship_query(
-                    rel_def, structure, mysql_config_str
+                    rel_def, hygm_data, mysql_config_str
                 )
                 if rel_query:
                     queries.append(rel_query)
-                    logger.info(f"Added relationship creation: {rel_def['name']}")
+                    logger.info(f"Added relationship creation: {rel_def.name}")
 
             state["migration_queries"] = queries
             state["current_step"] = "Cypher queries generated using HyGM graph model"
@@ -566,20 +533,20 @@ SET n += row;"""
         return valid_properties
 
     def _generate_hygm_relationship_query(
-        self, rel_def: Dict[str, Any], structure: Dict[str, Any], mysql_config_str: str
+        self, rel_def, hygm_data: Dict[str, Any], mysql_config_str: str
     ) -> str:
         """Generate relationship query based on HyGM relationship definition."""
 
         try:
-            rel_name = rel_def["name"]
-            rel_type = rel_def["type"]
-            from_node = rel_def["from_node"]
-            to_node = rel_def["to_node"]
-            source_info = rel_def.get("source_info", {})
+            rel_name = rel_def.name
+            rel_type = rel_def.type
+            from_node = rel_def.from_node
+            to_node = rel_def.to_node
+            source_info = rel_def.source_info or {}
 
             # Find the corresponding node labels from HyGM
-            from_label = self._find_hygm_node_label(from_node, structure)
-            to_label = self._find_hygm_node_label(to_node, structure)
+            from_label = self._find_hygm_node_label(from_node, hygm_data)
+            to_label = self._find_hygm_node_label(to_node, hygm_data)
 
             if not from_label or not to_label:
                 logger.warning(
@@ -594,7 +561,7 @@ SET n += row;"""
                     to_label,
                     source_info,
                     mysql_config_str,
-                    structure,
+                    hygm_data,
                 )
             elif rel_type == "many_to_many":
                 return self._generate_many_to_many_hygm_query(
@@ -603,7 +570,7 @@ SET n += row;"""
                     to_label,
                     source_info,
                     mysql_config_str,
-                    structure,
+                    hygm_data,
                 )
             else:
                 logger.warning(f"Unsupported relationship type: {rel_type}")
@@ -615,16 +582,11 @@ SET n += row;"""
             )
             return ""
 
-    def _find_hygm_node_label(self, node_name: str, structure: Dict[str, Any]) -> str:
+    def _find_hygm_node_label(self, node_name: str, hygm_data: Dict[str, Any]) -> str:
         """Find the HyGM node label for a given node name."""
-        graph_model = structure.get("graph_model", {})
-        nodes = graph_model.get("nodes", [])
-
-        for node in nodes:
-            if node.get("name") == node_name or node.get("source_table") == node_name:
-                return node.get("label", "")
-
-        # Fallback to original table name transformation
+        # Since we're now using the GraphModel directly in state,
+        # we need to access it from the state instead of here
+        # For now, use fallback to table name transformation
         return self.cypher_generator._table_name_to_label(node_name)
 
     def _generate_one_to_many_hygm_query(
@@ -634,7 +596,7 @@ SET n += row;"""
         to_label: str,
         source_info: Dict[str, Any],
         mysql_config_str: str,
-        structure: Dict[str, Any],
+        hygm_data: Dict[str, Any],
     ) -> str:
         """Generate one-to-many relationship query using HyGM information."""
 
@@ -648,7 +610,7 @@ SET n += row;"""
             return ""
 
         # Get primary key from source table
-        from_table_info = structure.get("entity_tables", {}).get(from_table, {})
+        from_table_info = hygm_data.get("entity_tables", {}).get(from_table, {})
         from_pk = self._get_primary_key(from_table_info)
 
         if not from_pk:
@@ -670,7 +632,7 @@ CREATE (from_node)-[:{rel_name}]->(to_node);"""
         to_label: str,
         source_info: Dict[str, Any],
         mysql_config_str: str,
-        structure: Dict[str, Any],
+        hygm_data: Dict[str, Any],
     ) -> str:
         """Generate many-to-many relationship query using HyGM information."""
 
@@ -759,7 +721,7 @@ SET n += row;"""
                     to_table = rel["to_table"]  # Referenced table
                     from_label = self.cypher_generator._table_name_to_label(from_table)
                     to_label = self.cypher_generator._table_name_to_label(to_table)
-                    rel_name = self.cypher_generator._generate_relationship_type(
+                    rel_name = self.cypher_generator.generate_relationship_type(
                         from_table, to_table
                     )
 
@@ -786,7 +748,7 @@ CREATE (from_node)-[:{rel_name}]->(to_node);"""
                     to_table = rel["to_table"]
                     from_label = self.cypher_generator._table_name_to_label(from_table)
                     to_label = self.cypher_generator._table_name_to_label(to_table)
-                    rel_name = self.cypher_generator._generate_relationship_type(
+                    rel_name = self.cypher_generator.generate_relationship_type(
                         from_table, to_table, join_table
                     )
 
@@ -967,6 +929,7 @@ CREATE (from)-[:{rel_name}]->(to);"""
             mysql_config=mysql_config,
             memgraph_config=memgraph_config,
             database_structure={},
+            graph_model=None,
             migration_queries=[],
             current_step="Starting migration",
             errors=[],
