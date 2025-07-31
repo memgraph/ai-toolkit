@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-MySQL to Memgraph Migration Agent - Main Entry Point
+SQL Database to Memgraph Migration Agent - Main Entry Point
 
-This is the main entry point for the MySQL to Memgraph migration agent.
+This is the main entry point for the SQL database to Memgraph migration agent.
 Run with: uv run main.py
 """
 
@@ -18,7 +18,7 @@ from utils import (
     print_environment_help,
     print_troubleshooting_help,
 )
-from sql_migration_agent import MySQLToMemgraphAgent
+from sql_migration_agent import SQLToMemgraphAgent
 
 # Configure logging
 logging.basicConfig(
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 def print_banner() -> None:
     """Print application banner."""
     print("=" * 60)
-    print("🚀 MySQL to Memgraph Migration Agent")
+    print("🚀 SQL Database to Memgraph Migration Agent")
     print("=" * 60)
     print("Intelligent database migration with LLM-powered analysis")
     print()
@@ -44,9 +44,9 @@ def get_table_selection_mode() -> bool:
     Returns:
         True for interactive mode, False for automatic mode
     """
-    print("Table selection mode:")
-    print("  1. Interactive - manually select tables to migrate")
-    print("  2. Automatic - migrate all entity tables")
+    print("Migration mode:")
+    print("  1. Interactive - help in designing and migrate SQL to the Graph model.")
+    print("  2. Automatic - design and migrate SQL to the Graph model automatically.")
     print()
 
     while True:
@@ -66,7 +66,7 @@ def get_table_selection_mode() -> bool:
 
 
 def run_migration(
-    mysql_config: Dict[str, str],
+    source_db_config: Dict[str, str],
     memgraph_config: Dict[str, str],
     interactive_mode: bool,
 ) -> Dict[str, Any]:
@@ -74,7 +74,7 @@ def run_migration(
     Run the migration with the specified configuration.
 
     Args:
-        mysql_config: MySQL connection configuration
+        source_db_config: Source database connection configuration
         memgraph_config: Memgraph connection configuration
         interactive_mode: Whether to use interactive table selection
 
@@ -87,13 +87,13 @@ def run_migration(
     print()
 
     # Create agent with table-based strategy (default)
-    agent = MySQLToMemgraphAgent(
+    agent = SQLToMemgraphAgent(
         interactive_table_selection=interactive_mode,
     )
 
     print("🚀 Starting migration workflow...")
     print("This will:")
-    print("  1. 🔍 Analyze MySQL schema and detect join tables")
+    print("  1. 🔍 Analyze source database schema and detect join tables")
     print("  2. 🤖 Generate migration plan with LLM")
     print("  3. 📝 Create indexes and constraints automatically")
     print("  4. ⚙️  Generate migration queries using Memgraph migrate module")
@@ -108,12 +108,12 @@ def run_migration(
         print()
 
         # For demo purposes, create a non-interactive agent
-        demo_agent = MySQLToMemgraphAgent(
+        demo_agent = SQLToMemgraphAgent(
             interactive_table_selection=False,
         )
-        return demo_agent.migrate(mysql_config, memgraph_config)
+        return demo_agent.migrate(source_db_config, memgraph_config)
     else:
-        return agent.migrate(mysql_config, memgraph_config)
+        return agent.migrate(source_db_config, memgraph_config)
 
 
 def print_migration_results(result: Dict[str, Any]) -> None:
@@ -198,13 +198,13 @@ def main() -> None:
     try:
         # Setup and validate environment
         print("🔧 Setting up environment...")
-        mysql_config, memgraph_config = setup_and_validate_environment()
+        source_db_config, memgraph_config = setup_and_validate_environment()
         print("✅ Environment validation completed")
         print()
 
         # Probe database connections
         print("🔌 Testing database connections...")
-        probe_all_connections(mysql_config, memgraph_config)
+        probe_all_connections(source_db_config, memgraph_config)
         print("✅ All connections verified")
         print()
 
@@ -212,7 +212,7 @@ def main() -> None:
         interactive_mode = get_table_selection_mode()
 
         # Run migration
-        result = run_migration(mysql_config, memgraph_config, interactive_mode)
+        result = run_migration(source_db_config, memgraph_config, interactive_mode)
 
         # Display results
         print_migration_results(result)

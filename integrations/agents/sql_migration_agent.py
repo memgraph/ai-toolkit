@@ -1,7 +1,7 @@
 """
-MySQL to Memgraph Migration Agent
+SQL Database to Memgraph Migration Agent
 
-This agent analyzes MySQL databases, generates appropriate Cypher queries,
+This agent analyzes SQL databases, generates appropriate Cypher queries,
 and migrates data to Memgraph using LangGraph workflow.
 """
 
@@ -20,7 +20,7 @@ from langgraph.types import interrupt
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 
-from sql_database_analyzer import MySQLAnalyzer
+from sql_database_analyzer import MySQLAnalyzer  # Backward compatibility
 from cypher_generator import CypherGenerator
 from hygm import HyGM, GraphModel
 from memgraph_toolbox.api.memgraph import Memgraph
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 class MigrationState(TypedDict):
     """State for the migration workflow."""
 
-    mysql_config: Dict[str, str]
+    source_db_config: Dict[str, str]
     memgraph_config: Dict[str, str]
     database_structure: Dict[str, Any]
     graph_model: Any  # HyGM GraphModel object
@@ -49,8 +49,8 @@ class MigrationState(TypedDict):
     created_constraints: List[str]
 
 
-class MySQLToMemgraphAgent:
-    """Agent for migrating MySQL databases to Memgraph."""
+class SQLToMemgraphAgent:
+    """Agent for migrating SQL databases to Memgraph."""
 
     def __init__(
         self,
@@ -74,7 +74,7 @@ class MySQLToMemgraphAgent:
         self.llm = ChatOpenAI(
             model="gpt-4o-mini", temperature=0.1, api_key=openai_api_key
         )
-        self.mysql_analyzer = None
+        self.database_analyzer = None
         self.cypher_generator = CypherGenerator()
         self.interactive_table_selection = interactive_table_selection
 
@@ -83,21 +83,21 @@ class MySQLToMemgraphAgent:
         # Build the workflow graph
         self.workflow = self._build_workflow()
 
-    def _get_mysql_config_for_migrate(self, mysql_config: Dict[str, str]) -> str:
+    def _get_db_config_for_migrate(self, db_config: Dict[str, str]) -> str:
         """
-        Convert MySQL config for use with migrate module in Memgraph container.
+        Convert database config for use with migrate module in Memgraph.
 
-        Adjusts localhost/127.0.0.1 to host.docker.internal for Docker networking.
+        Adjusts localhost/127.0.0.1 to host.docker.internal for Docker.
         """
-        migrate_host = mysql_config["host"]
+        migrate_host = db_config["host"]
         if migrate_host == "localhost" or migrate_host == "127.0.0.1":
             migrate_host = "host.docker.internal"
 
         return f"""{{
-            user: '{mysql_config['user']}',
-            password: '{mysql_config['password']}',
+            user: '{db_config['user']}',
+            password: '{db_config['password']}',
             host: '{migrate_host}',
-            database: '{mysql_config['database']}'
+            database: '{db_config['database']}'
         }}"""
 
     def _build_workflow(self) -> StateGraph:
@@ -105,7 +105,7 @@ class MySQLToMemgraphAgent:
         workflow = StateGraph(MigrationState)
 
         # Add nodes
-        workflow.add_node("analyze_mysql", self._analyze_mysql_schema)
+        workflow.add_node("analyze_database", self._analyze_database_schema)
         workflow.add_node("select_tables", self._select_tables_for_migration)
         workflow.add_node(
             "interactive_graph_modeling", self._interactive_graph_modeling
@@ -117,7 +117,7 @@ class MySQLToMemgraphAgent:
         workflow.add_node("verify_migration", self._verify_migration)
 
         # Add edges
-        workflow.add_edge("analyze_mysql", "select_tables")
+        workflow.add_edge("analyze_database", "select_tables")
         workflow.add_edge("select_tables", "interactive_graph_modeling")
         workflow.add_edge("interactive_graph_modeling", "create_indexes")
         workflow.add_edge("create_indexes", "generate_cypher_queries")
@@ -127,26 +127,26 @@ class MySQLToMemgraphAgent:
         workflow.add_edge("verify_migration", END)
 
         # Set entry point
-        workflow.set_entry_point("analyze_mysql")
+        workflow.set_entry_point("analyze_database")
 
         # Return the workflow (not compiled) so caller can add checkpointer
         return workflow
 
-    def _analyze_mysql_schema(self, state: MigrationState) -> MigrationState:
-        """Analyze MySQL database schema and structure."""
-        logger.info("Analyzing MySQL database schema...")
+    def _analyze_database_schema(self, state: MigrationState) -> MigrationState:
+        """Analyze source database schema and structure."""
+        logger.info("Analyzing source database schema...")
 
         try:
-            # Initialize MySQL analyzer using factory
-            mysql_analyzer = DatabaseAnalyzerFactory.create_analyzer(
-                database_type="mysql", **state["mysql_config"]
+            # Initialize database analyzer using factory
+            database_analyzer = DatabaseAnalyzerFactory.create_analyzer(
+                database_type="mysql", **state["source_db_config"]
             )
 
-            if not mysql_analyzer.connect():
-                raise Exception("Failed to connect to MySQL database")
+            if not database_analyzer.connect():
+                raise Exception("Failed to connect to source database")
 
             # Get standardized database structure
-            db_structure = mysql_analyzer.get_database_structure()
+            db_structure = database_analyzer.get_database_structure()
 
             # Use Database Data Interface to format data for HyGM
             hygm_data = DatabaseDataInterface.get_hygm_data_structure(db_structure)
@@ -207,7 +207,7 @@ class MySQLToMemgraphAgent:
                 logger.info(f"Skipping {views_count} view tables from migration")
 
         except Exception as e:
-            logger.error(f"Error analyzing MySQL schema: {e}")
+            logger.error(f"Error analyzing database schema: {e}")
             state["errors"].append(f"Schema analysis failed: {e}")
 
         return state
@@ -429,7 +429,7 @@ class MySQLToMemgraphAgent:
 
         try:
             hygm_data = state["database_structure"]
-            mysql_config = state["mysql_config"]
+            source_db_config = state["source_db_config"]
 
             # Check if we have HyGM graph model
             if not state.get("graph_model"):
@@ -441,8 +441,8 @@ class MySQLToMemgraphAgent:
             graph_model = state["graph_model"]
             queries = []
 
-            # Create MySQL connection config for migrate module
-            mysql_config_str = self._get_mysql_config_for_migrate(mysql_config)
+            # Create database connection config for migrate module
+            db_config_str = self._get_db_config_for_migrate(source_db_config)
 
             # Generate node creation queries based on HyGM recommendations
             logger.info(
@@ -467,7 +467,8 @@ class MySQLToMemgraphAgent:
                     node_query = f"""
 // Create {node_label} nodes from {source_table} table (HyGM optimized)
 // Rationale: {node_def.modeling_rationale}
-CALL migrate.mysql('SELECT {properties_str} FROM {source_table}', {mysql_config_str})
+CALL migrate.mysql('SELECT {properties_str} FROM {source_table}', 
+                   {db_config_str})
 YIELD row
 CREATE (n:{node_label})
 SET n += row;"""
@@ -487,7 +488,7 @@ SET n += row;"""
 
             for rel_def in graph_model.relationships:
                 rel_query = self._generate_hygm_relationship_query(
-                    rel_def, hygm_data, mysql_config_str
+                    rel_def, hygm_data, db_config_str
                 )
                 if rel_query:
                     queries.append(rel_query)
@@ -910,10 +911,10 @@ CREATE (from)-[:{rel_name}]->(to);"""
         return state
 
     def migrate(
-        self, mysql_config: Dict[str, str], memgraph_config: Dict[str, str] = None
+        self, source_db_config: Dict[str, str], memgraph_config: Dict[str, str] = None
     ) -> Dict[str, Any]:
         """Execute the complete migration workflow."""
-        logger.info("Starting MySQL to Memgraph migration...")
+        logger.info("Starting SQL database to Memgraph migration...")
 
         # Default Memgraph configuration
         if not memgraph_config:
@@ -926,7 +927,7 @@ CREATE (from)-[:{rel_name}]->(to);"""
 
         # Initialize state
         initial_state = MigrationState(
-            mysql_config=mysql_config,
+            source_db_config=source_db_config,
             memgraph_config=memgraph_config,
             database_structure={},
             graph_model=None,
@@ -955,8 +956,8 @@ CREATE (from)-[:{rel_name}]->(to);"""
                 final_state = compiled_workflow.invoke(initial_state)
 
             # Cleanup connections
-            if self.mysql_analyzer:
-                self.mysql_analyzer.disconnect()
+            if self.database_analyzer:
+                self.database_analyzer.disconnect()
             if self.memgraph_client:
                 self.memgraph_client.close()
 
