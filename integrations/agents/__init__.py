@@ -6,8 +6,8 @@ to Memgraph with LLM-powered graph modeling and analysis.
 
 ## Package Structure
 
-- `core/` - Main migration orchestration and graph modeling
-- `database/` - Database analysis and abstraction layer  
+- `core/` - Main migration orchestration and graph modeling (HyGM)
+- `database/` - Database analysis and data interface layer
 - `query_generation/` - Cypher query generation and schema utilities
 - `utils/` - Configuration and environment utilities
 - `examples/` - Usage examples and demonstrations
@@ -16,7 +16,8 @@ to Memgraph with LLM-powered graph modeling and analysis.
 ## Quick Start
 
 ```python
-from agents.core import SQLToMemgraphAgent
+from agents.core import SQLToMemgraphAgent, HyGM
+from agents.database import DatabaseDataInterface
 from agents.utils import setup_and_validate_environment
 
 # Setup environment

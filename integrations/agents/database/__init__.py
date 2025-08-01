@@ -21,7 +21,7 @@ from database.interface import (
     DatabaseStructure,
 )
 from database.factory import DatabaseAnalyzerFactory
-from database.hygm_adapter import DatabaseDataInterface
+from database.data_interface import DatabaseDataInterface
 
 __all__ = [
     "DatabaseAnalyzer",

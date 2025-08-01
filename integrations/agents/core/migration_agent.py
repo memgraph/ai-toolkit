@@ -26,7 +26,7 @@ from query_generation.cypher_generator import CypherGenerator
 from core.graph_modeling import HyGM, GraphModel
 from memgraph_toolbox.api.memgraph import Memgraph
 from database.factory import DatabaseAnalyzerFactory
-from database.hygm_adapter import DatabaseDataInterface
+from database.data_interface import DatabaseDataInterface
 
 # Load environment variables
 load_dotenv()

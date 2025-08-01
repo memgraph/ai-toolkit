@@ -1,9 +1,9 @@
 """
-Database Data Interface for HyGM consumption.
+Database Data Interface for graph modeling.
 
 This module provides a clean data interface between database analyzers
-and HyGM, enabling HyGM to work with any SQL database system through
-standardized data structures.
+and graph modeling systems, enabling HyGM to work with any SQL database
+system through standardized data structures.
 """
 
 from typing import Dict, Any
