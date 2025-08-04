@@ -30,4 +30,4 @@ class CypherTool(BaseTool):
         """Execute the provided Cypher query and return the results."""
         query = arguments["query"]
         result = self.db.query(query)
-        return [dict(record) for record in result]
+        return result

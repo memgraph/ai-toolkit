@@ -169,6 +169,58 @@ def test_cypher():
     assert len(result) == 1
 
 
+def test_cypher_date_time_serialization():
+    """Test the Cypher tool with comprehensive date/time serialization."""
+
+    url = "bolt://localhost:7687"
+    user = ""
+    password = ""
+    memgraph_client = Memgraph(url=url, username=user, password=password)
+
+    cypher_tool = CypherTool(db=memgraph_client)
+
+    # Test all temporal types supported by Memgraph
+    query = """
+    RETURN
+        date('2024-01-15') AS test_date,
+        localTime('10:30:45') AS test_local_time,
+        localDateTime('2024-01-15T10:30:45') AS test_local_datetime,
+        datetime('2024-01-15T10:30:45+01:00') AS test_datetime,
+        duration('PT2M2.33S') AS test_duration
+    """
+
+    result = cypher_tool.call({"query": query})
+
+    assert isinstance(result, list)
+    assert len(result) == 1
+
+    record = result[0]
+
+    # Verify all temporal types are present and properly serialized
+    assert "test_date" in record
+    assert "test_local_time" in record
+    assert "test_local_datetime" in record
+    assert "test_datetime" in record
+    assert "test_duration" in record
+
+    # Verify date serialization (Date -> "YYYY-MM-DD")
+    assert record["test_date"] == "2024-01-15"
+
+    # Verify local time serialization (LocalTime -> "HH:MM:SS.nnnnnnnnn")
+    assert record["test_local_time"] == "10:30:45.000000000"
+
+    # Verify local datetime serialization (LocalDateTime -> ISO format)
+    assert record["test_local_datetime"] == "2024-01-15T10:30:45.000000000"
+
+    # Verify datetime serialization (ZonedDateTime -> ISO format with timezone)
+    assert "2024-01-15T10:30:45" in record["test_datetime"]
+    assert "+01:00" in record["test_datetime"]
+
+    # Verify duration serialization (Duration -> string representation)
+    assert isinstance(record["test_duration"], str)
+    assert "PT2M2.33S" in record["test_duration"]
+
+
 def test_betweenness_centrality_tool():
     """Test the RunBetweennessCentralityTool."""
 
