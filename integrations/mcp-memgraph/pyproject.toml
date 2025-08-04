@@ -52,3 +52,7 @@ asyncio_default_fixture_loop_scope = "function"
 [build-system]
 requires = ["hatchling", "build", "setuptools"]
 build-backend = "hatchling.build"
+
+
+[tool.hatch.metadata]
+allow-direct-references = true
