@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional
 import os
 from neo4j import GraphDatabase
+from ..utils.serialization import serialize_record_data
 
 
 class Memgraph:
@@ -82,7 +83,7 @@ class Memgraph:
                 parameters_=params,
                 database_=self.database,
             )
-            json_data = [r.data() for r in data]
+            json_data = [serialize_record_data(r.data()) for r in data]
             return json_data
         except Neo4jError as e:
             if not (
@@ -115,7 +116,7 @@ class Memgraph:
         # fallback to allow implicit transactions
         with self.driver.session(database=self.database) as session:
             data = session.run(query, params)
-            json_data = [r.data() for r in data]
+            json_data = [serialize_record_data(r.data()) for r in data]
             return json_data
 
     def close(self) -> None:
