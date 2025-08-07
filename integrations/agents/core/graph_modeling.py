@@ -3,7 +3,7 @@ Hypothetical Graph Modeling (HyGM) Module
 
 This module uses LLM to analyze database schemas and provide intelligent
 graph modeling suggestions for optimal MySQL to Memgraph migration.
-Supports both automatic and manual (interactive) modeling modes.
+Supports both automatic and interactive modeling modes.
 """
 
 import json
@@ -20,7 +20,7 @@ class ModelingMode(Enum):
     """Modeling modes for HyGM."""
 
     AUTOMATIC = "automatic"
-    MANUAL = "manual"
+    INTERACTIVE = "interactive"
 
 
 @dataclass
@@ -68,7 +68,7 @@ class HyGM:
 
     Supports two modes:
     - AUTOMATIC: Creates graph model without user interaction
-    - MANUAL: Interactive mode with user feedback via LangGraph interrupts
+    - INTERACTIVE: Interactive mode with user feedback via terminal input
     """
 
     def __init__(self, llm, mode: ModelingMode = ModelingMode.AUTOMATIC):
@@ -98,8 +98,8 @@ class HyGM:
 
         if self.mode == ModelingMode.AUTOMATIC:
             return self._automatic_modeling(database_structure, domain_context)
-        else:  # MANUAL mode
-            return self._manual_modeling(database_structure, domain_context)
+        else:  # INTERACTIVE mode
+            return self._interactive_modeling(database_structure, domain_context)
 
     def _automatic_modeling(
         self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
@@ -124,7 +124,7 @@ class HyGM:
         logger.info("Automatic graph modeling completed")
         return graph_model
 
-    def _manual_modeling(
+    def _interactive_modeling(
         self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
     ) -> GraphModel:
         """

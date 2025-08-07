@@ -156,7 +156,7 @@ class SQLToMemgraphAgent:
 
                 if self.interactive_graph_modeling:
                     logger.info("Using interactive graph modeling mode")
-                    modeling_mode = ModelingMode.MANUAL
+                    modeling_mode = ModelingMode.INTERACTIVE
                 else:
                     logger.info("Using automatic graph modeling mode")
                     modeling_mode = ModelingMode.AUTOMATIC
