@@ -9,11 +9,107 @@ Supports both automatic and interactive modeling modes.
 import json
 import logging
 from enum import Enum
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Literal
 from dataclasses import dataclass
+from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, SystemMessage
 
 logger = logging.getLogger(__name__)
+
+
+# Structured output models for LLM operations
+class ModelOperation(BaseModel):
+    """Base model for graph model operations."""
+
+    type: Literal[
+        "change_node_label",
+        "rename_property",
+        "drop_property",
+        "add_property",
+        "change_relationship_name",
+        "drop_relationship",
+        "add_index",
+        "drop_index",
+    ]
+
+
+class ChangeNodeLabelOperation(ModelOperation):
+    """Change a node's label."""
+
+    type: Literal["change_node_label"] = "change_node_label"
+    target: str = Field(description="Current node label to change")
+    new_value: str = Field(description="New label for the node")
+
+
+class RenamePropertyOperation(ModelOperation):
+    """Rename a property in a node."""
+
+    type: Literal["rename_property"] = "rename_property"
+    node: str = Field(description="Node label containing the property")
+    target: str = Field(description="Current property name")
+    new_value: str = Field(description="New property name")
+
+
+class DropPropertyOperation(ModelOperation):
+    """Drop a property from a node."""
+
+    type: Literal["drop_property"] = "drop_property"
+    node: str = Field(description="Node label containing the property")
+    target: str = Field(description="Property name to drop")
+
+
+class AddPropertyOperation(ModelOperation):
+    """Add a property to a node."""
+
+    type: Literal["add_property"] = "add_property"
+    node: str = Field(description="Node label to add property to")
+    new_value: str = Field(description="New property name to add")
+
+
+class ChangeRelationshipNameOperation(ModelOperation):
+    """Change a relationship's name."""
+
+    type: Literal["change_relationship_name"] = "change_relationship_name"
+    target: str = Field(description="Current relationship name")
+    new_value: str = Field(description="New relationship name")
+
+
+class DropRelationshipOperation(ModelOperation):
+    """Drop a relationship."""
+
+    type: Literal["drop_relationship"] = "drop_relationship"
+    target: str = Field(description="Relationship name to drop")
+
+
+class AddIndexOperation(ModelOperation):
+    """Add an index to a node property."""
+
+    type: Literal["add_index"] = "add_index"
+    node: str = Field(description="Node label")
+    property: str = Field(description="Property name to index")
+
+
+class DropIndexOperation(ModelOperation):
+    """Drop an index from a node property."""
+
+    type: Literal["drop_index"] = "drop_index"
+    node: str = Field(description="Node label")
+    property: str = Field(description="Property name to remove index from")
+
+
+class ModelModifications(BaseModel):
+    """Container for all model modification operations."""
+
+    operations: List[
+        ChangeNodeLabelOperation
+        | RenamePropertyOperation
+        | DropPropertyOperation
+        | AddPropertyOperation
+        | ChangeRelationshipNameOperation
+        | DropRelationshipOperation
+        | AddIndexOperation
+        | DropIndexOperation
+    ] = Field(description="List of operations to apply to the graph model")
 
 
 class ModelingMode(Enum):
@@ -306,43 +402,28 @@ class HyGM:
 
     def _apply_natural_language_feedback(self, feedback: str) -> None:
         """
-        Apply natural language feedback to modify the current graph model.
+        Apply natural language feedback using structured output.
         """
-        logger.info("Processing natural language feedback...")
+        logger.info("Processing natural language feedback with structured output...")
 
         system_message = SystemMessage(
             content="""
 You are a graph modeling expert that processes natural language feedback
 to modify graph models.
 
-Parse the user's feedback and return specific modifications in JSON format.
+Parse the user's feedback and return specific modifications as structured operations.
 
-Supported operations:
-1. Change node label: "change_node_label"
-2. Rename property: "rename_property"
-3. Drop property: "drop_property"
-4. Add property: "add_property"
-5. Change relationship name: "change_relationship_name"
-6. Drop relationship: "drop_relationship"
-7. Add index: "add_index"
-8. Drop index: "drop_index"
+Available operations:
+- change_node_label: Change a node's label
+- rename_property: Rename a property in a node  
+- drop_property: Remove a property from a node
+- add_property: Add a property to a node
+- change_relationship_name: Change a relationship's name
+- drop_relationship: Remove a relationship
+- add_index: Add an index to a node property
+- drop_index: Remove an index from a node property
 
-Return format:
-{
-  "operations": [
-    {
-      "type": "change_node_label",
-      "target": "old_label",
-      "new_value": "new_label"
-    },
-    {
-      "type": "rename_property",
-      "node": "node_label",
-      "target": "old_prop_name",
-      "new_value": "new_prop_name"
-    }
-  ]
-}
+Analyze the feedback carefully and return the appropriate operations.
 """
         )
 
@@ -360,15 +441,37 @@ Parse this feedback into specific operations to modify the graph model.
         )
 
         try:
-            response = self.llm.invoke([system_message, human_message])
-            operations_data = json.loads(response.content)
+            # Use structured output if the LLM supports it
+            if hasattr(self.llm, "with_structured_output"):
+                structured_llm = self.llm.with_structured_output(ModelModifications)
+                response = structured_llm.invoke([system_message, human_message])
+                operations = [op.model_dump() for op in response.operations]
+            else:
+                # Fallback to JSON parsing for LLMs without structured output
+                logger.warning(
+                    "LLM doesn't support structured output, falling back to JSON parsing"
+                )
+                response = self.llm.invoke([system_message, human_message])
 
-            self._execute_model_operations(operations_data.get("operations", []))
+                # Try to extract JSON from response
+                content = response.content.strip()
+                if content.startswith("```json"):
+                    content = content[7:-3].strip()
+                elif content.startswith("```"):
+                    content = content[3:-3].strip()
+
+                response_data = json.loads(content)
+                operations = response_data.get("operations", [])
+
+            self._execute_model_operations(operations)
+            logger.info(f"Successfully applied {len(operations)} operations")
 
         except json.JSONDecodeError as e:
             logger.error(f"Error parsing LLM response as JSON: {e}")
+            print(f"❌ Failed to parse feedback: {e}")
         except Exception as e:
             logger.error(f"Error processing natural language feedback: {e}")
+            print(f"❌ Error processing feedback: {e}")
 
     def _execute_model_operations(self, operations: List[Dict[str, Any]]) -> None:
         """Execute a list of model modification operations."""

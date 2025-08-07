@@ -12,12 +12,27 @@ This repository contains the following libraries:
 3. [**mcp-memgraph**](/integrations/mcp-memgraph/)
    An MCP (Model Context Protocol) server implementation, exposing Memgraph tools over a lightweight STDIO protocol. The package is available on the [PyPi](https://pypi.org/project/mcp-memgraph/)
 
+4. [**agents**](/integrations/agents/) ⚡ **Experimental**
+   An intelligent database migration agent that automates the process of migrating from MySQL to Memgraph using LLM-powered graph modeling and analysis. Features automated schema analysis, intelligent graph modeling with interactive refinement, and data migration with validation.
+
+## Key Features
+
+### Migration Agent Capabilities
+
+- **🔍 Intelligent Schema Analysis**: Automatically analyzes MySQL database structure and relationships
+- **🧠 LLM-Powered Graph Modeling**: Uses AI to create optimal graph models from relational schemas
+- **🔄 Interactive Refinement**: Allows users to refine graph models through natural language feedback
+- **⚡ Automated Migration**: Handles complete data migration with validation and rollback capabilities
+- **📊 Progress Monitoring**: Real-time migration progress tracking with detailed logging
+- **🛡️ Data Validation**: Comprehensive pre and post-migration data integrity checks
+
 ## Usage examples
 
-For individual examples on how to use the toolbox, LangChain, or MCP, refer to our documentation:
+For individual examples on how to use the toolbox, LangChain, MCP, or agents, refer to our documentation:
 
 - [Langchain examples](https://memgraph.com/docs/ai-ecosystem/integrations#langchain)
 - [MCP examples](https://memgraph.com/docs/ai-ecosystem/integrations#model-context-protocol-mcp)
+- [Agent migration examples](/integrations/agents/examples/) - Interactive MySQL to Memgraph migration workflows
 
 ## Developing locally
 
@@ -61,6 +76,22 @@ pytest -s integrations/langchain-memgraph/tests
 uv pip install -e integrations/mcp-memgraph[test]
 pytest -s integrations/mcp-memgraph/tests
 ```
+
+### Agent integration tests
+
+```
+uv pip install -e integrations/agents[test]
+pytest -s integrations/agents/tests
+```
+
+To run a complete migration workflow with the agent:
+
+```
+cd integrations/agents
+uv run main.py
+```
+
+**Note:** The agent requires both MySQL and Memgraph connections. Set up your environment variables in `.env` based on `.env.example`.
 
 If you are running any test on MacOS in zsh, add `""` to the command:
 
