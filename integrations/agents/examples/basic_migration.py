@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 def run_basic_migration():
-    """Run a basic migration with automatic table selection."""
+    """Run a basic migration with automatic graph modeling."""
     print("🚀 Basic SQL to Memgraph Migration Example")
     print("=" * 50)
 
@@ -35,7 +35,7 @@ def run_basic_migration():
         mysql_config, memgraph_config = setup_and_validate_environment()
 
         # Create migration agent in automatic mode (non-interactive)
-        agent = SQLToMemgraphAgent(interactive_table_selection=False)
+        agent = SQLToMemgraphAgent(interactive_graph_modeling=False)
 
         # Run migration
         print("Starting automatic migration...")

@@ -17,11 +17,9 @@ sys.path.append(str(Path(__file__).parent.parent / "langchain-memgraph"))
 sys.path.append(str(Path(__file__).parent.parent))  # Add agents root to path
 
 from langgraph.graph import StateGraph, END
-from langgraph.types import interrupt
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 
-from database.adapters.mysql import MySQLAnalyzer  # Backward compatibility
 from query_generation.cypher_generator import CypherGenerator
 from core.graph_modeling import HyGM, GraphModel
 from memgraph_toolbox.api.memgraph import Memgraph
@@ -55,15 +53,15 @@ class SQLToMemgraphAgent:
 
     def __init__(
         self,
-        interactive_table_selection: bool = True,
+        interactive_graph_modeling: bool = False,
     ):
         """Initialize the migration agent.
 
         Args:
-            interactive_table_selection: Whether to prompt user for table
-                selection.
-                - True: Show interactive table selection (default)
-                - False: Migrate all entity tables automatically
+            interactive_graph_modeling: Whether to use interactive graph
+                modeling mode.
+                - True: Allow user to modify graph model
+                - False: Use automatic graph modeling (default)
         """
         # Environment validation is now handled by utils.environment module
         # This makes the agent more modular and reusable
@@ -77,7 +75,7 @@ class SQLToMemgraphAgent:
         )
         self.database_analyzer = None
         self.cypher_generator = CypherGenerator()
-        self.interactive_table_selection = interactive_table_selection
+        self.interactive_graph_modeling = interactive_graph_modeling
 
         self.memgraph_client = None
 
@@ -107,7 +105,6 @@ class SQLToMemgraphAgent:
 
         # Add nodes
         workflow.add_node("analyze_database", self._analyze_database_schema)
-        workflow.add_node("select_tables", self._select_tables_for_migration)
         workflow.add_node(
             "interactive_graph_modeling", self._interactive_graph_modeling
         )
@@ -117,9 +114,8 @@ class SQLToMemgraphAgent:
         workflow.add_node("execute_migration", self._execute_migration)
         workflow.add_node("verify_migration", self._verify_migration)
 
-        # Add edges
-        workflow.add_edge("analyze_database", "select_tables")
-        workflow.add_edge("select_tables", "interactive_graph_modeling")
+        # Add edges - direct flow without table selection
+        workflow.add_edge("analyze_database", "interactive_graph_modeling")
         workflow.add_edge("interactive_graph_modeling", "create_indexes")
         workflow.add_edge("create_indexes", "generate_cypher_queries")
         workflow.add_edge("generate_cypher_queries", "validate_queries")
@@ -153,23 +149,24 @@ class SQLToMemgraphAgent:
             hygm_data = DatabaseDataInterface.get_hygm_data_structure(db_structure)
 
             # Enhance with intelligent graph modeling
-            logger.info(
-                "Applying intelligent graph modeling analysis "
-                "with single LLM call..."
-            )
+            logger.info("Starting graph modeling analysis...")
             try:
-                graph_modeler = HyGM(llm=self.llm)
+                # Determine modeling mode based on settings
+                from core.graph_modeling import ModelingMode
 
-                # Use interactive if enabled, otherwise standard approach
-                if self.interactive_table_selection:
-                    logger.info("Using interactive graph modeling approach")
-                    graph_model = graph_modeler.analyze_and_model_schema_interactive(
-                        hygm_data,
-                        domain_context=("Database migration with user feedback"),
-                    )
+                if self.interactive_graph_modeling:
+                    logger.info("Using interactive graph modeling mode")
+                    modeling_mode = ModelingMode.MANUAL
                 else:
-                    logger.info("Using standard graph modeling approach")
-                    graph_model = graph_modeler.analyze_and_model_schema(hygm_data)
+                    logger.info("Using automatic graph modeling mode")
+                    modeling_mode = ModelingMode.AUTOMATIC
+
+                graph_modeler = HyGM(llm=self.llm, mode=modeling_mode)
+
+                # Generate graph model using new unified interface
+                graph_model = graph_modeler.model_graph(
+                    hygm_data, domain_context="Database migration to graph database"
+                )
 
                 # Store the graph model in state for use by migration agent
                 state["database_structure"] = hygm_data
@@ -189,6 +186,20 @@ class SQLToMemgraphAgent:
 
             # Only count entity tables for migration progress (exclude views and join tables)
             state["total_tables"] = len(hygm_data["entity_tables"])
+
+            # Automatically select all entity tables for migration
+            entity_tables = hygm_data.get("entity_tables", {})
+            if entity_tables:
+                selected_tables = list(entity_tables.keys())
+                logger.info(
+                    f"Automatically selecting all {len(selected_tables)} entity tables for migration"
+                )
+                hygm_data["selected_tables"] = selected_tables
+                state["database_structure"] = hygm_data
+            else:
+                logger.warning("No entity tables found for migration")
+                state["errors"].append("No entity tables available for migration")
+
             state["current_step"] = "Schema analysis completed"
 
             # Log detailed analysis
@@ -214,107 +225,50 @@ class SQLToMemgraphAgent:
         return state
 
     def _interactive_graph_modeling(self, state: MigrationState) -> MigrationState:
-        """Interactive graph modeling with user feedback loop."""
-        logger.info("Starting interactive graph modeling process...")
+        """
+        Graph modeling step - now handled by HyGM class internally.
+        This method validates the completed graph model.
+        """
+        logger.info("Validating completed graph model...")
 
+        # Validate that we have a graph model
+        if not state.get("graph_model"):
+            logger.error("No graph model found - this should not happen")
+            state["errors"].append("Graph modeling failed to produce a model")
+            state["current_step"] = "Graph modeling failed"
+            return state
+
+        # Perform final validation
         try:
-            # Skip interactive modeling if not in interactive mode
-            if not self.interactive_table_selection:
-                logger.info("Non-interactive mode: skipping graph modeling feedback")
-                state["current_step"] = "Graph modeling completed (non-interactive)"
-                return state
+            from core.graph_modeling import HyGM
 
-            # Check if we have an existing graph model
-            if not state.get("graph_model"):
-                logger.warning("No graph model found for interactive refinement")
-                state["current_step"] = "Graph modeling skipped - no initial model"
-                return state
+            # Store graph model for later use in query generation
+            self._current_graph_model = state["graph_model"]
 
-            # Initialize interactive HyGM
-            graph_modeler = HyGM(llm=self.llm)
+            validator = HyGM(llm=self.llm)
+            validation_result = validator.validate_graph_model(
+                state["graph_model"], state["database_structure"]
+            )
 
-            # Load the existing graph model into HyGM for interaction
-            graph_modeler.current_graph_model = state["graph_model"]
+            if not validation_result["is_valid"]:
+                logger.warning("Graph model has validation issues:")
+                for issue in validation_result["issues"]:
+                    logger.warning(f"- {issue}")
+                state["errors"].extend(validation_result["issues"])
 
-            # Present initial model to user
-            while True:
-                model_presentation = graph_modeler.get_current_model_presentation()
-
-                # Use LangGraph interrupt for user interaction
-                user_response = interrupt(
-                    {
-                        "type": "graph_model_review",
-                        "message": "Review and modify the graph model",
-                        "model_presentation": model_presentation,
-                        "instructions": {
-                            "actions": [
-                                "'continue' - Proceed with current model",
-                                "'modify' - Make changes to the model",
-                                "'reset' - Start over with original analysis",
-                            ],
-                            "modification_examples": [
-                                "Change node labels, properties, or constraints",
-                                "Modify relationship names or directionality",
-                                "Remove unwanted nodes or relationships",
-                                "Add new nodes or relationships",
-                            ],
-                        },
-                    }
-                )
-
-                if not user_response:
-                    logger.info(
-                        "No user response received, proceeding with current model"
-                    )
-                    break
-
-                action = user_response.get("action", "continue").lower()
-
-                if action == "continue":
-                    logger.info("User approved the current graph model")
-                    break
-                elif action == "reset":
-                    # Reset to original model
-                    graph_modeler.current_graph_model = state["graph_model"]
-                    graph_modeler.iteration_count = 0
-                    logger.info("Reset graph model to original state")
-                    continue
-                elif action == "modify":
-                    # Apply user modifications
-                    feedback = user_response.get("feedback", {})
-                    if feedback:
-                        result = graph_modeler.apply_user_feedback(feedback)
-                        if result.get("success"):
-                            logger.info(
-                                f"Applied user feedback successfully: {result['message']}"
-                            )
-                        else:
-                            logger.error(
-                                f"Failed to apply feedback: {result.get('error', 'Unknown error')}"
-                            )
-                    continue
-                else:
-                    logger.warning(
-                        f"Unknown action: {action}, proceeding with current model"
-                    )
-                    break
-
-            # Update the state with the refined graph model
-            final_model = graph_modeler.current_graph_model
-            state["graph_model"] = final_model
+            if validation_result["warnings"]:
+                logger.info("Graph model validation warnings:")
+                for warning in validation_result["warnings"]:
+                    logger.info(f"- {warning}")
 
             state[
                 "current_step"
-            ] = f"Interactive graph modeling completed ({graph_modeler.iteration_count} iterations)"
-
-            logger.info(
-                f"Completed interactive graph modeling after {graph_modeler.iteration_count} iterations"
-            )
+            ] = f"Graph model validated - {validation_result['summary']}"
 
         except Exception as e:
-            logger.error(f"Error in interactive graph modeling: {e}")
-            state["errors"].append(f"Interactive graph modeling failed: {e}")
-            state["current_step"] = "Interactive graph modeling failed"
+            logger.error(f"Error validating graph model: {e}")
+            state["errors"].append(f"Graph model validation failed: {e}")
+            state["current_step"] = "Graph model validation failed"
 
         return state
 
@@ -586,9 +540,13 @@ SET n += row;"""
 
     def _find_hygm_node_label(self, node_name: str, hygm_data: Dict[str, Any]) -> str:
         """Find the HyGM node label for a given node name."""
-        # Since we're now using the GraphModel directly in state,
-        # we need to access it from the state instead of here
-        # For now, use fallback to table name transformation
+        # Access the graph model from the current state to get actual node labels
+        if hasattr(self, "_current_graph_model") and self._current_graph_model:
+            for node in self._current_graph_model.nodes:
+                if node.source_table.lower() == node_name.lower():
+                    return node.label
+
+        # Fallback to table name transformation if graph model not available
         return self.cypher_generator._table_name_to_label(node_name)
 
     def _generate_one_to_many_hygm_query(
@@ -942,19 +900,20 @@ CREATE (from)-[:{rel_name}]->(to);"""
         )
 
         try:
-            # For non-interactive mode, compile workflow without checkpointer
-            if not self.interactive_table_selection:
+            # For non-interactive graph modeling mode, compile workflow without checkpointer
+            if not self.interactive_graph_modeling:
                 compiled_workflow = self.workflow.compile()
                 final_state = compiled_workflow.invoke(initial_state)
             else:
-                # For interactive mode, import and use checkpointer
+                # For interactive graph modeling mode, import and use checkpointer
                 from langgraph.checkpoint.memory import MemorySaver
 
                 memory = MemorySaver()
                 compiled_workflow = self.workflow.compile(checkpointer=memory)
 
-                # This will require proper handling of interrupts in calling code
-                final_state = compiled_workflow.invoke(initial_state)
+                # Provide required configuration for checkpointer
+                config = {"configurable": {"thread_id": "migration_thread_1"}}
+                final_state = compiled_workflow.invoke(initial_state, config=config)
 
             # Cleanup connections
             if self.database_analyzer:
@@ -979,195 +938,3 @@ CREATE (from)-[:{rel_name}]->(to);"""
                 "total_tables": 0,
                 "final_step": "Failed",
             }
-
-    def _select_tables_for_migration(self, state: MigrationState) -> MigrationState:
-        """Allow human to select which tables to migrate using LangGraph interrupt."""
-        logger.info("Starting table selection process...")
-
-        try:
-            structure = state["database_structure"]
-            entity_tables = structure.get("entity_tables", {})
-            join_tables = structure.get("join_tables", {})
-            views = structure.get("views", {})
-
-            if not entity_tables:
-                logger.warning("No entity tables found for migration")
-                state["current_step"] = "No tables available for migration"
-                return state
-
-            # Non-interactive mode: select all entity tables
-            if not self.interactive_table_selection:
-                selected_tables = list(entity_tables.keys())
-                logger.info(
-                    f"Non-interactive mode: selecting all {len(selected_tables)} entity tables"
-                )
-
-                # Update the database structure with all tables
-                structure["selected_tables"] = selected_tables
-                state["database_structure"] = structure
-                state["total_tables"] = len(selected_tables)
-
-                # Keep all relationships as they are
-                state[
-                    "current_step"
-                ] = "All tables selected for migration (non-interactive)"
-                return state
-
-            # Interactive mode: use LangGraph interrupt for human input
-            # Prepare table information for human review
-            table_info = {"entity_tables": [], "join_tables": [], "views": []}
-
-            # Format entity tables with details
-            for i, (table_name, table_data) in enumerate(entity_tables.items(), 1):
-                row_count = table_data.get("row_count", 0)
-                fk_count = len(table_data.get("foreign_keys", []))
-                table_info["entity_tables"].append(
-                    {
-                        "number": i,
-                        "name": table_name,
-                        "row_count": row_count,
-                        "foreign_key_count": fk_count,
-                    }
-                )
-
-            # Format join tables for context
-            for table_name, table_data in join_tables.items():
-                row_count = table_data.get("row_count", 0)
-                fk_count = len(table_data.get("foreign_keys", []))
-                table_info["join_tables"].append(
-                    {
-                        "name": table_name,
-                        "row_count": row_count,
-                        "foreign_key_count": fk_count,
-                    }
-                )
-
-            # Format views for context
-            for table_name, table_data in views.items():
-                row_count = table_data.get("row_count", 0)
-                table_info["views"].append({"name": table_name, "row_count": row_count})
-
-            # Use LangGraph interrupt to pause for human input
-            logger.info("Requesting human input for table selection...")
-            user_response = interrupt(
-                {
-                    "type": "table_selection",
-                    "message": "Please select which tables to migrate",
-                    "table_info": table_info,
-                    "instructions": {
-                        "options": [
-                            "'all' - Migrate all entity tables",
-                            "'1,3,5' - Migrate specific tables by number",
-                            "'1-5' - Migrate range of tables",
-                            "'none' - Skip migration (exit)",
-                        ]
-                    },
-                }
-            )
-
-            # Process the human response
-            if not user_response or "selection" not in user_response:
-                raise ValueError("No table selection received from user")
-
-            selection = user_response["selection"].strip()
-            table_list = [table["name"] for table in table_info["entity_tables"]]
-
-            # Parse user selection
-            if selection.lower() == "none":
-                logger.info("Migration cancelled by user.")
-                state["errors"].append("Migration cancelled by user")
-                state["current_step"] = "Migration cancelled"
-                return state
-
-            elif selection.lower() == "all":
-                selected_tables = list(entity_tables.keys())
-
-            elif "," in selection:
-                # Handle comma-separated list (e.g., "1,3,5")
-                indices = []
-                for part in selection.split(","):
-                    try:
-                        idx = int(part.strip()) - 1
-                        if 0 <= idx < len(table_list):
-                            indices.append(idx)
-                        else:
-                            raise ValueError(f"Invalid table number: {part.strip()}")
-                    except ValueError as e:
-                        raise ValueError(f"Invalid number in selection: {part.strip()}")
-
-                selected_tables = [table_list[i] for i in indices]
-
-            elif "-" in selection:
-                # Handle range (e.g., "1-5")
-                try:
-                    start, end = selection.split("-")
-                    start_idx = int(start.strip()) - 1
-                    end_idx = int(end.strip()) - 1
-
-                    if (
-                        0 <= start_idx < len(table_list)
-                        and 0 <= end_idx < len(table_list)
-                        and start_idx <= end_idx
-                    ):
-                        selected_tables = table_list[start_idx : end_idx + 1]
-                    else:
-                        raise ValueError("Invalid range")
-                except ValueError:
-                    raise ValueError("Invalid range format. Use format like '1-5'")
-
-            else:
-                # Handle single number
-                try:
-                    idx = int(selection) - 1
-                    if 0 <= idx < len(table_list):
-                        selected_tables = [table_list[idx]]
-                    else:
-                        raise ValueError("Invalid table number")
-                except ValueError:
-                    raise ValueError(
-                        f"Invalid selection. Please enter a number between 1 and {len(table_list)}, 'all', or 'none'"
-                    )
-
-            # Filter the structure to only include selected tables
-            filtered_entity_tables = {
-                table_name: table_info
-                for table_name, table_info in entity_tables.items()
-                if table_name in selected_tables
-            }
-
-            # Update the database structure with filtered tables
-            structure["entity_tables"] = filtered_entity_tables
-            structure["selected_tables"] = selected_tables
-            state["database_structure"] = structure
-            state["total_tables"] = len(selected_tables)
-
-            # Filter relationships to only include those involving selected tables
-            filtered_relationships = []
-            for rel in structure.get("relationships", []):
-                if rel["type"] == "many_to_many":
-                    # Include if both tables in the relationship are selected
-                    if (
-                        rel["from_table"] in selected_tables
-                        and rel["to_table"] in selected_tables
-                    ):
-                        filtered_relationships.append(rel)
-                else:
-                    # Include if the from_table is selected
-                    if rel["from_table"] in selected_tables:
-                        filtered_relationships.append(rel)
-
-            structure["relationships"] = filtered_relationships
-
-            logger.info(
-                f"User selected {len(selected_tables)} tables for migration: {', '.join(selected_tables)}"
-            )
-            logger.info(f"{len(filtered_relationships)} relationships will be created")
-
-            state["current_step"] = "Tables selected for migration"
-
-        except Exception as e:
-            logger.error(f"Error in table selection: {e}")
-            state["errors"].append(f"Table selection failed: {e}")
-            state["current_step"] = "Table selection failed"
-
-        return state

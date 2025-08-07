@@ -24,7 +24,7 @@ from agents.utils import setup_and_validate_environment
 mysql_config, memgraph_config = setup_and_validate_environment()
 
 # Create migration agent
-agent = SQLToMemgraphAgent(interactive_table_selection=False)
+agent = SQLToMemgraphAgent(interactive_graph_modeling=False)
 
 # Run migration
 result = agent.migrate(mysql_config, memgraph_config)

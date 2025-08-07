@@ -41,38 +41,38 @@ def print_banner() -> None:
     print()
 
 
-def get_table_selection_mode() -> bool:
+def get_graph_modeling_mode() -> bool:
     """
-    Get user choice for table selection mode.
+    Get user choice for graph modeling mode.
 
     Returns:
-        True for interactive mode, False for automatic mode
+        bool: True for interactive graph modeling, False for automatic
     """
-    print("Migration mode:")
-    print("  1. Interactive - help in designing and migrate SQL to the Graph model.")
-    print("  2. Automatic - design and migrate SQL to the Graph model automatically.")
+    print("Graph modeling mode:")
+    print("  1. Interactive - Refine the graph model with natural language feedback")
+    print("  2. Automatic - Generate graph model automatically")
     print()
 
     while True:
         try:
             choice = input("Select mode (1-2) or press Enter for automatic: ").strip()
             if not choice:
-                return False  # Default to automatic mode
+                return False  # Default to automatic
 
             if choice == "1":
-                return True
+                return True  # Interactive
             elif choice == "2":
-                return False
+                return False  # Automatic
             else:
-                print("Invalid choice. Please select 1 or 2.")
+                print("Invalid choice. Please select 1-2.")
         except ValueError:
-            print("Invalid input. Please enter 1 or 2.")
+            print("Invalid input. Please enter 1-2.")
 
 
 def run_migration(
-    source_db_config: Dict[str, str],
-    memgraph_config: Dict[str, str],
-    interactive_mode: bool,
+    source_db_config: Dict[str, Any],
+    memgraph_config: Dict[str, Any],
+    interactive_graph_modeling: bool,
 ) -> Dict[str, Any]:
     """
     Run the migration with the specified configuration.
@@ -80,44 +80,41 @@ def run_migration(
     Args:
         source_db_config: Source database connection configuration
         memgraph_config: Memgraph connection configuration
-        interactive_mode: Whether to use interactive table selection
+        interactive_graph_modeling: Whether to use interactive graph modeling
 
     Returns:
         Migration result dictionary
     """
-    print("🔧 Creating migration agent with table_based strategy")
-    mode_text = "interactive" if interactive_mode else "automatic"
-    print(f"📋 Table selection mode: {mode_text}")
+    print("🔧 Creating migration agent...")
+
+    graph_mode = "interactive" if interactive_graph_modeling else "automatic"
+    print(f"🎯 Graph modeling: {graph_mode}")
     print()
 
-    # Create agent with table-based strategy (default)
+    # Create agent with graph modeling interaction mode
     agent = SQLToMemgraphAgent(
-        interactive_table_selection=interactive_mode,
+        interactive_graph_modeling=interactive_graph_modeling,
     )
 
     print("🚀 Starting migration workflow...")
     print("This will:")
-    print("  1. 🔍 Analyze source database schema and detect join tables")
-    print("  2. 🤖 Generate migration plan with LLM")
-    print("  3. 📝 Create indexes and constraints automatically")
-    print("  4. ⚙️  Generate migration queries using Memgraph migrate module")
+    print("  1. 🔍 Analyze source database schema")
+    print("  2. 🎯 Generate graph model with HyGM")
+    print("  3. 📝 Create indexes and constraints")
+    print("  4. ⚙️  Generate migration queries")
     print("  5. 🔄 Execute migration to Memgraph")
     print("  6. ✅ Verify the migration results")
     print()
 
     # Handle interactive vs automatic mode
-    if interactive_mode:
-        print("⚠️  Note: Interactive mode requires manual workflow execution")
-        print("   This demo will run in automatic mode for demonstration")
+    if interactive_graph_modeling:
+        print(
+            "🔄 Interactive mode: You'll be prompted to review and refine the graph model"
+        )
         print()
 
-        # For demo purposes, create a non-interactive agent
-        demo_agent = SQLToMemgraphAgent(
-            interactive_table_selection=False,
-        )
-        return demo_agent.migrate(source_db_config, memgraph_config)
-    else:
-        return agent.migrate(source_db_config, memgraph_config)
+    # Run the migration with the user's chosen mode
+    return agent.migrate(source_db_config, memgraph_config)
 
 
 def print_migration_results(result: Dict[str, Any]) -> None:
@@ -213,10 +210,10 @@ def main() -> None:
         print()
 
         # Get user preferences
-        interactive_mode = get_table_selection_mode()
+        graph_interactive = get_graph_modeling_mode()
 
         # Run migration
-        result = run_migration(source_db_config, memgraph_config, interactive_mode)
+        result = run_migration(source_db_config, memgraph_config, graph_interactive)
 
         # Display results
         print_migration_results(result)
