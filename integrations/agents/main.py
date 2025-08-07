@@ -23,6 +23,7 @@ from utils import (
     print_troubleshooting_help,
 )
 from core import SQLToMemgraphAgent
+from core.graph_modeling import GraphModelingStrategy
 
 # Configure logging
 logging.basicConfig(
@@ -49,7 +50,8 @@ def get_graph_modeling_mode() -> bool:
         bool: True for interactive graph modeling, False for automatic
     """
     print("Graph modeling mode:")
-    print("  1. Interactive - Refine the graph model with natural language feedback")
+    print("  1. Interactive - Refine the graph model with natural language")
+    print("                   feedback")
     print("  2. Automatic - Generate graph model automatically")
     print()
 
@@ -69,10 +71,42 @@ def get_graph_modeling_mode() -> bool:
             print("Invalid input. Please enter 1-2.")
 
 
+def get_graph_modeling_strategy() -> GraphModelingStrategy:
+    """
+    Get user choice for graph modeling strategy.
+
+    Returns:
+        GraphModelingStrategy: Selected strategy
+    """
+    print("Graph modeling strategy:")
+    print("  1. Deterministic - Rule-based graph creation (fast, predictable)")
+    print("  2. LLM-Powered - AI generates optimal graph model")
+    print("                   (flexible, smart)")
+    print()
+
+    while True:
+        try:
+            choice = input(
+                "Select strategy (1-2) or press Enter for deterministic: "
+            ).strip()
+            if not choice:
+                return GraphModelingStrategy.DETERMINISTIC  # Default
+
+            if choice == "1":
+                return GraphModelingStrategy.DETERMINISTIC
+            elif choice == "2":
+                return GraphModelingStrategy.LLM_POWERED
+            else:
+                print("Invalid choice. Please select 1-2.")
+        except ValueError:
+            print("Invalid input. Please enter 1-2.")
+
+
 def run_migration(
     source_db_config: Dict[str, Any],
     memgraph_config: Dict[str, Any],
     interactive_graph_modeling: bool,
+    graph_modeling_strategy: GraphModelingStrategy,
 ) -> Dict[str, Any]:
     """
     Run the migration with the specified configuration.
@@ -81,6 +115,7 @@ def run_migration(
         source_db_config: Source database connection configuration
         memgraph_config: Memgraph connection configuration
         interactive_graph_modeling: Whether to use interactive graph modeling
+        graph_modeling_strategy: Strategy for graph model creation
 
     Returns:
         Migration result dictionary
@@ -88,12 +123,14 @@ def run_migration(
     print("🔧 Creating migration agent...")
 
     graph_mode = "interactive" if interactive_graph_modeling else "automatic"
-    print(f"🎯 Graph modeling: {graph_mode}")
+    strategy_name = graph_modeling_strategy.value
+    print(f"🎯 Graph modeling: {graph_mode} with {strategy_name} strategy")
     print()
 
-    # Create agent with graph modeling interaction mode
+    # Create agent with graph modeling settings
     agent = SQLToMemgraphAgent(
         interactive_graph_modeling=interactive_graph_modeling,
+        graph_modeling_strategy=graph_modeling_strategy,
     )
 
     print("🚀 Starting migration workflow...")
@@ -108,12 +145,11 @@ def run_migration(
 
     # Handle interactive vs automatic mode
     if interactive_graph_modeling:
-        print(
-            "🔄 Interactive mode: You'll be prompted to review and refine the graph model"
-        )
+        print("🔄 Interactive mode: You'll be prompted to review and refine")
+        print("   the graph model")
         print()
 
-    # Run the migration with the user's chosen mode
+    # Run the migration with the user's chosen settings
     return agent.migrate(source_db_config, memgraph_config)
 
 
@@ -211,9 +247,12 @@ def main() -> None:
 
         # Get user preferences
         graph_interactive = get_graph_modeling_mode()
+        graph_strategy = get_graph_modeling_strategy()
 
         # Run migration
-        result = run_migration(source_db_config, memgraph_config, graph_interactive)
+        result = run_migration(
+            source_db_config, memgraph_config, graph_interactive, graph_strategy
+        )
 
         # Display results
         print_migration_results(result)

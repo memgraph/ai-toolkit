@@ -17,6 +17,84 @@ from langchain_core.messages import HumanMessage, SystemMessage
 logger = logging.getLogger(__name__)
 
 
+class GraphModelingStrategy(Enum):
+    """Graph modeling strategies available."""
+
+    DETERMINISTIC = "deterministic"  # Rule-based graph creation
+    LLM_POWERED = "llm_powered"  # LLM generates the graph model
+
+
+# Structured output models for LLM graph generation
+class LLMGraphNode(BaseModel):
+    """Node definition for LLM-generated graph models."""
+
+    name: str = Field(description="Unique identifier for the node")
+    label: str = Field(
+        description="Cypher label for the node (e.g., 'User', 'Product')"
+    )
+    properties: List[str] = Field(
+        description="List of properties to include from source table"
+    )
+    primary_key: str = Field(description="Primary key property name")
+    indexes: List[str] = Field(description="Properties that should have indexes")
+    constraints: List[str] = Field(
+        description="Properties that should have uniqueness constraints"
+    )
+    source_table: str = Field(description="Source SQL table name")
+    modeling_rationale: str = Field(description="Explanation for modeling decisions")
+
+    class Config:
+        """Pydantic config for OpenAI structured output compatibility."""
+
+        extra = "forbid"
+
+
+class LLMGraphRelationship(BaseModel):
+    """Relationship definition for LLM-generated graph models."""
+
+    name: str = Field(description="Relationship type name (e.g., 'OWNS', 'BELONGS_TO')")
+    type: Literal["one_to_many", "many_to_many", "one_to_one"] = Field(
+        description="Cardinality of the relationship"
+    )
+    from_node: str = Field(description="Source node name")
+    to_node: str = Field(description="Target node name")
+    properties: List[str] = Field(
+        description="Properties to include on the relationship (if any)", default=[]
+    )
+    directionality: Literal["directed", "undirected"] = Field(
+        description="Whether the relationship has direction"
+    )
+    modeling_rationale: str = Field(description="Explanation for this relationship")
+
+    class Config:
+        """Pydantic config for OpenAI structured output compatibility."""
+
+        extra = "forbid"
+
+
+class LLMGraphModel(BaseModel):
+    """Complete LLM-generated graph model."""
+
+    nodes: List[LLMGraphNode] = Field(description="All nodes in the graph model")
+    relationships: List[LLMGraphRelationship] = Field(
+        description="All relationships in the graph model"
+    )
+    modeling_decisions: List[str] = Field(
+        description="High-level modeling decisions and rationale"
+    )
+    optimization_suggestions: List[str] = Field(
+        description="Suggestions for query optimization and indexing"
+    )
+    domain_insights: List[str] = Field(
+        description="Domain-specific insights discovered during modeling", default=[]
+    )
+
+    class Config:
+        """Pydantic config for OpenAI structured output compatibility."""
+
+        extra = "forbid"  # This ensures additionalProperties = false
+
+
 # Structured output models for LLM operations
 class ModelOperation(BaseModel):
     """Base model for graph model operations."""
@@ -167,13 +245,301 @@ class HyGM:
     - INTERACTIVE: Interactive mode with user feedback via terminal input
     """
 
-    def __init__(self, llm, mode: ModelingMode = ModelingMode.AUTOMATIC):
-        """Initialize with an LLM instance and modeling mode."""
+    def __init__(
+        self,
+        llm,
+        mode: ModelingMode = ModelingMode.AUTOMATIC,
+        strategy: GraphModelingStrategy = GraphModelingStrategy.DETERMINISTIC,
+    ):
+        """Initialize with an LLM instance, modeling mode, and strategy."""
         self.llm = llm
         self.mode = mode
+        self.strategy = strategy
         self.current_graph_model = None
         self.iteration_count = 0
         self.database_structure = None
+
+    def create_graph_model(
+        self,
+        database_structure: Dict[str, Any],
+        domain_context: Optional[str] = None,
+        strategy: Optional[GraphModelingStrategy] = None,
+    ) -> GraphModel:
+        """
+        Create a graph model using the specified strategy.
+
+        Args:
+            database_structure: Database structure from data_interface
+            domain_context: Optional domain context for better modeling
+            strategy: Override the default strategy for this call
+
+        Returns:
+            GraphModel created using the specified strategy
+        """
+        used_strategy = strategy or self.strategy
+
+        logger.info(f"Creating graph model using {used_strategy.value} strategy...")
+
+        if used_strategy == GraphModelingStrategy.LLM_POWERED:
+            return self._llm_powered_modeling(database_structure, domain_context)
+        else:
+            # Use existing deterministic approach
+            return self.model_graph(database_structure, domain_context)
+
+    def _llm_powered_modeling(
+        self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
+    ) -> GraphModel:
+        """
+        Use LLM to generate the complete graph model from scratch.
+
+        This method sends the database schema and sample data to the LLM
+        and asks it to design the optimal graph model.
+        """
+        logger.info("Using LLM to generate graph model...")
+
+        try:
+            # Create system prompt for graph modeling
+            system_prompt = self._create_llm_modeling_system_prompt()
+
+            # Create human prompt with database structure and sample data
+            human_prompt = self._create_llm_modeling_human_prompt(
+                database_structure, domain_context
+            )
+
+            # Get structured response from LLM
+            structured_llm = self.llm.with_structured_output(LLMGraphModel)
+
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=human_prompt),
+            ]
+
+            llm_model = structured_llm.invoke(messages)
+
+            # Convert LLM model to standard GraphModel format
+            graph_model = self._convert_llm_model_to_graph_model(
+                llm_model, database_structure
+            )
+
+            logger.info("LLM-powered graph modeling completed")
+            return graph_model
+
+        except Exception as e:
+            logger.error(f"LLM-powered modeling failed: {e}")
+            logger.info("Falling back to deterministic modeling...")
+            return self.model_graph(database_structure, domain_context)
+
+    def _create_llm_modeling_system_prompt(self) -> str:
+        """Create system prompt for LLM graph modeling."""
+        return """You are an expert graph database architect specializing in
+converting relational database schemas into optimal graph models for Memgraph.
+
+Your task is to analyze the provided SQL database schema and sample data, then
+design the best possible graph model that:
+
+1. PRESERVES DATA INTEGRITY: All important data relationships are maintained
+2. OPTIMIZES FOR GRAPH QUERIES: Structure enables efficient traversals
+3. FOLLOWS GRAPH BEST PRACTICES: Uses appropriate node/relationship patterns
+4. CONSIDERS DOMAIN SEMANTICS: Understands the business meaning of the data
+
+Key principles:
+- Entity tables become nodes with meaningful labels
+- Foreign key relationships become directed edges
+- Many-to-many relationships use the join table properties on edges
+- Choose descriptive relationship names (OWNS, BELONGS_TO, etc.)
+- Index frequently queried properties
+- Add constraints for data integrity
+
+Analyze the schema carefully, consider the sample data patterns, and create
+a graph model that will perform well for typical graph database use cases."""
+
+    def _create_llm_modeling_human_prompt(
+        self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
+    ) -> str:
+        """Create human prompt with database details for LLM modeling."""
+
+        # Build schema description
+        schema_parts = ["DATABASE SCHEMA:"]
+
+        entity_tables = database_structure.get("entity_tables", {})
+        join_tables = database_structure.get("join_tables", {})
+        relationships = database_structure.get("relationships", [])
+
+        # Describe entity tables
+        if entity_tables:
+            schema_parts.append("\nENTITY TABLES:")
+            for table_name, table_info in entity_tables.items():
+                schema_parts.append(f"\n{table_name}:")
+                schema_parts.append(f"  Rows: {table_info.get('row_count', 0)}")
+
+                # Add column information
+                schema_list = table_info.get("schema", [])
+                if schema_list:
+                    schema_parts.append("  Columns:")
+                    for col in schema_list:
+                        col_desc = f"    - {col.get('field', 'unknown')}"
+                        col_desc += f" ({col.get('type', 'unknown')})"
+                        if col.get("key") == "PRI":
+                            col_desc += " [PRIMARY KEY]"
+                        if col.get("key") == "MUL":
+                            col_desc += " [FOREIGN KEY]"
+                        schema_parts.append(col_desc)
+
+        # Describe join tables
+        if join_tables:
+            schema_parts.append("\nJOIN TABLES:")
+            for table_name, table_info in join_tables.items():
+                schema_parts.append(f"\n{table_name}:")
+                schema_parts.append(f"  Rows: {table_info.get('row_count', 0)}")
+
+                # Show foreign keys
+                fks = table_info.get("foreign_keys", [])
+                if fks:
+                    schema_parts.append("  Foreign Keys:")
+                    for fk in fks:
+                        fk_desc = f"    - {fk.get('column')} -> "
+                        fk_desc += f"{fk.get('referenced_table')}."
+                        fk_desc += f"{fk.get('referenced_column')}"
+                        schema_parts.append(fk_desc)
+
+        # Describe relationships
+        if relationships:
+            schema_parts.append("\nRELATIONSHIPS:")
+            for rel in relationships:
+                rel_desc = f"  - {rel.get('type', 'unknown')}: "
+                rel_desc += f"{rel.get('from_table')}."
+                rel_desc += f"{rel.get('from_column')} "
+                rel_desc += f"-> {rel.get('to_table')}."
+                rel_desc += f"{rel.get('to_column')}"
+                schema_parts.append(rel_desc)
+
+        # Add sample data if available
+        sample_data = database_structure.get("sample_data", {})
+        if sample_data:
+            schema_parts.append("\nSAMPLE DATA:")
+            for table_name, samples in sample_data.items():
+                if samples:
+                    schema_parts.append(f"\n{table_name} (first few rows):")
+                    for i, row in enumerate(samples[:3]):
+                        schema_parts.append(f"  Row {i+1}: {row}")
+
+        # Add domain context if provided
+        if domain_context:
+            schema_parts.append(f"\nDOMAIN CONTEXT: {domain_context}")
+
+        schema_parts.append(
+            "\nCreate an optimal graph model for this database structure."
+        )
+
+        return "\n".join(schema_parts)
+
+    def _convert_llm_model_to_graph_model(
+        self, llm_model: LLMGraphModel, database_structure: Dict[str, Any]
+    ) -> GraphModel:
+        """Convert LLM-generated model to standard GraphModel format."""
+
+        # Convert nodes
+        nodes = []
+        for llm_node in llm_model.nodes:
+            node = GraphNode(
+                name=llm_node.name,
+                label=llm_node.label,
+                properties=llm_node.properties,
+                primary_key=llm_node.primary_key,
+                indexes=llm_node.indexes,
+                constraints=llm_node.constraints,
+                source_table=llm_node.source_table,
+                modeling_rationale=llm_node.modeling_rationale,
+            )
+            nodes.append(node)
+
+        # Convert relationships
+        relationships = []
+        for llm_rel in llm_model.relationships:
+            # Find source info from database structure
+            source_info = self._find_relationship_source_info(
+                llm_rel, database_structure
+            )
+
+            relationship = GraphRelationship(
+                name=llm_rel.name,
+                type=llm_rel.type,
+                from_node=llm_rel.from_node,
+                to_node=llm_rel.to_node,
+                properties=llm_rel.properties,
+                directionality=llm_rel.directionality,
+                source_info=source_info,
+                modeling_rationale=llm_rel.modeling_rationale,
+            )
+            relationships.append(relationship)
+
+        return GraphModel(
+            nodes=nodes,
+            relationships=relationships,
+            modeling_decisions=llm_model.modeling_decisions,
+            optimization_suggestions=llm_model.optimization_suggestions,
+            data_patterns={"domain_insights": llm_model.domain_insights},
+        )
+
+    def _find_relationship_source_info(
+        self, llm_rel: LLMGraphRelationship, database_structure: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Find source relationship info from database structure."""
+
+        # Try to match with existing relationships - handle case variations
+        for rel in database_structure.get("relationships", []):
+            # Check exact match first
+            if (
+                rel.get("from_table") == llm_rel.from_node
+                and rel.get("to_table") == llm_rel.to_node
+            ):
+                return rel
+
+            # Check case-insensitive match
+            from_match = rel.get("from_table", "").lower() == llm_rel.from_node.lower()
+            to_match = rel.get("to_table", "").lower() == llm_rel.to_node.lower()
+            if from_match and to_match:
+                return rel
+
+            # Check reversed relationship (LLM might infer wrong direction)
+            rev_from_match = (
+                rel.get("from_table", "").lower() == llm_rel.to_node.lower()
+            )
+            rev_to_match = rel.get("to_table", "").lower() == llm_rel.from_node.lower()
+            if rev_from_match and rev_to_match:
+                # Return with swapped direction to match LLM's inference
+                reversed_rel = rel.copy()
+                reversed_rel["from_table"] = llm_rel.from_node
+                reversed_rel["to_table"] = llm_rel.to_node
+                logger.info(
+                    f"Found reversed relationship for "
+                    f"{llm_rel.from_node} -> {llm_rel.to_node}"
+                )
+                return reversed_rel
+
+        # Debug: Log when relationship is not found
+        rel_info = f"{llm_rel.from_node} -> {llm_rel.to_node}"
+        logger.warning(
+            f"Could not find relationship source info for "
+            f"{rel_info} (type: {llm_rel.type})"
+        )
+
+        available_rels = [
+            (
+                r.get("from_table"),
+                r.get("to_table"),
+                r.get("constraint_name", "unnamed"),
+            )
+            for r in database_structure.get("relationships", [])
+        ]
+        logger.warning(f"Available relationships: {available_rels}")
+
+        # Return minimal info if not found
+        return {
+            "from_table": llm_rel.from_node,
+            "to_table": llm_rel.to_node,
+            "type": llm_rel.type,
+        }
 
     def model_graph(
         self, database_structure: Dict[str, Any], domain_context: Optional[str] = None

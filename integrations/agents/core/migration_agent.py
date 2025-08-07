@@ -21,7 +21,7 @@ from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 
 from query_generation.cypher_generator import CypherGenerator
-from core.graph_modeling import HyGM, GraphModel
+from core.graph_modeling import HyGM, GraphModel, ModelingMode, GraphModelingStrategy
 from memgraph_toolbox.api.memgraph import Memgraph
 from database.factory import DatabaseAnalyzerFactory
 from database.data_interface import DatabaseDataInterface
@@ -54,6 +54,7 @@ class SQLToMemgraphAgent:
     def __init__(
         self,
         interactive_graph_modeling: bool = False,
+        graph_modeling_strategy: GraphModelingStrategy = GraphModelingStrategy.DETERMINISTIC,
     ):
         """Initialize the migration agent.
 
@@ -62,6 +63,9 @@ class SQLToMemgraphAgent:
                 modeling mode.
                 - True: Allow user to modify graph model
                 - False: Use automatic graph modeling (default)
+            graph_modeling_strategy: Strategy for graph model creation
+                - DETERMINISTIC: Rule-based graph creation (default)
+                - LLM_POWERED: LLM generates the graph model
         """
         # Environment validation is now handled by utils.environment module
         # This makes the agent more modular and reusable
@@ -76,6 +80,7 @@ class SQLToMemgraphAgent:
         self.database_analyzer = None
         self.cypher_generator = CypherGenerator()
         self.interactive_graph_modeling = interactive_graph_modeling
+        self.graph_modeling_strategy = graph_modeling_strategy
 
         self.memgraph_client = None
 
@@ -152,8 +157,6 @@ class SQLToMemgraphAgent:
             logger.info("Starting graph modeling analysis...")
             try:
                 # Determine modeling mode based on settings
-                from core.graph_modeling import ModelingMode
-
                 if self.interactive_graph_modeling:
                     logger.info("Using interactive graph modeling mode")
                     modeling_mode = ModelingMode.INTERACTIVE
@@ -161,10 +164,19 @@ class SQLToMemgraphAgent:
                     logger.info("Using automatic graph modeling mode")
                     modeling_mode = ModelingMode.AUTOMATIC
 
-                graph_modeler = HyGM(llm=self.llm, mode=modeling_mode)
+                # Create graph modeler with strategy and mode
+                graph_modeler = HyGM(
+                    llm=self.llm,
+                    mode=modeling_mode,
+                    strategy=self.graph_modeling_strategy,
+                )
+
+                # Log the strategy being used
+                strategy_name = self.graph_modeling_strategy.value
+                logger.info(f"Using {strategy_name} graph modeling strategy")
 
                 # Generate graph model using new unified interface
-                graph_model = graph_modeler.model_graph(
+                graph_model = graph_modeler.create_graph_model(
                     hygm_data, domain_context="Database migration to graph database"
                 )
 
@@ -394,6 +406,8 @@ class SQLToMemgraphAgent:
                 return self._generate_cypher_queries_fallback(state)
 
             graph_model = state["graph_model"]
+            # Store graph model in instance for use by helper methods
+            self._current_graph_model = graph_model
             queries = []
 
             # Create database connection config for migrate module
@@ -543,7 +557,14 @@ SET n += row;"""
         # Access the graph model from the current state to get actual node labels
         if hasattr(self, "_current_graph_model") and self._current_graph_model:
             for node in self._current_graph_model.nodes:
+                # First try to match by label (for LLM-generated models)
+                if node.label.lower() == node_name.lower():
+                    return node.label
+                # Then try to match by source table (for deterministic models)
                 if node.source_table.lower() == node_name.lower():
+                    return node.label
+                # Also try to match the node name itself
+                if node.name.lower() == node_name.lower():
                     return node.label
 
         # Fallback to table name transformation if graph model not available
