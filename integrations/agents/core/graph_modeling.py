@@ -547,7 +547,7 @@ DO NOT create relationships that don't correspond to actual foreign keys in the 
                 )
                 return reversed_rel
 
-        # Debug: Log when relationship is not found
+        # Log when relationship is not found
         rel_info = f"{llm_rel.from_node} -> {llm_rel.to_node}"
         logger.warning(
             f"Could not find relationship source info for "
