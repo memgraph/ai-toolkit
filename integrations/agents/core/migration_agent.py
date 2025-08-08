@@ -150,6 +150,9 @@ class SQLToMemgraphAgent:
             # Get standardized database structure
             db_structure = database_analyzer.get_database_structure()
 
+            # Store database structure for later use (e.g., primary key lookup)
+            self._database_structure = db_structure
+
             # Use Database Data Interface to format data for HyGM
             hygm_data = DatabaseDataInterface.get_hygm_data_structure(db_structure)
 

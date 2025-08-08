@@ -338,20 +338,28 @@ Your task is to analyze the provided SQL database schema and sample data, then
 design the best possible graph model that:
 
 1. PRESERVES DATA INTEGRITY: All important data relationships are maintained
-2. OPTIMIZES FOR GRAPH QUERIES: Structure enables efficient traversals
-3. FOLLOWS GRAPH BEST PRACTICES: Uses appropriate node/relationship patterns
-4. CONSIDERS DOMAIN SEMANTICS: Understands the business meaning of the data
+2. MAPS TO ACTUAL SCHEMA: Use the exact table and column names provided
+3. OPTIMIZES FOR GRAPH QUERIES: Structure enables efficient traversals
+4. FOLLOWS GRAPH BEST PRACTICES: Uses appropriate node/relationship patterns
+5. CONSIDERS DOMAIN SEMANTICS: Understands the business meaning of the data
+
+CRITICAL REQUIREMENTS:
+- For nodes: Use the exact table names as 'source_table', create semantic 'label' names
+- For node properties: Use the exact column names from the schema
+- For node primary keys: Use the exact primary key column name from the schema
+- For relationships: Reference nodes using their exact 'source_table' names
+- For relationship mapping: Base relationships ONLY on the foreign keys shown in the schema
+- For many-to-many: Use join tables exactly as defined in the schema
 
 Key principles:
-- Entity tables become nodes with meaningful labels
-- Foreign key relationships become directed edges
+- Entity tables become nodes with meaningful labels but preserve source_table
+- Foreign key relationships become directed edges with proper column mapping
 - Many-to-many relationships use the join table properties on edges
-- Choose descriptive relationship names (OWNS, BELONGS_TO, etc.)
-- Index frequently queried properties
-- Add constraints for data integrity
+- Choose descriptive relationship names (OWNS, BELONGS_TO, etc.) but map to actual FKs
+- Primary keys and column names must match the database schema exactly
+- Index frequently queried properties using their actual column names
 
-Analyze the schema carefully, consider the sample data patterns, and create
-a graph model that will perform well for typical graph database use cases."""
+DO NOT create relationships that don't correspond to actual foreign keys in the database."""
 
     def _create_llm_modeling_human_prompt(
         self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
@@ -360,6 +368,12 @@ a graph model that will perform well for typical graph database use cases."""
 
         # Build schema description
         schema_parts = ["DATABASE SCHEMA:"]
+        schema_parts.append(
+            "IMPORTANT: Use exact table and column names in your model."
+        )
+        schema_parts.append(
+            "For relationships, reference nodes by their source_table names."
+        )
 
         entity_tables = database_structure.get("entity_tables", {})
         join_tables = database_structure.get("join_tables", {})
@@ -401,6 +415,22 @@ a graph model that will perform well for typical graph database use cases."""
                         fk_desc += f"{fk.get('referenced_table')}."
                         fk_desc += f"{fk.get('referenced_column')}"
                         schema_parts.append(fk_desc)
+
+        # Describe relationships with detailed foreign key mapping
+        if relationships:
+            schema_parts.append("\nFOREIGN KEY RELATIONSHIPS:")
+            schema_parts.append("These are the ONLY relationships you should model:")
+            for rel in relationships:
+                rel_desc = f"  - {rel.get('from_table')}.{rel.get('from_column')} "
+                rel_desc += f"-> {rel.get('to_table')}.{rel.get('to_column')}"
+                rel_desc += f" [constraint: {rel.get('constraint_name', 'unnamed')}]"
+                schema_parts.append(rel_desc)
+
+            schema_parts.append("\nFor relationships:")
+            schema_parts.append("- Use from_node = source table name")
+            schema_parts.append("- Use to_node = target table name")
+            schema_parts.append("- Create semantic relationship names")
+            schema_parts.append("- Map to the exact foreign key constraints above")
 
         # Describe relationships
         if relationships:
