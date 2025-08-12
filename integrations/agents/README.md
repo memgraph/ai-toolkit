@@ -1,0 +1,62 @@
+# SQL Database to Memgraph Migration Agent
+
+Intelligent database migration agent that transforms SQL databases (MySQL, PostgreSQL) into graph databases using Memgraph, powered by LLM analysis and LangGraph workflows.
+
+## Overview
+
+This package provides a sophisticated migration agent that:
+
+- **Analyzes SQL database schemas** - Automatically discovers tables, relationships, and constraints
+- **Generates optimal graph models** - Uses AI to create node and relationship structures
+- **Creates indexes and constraints** - Ensures performance and data integrity
+- **Handles complex relationships** - Converts foreign keys to graph relationships
+- **Interactive refinement** - Allows users to review and adjust the graph model
+- **Comprehensive validation** - Verifies migration results and data integrity
+
+## Installation
+
+```bash
+# Install the package
+uv pip install .
+
+# Or install in development mode
+uv pip install -e .
+```
+
+## Quick Start
+
+Run the migration agent:
+
+```bash
+uv run main
+```
+
+The agent will guide you through:
+
+1. Environment setup and database connections
+2. Graph modeling strategy selection
+3. Interactive or automatic migration mode
+4. Complete migration workflow with progress tracking
+
+## Configuration
+
+Set up your environment variables in `.env`:
+
+```bash
+# Source Database (MySQL/PostgreSQL)
+SOURCE_DB_HOST=localhost
+SOURCE_DB_PORT=3306
+SOURCE_DB_NAME=your_database
+SOURCE_DB_USER=username
+SOURCE_DB_PASSWORD=password
+SOURCE_DB_TYPE=mysql  # or postgresql
+
+# Memgraph Database
+MEMGRAPH_HOST=localhost
+MEMGRAPH_PORT=7687
+MEMGRAPH_USER=
+MEMGRAPH_PASSWORD=
+
+# OpenAI (for LLM-powered features)
+OPENAI_API_KEY=your_openai_key
+```
