@@ -104,6 +104,57 @@ class SQLToMemgraphAgent:
             database: '{db_config['database']}'
         }}"""
 
+    # def _filter_problematic_columns(
+    #     self, properties: List[str], table_info: Dict[str, Any]
+    # ) -> List[str]:
+    #     """
+    #     Filter out columns with data types that cause PyObject conversion
+    #     issues.
+    #
+    #     Args:
+    #         properties: List of column names to filter
+    #         table_info: Table information containing schema
+    #
+    #     Returns:
+    #         List of column names excluding problematic types
+    #     """
+    #     if not properties or not table_info:
+    #         return properties
+    #
+    #     # Data types that cause PyObject conversion issues
+    #     problematic_types = {
+    #         'geometry', 'point', 'linestring', 'polygon', 'multipoint',
+    #         'multilinestring', 'multipolygon', 'geometrycollection',  # Spatial
+    #         'blob', 'longblob', 'mediumblob', 'tinyblob',  # Binary types
+    #         'binary', 'varbinary',  # Binary string types
+    #         'json'  # JSON type can also cause issues
+    #     }
+    #
+    #     # Get schema information
+    #     schema = table_info.get("schema", [])
+    #     column_types = {}
+    #     for col_info in schema:
+    #         col_name = col_info.get("field")
+    #         col_type = col_info.get("type", "").lower()
+    #         if col_name:
+    #             # Extract base type (remove length/precision info)
+    #             base_type = col_type.split('(')[0].strip()
+    #             column_types[col_name] = base_type
+    #
+    #     # Filter out problematic columns
+    #     filtered_properties = []
+    #     for prop in properties:
+    #         col_type = column_types.get(prop, "").lower()
+    #         if col_type not in problematic_types:
+    #             filtered_properties.append(prop)
+    #         else:
+    #             logger.warning(
+    #                 f"Excluding column '{prop}' with problematic type "
+    #                 f"'{col_type}' from migration"
+    #             )
+    #
+    #     return filtered_properties
+
     def _build_workflow(self) -> StateGraph:
         """Build the LangGraph workflow."""
         workflow = StateGraph(MigrationState)
@@ -434,19 +485,27 @@ class SQLToMemgraphAgent:
                     properties, table_info
                 )
 
-                if valid_properties:
-                    properties_str = ", ".join(valid_properties)
+                # Filter out problematic data types that cause PyObject
+                # conversion errors
+                # filtered_properties = self._filter_problematic_columns(
+                #     valid_properties, table_info
+                # )
+                filtered_properties = valid_properties
+
+                if filtered_properties:
+                    properties_str = ", ".join(filtered_properties)
                     node_query = f"""
 // Create {node_label} nodes from {source_table} table (HyGM optimized)
 // Rationale: {node_def.modeling_rationale}
-CALL migrate.mysql('SELECT {properties_str} FROM {source_table}', 
+CALL migrate.mysql('SELECT {properties_str} FROM {source_table}',
                    {db_config_str})
 YIELD row
 CREATE (n:{node_label})
 SET n += row;"""
                     queries.append(node_query)
                     logger.info(
-                        f"Added node creation for {node_label} with {len(valid_properties)} properties"
+                        f"Added node creation for {node_label} with "
+                        f"{len(filtered_properties)} properties"
                     )
                 else:
                     logger.warning(
@@ -663,13 +722,13 @@ CREATE (from)-[:{rel_name}]->(to);"""
 
         try:
             structure = state["database_structure"]
-            mysql_config = state["mysql_config"]
+            source_db_config = state["source_db_config"]
 
             # Generate migration queries using migrate.mysql() procedure
             queries = []
 
             # Create MySQL connection config for migrate module
-            mysql_config_str = self._get_mysql_config_for_migrate(mysql_config)
+            mysql_config_str = self._get_db_config_for_migrate(source_db_config)
 
             # Generate node creation queries for each entity table
             entity_tables = structure.get("entity_tables", {})
@@ -689,14 +748,21 @@ CREATE (from)-[:{rel_name}]->(to);"""
                         node_columns.append(col_name)
 
                 if node_columns:
-                    columns_str = ", ".join(node_columns)
-                    node_query = f"""
+                    # Filter out problematic data types
+                    # filtered_columns = self._filter_problematic_columns(
+                    #     node_columns, table_info
+                    # )
+                    filtered_columns = node_columns
+
+                    if filtered_columns:
+                        columns_str = ", ".join(filtered_columns)
+                        node_query = f"""
 // Create {label} nodes from {table_name} table (fallback)
 CALL migrate.mysql('SELECT {columns_str} FROM {table_name}', {mysql_config_str})
 YIELD row
 CREATE (n:{label})
 SET n += row;"""
-                    queries.append(node_query)
+                        queries.append(node_query)
 
             # Generate relationship creation queries
             for rel in structure["relationships"]:
@@ -783,8 +849,8 @@ CREATE (from)-[:{rel_name}]->(to);"""
             logger.info("Memgraph connection established successfully")
 
             # Test migrate.mysql connection by querying a small dataset
-            mysql_config = state["mysql_config"]
-            mysql_config_str = self._get_mysql_config_for_migrate(mysql_config)
+            source_db_config = state["source_db_config"]
+            mysql_config_str = self._get_db_config_for_migrate(source_db_config)
 
             test_mysql_query = f"""
             CALL migrate.mysql('SELECT 1 as test_column LIMIT 1', {mysql_config_str})
@@ -836,10 +902,22 @@ CREATE (from)-[:{rel_name}]->(to);"""
 
                         # Log progress for node creation queries
                         if "CREATE (n:" in query:
-                            table_match = query.split("FROM ")[1].split()[0]
-                            logger.info(
-                                f"Successfully migrated data from table: {table_match}"
-                            )
+                            # Extract table name from query comment or FROM clause
+                            table_name = None
+                            if "FROM " in query:
+                                try:
+                                    from_part = query.split("FROM ")[1]
+                                    table_name = from_part.split()[0].rstrip(",")
+                                except (IndexError, AttributeError):
+                                    pass
+
+                            if table_name:
+                                logger.info(
+                                    f"Successfully migrated data from table: {table_name}"
+                                )
+                                # Update completed tables list
+                                if table_name not in state["completed_tables"]:
+                                    state["completed_tables"].append(table_name)
                         elif "CREATE (" in query and "-[:" in query:
                             logger.info("Successfully created relationships")
 
