@@ -439,14 +439,15 @@ class SQLToMemgraphAgent:
                     node_query = f"""
 // Create {node_label} nodes from {source_table} table (HyGM optimized)
 // Rationale: {node_def.modeling_rationale}
-CALL migrate.mysql('SELECT {properties_str} FROM {source_table}', 
+CALL migrate.mysql('SELECT {properties_str} FROM {source_table}',
                    {db_config_str})
 YIELD row
 CREATE (n:{node_label})
 SET n += row;"""
                     queries.append(node_query)
                     logger.info(
-                        f"Added node creation for {node_label} with {len(valid_properties)} properties"
+                        f"Added node creation for {node_label} with "
+                        f"{len(valid_properties)} properties"
                     )
                 else:
                     logger.warning(
@@ -663,13 +664,13 @@ CREATE (from)-[:{rel_name}]->(to);"""
 
         try:
             structure = state["database_structure"]
-            mysql_config = state["mysql_config"]
+            source_db_config = state["source_db_config"]
 
             # Generate migration queries using migrate.mysql() procedure
             queries = []
 
             # Create MySQL connection config for migrate module
-            mysql_config_str = self._get_mysql_config_for_migrate(mysql_config)
+            mysql_config_str = self._get_db_config_for_migrate(source_db_config)
 
             # Generate node creation queries for each entity table
             entity_tables = structure.get("entity_tables", {})
@@ -783,8 +784,8 @@ CREATE (from)-[:{rel_name}]->(to);"""
             logger.info("Memgraph connection established successfully")
 
             # Test migrate.mysql connection by querying a small dataset
-            mysql_config = state["mysql_config"]
-            mysql_config_str = self._get_mysql_config_for_migrate(mysql_config)
+            source_db_config = state["source_db_config"]
+            mysql_config_str = self._get_db_config_for_migrate(source_db_config)
 
             test_mysql_query = f"""
             CALL migrate.mysql('SELECT 1 as test_column LIMIT 1', {mysql_config_str})
@@ -836,10 +837,22 @@ CREATE (from)-[:{rel_name}]->(to);"""
 
                         # Log progress for node creation queries
                         if "CREATE (n:" in query:
-                            table_match = query.split("FROM ")[1].split()[0]
-                            logger.info(
-                                f"Successfully migrated data from table: {table_match}"
-                            )
+                            # Extract table name from query comment or FROM clause
+                            table_name = None
+                            if "FROM " in query:
+                                try:
+                                    from_part = query.split("FROM ")[1]
+                                    table_name = from_part.split()[0].rstrip(",")
+                                except (IndexError, AttributeError):
+                                    pass
+
+                            if table_name:
+                                logger.info(
+                                    f"Successfully migrated data from table: {table_name}"
+                                )
+                                # Update completed tables list
+                                if table_name not in state["completed_tables"]:
+                                    state["completed_tables"].append(table_name)
                         elif "CREATE (" in query and "-[:" in query:
                             logger.info("Successfully created relationships")
 
