@@ -79,15 +79,6 @@ class LLMGraphModel(BaseModel):
     relationships: List[LLMGraphRelationship] = Field(
         description="All relationships in the graph model"
     )
-    modeling_decisions: List[str] = Field(
-        description="High-level modeling decisions and rationale"
-    )
-    optimization_suggestions: List[str] = Field(
-        description="Suggestions for query optimization and indexing"
-    )
-    domain_insights: List[str] = Field(
-        description="Domain-specific insights discovered during modeling", default=[]
-    )
 
     class Config:
         """Pydantic config for OpenAI structured output compatibility."""
@@ -231,9 +222,6 @@ class GraphModel:
 
     nodes: List[GraphNode]
     relationships: List[GraphRelationship]
-    modeling_decisions: List[str]
-    optimization_suggestions: List[str]
-    data_patterns: Dict[str, Any]
 
     def to_schema_format(
         self, sample_data: Optional[Dict[str, List[Dict[str, Any]]]] = None
@@ -778,9 +766,6 @@ DO NOT create relationships that don't correspond to actual foreign keys in the 
         return GraphModel(
             nodes=nodes,
             relationships=relationships,
-            modeling_decisions=llm_model.modeling_decisions,
-            optimization_suggestions=llm_model.optimization_suggestions,
-            data_patterns={"domain_insights": llm_model.domain_insights},
         )
 
     def _find_relationship_source_info(
@@ -1363,24 +1348,9 @@ Parse this feedback into specific operations to modify the graph model.
                 )
                 relationships.append(relationship)
 
-            modeling_decisions = [
-                f"Analyzed {len(nodes)} entities and {len(relationships)} relationships",
-                "Applied semantic labeling based on table names",
-                "Configured relationships based on foreign key analysis",
-            ]
-
-            optimization_suggestions = [
-                "Consider adding indexes for frequently queried properties",
-                "Review node labels for better semantic meaning",
-                "Validate relationship directions based on business logic",
-            ]
-
             return GraphModel(
                 nodes=nodes,
                 relationships=relationships,
-                modeling_decisions=modeling_decisions,
-                optimization_suggestions=optimization_suggestions,
-                data_patterns={},
             )
 
         except Exception as e:
@@ -1388,9 +1358,6 @@ Parse this feedback into specific operations to modify the graph model.
             return GraphModel(
                 nodes=[],
                 relationships=[],
-                modeling_decisions=["Model generation failed"],
-                optimization_suggestions=[],
-                data_patterns={},
             )
 
     def _fix_validation_issues(

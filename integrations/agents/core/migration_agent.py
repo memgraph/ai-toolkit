@@ -324,9 +324,6 @@ class SQLToMemgraphAgent:
         return GraphModel(
             nodes=nodes,
             relationships=relationships,
-            modeling_decisions=model_dict.get("modeling_decisions", []),
-            optimization_suggestions=model_dict.get("optimization_suggestions", []),
-            data_patterns=model_dict.get("data_patterns", {}),
         )
 
     # TODO: This should be human visible and configurable.

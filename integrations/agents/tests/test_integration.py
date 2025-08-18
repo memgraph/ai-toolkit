@@ -151,9 +151,6 @@ def test_graph_modeler_standalone():
         logger.info("Graph modeling completed successfully!")
         logger.info("Created %d node types", len(graph_model.nodes))
         logger.info("Created %d relationships", len(graph_model.relationships))
-        logger.info(
-            "Generated %d modeling decisions", len(graph_model.modeling_decisions)
-        )
 
         # Print some details for debugging
         if graph_model.nodes:
@@ -166,15 +163,11 @@ def test_graph_modeler_standalone():
         assert len(graph_model.nodes) > 0, "Should create at least one node type"
         # Relationships might be 0 if LLM determined they should be created differently
         # assert len(graph_model.relationships) > 0, "Should create at least one relationship"
-        assert len(graph_model.modeling_decisions) > 0, "Should have modeling decisions"
 
         logger.info("✅ Graph modeling successful!")
         logger.info("   - Created %d node types", len(graph_model.nodes))
         logger.info(
             "   - Created %d relationship types", len(graph_model.relationships)
-        )
-        logger.info(
-            "   - Generated %d modeling decisions", len(graph_model.modeling_decisions)
         )
 
         return True
