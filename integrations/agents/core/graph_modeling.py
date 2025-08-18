@@ -235,6 +235,278 @@ class GraphModel:
     optimization_suggestions: List[str]
     data_patterns: Dict[str, Any]
 
+    def to_schema_format(
+        self, sample_data: Optional[Dict[str, List[Dict[str, Any]]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Convert the GraphModel to the comprehensive schema format.
+
+        Args:
+            sample_data: Optional sample data dictionary with
+                table_name -> list of rows
+
+        Returns:
+            Dictionary in the specified schema format with nodes, edges,
+            indexes, constraints, and enums
+        """
+        schema = {
+            "nodes": [],
+            "edges": [],
+            "node_indexes": [],
+            "edge_indexes": [],
+            "node_constraints": [],
+            "edge_constraints": [],
+            "enums": [],
+        }
+
+        # Convert nodes
+        for node in self.nodes:
+            node_schema = self._convert_node_to_schema(node, sample_data)
+            schema["nodes"].append(node_schema)
+
+            # Add node indexes
+            for index_prop in node.indexes:
+                index_schema = {
+                    "labels": [node.label],
+                    "properties": [index_prop],
+                    "count": 0,  # Would need actual data to calculate
+                    "examples": [{}],
+                    "type": "label+property",
+                }
+                schema["node_indexes"].append(index_schema)
+
+            # Add node constraints
+            for constraint in node.constraints:
+                if "UNIQUE" in constraint.upper():
+                    prop_name = constraint.replace("UNIQUE(", "").replace(")", "")
+                    constraint_schema = {
+                        "type": "unique",
+                        "labels": [node.label],
+                        "properties": [prop_name],
+                        "data_type": "",
+                    }
+                    schema["node_constraints"].append(constraint_schema)
+
+        # Convert relationships
+        for relationship in self.relationships:
+            edge_schema = self._convert_relationship_to_schema(
+                relationship, sample_data
+            )
+            schema["edges"].append(edge_schema)
+
+            # Add edge indexes if properties exist
+            if relationship.properties:
+                for prop in relationship.properties:
+                    edge_index_schema = {
+                        "edge_type": relationship.name,
+                        "properties": [prop],
+                        "count": 0,
+                        "examples": [{}],
+                        "type": "edge_type+property",
+                    }
+                    schema["edge_indexes"].append(edge_index_schema)
+
+        # Detect and add enums from sample data
+        if sample_data:
+            enums = self._detect_enums_from_sample_data(sample_data)
+            schema["enums"] = enums
+
+        return schema
+
+    def _convert_node_to_schema(
+        self, node: GraphNode, sample_data: Optional[Dict[str, List[Dict[str, Any]]]]
+    ) -> Dict[str, Any]:
+        """Convert a GraphNode to the schema node format."""
+        node_schema = {
+            "labels": [node.label],
+            "count": 1,  # Default, would need actual data
+            "properties": [],
+            "examples": [{"gid": 0}],
+        }
+
+        # Get sample data for this node's source table
+        table_samples = sample_data.get(node.source_table, []) if sample_data else []
+
+        # Convert properties
+        for prop in node.properties:
+            prop_schema = self._convert_property_to_schema(prop, table_samples)
+            node_schema["properties"].append(prop_schema)
+
+        # Add examples from sample data
+        if table_samples:
+            node_schema["examples"] = [
+                {"gid": i, **{k: v for k, v in row.items() if k in node.properties}}
+                for i, row in enumerate(table_samples[:3])
+            ]
+
+        return node_schema
+
+    def _convert_relationship_to_schema(
+        self,
+        relationship: GraphRelationship,
+        sample_data: Optional[Dict[str, List[Dict[str, Any]]]],
+    ) -> Dict[str, Any]:
+        """Convert a GraphRelationship to the schema edge format."""
+        # Find the node labels for start and end nodes
+        start_labels = [relationship.from_node]
+        end_labels = [relationship.to_node]
+
+        # Try to find actual labels from nodes
+        for node in self.nodes:
+            if (
+                node.source_table == relationship.from_node
+                or node.name == relationship.from_node
+            ):
+                start_labels = [node.label]
+            if (
+                node.source_table == relationship.to_node
+                or node.name == relationship.to_node
+            ):
+                end_labels = [node.label]
+
+        edge_schema = {
+            "edge_type": relationship.name,
+            "start_node_labels": start_labels,
+            "end_node_labels": end_labels,
+            "count": 1,  # Default, would need actual data
+            "properties": [],
+            "examples": [{}],
+        }
+
+        # Convert relationship properties if any
+        if relationship.properties:
+            for prop in relationship.properties:
+                prop_schema = self._convert_property_to_schema(prop, [])
+                edge_schema["properties"].append(prop_schema)
+
+        return edge_schema
+
+    def _convert_property_to_schema(
+        self, prop_name: str, sample_rows: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Convert a property to schema format with type detection."""
+        prop_schema = {
+            "key": prop_name,
+            "count": 1,
+            "filling_factor": 100.00,
+            "types": [],
+        }
+
+        # Analyze sample data to determine types
+        if sample_rows:
+            type_counts = {}
+            examples_by_type = {}
+
+            for row in sample_rows:
+                value = row.get(prop_name)
+                detected_type = self._detect_value_type(value)
+
+                current_count = type_counts.get(detected_type, 0)
+                type_counts[detected_type] = current_count + 1
+                if detected_type not in examples_by_type:
+                    examples_by_type[detected_type] = []
+                if len(examples_by_type[detected_type]) < 3:
+                    examples_by_type[detected_type].append(value)
+
+            # Create type entries
+            for type_name, count in type_counts.items():
+                type_entry = {
+                    "type": type_name,
+                    "count": count,
+                    "examples": examples_by_type[type_name][:3],
+                }
+                prop_schema["types"].append(type_entry)
+        else:
+            # Default type when no sample data
+            prop_schema["types"] = [{"type": "String", "count": 1, "examples": [""]}]
+
+        return prop_schema
+
+    def _detect_value_type(self, value: Any) -> str:
+        """Detect the type of a value and return the schema type name."""
+        if value is None:
+            return "Null"
+        elif isinstance(value, bool):
+            return "Boolean"
+        elif isinstance(value, int):
+            return "Integer"
+        elif isinstance(value, float):
+            return "Float"
+        elif isinstance(value, list):
+            return "List"
+        elif isinstance(value, dict):
+            return "Map"
+        elif isinstance(value, str):
+            # Check for special string types
+            if self._is_date_string(value):
+                return "Date"
+            elif self._is_datetime_string(value):
+                return "LocalDateTime"
+            elif self._is_time_string(value):
+                return "LocalTime"
+            else:
+                return "String"
+        else:
+            return "String"  # Default fallback
+
+    def _is_date_string(self, value: str) -> bool:
+        """Check if string looks like a date."""
+        import re
+
+        date_patterns = [
+            r"^\d{4}-\d{2}-\d{2}$",  # YYYY-MM-DD
+            r"^\d{2}/\d{2}/\d{4}$",  # MM/DD/YYYY
+            r"^\d{2}-\d{2}-\d{4}$",  # MM-DD-YYYY
+        ]
+        return any(re.match(pattern, value) for pattern in date_patterns)
+
+    def _is_datetime_string(self, value: str) -> bool:
+        """Check if string looks like a datetime."""
+        import re
+
+        datetime_patterns = [
+            r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}",  # YYYY-MM-DD HH:MM:SS
+            r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}",  # ISO format
+        ]
+        return any(re.match(pattern, value) for pattern in datetime_patterns)
+
+    def _is_time_string(self, value: str) -> bool:
+        """Check if string looks like a time."""
+        import re
+
+        return bool(re.match(r"^\d{2}:\d{2}:\d{2}$", value))
+
+    def _detect_enums_from_sample_data(
+        self, sample_data: Dict[str, List[Dict[str, Any]]]
+    ) -> List[Dict[str, Any]]:
+        """Detect enum-like columns from sample data."""
+        enums = []
+
+        for table_name, rows in sample_data.items():
+            if not rows:
+                continue
+
+            # Analyze each column for enum-like behavior
+            for column in rows[0].keys():
+                values = set()
+                total_values = 0
+
+                for row in rows:
+                    value = row.get(column)
+                    if isinstance(value, str) and value:
+                        values.add(value)
+                        total_values += 1
+
+                # Check if few unique values compared to total (potential enum)
+                if len(values) <= 10 and total_values > len(values) * 2:
+                    enum_schema = {
+                        "name": f"{table_name}_{column}",
+                        "values": sorted(list(values)),
+                    }
+                    enums.append(enum_schema)
+
+        return enums
+
 
 class HyGM:
     """
