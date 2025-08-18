@@ -302,7 +302,6 @@ class SQLToMemgraphAgent:
                 indexes=node_dict.get("indexes", []),
                 constraints=node_dict.get("constraints", []),
                 source_table=node_dict.get("source_table", ""),
-                modeling_rationale=node_dict.get("modeling_rationale", ""),
             )
             nodes.append(node)
 
@@ -317,7 +316,6 @@ class SQLToMemgraphAgent:
                 properties=rel_dict.get("properties", []),
                 directionality=rel_dict.get("directionality", "directed"),
                 source_info=rel_dict.get("source_info", {}),
-                modeling_rationale=rel_dict.get("modeling_rationale", ""),
             )
             relationships.append(rel)
 
@@ -435,7 +433,6 @@ class SQLToMemgraphAgent:
                     properties_str = ", ".join(valid_properties)
                     node_query = f"""
 // Create {node_label} nodes from {source_table} table (HyGM optimized)
-// Rationale: {node_def.modeling_rationale}
 CALL migrate.mysql('SELECT {properties_str} FROM {source_table}',
                    {db_config_str})
 YIELD row

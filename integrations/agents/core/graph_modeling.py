@@ -41,7 +41,6 @@ class LLMGraphNode(BaseModel):
         description="Properties that should have uniqueness constraints"
     )
     source_table: str = Field(description="Source SQL table name")
-    modeling_rationale: str = Field(description="Explanation for modeling decisions")
 
     class Config:
         """Pydantic config for OpenAI structured output compatibility."""
@@ -64,7 +63,6 @@ class LLMGraphRelationship(BaseModel):
     directionality: Literal["directed", "undirected"] = Field(
         description="Whether the relationship has direction"
     )
-    modeling_rationale: str = Field(description="Explanation for this relationship")
 
     class Config:
         """Pydantic config for OpenAI structured output compatibility."""
@@ -199,7 +197,6 @@ class GraphNode:
     indexes: List[str]
     constraints: List[str]
     source_table: str
-    modeling_rationale: str
 
 
 @dataclass
@@ -213,7 +210,6 @@ class GraphRelationship:
     properties: List[str]
     directionality: str  # "directed", "undirected"
     source_info: Dict[str, Any]
-    modeling_rationale: str
 
 
 @dataclass
@@ -739,7 +735,6 @@ DO NOT create relationships that don't correspond to actual foreign keys in the 
                 indexes=llm_node.indexes,
                 constraints=llm_node.constraints,
                 source_table=llm_node.source_table,
-                modeling_rationale=llm_node.modeling_rationale,
             )
             nodes.append(node)
 
@@ -759,7 +754,6 @@ DO NOT create relationships that don't correspond to actual foreign keys in the 
                 properties=llm_rel.properties,
                 directionality=llm_rel.directionality,
                 source_info=source_info,
-                modeling_rationale=llm_rel.modeling_rationale,
             )
             relationships.append(relationship)
 
@@ -1330,7 +1324,6 @@ Parse this feedback into specific operations to modify the graph model.
                     indexes=self._extract_indexes_from_table(table_info),
                     constraints=self._extract_constraints_from_table(table_info),
                     source_table=table_name,
-                    modeling_rationale="Generated from schema analysis",
                 )
                 nodes.append(node)
 
@@ -1344,7 +1337,6 @@ Parse this feedback into specific operations to modify the graph model.
                     properties=[],
                     directionality="directed",
                     source_info=rel,
-                    modeling_rationale="Generated from schema analysis",
                 )
                 relationships.append(relationship)
 

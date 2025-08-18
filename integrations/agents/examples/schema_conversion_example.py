@@ -20,7 +20,6 @@ def create_sample_graph_model():
         indexes=["username", "email"],
         constraints=["UNIQUE(id)", "UNIQUE(email)"],
         source_table="users",
-        modeling_rationale="Users are core entities in the system",
     )
 
     product_node = GraphNode(
@@ -31,7 +30,6 @@ def create_sample_graph_model():
         indexes=["category"],
         constraints=["UNIQUE(id)"],
         source_table="products",
-        modeling_rationale="Products represent items for sale",
     )
 
     # Create sample relationship
@@ -43,7 +41,6 @@ def create_sample_graph_model():
         properties=["quantity", "purchase_date", "total_price"],
         directionality="directed",
         source_info={"from_table": "users", "to_table": "products"},
-        modeling_rationale="Users can purchase multiple products",
     )
 
     # Create the GraphModel
