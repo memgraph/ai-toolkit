@@ -187,43 +187,400 @@ class ModelingMode(Enum):
 
 
 @dataclass
-class GraphNode:
-    """Represents a node in the graph model."""
+class PropertySource:
+    """Source information for a property."""
 
-    name: str
-    label: str
-    properties: List[str]
-    primary_key: str
-    indexes: List[str]
-    constraints: List[str]
-    source_table: str
+    field: str  # Source field name
+    transformation: Optional[str] = None  # Any transformation applied
+
+
+@dataclass
+class NodeSource:
+    """Source information for a node."""
+
+    type: str  # "table", "view", "file", "api", "manual"
+    name: str  # Source name (e.g., table name)
+    location: str  # Full location path
+    mapping: Dict[str, Any]  # Mapping details for labels, id_field, etc.
+
+
+@dataclass
+class RelationshipSource:
+    """Source information for a relationship."""
+
+    type: str  # "table", "view", "junction_table", "derived"
+    name: str  # Source name
+    location: str  # Full location path
+    mapping: Dict[str, Any]  # Mapping for start_node, end_node, edge_type
+
+
+@dataclass
+class IndexSource:
+    """Source information for an index."""
+
+    origin: str  # "migration_requirement", "performance_optimization", etc.
+    reason: str  # Why this index was created
+    created_by: str  # Who/what created it
+
+
+@dataclass
+class ConstraintSource:
+    """Source information for a constraint."""
+
+    origin: str  # "source_database_constraint", "business_rule", etc.
+    constraint_name: Optional[str] = None  # Original constraint name
+    migrated_from: Optional[str] = None  # Source location
+    reason: Optional[str] = None  # Business reason
+    created_by: Optional[str] = None  # Creator
+
+
+@dataclass
+class EnumSource:
+    """Source information for an enum."""
+
+    origin: str  # "source_database_enum", "manual", etc.
+    enum_name: Optional[str] = None  # Original enum name
+    migrated_from: Optional[str] = None  # Source location
+
+
+@dataclass
+class GraphProperty:
+    """Represents a property with full schema format details."""
+
+    key: str
+    count: int = 1
+    filling_factor: float = 100.0
+    types: List[Dict[str, Any]] = None
+    source: Optional[PropertySource] = None
+
+    def __post_init__(self):
+        if self.types is None:
+            self.types = [{"type": "String", "count": 1, "examples": [""]}]
+
+
+@dataclass
+class GraphNode:
+    """Represents a node in the graph model aligned with schema format."""
+
+    labels: List[str]  # Node labels
+    count: int = 1
+    properties: List[GraphProperty] = None
+    examples: List[Dict[str, Any]] = None
+    source: Optional[NodeSource] = None
+
+    def __post_init__(self):
+        if self.properties is None:
+            self.properties = []
+        if self.examples is None:
+            self.examples = [{"gid": 0}]
+
+    @property
+    def primary_label(self) -> str:
+        """Get the primary (first) label for backward compatibility."""
+        return self.labels[0] if self.labels else "Unknown"
 
 
 @dataclass
 class GraphRelationship:
-    """Represents a relationship in the graph model."""
+    """Represents a relationship in the graph model aligned with schema format."""
+
+    edge_type: str
+    start_node_labels: List[str]
+    end_node_labels: List[str]
+    count: int = 1
+    properties: List[GraphProperty] = None
+    examples: List[Dict[str, Any]] = None
+    source: Optional[RelationshipSource] = None
+    directionality: str = "directed"
+
+    def __post_init__(self):
+        if self.properties is None:
+            self.properties = []
+        if self.examples is None:
+            self.examples = [{}]
+
+
+@dataclass
+class GraphIndex:
+    """Represents an index aligned with schema format."""
+
+    labels: Optional[List[str]] = None  # For node indexes
+    edge_type: Optional[str] = None  # For edge indexes
+    properties: List[str] = None
+    count: int = 0
+    examples: List[Dict[str, Any]] = None
+    type: str = "label+property"  # Index type
+    source: Optional[IndexSource] = None
+
+    def __post_init__(self):
+        if self.properties is None:
+            self.properties = []
+        if self.examples is None:
+            self.examples = [{}]
+
+
+@dataclass
+class GraphConstraint:
+    """Represents a constraint aligned with schema format."""
+
+    type: str  # "unique", "existence", "data_type"
+    labels: Optional[List[str]] = None  # For node constraints
+    edge_type: Optional[str] = None  # For edge constraints
+    properties: List[str] = None
+    data_type: Optional[str] = None
+    source: Optional[ConstraintSource] = None
+
+    def __post_init__(self):
+        if self.properties is None:
+            self.properties = []
+
+
+@dataclass
+class GraphEnum:
+    """Represents an enum aligned with schema format."""
 
     name: str
-    type: str  # "one_to_many", "many_to_many", "one_to_one"
-    from_node: str
-    to_node: str
-    properties: List[str]
-    directionality: str  # "directed", "undirected"
-    source_info: Dict[str, Any]
+    values: List[str]
+    source: Optional[EnumSource] = None
 
 
 @dataclass
 class GraphModel:
-    """Complete graph model for the database."""
+    """Complete graph model aligned with schema format."""
 
     nodes: List[GraphNode]
-    relationships: List[GraphRelationship]
+    edges: List[GraphRelationship]
+    node_indexes: List[GraphIndex] = None
+    edge_indexes: List[GraphIndex] = None
+    node_constraints: List[GraphConstraint] = None
+    edge_constraints: List[GraphConstraint] = None
+    enums: List[GraphEnum] = None
+
+    def __post_init__(self):
+        if self.node_indexes is None:
+            self.node_indexes = []
+        if self.edge_indexes is None:
+            self.edge_indexes = []
+        if self.node_constraints is None:
+            self.node_constraints = []
+        if self.edge_constraints is None:
+            self.edge_constraints = []
+        if self.enums is None:
+            self.enums = []
+
+    @classmethod
+    def from_schema_format(cls, schema_dict: Dict[str, Any]) -> "GraphModel":
+        """
+        Create a GraphModel from schema format dictionary.
+
+        Args:
+            schema_dict: Dictionary in the comprehensive schema format
+
+        Returns:
+            GraphModel instance
+        """
+        # Convert nodes
+        nodes = []
+        for node_dict in schema_dict.get("nodes", []):
+            # Convert properties
+            properties = []
+            for prop_dict in node_dict.get("properties", []):
+                prop_source = None
+                if "source" in prop_dict:
+                    prop_source = PropertySource(
+                        field=prop_dict["source"]["field"],
+                        transformation=prop_dict["source"].get("transformation"),
+                    )
+
+                graph_prop = GraphProperty(
+                    key=prop_dict["key"],
+                    count=prop_dict.get("count", 1),
+                    filling_factor=prop_dict.get("filling_factor", 100.0),
+                    types=prop_dict.get("types", []),
+                    source=prop_source,
+                )
+                properties.append(graph_prop)
+
+            # Convert source
+            node_source = None
+            if "source" in node_dict:
+                node_source = NodeSource(
+                    type=node_dict["source"]["type"],
+                    name=node_dict["source"]["name"],
+                    location=node_dict["source"]["location"],
+                    mapping=node_dict["source"]["mapping"],
+                )
+
+            node = GraphNode(
+                labels=node_dict["labels"],
+                count=node_dict.get("count", 1),
+                properties=properties,
+                examples=node_dict.get("examples", [{"gid": 0}]),
+                source=node_source,
+            )
+            nodes.append(node)
+
+        # Convert edges
+        edges = []
+        for edge_dict in schema_dict.get("edges", []):
+            # Convert properties
+            properties = []
+            for prop_dict in edge_dict.get("properties", []):
+                prop_source = None
+                if "source" in prop_dict:
+                    prop_source = PropertySource(
+                        field=prop_dict["source"]["field"],
+                        transformation=prop_dict["source"].get("transformation"),
+                    )
+
+                graph_prop = GraphProperty(
+                    key=prop_dict["key"],
+                    count=prop_dict.get("count", 1),
+                    filling_factor=prop_dict.get("filling_factor", 100.0),
+                    types=prop_dict.get("types", []),
+                    source=prop_source,
+                )
+                properties.append(graph_prop)
+
+            # Convert source
+            edge_source = None
+            if "source" in edge_dict:
+                edge_source = RelationshipSource(
+                    type=edge_dict["source"]["type"],
+                    name=edge_dict["source"]["name"],
+                    location=edge_dict["source"]["location"],
+                    mapping=edge_dict["source"]["mapping"],
+                )
+
+            edge = GraphRelationship(
+                edge_type=edge_dict["edge_type"],
+                start_node_labels=edge_dict["start_node_labels"],
+                end_node_labels=edge_dict["end_node_labels"],
+                count=edge_dict.get("count", 1),
+                properties=properties,
+                examples=edge_dict.get("examples", [{}]),
+                source=edge_source,
+            )
+            edges.append(edge)
+
+        # Convert indexes
+        node_indexes = []
+        for index_dict in schema_dict.get("node_indexes", []):
+            index_source = None
+            if "source" in index_dict:
+                index_source = IndexSource(
+                    origin=index_dict["source"]["origin"],
+                    reason=index_dict["source"]["reason"],
+                    created_by=index_dict["source"]["created_by"],
+                )
+
+            index = GraphIndex(
+                labels=index_dict.get("labels"),
+                properties=index_dict.get("properties", []),
+                count=index_dict.get("count", 0),
+                examples=index_dict.get("examples", [{}]),
+                type=index_dict.get("type", "label+property"),
+                source=index_source,
+            )
+            node_indexes.append(index)
+
+        edge_indexes = []
+        for index_dict in schema_dict.get("edge_indexes", []):
+            index_source = None
+            if "source" in index_dict:
+                index_source = IndexSource(
+                    origin=index_dict["source"]["origin"],
+                    reason=index_dict["source"]["reason"],
+                    created_by=index_dict["source"]["created_by"],
+                )
+
+            index = GraphIndex(
+                edge_type=index_dict.get("edge_type"),
+                properties=index_dict.get("properties", []),
+                count=index_dict.get("count", 0),
+                examples=index_dict.get("examples", [{}]),
+                type=index_dict.get("type", "edge_type+property"),
+                source=index_source,
+            )
+            edge_indexes.append(index)
+
+        # Convert constraints
+        node_constraints = []
+        for constraint_dict in schema_dict.get("node_constraints", []):
+            constraint_source = None
+            if "source" in constraint_dict:
+                constraint_source = ConstraintSource(
+                    origin=constraint_dict["source"]["origin"],
+                    constraint_name=constraint_dict["source"].get("constraint_name"),
+                    migrated_from=constraint_dict["source"].get("migrated_from"),
+                    reason=constraint_dict["source"].get("reason"),
+                    created_by=constraint_dict["source"].get("created_by"),
+                )
+
+            constraint = GraphConstraint(
+                type=constraint_dict["type"],
+                labels=constraint_dict.get("labels"),
+                properties=constraint_dict.get("properties", []),
+                data_type=constraint_dict.get("data_type"),
+                source=constraint_source,
+            )
+            node_constraints.append(constraint)
+
+        edge_constraints = []
+        for constraint_dict in schema_dict.get("edge_constraints", []):
+            constraint_source = None
+            if "source" in constraint_dict:
+                constraint_source = ConstraintSource(
+                    origin=constraint_dict["source"]["origin"],
+                    constraint_name=constraint_dict["source"].get("constraint_name"),
+                    migrated_from=constraint_dict["source"].get("migrated_from"),
+                    reason=constraint_dict["source"].get("reason"),
+                    created_by=constraint_dict["source"].get("created_by"),
+                )
+
+            constraint = GraphConstraint(
+                type=constraint_dict["type"],
+                edge_type=constraint_dict.get("edge_type"),
+                properties=constraint_dict.get("properties", []),
+                data_type=constraint_dict.get("data_type"),
+                source=constraint_source,
+            )
+            edge_constraints.append(constraint)
+
+        # Convert enums
+        enums = []
+        for enum_dict in schema_dict.get("enums", []):
+            enum_source = None
+            if "source" in enum_dict:
+                enum_source = EnumSource(
+                    origin=enum_dict["source"]["origin"],
+                    enum_name=enum_dict["source"].get("enum_name"),
+                    migrated_from=enum_dict["source"].get("migrated_from"),
+                )
+
+            enum = GraphEnum(
+                name=enum_dict["name"], values=enum_dict["values"], source=enum_source
+            )
+            enums.append(enum)
+
+        return cls(
+            nodes=nodes,
+            edges=edges,
+            node_indexes=node_indexes,
+            edge_indexes=edge_indexes,
+            node_constraints=node_constraints,
+            edge_constraints=edge_constraints,
+            enums=enums,
+        )
 
     def to_schema_format(
         self, sample_data: Optional[Dict[str, List[Dict[str, Any]]]] = None
     ) -> Dict[str, Any]:
         """
         Convert the GraphModel to the comprehensive schema format.
+
+        This method now directly returns the schema format since the internal
+        structure already matches it.
 
         Args:
             sample_data: Optional sample data dictionary with
@@ -233,69 +590,211 @@ class GraphModel:
             Dictionary in the specified schema format with nodes, edges,
             indexes, constraints, and enums
         """
-        schema = {
-            "nodes": [],
-            "edges": [],
-            "node_indexes": [],
-            "edge_indexes": [],
-            "node_constraints": [],
-            "edge_constraints": [],
-            "enums": [],
+        # Convert internal structures to schema format
+        schema_nodes = []
+        for node in self.nodes:
+            schema_node = self._node_to_schema_dict(node, sample_data)
+            schema_nodes.append(schema_node)
+
+        schema_edges = []
+        for edge in self.edges:
+            schema_edge = self._edge_to_schema_dict(edge, sample_data)
+            schema_edges.append(schema_edge)
+
+        schema_node_indexes = []
+        for index in self.node_indexes:
+            schema_index = self._index_to_schema_dict(index)
+            schema_node_indexes.append(schema_index)
+
+        schema_edge_indexes = []
+        for index in self.edge_indexes:
+            schema_index = self._index_to_schema_dict(index)
+            schema_edge_indexes.append(schema_index)
+
+        schema_node_constraints = []
+        for constraint in self.node_constraints:
+            schema_constraint = self._constraint_to_schema_dict(constraint)
+            schema_node_constraints.append(schema_constraint)
+
+        schema_edge_constraints = []
+        for constraint in self.edge_constraints:
+            schema_constraint = self._constraint_to_schema_dict(constraint)
+            schema_edge_constraints.append(schema_constraint)
+
+        schema_enums = []
+        for enum in self.enums:
+            schema_enum = self._enum_to_schema_dict(enum)
+            schema_enums.append(schema_enum)
+
+        return {
+            "nodes": schema_nodes,
+            "edges": schema_edges,
+            "node_indexes": schema_node_indexes,
+            "edge_indexes": schema_edge_indexes,
+            "node_constraints": schema_node_constraints,
+            "edge_constraints": schema_edge_constraints,
+            "enums": schema_enums,
         }
 
-        # Convert nodes
-        for node in self.nodes:
-            node_schema = self._convert_node_to_schema(node, sample_data)
-            schema["nodes"].append(node_schema)
-
-            # Add node indexes
-            for index_prop in node.indexes:
-                index_schema = {
-                    "labels": [node.label],
-                    "properties": [index_prop],
-                    "count": 0,  # Would need actual data to calculate
-                    "examples": [{}],
-                    "type": "label+property",
+    def _node_to_schema_dict(
+        self, node: GraphNode, sample_data: Optional[Dict[str, List[Dict[str, Any]]]]
+    ) -> Dict[str, Any]:
+        """Convert GraphNode to schema dictionary format."""
+        # Convert properties to schema format
+        schema_properties = []
+        for prop in node.properties:
+            if isinstance(prop, GraphProperty):
+                prop_dict = {
+                    "key": prop.key,
+                    "count": prop.count,
+                    "filling_factor": prop.filling_factor,
+                    "types": prop.types,
                 }
-                schema["node_indexes"].append(index_schema)
-
-            # Add node constraints
-            for constraint in node.constraints:
-                if "UNIQUE" in constraint.upper():
-                    prop_name = constraint.replace("UNIQUE(", "").replace(")", "")
-                    constraint_schema = {
-                        "type": "unique",
-                        "labels": [node.label],
-                        "properties": [prop_name],
-                        "data_type": "",
+                if prop.source:
+                    prop_dict["source"] = {
+                        "field": prop.source.field,
+                        "transformation": prop.source.transformation,
                     }
-                    schema["node_constraints"].append(constraint_schema)
+                schema_properties.append(prop_dict)
+            else:
+                # Handle legacy string properties
+                prop_dict = self._convert_property_to_schema(prop, [])
+                schema_properties.append(prop_dict)
 
-        # Convert relationships
-        for relationship in self.relationships:
-            edge_schema = self._convert_relationship_to_schema(
-                relationship, sample_data
-            )
-            schema["edges"].append(edge_schema)
+        schema_node = {
+            "labels": node.labels,
+            "count": node.count,
+            "properties": schema_properties,
+            "examples": node.examples,
+        }
 
-            # Add edge indexes if properties exist
-            if relationship.properties:
-                for prop in relationship.properties:
-                    edge_index_schema = {
-                        "edge_type": relationship.name,
-                        "properties": [prop],
-                        "count": 0,
-                        "examples": [{}],
-                        "type": "edge_type+property",
+        if node.source:
+            schema_node["source"] = {
+                "type": node.source.type,
+                "name": node.source.name,
+                "location": node.source.location,
+                "mapping": node.source.mapping,
+            }
+
+        return schema_node
+
+    def _edge_to_schema_dict(
+        self,
+        edge: GraphRelationship,
+        sample_data: Optional[Dict[str, List[Dict[str, Any]]]],
+    ) -> Dict[str, Any]:
+        """Convert GraphRelationship to schema dictionary format."""
+        # Convert properties to schema format
+        schema_properties = []
+        for prop in edge.properties:
+            if isinstance(prop, GraphProperty):
+                prop_dict = {
+                    "key": prop.key,
+                    "count": prop.count,
+                    "filling_factor": prop.filling_factor,
+                    "types": prop.types,
+                }
+                if prop.source:
+                    prop_dict["source"] = {
+                        "field": prop.source.field,
+                        "transformation": prop.source.transformation,
                     }
-                    schema["edge_indexes"].append(edge_index_schema)
+                schema_properties.append(prop_dict)
+            else:
+                # Handle legacy string properties
+                prop_dict = self._convert_property_to_schema(prop, [])
+                schema_properties.append(prop_dict)
 
-        # Detect and add enums from sample data
-        if sample_data:
-            enums = self._detect_enums_from_sample_data(sample_data)
-            schema["enums"] = enums
+        schema_edge = {
+            "edge_type": edge.edge_type,
+            "start_node_labels": edge.start_node_labels,
+            "end_node_labels": edge.end_node_labels,
+            "count": edge.count,
+            "properties": schema_properties,
+            "examples": edge.examples,
+        }
 
-        return schema
+        if edge.source:
+            schema_edge["source"] = {
+                "type": edge.source.type,
+                "name": edge.source.name,
+                "location": edge.source.location,
+                "mapping": edge.source.mapping,
+            }
+
+        return schema_edge
+
+    def _index_to_schema_dict(self, index: GraphIndex) -> Dict[str, Any]:
+        """Convert GraphIndex to schema dictionary format."""
+        schema_index = {
+            "properties": index.properties,
+            "count": index.count,
+            "examples": index.examples,
+            "type": index.type,
+        }
+
+        if index.labels:
+            schema_index["labels"] = index.labels
+        if index.edge_type:
+            schema_index["edge_type"] = index.edge_type
+
+        if index.source:
+            schema_index["source"] = {
+                "origin": index.source.origin,
+                "reason": index.source.reason,
+                "created_by": index.source.created_by,
+            }
+
+        return schema_index
+
+    def _constraint_to_schema_dict(self, constraint: GraphConstraint) -> Dict[str, Any]:
+        """Convert GraphConstraint to schema dictionary format."""
+        schema_constraint = {
+            "type": constraint.type,
+            "properties": constraint.properties,
+        }
+
+        if constraint.labels:
+            schema_constraint["labels"] = constraint.labels
+        if constraint.edge_type:
+            schema_constraint["edge_type"] = constraint.edge_type
+        if constraint.data_type:
+            schema_constraint["data_type"] = constraint.data_type
+
+        if constraint.source:
+            source_dict = {
+                "origin": constraint.source.origin,
+            }
+            if constraint.source.constraint_name:
+                source_dict["constraint_name"] = constraint.source.constraint_name
+            if constraint.source.migrated_from:
+                source_dict["migrated_from"] = constraint.source.migrated_from
+            if constraint.source.reason:
+                source_dict["reason"] = constraint.source.reason
+            if constraint.source.created_by:
+                source_dict["created_by"] = constraint.source.created_by
+            schema_constraint["source"] = source_dict
+
+        return schema_constraint
+
+    def _enum_to_schema_dict(self, enum: GraphEnum) -> Dict[str, Any]:
+        """Convert GraphEnum to schema dictionary format."""
+        schema_enum = {
+            "name": enum.name,
+            "values": enum.values,
+        }
+
+        if enum.source:
+            source_dict = {
+                "origin": enum.source.origin,
+            }
+            if enum.source.enum_name:
+                source_dict["enum_name"] = enum.source.enum_name
+            if enum.source.migrated_from:
+                source_dict["migrated_from"] = enum.source.migrated_from
+            schema_enum["source"] = source_dict
+
+        return schema_enum
 
     def _convert_node_to_schema(
         self, node: GraphNode, sample_data: Optional[Dict[str, List[Dict[str, Any]]]]
@@ -727,14 +1226,25 @@ DO NOT create relationships that don't correspond to actual foreign keys in the 
         # Convert nodes
         nodes = []
         for llm_node in llm_model.nodes:
+            # Create source information
+            source = NodeSource(
+                type="table",
+                name=llm_node.source_table,
+                location=f"database.schema.{llm_node.source_table}",
+                mapping={"labels": [llm_node.label], "id_field": llm_node.primary_key},
+            )
+
+            # Convert properties to GraphProperty objects
+            graph_properties = []
+            for prop_name in llm_node.properties:
+                prop_source = PropertySource(
+                    field=f"{llm_node.source_table}.{prop_name}"
+                )
+                graph_prop = GraphProperty(key=prop_name, source=prop_source)
+                graph_properties.append(graph_prop)
+
             node = GraphNode(
-                name=llm_node.name,
-                label=llm_node.label,
-                properties=llm_node.properties,
-                primary_key=llm_node.primary_key,
-                indexes=llm_node.indexes,
-                constraints=llm_node.constraints,
-                source_table=llm_node.source_table,
+                labels=[llm_node.label], properties=graph_properties, source=source
             )
             nodes.append(node)
 
@@ -746,21 +1256,94 @@ DO NOT create relationships that don't correspond to actual foreign keys in the 
                 llm_rel, database_structure
             )
 
+            # Create relationship source
+            rel_source = RelationshipSource(
+                type="table"
+                if source_info.get("type") != "many_to_many"
+                else "junction_table",
+                name=source_info.get("constraint_name", llm_rel.name),
+                location=f"database.schema.{source_info.get('from_table', llm_rel.from_node)}",
+                mapping={
+                    "start_node": f"{source_info.get('from_table', llm_rel.from_node)}.{source_info.get('from_column', 'id')}",
+                    "end_node": f"{source_info.get('to_table', llm_rel.to_node)}.{source_info.get('to_column', 'id')}",
+                    "edge_type": llm_rel.name,
+                },
+            )
+
+            # Find actual node labels
+            start_labels = [self._find_node_label_by_table(llm_rel.from_node, nodes)]
+            end_labels = [self._find_node_label_by_table(llm_rel.to_node, nodes)]
+
+            # Convert relationship properties to GraphProperty objects
+            graph_properties = []
+            for prop_name in llm_rel.properties:
+                prop_source = PropertySource(
+                    field=f"{source_info.get('from_table', llm_rel.from_node)}.{prop_name}"
+                )
+                graph_prop = GraphProperty(key=prop_name, source=prop_source)
+                graph_properties.append(graph_prop)
+
             relationship = GraphRelationship(
-                name=llm_rel.name,
-                type=llm_rel.type,
-                from_node=llm_rel.from_node,
-                to_node=llm_rel.to_node,
-                properties=llm_rel.properties,
+                edge_type=llm_rel.name,
+                start_node_labels=start_labels,
+                end_node_labels=end_labels,
+                properties=graph_properties,
+                source=rel_source,
                 directionality=llm_rel.directionality,
-                source_info=source_info,
             )
             relationships.append(relationship)
 
+        # Create indexes from node information
+        node_indexes = []
+        for llm_node in llm_model.nodes:
+            for index_prop in llm_node.indexes:
+                index_source = IndexSource(
+                    origin="migration_requirement",
+                    reason="performance_optimization",
+                    created_by="migration_agent",
+                )
+
+                graph_index = GraphIndex(
+                    labels=[llm_node.label],
+                    properties=[index_prop],
+                    type="label+property",
+                    source=index_source,
+                )
+                node_indexes.append(graph_index)
+
+        # Create constraints from node information
+        node_constraints = []
+        for llm_node in llm_model.nodes:
+            for constraint_str in llm_node.constraints:
+                if "UNIQUE" in constraint_str.upper():
+                    prop_name = constraint_str.replace("UNIQUE(", "").replace(")", "")
+                    constraint_source = ConstraintSource(
+                        origin="source_database_constraint",
+                        constraint_name=f"{llm_node.source_table}_{prop_name}_unique",
+                        migrated_from=f"database.schema.{llm_node.source_table}",
+                    )
+
+                    graph_constraint = GraphConstraint(
+                        type="unique",
+                        labels=[llm_node.label],
+                        properties=[prop_name],
+                        source=constraint_source,
+                    )
+                    node_constraints.append(graph_constraint)
+
         return GraphModel(
             nodes=nodes,
-            relationships=relationships,
+            edges=relationships,
+            node_indexes=node_indexes,
+            node_constraints=node_constraints,
         )
+
+    def _find_node_label_by_table(self, table_name: str, nodes: List[GraphNode]) -> str:
+        """Find node label by source table name."""
+        for node in nodes:
+            if node.source and node.source.name == table_name:
+                return node.primary_label
+        return table_name.title()  # Fallback
 
     def _find_relationship_source_info(
         self, llm_rel: LLMGraphRelationship, database_structure: Dict[str, Any]
@@ -961,7 +1544,11 @@ DO NOT create relationships that don't correspond to actual foreign keys in the 
 
         # 1. Check all entity tables are represented as nodes
         entity_tables = set(database_structure.get("entity_tables", {}).keys())
-        model_source_tables = {node.source_table for node in graph_model.nodes}
+        model_source_tables = set()
+
+        for node in graph_model.nodes:
+            if node.source and hasattr(node.source, "name"):
+                model_source_tables.add(node.source.name)
 
         missing_tables = entity_tables - model_source_tables
         if missing_tables:
@@ -969,67 +1556,61 @@ DO NOT create relationships that don't correspond to actual foreign keys in the 
 
         # 2. Validate node properties exist in source tables
         for node in graph_model.nodes:
-            source_table = node.source_table
+            source_table = node.source.name if node.source else None
             if source_table in database_structure.get("entity_tables", {}):
                 table_info = database_structure["entity_tables"][source_table]
                 available_columns = self._get_table_columns(table_info)
 
-                invalid_props = [
-                    prop for prop in node.properties if prop not in available_columns
-                ]
+                # Check GraphProperty objects
+                invalid_props = []
+                for prop in node.properties:
+                    if isinstance(prop, GraphProperty):
+                        prop_name = prop.key
+                    else:
+                        prop_name = prop
+
+                    if prop_name not in available_columns:
+                        invalid_props.append(prop_name)
+
                 if invalid_props:
+                    node_label = node.primary_label
                     issues.append(
-                        f"Node {node.label} has invalid properties: {invalid_props}"
+                        f"Node {node_label} has invalid properties: {invalid_props}"
                     )
 
-        # 3. Check primary key mapping
+        # 3. Validate relationships
+        node_labels_set = set()
         for node in graph_model.nodes:
-            source_table = node.source_table
-            if source_table in database_structure.get("entity_tables", {}):
-                table_info = database_structure["entity_tables"][source_table]
+            if node.labels:
+                node_labels_set.update([label.lower() for label in node.labels])
 
-                if node.primary_key not in self._get_table_columns(table_info):
-                    issues.append(
-                        f"Node {node.label} primary key '{node.primary_key}' "
-                        f"not found in source table"
-                    )
+        for rel in graph_model.edges:
+            # Check start node labels
+            if rel.start_node_labels:
+                for label in rel.start_node_labels:
+                    if label.lower() not in node_labels_set:
+                        issues.append(
+                            f"Relationship {rel.edge_type} references unknown start node label: {label}"
+                        )
 
-        # 4. Validate relationships
-        node_labels = {node.label.lower() for node in graph_model.nodes}
-        for rel in graph_model.relationships:
-            if rel.from_node not in node_labels:
-                # Try to find by source table
-                found = False
-                for node in graph_model.nodes:
-                    if node.source_table.lower() == rel.from_node:
-                        found = True
-                        break
-                if not found:
-                    issues.append(
-                        f"Relationship {rel.name} references unknown from_node: "
-                        f"{rel.from_node}"
-                    )
+            # Check end node labels
+            if rel.end_node_labels:
+                for label in rel.end_node_labels:
+                    if label.lower() not in node_labels_set:
+                        issues.append(
+                            f"Relationship {rel.edge_type} references unknown end node label: {label}"
+                        )
 
-            if rel.to_node not in node_labels:
-                # Try to find by source table
-                found = False
-                for node in graph_model.nodes:
-                    if node.source_table.lower() == rel.to_node:
-                        found = True
-                        break
-                if not found:
-                    issues.append(
-                        f"Relationship {rel.name} references unknown to_node: "
-                        f"{rel.to_node}"
-                    )
-
-        # 5. Check for graph modeling best practices
+        # 4. Check for graph modeling best practices
         for node in graph_model.nodes:
-            if node.label.lower() == node.source_table.lower():
-                warnings.append(
-                    f"Node label '{node.label}' is same as table name, "
-                    f"consider more semantic naming"
-                )
+            source_table = node.source.name if node.source else None
+            if node.labels and source_table:
+                primary_label = node.primary_label
+                if primary_label.lower() == source_table.lower():
+                    warnings.append(
+                        f"Node label '{primary_label}' is same as table name, "
+                        f"consider more semantic naming"
+                    )
 
         is_valid = len(issues) == 0
 
@@ -1149,101 +1730,117 @@ Parse this feedback into specific operations to modify the graph model.
 
     def _change_node_label(self, old_label: str, new_label: str) -> None:
         """Change a node's label."""
-        updated_node = None
         for node in self.current_graph_model.nodes:
-            if node.label == old_label:
+            if node.primary_label == old_label:
                 logger.info(f"Changing node label: {old_label} -> {new_label}")
-                node.label = new_label
-                updated_node = node
+                node.labels = [new_label] + node.labels[1:]  # Replace primary label
                 break
-
-        if updated_node:
-            # Update relationships that reference this node
-            # Relationships use source_table (lowercase) as identifiers, not labels
-            old_node_id = updated_node.source_table.lower()
-            new_node_id = new_label.lower()  # Use new label as lowercase identifier
-
-            for rel in self.current_graph_model.relationships:
-                if rel.from_node == old_node_id:
-                    rel.from_node = new_node_id
-                if rel.to_node == old_node_id:
-                    rel.to_node = new_node_id
 
     def _rename_node_property(
         self, node_label: str, old_prop: str, new_prop: str
     ) -> None:
         """Rename a property in a node."""
         for node in self.current_graph_model.nodes:
-            if node.label == node_label:
-                if old_prop in node.properties:
-                    logger.info(
-                        f"Renaming property in {node_label}: {old_prop} -> {new_prop}"
-                    )
-                    idx = node.properties.index(old_prop)
-                    node.properties[idx] = new_prop
-
-                    # Update indexes if needed
-                    if old_prop in node.indexes:
-                        idx = node.indexes.index(old_prop)
-                        node.indexes[idx] = new_prop
+            if node.primary_label == node_label:
+                for prop in node.properties:
+                    if isinstance(prop, GraphProperty) and prop.key == old_prop:
+                        logger.info(
+                            f"Renaming property in {node_label}: {old_prop} -> {new_prop}"
+                        )
+                        prop.key = new_prop
+                        break
                 break
 
     def _drop_node_property(self, node_label: str, prop_name: str) -> None:
         """Drop a property from a node."""
         for node in self.current_graph_model.nodes:
-            if node.label == node_label:
-                if prop_name in node.properties:
-                    logger.info(f"Dropping property {prop_name} from {node_label}")
-                    node.properties.remove(prop_name)
-
-                    # Remove from indexes if present
-                    if prop_name in node.indexes:
-                        node.indexes.remove(prop_name)
+            if node.primary_label == node_label:
+                node.properties = [
+                    prop
+                    for prop in node.properties
+                    if not (isinstance(prop, GraphProperty) and prop.key == prop_name)
+                ]
+                logger.info(f"Dropping property {prop_name} from {node_label}")
                 break
 
     def _add_node_property(self, node_label: str, prop_name: str) -> None:
         """Add a property to a node."""
         for node in self.current_graph_model.nodes:
-            if node.label == node_label:
-                if prop_name not in node.properties:
+            if node.primary_label == node_label:
+                # Check if property already exists
+                existing = any(
+                    isinstance(prop, GraphProperty) and prop.key == prop_name
+                    for prop in node.properties
+                )
+                if not existing:
                     logger.info(f"Adding property {prop_name} to {node_label}")
-                    node.properties.append(prop_name)
+                    new_prop = GraphProperty(key=prop_name)
+                    node.properties.append(new_prop)
                 break
 
     def _change_relationship_name(self, old_name: str, new_name: str) -> None:
         """Change a relationship's name."""
-        for rel in self.current_graph_model.relationships:
-            if rel.name == old_name:
+        for rel in self.current_graph_model.edges:
+            if rel.edge_type == old_name:
                 logger.info(f"Changing relationship name: {old_name} -> {new_name}")
-                rel.name = new_name
+                rel.edge_type = new_name
                 break
 
     def _drop_relationship(self, rel_name: str) -> None:
         """Drop a relationship."""
-        self.current_graph_model.relationships = [
-            rel
-            for rel in self.current_graph_model.relationships
-            if rel.name != rel_name
+        self.current_graph_model.edges = [
+            rel for rel in self.current_graph_model.edges if rel.edge_type != rel_name
         ]
         logger.info(f"Dropped relationship: {rel_name}")
 
     def _add_node_index(self, node_label: str, prop_name: str) -> None:
         """Add an index to a node property."""
+        # Find the node
+        target_node = None
         for node in self.current_graph_model.nodes:
-            if node.label == node_label:
-                if prop_name not in node.indexes:
-                    logger.info(f"Adding index on {node_label}.{prop_name}")
-                    node.indexes.append(prop_name)
+            if node.primary_label == node_label:
+                target_node = node
                 break
+
+        if target_node:
+            # Check if index already exists
+            existing = any(
+                index.labels == target_node.labels and prop_name in index.properties
+                for index in self.current_graph_model.node_indexes
+            )
+            if not existing:
+                logger.info(f"Adding index on {node_label}.{prop_name}")
+                index_source = IndexSource(
+                    origin="user_request",
+                    reason="performance_optimization",
+                    created_by="interactive_session",
+                )
+                new_index = GraphIndex(
+                    labels=target_node.labels,
+                    properties=[prop_name],
+                    type="label+property",
+                    source=index_source,
+                )
+                self.current_graph_model.node_indexes.append(new_index)
 
     def _drop_node_index(self, node_label: str, prop_name: str) -> None:
         """Drop an index from a node property."""
+        # Find the node
+        target_node = None
         for node in self.current_graph_model.nodes:
-            if node.label == node_label:
-                if prop_name in node.indexes:
-                    logger.info(f"Dropping index on {node_label}.{prop_name}")
-                    node.indexes.remove(prop_name)
+            if node.primary_label == node_label:
+                target_node = node
                 break
+
+        if target_node:
+            self.current_graph_model.node_indexes = [
+                index
+                for index in self.current_graph_model.node_indexes
+                if not (
+                    index.labels == target_node.labels and prop_name in index.properties
+                )
+            ]
+            logger.info(f"Dropping index on {node_label}.{prop_name}")
 
     def _get_model_presentation(self) -> str:
         """Get formatted presentation of current model for user review."""
@@ -1253,22 +1850,43 @@ Parse this feedback into specific operations to modify the graph model.
         presentation = []
         presentation.append("NODES:")
         for i, node in enumerate(self.current_graph_model.nodes, 1):
-            presentation.append(f"{i}. {node.label} (from: {node.source_table})")
-            presentation.append(f"   Properties: {', '.join(node.properties)}")
-            presentation.append(f"   Primary Key: {node.primary_key}")
-            if node.indexes:
-                presentation.append(f"   Indexes: {', '.join(node.indexes)}")
+            source_name = node.source.name if node.source else "Unknown"
+            presentation.append(f"{i}. {node.primary_label} (from: {source_name})")
+
+            prop_names = [
+                prop.key if isinstance(prop, GraphProperty) else str(prop)
+                for prop in node.properties
+            ]
+            presentation.append(f"   Properties: {', '.join(prop_names)}")
+
+            # Show indexes
+            node_indexes = [
+                index
+                for index in self.current_graph_model.node_indexes
+                if index.labels == node.labels
+            ]
+            if node_indexes:
+                index_props = [
+                    prop for index in node_indexes for prop in index.properties
+                ]
+                presentation.append(f"   Indexes: {', '.join(index_props)}")
             presentation.append("")
 
         presentation.append("RELATIONSHIPS:")
-        for i, rel in enumerate(self.current_graph_model.relationships, 1):
+        for i, rel in enumerate(self.current_graph_model.edges, 1):
             direction = "->" if rel.directionality == "directed" else "<->"
+            start_labels = ", ".join(rel.start_node_labels)
+            end_labels = ", ".join(rel.end_node_labels)
             presentation.append(
-                f"{i}. {rel.from_node} {direction} [{rel.name}] {direction} {rel.to_node}"
+                f"{i}. {start_labels} {direction} [{rel.edge_type}] {direction} {end_labels}"
             )
-            presentation.append(f"   Type: {rel.type}")
-            if rel.properties:
-                presentation.append(f"   Properties: {', '.join(rel.properties)}")
+
+            prop_names = [
+                prop.key if isinstance(prop, GraphProperty) else str(prop)
+                for prop in rel.properties
+            ]
+            if prop_names:
+                presentation.append(f"   Properties: {', '.join(prop_names)}")
             presentation.append("")
 
         return "\n".join(presentation)
@@ -1280,14 +1898,21 @@ Parse this feedback into specific operations to modify the graph model.
 
         summary_parts = ["NODES:"]
         for node in self.current_graph_model.nodes:
-            props_str = ", ".join(node.properties[:3])  # Show first 3 props
+            source_name = node.source.name if node.source else "Unknown"
+            prop_names = [
+                prop.key if isinstance(prop, GraphProperty) else str(prop)
+                for prop in node.properties[:3]  # Show first 3 props
+            ]
+            props_str = ", ".join(prop_names)
             if len(node.properties) > 3:
                 props_str += "..."
-            summary_parts.append(f"- {node.label} ({node.source_table}): {props_str}")
+            summary_parts.append(f"- {node.primary_label} ({source_name}): {props_str}")
 
         summary_parts.append("\nRELATIONSHIPS:")
-        for rel in self.current_graph_model.relationships:
-            rel_str = f"- {rel.from_node} -[{rel.name}]-> {rel.to_node}"
+        for rel in self.current_graph_model.edges:
+            start_labels = ", ".join(rel.start_node_labels)
+            end_labels = ", ".join(rel.end_node_labels)
+            rel_str = f"- {start_labels} -[{rel.edge_type}]-> {end_labels}"
             summary_parts.append(rel_str)
 
         return "\n".join(summary_parts)
@@ -1313,43 +1938,192 @@ Parse this feedback into specific operations to modify the graph model.
             # Create simplified model based on database structure
             nodes = []
             relationships = []
+            node_indexes = []
+            node_constraints = []
 
             # Create nodes from entity tables
             for table_name, table_info in database_structure["entity_tables"].items():
-                node = GraphNode(
+                # Create node source
+                source = NodeSource(
+                    type="table",
                     name=table_name,
-                    label=table_name.replace("_", "").title(),
-                    properties=self._extract_node_properties_from_table(table_info),
-                    primary_key=self._find_primary_key(table_info),
-                    indexes=self._extract_indexes_from_table(table_info),
-                    constraints=self._extract_constraints_from_table(table_info),
-                    source_table=table_name,
+                    location=f"database.schema.{table_name}",
+                    mapping={
+                        "labels": [table_name.replace("_", "").title()],
+                        "id_field": self._find_primary_key(table_info),
+                    },
+                )
+
+                # Create properties as GraphProperty objects
+                properties = []
+                prop_names = self._extract_node_properties_from_table(table_info)
+                for prop_name in prop_names:
+                    prop_source = PropertySource(field=f"{table_name}.{prop_name}")
+                    graph_prop = GraphProperty(key=prop_name, source=prop_source)
+                    properties.append(graph_prop)
+
+                node = GraphNode(
+                    labels=[table_name.replace("_", "").title()],
+                    properties=properties,
+                    source=source,
                 )
                 nodes.append(node)
 
+                # Create indexes
+                index_props = self._extract_indexes_from_table(table_info)
+                for index_prop in index_props:
+                    index_source = IndexSource(
+                        origin="migration_requirement",
+                        reason="performance_optimization",
+                        created_by="migration_agent",
+                    )
+
+                    graph_index = GraphIndex(
+                        labels=[table_name.replace("_", "").title()],
+                        properties=[index_prop],
+                        type="label+property",
+                        source=index_source,
+                    )
+                    node_indexes.append(graph_index)
+
+                # Create constraints
+                constraint_strs = self._extract_constraints_from_table(table_info)
+                for constraint_str in constraint_strs:
+                    if "UNIQUE" in constraint_str.upper():
+                        prop_name = constraint_str.replace("UNIQUE(", "").replace(
+                            ")", ""
+                        )
+                        constraint_source = ConstraintSource(
+                            origin="source_database_constraint",
+                            constraint_name=f"{table_name}_{prop_name}_unique",
+                            migrated_from=f"database.schema.{table_name}",
+                        )
+
+                        graph_constraint = GraphConstraint(
+                            type="unique",
+                            labels=[table_name.replace("_", "").title()],
+                            properties=[prop_name],
+                            source=constraint_source,
+                        )
+                        node_constraints.append(graph_constraint)
+
             # Create relationships
             for rel in database_structure.get("relationships", []):
+                # Create relationship source
+                rel_source = RelationshipSource(
+                    type="table"
+                    if rel.get("type") != "many_to_many"
+                    else "junction_table",
+                    name=rel.get("constraint_name", ""),
+                    location=f"database.schema.{rel['from_table']}",
+                    mapping={
+                        "start_node": f"{rel['from_table']}.{rel['from_column']}",
+                        "end_node": f"{rel['to_table']}.{rel['to_column']}",
+                        "edge_type": self._generate_relationship_name(rel),
+                    },
+                )
+
+                # Find node labels
+                from_label = rel["from_table"].replace("_", "").title()
+                to_label = rel["to_table"].replace("_", "").title()
+
                 relationship = GraphRelationship(
-                    name=self._generate_relationship_name(rel),
-                    type=rel.get("type", "one_to_many"),
-                    from_node=rel["from_table"].lower(),
-                    to_node=rel["to_table"].lower(),
+                    edge_type=self._generate_relationship_name(rel),
+                    start_node_labels=[from_label],
+                    end_node_labels=[to_label],
                     properties=[],
+                    source=rel_source,
                     directionality="directed",
-                    source_info=rel,
                 )
                 relationships.append(relationship)
 
+            # Process junction tables (many-to-many relationships)
+            join_tables = database_structure.get("join_tables", {})
+            for join_table_name, join_table_info in join_tables.items():
+                # Extract the foreign keys from the junction table
+                foreign_keys = join_table_info.get("foreign_keys", [])
+                if len(foreign_keys) >= 2:
+                    # Get the first two foreign keys (assuming junction table pattern)
+                    fk1 = foreign_keys[0]
+                    fk2 = foreign_keys[1]
+
+                    # Create junction table relationship source
+                    rel_source = RelationshipSource(
+                        type="junction_table",
+                        name=join_table_name,
+                        location=f"database.schema.{join_table_name}",
+                        mapping={
+                            "join_table": join_table_name,
+                            "from_table": fk1["referenced_table"],
+                            "to_table": fk2["referenced_table"],
+                            "join_from_column": fk1["column"],
+                            "join_to_column": fk2["column"],
+                            "from_column": fk1["referenced_column"],
+                            "to_column": fk2["referenced_column"],
+                        },
+                    )
+
+                    # Generate relationship name from junction table
+                    def generate_relationship_name(table_name, from_table, to_table):
+                        """Generate semantic relationship name from junction table."""
+                        # Remove common prefixes/suffixes and convert to relationship
+                        table_clean = table_name.lower()
+                        from_clean = from_table.lower()
+                        to_clean = to_table.lower()
+
+                        # Try to infer semantic meaning from table names
+                        if from_clean in table_clean and to_clean in table_clean:
+                            # Extract relationship part by removing table names
+                            rel_part = table_clean.replace(from_clean, "")
+                            rel_part = rel_part.replace(to_clean, "").strip("_")
+                            if rel_part:
+                                return rel_part.upper()
+
+                        # Fallback: create relationship from table name pattern
+                        # Convert table_name to a meaningful relationship
+                        parts = table_clean.split("_")
+                        if len(parts) >= 2:
+                            # Try to find action/relationship words
+                            action_words = ["has", "in", "to", "of", "by", "with"]
+                            for part in parts:
+                                if part in action_words or part.endswith("s"):
+                                    return f"{from_clean.upper()}_TO_{to_clean.upper()}"
+
+                        # Final fallback: generic pattern
+                        return f"{from_clean.upper()}_TO_{to_clean.upper()}"
+
+                    rel_name = generate_relationship_name(
+                        join_table_name,
+                        fk1["referenced_table"],
+                        fk2["referenced_table"],
+                    )
+
+                    # Find node labels
+                    from_label = fk1["referenced_table"].replace("_", "").title()
+                    to_label = fk2["referenced_table"].replace("_", "").title()
+
+                    relationship = GraphRelationship(
+                        edge_type=rel_name,
+                        start_node_labels=[from_label],
+                        end_node_labels=[to_label],
+                        properties=[],
+                        source=rel_source,
+                        directionality="directed",
+                    )
+                    relationships.append(relationship)
+
             return GraphModel(
                 nodes=nodes,
-                relationships=relationships,
+                edges=relationships,
+                node_indexes=node_indexes,
+                node_constraints=node_constraints,
             )
 
         except Exception as e:
             logger.error(f"Failed to generate initial graph model: {e}")
             return GraphModel(
                 nodes=[],
-                relationships=[],
+                edges=[],
             )
 
     def _fix_validation_issues(
