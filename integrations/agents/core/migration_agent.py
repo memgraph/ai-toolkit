@@ -21,7 +21,7 @@ from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 
 from query_generation.cypher_generator import CypherGenerator
-from core.graph_modeling import HyGM, GraphModel, ModelingMode, GraphModelingStrategy
+from core.hygm import HyGM, GraphModel, ModelingMode, GraphModelingStrategy
 from memgraph_toolbox.api.memgraph import Memgraph
 from database.factory import DatabaseAnalyzerFactory
 from database.data_interface import DatabaseDataInterface
@@ -255,7 +255,7 @@ class SQLToMemgraphAgent:
 
         # Perform final validation
         try:
-            from core.graph_modeling import HyGM
+            from core.hygm import HyGM
 
             # Store graph model for later use in query generation
             self._current_graph_model = state["graph_model"]
@@ -289,7 +289,7 @@ class SQLToMemgraphAgent:
 
     def _convert_dict_to_graph_model(self, model_dict: Dict[str, Any]) -> GraphModel:
         """Convert dictionary representation back to GraphModel object."""
-        from .graph_modeling import GraphModel, GraphNode, GraphRelationship
+        from .hygm import GraphModel, GraphNode, GraphRelationship
 
         # Convert nodes
         nodes = []

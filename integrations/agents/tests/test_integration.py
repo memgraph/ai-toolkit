@@ -17,7 +17,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.environment import probe_mysql_connection, probe_memgraph_connection
 from utils.config import get_preset_config
-from core.graph_modeling import HyGM
+from core.hygm import HyGM
 from langchain_openai import ChatOpenAI
 
 # Load environment variables
@@ -37,7 +37,7 @@ def test_comprehensive_sql_to_graph_conversion():
         llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
 
         # Create graph modeler with deterministic strategy for predictable testing
-        from core.graph_modeling import GraphModelingStrategy
+        from core.hygm import GraphModelingStrategy
 
         modeler = HyGM(llm=llm, strategy=GraphModelingStrategy.DETERMINISTIC)
 
@@ -1065,7 +1065,7 @@ def test_full_migration_workflow_simulation():
 
     try:
         # Initialize components
-        from core.graph_modeling import GraphModelingStrategy
+        from core.hygm import GraphModelingStrategy
         from core.migration_agent import SQLToMemgraphAgent
 
         # Create migration agent with deterministic strategy
@@ -1377,7 +1377,7 @@ def test_full_migration_workflow_simulation():
 
         # Test graph modeling step (using HyGM directly)
         logger.info("Testing graph modeling step...")
-        from core.graph_modeling import HyGM
+        from core.hygm import HyGM
 
         modeler = HyGM(llm=agent.llm, strategy=GraphModelingStrategy.DETERMINISTIC)
         graph_model = modeler.create_graph_model(sample_structure)
