@@ -221,6 +221,8 @@ class IndexSource:
     origin: str  # "migration_requirement", "performance_optimization", etc.
     reason: str  # Why this index was created
     created_by: str  # Who/what created it
+    index_name: Optional[str] = None  # Original index name
+    migrated_from: Optional[str] = None  # Source location
 
 
 @dataclass
@@ -230,7 +232,6 @@ class ConstraintSource:
     origin: str  # "source_database_constraint", "business_rule", etc.
     constraint_name: Optional[str] = None  # Original constraint name
     migrated_from: Optional[str] = None  # Source location
-    reason: Optional[str] = None  # Business reason
     created_by: Optional[str] = None  # Creator
 
 
@@ -241,6 +242,7 @@ class EnumSource:
     origin: str  # "source_database_enum", "manual", etc.
     enum_name: Optional[str] = None  # Original enum name
     migrated_from: Optional[str] = None  # Source location
+    created_by: Optional[str] = None  # Creator
 
 
 @dataclass
@@ -472,6 +474,8 @@ class GraphModel:
                     origin=index_dict["source"]["origin"],
                     reason=index_dict["source"]["reason"],
                     created_by=index_dict["source"]["created_by"],
+                    index_name=index_dict["source"].get("index_name"),
+                    migrated_from=index_dict["source"].get("migrated_from"),
                 )
 
             index = GraphIndex(
@@ -492,6 +496,8 @@ class GraphModel:
                     origin=index_dict["source"]["origin"],
                     reason=index_dict["source"]["reason"],
                     created_by=index_dict["source"]["created_by"],
+                    index_name=index_dict["source"].get("index_name"),
+                    migrated_from=index_dict["source"].get("migrated_from"),
                 )
 
             index = GraphIndex(
@@ -556,6 +562,7 @@ class GraphModel:
                     origin=enum_dict["source"]["origin"],
                     enum_name=enum_dict["source"].get("enum_name"),
                     migrated_from=enum_dict["source"].get("migrated_from"),
+                    created_by=enum_dict["source"].get("created_by"),
                 )
 
             enum = GraphEnum(
@@ -739,11 +746,16 @@ class GraphModel:
             schema_index["edge_type"] = index.edge_type
 
         if index.source:
-            schema_index["source"] = {
+            source_dict = {
                 "origin": index.source.origin,
                 "reason": index.source.reason,
                 "created_by": index.source.created_by,
             }
+            if index.source.index_name:
+                source_dict["index_name"] = index.source.index_name
+            if index.source.migrated_from:
+                source_dict["migrated_from"] = index.source.migrated_from
+            schema_index["source"] = source_dict
 
         return schema_index
 
@@ -792,6 +804,8 @@ class GraphModel:
                 source_dict["enum_name"] = enum.source.enum_name
             if enum.source.migrated_from:
                 source_dict["migrated_from"] = enum.source.migrated_from
+            if enum.source.created_by:
+                source_dict["created_by"] = enum.source.created_by
             schema_enum["source"] = source_dict
 
         return schema_enum
@@ -1035,6 +1049,11 @@ class HyGM:
 
         logger.info(f"Creating graph model using {used_strategy.value} strategy...")
 
+        # Check if interactive mode is enabled
+        if self.mode == ModelingMode.INTERACTIVE:
+            return self._interactive_modeling(database_structure, domain_context)
+
+        # For automatic mode, use the specified strategy
         if used_strategy == GraphModelingStrategy.LLM_POWERED:
             return self._llm_powered_modeling(database_structure, domain_context)
         else:
@@ -1301,6 +1320,8 @@ DO NOT create relationships that don't correspond to actual foreign keys in the 
                     origin="migration_requirement",
                     reason="performance_optimization",
                     created_by="migration_agent",
+                    index_name=None,
+                    migrated_from=None,
                 )
 
                 graph_index = GraphIndex(
@@ -1814,6 +1835,8 @@ Parse this feedback into specific operations to modify the graph model.
                     origin="user_request",
                     reason="performance_optimization",
                     created_by="interactive_session",
+                    index_name=None,
+                    migrated_from=None,
                 )
                 new_index = GraphIndex(
                     labels=target_node.labels,
@@ -1931,200 +1954,131 @@ Parse this feedback into specific operations to modify the graph model.
     def _generate_initial_model(
         self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
     ) -> GraphModel:
-        """Generate initial graph model from database structure."""
+        """Generate initial graph model from database structure using the configured strategy."""
         logger.info("Generating initial graph model...")
 
-        try:
-            # Create simplified model based on database structure
-            nodes = []
-            relationships = []
-            node_indexes = []
-            node_constraints = []
+        # Use the configured strategy for generating the initial model
+        if self.strategy == GraphModelingStrategy.LLM_POWERED:
+            return self._llm_powered_modeling(database_structure, domain_context)
+        else:
+            return self._deterministic_modeling(database_structure, domain_context)
 
-            # Create nodes from entity tables
-            for table_name, table_info in database_structure["entity_tables"].items():
-                # Create node source
-                source = NodeSource(
-                    type="table",
-                    name=table_name,
-                    location=f"database.schema.{table_name}",
-                    mapping={
-                        "labels": [table_name.replace("_", "").title()],
-                        "id_field": self._find_primary_key(table_info),
-                    },
-                )
+    def _deterministic_modeling(
+        self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
+    ) -> GraphModel:
+        """
+        Create a basic graph model deterministically from database structure.
+        This method creates a straightforward mapping without mode checks.
+        """
+        logger.info("Creating deterministic graph model...")
 
-                # Create properties as GraphProperty objects
-                properties = []
-                prop_names = self._extract_node_properties_from_table(table_info)
-                for prop_name in prop_names:
-                    prop_source = PropertySource(field=f"{table_name}.{prop_name}")
-                    graph_prop = GraphProperty(key=prop_name, source=prop_source)
-                    properties.append(graph_prop)
+        nodes = []
+        relationships = []
+        node_indexes = []
+        node_constraints = []
 
-                node = GraphNode(
-                    labels=[table_name.replace("_", "").title()],
-                    properties=properties,
-                    source=source,
-                )
-                nodes.append(node)
-
-                # Create indexes
-                index_props = self._extract_indexes_from_table(table_info)
-                for index_prop in index_props:
-                    index_source = IndexSource(
-                        origin="migration_requirement",
-                        reason="performance_optimization",
-                        created_by="migration_agent",
-                    )
-
-                    graph_index = GraphIndex(
-                        labels=[table_name.replace("_", "").title()],
-                        properties=[index_prop],
-                        type="label+property",
-                        source=index_source,
-                    )
-                    node_indexes.append(graph_index)
-
-                # Create constraints
-                constraint_strs = self._extract_constraints_from_table(table_info)
-                for constraint_str in constraint_strs:
-                    if "UNIQUE" in constraint_str.upper():
-                        prop_name = constraint_str.replace("UNIQUE(", "").replace(
-                            ")", ""
-                        )
-                        constraint_source = ConstraintSource(
-                            origin="source_database_constraint",
-                            constraint_name=f"{table_name}_{prop_name}_unique",
-                            migrated_from=f"database.schema.{table_name}",
-                        )
-
-                        graph_constraint = GraphConstraint(
-                            type="unique",
-                            labels=[table_name.replace("_", "").title()],
-                            properties=[prop_name],
-                            source=constraint_source,
-                        )
-                        node_constraints.append(graph_constraint)
-
-            # Create relationships
-            for rel in database_structure.get("relationships", []):
-                # Create relationship source
-                rel_source = RelationshipSource(
-                    type="table"
-                    if rel.get("type") != "many_to_many"
-                    else "junction_table",
-                    name=rel.get("constraint_name", ""),
-                    location=f"database.schema.{rel['from_table']}",
-                    mapping={
-                        "start_node": f"{rel['from_table']}.{rel['from_column']}",
-                        "end_node": f"{rel['to_table']}.{rel['to_column']}",
-                        "edge_type": self._generate_relationship_name(rel),
-                    },
-                )
-
-                # Find node labels
-                from_label = rel["from_table"].replace("_", "").title()
-                to_label = rel["to_table"].replace("_", "").title()
-
-                relationship = GraphRelationship(
-                    edge_type=self._generate_relationship_name(rel),
-                    start_node_labels=[from_label],
-                    end_node_labels=[to_label],
-                    properties=[],
-                    source=rel_source,
-                    directionality="directed",
-                )
-                relationships.append(relationship)
-
-            # Process junction tables (many-to-many relationships)
-            join_tables = database_structure.get("join_tables", {})
-            for join_table_name, join_table_info in join_tables.items():
-                # Extract the foreign keys from the junction table
-                foreign_keys = join_table_info.get("foreign_keys", [])
-                if len(foreign_keys) >= 2:
-                    # Get the first two foreign keys (assuming junction table pattern)
-                    fk1 = foreign_keys[0]
-                    fk2 = foreign_keys[1]
-
-                    # Create junction table relationship source
-                    rel_source = RelationshipSource(
-                        type="junction_table",
-                        name=join_table_name,
-                        location=f"database.schema.{join_table_name}",
-                        mapping={
-                            "join_table": join_table_name,
-                            "from_table": fk1["referenced_table"],
-                            "to_table": fk2["referenced_table"],
-                            "join_from_column": fk1["column"],
-                            "join_to_column": fk2["column"],
-                            "from_column": fk1["referenced_column"],
-                            "to_column": fk2["referenced_column"],
-                        },
-                    )
-
-                    # Generate relationship name from junction table
-                    def generate_relationship_name(table_name, from_table, to_table):
-                        """Generate semantic relationship name from junction table."""
-                        # Remove common prefixes/suffixes and convert to relationship
-                        table_clean = table_name.lower()
-                        from_clean = from_table.lower()
-                        to_clean = to_table.lower()
-
-                        # Try to infer semantic meaning from table names
-                        if from_clean in table_clean and to_clean in table_clean:
-                            # Extract relationship part by removing table names
-                            rel_part = table_clean.replace(from_clean, "")
-                            rel_part = rel_part.replace(to_clean, "").strip("_")
-                            if rel_part:
-                                return rel_part.upper()
-
-                        # Fallback: create relationship from table name pattern
-                        # Convert table_name to a meaningful relationship
-                        parts = table_clean.split("_")
-                        if len(parts) >= 2:
-                            # Try to find action/relationship words
-                            action_words = ["has", "in", "to", "of", "by", "with"]
-                            for part in parts:
-                                if part in action_words or part.endswith("s"):
-                                    return f"{from_clean.upper()}_TO_{to_clean.upper()}"
-
-                        # Final fallback: generic pattern
-                        return f"{from_clean.upper()}_TO_{to_clean.upper()}"
-
-                    rel_name = generate_relationship_name(
-                        join_table_name,
-                        fk1["referenced_table"],
-                        fk2["referenced_table"],
-                    )
-
-                    # Find node labels
-                    from_label = fk1["referenced_table"].replace("_", "").title()
-                    to_label = fk2["referenced_table"].replace("_", "").title()
-
-                    relationship = GraphRelationship(
-                        edge_type=rel_name,
-                        start_node_labels=[from_label],
-                        end_node_labels=[to_label],
-                        properties=[],
-                        source=rel_source,
-                        directionality="directed",
-                    )
-                    relationships.append(relationship)
-
-            return GraphModel(
-                nodes=nodes,
-                edges=relationships,
-                node_indexes=node_indexes,
-                node_constraints=node_constraints,
+        # Convert entity tables to nodes
+        entity_tables = database_structure.get("entity_tables", {})
+        for table_name, table_info in entity_tables.items():
+            # Create source information
+            source = NodeSource(
+                type="table",
+                name=table_name,
+                location=f"database.schema.{table_name}",
+                mapping={
+                    "labels": [table_name.title()],
+                    "id_field": self._find_primary_key(table_info),
+                },
             )
 
-        except Exception as e:
-            logger.error(f"Failed to generate initial graph model: {e}")
-            return GraphModel(
-                nodes=[],
-                edges=[],
+            # Extract properties
+            properties = []
+            for prop_name in self._extract_node_properties_from_table(table_info):
+                prop_source = PropertySource(field=f"{table_name}.{prop_name}")
+                graph_prop = GraphProperty(key=prop_name, source=prop_source)
+                properties.append(graph_prop)
+
+            # Create node
+            node = GraphNode(
+                labels=[table_name.title()], properties=properties, source=source
             )
+            nodes.append(node)
+
+            # Create indexes for this node
+            for index_prop in self._extract_indexes_from_table(table_info):
+                index_source = IndexSource(
+                    origin="migration_requirement",
+                    reason="performance_optimization",
+                    created_by="migration_agent",
+                    index_name=None,
+                    migrated_from=None,
+                )
+                graph_index = GraphIndex(
+                    labels=[table_name.title()],
+                    properties=[index_prop],
+                    type="label+property",
+                    source=index_source,
+                )
+                node_indexes.append(graph_index)
+
+            # Create constraints for this node
+            for constraint_str in self._extract_constraints_from_table(table_info):
+                if "UNIQUE" in constraint_str.upper():
+                    prop_name = constraint_str.replace("UNIQUE(", "").replace(")", "")
+                    constraint_source = ConstraintSource(
+                        origin="source_database_constraint",
+                        constraint_name=f"{table_name}_{prop_name}_unique",
+                        migrated_from=f"database.schema.{table_name}",
+                    )
+                    graph_constraint = GraphConstraint(
+                        type="unique",
+                        labels=[table_name.title()],
+                        properties=[prop_name],
+                        source=constraint_source,
+                    )
+                    node_constraints.append(graph_constraint)
+
+        # Convert relationships
+        relationships_data = database_structure.get("relationships", [])
+        for rel_data in relationships_data:
+            rel_name = self._generate_relationship_name(rel_data)
+
+            # Find source and target node labels
+            from_table = rel_data.get("from_table", "")
+            to_table = rel_data.get("to_table", "")
+
+            start_labels = [from_table.title()]
+            end_labels = [to_table.title()]
+
+            # Create relationship source
+            rel_source = RelationshipSource(
+                type="table",
+                name=rel_data.get("constraint_name", rel_name),
+                location=f"database.schema.{from_table}",
+                mapping={
+                    "start_node": f"{from_table}.{rel_data.get('from_column', 'id')}",
+                    "end_node": f"{to_table}.{rel_data.get('to_column', 'id')}",
+                    "edge_type": rel_name,
+                },
+            )
+
+            # Create relationship
+            relationship = GraphRelationship(
+                edge_type=rel_name,
+                start_node_labels=start_labels,
+                end_node_labels=end_labels,
+                properties=[],
+                source=rel_source,
+                directionality="directed",
+            )
+            relationships.append(relationship)
+
+        return GraphModel(
+            nodes=nodes,
+            edges=relationships,
+            node_indexes=node_indexes,
+            node_constraints=node_constraints,
+        )
 
     def _fix_validation_issues(
         self, graph_model: GraphModel, validation_result: Dict[str, Any]
