@@ -23,7 +23,7 @@ from utils import (
     print_troubleshooting_help,
 )
 from core import SQLToMemgraphAgent
-from core.graph_modeling import GraphModelingStrategy
+from core.hygm import GraphModelingStrategy
 
 # Configure logging
 logging.basicConfig(

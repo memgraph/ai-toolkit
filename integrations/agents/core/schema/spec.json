@@ -1,0 +1,155 @@
+{
+  "nodes": [
+    {
+      "labels": ["NodeLabel"],
+      "count": 1,
+      "properties": [
+        {
+          "key": "property_key_0",
+          "count": 1,
+          "filling_factor": 100.0,
+          "types": [
+            { "type": "Null", "count": 1, "examples": [] },
+            { "type": "String", "count": 1, "examples": [] },
+            { "type": "Boolean", "count": 1, "examples": [] },
+            { "type": "Integer", "count": 1, "examples": [] },
+            { "type": "Float", "count": 1, "examples": [] },
+            { "type": "List", "count": 1, "examples": [] },
+            { "type": "Map", "count": 1, "examples": [] },
+            { "type": "Duration", "count": 1, "examples": [] },
+            { "type": "Date", "count": 1, "examples": [] },
+            { "type": "LocalTime", "count": 1, "examples": [] },
+            { "type": "LocalDateTime", "count": 1, "examples": [] },
+            { "type": "ZonedDateTime", "count": 1, "examples": [] },
+            { "type": "Enum::Name", "count": 1, "examples": [] },
+            { "type": "Point2D", "count": 1, "examples": [] },
+            { "type": "Point3D", "count": 1, "examples": [] }
+          ],
+          "source": {
+            "field": "source_table.column_name",
+            "transformation": "UPPER(column_name) | null"
+          }
+        }
+      ],
+      "examples": [{}],
+      "source": {
+        "type": "table|view|file|api|manual",
+        "name": "source_table_name",
+        "location": "database.schema.table_name",
+        "mapping": {
+          "labels": ["source_table.type_column | NodeLabel"],
+          "id_field": "source_table.id"
+        }
+      }
+    }
+  ],
+
+  "edges": [
+    {
+      "edge_type": "RELATIONSHIP_TYPE",
+      "start_node_labels": ["StartNodeLabel"],
+      "end_node_labels": ["EndNodeLabel"],
+      "count": 1,
+      "properties": [
+        {
+          "key": "edge_property",
+          "count": 1,
+          "filling_factor": 100.0,
+          "types": [{ "type": "String", "count": 1, "examples": [] }],
+          "source": {
+            "field": "junction_table.property_column",
+            "transformation": "DATE(created_at) | null"
+          }
+        }
+      ],
+      "examples": [{}],
+      "source": {
+        "type": "table|view|junction_table|derived",
+        "name": "relationships_table",
+        "location": "database.schema.relationships_table",
+        "mapping": {
+          "start_node": "relationships_table.start_id",
+          "end_node": "relationships_table.end_id",
+          "edge_type": "RELATIONSHIP_TYPE | relationships_table.type_column"
+        }
+      }
+    }
+  ],
+
+  "node_indexes": [
+    {
+      "labels": ["NodeLabel"],
+      "properties": ["indexed_property"],
+      "count": 0,
+      "examples": [{}],
+      "type": "label|label+property|label+property_point|label_text|label+property_text|label+property_vector",
+      "source": {
+        "origin": "migration_requirement|performance_optimization|source_database_index",
+        "reason": "unique_constraint|query_performance|full_text_search|vector_similarity",
+        "created_by": "migration_agent|dba_team|application_requirement",
+        "index_name": "idx_node_property | null",
+        "migrated_from": "database.schema.table_name | null"
+      }
+    }
+  ],
+
+  "edge_indexes": [
+    {
+      "edge_type": "RELATIONSHIP_TYPE",
+      "properties": ["indexed_edge_property"],
+      "count": 0,
+      "examples": [{}],
+      "type": "edge_type|edge_type+property|edge_type+property_point|edge_type_text|edge_type+property_text|edge_type+property_vector",
+      "source": {
+        "origin": "migration_requirement|performance_optimization|source_database_index",
+        "reason": "temporal_queries|relationship_traversal|full_text_search|vector_similarity",
+        "created_by": "migration_agent|dba_team|application_requirement",
+        "index_name": "idx_edge_property | null",
+        "migrated_from": "database.schema.table_name | null"
+      }
+    }
+  ],
+
+  "node_constraints": [
+    {
+      "type": "unique|existence|data_type",
+      "labels": ["NodeLabel"],
+      "properties": ["constrained_property"],
+      "data_type": "String|Integer|Float|Boolean|Date|etc",
+      "source": {
+        "origin": "source_database_constraint|migration_requirement|data_integrity",
+        "constraint_name": "original_constraint_name | null",
+        "migrated_from": "database.schema.table_name | null",
+        "created_by": "migration_agent|dba_team|data_governance"
+      }
+    }
+  ],
+
+  "edge_constraints": [
+    {
+      "type": "unique|existence|data_type",
+      "edge_type": "RELATIONSHIP_TYPE",
+      "properties": ["constrained_edge_property"],
+      "data_type": "String|Integer|Float|Boolean|Date|etc",
+      "source": {
+        "origin": "source_database_constraint|migration_requirement|data_integrity",
+        "constraint_name": "original_constraint_name | null",
+        "migrated_from": "database.schema.table_name | null",
+        "created_by": "migration_agent|dba_team|data_governance"
+      }
+    }
+  ],
+
+  "enums": [
+    {
+      "name": "EnumName",
+      "values": [],
+      "source": {
+        "origin": "source_database_enum|application_requirement|manual_definition",
+        "enum_name": "original_enum_name | null",
+        "migrated_from": "database.schema.enum_type | null",
+        "created_by": "migration_agent|application_developer|data_architect"
+      }
+    }
+  ]
+}
