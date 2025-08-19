@@ -1,7 +1,8 @@
 """
 LLM-specific models for Hypothetical Graph Modeling (HyGM).
 
-These models define the structure for LLM input/output and interactive operations.
+These models define the structure for LLM input/output and interactive
+operations.
 """
 
 from enum import Enum
@@ -28,8 +29,8 @@ class LLMGraphNode(BaseModel):
     """Node definition for LLM-generated graph models."""
 
     name: str = Field(description="Unique identifier for the node")
-    label: str = Field(
-        description="Cypher label for the node (e.g., 'User', 'Product')"
+    labels: List[str] = Field(
+        description="Cypher labels for the node (e.g., ['User'], ['Product'])"
     )
     properties: List[str] = Field(
         description="List of properties to include from source table"
