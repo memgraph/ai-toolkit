@@ -53,6 +53,10 @@ class LLMStrategy(BaseModelingStrategy):
 
         Returns:
             GraphModel: AI-generated graph model
+
+        Raises:
+            ValueError: If no LLM client is provided
+            Exception: If LLM model creation fails
         """
         logger.info("Creating LLM-powered graph model...")
 
@@ -60,15 +64,12 @@ class LLMStrategy(BaseModelingStrategy):
         self._database_structure = database_structure
 
         if not self.llm_client:
-            logger.warning("No LLM client provided, falling back to basic")
-            return self._create_basic_model(database_structure)
+            raise ValueError(
+                "No LLM client provided for LLM-powered modeling. "
+                "Please configure OpenAI API key or use deterministic strategy."
+            )
 
-        try:
-            return self._create_llm_model(database_structure, domain_context)
-        except Exception as e:  # noqa: BLE001
-            logger.error("LLM model creation failed: %s", e)
-            logger.info("Falling back to basic model creation")
-            return self._create_basic_model(database_structure)
+        return self._create_llm_model(database_structure, domain_context)
 
     def _create_llm_model(
         self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
@@ -76,42 +77,58 @@ class LLMStrategy(BaseModelingStrategy):
         """Create model using LLM structured output."""
         logger.info("Using LLM to generate graph model...")
 
-        # For now, use the deterministic strategy as the LLM implementation
-        # needs proper OpenAI client configuration for structured output
-        # This preserves the database relationship mapping while providing
-        # a working solution
+        try:
+            # Import the structured output model
+            from core.hygm.models.llm_models import LLMGraphModel
 
-        from core.hygm.strategies.deterministic import DeterministicStrategy
+            # Prepare the prompt
+            prompt = self._build_modeling_prompt(database_structure, domain_context)
 
-        logger.info("LLM-powered graph modeling completed")
-        deterministic_strategy = DeterministicStrategy()
-        return deterministic_strategy.create_model(database_structure)
-        """Create model using LLM structured output."""
-        from core.hygm.models.llm_models import GraphModelingStrategy
-
-        # Prepare the prompt
-        prompt = self._build_modeling_prompt(
-            database_structure, domain_context
-        )  # Call LLM with structured output
-        completion = self.llm_client.beta.chat.completions.parse(
-            model=self.model_name,
-            messages=[
+            # Call LLM with structured output using LangChain
+            # Note: LangChain's ChatOpenAI doesn't support structured output directly
+            # We'll use the regular invoke method and parse the response manually
+            messages = [
                 {
                     "role": "system",
                     "content": (
                         "You are an expert database architect specializing "
-                        "in converting relational schemas to graph models."
+                        "in converting relational schemas to graph models. "
+                        "Always respond with valid JSON matching the exact schema provided."
                     ),
                 },
                 {"role": "user", "content": prompt},
-            ],
-            response_format=GraphModelingStrategy,
-            temperature=self.temperature,
-        )
+            ]
 
-        # Extract and convert LLM response to internal graph model
-        llm_model = completion.choices[0].message.parsed
-        return self._convert_llm_to_graph_model(llm_model)
+            response = self.llm_client.invoke(messages)
+
+            # Debug: Log the actual response
+            logger.info(f"LLM Response: {response.content[:500]}...")
+
+            # Parse the response as JSON and validate against our model
+            import json
+
+            try:
+                response_dict = json.loads(response.content)
+                llm_model = LLMGraphModel(**response_dict)
+            except (json.JSONDecodeError, ValueError) as parse_error:
+                error_msg = (
+                    f"Failed to parse LLM response as structured output: {parse_error}"
+                )
+                logger.error(error_msg)
+                logger.error(f"Raw response: {response.content}")
+                raise ValueError(error_msg) from parse_error
+
+            # Extract and convert LLM response to internal graph model
+            return self._convert_llm_to_graph_model(llm_model)
+
+        except ImportError as e:
+            error_msg = f"Missing LLM models module: {e}"
+            logger.error(error_msg)
+            raise ImportError(error_msg) from e
+        except Exception as e:
+            error_msg = f"LLM model creation failed: {e}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
 
     def _build_modeling_prompt(
         self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
@@ -369,10 +386,3 @@ class LLMStrategy(BaseModelingStrategy):
 
         # Fallback to the node name itself as label
         return [node_name]
-
-    def _create_basic_model(self, database_structure: Dict[str, Any]):
-        """Fallback to basic model creation when LLM is unavailable."""
-        from core.hygm.strategies.deterministic import DeterministicStrategy
-
-        fallback_strategy = DeterministicStrategy()
-        return fallback_strategy.create_model(database_structure)
