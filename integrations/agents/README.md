@@ -60,3 +60,17 @@ MEMGRAPH_PASSWORD=
 # OpenAI (for LLM-powered features)
 OPENAI_API_KEY=your_openai_key
 ```
+
+# Arhitecture
+
+core/hygm/
+├── hygm.py # Main orchestrator class  
+├── models/ # Data models and structures
+│ ├── graph_models.py # Core graph representation
+│ ├── llm_models.py # LLM-specific models
+│ ├── operations.py # Interactive operations
+│ └── sources.py # Source tracking
+└── strategies/ # Modeling strategies
+├── base.py # Abstract interface
+├── deterministic.py # Rule-based modeling
+└── llm.py # AI-powered modeling
