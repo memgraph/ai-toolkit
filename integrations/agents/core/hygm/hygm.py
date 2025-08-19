@@ -274,3 +274,53 @@ class HyGM:
         return self.create_graph_model(
             database_structure, domain_context, GraphModelingStrategy.DETERMINISTIC
         )
+
+    def validate_graph_model(
+        self, graph_model: "GraphModel", database_structure: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Validate graph model against database structure.
+
+        Args:
+            graph_model: The graph model to validate
+            database_structure: Original database structure
+
+        Returns:
+            Dict with validation results
+        """
+        logger.info("Validating graph model...")
+
+        issues = []
+        warnings = []
+
+        # Check all entity tables are represented as nodes
+        entity_tables = set(database_structure.get("entity_tables", {}).keys())
+        model_source_tables = set()
+
+        for node in graph_model.nodes:
+            if node.source and hasattr(node.source, "name"):
+                model_source_tables.add(node.source.name)
+
+        missing_tables = entity_tables - model_source_tables
+        if missing_tables:
+            issues.append(f"Missing nodes for tables: {missing_tables}")
+
+        # Check relationships correspond to actual foreign keys
+        db_relationships = database_structure.get("relationships", [])
+        if len(graph_model.edges) == 0 and len(db_relationships) > 0:
+            warnings.append("No relationships created despite foreign keys existing")
+
+        # Basic counts validation
+        if len(graph_model.nodes) == 0:
+            issues.append("No nodes created in graph model")
+
+        # Summary
+        is_valid = len(issues) == 0
+        summary = f"{len(graph_model.nodes)} nodes, {len(graph_model.edges)} edges"
+
+        return {
+            "is_valid": is_valid,
+            "issues": issues,
+            "warnings": warnings,
+            "summary": summary,
+        }

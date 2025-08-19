@@ -169,9 +169,17 @@ class DeterministicStrategy(BaseModelingStrategy):
     ) -> List[str]:
         """Extract properties that should be included in the node."""
         properties = []
-        for col_name, col_info in table_info.get("columns", {}).items():
-            # Include most columns but skip obvious foreign keys
-            if not col_name.endswith("_id") or col_info.get("key") == "PRI":
+
+        # Get schema from table_info - it's a list of column dictionaries
+        schema_list = table_info.get("schema", [])
+        for col_info in schema_list:
+            col_name = col_info.get("field")
+            if not col_name:
+                continue
+
+            # Include all columns except foreign key columns (ending with _id
+            # but not primary keys)
+            if not (col_name.endswith("_id") and col_info.get("key") != "PRI"):
                 properties.append(col_name)
         return properties
 
