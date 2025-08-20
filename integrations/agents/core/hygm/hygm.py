@@ -279,48 +279,329 @@ class HyGM:
         self, graph_model: "GraphModel", database_structure: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Validate graph model against database structure.
+        Comprehensive validation of graph model against database structure.
 
         Args:
             graph_model: The graph model to validate
             database_structure: Original database structure
 
         Returns:
-            Dict with validation results
+            Dict with detailed validation results including:
+            - is_valid: Boolean indicating if model passes all critical checks
+            - issues: List of critical problems that must be fixed
+            - warnings: List of recommendations and potential improvements
+            - suggestions: List of optimization suggestions
+            - summary: High-level summary of validation results
+            - metrics: Quantitative validation metrics
         """
-        logger.info("Validating graph model...")
+        logger.info("Performing comprehensive graph model validation...")
 
         issues = []
         warnings = []
+        suggestions = []
+        metrics = {}
 
-        # Check all entity tables are represented as nodes
+        # 1. STRUCTURAL VALIDATION
         entity_tables = set(database_structure.get("entity_tables", {}).keys())
         model_source_tables = set()
 
+        # Basic existence checks
+        if len(graph_model.nodes) == 0:
+            issues.append("Critical: No nodes created in graph model")
+
+        if not entity_tables:
+            warnings.append("No entity tables found in source database")
+
+        # 2. NODE COVERAGE VALIDATION
         for node in graph_model.nodes:
             if node.source and hasattr(node.source, "name"):
                 model_source_tables.add(node.source.name)
 
         missing_tables = entity_tables - model_source_tables
         if missing_tables:
-            issues.append(f"Missing nodes for tables: {missing_tables}")
+            issues.append(
+                f"Missing nodes for entity tables: " f"{sorted(missing_tables)}"
+            )
 
-        # Check relationships correspond to actual foreign keys
-        db_relationships = database_structure.get("relationships", [])
-        if len(graph_model.edges) == 0 and len(db_relationships) > 0:
-            warnings.append("No relationships created despite foreign keys existing")
+        extra_tables = model_source_tables - entity_tables
+        if extra_tables:
+            warnings.append(
+                f"Nodes created for non-entity tables: " f"{sorted(extra_tables)}"
+            )
 
-        # Basic counts validation
-        if len(graph_model.nodes) == 0:
-            issues.append("No nodes created in graph model")
+        # 3. NODE QUALITY VALIDATION
+        duplicate_labels = set()
+        nodes_without_properties = []
+        nodes_with_invalid_labels = []
 
-        # Summary
+        seen_labels = set()
+        for node in graph_model.nodes:
+            # Check for duplicate primary labels
+            primary_label = node.primary_label
+            if primary_label in seen_labels:
+                duplicate_labels.add(primary_label)
+            seen_labels.add(primary_label)
+
+            # Check node has properties
+            if not node.properties or len(node.properties) == 0:
+                nodes_without_properties.append(primary_label)
+
+            # Validate label naming conventions
+            if not primary_label or not primary_label.replace("_", "").isalnum():
+                nodes_with_invalid_labels.append(primary_label)
+
+        if duplicate_labels:
+            issues.append(
+                f"Duplicate node labels found: " f"{sorted(duplicate_labels)}"
+            )
+        if nodes_without_properties:
+            warnings.append(
+                f"Nodes without properties: " f"{sorted(nodes_without_properties)}"
+            )
+        if nodes_with_invalid_labels:
+            warnings.append(
+                f"Nodes with invalid label names: "
+                f"{sorted(nodes_with_invalid_labels)}"
+            )
+
+        # 4. PROPERTY VALIDATION
+        property_issues = self._validate_node_properties(
+            graph_model, database_structure
+        )
+        issues.extend(property_issues.get("issues", []))
+        warnings.extend(property_issues.get("warnings", []))
+        suggestions.extend(property_issues.get("suggestions", []))
+
+        # 5. RELATIONSHIP VALIDATION
+        relationship_validation = self._validate_relationships(
+            graph_model, database_structure
+        )
+        issues.extend(relationship_validation.get("issues", []))
+        warnings.extend(relationship_validation.get("warnings", []))
+        suggestions.extend(relationship_validation.get("suggestions", []))
+
+        # 6. SCHEMA CONSISTENCY VALIDATION
+        schema_validation = self._validate_schema_consistency(
+            graph_model, database_structure
+        )
+        warnings.extend(schema_validation.get("warnings", []))
+        suggestions.extend(schema_validation.get("suggestions", []))
+
+        # 7. CALCULATE METRICS
+        coverage_pct = (
+            len(model_source_tables) / len(entity_tables) * 100 if entity_tables else 0
+        )
+        avg_props = (
+            sum(len(node.properties) for node in graph_model.nodes)
+            / len(graph_model.nodes)
+            if graph_model.nodes
+            else 0
+        )
+        rel_density = (
+            len(graph_model.edges) / len(graph_model.nodes) if graph_model.nodes else 0
+        )
+
+        metrics = {
+            "node_count": len(graph_model.nodes),
+            "edge_count": len(graph_model.edges),
+            "coverage_percentage": coverage_pct,
+            "avg_properties_per_node": avg_props,
+            "relationship_density": rel_density,
+            "tables_covered": len(model_source_tables),
+            "total_entity_tables": len(entity_tables),
+        }
+
+        # Determine validity
         is_valid = len(issues) == 0
-        summary = f"{len(graph_model.nodes)} nodes, {len(graph_model.edges)} edges"
+
+        # Generate comprehensive summary
+        summary = self._generate_validation_summary(
+            metrics, issues, warnings, suggestions
+        )
 
         return {
             "is_valid": is_valid,
             "issues": issues,
             "warnings": warnings,
+            "suggestions": suggestions,
             "summary": summary,
+            "metrics": metrics,
         }
+
+    def _validate_node_properties(
+        self, graph_model: "GraphModel", database_structure: Dict[str, Any]
+    ) -> Dict[str, list]:
+        """Validate node properties exist in source schema."""
+        issues = []
+        warnings = []
+        suggestions = []
+
+        entity_tables = database_structure.get("entity_tables", {})
+
+        for node in graph_model.nodes:
+            if not node.source or not hasattr(node.source, "name"):
+                continue
+
+            table_name = node.source.name
+            table_info = entity_tables.get(table_name, {})
+            schema_columns = {col["field"]: col for col in table_info.get("schema", [])}
+
+            # Check each property exists in source schema
+            missing_props = []
+
+            for prop in node.properties:
+                prop_key = prop.key if hasattr(prop, "key") else str(prop)
+
+                if prop_key not in schema_columns:
+                    missing_props.append(prop_key)
+
+            if missing_props:
+                issues.append(
+                    f"Node {node.primary_label} has properties not in source: "
+                    f"{missing_props}"
+                )
+
+        return {"issues": issues, "warnings": warnings, "suggestions": suggestions}
+
+    def _validate_relationships(
+        self, graph_model: "GraphModel", database_structure: Dict[str, Any]
+    ) -> Dict[str, list]:
+        """Validate relationships against database foreign keys."""
+        issues = []
+        warnings = []
+        suggestions = []
+
+        db_relationships = database_structure.get("relationships", [])
+
+        # Check if relationships exist when they should
+        if len(graph_model.edges) == 0 and len(db_relationships) > 0:
+            warnings.append(
+                f"No relationships created despite {len(db_relationships)} "
+                f"foreign keys existing"
+            )
+
+        # Validate each relationship
+        for edge in graph_model.edges:
+            # Check if relationship type follows naming conventions
+            if not edge.edge_type.isupper():
+                suggestions.append(
+                    f"Relationship type '{edge.edge_type}' should be UPPERCASE"
+                )
+
+            # Check for self-referencing relationships
+            if edge.start_node_labels == edge.end_node_labels:
+                warnings.append(
+                    f"Self-referencing relationship detected: {edge.edge_type}"
+                )
+
+            # Validate directionality
+            if edge.directionality not in ["directed", "undirected"]:
+                issues.append(
+                    f"Invalid directionality '{edge.directionality}' "
+                    f"for relationship {edge.edge_type}"
+                )
+
+        # Check for missing relationships based on foreign keys
+        missing_rels = self._identify_missing_relationships(
+            graph_model, db_relationships
+        )
+        if missing_rels:
+            suggestions.extend(missing_rels)
+
+        return {"issues": issues, "warnings": warnings, "suggestions": suggestions}
+
+    def _validate_schema_consistency(
+        self, graph_model: "GraphModel", database_structure: Dict[str, Any]
+    ) -> Dict[str, list]:
+        """Validate overall schema consistency and design patterns."""
+        warnings = []
+        suggestions = []
+
+        # Check for potential many-to-many patterns
+        join_tables = database_structure.get("join_tables", {})
+        if join_tables and len(graph_model.edges) < len(join_tables):
+            warnings.append(
+                f"Potential many-to-many relationships not modeled: "
+                f"{len(join_tables)} join tables found"
+            )
+
+        # Check for hierarchical relationships
+        self_refs = [
+            edge
+            for edge in graph_model.edges
+            if edge.start_node_labels == edge.end_node_labels
+        ]
+        if self_refs:
+            suggestions.append(
+                f"Consider tree/hierarchy modeling for self-referencing "
+                f"relationships: {[e.edge_type for e in self_refs]}"
+            )
+
+        return {"warnings": warnings, "suggestions": suggestions}
+
+    def _generate_validation_summary(
+        self, metrics: Dict, issues: list, warnings: list, suggestions: list
+    ) -> str:
+        """Generate a comprehensive validation summary."""
+        coverage = metrics.get("coverage_percentage", 0)
+        node_count = metrics.get("node_count", 0)
+        edge_count = metrics.get("edge_count", 0)
+
+        status = "VALID" if len(issues) == 0 else "INVALID"
+
+        summary_parts = [
+            f"Status: {status}",
+            f"Coverage: {coverage:.1f}% " f"({node_count} nodes, {edge_count} edges)",
+        ]
+
+        if issues:
+            summary_parts.append(f"Issues: {len(issues)} critical")
+        if warnings:
+            summary_parts.append(f"Warnings: {len(warnings)}")
+        if suggestions:
+            summary_parts.append(f"Suggestions: {len(suggestions)} " "optimizations")
+
+        return " | ".join(summary_parts)
+
+    def _identify_missing_relationships(
+        self, graph_model: "GraphModel", db_relationships: list
+    ) -> list:
+        """Identify relationships that exist in DB but missing in graph."""
+        suggestions = []
+
+        # Get existing relationship patterns from graph model
+        existing_patterns = set()
+        for edge in graph_model.edges:
+            pattern = (
+                tuple(sorted(edge.start_node_labels)),
+                tuple(sorted(edge.end_node_labels)),
+                edge.edge_type,
+            )
+            existing_patterns.add(pattern)
+
+        # Check database relationships
+        for db_rel in db_relationships:
+            parent_table = db_rel.get("parent_table", "")
+            child_table = db_rel.get("child_table", "")
+
+            if parent_table and child_table:
+                # Simple heuristic: check if this table pair has a relationship
+                has_relationship = any(
+                    (
+                        parent_table.lower() in str(edge.start_node_labels).lower()
+                        and child_table.lower() in str(edge.end_node_labels).lower()
+                    )
+                    or (
+                        child_table.lower() in str(edge.start_node_labels).lower()
+                        and parent_table.lower() in str(edge.end_node_labels).lower()
+                    )
+                    for edge in graph_model.edges
+                )
+
+                if not has_relationship:
+                    suggestions.append(
+                        f"Consider modeling relationship between "
+                        f"{parent_table} and {child_table}"
+                    )
+
+        return suggestions
