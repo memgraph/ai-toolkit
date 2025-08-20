@@ -1,0 +1,810 @@
+"""
+Independent post-migration validation module.
+
+This module provides validation functionality for comparing GraphModel schemas
+with actual Memgraph database schemas after migration. It is designed to be
+independent of HyGM and can work directly with GraphModel objects.
+"""
+
+import logging
+from dataclasses import dataclass
+from enum import Enum
+from typing import Dict, List, Any, Optional
+from ..models.graph_models import GraphModel
+
+logger = logging.getLogger(__name__)
+
+
+class ValidationSeverity(Enum):
+    """Severity levels for validation issues."""
+
+    CRITICAL = "CRITICAL"
+    WARNING = "WARNING"
+    INFO = "INFO"
+
+
+@dataclass
+class ValidationIssue:
+    """Represents a validation issue found during schema comparison."""
+
+    severity: ValidationSeverity
+    category: str
+    message: str
+    expected: Any = None
+    actual: Any = None
+    recommendation: Optional[str] = None
+
+
+@dataclass
+class ValidationResult:
+    """Results of post-migration validation."""
+
+    success: bool
+    summary: str
+    issues: List[ValidationIssue]
+    metrics: Dict[str, Any]
+    expected_schema: Dict[str, Any]
+    actual_schema: Dict[str, Any]
+
+
+class MemgraphSchemaValidator:
+    """
+    Validates Memgraph schema against expected GraphModel.
+
+    This class provides comprehensive validation of Memgraph database schema
+    by comparing it with the expected GraphModel specification.
+    """
+
+    def __init__(self, memgraph_connection):
+        """
+        Initialize validator with Memgraph connection.
+
+        Args:
+            memgraph_connection: Connection to Memgraph database
+                (adapter or raw connection)
+        """
+        self.connection = memgraph_connection
+        self.issues = []
+
+    def validate_post_migration(self, expected_model: GraphModel) -> ValidationResult:
+        """
+        Validate the migrated schema against expected model.
+
+        Args:
+            expected_model: GraphModel representing expected schema
+
+        Returns:
+            ValidationResult with detailed comparison results
+        """
+        self.issues = []  # Reset issues for new validation
+
+        try:
+            # Get actual schema from Memgraph
+            actual_schema = self._get_actual_schema()
+            nodes_count = len(actual_schema.get("nodes", []))
+            rels_count = len(actual_schema.get("relationships", []))
+            logger.info(
+                f"Retrieved actual schema: {nodes_count} nodes, "
+                f"{rels_count} relationships"
+            )
+
+            # Convert expected model to comparable format
+            expected_schema = self._convert_model_to_schema_info(expected_model)
+            exp_nodes = len(expected_schema.get("nodes", []))
+            exp_rels = len(expected_schema.get("relationships", []))
+            logger.info(
+                f"Expected schema: {exp_nodes} nodes, " f"{exp_rels} relationships"
+            )
+
+            # Perform validations
+            self._validate_node_labels(expected_schema, actual_schema)
+            self._validate_node_properties(expected_schema, actual_schema)
+            self._validate_relationships(expected_schema, actual_schema)
+            self._validate_indexes(expected_schema, actual_schema)
+            self._validate_constraints(expected_schema, actual_schema)
+
+            # Generate results
+            critical_issues = [
+                issue
+                for issue in self.issues
+                if issue.severity == ValidationSeverity.CRITICAL
+            ]
+            success = not any(critical_issues)
+            summary = self._generate_summary()
+            metrics = self._calculate_metrics(expected_schema, actual_schema)
+
+            return ValidationResult(
+                success=success,
+                summary=summary,
+                issues=self.issues,
+                metrics=metrics,
+                expected_schema=expected_schema,
+                actual_schema=actual_schema,
+            )
+
+        except Exception as e:
+            logger.error(f"Validation failed with error: {e}")
+            self.issues.append(
+                ValidationIssue(
+                    severity=ValidationSeverity.CRITICAL,
+                    category="validation_error",
+                    message=f"Validation process failed: {str(e)}",
+                    recommendation="Check database connection and schema access",
+                )
+            )
+
+            return ValidationResult(
+                success=False,
+                summary=f"Validation failed: {str(e)}",
+                issues=self.issues,
+                metrics={},
+                expected_schema={},
+                actual_schema={},
+            )
+
+    def _get_actual_schema(self) -> Dict[str, Any]:
+        """
+        Get actual schema from Memgraph database.
+
+        Returns:
+            Structured schema information from Memgraph
+        """
+        # Handle different connection types
+        if hasattr(self.connection, "get_schema_info"):
+            # MemgraphAdapter interface
+            return self._parse_memgraph_adapter_schema(self.connection)
+        else:
+            # Raw connection - execute SHOW SCHEMA INFO
+            return self._parse_raw_connection_schema(self.connection)
+
+    def _parse_raw_connection_schema(self, connection) -> Dict[str, Any]:
+        """
+        Parse schema from raw Memgraph connection.
+
+        Args:
+            connection: Raw database connection (Memgraph client)
+
+        Returns:
+            Structured schema information
+        """
+        try:
+            # Check if it's a Memgraph client with .query() method
+            if hasattr(connection, "query"):
+                result = connection.query("SHOW SCHEMA INFO;")
+                # Convert query result to list to access records
+                records = list(result)
+
+                if records and "schema" in records[0]:
+                    # Parse the JSON schema from the first record
+                    import json
+
+                    schema_json = records[0]["schema"]
+                    schema_data = json.loads(schema_json)
+                    return self._parse_memgraph_json_schema(schema_data)
+                else:
+                    logger.warning("SHOW SCHEMA INFO returned unexpected format")
+                    return {
+                        "nodes": [],
+                        "relationships": [],
+                        "indexes": [],
+                        "constraints": [],
+                    }
+            else:
+                # Fallback for cursor-based connections
+                cursor = connection.cursor()
+                cursor.execute("SHOW SCHEMA INFO;")
+                result = cursor.fetchall()
+                return self._parse_schema_info_result(result)
+        except Exception as e:
+            logger.error(f"Failed to get schema from connection: {e}")
+            return {"nodes": [], "relationships": [], "indexes": [], "constraints": []}
+
+    def _parse_schema_info_result(self, schema_info_rows) -> Dict[str, Any]:
+        """
+        Parse the result of SHOW SCHEMA INFO query.
+
+        Args:
+            schema_info_rows: Raw result from SHOW SCHEMA INFO
+
+        Returns:
+            Structured schema information
+        """
+        nodes = {}
+        relationships = {}
+        indexes = []
+        constraints = []
+
+        for row in schema_info_rows:
+            if len(row) >= 3:
+                element_type = row[0]  # "node" or "relationship"
+                element_name = row[1]  # label or relationship type
+                properties = row[2] if len(row) > 2 else {}
+
+                if element_type == "node":
+                    if element_name not in nodes:
+                        # Handle both single labels and label combinations
+                        if isinstance(element_name, str):
+                            labels = [element_name]
+                        else:
+                            labels = element_name
+                        nodes[element_name] = {"labels": labels, "properties": {}}
+                    if isinstance(properties, dict):
+                        nodes[element_name]["properties"].update(properties)
+
+                elif element_type == "relationship":
+                    if element_name not in relationships:
+                        relationships[element_name] = {
+                            "type": element_name,
+                            "properties": {},
+                        }
+                    if isinstance(properties, dict):
+                        rel_props = relationships[element_name]["properties"]
+                        rel_props.update(properties)
+
+        return {
+            "nodes": list(nodes.values()),
+            "relationships": list(relationships.values()),
+            "indexes": indexes,
+            "constraints": constraints,
+        }
+
+    def _parse_memgraph_adapter_schema(self, adapter) -> Dict[str, Any]:
+        """
+        Parse schema info from MemgraphAdapter.
+
+        Args:
+            adapter: MemgraphAdapter instance
+
+        Returns:
+            Structured schema information
+        """
+        try:
+            # Get schema info using adapter methods
+            schema_info_rows = adapter.get_schema_info()
+            parsed_schema = self._parse_schema_info_result(schema_info_rows)
+
+            # Get additional info
+            indexes = adapter.get_indexes()
+            constraints = adapter.get_constraints()
+
+            parsed_schema["indexes"] = indexes
+            parsed_schema["constraints"] = constraints
+
+            return parsed_schema
+
+        except Exception as e:
+            logger.error(f"Failed to parse MemgraphAdapter schema: {e}")
+            # Fallback to empty schema
+            return {"nodes": [], "relationships": [], "indexes": [], "constraints": []}
+
+    def _parse_memgraph_json_schema(
+        self, schema_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Parse Memgraph JSON schema format.
+
+        Args:
+            schema_data: JSON schema data from SHOW SCHEMA INFO
+
+        Returns:
+            Structured schema information
+        """
+        nodes = []
+        relationships = []
+        indexes = []
+        constraints = []
+
+        # Parse nodes
+        for node_data in schema_data.get("nodes", []):
+            node_info = {"labels": node_data.get("labels", []), "properties": {}}
+
+            # Parse node properties
+            for prop in node_data.get("properties", []):
+                prop_name = prop.get("key", "")
+                prop_types = prop.get("types", [])
+                if prop_types:
+                    # Get the primary type
+                    primary_type = prop_types[0].get("type", "String")
+                    node_info["properties"][prop_name] = primary_type
+
+            nodes.append(node_info)
+
+        # Parse relationships
+        for edge_data in schema_data.get("edges", []):
+            rel_info = {"type": edge_data.get("type", ""), "properties": {}}
+
+            # Parse relationship properties
+            for prop in edge_data.get("properties", []):
+                prop_name = prop.get("key", "")
+                prop_types = prop.get("types", [])
+                if prop_types:
+                    primary_type = prop_types[0].get("type", "String")
+                    rel_info["properties"][prop_name] = primary_type
+
+            relationships.append(rel_info)
+
+        # Parse indexes
+        for index_data in schema_data.get("node_indexes", []):
+            index_info = {
+                "type": "node",
+                "labels": index_data.get("labels", []),
+                "properties": index_data.get("properties", []),
+                "index_type": index_data.get("type", "label+properties"),
+            }
+            indexes.append(index_info)
+
+        # Parse constraints
+        for constraint_data in schema_data.get("node_constraints", []):
+            constraint_info = {
+                "type": "node",
+                "labels": constraint_data.get("labels", []),
+                "properties": constraint_data.get("properties", []),
+                "constraint_type": constraint_data.get("type", "unique"),
+            }
+            constraints.append(constraint_info)
+
+        return {
+            "nodes": nodes,
+            "relationships": relationships,
+            "indexes": indexes,
+            "constraints": constraints,
+        }
+
+    def _convert_model_to_schema_info(self, model: GraphModel) -> Dict[str, Any]:
+        """
+        Convert GraphModel to schema info format for comparison.
+
+        Args:
+            model: GraphModel to convert
+
+        Returns:
+            Schema info format compatible with Memgraph output
+        """
+        nodes = []
+        for node in model.nodes:
+            node_info = {"labels": node.labels, "properties": {}}
+
+            # Convert properties to simple format
+            for prop in node.properties:
+                if hasattr(prop, "key"):
+                    # Determine expected type from GraphProperty types
+                    prop_types = prop.types if hasattr(prop, "types") else []
+                    primary_type = self._get_primary_type(prop_types)
+                    node_info["properties"][prop.key] = primary_type
+                else:
+                    # Handle string properties
+                    node_info["properties"][str(prop)] = "String"
+
+            nodes.append(node_info)
+
+        relationships = []
+        for edge in model.edges:
+            rel_info = {"type": edge.edge_type, "properties": {}}
+
+            # Convert properties
+            for prop in edge.properties:
+                if hasattr(prop, "key"):
+                    prop_types = prop.types if hasattr(prop, "types") else []
+                    primary_type = self._get_primary_type(prop_types)
+                    rel_info["properties"][prop.key] = primary_type
+                else:
+                    rel_info["properties"][str(prop)] = "String"
+
+            relationships.append(rel_info)
+
+        # Convert indexes
+        indexes = []
+        for index in model.node_indexes:
+            index_info = {
+                "type": "node",
+                "labels": index.labels,
+                "properties": index.properties,
+                "index_type": index.type,
+            }
+            indexes.append(index_info)
+
+        for index in model.edge_indexes:
+            index_info = {
+                "type": "edge",
+                "edge_type": index.edge_type,
+                "properties": index.properties,
+                "index_type": index.type,
+            }
+            indexes.append(index_info)
+
+        # Convert constraints
+        constraints = []
+        for constraint in model.node_constraints:
+            constraint_info = {
+                "type": "node",
+                "labels": constraint.labels,
+                "properties": constraint.properties,
+                "constraint_type": constraint.type,
+            }
+            constraints.append(constraint_info)
+
+        for constraint in model.edge_constraints:
+            constraint_info = {
+                "type": "edge",
+                "edge_type": constraint.edge_type,
+                "properties": constraint.properties,
+                "constraint_type": constraint.type,
+            }
+            constraints.append(constraint_info)
+
+        return {
+            "nodes": nodes,
+            "relationships": relationships,
+            "indexes": indexes,
+            "constraints": constraints,
+        }
+
+    def _get_primary_type(self, type_list: List[Dict[str, Any]]) -> str:
+        """Get the primary type from a list of type definitions."""
+        if not type_list:
+            return "String"
+
+        # Find the type with highest count, excluding Null
+        max_count = 0
+        primary_type = "String"
+
+        for type_def in type_list:
+            if type_def.get("type", "") != "Null":
+                count = type_def.get("count", 0)
+                if count > max_count:
+                    max_count = count
+                    primary_type = type_def.get("type", "String")
+
+        return primary_type
+
+    def _validate_node_labels(self, expected: Dict[str, Any], actual: Dict[str, Any]):
+        """Validate that all expected node labels exist in Memgraph."""
+        expected_labels = {tuple(node["labels"]) for node in expected["nodes"]}
+        actual_labels = {tuple(node["labels"]) for node in actual["nodes"]}
+
+        # Check for missing labels
+        missing_labels = expected_labels - actual_labels
+        for labels in missing_labels:
+            self.issues.append(
+                ValidationIssue(
+                    severity=ValidationSeverity.CRITICAL,
+                    category="missing_node_labels",
+                    message=f"Missing node labels in Memgraph: {list(labels)}",
+                    expected=list(labels),
+                    actual=None,
+                    recommendation=("Check migration script for node creation issues"),
+                )
+            )
+
+        # Check for unexpected labels
+        extra_labels = actual_labels - expected_labels
+        for labels in extra_labels:
+            self.issues.append(
+                ValidationIssue(
+                    severity=ValidationSeverity.WARNING,
+                    category="extra_node_labels",
+                    message=f"Unexpected node labels in Memgraph: {list(labels)}",
+                    expected=None,
+                    actual=list(labels),
+                    recommendation="Verify if these labels were intentionally created",
+                )
+            )
+
+    def _validate_node_properties(
+        self, expected: Dict[str, Any], actual: Dict[str, Any]
+    ):
+        """Validate node properties match expected schema."""
+        # Create lookup dictionaries
+        expected_nodes = {tuple(node["labels"]): node for node in expected["nodes"]}
+        actual_nodes = {tuple(node["labels"]): node for node in actual["nodes"]}
+
+        for labels, expected_node in expected_nodes.items():
+            if labels not in actual_nodes:
+                continue  # Already handled in label validation
+
+            actual_node = actual_nodes[labels]
+            expected_props = expected_node.get("properties", {})
+            actual_props = actual_node.get("properties", {})
+
+            # Check for missing properties
+            missing_props = set(expected_props.keys()) - set(actual_props.keys())
+            for prop in missing_props:
+                self.issues.append(
+                    ValidationIssue(
+                        severity=ValidationSeverity.CRITICAL,
+                        category="missing_node_property",
+                        message=f"Missing property '{prop}' on node {list(labels)}",
+                        expected=prop,
+                        actual=None,
+                        recommendation="Check property mapping in migration script",
+                    )
+                )
+
+            # Check for type mismatches
+            for prop, expected_type in expected_props.items():
+                if prop in actual_props:
+                    actual_type = actual_props[prop]
+                    if not self._types_compatible(expected_type, actual_type):
+                        self.issues.append(
+                            ValidationIssue(
+                                severity=ValidationSeverity.WARNING,
+                                category="property_type_mismatch",
+                                message=f"Property '{prop}' type mismatch on node {list(labels)}",
+                                expected=expected_type,
+                                actual=actual_type,
+                                recommendation="Verify data transformation logic",
+                            )
+                        )
+
+    def _validate_relationships(self, expected: Dict[str, Any], actual: Dict[str, Any]):
+        """Validate relationship types and properties."""
+        expected_rels = {rel["type"]: rel for rel in expected["relationships"]}
+        actual_rels = {rel["type"]: rel for rel in actual["relationships"]}
+
+        # Check for missing relationship types
+        missing_rels = set(expected_rels.keys()) - set(actual_rels.keys())
+        for rel_type in missing_rels:
+            self.issues.append(
+                ValidationIssue(
+                    severity=ValidationSeverity.CRITICAL,
+                    category="missing_relationship_type",
+                    message=f"Missing relationship type: {rel_type}",
+                    expected=rel_type,
+                    actual=None,
+                    recommendation="Check relationship creation in migration script",
+                )
+            )
+
+        # Check relationship properties
+        for rel_type, expected_rel in expected_rels.items():
+            if rel_type not in actual_rels:
+                continue
+
+            actual_rel = actual_rels[rel_type]
+            expected_props = expected_rel.get("properties", {})
+            actual_props = actual_rel.get("properties", {})
+
+            missing_props = set(expected_props.keys()) - set(actual_props.keys())
+            for prop in missing_props:
+                self.issues.append(
+                    ValidationIssue(
+                        severity=ValidationSeverity.WARNING,
+                        category="missing_relationship_property",
+                        message=f"Missing property '{prop}' on relationship {rel_type}",
+                        expected=prop,
+                        actual=None,
+                        recommendation="Check relationship property mapping",
+                    )
+                )
+
+    def _validate_indexes(self, expected: Dict[str, Any], actual: Dict[str, Any]):
+        """Validate that expected indexes exist in Memgraph."""
+        expected_indexes = expected.get("indexes", [])
+        actual_indexes = actual.get("indexes", [])
+
+        # Create comparable representations
+        expected_index_keys = set()
+        for idx in expected_indexes:
+            if idx.get("type") == "node":
+                key = (
+                    "node",
+                    tuple(idx.get("labels", [])),
+                    tuple(idx.get("properties", [])),
+                )
+            else:
+                key = (
+                    "edge",
+                    idx.get("edge_type", ""),
+                    tuple(idx.get("properties", [])),
+                )
+            expected_index_keys.add(key)
+
+        actual_index_keys = set()
+        for idx in actual_indexes:
+            if idx.get("type") == "node":
+                key = (
+                    "node",
+                    tuple(idx.get("labels", [])),
+                    tuple(idx.get("properties", [])),
+                )
+            else:
+                key = (
+                    "edge",
+                    idx.get("edge_type", ""),
+                    tuple(idx.get("properties", [])),
+                )
+            actual_index_keys.add(key)
+
+        # Check for missing indexes
+        missing_indexes = expected_index_keys - actual_index_keys
+        for index_key in missing_indexes:
+            self.issues.append(
+                ValidationIssue(
+                    severity=ValidationSeverity.WARNING,
+                    category="missing_index",
+                    message=f"Missing index: {index_key}",
+                    expected=index_key,
+                    actual=None,
+                    recommendation="Consider creating missing indexes for performance",
+                )
+            )
+
+    def _validate_constraints(self, expected: Dict[str, Any], actual: Dict[str, Any]):
+        """Validate that expected constraints exist in Memgraph."""
+        expected_constraints = expected.get("constraints", [])
+        actual_constraints = actual.get("constraints", [])
+
+        # Create comparable representations
+        expected_constraint_keys = set()
+        for const in expected_constraints:
+            if const.get("type") == "node":
+                key = (
+                    "node",
+                    tuple(const.get("labels", [])),
+                    tuple(const.get("properties", [])),
+                    const.get("constraint_type"),
+                )
+            else:
+                key = (
+                    "edge",
+                    const.get("edge_type", ""),
+                    tuple(const.get("properties", [])),
+                    const.get("constraint_type"),
+                )
+            expected_constraint_keys.add(key)
+
+        actual_constraint_keys = set()
+        for const in actual_constraints:
+            if const.get("type") == "node":
+                key = (
+                    "node",
+                    tuple(const.get("labels", [])),
+                    tuple(const.get("properties", [])),
+                    const.get("constraint_type"),
+                )
+            else:
+                key = (
+                    "edge",
+                    const.get("edge_type", ""),
+                    tuple(const.get("properties", [])),
+                    const.get("constraint_type"),
+                )
+            actual_constraint_keys.add(key)
+
+        # Check for missing constraints
+        missing_constraints = expected_constraint_keys - actual_constraint_keys
+        for constraint_key in missing_constraints:
+            self.issues.append(
+                ValidationIssue(
+                    severity=ValidationSeverity.CRITICAL,
+                    category="missing_constraint",
+                    message=f"Missing constraint: {constraint_key}",
+                    expected=constraint_key,
+                    actual=None,
+                    recommendation="Ensure data integrity by creating missing constraints",
+                )
+            )
+
+    def _types_compatible(self, expected_type: str, actual_type: str) -> bool:
+        """Check if actual type is compatible with expected type."""
+        # Define type compatibility mappings
+        compatible_types = {
+            "String": ["String", "TEXT", "VARCHAR"],
+            "Integer": ["Integer", "INT", "BIGINT"],
+            "Float": ["Float", "DOUBLE", "DECIMAL"],
+            "Boolean": ["Boolean", "BOOL"],
+            "Date": ["Date", "DATE"],
+            "LocalDateTime": ["LocalDateTime", "DATETIME", "TIMESTAMP"],
+            "LocalTime": ["LocalTime", "TIME"],
+        }
+
+        expected_compatible = compatible_types.get(expected_type, [expected_type])
+        return actual_type in expected_compatible
+
+    def _generate_summary(self) -> str:
+        """Generate a summary of validation results."""
+        critical_count = sum(
+            1 for issue in self.issues if issue.severity == ValidationSeverity.CRITICAL
+        )
+        warning_count = sum(
+            1 for issue in self.issues if issue.severity == ValidationSeverity.WARNING
+        )
+        info_count = sum(
+            1 for issue in self.issues if issue.severity == ValidationSeverity.INFO
+        )
+
+        if critical_count == 0:
+            status = "PASSED"
+        else:
+            status = "FAILED"
+
+        summary_parts = [
+            f"Validation {status}",
+            f"Critical: {critical_count}",
+            f"Warnings: {warning_count}",
+            f"Info: {info_count}",
+        ]
+
+        return " | ".join(summary_parts)
+
+    def _calculate_metrics(
+        self, expected: Dict[str, Any], actual: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Calculate validation metrics."""
+        return {
+            "expected_nodes": len(expected.get("nodes", [])),
+            "actual_nodes": len(actual.get("nodes", [])),
+            "expected_relationships": len(expected.get("relationships", [])),
+            "actual_relationships": len(actual.get("relationships", [])),
+            "expected_indexes": len(expected.get("indexes", [])),
+            "actual_indexes": len(actual.get("indexes", [])),
+            "expected_constraints": len(expected.get("constraints", [])),
+            "actual_constraints": len(actual.get("constraints", [])),
+            "total_issues": len(self.issues),
+            "critical_issues": sum(
+                1
+                for issue in self.issues
+                if issue.severity == ValidationSeverity.CRITICAL
+            ),
+            "validation_score": self._calculate_validation_score(),
+        }
+
+    def _calculate_validation_score(self) -> float:
+        """Calculate a validation score (0-100)."""
+        if not self.issues:
+            return 100.0
+
+        # Weight different severities
+        critical_weight = 10
+        warning_weight = 3
+        info_weight = 1
+
+        total_penalty = sum(
+            critical_weight
+            if issue.severity == ValidationSeverity.CRITICAL
+            else warning_weight
+            if issue.severity == ValidationSeverity.WARNING
+            else info_weight
+            for issue in self.issues
+        )
+
+        # Calculate score (max penalty of 100)
+        max_penalty = 100
+        score = max(0, 100 - (total_penalty * 100 / max_penalty))
+        return round(score, 2)
+
+
+def validate_migration_result(
+    expected_model: GraphModel, memgraph_connection, detailed_report: bool = True
+) -> ValidationResult:
+    """
+    Convenience function for post-migration validation.
+
+    Args:
+        expected_model: Expected GraphModel/spec.json
+        memgraph_connection: Connection to Memgraph database
+        detailed_report: Whether to include detailed issue information
+
+    Returns:
+        ValidationResult with comparison results
+    """
+    validator = MemgraphSchemaValidator(memgraph_connection)
+    result = validator.validate_post_migration(expected_model)
+
+    if detailed_report:
+        logger.info(f"Validation Summary: {result.summary}")
+        logger.info(
+            f"Validation Score: {result.metrics.get('validation_score', 0)}/100"
+        )
+
+        for issue in result.issues:
+            log_level = (
+                logging.ERROR
+                if issue.severity == ValidationSeverity.CRITICAL
+                else logging.WARNING
+            )
+            logger.log(log_level, f"{issue.category}: {issue.message}")
+            if issue.recommendation:
+                logger.info(f"  Recommendation: {issue.recommendation}")
+
+    return result

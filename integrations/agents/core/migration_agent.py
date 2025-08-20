@@ -8,7 +8,7 @@ and migrates data to Memgraph using LangGraph workflow.
 import os
 import sys
 import logging
-from typing import Dict, List, Any, TypedDict
+from typing import Dict, List, Any, TypedDict, Optional
 from pathlib import Path
 
 # Add parent directories to path for imports
@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 
 from query_generation.cypher_generator import CypherGenerator
 from core.hygm import HyGM, GraphModel, ModelingMode, GraphModelingStrategy
+from core.hygm.validation import validate_migration_result
 from memgraph_toolbox.api.memgraph import Memgraph
 from database.factory import DatabaseAnalyzerFactory
 from database.data_interface import DatabaseDataInterface
@@ -46,6 +47,7 @@ class MigrationState(TypedDict):
     total_tables: int
     created_indexes: List[str]
     created_constraints: List[str]
+    validation_report: Dict[str, Any]  # Post-migration validation results
 
 
 class SQLToMemgraphAgent:
@@ -118,6 +120,7 @@ class SQLToMemgraphAgent:
         workflow.add_node("validate_queries", self._validate_queries)
         workflow.add_node("execute_migration", self._execute_migration)
         workflow.add_node("verify_migration", self._verify_migration)
+        workflow.add_node("validate_post_migration", self._validate_post_migration)
 
         # Add edges - direct flow without table selection
         workflow.add_edge("analyze_database", "interactive_graph_modeling")
@@ -126,7 +129,8 @@ class SQLToMemgraphAgent:
         workflow.add_edge("generate_cypher_queries", "validate_queries")
         workflow.add_edge("validate_queries", "execute_migration")
         workflow.add_edge("execute_migration", "verify_migration")
-        workflow.add_edge("verify_migration", END)
+        workflow.add_edge("verify_migration", "validate_post_migration")
+        workflow.add_edge("validate_post_migration", END)
 
         # Set entry point
         workflow.set_entry_point("analyze_database")
@@ -930,8 +934,100 @@ CREATE (from)-[:{rel_name}]->(to);"""
 
         return state
 
+    def _validate_post_migration(self, state: MigrationState) -> MigrationState:
+        """Validate post-migration results using HyGM schema comparison."""
+        logger.info("Running post-migration validation...")
+
+        try:
+            # Check if we have a graph model to validate against
+            if not state.get("graph_model"):
+                logger.warning("No graph model available for validation")
+                state["validation_report"] = {
+                    "success": False,
+                    "reason": "No graph model available",
+                }
+                state["current_step"] = "Post-migration validation skipped"
+                return state
+
+            # Reuse existing Memgraph connection from previous steps
+            if not self.memgraph_client:
+                logger.error("No Memgraph connection available for validation")
+                state["validation_report"] = {
+                    "success": False,
+                    "reason": "No Memgraph connection available",
+                }
+                state["current_step"] = "Post-migration validation failed"
+                return state
+
+            # Get the graph model from state
+            graph_model = state.get("graph_model")
+
+            # Run post-migration validation using existing connection
+            logger.info("Executing post-migration validation...")
+            validation_result = validate_migration_result(
+                expected_model=graph_model,
+                memgraph_connection=self.memgraph_client,
+                detailed_report=True,
+            )
+
+            # Store validation results in state
+            state["validation_report"] = {
+                "success": validation_result.success,
+                "summary": validation_result.summary,
+                "issues": [
+                    {
+                        "severity": issue.severity.value,
+                        "category": issue.category,
+                        "message": issue.message,
+                        "expected": issue.expected,
+                        "actual": issue.actual,
+                        "recommendation": issue.recommendation,
+                    }
+                    for issue in validation_result.issues
+                ],
+                "metrics": validation_result.metrics,
+            }
+
+            # Log validation summary
+            if validation_result.success:
+                logger.info("✅ Post-migration validation PASSED")
+                score = validation_result.metrics.get("validation_score", 0)
+                logger.info(f"Validation score: {score}/100")
+            else:
+                logger.warning("⚠️ Post-migration validation found issues")
+                score = validation_result.metrics.get("validation_score", 0)
+                logger.warning(f"Validation score: {score}/100")
+
+                # Log critical issues
+                critical_issues = [
+                    issue
+                    for issue in validation_result.issues
+                    if issue.severity.value == "CRITICAL"
+                ]
+                if critical_issues:
+                    count = len(critical_issues)
+                    logger.error(f"Found {count} critical validation issues:")
+                    # Show first 3 critical issues
+                    for issue in critical_issues[:3]:
+                        logger.error(f"  - {issue.message}")
+
+            state["current_step"] = "Post-migration validation completed"
+
+        except Exception as e:
+            logger.error(f"Error during post-migration validation: {e}")
+            state["errors"].append(f"Post-migration validation failed: {e}")
+            state["validation_report"] = {
+                "validation_performed": False,
+                "reason": f"Validation error: {e}",
+            }
+            state["current_step"] = "Post-migration validation failed"
+
+        return state
+
     def migrate(
-        self, source_db_config: Dict[str, str], memgraph_config: Dict[str, str] = None
+        self,
+        source_db_config: Dict[str, str],
+        memgraph_config: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """Execute the complete migration workflow."""
         logger.info("Starting SQL database to Memgraph migration...")
@@ -958,6 +1054,7 @@ CREATE (from)-[:{rel_name}]->(to);"""
             total_tables=0,
             created_indexes=[],
             created_constraints=[],
+            validation_report={},
         )
 
         try:
@@ -988,6 +1085,7 @@ CREATE (from)-[:{rel_name}]->(to);"""
                 "total_tables": final_state["total_tables"],
                 "errors": final_state["errors"],
                 "final_step": final_state["current_step"],
+                "validation_report": final_state.get("validation_report", {}),
             }
 
         except Exception as e:
@@ -998,4 +1096,5 @@ CREATE (from)-[:{rel_name}]->(to);"""
                 "completed_tables": [],
                 "total_tables": 0,
                 "final_step": "Failed",
+                "validation_report": {},
             }
