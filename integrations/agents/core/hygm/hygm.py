@@ -6,7 +6,7 @@ This is the primary interface for the modular HyGM system.
 
 import logging
 from enum import Enum
-from typing import Dict, Any, Optional, TYPE_CHECKING
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .models.graph_models import GraphModel
@@ -97,7 +97,11 @@ class HyGM:
 
         # For automatic mode, use the specified strategy
         strategy_instance = self._get_strategy_instance(used_strategy)
-        return strategy_instance.create_model(database_structure, domain_context)
+        graph_model = strategy_instance.create_model(database_structure, domain_context)
+
+        # Store the created model as current
+        self.current_graph_model = graph_model
+        return graph_model
 
     def _get_strategy_instance(
         self, strategy: GraphModelingStrategy
@@ -261,6 +265,31 @@ class HyGM:
         print("Interactive model modification not yet implemented.")
         print("Returning model unchanged...")
         return model
+
+    def export_schema_format(
+        self,
+        graph_model: Optional["GraphModel"] = None,
+        sample_data: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Export graph model to schema format (spec.json compatible).
+
+        Args:
+            graph_model: Graph model to export. If None, uses current model
+            sample_data: Optional sample data for type detection
+
+        Returns:
+            Dict in spec.json format
+        """
+        model_to_export = graph_model or self.current_graph_model
+
+        if model_to_export is None:
+            raise ValueError(
+                "No graph model available. Create a model first using "
+                "create_graph_model()"
+            )
+
+        return model_to_export.to_schema_format(sample_data)
 
     # Backward compatibility methods
     def model_graph(
