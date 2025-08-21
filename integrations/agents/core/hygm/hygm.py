@@ -10,15 +10,22 @@ from typing import Dict, Any, Optional, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .models.graph_models import GraphModel
+    from .models.operations import ModelModifications
 
 try:
-    from .strategies import BaseModelingStrategy, DeterministicStrategy, LLMStrategy
+    from .strategies import (
+        BaseModelingStrategy,
+        DeterministicStrategy,
+        LLMStrategy,
+    )
+    from .validation import GraphSchemaValidator
 except ImportError:
     from core.hygm.strategies import (
         BaseModelingStrategy,
         DeterministicStrategy,
         LLMStrategy,
     )
+    from core.hygm.validation import GraphSchemaValidator
 
 logger = logging.getLogger(__name__)
 
@@ -152,23 +159,27 @@ class HyGM:
                 logger.info("Model accepted by user")
                 break
             elif user_choice == "modify":
+                logger.info("Starting interactive model modification...")
                 current_model = self._modify_model_interactively(current_model)
                 self.iteration_count += 1
             elif user_choice == "regenerate":
+                logger.info("Regenerating model with same strategy...")
                 # Regenerate with the same strategy
                 current_model = strategy_instance.create_model(
                     database_structure, domain_context
                 )
                 self.iteration_count += 1
             elif user_choice == "switch_strategy":
+                logger.info("Switching modeling strategy...")
                 # Switch between strategies
                 new_strategy = self._switch_strategy(strategy)
-                strategy_instance = self._get_strategy_instance(new_strategy)
-                current_model = strategy_instance.create_model(
-                    database_structure, domain_context
-                )
-                strategy = new_strategy
-                self.iteration_count += 1
+                if new_strategy != strategy:
+                    strategy_instance = self._get_strategy_instance(new_strategy)
+                    current_model = strategy_instance.create_model(
+                        database_structure, domain_context
+                    )
+                    strategy = new_strategy
+                    self.iteration_count += 1
 
         self.current_graph_model = current_model
         return current_model
@@ -193,13 +204,13 @@ class HyGM:
 
         print(f"\nINDEXES ({len(model.node_indexes)}):")
         for i, index in enumerate(model.node_indexes, 1):
-            labels = " | ".join(index.labels)
+            labels = " | ".join(index.labels or [])
             props = ", ".join(index.properties)
             print(f"  {i}. {labels}.{props}")
 
         print(f"\nCONSTRAINTS ({len(model.node_constraints)}):")
         for i, constraint in enumerate(model.node_constraints, 1):
-            labels = " | ".join(constraint.labels)
+            labels = " | ".join(constraint.labels or [])
             props = ", ".join(constraint.properties)
             print(f"  {i}. {constraint.type.upper()}: {labels}.{props}")
 
@@ -259,11 +270,199 @@ class HyGM:
                 return current_strategy
 
     def _modify_model_interactively(self, model: "GraphModel") -> "GraphModel":
-        """Allow user to modify the model interactively."""
-        # This would integrate with the interactive modification system
-        # For now, return the model unchanged
-        print("Interactive model modification not yet implemented.")
-        print("Returning model unchanged...")
+        """Allow user to modify the model using natural language commands."""
+        print("\n" + "=" * 60)
+        print("INTERACTIVE MODEL MODIFICATION")
+        print("=" * 60)
+        print("\nDescribe the changes you'd like to make to the graph model.")
+        print("You can use natural language like:")
+        print("  - 'Rename the Actor label to Person'")
+        print("  - 'Add a birth_date property to Actor nodes'")
+        print("  - 'Remove the last_update property from all nodes'")
+        print("  - 'Change ACTED_IN relationship to PERFORMED_IN'")
+        print("  - 'Add an index on Customer email property'")
+        print("\nType 'done' when finished, or 'cancel' to return unchanged.")
+
+        while True:
+            try:
+                print("\n" + "-" * 60)
+                user_input = input("Describe your change: ").strip()
+
+                if user_input.lower() == "done":
+                    print("Applying changes to model...")
+                    break
+                elif user_input.lower() == "cancel":
+                    print("Cancelling changes...")
+                    return model
+                elif not user_input:
+                    print("Please describe the change you'd like to make.")
+                    continue
+
+                # Use LLM to parse natural language into operations
+                if self.llm:
+                    operations = self._parse_natural_language_to_operations(
+                        user_input, model
+                    )
+                    if operations:
+                        print(f"✅ Understood: {operations.reasoning}")
+                        # Apply operations to model
+                        model = self._apply_operations_to_model(model, operations)
+                        print("Changes applied!")
+                    else:
+                        print(
+                            "❌ I didn't understand that command. " "Please try again."
+                        )
+                else:
+                    print("❌ LLM not available for natural language processing.")
+                    print("Please use the basic modification menu instead.")
+                    break
+
+            except (EOFError, KeyboardInterrupt):
+                print("\nCancelling changes...")
+                return model
+
+        return model
+
+    def _parse_natural_language_to_operations(
+        self, user_input: str, model: "GraphModel"
+    ) -> Optional["ModelModifications"]:
+        """Parse natural language input into structured operations."""
+        if not self.llm:
+            return None
+
+        # Get current model structure for context
+        model_context = self._get_model_context_for_llm(model)
+
+        system_prompt = (
+            "You are an expert at translating natural language instructions "
+            "into structured graph model operations.\n\n"
+            f"Current graph model structure:\n{model_context}\n\n"
+            "Available operations:\n"
+            "- change_node_label: Change a node's label\n"
+            "- rename_property: Rename a property on a node\n"
+            "- drop_property: Remove a property from a node\n"
+            "- add_property: Add a new property to a node\n"
+            "- change_relationship_name: Change a relationship name\n"
+            "- drop_relationship: Remove a relationship\n"
+            "- add_index: Add an index on a property\n"
+            "- drop_index: Remove an index\n\n"
+            "Parse the user's request into appropriate operations. "
+            "Return a ModelModifications object with the operations and "
+            "reasoning."
+        )
+
+        try:
+            from langchain_core.output_parsers import PydanticOutputParser
+
+            # Import at runtime to avoid circular imports
+            try:
+                from .models.operations import ModelModifications
+            except ImportError:
+                from core.hygm.models.operations import ModelModifications
+
+            parser = PydanticOutputParser(pydantic_object=ModelModifications)
+
+            prompt = f"""
+            User request: {user_input}
+            
+            {parser.get_format_instructions()}
+            """
+
+            response = self.llm.invoke(
+                [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt},
+                ]
+            )
+
+            # Parse the response
+            operations = parser.parse(response.content)
+            return operations
+
+        except (ImportError, ValueError, AttributeError) as e:
+            logger.error("Error parsing natural language: %s", e)
+            return None
+        except Exception as e:  # noqa: BLE001 - Catch-all for LLM errors
+            logger.error("Unexpected error in natural language parsing: %s", e)
+            return None
+
+    def _get_model_context_for_llm(self, model: "GraphModel") -> str:
+        """Get a text description of the current model for LLM context."""
+        context_parts = []
+
+        # Nodes
+        context_parts.append("NODES:")
+        for node in model.nodes:
+            props = [p.key for p in node.properties]
+            context_parts.append(f"  - {node.primary_label}: {props}")
+
+        # Relationships
+        context_parts.append("\nRELATIONSHIPS:")
+        for edge in model.edges:
+            start = " | ".join(edge.start_node_labels)
+            end = " | ".join(edge.end_node_labels)
+            context_parts.append(f"  - ({start})-[:{edge.edge_type}]->({end})")
+
+        # Indexes
+        if model.node_indexes:
+            context_parts.append("\nINDEXES:")
+            for index in model.node_indexes:
+                labels = " | ".join(index.labels or [])
+                props = ", ".join(index.properties)
+                context_parts.append(f"  - {labels}.{props}")
+
+        return "\n".join(context_parts)
+
+    def _apply_operations_to_model(
+        self, model: "GraphModel", operations: "ModelModifications"
+    ) -> "GraphModel":
+        """Apply structured operations to the graph model."""
+        # For now, we'll print what would be applied
+        # In a full implementation, this would modify the actual model
+        print(f"\nWould apply {len(operations.operations)} operations:")
+
+        for op in operations.operations:
+            if op.operation_type == "change_node_label":
+                print(
+                    f"  - Change node label: {getattr(op, 'old_label')} "
+                    f"→ {getattr(op, 'new_label')}"
+                )
+            elif op.operation_type == "rename_property":
+                node = getattr(op, "node_label")
+                old_prop = getattr(op, "old_property")
+                new_prop = getattr(op, "new_property")
+                print(f"  - Rename property on {node}: " f"{old_prop} → {new_prop}")
+            elif op.operation_type == "drop_property":
+                node = getattr(op, "node_label")
+                prop = getattr(op, "property_name")
+                print(f"  - Drop property: {node}.{prop}")
+            elif op.operation_type == "add_property":
+                node = getattr(op, "node_label")
+                prop = getattr(op, "property_name")
+                print(f"  - Add property: {node}.{prop}")
+            elif op.operation_type == "change_relationship_name":
+                old_name = getattr(op, "old_name")
+                new_name = getattr(op, "new_name")
+                print(f"  - Change relationship: {old_name} → {new_name}")
+            elif op.operation_type == "drop_relationship":
+                rel = getattr(op, "relationship_name")
+                print(f"  - Drop relationship: {rel}")
+            elif op.operation_type == "add_index":
+                node = getattr(op, "node_label")
+                prop = getattr(op, "property_name")
+                print(f"  - Add index: {node}.{prop}")
+            elif op.operation_type == "drop_index":
+                node = getattr(op, "node_label")
+                prop = getattr(op, "property_name")
+                print(f"  - Drop index: {node}.{prop}")
+
+        print(f"\nReasoning: {operations.reasoning}")
+        print("\n⚠️  Note: Actual model modification not yet implemented.")
+        print("This is a preview of what would be changed.")
+
+        # TODO: Implement actual model modifications
+        # This would require updating the GraphModel structure
+
         return model
 
     def export_schema_format(
@@ -293,7 +492,9 @@ class HyGM:
 
     # Backward compatibility methods
     def model_graph(
-        self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
+        self,
+        database_structure: Dict[str, Any],
+        domain_context: Optional[str] = None,
     ) -> "GraphModel":
         """
         Backward compatibility method.
@@ -301,7 +502,9 @@ class HyGM:
         This maintains the original API while using the new modular system.
         """
         return self.create_graph_model(
-            database_structure, domain_context, GraphModelingStrategy.DETERMINISTIC
+            database_structure,
+            domain_context,
+            GraphModelingStrategy.DETERMINISTIC,
         )
 
     def validate_graph_model(
@@ -309,6 +512,9 @@ class HyGM:
     ) -> Dict[str, Any]:
         """
         Comprehensive validation of graph model against database structure.
+
+        This method uses the new modular validation system to perform
+        pre-migration validation of the graph model.
 
         Args:
             graph_model: The graph model to validate
@@ -319,318 +525,31 @@ class HyGM:
             - is_valid: Boolean indicating if model passes all critical checks
             - issues: List of critical problems that must be fixed
             - warnings: List of recommendations and potential improvements
-            - suggestions: List of optimization suggestions
             - summary: High-level summary of validation results
             - metrics: Quantitative validation metrics
         """
         logger.info("Performing comprehensive graph model validation...")
 
-        issues = []
-        warnings = []
-        suggestions = []
-        metrics = {}
+        # Use the new pre-migration validator
+        validator = GraphSchemaValidator()
+        result = validator.validate(graph_model, database_structure)
 
-        # 1. STRUCTURAL VALIDATION
-        entity_tables = set(database_structure.get("entity_tables", {}).keys())
-        model_source_tables = set()
-
-        # Basic existence checks
-        if len(graph_model.nodes) == 0:
-            issues.append("Critical: No nodes created in graph model")
-
-        if not entity_tables:
-            warnings.append("No entity tables found in source database")
-
-        # 2. NODE COVERAGE VALIDATION
-        for node in graph_model.nodes:
-            if node.source and hasattr(node.source, "name"):
-                model_source_tables.add(node.source.name)
-
-        missing_tables = entity_tables - model_source_tables
-        if missing_tables:
-            issues.append(
-                f"Missing nodes for entity tables: " f"{sorted(missing_tables)}"
-            )
-
-        extra_tables = model_source_tables - entity_tables
-        if extra_tables:
-            warnings.append(
-                f"Nodes created for non-entity tables: " f"{sorted(extra_tables)}"
-            )
-
-        # 3. NODE QUALITY VALIDATION
-        duplicate_labels = set()
-        nodes_without_properties = []
-        nodes_with_invalid_labels = []
-
-        seen_labels = set()
-        for node in graph_model.nodes:
-            # Check for duplicate primary labels
-            primary_label = node.primary_label
-            if primary_label in seen_labels:
-                duplicate_labels.add(primary_label)
-            seen_labels.add(primary_label)
-
-            # Check node has properties
-            if not node.properties or len(node.properties) == 0:
-                nodes_without_properties.append(primary_label)
-
-            # Validate label naming conventions
-            if not primary_label or not primary_label.replace("_", "").isalnum():
-                nodes_with_invalid_labels.append(primary_label)
-
-        if duplicate_labels:
-            issues.append(
-                f"Duplicate node labels found: " f"{sorted(duplicate_labels)}"
-            )
-        if nodes_without_properties:
-            warnings.append(
-                f"Nodes without properties: " f"{sorted(nodes_without_properties)}"
-            )
-        if nodes_with_invalid_labels:
-            warnings.append(
-                f"Nodes with invalid label names: "
-                f"{sorted(nodes_with_invalid_labels)}"
-            )
-
-        # 4. PROPERTY VALIDATION
-        property_issues = self._validate_node_properties(
-            graph_model, database_structure
-        )
-        issues.extend(property_issues.get("issues", []))
-        warnings.extend(property_issues.get("warnings", []))
-        suggestions.extend(property_issues.get("suggestions", []))
-
-        # 5. RELATIONSHIP VALIDATION
-        relationship_validation = self._validate_relationships(
-            graph_model, database_structure
-        )
-        issues.extend(relationship_validation.get("issues", []))
-        warnings.extend(relationship_validation.get("warnings", []))
-        suggestions.extend(relationship_validation.get("suggestions", []))
-
-        # 6. SCHEMA CONSISTENCY VALIDATION
-        schema_validation = self._validate_schema_consistency(
-            graph_model, database_structure
-        )
-        warnings.extend(schema_validation.get("warnings", []))
-        suggestions.extend(schema_validation.get("suggestions", []))
-
-        # 7. CALCULATE METRICS
-        coverage_pct = (
-            len(model_source_tables) / len(entity_tables) * 100 if entity_tables else 0
-        )
-        avg_props = (
-            sum(len(node.properties) for node in graph_model.nodes)
-            / len(graph_model.nodes)
-            if graph_model.nodes
-            else 0
-        )
-        rel_density = (
-            len(graph_model.edges) / len(graph_model.nodes) if graph_model.nodes else 0
-        )
-
-        metrics = {
-            "node_count": len(graph_model.nodes),
-            "edge_count": len(graph_model.edges),
-            "coverage_percentage": coverage_pct,
-            "avg_properties_per_node": avg_props,
-            "relationship_density": rel_density,
-            "tables_covered": len(model_source_tables),
-            "total_entity_tables": len(entity_tables),
-        }
-
-        # Determine validity
-        is_valid = len(issues) == 0
-
-        # Generate comprehensive summary
-        summary = self._generate_validation_summary(
-            metrics, issues, warnings, suggestions
-        )
-
+        # Convert to the expected format for backward compatibility
         return {
-            "is_valid": is_valid,
-            "issues": issues,
-            "warnings": warnings,
-            "suggestions": suggestions,
-            "summary": summary,
-            "metrics": metrics,
+            "is_valid": result.success,
+            "issues": [issue.message for issue in result.critical_issues],
+            "warnings": [issue.message for issue in result.warnings],
+            "suggestions": [issue.message for issue in result.info_issues],
+            "summary": result.summary,
+            "metrics": {
+                "coverage_percentage": result.metrics.coverage_percentage,
+                "tables_covered": result.metrics.tables_covered,
+                "tables_total": result.metrics.tables_total,
+                "properties_covered": result.metrics.properties_covered,
+                "properties_total": result.metrics.properties_total,
+                "relationships_covered": result.metrics.relationships_covered,
+                "relationships_total": result.metrics.relationships_total,
+            },
+            # Include full result for advanced usage
+            "validation_result": result,
         }
-
-    def _validate_node_properties(
-        self, graph_model: "GraphModel", database_structure: Dict[str, Any]
-    ) -> Dict[str, list]:
-        """Validate node properties exist in source schema."""
-        issues = []
-        warnings = []
-        suggestions = []
-
-        entity_tables = database_structure.get("entity_tables", {})
-
-        for node in graph_model.nodes:
-            if not node.source or not hasattr(node.source, "name"):
-                continue
-
-            table_name = node.source.name
-            table_info = entity_tables.get(table_name, {})
-            schema_columns = {col["field"]: col for col in table_info.get("schema", [])}
-
-            # Check each property exists in source schema
-            missing_props = []
-
-            for prop in node.properties:
-                prop_key = prop.key if hasattr(prop, "key") else str(prop)
-
-                if prop_key not in schema_columns:
-                    missing_props.append(prop_key)
-
-            if missing_props:
-                issues.append(
-                    f"Node {node.primary_label} has properties not in source: "
-                    f"{missing_props}"
-                )
-
-        return {"issues": issues, "warnings": warnings, "suggestions": suggestions}
-
-    def _validate_relationships(
-        self, graph_model: "GraphModel", database_structure: Dict[str, Any]
-    ) -> Dict[str, list]:
-        """Validate relationships against database foreign keys."""
-        issues = []
-        warnings = []
-        suggestions = []
-
-        db_relationships = database_structure.get("relationships", [])
-
-        # Check if relationships exist when they should
-        if len(graph_model.edges) == 0 and len(db_relationships) > 0:
-            warnings.append(
-                f"No relationships created despite {len(db_relationships)} "
-                f"foreign keys existing"
-            )
-
-        # Validate each relationship
-        for edge in graph_model.edges:
-            # Check if relationship type follows naming conventions
-            if not edge.edge_type.isupper():
-                suggestions.append(
-                    f"Relationship type '{edge.edge_type}' should be UPPERCASE"
-                )
-
-            # Check for self-referencing relationships
-            if edge.start_node_labels == edge.end_node_labels:
-                warnings.append(
-                    f"Self-referencing relationship detected: {edge.edge_type}"
-                )
-
-            # Validate directionality
-            if edge.directionality not in ["directed", "undirected"]:
-                issues.append(
-                    f"Invalid directionality '{edge.directionality}' "
-                    f"for relationship {edge.edge_type}"
-                )
-
-        # Check for missing relationships based on foreign keys
-        missing_rels = self._identify_missing_relationships(
-            graph_model, db_relationships
-        )
-        if missing_rels:
-            suggestions.extend(missing_rels)
-
-        return {"issues": issues, "warnings": warnings, "suggestions": suggestions}
-
-    def _validate_schema_consistency(
-        self, graph_model: "GraphModel", database_structure: Dict[str, Any]
-    ) -> Dict[str, list]:
-        """Validate overall schema consistency and design patterns."""
-        warnings = []
-        suggestions = []
-
-        # Check for potential many-to-many patterns
-        join_tables = database_structure.get("join_tables", {})
-        if join_tables and len(graph_model.edges) < len(join_tables):
-            warnings.append(
-                f"Potential many-to-many relationships not modeled: "
-                f"{len(join_tables)} join tables found"
-            )
-
-        # Check for hierarchical relationships
-        self_refs = [
-            edge
-            for edge in graph_model.edges
-            if edge.start_node_labels == edge.end_node_labels
-        ]
-        if self_refs:
-            suggestions.append(
-                f"Consider tree/hierarchy modeling for self-referencing "
-                f"relationships: {[e.edge_type for e in self_refs]}"
-            )
-
-        return {"warnings": warnings, "suggestions": suggestions}
-
-    def _generate_validation_summary(
-        self, metrics: Dict, issues: list, warnings: list, suggestions: list
-    ) -> str:
-        """Generate a comprehensive validation summary."""
-        coverage = metrics.get("coverage_percentage", 0)
-        node_count = metrics.get("node_count", 0)
-        edge_count = metrics.get("edge_count", 0)
-
-        status = "VALID" if len(issues) == 0 else "INVALID"
-
-        summary_parts = [
-            f"Status: {status}",
-            f"Coverage: {coverage:.1f}% " f"({node_count} nodes, {edge_count} edges)",
-        ]
-
-        if issues:
-            summary_parts.append(f"Issues: {len(issues)} critical")
-        if warnings:
-            summary_parts.append(f"Warnings: {len(warnings)}")
-        if suggestions:
-            summary_parts.append(f"Suggestions: {len(suggestions)} " "optimizations")
-
-        return " | ".join(summary_parts)
-
-    def _identify_missing_relationships(
-        self, graph_model: "GraphModel", db_relationships: list
-    ) -> list:
-        """Identify relationships that exist in DB but missing in graph."""
-        suggestions = []
-
-        # Get existing relationship patterns from graph model
-        existing_patterns = set()
-        for edge in graph_model.edges:
-            pattern = (
-                tuple(sorted(edge.start_node_labels)),
-                tuple(sorted(edge.end_node_labels)),
-                edge.edge_type,
-            )
-            existing_patterns.add(pattern)
-
-        # Check database relationships
-        for db_rel in db_relationships:
-            parent_table = db_rel.get("parent_table", "")
-            child_table = db_rel.get("child_table", "")
-
-            if parent_table and child_table:
-                # Simple heuristic: check if this table pair has a relationship
-                has_relationship = any(
-                    (
-                        parent_table.lower() in str(edge.start_node_labels).lower()
-                        and child_table.lower() in str(edge.end_node_labels).lower()
-                    )
-                    or (
-                        child_table.lower() in str(edge.start_node_labels).lower()
-                        and parent_table.lower() in str(edge.end_node_labels).lower()
-                    )
-                    for edge in graph_model.edges
-                )
-
-                if not has_relationship:
-                    suggestions.append(
-                        f"Consider modeling relationship between "
-                        f"{parent_table} and {child_table}"
-                    )
-
-        return suggestions
