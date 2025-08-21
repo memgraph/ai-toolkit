@@ -50,9 +50,9 @@ def get_graph_modeling_mode() -> bool:
         bool: True for interactive graph modeling, False for automatic
     """
     print("Graph modeling mode:")
-    print("  1. Interactive - Refine the graph model with natural language")
-    print("                   feedback")
-    print("  2. Automatic - Generate graph model automatically")
+    print("  1. Interactive - Generate graph model with user feedback")
+    print()
+    print("  2. Automatic - Generate graph model automatically without user feedback")
     print()
 
     while True:
@@ -79,9 +79,9 @@ def get_graph_modeling_strategy() -> GraphModelingStrategy:
         GraphModelingStrategy: Selected strategy
     """
     print("Graph modeling strategy:")
-    print("  1. Deterministic - Rule-based graph creation (fast, predictable)")
-    print("  2. LLM-Powered - AI generates optimal graph model")
-    print("                   (flexible, smart)")
+    print("  1. Deterministic - Rule-based graph model creation (predictable)")
+    print("  2. AI-Powered - LLM-based graph model creation (non-deterministic)")
+    print()
     print()
 
     while True:

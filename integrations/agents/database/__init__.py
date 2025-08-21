@@ -1,36 +1,36 @@
 """
-Database analysis and abstraction layer.
+Database analysis package interface.
 
-This package provides database-agnostic interfaces and implementations
-for analyzing SQL database structures.
+This module provides the main entry point for database analysis functionality,
+importing and exposing all the necessary components.
 """
 
-import sys
-from pathlib import Path
-
-# Add agents root to path for absolute imports
-sys.path.append(str(Path(__file__).parent.parent))
-
-from database.interface import (
-    DatabaseAnalyzer,
+# Core data models
+from .models import (
+    TableType,
     ColumnInfo,
     ForeignKeyInfo,
     TableInfo,
-    TableType,
     RelationshipInfo,
     DatabaseStructure,
 )
-from database.factory import DatabaseAnalyzerFactory
-from database.data_interface import DatabaseDataInterface
+
+# Base interfaces
+from .analyzer import DatabaseAnalyzer
+
+# Factory (imported from existing factory module)
+from .factory import DatabaseAnalyzerFactory
 
 __all__ = [
-    "DatabaseAnalyzer",
+    # Data models
+    "TableType",
     "ColumnInfo",
     "ForeignKeyInfo",
     "TableInfo",
-    "TableType",
     "RelationshipInfo",
     "DatabaseStructure",
+    # Interfaces
+    "DatabaseAnalyzer",
+    # Factory
     "DatabaseAnalyzerFactory",
-    "DatabaseDataInterface",
 ]

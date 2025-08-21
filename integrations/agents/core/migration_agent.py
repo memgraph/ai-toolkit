@@ -25,7 +25,6 @@ from core.hygm import HyGM, GraphModel, ModelingMode, GraphModelingStrategy
 from core.hygm.validation import validate_migration_result
 from memgraph_toolbox.api.memgraph import Memgraph
 from database.factory import DatabaseAnalyzerFactory
-from database.data_interface import DatabaseDataInterface
 
 # Load environment variables
 load_dotenv()
@@ -67,14 +66,10 @@ class SQLToMemgraphAgent:
                 - False: Use automatic graph modeling (default)
             graph_modeling_strategy: Strategy for graph model creation
                 - DETERMINISTIC: Rule-based graph creation (default)
-                - LLM_POWERED: LLM generates the graph model
+                - AI-POWERED: LLM generates the graph model
         """
-        # Environment validation is now handled by utils.environment module
-        # This makes the agent more modular and reusable
 
         openai_api_key = os.getenv("OPENAI_API_KEY")
-        if not openai_api_key:
-            raise ValueError("OPENAI_API_KEY environment variable is required")
 
         self.llm = ChatOpenAI(
             model="gpt-4o-mini", temperature=0.1, api_key=openai_api_key
@@ -157,8 +152,8 @@ class SQLToMemgraphAgent:
             # Store database structure for later use (e.g., primary key lookup)
             self._database_structure = db_structure
 
-            # Use Database Data Interface to format data for HyGM
-            hygm_data = DatabaseDataInterface.get_hygm_data_structure(db_structure)
+            # Use the built-in HyGM format conversion
+            hygm_data = db_structure.to_hygm_format()
 
             # Enhance with intelligent graph modeling
             logger.info("Starting graph modeling analysis...")
@@ -1106,15 +1101,6 @@ CREATE (from)-[:{rel_name}]->(to);"""
     ) -> Dict[str, Any]:
         """Execute the complete migration workflow."""
         logger.info("Starting SQL database to Memgraph migration...")
-
-        # Default Memgraph configuration
-        if not memgraph_config:
-            memgraph_config = {
-                "url": os.getenv("MEMGRAPH_URL", "bolt://localhost:7687"),
-                "username": os.getenv("MEMGRAPH_USER", ""),
-                "password": os.getenv("MEMGRAPH_PASSWORD", ""),
-                "database": os.getenv("MEMGRAPH_DATABASE", "memgraph"),
-            }
 
         # Initialize state
         initial_state = MigrationState(
