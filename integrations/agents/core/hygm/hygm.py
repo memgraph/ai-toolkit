@@ -465,48 +465,6 @@ class HyGM:
 
         return model
 
-    def export_schema_format(
-        self,
-        graph_model: Optional["GraphModel"] = None,
-        sample_data: Optional[Dict[str, List[Dict[str, Any]]]] = None,
-    ) -> Dict[str, Any]:
-        """
-        Export graph model to schema format (spec.json compatible).
-
-        Args:
-            graph_model: Graph model to export. If None, uses current model
-            sample_data: Optional sample data for type detection
-
-        Returns:
-            Dict in spec.json format
-        """
-        model_to_export = graph_model or self.current_graph_model
-
-        if model_to_export is None:
-            raise ValueError(
-                "No graph model available. Create a model first using "
-                "create_graph_model()"
-            )
-
-        return model_to_export.to_schema_format(sample_data)
-
-    # Backward compatibility methods
-    def model_graph(
-        self,
-        database_structure: Dict[str, Any],
-        domain_context: Optional[str] = None,
-    ) -> "GraphModel":
-        """
-        Backward compatibility method.
-
-        This maintains the original API while using the new modular system.
-        """
-        return self.create_graph_model(
-            database_structure,
-            domain_context,
-            GraphModelingStrategy.DETERMINISTIC,
-        )
-
     def validate_graph_model(
         self, graph_model: "GraphModel", database_structure: Dict[str, Any]
     ) -> Dict[str, Any]:

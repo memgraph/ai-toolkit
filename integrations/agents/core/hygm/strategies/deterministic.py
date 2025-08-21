@@ -61,6 +61,10 @@ class DeterministicStrategy(BaseModelingStrategy):
         # Convert entity tables to nodes
         entity_tables = database_structure.get("entity_tables", {})
         for table_name, table_info in entity_tables.items():
+            # Get primary key from explicit field
+            primary_keys = table_info.get("primary_keys", [])
+            id_field = primary_keys[0] if primary_keys else "id"
+
             # Create source information
             source = NodeSource(
                 type="table",
@@ -68,7 +72,7 @@ class DeterministicStrategy(BaseModelingStrategy):
                 location=f"database.schema.{table_name}",
                 mapping={
                     "labels": [table_name.title()],
-                    "id_field": self._find_primary_key(table_info),
+                    "id_field": id_field,
                 },
             )
 
@@ -251,20 +255,3 @@ class DeterministicStrategy(BaseModelingStrategy):
             from_table = rel_data.get("from_table", "")
             to_table = rel_data.get("to_table", "")
             return f"{from_table.upper()}_TO_{to_table.upper()}"
-
-    def _find_primary_key(self, table_info: Dict[str, Any]) -> str:
-        """Find the primary key column for a table."""
-        # Handle both 'columns' dict format and 'schema' list format
-        if "schema" in table_info:
-            # Schema list format (newer format)
-            schema_list = table_info.get("schema", [])
-            for col_info in schema_list:
-                if col_info.get("key") == "PRI":
-                    return col_info.get("field", "id")
-        else:
-            # Columns dict format (legacy format)
-            for col_name, col_info in table_info.get("columns", {}).items():
-                if col_info.get("key") == "PRI":
-                    return col_name
-
-        return "id"  # Fallback

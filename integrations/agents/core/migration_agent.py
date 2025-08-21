@@ -690,11 +690,14 @@ SET n += row;"""
 
         # Get primary key from source table
         from_table_info = hygm_data.get("entity_tables", {}).get(from_table, {})
-        from_pk = self._get_primary_key(from_table_info)
+        primary_keys = from_table_info.get("primary_keys", [])
 
-        if not from_pk:
+        if not primary_keys:
             logger.warning(f"Could not determine primary key for table {from_table}")
             return ""
+
+        # Use the first primary key (most common case)
+        from_pk = primary_keys[0]
 
         return f"""
 // Create {rel_name} relationships (HyGM: {from_label} -> {to_label})
@@ -737,19 +740,6 @@ YIELD row
 MATCH (from:{from_label} {{{from_pk}: row.{from_fk}}})
 MATCH (to:{to_label} {{{to_pk}: row.{to_fk}}})
 CREATE (from)-[:{rel_name}]->(to);"""
-
-    def _get_primary_key(self, table_info: Dict[str, Any]) -> str:
-        """Get the primary key column name from table info."""
-        schema_list = table_info.get("schema", [])
-        for col_info in schema_list:
-            if col_info.get("key") == "PRI":
-                return col_info.get("field", "")
-
-        # Fallback: assume first column is primary key
-        if schema_list:
-            return schema_list[0].get("field", "id")
-
-        return "id"  # Default assumption
 
     def _generate_cypher_queries_fallback(
         self, state: MigrationState
