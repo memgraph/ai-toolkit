@@ -23,7 +23,7 @@ from utils import (
     print_troubleshooting_help,
 )
 from core import SQLToMemgraphAgent
-from core.hygm import GraphModelingStrategy
+from core.hygm import GraphModelingStrategy, ModelingMode
 
 # Configure logging
 logging.basicConfig(
@@ -42,12 +42,12 @@ def print_banner() -> None:
     print()
 
 
-def get_graph_modeling_mode() -> bool:
+def get_graph_modeling_mode() -> ModelingMode:
     """
     Get user choice for graph modeling mode.
 
     Returns:
-        bool: True for interactive graph modeling, False for automatic
+        ModelingMode: Selected modeling mode
     """
     print("Graph modeling mode:")
     print("  1. Interactive - Generate graph model with user feedback")
@@ -59,12 +59,12 @@ def get_graph_modeling_mode() -> bool:
         try:
             choice = input("Select mode (1-2) or press Enter for automatic: ").strip()
             if not choice:
-                return False  # Default to automatic
+                return ModelingMode.AUTOMATIC  # Default to automatic
 
             if choice == "1":
-                return True  # Interactive
+                return ModelingMode.INTERACTIVE  # Interactive
             elif choice == "2":
-                return False  # Automatic
+                return ModelingMode.AUTOMATIC  # Automatic
             else:
                 print("Invalid choice. Please select 1-2.")
         except ValueError:
@@ -107,7 +107,7 @@ def get_graph_modeling_strategy() -> GraphModelingStrategy:
 def run_migration(
     source_db_config: Dict[str, Any],
     memgraph_config: Dict[str, Any],
-    interactive_graph_modeling: bool,
+    modeling_mode: ModelingMode,
     graph_modeling_strategy: GraphModelingStrategy,
 ) -> Dict[str, Any]:
     """
@@ -116,7 +116,7 @@ def run_migration(
     Args:
         source_db_config: Source database connection configuration
         memgraph_config: Memgraph connection configuration
-        interactive_graph_modeling: Whether to use interactive graph modeling
+        modeling_mode: Graph modeling mode (interactive or automatic)
         graph_modeling_strategy: Strategy for graph model creation
 
     Returns:
@@ -124,14 +124,16 @@ def run_migration(
     """
     print("🔧 Creating migration agent...")
 
-    graph_mode = "interactive" if interactive_graph_modeling else "automatic"
+    mode_name = (
+        "interactive" if modeling_mode == ModelingMode.INTERACTIVE else "automatic"
+    )
     strategy_name = graph_modeling_strategy.value
-    print(f"🎯 Graph modeling: {graph_mode} with {strategy_name} strategy")
+    print(f"🎯 Graph modeling: {mode_name} with {strategy_name} strategy")
     print()
 
     # Create agent with graph modeling settings
     agent = SQLToMemgraphAgent(
-        interactive_graph_modeling=interactive_graph_modeling,
+        modeling_mode=modeling_mode,
         graph_modeling_strategy=graph_modeling_strategy,
     )
 
@@ -146,7 +148,7 @@ def run_migration(
     print()
 
     # Handle interactive vs automatic mode
-    if interactive_graph_modeling:
+    if modeling_mode == ModelingMode.INTERACTIVE:
         print("🔄 Interactive mode: You'll be prompted to review and refine")
         print("   the graph model")
         print()

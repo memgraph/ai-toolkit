@@ -54,19 +54,18 @@ class SQLToMemgraphAgent:
 
     def __init__(
         self,
-        interactive_graph_modeling: bool = False,
+        modeling_mode: ModelingMode = ModelingMode.AUTOMATIC,
         graph_modeling_strategy: GraphModelingStrategy = GraphModelingStrategy.DETERMINISTIC,
     ):
         """Initialize the migration agent.
 
         Args:
-            interactive_graph_modeling: Whether to use interactive graph
-                modeling mode.
-                - True: Allow user to modify graph model
-                - False: Use automatic graph modeling (default)
+            modeling_mode: Graph modeling mode
+                - AUTOMATIC: Generate graph model automatically (default)
+                - INTERACTIVE: Allow user to modify and refine graph model
             graph_modeling_strategy: Strategy for graph model creation
                 - DETERMINISTIC: Rule-based graph creation (default)
-                - AI-POWERED: LLM generates the graph model
+                - LLM_POWERED: LLM generates the graph model
         """
 
         openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -76,7 +75,7 @@ class SQLToMemgraphAgent:
         )
         self.database_analyzer = None
         self.cypher_generator = CypherGenerator()
-        self.interactive_graph_modeling = interactive_graph_modeling
+        self.modeling_mode = modeling_mode
         self.graph_modeling_strategy = graph_modeling_strategy
 
         self.memgraph_client = None
@@ -158,18 +157,16 @@ class SQLToMemgraphAgent:
             # Enhance with intelligent graph modeling
             logger.info("Starting graph modeling analysis...")
             try:
-                # Determine modeling mode based on settings
-                if self.interactive_graph_modeling:
+                # Log the modeling mode being used
+                if self.modeling_mode == ModelingMode.INTERACTIVE:
                     logger.info("Using interactive graph modeling mode")
-                    modeling_mode = ModelingMode.INTERACTIVE
                 else:
                     logger.info("Using automatic graph modeling mode")
-                    modeling_mode = ModelingMode.AUTOMATIC
 
                 # Create graph modeler with strategy and mode
                 graph_modeler = HyGM(
                     llm=self.llm,
-                    mode=modeling_mode,
+                    mode=self.modeling_mode,
                     strategy=self.graph_modeling_strategy,
                 )
 
@@ -1119,8 +1116,8 @@ CREATE (from)-[:{rel_name}]->(to);"""
         )
 
         try:
-            # For non-interactive graph modeling mode, compile workflow without checkpointer
-            if not self.interactive_graph_modeling:
+            # For automatic graph modeling mode, compile workflow without checkpointer
+            if self.modeling_mode == ModelingMode.AUTOMATIC:
                 compiled_workflow = self.workflow.compile()
                 final_state = compiled_workflow.invoke(initial_state)
             else:
