@@ -93,11 +93,22 @@ class LLMGraphModel(BaseModel):
             GraphNode,
             GraphRelationship,
             GraphProperty,
+            GraphIndex,
+            GraphConstraint,
         )
-        from .sources import NodeSource, RelationshipSource, PropertySource
+        from .sources import (
+            NodeSource,
+            RelationshipSource,
+            PropertySource,
+            IndexSource,
+            ConstraintSource,
+        )
 
         # Convert nodes
         graph_nodes = []
+        node_indexes = []
+        node_constraints = []
+
         for llm_node in self.nodes:
             # Create properties with proper GraphProperty objects
             properties = []
@@ -130,6 +141,38 @@ class LLMGraphModel(BaseModel):
                 source=node_source,
             )
             graph_nodes.append(graph_node)
+
+            # Create indexes for this node
+            for index_prop in llm_node.indexes:
+                index_source = IndexSource(
+                    origin="llm_recommendation",
+                    reason=f"Index recommended by LLM for {llm_node.name}.{index_prop}",
+                    created_by="ai_analysis",
+                    index_name=None,
+                    migrated_from=None,
+                )
+                graph_index = GraphIndex(
+                    labels=llm_node.labels,
+                    properties=[index_prop],
+                    type="label+property",
+                    source=index_source,
+                )
+                node_indexes.append(graph_index)
+
+            # Create constraints for this node
+            for constraint_prop in llm_node.constraints:
+                constraint_source = ConstraintSource(
+                    origin="llm_recommendation",
+                    constraint_name=f"ai_unique_constraint_{llm_node.name}_{constraint_prop}",
+                    migrated_from="ai_analysis",
+                )
+                graph_constraint = GraphConstraint(
+                    type="unique",
+                    labels=llm_node.labels,
+                    properties=[constraint_prop],
+                    source=constraint_source,
+                )
+                node_constraints.append(graph_constraint)
 
         # Convert relationships
         graph_relationships = []
@@ -178,4 +221,9 @@ class LLMGraphModel(BaseModel):
             )
             graph_relationships.append(graph_rel)
 
-        return GraphModel(nodes=graph_nodes, edges=graph_relationships)
+        return GraphModel(
+            nodes=graph_nodes,
+            edges=graph_relationships,
+            node_indexes=node_indexes,
+            node_constraints=node_constraints,
+        )

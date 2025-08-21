@@ -137,13 +137,27 @@ class LLMStrategy(BaseModelingStrategy):
             str(database_structure),
             "",
             "Requirements:",
-            "- Create semantic node labels that represent entities (not just table names)",
-            "- Identify meaningful relationships between entities based on foreign keys",
+            "- Create semantic node labels (not just table names)",
+            "- Identify meaningful relationships based on foreign keys",
             "- Include relevant properties from source tables on nodes",
-            "- Set appropriate primary keys, indexes, and constraints",
+            "- Set appropriate primary keys for each node",
+            "- **CRITICAL: Recommend indexes for ALL relation properties**",
+            "- **CRITICAL: Both relationship ends MUST have indexes**",
+            "- Include unique constraints for primary keys and unique fields",
             "- Use descriptive relationship names (e.g., 'OWNS', 'BELONGS_TO')",
-            "- Consider one-to-many, many-to-many, and one-to-one cardinalities",
+            "- Consider one-to-many, many-to-many, and one-to-one types",
             "- Optimize for both data integrity and query performance",
+            "",
+            "Index Guidelines:",
+            "- Primary keys should always have indexes",
+            "- Foreign key properties should always have indexes",
+            "- Unique fields should have indexes",
+            "- Properties in WHERE clauses should have indexes",
+            "",
+            "Constraint Guidelines:",
+            "- Primary key properties should have unique constraints",
+            "- Unique business fields should have unique constraints",
+            "- Consider data integrity requirements from source database",
         ]
 
         if domain_context:
@@ -252,7 +266,8 @@ class LLMStrategy(BaseModelingStrategy):
             for index_prop in llm_node.indexes:
                 index_source = IndexSource(
                     origin="llm_recommendation",
-                    reason=f"Index recommended by LLM for {llm_node.name}.{index_prop}",
+                    reason=f"Index recommended by LLM for {llm_node.name}."
+                    f"{index_prop}",
                     created_by="ai_analysis",
                     index_name=None,
                     migrated_from=None,
@@ -272,7 +287,8 @@ class LLMStrategy(BaseModelingStrategy):
             for constraint_prop in llm_node.constraints:
                 constraint_source = ConstraintSource(
                     origin="llm_recommendation",
-                    constraint_name=f"ai_unique_constraint_{llm_node.name}_{constraint_prop}",
+                    constraint_name=f"ai_unique_constraint_{llm_node.name}_"
+                    f"{constraint_prop}",
                     migrated_from="ai_analysis",
                 )
 

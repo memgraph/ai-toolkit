@@ -331,7 +331,82 @@ class SQLToMemgraphAgent:
     # TODO: This should be human visible and configurable.
     def _create_indexes(self, state: MigrationState) -> MigrationState:
         """Create indexes and constraints in Memgraph before migration."""
-        logger.info("Creating indexes and constraints in Memgraph...")
+        logger.info("Creating indexes and constraints from HyGM graph model...")
+
+        try:
+            memgraph = Memgraph(**state["memgraph_config"])
+
+            # Track created indexes and constraints
+            created_indexes = []
+            created_constraints = []
+
+            # Check if we have a HyGM graph model with indexes and constraints
+            graph_model = state.get("graph_model")
+            if graph_model and hasattr(graph_model, "node_indexes"):
+                logger.info("Using HyGM-provided indexes and constraints")
+
+                # Generate index queries from HyGM graph model
+                index_queries = self.cypher_generator.generate_index_queries_from_hygm(
+                    graph_model.node_indexes
+                )
+
+                # Generate constraint queries from HyGM graph model
+                constraint_queries = (
+                    self.cypher_generator.generate_constraint_queries_from_hygm(
+                        graph_model.node_constraints
+                    )
+                )
+
+                logger.info(
+                    "HyGM provided %d indexes and %d constraints",
+                    len(index_queries),
+                    len(constraint_queries),
+                )
+            else:
+                # Fallback to legacy method if no HyGM model available
+                logger.warning("No HyGM graph model found, using fallback method")
+                return self._create_indexes_fallback(state)
+
+            # Execute constraint queries first
+            for query in constraint_queries:
+                try:
+                    logger.info("Creating constraint: %s", query)
+                    memgraph.query(query)
+                    created_constraints.append(query)
+                except Exception as e:
+                    # Some constraints might already exist, continue
+                    logger.warning("Constraint creation warning: %s", e)
+
+            # Execute index queries
+            for query in index_queries:
+                try:
+                    logger.info("Creating index: %s", query)
+                    memgraph.query(query)
+                    created_indexes.append(query)
+                except Exception as e:
+                    # Some indexes might already exist, log but continue
+                    logger.warning("Index creation warning: %s", e)
+
+            # Store results in state
+            state["created_indexes"] = created_indexes
+            state["created_constraints"] = created_constraints
+            state["current_step"] = "HyGM indexes and constraints created"
+
+            logger.info(
+                "Created %d constraints and %d indexes from HyGM model",
+                len(created_constraints),
+                len(created_indexes),
+            )
+
+        except Exception as e:
+            logger.error("Error creating indexes: %s", e)
+            state["errors"].append(f"Index creation failed: {e}")
+
+        return state
+
+    def _create_indexes_fallback(self, state: MigrationState) -> MigrationState:
+        """Fallback method for creating indexes when no HyGM model available."""
+        logger.info("Creating indexes and constraints using fallback method...")
 
         try:
             memgraph = Memgraph(**state["memgraph_config"])
@@ -358,7 +433,7 @@ class SQLToMemgraphAgent:
                 # Execute constraint queries first
                 for query in constraint_queries:
                     try:
-                        logger.info(f"Creating constraint: {query}")
+                        logger.info("Creating constraint: %s", query)
                         memgraph.query(query)
                         created_constraints.append(query)
                     except Exception as e:
@@ -368,7 +443,7 @@ class SQLToMemgraphAgent:
                 # Execute index queries
                 for query in index_queries:
                     try:
-                        logger.info(f"Creating index: {query}")
+                        logger.info("Creating index: %s", query)
                         memgraph.query(query)
                         created_indexes.append(query)
                     except Exception as e:
@@ -378,10 +453,10 @@ class SQLToMemgraphAgent:
             # Store results in state
             state["created_indexes"] = created_indexes
             state["created_constraints"] = created_constraints
-            state["current_step"] = "Indexes and constraints created"
+            state["current_step"] = "Fallback indexes and constraints created"
 
             logger.info(
-                "Created %d constraints and %d indexes",
+                "Created %d constraints and %d indexes using fallback method",
                 len(created_constraints),
                 len(created_indexes),
             )
