@@ -1031,6 +1031,9 @@ CREATE (from)-[:{rel_name}]->(to);"""
             state["validation_report"] = {
                 "success": validation_result.success,
                 "summary": validation_result.summary,
+                "validation_score": validation_result.details.get(
+                    "validation_score", 0
+                ),
                 "issues": [
                     {
                         "severity": issue.severity.value,
@@ -1048,11 +1051,11 @@ CREATE (from)-[:{rel_name}]->(to);"""
             # Log validation summary
             if validation_result.success:
                 logger.info("✅ Post-migration validation PASSED")
-                score = int(validation_result.metrics.coverage_percentage)
+                score = int(validation_result.details.get("validation_score", 0))
                 logger.info(f"Validation score: {score}/100")
             else:
                 logger.warning("⚠️ Post-migration validation found issues")
-                score = int(validation_result.metrics.coverage_percentage)
+                score = int(validation_result.details.get("validation_score", 0))
                 logger.warning(f"Validation score: {score}/100")
 
                 # Log critical issues

@@ -194,10 +194,12 @@ def print_migration_results(result: Dict[str, Any]) -> None:
         else:
             print("  ⚠️  Status: Issues found")
 
-        # Display validation metrics if available
+        # Display validation score and metrics if available
+        validation_score = validation_report.get("validation_score", 0)
+        print(f"  📊 Validation Score: {int(validation_score)}/100")
+
         metrics = validation_report.get("metrics")
         if metrics:
-            print(f"  📊 Coverage Score: {int(metrics.coverage_percentage)}/100")
             print(f"  📁 Tables: {metrics.tables_covered}/{metrics.tables_total}")
             print(
                 f"  🏷️  Properties: {metrics.properties_covered}/{metrics.properties_total}"
