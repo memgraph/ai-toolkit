@@ -319,7 +319,7 @@ class HyGM:
                         self._display_current_model(model)
 
                         # Perform validation after applying changes
-                        self._perform_post_operation_validation(
+                        model = self._perform_post_operation_validation(
                             model, strategy, operations
                         )
                     else:
@@ -696,18 +696,22 @@ class HyGM:
         model: "GraphModel",
         strategy: GraphModelingStrategy,
         operations: "ModelModifications",
-    ) -> None:
+    ) -> "GraphModel":
         """
         Perform Graph Schema Validation after applying operations.
 
         This method validates that the modified graph model still properly
         represents the original database structure, accounting for the
-        applied changes.
+        applied changes. For LLM strategy, it includes automatic model
+        improvement loop.
 
         Args:
             model: Modified graph model to validate
             strategy: Current modeling strategy (affects validation response)
             operations: Operations that were just applied
+
+        Returns:
+            The final model (potentially improved by LLM)
         """
         print("\n" + "=" * 60)
         print("GRAPH SCHEMA VALIDATION")
@@ -715,20 +719,60 @@ class HyGM:
 
         if not self.database_structure:
             print("❌ Cannot validate: Original database structure not available")
-            return
+            return model
 
-        # Perform validation using the GraphSchemaValidator
-        validator = GraphSchemaValidator()
-        validation_result = validator.validate(model, self.database_structure)
+        current_model = model
+        max_improvement_iterations = 3
+        improvement_count = 0
 
-        # Print validation summary
-        self._display_validation_results(validation_result, strategy)
+        while improvement_count < max_improvement_iterations:
+            # Perform validation using the GraphSchemaValidator
+            validator = GraphSchemaValidator()
+            validation_result = validator.validate(
+                current_model, self.database_structure
+            )
 
-        # Handle validation results based on strategy
-        if strategy == GraphModelingStrategy.DETERMINISTIC:
-            self._handle_deterministic_validation(validation_result)
-        elif strategy == GraphModelingStrategy.LLM_POWERED:
-            self._handle_llm_validation(validation_result, model, operations)
+            # Print validation summary
+            self._display_validation_results(validation_result, strategy)
+
+            # Handle validation results based on strategy
+            if strategy == GraphModelingStrategy.DETERMINISTIC:
+                self._handle_deterministic_validation(validation_result)
+                break  # No automatic improvement for deterministic
+            elif strategy == GraphModelingStrategy.LLM_POWERED:
+                if validation_result.success:
+                    print("\n✅ All validation checks passed!")
+                    break
+                else:
+                    # Try LLM improvement
+                    improved_model = self._handle_llm_validation(
+                        validation_result, current_model, operations
+                    )
+
+                    if improved_model != current_model:
+                        # Model was improved, validate again
+                        current_model = improved_model
+                        improvement_count += 1
+                        self.iteration_count += 1
+
+                        print(f"\n🔄 ITERATION {self.iteration_count} - IMPROVED MODEL")
+                        self._display_current_model(current_model)
+
+                        if improvement_count < max_improvement_iterations:
+                            print(
+                                f"\n🔍 Re-validating improved model (iteration {improvement_count + 1}/{max_improvement_iterations})..."
+                            )
+                            continue
+                        else:
+                            print(
+                                f"\n⚠️ Reached maximum improvement iterations ({max_improvement_iterations})"
+                            )
+                            break
+                    else:
+                        # No improvement was made or accepted
+                        break
+
+        return current_model
 
     def _display_validation_results(
         self, validation_result, strategy: GraphModelingStrategy
@@ -800,13 +844,11 @@ class HyGM:
         validation_result,
         model: "GraphModel",
         operations: "ModelModifications",
-    ) -> None:
-        """Handle validation results for LLM strategy."""
+    ) -> "GraphModel":
+        """Handle validation results for LLM strategy with automatic model regeneration."""
         if not validation_result.success and self.llm:
-            print("\n🤖 LLM STRATEGY: AUTOMATIC VALIDATION FIXING")
-            print(
-                "The LLM will analyze validation issues and suggest " "improvements..."
-            )
+            print("\n🤖 LLM STRATEGY: AUTOMATIC MODEL IMPROVEMENT")
+            print("The LLM will analyze validation issues and regenerate the model...")
 
             # Prepare context for LLM
             validation_context = self._prepare_validation_context_for_llm(
@@ -814,18 +856,31 @@ class HyGM:
             )
 
             try:
-                # Use LLM to suggest fixes
-                fix_suggestions = self._get_llm_validation_fixes(validation_context)
-                if fix_suggestions:
-                    print("\n🔧 LLM Suggestions:")
-                    print(fix_suggestions)
+                # Use LLM to regenerate the improved model
+                improved_model = self._regenerate_model_with_llm_fixes(
+                    model, validation_context, validation_result
+                )
+
+                if improved_model:
+                    print("\n✅ LLM has generated an improved model!")
+
+                    # Offer the user to review the improved model
+                    if self._should_apply_llm_improvements(improved_model, model):
+                        print("� Applying LLM improvements...")
+                        return improved_model
+                    else:
+                        print("❌ User rejected LLM improvements")
+                        return model
                 else:
-                    print("❌ LLM could not generate fix suggestions")
+                    print("❌ LLM could not generate improved model")
+                    return model
             except Exception as e:
-                logger.error("Error getting LLM validation fixes: %s", e)
-                print(f"❌ Error getting LLM suggestions: {e}")
+                logger.error("Error getting LLM model improvements: %s", e)
+                print(f"❌ Error getting LLM improvements: {e}")
+                return model
         else:
             print("\n✅ All validation checks passed!")
+            return model
 
     def _prepare_validation_context_for_llm(
         self,
@@ -864,6 +919,204 @@ class HyGM:
         context_parts.append(f"Indexes: {len(model.node_indexes)}")
 
         return "\n".join(context_parts)
+
+    def _regenerate_model_with_llm_fixes(
+        self, current_model: "GraphModel", validation_context: str, validation_result
+    ) -> Optional["GraphModel"]:
+        """Use LLM to regenerate an improved model based on validation issues."""
+        if not self.llm or not self.database_structure:
+            return None
+
+        # Get the modeling strategy instance for regeneration
+        strategy_instance = self._get_strategy_instance(
+            GraphModelingStrategy.LLM_POWERED
+        )
+
+        # Prepare enhanced context for the LLM
+        improvement_context = self._prepare_improvement_context(
+            current_model, validation_result, validation_context
+        )
+
+        system_prompt = (
+            "You are an expert graph modeling assistant. You need to regenerate "
+            "an improved graph model that addresses the validation issues "
+            "identified in the current model. Focus on:\n\n"
+            "1. Adding any missing entities (tables) to achieve full coverage\n"
+            "2. Including all required properties from the original database\n"
+            "3. Ensuring all relationships are properly modeled\n"
+            "4. Maintaining data integrity and proper graph structure\n\n"
+            "Generate a complete, improved graph model that resolves the "
+            "validation issues while preserving the user's modifications."
+        )
+
+        try:
+            print("🔄 LLM is analyzing validation issues and regenerating model...")
+
+            # Use the LLM strategy but with enhanced context
+            improved_model = strategy_instance.create_model(
+                self.database_structure, domain_context=improvement_context
+            )
+
+            if improved_model:
+                print("✅ LLM generated improved model")
+                return improved_model
+            else:
+                print("❌ LLM failed to generate improved model")
+                return None
+
+        except Exception as e:
+            logger.error("Error regenerating model with LLM: %s", e)
+            return None
+
+    def _prepare_improvement_context(
+        self, current_model: "GraphModel", validation_result, validation_context: str
+    ) -> str:
+        """Prepare comprehensive context for LLM model improvement."""
+        context_parts = []
+
+        # Previous model structure
+        context_parts.append("CURRENT MODEL TO IMPROVE:")
+        context_parts.append(self._get_model_context_for_llm(current_model))
+
+        # Validation issues that need fixing
+        context_parts.append("\nVALIDATION ISSUES TO RESOLVE:")
+        context_parts.append(validation_context)
+
+        # Critical requirements
+        context_parts.append("\nCRITICAL REQUIREMENTS:")
+        critical_issues = validation_result.critical_issues
+        for i, issue in enumerate(critical_issues, 1):
+            context_parts.append(f"{i}. {issue.message}")
+            if hasattr(issue, "recommendation") and issue.recommendation:
+                context_parts.append(f"   → {issue.recommendation}")
+
+        # Coverage targets
+        metrics = validation_result.metrics
+        context_parts.append("\nCOVERAGE TARGETS:")
+        context_parts.append(f"- Target tables: {metrics.tables_total}")
+        context_parts.append(f"- Target properties: {metrics.properties_total}")
+        context_parts.append(f"- Target relationships: {metrics.relationships_total}")
+
+        return "\n".join(context_parts)
+
+    def _should_apply_llm_improvements(
+        self, improved_model: "GraphModel", current_model: "GraphModel"
+    ) -> bool:
+        """Ask user whether to apply LLM improvements."""
+        print("\n" + "=" * 60)
+        print("🤖 LLM MODEL IMPROVEMENT REVIEW")
+        print("=" * 60)
+
+        # Show comparison
+        print(f"\nCURRENT MODEL:")
+        print(f"  Nodes: {len(current_model.nodes)}")
+        print(f"  Relationships: {len(current_model.edges)}")
+        print(f"  Indexes: {len(current_model.node_indexes)}")
+        print(f"  Constraints: {len(current_model.node_constraints)}")
+
+        print(f"\nIMPROVED MODEL:")
+        print(f"  Nodes: {len(improved_model.nodes)}")
+        print(f"  Relationships: {len(improved_model.edges)}")
+        print(f"  Indexes: {len(improved_model.node_indexes)}")
+        print(f"  Constraints: {len(improved_model.node_constraints)}")
+
+        # Show what's new/different
+        self._show_model_differences(current_model, improved_model)
+
+        print("\nWould you like to apply these LLM improvements?")
+        print("1. Yes - Apply improvements and continue")
+        print("2. No - Keep current model")
+        print("3. Review - Show detailed improved model first")
+
+        while True:
+            try:
+                choice = input("\nEnter your choice (1-3): ").strip()
+                if choice == "1":
+                    return True
+                elif choice == "2":
+                    return False
+                elif choice == "3":
+                    self._display_current_model(improved_model)
+                    print(
+                        "\nAfter reviewing, would you like to apply these improvements?"
+                    )
+                    print("1. Yes - Apply improvements")
+                    print("2. No - Keep current model")
+                    continue
+                else:
+                    print("Invalid choice. Please enter 1, 2, or 3.")
+            except (EOFError, KeyboardInterrupt):
+                print("\nKeeping current model...")
+                return False
+
+    def _show_model_differences(
+        self, current_model: "GraphModel", improved_model: "GraphModel"
+    ) -> None:
+        """Show differences between current and improved models."""
+        # Compare nodes
+        current_node_labels = {node.primary_label for node in current_model.nodes}
+        improved_node_labels = {node.primary_label for node in improved_model.nodes}
+
+        new_nodes = improved_node_labels - current_node_labels
+        removed_nodes = current_node_labels - improved_node_labels
+
+        if new_nodes:
+            print(f"\n➕ NEW NODES ({len(new_nodes)}):")
+            for label in sorted(new_nodes):
+                print(f"  + {label}")
+
+        if removed_nodes:
+            print(f"\n➖ REMOVED NODES ({len(removed_nodes)}):")
+            for label in sorted(removed_nodes):
+                print(f"  - {label}")
+
+        # Compare relationships
+        current_relationships = {edge.edge_type for edge in current_model.edges}
+        improved_relationships = {edge.edge_type for edge in improved_model.edges}
+
+        new_relationships = improved_relationships - current_relationships
+        removed_relationships = current_relationships - improved_relationships
+
+        if new_relationships:
+            print(f"\n➕ NEW RELATIONSHIPS ({len(new_relationships)}):")
+            for rel_type in sorted(new_relationships):
+                print(f"  + {rel_type}")
+
+        if removed_relationships:
+            print(f"\n➖ REMOVED RELATIONSHIPS ({len(removed_relationships)}):")
+            for rel_type in sorted(removed_relationships):
+                print(f"  - {rel_type}")
+
+        # Show property changes for existing nodes
+        common_nodes = current_node_labels & improved_node_labels
+        if common_nodes:
+            property_changes = []
+            for label in common_nodes:
+                current_node = next(
+                    n for n in current_model.nodes if n.primary_label == label
+                )
+                improved_node = next(
+                    n for n in improved_model.nodes if n.primary_label == label
+                )
+
+                current_props = {p.key for p in current_node.properties}
+                improved_props = {p.key for p in improved_node.properties}
+
+                new_props = improved_props - current_props
+                removed_props = current_props - improved_props
+
+                if new_props or removed_props:
+                    property_changes.append((label, new_props, removed_props))
+
+            if property_changes:
+                print(f"\n🔄 PROPERTY CHANGES:")
+                for label, new_props, removed_props in property_changes:
+                    if new_props:
+                        for prop in sorted(new_props):
+                            print(f"  + {label}.{prop}")
+                    if removed_props:
+                        for prop in sorted(removed_props):
+                            print(f"  - {label}.{prop}")
 
     def _get_llm_validation_fixes(self, validation_context: str) -> Optional[str]:
         """Get LLM suggestions for fixing validation issues."""
