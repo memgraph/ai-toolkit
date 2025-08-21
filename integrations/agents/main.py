@@ -79,7 +79,9 @@ def get_graph_modeling_strategy() -> GraphModelingStrategy:
         GraphModelingStrategy: Selected strategy
     """
     print("Graph modeling strategy:")
+    print()
     print("  1. Deterministic - Rule-based graph model creation (predictable)")
+    print()
     print("  2. AI-Powered - LLM-based graph model creation (non-deterministic)")
     print()
     print()

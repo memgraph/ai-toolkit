@@ -6,7 +6,7 @@ analyzers based on the database type or connection parameters.
 """
 
 from typing import Dict, Any, Type
-from .interface import DatabaseAnalyzer
+from .analyzer import DatabaseAnalyzer
 from .adapters.mysql import MySQLAnalyzer
 
 

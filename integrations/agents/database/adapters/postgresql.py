@@ -12,8 +12,8 @@ architecture to support additional database systems like PostgreSQL.
 # import psycopg2.extras
 from typing import Dict, List, Any, Optional
 import logging
-from database_analyzer_interface import (
-    DatabaseAnalyzer,
+from ..analyzer import DatabaseAnalyzer
+from ..models import (
     ColumnInfo,
     ForeignKeyInfo,
     TableInfo,

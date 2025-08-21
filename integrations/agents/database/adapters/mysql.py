@@ -7,7 +7,7 @@ This module provides MySQL-specific implementation of the DatabaseAnalyzer inter
 import mysql.connector
 from typing import Dict, List, Any, Optional
 import logging
-from ..interface import (
+from ..analyzer import (
     DatabaseAnalyzer,
     ColumnInfo,
     ForeignKeyInfo,
