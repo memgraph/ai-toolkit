@@ -3,7 +3,7 @@ Validation module for HyGM graph models and Memgraph schemas.
 
 This module provides comprehensive validation capabilities including:
 - Pre-migration validation (Graph Schema Validation)
-- Post-migration validation (Memgraph Schema Validation)
+- Post-migration validation (Memgraph Data Validation)
 """
 
 from .base import (
@@ -16,9 +16,9 @@ from .base import (
     create_validation_issue,
 )
 from .graph_schema_validator import GraphSchemaValidator
-from .validation import (
-    MemgraphSchemaValidator,
-    validate_migration_result,
+from .memgraph_data_validator import (
+    MemgraphDataValidator,
+    validate_memgraph_data,
 )
 
 __all__ = [
@@ -33,6 +33,6 @@ __all__ = [
     # Pre-migration validation
     "GraphSchemaValidator",
     # Post-migration validation
-    "MemgraphSchemaValidator",
-    "validate_migration_result",
+    "MemgraphDataValidator",
+    "validate_memgraph_data",
 ]

@@ -185,6 +185,57 @@ def print_migration_results(result: Dict[str, Any]) -> None:
     total = result.get("total_tables", 0)
     print(f"\n📋 Tables processed: {completed}/{total}")
 
+    # Print post-migration validation results
+    validation_report = result.get("validation_report")
+    if validation_report:
+        print("\n✅ Post-migration Validation:")
+        if validation_report.get("success"):
+            print("  🎯 Status: PASSED")
+        else:
+            print("  ⚠️  Status: Issues found")
+
+        # Display validation metrics if available
+        metrics = validation_report.get("metrics")
+        if metrics:
+            print(f"  📊 Coverage Score: {int(metrics.coverage_percentage)}/100")
+            print(f"  📁 Tables: {metrics.tables_covered}/{metrics.tables_total}")
+            print(
+                f"  🏷️  Properties: {metrics.properties_covered}/{metrics.properties_total}"
+            )
+            print(
+                f"  🔗 Relationships: {metrics.relationships_covered}/{metrics.relationships_total}"
+            )
+            print(f"  📇 Indexes: {metrics.indexes_covered}/{metrics.indexes_total}")
+            print(
+                f"  🔒 Constraints: {metrics.constraints_covered}/{metrics.constraints_total}"
+            )
+
+        # Show validation issues summary
+        issues = validation_report.get("issues", [])
+        if issues:
+            critical_count = sum(
+                1 for issue in issues if issue.get("severity") == "CRITICAL"
+            )
+            warning_count = sum(
+                1 for issue in issues if issue.get("severity") == "WARNING"
+            )
+            info_count = sum(1 for issue in issues if issue.get("severity") == "INFO")
+
+            print(
+                f"  🚨 Issues: {critical_count} critical, {warning_count} warnings, {info_count} info"
+            )
+
+            # Show top critical issues
+            critical_issues = [
+                issue for issue in issues if issue.get("severity") == "CRITICAL"
+            ]
+            if critical_issues:
+                print("  📋 Top Critical Issues:")
+                for issue in critical_issues[:3]:
+                    print(f"    - {issue.get('message', 'Unknown issue')}")
+        else:
+            print("  ✅ No validation issues found")
+
     # Print schema analysis details
     if result.get("database_structure"):
         structure = result["database_structure"]

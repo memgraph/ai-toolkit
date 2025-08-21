@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 
 from query_generation.cypher_generator import CypherGenerator
 from core.hygm import HyGM, GraphModel, ModelingMode, GraphModelingStrategy
-from core.hygm.validation import validate_migration_result
+from core.hygm.validation import validate_memgraph_data
 from memgraph_toolbox.api.memgraph import Memgraph
 from database.factory import DatabaseAnalyzerFactory
 
@@ -1021,7 +1021,7 @@ CREATE (from)-[:{rel_name}]->(to);"""
 
             # Run post-migration validation using existing connection
             logger.info("Executing post-migration validation...")
-            validation_result = validate_migration_result(
+            validation_result = validate_memgraph_data(
                 expected_model=graph_model,
                 memgraph_connection=self.memgraph_client,
                 detailed_report=True,
@@ -1048,11 +1048,11 @@ CREATE (from)-[:{rel_name}]->(to);"""
             # Log validation summary
             if validation_result.success:
                 logger.info("✅ Post-migration validation PASSED")
-                score = validation_result.metrics.get("validation_score", 0)
+                score = int(validation_result.metrics.coverage_percentage)
                 logger.info(f"Validation score: {score}/100")
             else:
                 logger.warning("⚠️ Post-migration validation found issues")
-                score = validation_result.metrics.get("validation_score", 0)
+                score = int(validation_result.metrics.coverage_percentage)
                 logger.warning(f"Validation score: {score}/100")
 
                 # Log critical issues

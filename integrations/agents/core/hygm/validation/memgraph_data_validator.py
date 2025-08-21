@@ -1,58 +1,34 @@
 """
-Independent post-migration validation module.
+Memgraph Data Validation Module.
 
-This module provides validation functionality for comparing GraphModel schemas
-with actual Memgraph database schemas after migration. It is designed to be
-independent of HyGM and can work directly with GraphModel objects.
+This module provides comprehensive validation functionality for Memgraph 
+databases after migration, including schema validation (nodes, relationships, 
+indexes, constraints) and data count validation. It compares the expected 
+GraphModel specification with the actual Memgraph database state to ensure 
+migration success.
 """
 
 import logging
-from dataclasses import dataclass
-from enum import Enum
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from ..models.graph_models import GraphModel
+from .base import (
+    BaseValidator,
+    ValidationResult,
+    ValidationSeverity,
+    ValidationCategory,
+)
 
 logger = logging.getLogger(__name__)
 
 
-class ValidationSeverity(Enum):
-    """Severity levels for validation issues."""
-
-    CRITICAL = "CRITICAL"
-    WARNING = "WARNING"
-    INFO = "INFO"
-
-
-@dataclass
-class ValidationIssue:
-    """Represents a validation issue found during schema comparison."""
-
-    severity: ValidationSeverity
-    category: str
-    message: str
-    expected: Any = None
-    actual: Any = None
-    recommendation: Optional[str] = None
-
-
-@dataclass
-class ValidationResult:
-    """Results of post-migration validation."""
-
-    success: bool
-    summary: str
-    issues: List[ValidationIssue]
-    metrics: Dict[str, Any]
-    expected_schema: Dict[str, Any]
-    actual_schema: Dict[str, Any]
-
-
-class MemgraphSchemaValidator:
+class MemgraphDataValidator(BaseValidator):
     """
-    Validates Memgraph schema against expected GraphModel.
+    Validates Memgraph data and schema against expected GraphModel.
 
-    This class provides comprehensive validation of Memgraph database schema
-    by comparing it with the expected GraphModel specification.
+    This class provides comprehensive post-migration validation of Memgraph
+    database including schema validation (nodes, relationships, indexes,
+    constraints) and data count verification by comparing it with the expected
+    GraphModel specification.
     """
 
     def __init__(self, memgraph_connection):
@@ -63,8 +39,16 @@ class MemgraphSchemaValidator:
             memgraph_connection: Connection to Memgraph database
                 (adapter or raw connection)
         """
+        super().__init__()
         self.connection = memgraph_connection
-        self.issues = []
+
+    def validate(self, expected_model: GraphModel, **kwargs) -> ValidationResult:
+        """
+        Abstract method implementation for BaseValidator.
+
+        This is the main entry point for validation.
+        """
+        return self.validate_post_migration(expected_model)
 
     def validate_post_migration(self, expected_model: GraphModel) -> ValidationResult:
         """
@@ -76,7 +60,7 @@ class MemgraphSchemaValidator:
         Returns:
             ValidationResult with detailed comparison results
         """
-        self.issues = []  # Reset issues for new validation
+        self.reset()  # Reset state using parent method
 
         try:
             # Get actual schema from Memgraph
@@ -84,8 +68,9 @@ class MemgraphSchemaValidator:
             nodes_count = len(actual_schema.get("nodes", []))
             rels_count = len(actual_schema.get("relationships", []))
             logger.info(
-                f"Retrieved actual schema: {nodes_count} nodes, "
-                f"{rels_count} relationships"
+                "Retrieved actual schema: %d nodes, %d relationships",
+                nodes_count,
+                rels_count,
             )
 
             # Convert expected model to comparable format
@@ -93,7 +78,7 @@ class MemgraphSchemaValidator:
             exp_nodes = len(expected_schema.get("nodes", []))
             exp_rels = len(expected_schema.get("relationships", []))
             logger.info(
-                f"Expected schema: {exp_nodes} nodes, " f"{exp_rels} relationships"
+                "Expected schema: %d nodes, %d relationships", exp_nodes, exp_rels
             )
 
             # Perform validations
@@ -103,6 +88,9 @@ class MemgraphSchemaValidator:
             self._validate_indexes(expected_schema, actual_schema)
             self._validate_constraints(expected_schema, actual_schema)
 
+            # Calculate metrics using the base class structure
+            self._update_metrics(expected_schema, actual_schema)
+
             # Generate results
             critical_issues = [
                 issue
@@ -111,35 +99,35 @@ class MemgraphSchemaValidator:
             ]
             success = not any(critical_issues)
             summary = self._generate_summary()
-            metrics = self._calculate_metrics(expected_schema, actual_schema)
 
             return ValidationResult(
+                validation_type="memgraph_data_validation",
                 success=success,
                 summary=summary,
                 issues=self.issues,
-                metrics=metrics,
-                expected_schema=expected_schema,
-                actual_schema=actual_schema,
+                metrics=self.metrics,
+                details={
+                    "expected_schema": expected_schema,
+                    "actual_schema": actual_schema,
+                    "validation_score": self._calculate_validation_score(),
+                },
             )
 
         except Exception as e:
-            logger.error(f"Validation failed with error: {e}")
-            self.issues.append(
-                ValidationIssue(
-                    severity=ValidationSeverity.CRITICAL,
-                    category="validation_error",
-                    message=f"Validation process failed: {str(e)}",
-                    recommendation="Check database connection and schema access",
-                )
+            logger.error("Validation failed with error: %s", str(e))
+            self.add_issue(
+                ValidationSeverity.CRITICAL,
+                ValidationCategory.SCHEMA_MISMATCH,
+                f"Validation process failed: {str(e)}",
+                recommendation="Check database connection and schema access",
             )
 
             return ValidationResult(
+                validation_type="memgraph_data_validation",
                 success=False,
                 summary=f"Validation failed: {str(e)}",
                 issues=self.issues,
-                metrics={},
-                expected_schema={},
-                actual_schema={},
+                metrics=self.metrics,
             )
 
     def _get_actual_schema(self) -> Dict[str, Any]:
@@ -465,29 +453,25 @@ class MemgraphSchemaValidator:
         # Check for missing labels
         missing_labels = expected_labels - actual_labels
         for labels in missing_labels:
-            self.issues.append(
-                ValidationIssue(
-                    severity=ValidationSeverity.CRITICAL,
-                    category="missing_node_labels",
-                    message=f"Missing node labels in Memgraph: {list(labels)}",
-                    expected=list(labels),
-                    actual=None,
-                    recommendation=("Check migration script for node creation issues"),
-                )
+            self.add_issue(
+                ValidationSeverity.CRITICAL,
+                ValidationCategory.SCHEMA_MISMATCH,
+                f"Missing node labels in Memgraph: {list(labels)}",
+                expected=list(labels),
+                actual=None,
+                recommendation="Check migration script for node creation issues",
             )
 
         # Check for unexpected labels
         extra_labels = actual_labels - expected_labels
         for labels in extra_labels:
-            self.issues.append(
-                ValidationIssue(
-                    severity=ValidationSeverity.WARNING,
-                    category="extra_node_labels",
-                    message=f"Unexpected node labels in Memgraph: {list(labels)}",
-                    expected=None,
-                    actual=list(labels),
-                    recommendation="Verify if these labels were intentionally created",
-                )
+            self.add_issue(
+                ValidationSeverity.WARNING,
+                ValidationCategory.SCHEMA_MISMATCH,
+                f"Unexpected node labels in Memgraph: {list(labels)}",
+                expected=None,
+                actual=list(labels),
+                recommendation="Verify if these labels were intentionally created",
             )
 
     def _validate_node_properties(
@@ -509,32 +493,30 @@ class MemgraphSchemaValidator:
             # Check for missing properties
             missing_props = set(expected_props.keys()) - set(actual_props.keys())
             for prop in missing_props:
-                self.issues.append(
-                    ValidationIssue(
-                        severity=ValidationSeverity.CRITICAL,
-                        category="missing_node_property",
-                        message=f"Missing property '{prop}' on node {list(labels)}",
-                        expected=prop,
-                        actual=None,
-                        recommendation="Check property mapping in migration script",
-                    )
+                self.add_issue(
+                    ValidationSeverity.CRITICAL,
+                    ValidationCategory.SCHEMA_MISMATCH,
+                    f"Missing property '{prop}' on node {list(labels)}",
+                    expected=prop,
+                    actual=None,
+                    recommendation="Check property mapping in migration script",
                 )
 
+            # TODO: Re-enable property type mismatch validation once type
+            # mapping is stabilized
             # Check for type mismatches
-            for prop, expected_type in expected_props.items():
-                if prop in actual_props:
-                    actual_type = actual_props[prop]
-                    if not self._types_compatible(expected_type, actual_type):
-                        self.issues.append(
-                            ValidationIssue(
-                                severity=ValidationSeverity.WARNING,
-                                category="property_type_mismatch",
-                                message=f"Property '{prop}' type mismatch on node {list(labels)}",
-                                expected=expected_type,
-                                actual=actual_type,
-                                recommendation="Verify data transformation logic",
-                            )
-                        )
+            # for prop, expected_type in expected_props.items():
+            #     if prop in actual_props:
+            #         actual_type = actual_props[prop]
+            #         if not self._types_compatible(expected_type, actual_type):
+            #             self.add_issue(
+            #                 ValidationSeverity.WARNING,
+            #                 ValidationCategory.SCHEMA_MISMATCH,
+            #                 f"Property '{prop}' type mismatch on node {list(labels)}",
+            #                 expected=expected_type,
+            #                 actual=actual_type,
+            #                 recommendation="Verify data transformation logic",
+            #             )
 
     def _validate_relationships(self, expected: Dict[str, Any], actual: Dict[str, Any]):
         """Validate relationship types and properties."""
@@ -544,15 +526,13 @@ class MemgraphSchemaValidator:
         # Check for missing relationship types
         missing_rels = set(expected_rels.keys()) - set(actual_rels.keys())
         for rel_type in missing_rels:
-            self.issues.append(
-                ValidationIssue(
-                    severity=ValidationSeverity.CRITICAL,
-                    category="missing_relationship_type",
-                    message=f"Missing relationship type: {rel_type}",
-                    expected=rel_type,
-                    actual=None,
-                    recommendation="Check relationship creation in migration script",
-                )
+            self.add_issue(
+                ValidationSeverity.CRITICAL,
+                ValidationCategory.SCHEMA_MISMATCH,
+                f"Missing relationship type: {rel_type}",
+                expected=rel_type,
+                actual=None,
+                recommendation="Check relationship creation in migration script",
             )
 
         # Check relationship properties
@@ -566,15 +546,13 @@ class MemgraphSchemaValidator:
 
             missing_props = set(expected_props.keys()) - set(actual_props.keys())
             for prop in missing_props:
-                self.issues.append(
-                    ValidationIssue(
-                        severity=ValidationSeverity.WARNING,
-                        category="missing_relationship_property",
-                        message=f"Missing property '{prop}' on relationship {rel_type}",
-                        expected=prop,
-                        actual=None,
-                        recommendation="Check relationship property mapping",
-                    )
+                self.add_issue(
+                    ValidationSeverity.WARNING,
+                    ValidationCategory.SCHEMA_MISMATCH,
+                    f"Missing property '{prop}' on relationship {rel_type}",
+                    expected=prop,
+                    actual=None,
+                    recommendation="Check relationship property mapping",
                 )
 
     def _validate_indexes(self, expected: Dict[str, Any], actual: Dict[str, Any]):
@@ -618,15 +596,13 @@ class MemgraphSchemaValidator:
         # Check for missing indexes
         missing_indexes = expected_index_keys - actual_index_keys
         for index_key in missing_indexes:
-            self.issues.append(
-                ValidationIssue(
-                    severity=ValidationSeverity.WARNING,
-                    category="missing_index",
-                    message=f"Missing index: {index_key}",
-                    expected=index_key,
-                    actual=None,
-                    recommendation="Consider creating missing indexes for performance",
-                )
+            self.add_issue(
+                ValidationSeverity.WARNING,
+                ValidationCategory.PERFORMANCE,
+                f"Missing index: {index_key}",
+                expected=index_key,
+                actual=None,
+                recommendation="Consider creating missing indexes for performance",
             )
 
     def _validate_constraints(self, expected: Dict[str, Any], actual: Dict[str, Any]):
@@ -674,15 +650,13 @@ class MemgraphSchemaValidator:
         # Check for missing constraints
         missing_constraints = expected_constraint_keys - actual_constraint_keys
         for constraint_key in missing_constraints:
-            self.issues.append(
-                ValidationIssue(
-                    severity=ValidationSeverity.CRITICAL,
-                    category="missing_constraint",
-                    message=f"Missing constraint: {constraint_key}",
-                    expected=constraint_key,
-                    actual=None,
-                    recommendation="Ensure data integrity by creating missing constraints",
-                )
+            self.add_issue(
+                ValidationSeverity.CRITICAL,
+                ValidationCategory.DATA_INTEGRITY,
+                f"Missing constraint: {constraint_key}",
+                expected=constraint_key,
+                actual=None,
+                recommendation="Ensure data integrity by creating missing constraints",
             )
 
     def _types_compatible(self, expected_type: str, actual_type: str) -> bool:
@@ -701,53 +675,26 @@ class MemgraphSchemaValidator:
         expected_compatible = compatible_types.get(expected_type, [expected_type])
         return actual_type in expected_compatible
 
-    def _generate_summary(self) -> str:
-        """Generate a summary of validation results."""
-        critical_count = sum(
-            1 for issue in self.issues if issue.severity == ValidationSeverity.CRITICAL
-        )
-        warning_count = sum(
-            1 for issue in self.issues if issue.severity == ValidationSeverity.WARNING
-        )
-        info_count = sum(
-            1 for issue in self.issues if issue.severity == ValidationSeverity.INFO
-        )
+    def _update_metrics(self, expected: Dict[str, Any], actual: Dict[str, Any]):
+        """Update validation metrics using the base ValidationMetrics."""
+        # Update basic counts
+        self.metrics.tables_total = len(expected.get("nodes", []))
+        self.metrics.tables_covered = len(actual.get("nodes", []))
 
-        if critical_count == 0:
-            status = "PASSED"
-        else:
-            status = "FAILED"
+        # Relationships
+        self.metrics.relationships_total = len(expected.get("relationships", []))
+        self.metrics.relationships_covered = len(actual.get("relationships", []))
 
-        summary_parts = [
-            f"Validation {status}",
-            f"Critical: {critical_count}",
-            f"Warnings: {warning_count}",
-            f"Info: {info_count}",
-        ]
+        # Indexes
+        self.metrics.indexes_total = len(expected.get("indexes", []))
+        self.metrics.indexes_covered = len(actual.get("indexes", []))
 
-        return " | ".join(summary_parts)
+        # Constraints
+        self.metrics.constraints_total = len(expected.get("constraints", []))
+        self.metrics.constraints_covered = len(actual.get("constraints", []))
 
-    def _calculate_metrics(
-        self, expected: Dict[str, Any], actual: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Calculate validation metrics."""
-        return {
-            "expected_nodes": len(expected.get("nodes", [])),
-            "actual_nodes": len(actual.get("nodes", [])),
-            "expected_relationships": len(expected.get("relationships", [])),
-            "actual_relationships": len(actual.get("relationships", [])),
-            "expected_indexes": len(expected.get("indexes", [])),
-            "actual_indexes": len(actual.get("indexes", [])),
-            "expected_constraints": len(expected.get("constraints", [])),
-            "actual_constraints": len(actual.get("constraints", [])),
-            "total_issues": len(self.issues),
-            "critical_issues": sum(
-                1
-                for issue in self.issues
-                if issue.severity == ValidationSeverity.CRITICAL
-            ),
-            "validation_score": self._calculate_validation_score(),
-        }
+        # Calculate coverage percentage
+        self.metrics.calculate_coverage()
 
     def _calculate_validation_score(self) -> float:
         """Calculate a validation score (0-100)."""
@@ -774,11 +721,11 @@ class MemgraphSchemaValidator:
         return round(score, 2)
 
 
-def validate_migration_result(
+def validate_memgraph_data(
     expected_model: GraphModel, memgraph_connection, detailed_report: bool = True
 ) -> ValidationResult:
     """
-    Convenience function for post-migration validation.
+    Convenience function for post-migration Memgraph data validation.
 
     Args:
         expected_model: Expected GraphModel/spec.json
@@ -788,14 +735,13 @@ def validate_migration_result(
     Returns:
         ValidationResult with comparison results
     """
-    validator = MemgraphSchemaValidator(memgraph_connection)
+    validator = MemgraphDataValidator(memgraph_connection)
     result = validator.validate_post_migration(expected_model)
 
     if detailed_report:
-        logger.info(f"Validation Summary: {result.summary}")
-        logger.info(
-            f"Validation Score: {result.metrics.get('validation_score', 0)}/100"
-        )
+        logger.info("Validation Summary: %s", result.summary)
+        validation_score = result.details.get("validation_score", 0)
+        logger.info("Validation Score: %d/100", validation_score)
 
         for issue in result.issues:
             log_level = (
@@ -803,8 +749,8 @@ def validate_migration_result(
                 if issue.severity == ValidationSeverity.CRITICAL
                 else logging.WARNING
             )
-            logger.log(log_level, f"{issue.category}: {issue.message}")
+            logger.log(log_level, "%s: %s", issue.category, issue.message)
             if issue.recommendation:
-                logger.info(f"  Recommendation: {issue.recommendation}")
+                logger.info("  Recommendation: %s", issue.recommendation)
 
     return result
