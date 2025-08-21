@@ -15,7 +15,7 @@ from .base import (
     BaseValidator,
     create_validation_issue,
 )
-from .pre_migration import GraphSchemaValidator
+from .graph_schema_validator import GraphSchemaValidator
 from .validation import (
     MemgraphSchemaValidator,
     validate_migration_result,

@@ -1,5 +1,5 @@
 """
-Pre-migration validation for graph models.
+Graph Schema Validator for graph models.
 
 This module provides comprehensive validation of GraphModel objects against
 the original database structure to ensure complete coverage and correctness
@@ -13,7 +13,6 @@ from .base import (
     ValidationResult,
     ValidationSeverity,
     ValidationCategory,
-    ValidationMetrics,
 )
 
 if TYPE_CHECKING:
@@ -35,7 +34,7 @@ class GraphSchemaValidator(BaseValidator):
         self, graph_model: "GraphModel", database_structure: Dict[str, Any]
     ) -> ValidationResult:
         """
-        Perform comprehensive pre-migration validation.
+        Perform comprehensive graph schema validation.
 
         Args:
             graph_model: GraphModel to validate
@@ -46,7 +45,7 @@ class GraphSchemaValidator(BaseValidator):
         """
         self.reset()
 
-        logger.info("Starting pre-migration graph schema validation...")
+        logger.info("Starting graph schema validation...")
 
         try:
             # Basic validation checks
@@ -74,7 +73,7 @@ class GraphSchemaValidator(BaseValidator):
             ]
             if critical_issues:
                 return ValidationResult(
-                    validation_type="pre_migration",
+                    validation_type="graph_schema",
                     success=False,
                     summary="Validation failed: Missing required inputs",
                     issues=self.issues,
@@ -103,7 +102,7 @@ class GraphSchemaValidator(BaseValidator):
             )
 
             result = ValidationResult(
-                validation_type="pre_migration",
+                validation_type="graph_schema",
                 success=success,
                 summary=summary,
                 issues=self.issues,
@@ -116,11 +115,11 @@ class GraphSchemaValidator(BaseValidator):
                 },
             )
 
-            logger.info("Pre-migration validation completed: %s", summary)
+            logger.info("Graph schema validation completed: %s", summary)
             return result
 
         except Exception as e:
-            logger.error("Pre-migration validation failed: %s", str(e))
+            logger.error("Graph schema validation failed: %s", str(e))
             self.add_issue(
                 ValidationSeverity.CRITICAL,
                 ValidationCategory.STRUCTURE,
@@ -129,7 +128,7 @@ class GraphSchemaValidator(BaseValidator):
             )
 
             return ValidationResult(
-                validation_type="pre_migration",
+                validation_type="graph_schema",
                 success=False,
                 summary=f"Validation failed: {str(e)}",
                 issues=self.issues,
@@ -140,7 +139,14 @@ class GraphSchemaValidator(BaseValidator):
         """Validate that all entity tables are represented as nodes."""
         logger.debug("Validating table coverage...")
 
-        entity_tables = database_structure.get("entity_tables", {})
+        # Handle both new structured format and legacy format
+        if hasattr(database_structure, "entity_tables"):
+            # New structured format - work directly with objects
+            entity_tables = database_structure.entity_tables
+        else:
+            # Legacy format fallback
+            entity_tables = database_structure.get("entity_tables", {})
+
         self.metrics.tables_total = len(entity_tables)
 
         if not entity_tables:
@@ -186,28 +192,94 @@ class GraphSchemaValidator(BaseValidator):
         """Validate that all table columns are represented as properties."""
         logger.debug("Validating property coverage...")
 
-        entity_tables = database_structure.get("entity_tables", {})
-        total_properties = 0
-        covered_properties = 0
-        missing_by_table = {}
+        # Handle both new structured format and legacy format
+        if hasattr(database_structure, "entity_tables"):
+            # New structured format - work directly with objects
+            entity_tables = database_structure.entity_tables
+            foreign_key_columns = self._get_foreign_key_columns(database_structure)
 
-        for table_name, table_info in entity_tables.items():
-            table_columns = {col["field"] for col in table_info.get("schema", [])}
-            total_properties += len(table_columns)
+            total_properties = 0
+            covered_properties = 0
+            missing_by_table = {}
 
-            # Find corresponding node
-            node = self._find_node_for_table(graph_model, table_name)
-            if not node:
-                missing_by_table[table_name] = list(table_columns)
-                continue
+            for table_name, table_info in entity_tables.items():
+                # Get column names directly from ColumnInfo objects
+                table_columns = {col.name for col in table_info.columns}
+                total_properties += len(table_columns)
 
-            # Check property coverage for this node
-            node_properties = {prop.key for prop in node.properties}
-            missing_props = table_columns - node_properties
-            covered_properties += len(table_columns) - len(missing_props)
+                # Find corresponding node
+                node = self._find_node_for_table(graph_model, table_name)
+                if not node:
+                    missing_by_table[table_name] = list(table_columns)
+                    continue
 
-            if missing_props:
-                missing_by_table[table_name] = list(missing_props)
+                # Check property coverage for this node
+                node_properties = {prop.key for prop in node.properties}
+                missing_props = table_columns - node_properties
+
+                # Separate foreign key columns from regular missing properties
+                table_foreign_keys = foreign_key_columns.get(table_name, set())
+                missing_foreign_keys = missing_props & table_foreign_keys
+                missing_regular_props = missing_props - table_foreign_keys
+
+                # Count coverage: covered + foreign keys that became relationships
+                covered_properties += len(table_columns) - len(missing_regular_props)
+
+                # Only report regular properties as missing (not foreign keys)
+                if missing_regular_props:
+                    missing_by_table[table_name] = list(missing_regular_props)
+
+                # Log foreign keys that became relationships (for debugging)
+                if missing_foreign_keys:
+                    logger.debug(
+                        "Table %s: %d foreign key columns became relationships: %s",
+                        table_name,
+                        len(missing_foreign_keys),
+                        missing_foreign_keys,
+                    )
+        else:
+            # Legacy format fallback
+            entity_tables = database_structure.get("entity_tables", {})
+            foreign_key_columns = self._get_foreign_key_columns(database_structure)
+
+            total_properties = 0
+            covered_properties = 0
+            missing_by_table = {}
+
+            for table_name, table_info in entity_tables.items():
+                table_columns = {col["field"] for col in table_info.get("schema", [])}
+                total_properties += len(table_columns)
+
+                # Find corresponding node
+                node = self._find_node_for_table(graph_model, table_name)
+                if not node:
+                    missing_by_table[table_name] = list(table_columns)
+                    continue
+
+                # Check property coverage for this node
+                node_properties = {prop.key for prop in node.properties}
+                missing_props = table_columns - node_properties
+
+                # Separate foreign key columns from regular missing properties
+                table_foreign_keys = foreign_key_columns.get(table_name, set())
+                missing_foreign_keys = missing_props & table_foreign_keys
+                missing_regular_props = missing_props - table_foreign_keys
+
+                # Count coverage: covered + foreign keys that became relationships
+                covered_properties += len(table_columns) - len(missing_regular_props)
+
+                # Only report regular properties as missing (not foreign keys)
+                if missing_regular_props:
+                    missing_by_table[table_name] = list(missing_regular_props)
+
+                # Log foreign keys that became relationships (for debugging)
+                if missing_foreign_keys:
+                    logger.debug(
+                        "Table %s: %d foreign key columns became relationships: %s",
+                        table_name,
+                        len(missing_foreign_keys),
+                        missing_foreign_keys,
+                    )
 
         self.metrics.properties_total = total_properties
         self.metrics.properties_covered = covered_properties
@@ -218,19 +290,20 @@ class GraphSchemaValidator(BaseValidator):
                 ValidationSeverity.CRITICAL,
                 ValidationCategory.COVERAGE,
                 (
-                    f"Missing {total_missing} properties across "
+                    f"Missing {total_missing} non-foreign-key properties across "
                     f"{len(missing_by_table)} tables"
                 ),
                 expected=f"{total_properties} properties",
                 actual=f"{covered_properties} properties",
                 recommendation=(
-                    "Ensure all table columns are mapped to node properties"
+                    "Ensure all non-foreign-key columns are mapped to node properties. "
+                    "Foreign key columns are expected to become relationships."
                 ),
                 details={"missing_by_table": missing_by_table},
             )
 
         logger.debug(
-            "Property coverage: %d/%d properties covered",
+            "Property coverage: %d/%d properties covered (including foreign keys as relationships)",
             covered_properties,
             total_properties,
         )
@@ -279,11 +352,19 @@ class GraphSchemaValidator(BaseValidator):
         planned_indexes = len(graph_model.node_indexes) + len(graph_model.edge_indexes)
         self.metrics.indexes_covered = planned_indexes
 
-        # Basic coverage check
-        entity_tables = database_structure.get("entity_tables", {})
-        db_indexes_count = 0
-        for table_info in entity_tables.values():
-            db_indexes_count += len(table_info.get("indexes", []))
+        # Handle both new structured format and legacy format
+        if hasattr(database_structure, "entity_tables"):
+            # New structured format - work directly with objects
+            db_indexes_count = sum(
+                len(table_info.indexes)
+                for table_info in database_structure.entity_tables.values()
+            )
+        else:
+            # Legacy format fallback
+            entity_tables = database_structure.get("entity_tables", {})
+            db_indexes_count = 0
+            for table_info in entity_tables.values():
+                db_indexes_count += len(table_info.get("indexes", []))
 
         self.metrics.indexes_total = db_indexes_count
 
@@ -313,12 +394,20 @@ class GraphSchemaValidator(BaseValidator):
         )
         self.metrics.constraints_covered = planned_constraints
 
-        # Count database constraints
-        entity_tables = database_structure.get("entity_tables", {})
-        db_constraints_count = 0
-        for table_info in entity_tables.values():
-            db_constraints_count += len(table_info.get("primary_keys", []))
-            db_constraints_count += len(table_info.get("foreign_keys", []))
+        # Handle both new structured format and legacy format
+        if hasattr(database_structure, "entity_tables"):
+            # New structured format - work directly with objects
+            db_constraints_count = 0
+            for table_info in database_structure.entity_tables.values():
+                db_constraints_count += len(table_info.primary_keys)
+                db_constraints_count += len(table_info.foreign_keys)
+        else:
+            # Legacy format fallback
+            entity_tables = database_structure.get("entity_tables", {})
+            db_constraints_count = 0
+            for table_info in entity_tables.values():
+                db_constraints_count += len(table_info.get("primary_keys", []))
+                db_constraints_count += len(table_info.get("foreign_keys", []))
 
         self.metrics.constraints_total = db_constraints_count
 
@@ -326,10 +415,11 @@ class GraphSchemaValidator(BaseValidator):
             self.add_issue(
                 ValidationSeverity.WARNING,
                 ValidationCategory.CONSISTENCY,
-                f"No constraints planned, but {db_constraints_count} exist in source",
+                f"No constraints planned, but {db_constraints_count} "
+                "exist in source",
                 expected="Constraints planned for data integrity",
                 actual="No constraints planned",
-                recommendation="Consider adding constraints for data integrity",
+                recommendation="Consider adding constraints for data " "integrity",
             )
 
         logger.debug(
@@ -367,8 +457,10 @@ class GraphSchemaValidator(BaseValidator):
                 self.add_issue(
                     ValidationSeverity.CRITICAL,
                     ValidationCategory.CONSISTENCY,
-                    f"Relationship '{edge.edge_type}' references missing start node labels: {missing_start}",
-                    recommendation="Ensure all relationship endpoints reference existing node labels",
+                    f"Relationship '{edge.edge_type}' references missing "
+                    f"start node labels: {missing_start}",
+                    recommendation="Ensure all relationship endpoints "
+                    "reference existing node labels",
                 )
 
             # Check end node labels
@@ -377,8 +469,10 @@ class GraphSchemaValidator(BaseValidator):
                 self.add_issue(
                     ValidationSeverity.CRITICAL,
                     ValidationCategory.CONSISTENCY,
-                    f"Relationship '{edge.edge_type}' references missing end node labels: {missing_end}",
-                    recommendation="Ensure all relationship endpoints reference existing node labels",
+                    f"Relationship '{edge.edge_type}' references missing "
+                    f"end node labels: {missing_end}",
+                    recommendation="Ensure all relationship endpoints "
+                    "reference existing node labels",
                 )
 
     def _validate_naming_conventions(self, graph_model):
@@ -402,7 +496,7 @@ class GraphSchemaValidator(BaseValidator):
                 self.add_issue(
                     ValidationSeverity.INFO,
                     ValidationCategory.CONSISTENCY,
-                    f"Relationship type '{edge.edge_type}' should be uppercase",
+                    f"Relationship type '{edge.edge_type}' should be " "uppercase",
                     recommendation="Use UPPER_CASE for relationship types",
                 )
 
@@ -428,14 +522,55 @@ class GraphSchemaValidator(BaseValidator):
                 )
 
                 if not has_index:
+                    node_label = "/".join(node.labels)
+                    key_props = ", ".join(key_properties)
                     self.add_issue(
                         ValidationSeverity.INFO,
                         ValidationCategory.PERFORMANCE,
-                        f"Node {'/'.join(node.labels)} has key properties without indexes",
-                        recommendation=f"Consider adding indexes for: {', '.join(key_properties)}",
+                        f"Node {node_label} has key properties without " "indexes",
+                        recommendation=f"Consider adding indexes for: " f"{key_props}",
                     )
 
     # Helper methods
+
+    def _get_foreign_key_columns(self, database_structure):
+        """
+        Extract foreign key columns from database structure.
+
+        Returns a dict mapping table_name -> set of foreign key column names.
+        """
+        foreign_key_columns = {}
+
+        # Check if we have the new DatabaseStructure model
+        if hasattr(database_structure, "entity_tables"):
+            # New structured format - work directly with objects
+            for table_name, table_info in database_structure.entity_tables.items():
+                fk_columns = {fk.column_name for fk in table_info.foreign_keys}
+                if fk_columns:
+                    foreign_key_columns[table_name] = fk_columns
+        else:
+            # Legacy format fallback
+            entity_tables = database_structure.get("entity_tables", {})
+            for table_name, table_info in entity_tables.items():
+                foreign_keys = table_info.get("foreign_keys", [])
+                fk_columns = set()
+
+                for fk in foreign_keys:
+                    if isinstance(fk, dict):
+                        # Handle dict format
+                        if "column" in fk:
+                            fk_columns.add(fk["column"])
+                        elif "column_name" in fk:
+                            fk_columns.add(fk["column_name"])
+                    else:
+                        # Handle object format
+                        if hasattr(fk, "column_name"):
+                            fk_columns.add(fk.column_name)
+
+                if fk_columns:
+                    foreign_key_columns[table_name] = fk_columns
+
+        return foreign_key_columns
 
     def _find_node_for_table(self, graph_model, table_name: str):
         """Find the node that represents a given table."""

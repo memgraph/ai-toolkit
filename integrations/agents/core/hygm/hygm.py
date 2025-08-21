@@ -6,7 +6,7 @@ This is the primary interface for the modular HyGM system.
 
 import logging
 from enum import Enum
-from typing import Dict, Any, Optional, List, TYPE_CHECKING
+from typing import Dict, Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .models.graph_models import GraphModel
@@ -160,7 +160,9 @@ class HyGM:
                 break
             elif user_choice == "modify":
                 logger.info("Starting interactive model modification...")
-                current_model = self._modify_model_interactively(current_model)
+                current_model = self._modify_model_interactively(
+                    current_model, strategy
+                )
                 self.iteration_count += 1
             elif user_choice == "regenerate":
                 logger.info("Regenerating model with same strategy...")
@@ -269,7 +271,9 @@ class HyGM:
                 print(f"\nKeeping current strategy: {current_name}")
                 return current_strategy
 
-    def _modify_model_interactively(self, model: "GraphModel") -> "GraphModel":
+    def _modify_model_interactively(
+        self, model: "GraphModel", strategy: GraphModelingStrategy
+    ) -> "GraphModel":
         """Allow user to modify the model using natural language commands."""
         print("\n" + "=" * 60)
         print("INTERACTIVE MODEL MODIFICATION")
@@ -308,6 +312,16 @@ class HyGM:
                         # Apply operations to model
                         model = self._apply_operations_to_model(model, operations)
                         print("Changes applied!")
+
+                        # Show the updated model after changes
+                        print("\nApplying changes to model...")
+                        self.iteration_count += 1
+                        self._display_current_model(model)
+
+                        # Perform validation after applying changes
+                        self._perform_post_operation_validation(
+                            model, strategy, operations
+                        )
                     else:
                         print(
                             "❌ I didn't understand that command. " "Please try again."
@@ -417,52 +431,217 @@ class HyGM:
         self, model: "GraphModel", operations: "ModelModifications"
     ) -> "GraphModel":
         """Apply structured operations to the graph model."""
-        # For now, we'll print what would be applied
-        # In a full implementation, this would modify the actual model
-        print(f"\nWould apply {len(operations.operations)} operations:")
+        # Create a deep copy of the model to modify
+        import copy
+
+        modified_model = copy.deepcopy(model)
+
+        print(f"\nApplying {len(operations.operations)} operations:")
 
         for op in operations.operations:
-            if op.operation_type == "change_node_label":
-                print(
-                    f"  - Change node label: {getattr(op, 'old_label')} "
-                    f"→ {getattr(op, 'new_label')}"
-                )
-            elif op.operation_type == "rename_property":
-                node = getattr(op, "node_label")
-                old_prop = getattr(op, "old_property")
-                new_prop = getattr(op, "new_property")
-                print(f"  - Rename property on {node}: " f"{old_prop} → {new_prop}")
-            elif op.operation_type == "drop_property":
-                node = getattr(op, "node_label")
-                prop = getattr(op, "property_name")
-                print(f"  - Drop property: {node}.{prop}")
-            elif op.operation_type == "add_property":
-                node = getattr(op, "node_label")
-                prop = getattr(op, "property_name")
-                print(f"  - Add property: {node}.{prop}")
-            elif op.operation_type == "change_relationship_name":
-                old_name = getattr(op, "old_name")
-                new_name = getattr(op, "new_name")
-                print(f"  - Change relationship: {old_name} → {new_name}")
-            elif op.operation_type == "drop_relationship":
-                rel = getattr(op, "relationship_name")
-                print(f"  - Drop relationship: {rel}")
-            elif op.operation_type == "add_index":
-                node = getattr(op, "node_label")
-                prop = getattr(op, "property_name")
-                print(f"  - Add index: {node}.{prop}")
-            elif op.operation_type == "drop_index":
-                node = getattr(op, "node_label")
-                prop = getattr(op, "property_name")
-                print(f"  - Drop index: {node}.{prop}")
+            if isinstance(op, type(op)) and hasattr(op, "operation_type"):
+                if op.operation_type == "change_node_label":
+                    print(f"  - Change node label: {op.old_label} → {op.new_label}")
+                    modified_model = self._apply_change_node_label(
+                        modified_model, op.old_label, op.new_label
+                    )
+                elif op.operation_type == "rename_property":
+                    print(
+                        f"  - Rename property on {op.node_label}: "
+                        f"{op.old_property} → {op.new_property}"
+                    )
+                    modified_model = self._apply_rename_property(
+                        modified_model, op.node_label, op.old_property, op.new_property
+                    )
+                elif op.operation_type == "drop_property":
+                    print(f"  - Drop property: {op.node_label}.{op.property_name}")
+                    modified_model = self._apply_drop_property(
+                        modified_model, op.node_label, op.property_name
+                    )
+                elif op.operation_type == "add_property":
+                    print(f"  - Add property: {op.node_label}.{op.property_name}")
+                    modified_model = self._apply_add_property(
+                        modified_model, op.node_label, op.property_name
+                    )
+                elif op.operation_type == "change_relationship_name":
+                    print(f"  - Change relationship: {op.old_name} → {op.new_name}")
+                    modified_model = self._apply_change_relationship_name(
+                        modified_model, op.old_name, op.new_name
+                    )
+                elif op.operation_type == "drop_relationship":
+                    print(f"  - Drop relationship: {op.relationship_name}")
+                    modified_model = self._apply_drop_relationship(
+                        modified_model, op.relationship_name
+                    )
+                elif op.operation_type == "add_index":
+                    print(f"  - Add index: {op.node_label}.{op.property_name}")
+                    modified_model = self._apply_add_index(
+                        modified_model, op.node_label, op.property_name
+                    )
+                elif op.operation_type == "drop_index":
+                    print(f"  - Drop index: {op.node_label}.{op.property_name}")
+                    modified_model = self._apply_drop_index(
+                        modified_model, op.node_label, op.property_name
+                    )
 
-        print(f"\nReasoning: {operations.reasoning}")
-        print("\n⚠️  Note: Actual model modification not yet implemented.")
-        print("This is a preview of what would be changed.")
+        return modified_model
 
-        # TODO: Implement actual model modifications
-        # This would require updating the GraphModel structure
+    def _apply_change_node_label(
+        self, model: "GraphModel", old_label: str, new_label: str
+    ) -> "GraphModel":
+        """Apply change node label operation."""
+        for node in model.nodes:
+            if old_label in node.labels:
+                # Update labels
+                node.labels = [
+                    new_label if label == old_label else label for label in node.labels
+                ]
+                # Update source mapping if it exists
+                if node.source and "labels" in node.source.mapping:
+                    node.source.mapping["labels"] = [
+                        new_label if label == old_label else label
+                        for label in node.source.mapping["labels"]
+                    ]
 
+        # Update relationships that reference this label
+        for edge in model.edges:
+            edge.start_node_labels = [
+                new_label if label == old_label else label
+                for label in edge.start_node_labels
+            ]
+            edge.end_node_labels = [
+                new_label if label == old_label else label
+                for label in edge.end_node_labels
+            ]
+
+        # Update indexes
+        for index in model.node_indexes:
+            if index.labels:
+                index.labels = [
+                    new_label if label == old_label else label for label in index.labels
+                ]
+
+        # Update constraints
+        for constraint in model.node_constraints:
+            if constraint.labels:
+                constraint.labels = [
+                    new_label if label == old_label else label
+                    for label in constraint.labels
+                ]
+
+        return model
+
+    def _apply_rename_property(
+        self, model: "GraphModel", node_label: str, old_property: str, new_property: str
+    ) -> "GraphModel":
+        """Apply rename property operation."""
+        for node in model.nodes:
+            if node_label in node.labels:
+                for prop in node.properties:
+                    if prop.key == old_property:
+                        prop.key = new_property
+                        # Update source field reference
+                        if prop.source:
+                            old_field = prop.source.field
+                            table_name = old_field.split(".")[0]
+                            prop.source.field = f"{table_name}.{new_property}"
+        return model
+
+    def _apply_drop_property(
+        self, model: "GraphModel", node_label: str, property_name: str
+    ) -> "GraphModel":
+        """Apply drop property operation."""
+        for node in model.nodes:
+            if node_label in node.labels:
+                node.properties = [
+                    prop for prop in node.properties if prop.key != property_name
+                ]
+        return model
+
+    def _apply_add_property(
+        self, model: "GraphModel", node_label: str, property_name: str
+    ) -> "GraphModel":
+        """Apply add property operation."""
+        from .models.graph_models import GraphProperty
+        from .models.sources import PropertySource
+
+        for node in model.nodes:
+            if node_label in node.labels:
+                # Check if property already exists
+                existing_props = [prop.key for prop in node.properties]
+                if property_name not in existing_props:
+                    # Create new property with basic source tracking
+                    table_name = node.source.name if node.source else "unknown"
+                    prop_source = PropertySource(field=f"{table_name}.{property_name}")
+                    new_prop = GraphProperty(key=property_name, source=prop_source)
+                    node.properties.append(new_prop)
+        return model
+
+    def _apply_change_relationship_name(
+        self, model: "GraphModel", old_name: str, new_name: str
+    ) -> "GraphModel":
+        """Apply change relationship name operation."""
+        for edge in model.edges:
+            if edge.edge_type == old_name:
+                edge.edge_type = new_name
+                # Update source mapping if it exists
+                if edge.source and "edge_type" in edge.source.mapping:
+                    edge.source.mapping["edge_type"] = new_name
+        return model
+
+    def _apply_drop_relationship(
+        self, model: "GraphModel", relationship_name: str
+    ) -> "GraphModel":
+        """Apply drop relationship operation."""
+        model.edges = [
+            edge for edge in model.edges if edge.edge_type != relationship_name
+        ]
+        return model
+
+    def _apply_add_index(
+        self, model: "GraphModel", node_label: str, property_name: str
+    ) -> "GraphModel":
+        """Apply add index operation."""
+        from .models.graph_models import GraphIndex
+        from .models.sources import IndexSource
+
+        # Check if index already exists
+        for index in model.node_indexes:
+            if (
+                index.labels
+                and node_label in index.labels
+                and property_name in index.properties
+            ):
+                return model  # Index already exists
+
+        # Create new index
+        index_source = IndexSource(
+            origin="user_request",
+            reason="performance_optimization",
+            created_by="interactive_modification",
+        )
+        new_index = GraphIndex(
+            labels=[node_label],
+            properties=[property_name],
+            type="label+property",
+            source=index_source,
+        )
+        model.node_indexes.append(new_index)
+        return model
+
+    def _apply_drop_index(
+        self, model: "GraphModel", node_label: str, property_name: str
+    ) -> "GraphModel":
+        """Apply drop index operation."""
+        model.node_indexes = [
+            index
+            for index in model.node_indexes
+            if not (
+                index.labels
+                and node_label in index.labels
+                and property_name in index.properties
+            )
+        ]
         return model
 
     def validate_graph_model(
@@ -472,7 +651,7 @@ class HyGM:
         Comprehensive validation of graph model against database structure.
 
         This method uses the new modular validation system to perform
-        pre-migration validation of the graph model.
+        graph schema validation of the graph model.
 
         Args:
             graph_model: The graph model to validate
@@ -488,7 +667,7 @@ class HyGM:
         """
         logger.info("Performing comprehensive graph model validation...")
 
-        # Use the new pre-migration validator
+        # Use the GraphSchemaValidator
         validator = GraphSchemaValidator()
         result = validator.validate(graph_model, database_structure)
 
@@ -511,3 +690,211 @@ class HyGM:
             # Include full result for advanced usage
             "validation_result": result,
         }
+
+    def _perform_post_operation_validation(
+        self,
+        model: "GraphModel",
+        strategy: GraphModelingStrategy,
+        operations: "ModelModifications",
+    ) -> None:
+        """
+        Perform Graph Schema Validation after applying operations.
+
+        This method validates that the modified graph model still properly
+        represents the original database structure, accounting for the
+        applied changes.
+
+        Args:
+            model: Modified graph model to validate
+            strategy: Current modeling strategy (affects validation response)
+            operations: Operations that were just applied
+        """
+        print("\n" + "=" * 60)
+        print("GRAPH SCHEMA VALIDATION")
+        print("=" * 60)
+
+        if not self.database_structure:
+            print("❌ Cannot validate: Original database structure not available")
+            return
+
+        # Perform validation using the GraphSchemaValidator
+        validator = GraphSchemaValidator()
+        validation_result = validator.validate(model, self.database_structure)
+
+        # Print validation summary
+        self._display_validation_results(validation_result, strategy)
+
+        # Handle validation results based on strategy
+        if strategy == GraphModelingStrategy.DETERMINISTIC:
+            self._handle_deterministic_validation(validation_result)
+        elif strategy == GraphModelingStrategy.LLM_POWERED:
+            self._handle_llm_validation(validation_result, model, operations)
+
+    def _display_validation_results(
+        self, validation_result, strategy: GraphModelingStrategy
+    ) -> None:
+        """Display validation results in a user-friendly format."""
+        status = "✅ PASSED" if validation_result.success else "❌ FAILED"
+        print(f"\nValidation Status: {status}")
+        print(f"Strategy: {strategy.value.upper()}")
+        print(f"Summary: {validation_result.summary}")
+
+        # Display metrics
+        metrics = validation_result.metrics
+        print("\nCoverage Metrics:")
+        print(f"  Tables: {metrics.tables_covered}/{metrics.tables_total}")
+        print(
+            f"  Properties: {metrics.properties_covered}/" f"{metrics.properties_total}"
+        )
+        print(
+            f"  Relationships: {metrics.relationships_covered}/"
+            f"{metrics.relationships_total}"
+        )
+        print(f"  Overall Coverage: {metrics.coverage_percentage:.1f}%")
+
+        # Display critical issues
+        critical_issues = validation_result.critical_issues
+        if critical_issues:
+            print(f"\n🚨 Critical Issues ({len(critical_issues)}):")
+            for i, issue in enumerate(critical_issues[:5], 1):  # Show max 5
+                print(f"  {i}. {issue.message}")
+            if len(critical_issues) > 5:
+                print(f"  ... and {len(critical_issues) - 5} more issues")
+
+        # Display warnings
+        warnings = validation_result.warnings
+        if warnings:
+            print(f"\n⚠️ Warnings ({len(warnings)}):")
+            for i, warning in enumerate(warnings[:3], 1):  # Show max 3
+                print(f"  {i}. {warning.message}")
+            if len(warnings) > 3:
+                print(f"  ... and {len(warnings) - 3} more warnings")
+
+    def _handle_deterministic_validation(self, validation_result) -> None:
+        """Handle validation results for deterministic strategy."""
+        if not validation_result.success:
+            print("\n🔧 DETERMINISTIC STRATEGY GUIDANCE:")
+            print("The changes you made have introduced validation issues.")
+            print("Consider the following:")
+
+            critical_issues = validation_result.critical_issues
+            if critical_issues:
+                print("\n📋 Required Fixes:")
+                for i, issue in enumerate(critical_issues[:3], 1):
+                    has_rec = hasattr(issue, "recommendation") and issue.recommendation
+                    if has_rec:
+                        print(f"  {i}. {issue.recommendation}")
+                    else:
+                        print(f"  {i}. {issue.message}")
+
+            print("\nYou can:")
+            print("  - Make additional changes to fix these issues")
+            print("  - Type 'done' to accept the model as-is")
+            print("  - Type 'cancel' to revert your changes")
+        else:
+            print("\n✅ All validation checks passed!")
+            print("Your changes maintain proper database coverage.")
+
+    def _handle_llm_validation(
+        self,
+        validation_result,
+        model: "GraphModel",
+        operations: "ModelModifications",
+    ) -> None:
+        """Handle validation results for LLM strategy."""
+        if not validation_result.success and self.llm:
+            print("\n🤖 LLM STRATEGY: AUTOMATIC VALIDATION FIXING")
+            print(
+                "The LLM will analyze validation issues and suggest " "improvements..."
+            )
+
+            # Prepare context for LLM
+            validation_context = self._prepare_validation_context_for_llm(
+                validation_result, model, operations
+            )
+
+            try:
+                # Use LLM to suggest fixes
+                fix_suggestions = self._get_llm_validation_fixes(validation_context)
+                if fix_suggestions:
+                    print("\n🔧 LLM Suggestions:")
+                    print(fix_suggestions)
+                else:
+                    print("❌ LLM could not generate fix suggestions")
+            except Exception as e:
+                logger.error("Error getting LLM validation fixes: %s", e)
+                print(f"❌ Error getting LLM suggestions: {e}")
+        else:
+            print("\n✅ All validation checks passed!")
+
+    def _prepare_validation_context_for_llm(
+        self,
+        validation_result,
+        model: "GraphModel",
+        operations: "ModelModifications",
+    ) -> str:
+        """Prepare validation context for LLM analysis."""
+        context_parts = []
+
+        # Validation summary
+        context_parts.append("VALIDATION RESULTS:")
+        status = "PASSED" if validation_result.success else "FAILED"
+        context_parts.append(f"Status: {status}")
+        context_parts.append(f"Summary: {validation_result.summary}")
+
+        # Critical issues
+        critical_issues = validation_result.critical_issues
+        if critical_issues:
+            context_parts.append(f"\nCRITICAL ISSUES ({len(critical_issues)}):")
+            for i, issue in enumerate(critical_issues, 1):
+                context_parts.append(f"{i}. {issue.message}")
+                has_rec = hasattr(issue, "recommendation") and issue.recommendation
+                if has_rec:
+                    context_parts.append(f"   Recommendation: {issue.recommendation}")
+
+        # Recent operations
+        context_parts.append(f"\nRECENT OPERATIONS ({len(operations.operations)}):")
+        for i, op in enumerate(operations.operations, 1):
+            context_parts.append(f"{i}. {op.operation_type}: {op.description}")
+
+        # Current model state
+        context_parts.append("\nCURRENT MODEL STATE:")
+        context_parts.append(f"Nodes: {len(model.nodes)}")
+        context_parts.append(f"Relationships: {len(model.edges)}")
+        context_parts.append(f"Indexes: {len(model.node_indexes)}")
+
+        return "\n".join(context_parts)
+
+    def _get_llm_validation_fixes(self, validation_context: str) -> Optional[str]:
+        """Get LLM suggestions for fixing validation issues."""
+        if not self.llm:
+            return None
+
+        system_prompt = (
+            "You are an expert graph modeling assistant. "
+            "Analyze the validation results and suggest specific fixes "
+            "to improve the graph model's coverage of the original "
+            "database structure. "
+            "Focus on critical issues that affect data completeness."
+        )
+
+        try:
+            response = self.llm.invoke(
+                [
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Please analyze these validation results and suggest "
+                            f"fixes:\n\n"
+                            f"{validation_context}\n\n"
+                            f"Provide specific, actionable recommendations to fix "
+                            f"the critical issues."
+                        ),
+                    },
+                ]
+            )
+            return response.content
+        except Exception as e:
+            logger.error("Error calling LLM for validation fixes: %s", e)
+            return None

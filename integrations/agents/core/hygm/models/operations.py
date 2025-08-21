@@ -1,11 +1,11 @@
 """
 Operation models for interactive graph model modifications.
 
-These models define the structure for operations that can be applied to graph models
-during interactive sessions.
+These models define the structure for operations that can be applied to
+graph models during interactive sessions.
 """
 
-from typing import List, Optional
+from typing import List, Union, Literal
 from pydantic import BaseModel, Field
 
 
@@ -24,7 +24,7 @@ class ModelOperation(BaseModel):
 class ChangeNodeLabelOperation(ModelOperation):
     """Operation to change a node's label."""
 
-    operation_type: str = "change_node_label"
+    operation_type: Literal["change_node_label"] = "change_node_label"
     old_label: str = Field(description="Current node label")
     new_label: str = Field(description="New node label")
 
@@ -32,7 +32,7 @@ class ChangeNodeLabelOperation(ModelOperation):
 class RenamePropertyOperation(ModelOperation):
     """Operation to rename a property."""
 
-    operation_type: str = "rename_property"
+    operation_type: Literal["rename_property"] = "rename_property"
     node_label: str = Field(description="Node label containing the property")
     old_property: str = Field(description="Current property name")
     new_property: str = Field(description="New property name")
@@ -41,7 +41,7 @@ class RenamePropertyOperation(ModelOperation):
 class DropPropertyOperation(ModelOperation):
     """Operation to drop a property."""
 
-    operation_type: str = "drop_property"
+    operation_type: Literal["drop_property"] = "drop_property"
     node_label: str = Field(description="Node label containing the property")
     property_name: str = Field(description="Property name to drop")
 
@@ -49,7 +49,7 @@ class DropPropertyOperation(ModelOperation):
 class AddPropertyOperation(ModelOperation):
     """Operation to add a property."""
 
-    operation_type: str = "add_property"
+    operation_type: Literal["add_property"] = "add_property"
     node_label: str = Field(description="Node label to add property to")
     property_name: str = Field(description="Property name to add")
 
@@ -57,7 +57,7 @@ class AddPropertyOperation(ModelOperation):
 class ChangeRelationshipNameOperation(ModelOperation):
     """Operation to change a relationship name."""
 
-    operation_type: str = "change_relationship_name"
+    operation_type: Literal["change_relationship_name"] = "change_relationship_name"
     old_name: str = Field(description="Current relationship name")
     new_name: str = Field(description="New relationship name")
 
@@ -65,14 +65,14 @@ class ChangeRelationshipNameOperation(ModelOperation):
 class DropRelationshipOperation(ModelOperation):
     """Operation to drop a relationship."""
 
-    operation_type: str = "drop_relationship"
+    operation_type: Literal["drop_relationship"] = "drop_relationship"
     relationship_name: str = Field(description="Relationship name to drop")
 
 
 class AddIndexOperation(ModelOperation):
     """Operation to add an index."""
 
-    operation_type: str = "add_index"
+    operation_type: Literal["add_index"] = "add_index"
     node_label: str = Field(description="Node label for the index")
     property_name: str = Field(description="Property name for the index")
 
@@ -80,15 +80,28 @@ class AddIndexOperation(ModelOperation):
 class DropIndexOperation(ModelOperation):
     """Operation to drop an index."""
 
-    operation_type: str = "drop_index"
+    operation_type: Literal["drop_index"] = "drop_index"
     node_label: str = Field(description="Node label for the index")
     property_name: str = Field(description="Property name for the index")
+
+
+# Union type for all operations with discriminator
+OperationType = Union[
+    ChangeNodeLabelOperation,
+    RenamePropertyOperation,
+    DropPropertyOperation,
+    AddPropertyOperation,
+    ChangeRelationshipNameOperation,
+    DropRelationshipOperation,
+    AddIndexOperation,
+    DropIndexOperation,
+]
 
 
 class ModelModifications(BaseModel):
     """Container for multiple model operations."""
 
-    operations: List[ModelOperation] = Field(
+    operations: List[OperationType] = Field(
         description="List of operations to apply to the graph model"
     )
     reasoning: str = Field(

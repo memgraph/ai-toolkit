@@ -50,6 +50,7 @@ def get_graph_modeling_mode() -> ModelingMode:
         ModelingMode: Selected modeling mode
     """
     print("Graph modeling mode:")
+    print()
     print("  1. Interactive - Generate graph model with user feedback")
     print()
     print("  2. Automatic - Generate graph model automatically without user feedback")
