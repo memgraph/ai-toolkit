@@ -41,6 +41,9 @@ class MemgraphDataValidator(BaseValidator):
         """
         super().__init__()
         self.connection = memgraph_connection
+        self._cached_data_counts = (
+            None  # Cache for data counts to avoid repeated queries
+        )
 
     def validate(self, expected_model: GraphModel, **kwargs) -> ValidationResult:
         """
@@ -50,12 +53,16 @@ class MemgraphDataValidator(BaseValidator):
         """
         return self.validate_post_migration(expected_model)
 
-    def validate_post_migration(self, expected_model: GraphModel) -> ValidationResult:
+    def validate_post_migration(
+        self, expected_model: GraphModel, expected_data_counts: Dict[str, int] = None
+    ) -> ValidationResult:
         """
-        Validate the migrated schema against expected model.
+        Validate the migrated schema and data against expected model.
 
         Args:
             expected_model: GraphModel representing expected schema
+            expected_data_counts: Optional dict with expected node/relationship counts
+                Format: {"nodes": 12345, "relationships": 6789, "selected_tables": ["table1", "table2"]}
 
         Returns:
             ValidationResult with detailed comparison results
@@ -81,15 +88,19 @@ class MemgraphDataValidator(BaseValidator):
                 "Expected schema: %d nodes, %d relationships", exp_nodes, exp_rels
             )
 
-            # Perform validations
+            # Perform schema validations
             self._validate_node_labels(expected_schema, actual_schema)
             self._validate_node_properties(expected_schema, actual_schema)
             self._validate_relationships(expected_schema, actual_schema)
             self._validate_indexes(expected_schema, actual_schema)
             self._validate_constraints(expected_schema, actual_schema)
 
+            # Perform data count validation if expected counts provided
+            if expected_data_counts:
+                self._validate_data_counts(expected_data_counts)
+
             # Calculate metrics using the base class structure
-            self._update_metrics(expected_schema, actual_schema)
+            self._update_metrics(expected_schema, actual_schema, expected_data_counts)
 
             # Generate results
             critical_issues = [
@@ -110,6 +121,9 @@ class MemgraphDataValidator(BaseValidator):
                     "expected_schema": expected_schema,
                     "actual_schema": actual_schema,
                     "validation_score": self._calculate_validation_score(),
+                    "data_counts": self._get_actual_data_counts()
+                    if expected_data_counts
+                    else None,
                 },
             )
 
@@ -269,49 +283,86 @@ class MemgraphDataValidator(BaseValidator):
         self, schema_data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Parse Memgraph JSON schema format.
+        Parse Memgraph JSON schema format and extract data counts.
 
         Args:
             schema_data: JSON schema data from SHOW SCHEMA INFO
 
         Returns:
-            Structured schema information
+            Structured schema information with data counts
         """
         nodes = []
         relationships = []
         indexes = []
         constraints = []
 
+        # Track data counts from schema info
+        total_nodes = 0
+        total_relationships = 0
+
         # Parse nodes
         for node_data in schema_data.get("nodes", []):
             node_info = {"labels": node_data.get("labels", []), "properties": {}}
 
-            # Parse node properties
+            # Calculate node count from property types
+            node_count = 0
             for prop in node_data.get("properties", []):
                 prop_name = prop.get("key", "")
                 prop_types = prop.get("types", [])
                 if prop_types:
-                    # Get the primary type
+                    # Get the primary type and its count
                     primary_type = prop_types[0].get("type", "String")
+                    # Sum counts across all types for this property (excluding Null)
+                    prop_count = sum(
+                        type_def.get("count", 0)
+                        for type_def in prop_types
+                        if type_def.get("type", "") != "Null"
+                    )
+                    # Use the highest property count as the node count estimate
+                    node_count = max(node_count, prop_count)
                     node_info["properties"][prop_name] = primary_type
 
+            # Store the node count in the node info
+            node_info["node_count"] = node_count
+            total_nodes += node_count
             nodes.append(node_info)
 
         # Parse relationships
         for edge_data in schema_data.get("edges", []):
             rel_info = {"type": edge_data.get("type", ""), "properties": {}}
 
-            # Parse relationship properties
-            for prop in edge_data.get("properties", []):
-                prop_name = prop.get("key", "")
-                prop_types = prop.get("types", [])
-                if prop_types:
-                    primary_type = prop_types[0].get("type", "String")
-                    rel_info["properties"][prop_name] = primary_type
+            # Calculate relationship count from property types
+            rel_count = 0
+            properties = edge_data.get("properties", [])
 
+            if properties:
+                # If relationship has properties, count from property types
+                for prop in properties:
+                    prop_name = prop.get("key", "")
+                    prop_types = prop.get("types", [])
+                    if prop_types:
+                        primary_type = prop_types[0].get("type", "String")
+                        # Sum counts across all types for this property (excluding Null)
+                        prop_count = sum(
+                            type_def.get("count", 0)
+                            for type_def in prop_types
+                            if type_def.get("type", "") != "Null"
+                        )
+                        # Use the highest property count as the relationship count estimate
+                        rel_count = max(rel_count, prop_count)
+                        rel_info["properties"][prop_name] = primary_type
+            else:
+                # If relationship has no properties, we need to count differently
+                # For now, we'll mark it as unknown and use a fallback query later
+                rel_count = -1  # Mark as needs counting
+
+            # Store the relationship count
+            rel_info["relationship_count"] = rel_count
+            if rel_count > 0:
+                total_relationships += rel_count
             relationships.append(rel_info)
 
-        # Parse indexes
+        # Parse indexes (unchanged)
         for index_data in schema_data.get("node_indexes", []):
             index_info = {
                 "type": "node",
@@ -321,7 +372,7 @@ class MemgraphDataValidator(BaseValidator):
             }
             indexes.append(index_info)
 
-        # Parse constraints
+        # Parse constraints (unchanged)
         for constraint_data in schema_data.get("node_constraints", []):
             constraint_info = {
                 "type": "node",
@@ -336,6 +387,10 @@ class MemgraphDataValidator(BaseValidator):
             "relationships": relationships,
             "indexes": indexes,
             "constraints": constraints,
+            "data_counts": {
+                "total_nodes": total_nodes,
+                "total_relationships": total_relationships,
+            },
         }
 
     def _convert_model_to_schema_info(self, model: GraphModel) -> Dict[str, Any]:
@@ -659,6 +714,164 @@ class MemgraphDataValidator(BaseValidator):
                 recommendation="Ensure data integrity by creating missing constraints",
             )
 
+    def _validate_data_counts(self, expected_data_counts: Dict[str, int]):
+        """
+        Validate actual data counts against expected counts.
+
+        Args:
+            expected_data_counts: Expected counts with keys like "nodes", "relationships"
+        """
+        try:
+            actual_counts = self._get_actual_data_counts()
+
+            # Validate node count
+            if "nodes" in expected_data_counts:
+                expected_nodes = expected_data_counts["nodes"]
+                actual_nodes = actual_counts["nodes"]
+
+                if actual_nodes != expected_nodes:
+                    severity = (
+                        ValidationSeverity.CRITICAL
+                        if abs(actual_nodes - expected_nodes) > expected_nodes * 0.1
+                        else ValidationSeverity.WARNING
+                    )
+                    self.add_issue(
+                        severity,
+                        ValidationCategory.DATA_INTEGRITY,
+                        f"Node count mismatch: expected {expected_nodes}, got {actual_nodes}",
+                        expected=expected_nodes,
+                        actual=actual_nodes,
+                        recommendation="Check migration completeness and data source consistency",
+                    )
+                else:
+                    logger.info(f"✅ Node count validation passed: {actual_nodes} nodes")
+
+            # Validate relationship count
+            if "relationships" in expected_data_counts:
+                expected_rels = expected_data_counts["relationships"]
+                actual_rels = actual_counts["relationships"]
+
+                # Relationships can vary more due to optional FKs, so be more lenient
+                if actual_rels < expected_rels * 0.5:
+                    self.add_issue(
+                        ValidationSeverity.WARNING,
+                        ValidationCategory.DATA_INTEGRITY,
+                        f"Low relationship count: expected ~{expected_rels}, got {actual_rels}",
+                        expected=expected_rels,
+                        actual=actual_rels,
+                        recommendation="Check foreign key constraints and data completeness",
+                    )
+                else:
+                    logger.info(
+                        f"✅ Relationship count acceptable: {actual_rels} relationships"
+                    )
+
+        except Exception as e:
+            logger.error(f"Error validating data counts: {e}")
+            self.add_issue(
+                ValidationSeverity.WARNING,
+                ValidationCategory.DATA_INTEGRITY,
+                f"Data count validation failed: {str(e)}",
+                recommendation="Check database connection and query permissions",
+            )
+
+    def _get_actual_data_counts(self) -> Dict[str, int]:
+        """
+        Get actual node and relationship counts from Memgraph schema info.
+
+        Returns:
+            Dictionary with "nodes" and "relationships" counts
+        """
+        # Return cached result if available
+        if self._cached_data_counts is not None:
+            return self._cached_data_counts
+
+        try:
+            # Use the already-retrieved schema info which contains counts
+            actual_schema = self._get_actual_schema()
+
+            # Extract counts from schema data
+            data_counts = actual_schema.get("data_counts", {})
+            if data_counts:
+                nodes = data_counts.get("total_nodes", 0)
+                relationships = data_counts.get("total_relationships", 0)
+
+                # Check if we need to count relationships with fallback query
+                # This happens when relationships don't have properties
+                if relationships == 0 and actual_schema.get("relationships"):
+                    # Check if any relationships were marked as needing count
+                    needs_counting = any(
+                        rel.get("relationship_count", 0) == -1
+                        for rel in actual_schema.get("relationships", [])
+                    )
+
+                    if needs_counting:
+                        # Use fallback query for relationships
+                        relationships = self._count_relationships_fallback()
+                        logger.info("Used fallback query for relationship count")
+
+                result = {"nodes": nodes, "relationships": relationships}
+
+                # Cache the result
+                self._cached_data_counts = result
+                logger.info(
+                    "Data counts from schema: %d nodes, %d rel", nodes, relationships
+                )
+                return result
+
+            # Fallback: if schema doesn't have counts, calculate from node lists
+            # This happens when using non-JSON schema format
+            nodes = len(actual_schema.get("nodes", []))
+            relationships = len(actual_schema.get("relationships", []))
+
+            result = {
+                "nodes": nodes,  # This will be type count, not data count
+                "relationships": relationships,
+            }
+
+            # Cache the result
+            self._cached_data_counts = result
+            logger.warning(
+                "Schema info didn't contain data counts, " "using type counts instead"
+            )
+            logger.info(
+                "Schema-based counts: %d node types, %d rel types", nodes, relationships
+            )
+            return result
+
+        except (ValueError, KeyError, AttributeError) as e:
+            logger.error("Failed to get data counts from schema: %s", str(e))
+            result = {"nodes": 0, "relationships": 0}
+            self._cached_data_counts = result
+            return result
+
+    def _count_relationships_fallback(self) -> int:
+        """
+        Fallback method to count relationships using direct Cypher query.
+        Used when relationships don't have properties and can't be counted.
+
+        Returns:
+            Total number of relationships in the database
+        """
+        try:
+            if hasattr(self.connection, "query"):
+                # Direct connection with query method
+                query = "MATCH ()-[r]->() RETURN count(r) as rel_count"
+                rel_result = self.connection.query(query)
+                rel_count = rel_result[0]["rel_count"] if rel_result else 0
+            else:
+                # Cursor-based connection
+                cursor = self.connection.cursor()
+                cursor.execute("MATCH ()-[r]->() RETURN count(r) as rel_count")
+                rel_count = cursor.fetchone()[0]
+
+            logger.debug("Fallback relationship count: %d", rel_count)
+            return rel_count
+
+        except (ValueError, KeyError, AttributeError) as e:
+            logger.error("Fallback relationship counting failed: %s", str(e))
+            return 0
+
     def _types_compatible(self, expected_type: str, actual_type: str) -> bool:
         """Check if actual type is compatible with expected type."""
         # Define type compatibility mappings
@@ -675,7 +888,12 @@ class MemgraphDataValidator(BaseValidator):
         expected_compatible = compatible_types.get(expected_type, [expected_type])
         return actual_type in expected_compatible
 
-    def _update_metrics(self, expected: Dict[str, Any], actual: Dict[str, Any]):
+    def _update_metrics(
+        self,
+        expected: Dict[str, Any],
+        actual: Dict[str, Any],
+        expected_data_counts: Dict[str, int] = None,
+    ):
         """Update validation metrics using the base ValidationMetrics."""
         # Update basic counts
         self.metrics.tables_total = len(expected.get("nodes", []))
@@ -692,6 +910,19 @@ class MemgraphDataValidator(BaseValidator):
         # Constraints
         self.metrics.constraints_total = len(expected.get("constraints", []))
         self.metrics.constraints_covered = len(actual.get("constraints", []))
+
+        # Add data count metrics if available
+        if expected_data_counts:
+            actual_counts = self._get_actual_data_counts()
+            # Store additional metrics (can be accessed via metrics object)
+            self.metrics.data_nodes_expected = expected_data_counts.get("nodes", 0)
+            self.metrics.data_nodes_actual = actual_counts.get("nodes", 0)
+            self.metrics.data_relationships_expected = expected_data_counts.get(
+                "relationships", 0
+            )
+            self.metrics.data_relationships_actual = actual_counts.get(
+                "relationships", 0
+            )
 
         # Calculate coverage percentage
         self.metrics.calculate_coverage()
@@ -722,7 +953,10 @@ class MemgraphDataValidator(BaseValidator):
 
 
 def validate_memgraph_data(
-    expected_model: GraphModel, memgraph_connection, detailed_report: bool = True
+    expected_model: GraphModel,
+    memgraph_connection,
+    expected_data_counts: Dict[str, int] = None,
+    detailed_report: bool = True,
 ) -> ValidationResult:
     """
     Convenience function for post-migration Memgraph data validation.
@@ -730,13 +964,14 @@ def validate_memgraph_data(
     Args:
         expected_model: Expected GraphModel/spec.json
         memgraph_connection: Connection to Memgraph database
+        expected_data_counts: Optional expected node/relationship counts
         detailed_report: Whether to include detailed issue information
 
     Returns:
         ValidationResult with comparison results
     """
     validator = MemgraphDataValidator(memgraph_connection)
-    result = validator.validate_post_migration(expected_model)
+    result = validator.validate_post_migration(expected_model, expected_data_counts)
 
     if detailed_report:
         logger.info("Validation Summary: %s", result.summary)

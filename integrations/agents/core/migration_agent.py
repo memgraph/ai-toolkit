@@ -113,7 +113,6 @@ class SQLToMemgraphAgent:
         workflow.add_node("generate_cypher_queries", self._generate_cypher_queries)
         workflow.add_node("validate_queries", self._validate_queries)
         workflow.add_node("execute_migration", self._execute_migration)
-        workflow.add_node("verify_migration", self._verify_migration)
         workflow.add_node("validate_post_migration", self._validate_post_migration)
 
         # Add edges - direct flow without table selection
@@ -122,8 +121,7 @@ class SQLToMemgraphAgent:
         workflow.add_edge("create_indexes", "generate_cypher_queries")
         workflow.add_edge("generate_cypher_queries", "validate_queries")
         workflow.add_edge("validate_queries", "execute_migration")
-        workflow.add_edge("execute_migration", "verify_migration")
-        workflow.add_edge("verify_migration", "validate_post_migration")
+        workflow.add_edge("execute_migration", "validate_post_migration")
         workflow.add_edge("validate_post_migration", END)
 
         # Set entry point
@@ -957,40 +955,6 @@ CREATE (from)-[:{rel_name}]->(to);"""
 
         return state
 
-    def _verify_migration(self, state: MigrationState) -> MigrationState:
-        """Verify the migration results."""
-        logger.info("Verifying migration results...")
-
-        try:
-            # Count nodes and relationships in Memgraph
-            node_count_query = "MATCH (n) RETURN count(n) as node_count"
-            relationship_count_query = "MATCH ()-[r]->() RETURN count(r) as rel_count"
-
-            node_result = self.memgraph_client.query(node_count_query)
-            rel_result = self.memgraph_client.query(relationship_count_query)
-
-            node_count = node_result[0]["node_count"] if node_result else 0
-            rel_count = rel_result[0]["rel_count"] if rel_result else 0
-
-            # Calculate expected counts from MySQL
-            structure = state["database_structure"]
-            expected_nodes = sum(structure.get("table_counts", {}).values())
-
-            logger.info(f"Migration verification:")
-            logger.info(f"  - Nodes created: {node_count} (expected: {expected_nodes})")
-            logger.info(f"  - Relationships created: {rel_count}")
-            logger.info(
-                f"  - Tables migrated: {len(state['completed_tables'])}/{state['total_tables']}"
-            )
-
-            state["current_step"] = "Migration verification completed"
-
-        except Exception as e:
-            logger.error(f"Error verifying migration: {e}")
-            state["errors"].append(f"Migration verification failed: {e}")
-
-        return state
-
     def _validate_post_migration(self, state: MigrationState) -> MigrationState:
         """Validate post-migration results using HyGM schema comparison."""
         logger.info("Running post-migration validation...")
@@ -1019,11 +983,28 @@ CREATE (from)-[:{rel_name}]->(to);"""
             # Get the graph model from state
             graph_model = state.get("graph_model")
 
-            # Run post-migration validation using existing connection
+            # Calculate expected data counts from MySQL (moved from removed _verify_migration)
+            structure = state["database_structure"]
+            expected_nodes = 0
+            selected_tables = structure.get("selected_tables", [])
+            table_counts = structure.get("table_counts", {})
+
+            for table_name in selected_tables:
+                if table_name in table_counts:
+                    expected_nodes += table_counts[table_name]
+
+            # Create expected data counts for the validator
+            expected_data_counts = {
+                "nodes": expected_nodes,
+                "selected_tables": selected_tables,
+            }
+
+            # Run post-migration validation using existing connection with data counts
             logger.info("Executing post-migration validation...")
             validation_result = validate_memgraph_data(
                 expected_model=graph_model,
                 memgraph_connection=self.memgraph_client,
+                expected_data_counts=expected_data_counts,
                 detailed_report=True,
             )
 
