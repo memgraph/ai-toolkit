@@ -1,92 +1,20 @@
 """
-Abstract interface for database analyzers.
+Abstract analyzer interface for database systems.
 
-This module defines the standard interface that all database analyzers must implement
-to ensure compatibility with HyGM and the migration system.
+This module defines the abstract base class that all database analyzers
+must implement to ensure compatibility with the migration system.
 """
 
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional
-from dataclasses import dataclass
-from enum import Enum
-
-
-class TableType(Enum):
-    """Enumeration of table types."""
-
-    ENTITY = "entity"
-    JOIN = "join"
-    VIEW = "view"
-    LOOKUP = "lookup"
-
-
-@dataclass
-class ColumnInfo:
-    """Standardized column information across different database systems."""
-
-    name: str
-    data_type: str
-    is_nullable: bool
-    is_primary_key: bool
-    is_foreign_key: bool
-    default_value: Optional[Any] = None
-    auto_increment: bool = False
-    max_length: Optional[int] = None
-    precision: Optional[int] = None
-    scale: Optional[int] = None
-
-
-@dataclass
-class ForeignKeyInfo:
-    """Standardized foreign key information."""
-
-    column_name: str
-    referenced_table: str
-    referenced_column: str
-    constraint_name: Optional[str] = None
-
-
-@dataclass
-class TableInfo:
-    """Standardized table information."""
-
-    name: str
-    table_type: TableType
-    columns: List[ColumnInfo]
-    foreign_keys: List[ForeignKeyInfo]
-    row_count: int
-    primary_keys: List[str]
-    indexes: List[Dict[str, Any]]
-
-
-@dataclass
-class RelationshipInfo:
-    """Standardized relationship information."""
-
-    relationship_type: str  # "one_to_many", "many_to_many", "one_to_one"
-    from_table: str
-    from_column: str
-    to_table: str
-    to_column: str
-    join_table: Optional[str] = None
-    join_from_column: Optional[str] = None
-    join_to_column: Optional[str] = None
-    additional_properties: List[str] = None
-
-
-@dataclass
-class DatabaseStructure:
-    """Standardized database structure representation."""
-
-    tables: Dict[str, TableInfo]
-    entity_tables: Dict[str, TableInfo]
-    join_tables: Dict[str, TableInfo]
-    view_tables: Dict[str, TableInfo]
-    relationships: List[RelationshipInfo]
-    sample_data: Dict[str, List[Dict[str, Any]]]
-    table_counts: Dict[str, int]
-    database_name: str
-    database_type: str
+from .models import (
+    DatabaseStructure,
+    TableInfo,
+    ColumnInfo,
+    ForeignKeyInfo,
+    RelationshipInfo,
+    TableType,
+)
 
 
 class DatabaseAnalyzer(ABC):
@@ -110,7 +38,7 @@ class DatabaseAnalyzer(ABC):
 
     @abstractmethod
     def _get_database_type(self) -> str:
-        """Return the type of database (e.g., 'mysql', 'postgresql', 'duckdb')."""
+        """Return the type of database (e.g., 'mysql', 'postgresql')."""
         pass
 
     @abstractmethod
@@ -205,6 +133,50 @@ class DatabaseAnalyzer(ABC):
             True if the table is a view, False otherwise
         """
         pass
+
+    def is_connected(self) -> bool:
+        """
+        Check if the database connection is active.
+
+        Returns:
+            True if connected, False otherwise
+        """
+        return self.connection is not None
+
+    def get_connection_info(self) -> Dict[str, Any]:
+        """
+        Get connection information (excluding sensitive data like passwords).
+
+        Returns:
+            Dictionary with connection information
+        """
+        safe_config = self.connection_config.copy()
+        if "password" in safe_config:
+            safe_config["password"] = "***"
+        return {
+            "database_type": self.database_type,
+            "config": safe_config,
+            "connected": self.is_connected(),
+        }
+
+    def get_migration_config(self) -> Dict[str, str]:
+        """
+        Get connection config formatted for migration tools.
+
+        Returns:
+            Dictionary with string values suitable for migration tools
+        """
+        config = self.connection_config.copy()
+
+        # Ensure all values are strings for compatibility
+        migration_config = {}
+        for key, value in config.items():
+            if key == "password" and value is None:
+                migration_config[key] = ""
+            else:
+                migration_config[key] = str(value)
+
+        return migration_config
 
     def is_join_table(self, table_info: TableInfo) -> bool:
         """
@@ -334,7 +306,7 @@ class DatabaseAnalyzer(ABC):
             # Get sample data (limit to 3 rows for performance)
             try:
                 sample_data[table_name] = self.get_table_data(table_name, limit=3)
-            except Exception as e:
+            except Exception:
                 sample_data[table_name] = []
 
         # Second pass: create relationships
@@ -402,28 +374,3 @@ class DatabaseAnalyzer(ABC):
             database_name=self.connection_config.get("database", "unknown"),
             database_type=self.database_type,
         )
-
-    def is_connected(self) -> bool:
-        """
-        Check if the database connection is active.
-
-        Returns:
-            True if connected, False otherwise
-        """
-        return self.connection is not None
-
-    def get_connection_info(self) -> Dict[str, Any]:
-        """
-        Get connection information (excluding sensitive data like passwords).
-
-        Returns:
-            Dictionary with connection information
-        """
-        safe_config = self.connection_config.copy()
-        if "password" in safe_config:
-            safe_config["password"] = "***"
-        return {
-            "database_type": self.database_type,
-            "config": safe_config,
-            "connected": self.is_connected(),
-        }

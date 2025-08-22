@@ -8,7 +8,7 @@ and migrates data to Memgraph using LangGraph workflow.
 import os
 import sys
 import logging
-from typing import Dict, List, Any, TypedDict
+from typing import Dict, List, Any, TypedDict, Optional
 from pathlib import Path
 
 # Add parent directories to path for imports
@@ -22,9 +22,9 @@ from dotenv import load_dotenv
 
 from query_generation.cypher_generator import CypherGenerator
 from core.hygm import HyGM, GraphModel, ModelingMode, GraphModelingStrategy
+from core.hygm.validation import validate_memgraph_data
 from memgraph_toolbox.api.memgraph import Memgraph
 from database.factory import DatabaseAnalyzerFactory
-from database.data_interface import DatabaseDataInterface
 
 # Load environment variables
 load_dotenv()
@@ -46,6 +46,7 @@ class MigrationState(TypedDict):
     total_tables: int
     created_indexes: List[str]
     created_constraints: List[str]
+    validation_report: Dict[str, Any]  # Post-migration validation results
 
 
 class SQLToMemgraphAgent:
@@ -53,33 +54,28 @@ class SQLToMemgraphAgent:
 
     def __init__(
         self,
-        interactive_graph_modeling: bool = False,
+        modeling_mode: ModelingMode = ModelingMode.AUTOMATIC,
         graph_modeling_strategy: GraphModelingStrategy = GraphModelingStrategy.DETERMINISTIC,
     ):
         """Initialize the migration agent.
 
         Args:
-            interactive_graph_modeling: Whether to use interactive graph
-                modeling mode.
-                - True: Allow user to modify graph model
-                - False: Use automatic graph modeling (default)
+            modeling_mode: Graph modeling mode
+                - AUTOMATIC: Generate graph model automatically (default)
+                - INTERACTIVE: Allow user to modify and refine graph model
             graph_modeling_strategy: Strategy for graph model creation
                 - DETERMINISTIC: Rule-based graph creation (default)
                 - LLM_POWERED: LLM generates the graph model
         """
-        # Environment validation is now handled by utils.environment module
-        # This makes the agent more modular and reusable
 
         openai_api_key = os.getenv("OPENAI_API_KEY")
-        if not openai_api_key:
-            raise ValueError("OPENAI_API_KEY environment variable is required")
 
         self.llm = ChatOpenAI(
             model="gpt-4o-mini", temperature=0.1, api_key=openai_api_key
         )
         self.database_analyzer = None
         self.cypher_generator = CypherGenerator()
-        self.interactive_graph_modeling = interactive_graph_modeling
+        self.modeling_mode = modeling_mode
         self.graph_modeling_strategy = graph_modeling_strategy
 
         self.memgraph_client = None
@@ -117,7 +113,7 @@ class SQLToMemgraphAgent:
         workflow.add_node("generate_cypher_queries", self._generate_cypher_queries)
         workflow.add_node("validate_queries", self._validate_queries)
         workflow.add_node("execute_migration", self._execute_migration)
-        workflow.add_node("verify_migration", self._verify_migration)
+        workflow.add_node("validate_post_migration", self._validate_post_migration)
 
         # Add edges - direct flow without table selection
         workflow.add_edge("analyze_database", "interactive_graph_modeling")
@@ -125,8 +121,8 @@ class SQLToMemgraphAgent:
         workflow.add_edge("create_indexes", "generate_cypher_queries")
         workflow.add_edge("generate_cypher_queries", "validate_queries")
         workflow.add_edge("validate_queries", "execute_migration")
-        workflow.add_edge("execute_migration", "verify_migration")
-        workflow.add_edge("verify_migration", END)
+        workflow.add_edge("execute_migration", "validate_post_migration")
+        workflow.add_edge("validate_post_migration", END)
 
         # Set entry point
         workflow.set_entry_point("analyze_database")
@@ -153,24 +149,22 @@ class SQLToMemgraphAgent:
             # Store database structure for later use (e.g., primary key lookup)
             self._database_structure = db_structure
 
-            # Use Database Data Interface to format data for HyGM
-            hygm_data = DatabaseDataInterface.get_hygm_data_structure(db_structure)
+            # Use the built-in HyGM format conversion
+            hygm_data = db_structure.to_hygm_format()
 
             # Enhance with intelligent graph modeling
             logger.info("Starting graph modeling analysis...")
             try:
-                # Determine modeling mode based on settings
-                if self.interactive_graph_modeling:
+                # Log the modeling mode being used
+                if self.modeling_mode == ModelingMode.INTERACTIVE:
                     logger.info("Using interactive graph modeling mode")
-                    modeling_mode = ModelingMode.INTERACTIVE
                 else:
                     logger.info("Using automatic graph modeling mode")
-                    modeling_mode = ModelingMode.AUTOMATIC
 
                 # Create graph modeler with strategy and mode
                 graph_modeler = HyGM(
                     llm=self.llm,
-                    mode=modeling_mode,
+                    mode=self.modeling_mode,
                     strategy=self.graph_modeling_strategy,
                 )
 
@@ -327,7 +321,82 @@ class SQLToMemgraphAgent:
     # TODO: This should be human visible and configurable.
     def _create_indexes(self, state: MigrationState) -> MigrationState:
         """Create indexes and constraints in Memgraph before migration."""
-        logger.info("Creating indexes and constraints in Memgraph...")
+        logger.info("Creating indexes and constraints from HyGM graph model...")
+
+        try:
+            memgraph = Memgraph(**state["memgraph_config"])
+
+            # Track created indexes and constraints
+            created_indexes = []
+            created_constraints = []
+
+            # Check if we have a HyGM graph model with indexes and constraints
+            graph_model = state.get("graph_model")
+            if graph_model and hasattr(graph_model, "node_indexes"):
+                logger.info("Using HyGM-provided indexes and constraints")
+
+                # Generate index queries from HyGM graph model
+                index_queries = self.cypher_generator.generate_index_queries_from_hygm(
+                    graph_model.node_indexes
+                )
+
+                # Generate constraint queries from HyGM graph model
+                constraint_queries = (
+                    self.cypher_generator.generate_constraint_queries_from_hygm(
+                        graph_model.node_constraints
+                    )
+                )
+
+                logger.info(
+                    "HyGM provided %d indexes and %d constraints",
+                    len(index_queries),
+                    len(constraint_queries),
+                )
+            else:
+                # Fallback to legacy method if no HyGM model available
+                logger.warning("No HyGM graph model found, using fallback method")
+                return self._create_indexes_fallback(state)
+
+            # Execute constraint queries first
+            for query in constraint_queries:
+                try:
+                    logger.info("Creating constraint: %s", query)
+                    memgraph.query(query)
+                    created_constraints.append(query)
+                except Exception as e:
+                    # Some constraints might already exist, continue
+                    logger.warning("Constraint creation warning: %s", e)
+
+            # Execute index queries
+            for query in index_queries:
+                try:
+                    logger.info("Creating index: %s", query)
+                    memgraph.query(query)
+                    created_indexes.append(query)
+                except Exception as e:
+                    # Some indexes might already exist, log but continue
+                    logger.warning("Index creation warning: %s", e)
+
+            # Store results in state
+            state["created_indexes"] = created_indexes
+            state["created_constraints"] = created_constraints
+            state["current_step"] = "HyGM indexes and constraints created"
+
+            logger.info(
+                "Created %d constraints and %d indexes from HyGM model",
+                len(created_constraints),
+                len(created_indexes),
+            )
+
+        except Exception as e:
+            logger.error("Error creating indexes: %s", e)
+            state["errors"].append(f"Index creation failed: {e}")
+
+        return state
+
+    def _create_indexes_fallback(self, state: MigrationState) -> MigrationState:
+        """Fallback method for creating indexes when no HyGM model available."""
+        logger.info("Creating indexes and constraints using fallback method...")
 
         try:
             memgraph = Memgraph(**state["memgraph_config"])
@@ -354,7 +423,7 @@ class SQLToMemgraphAgent:
                 # Execute constraint queries first
                 for query in constraint_queries:
                     try:
-                        logger.info(f"Creating constraint: {query}")
+                        logger.info("Creating constraint: %s", query)
                         memgraph.query(query)
                         created_constraints.append(query)
                     except Exception as e:
@@ -364,7 +433,7 @@ class SQLToMemgraphAgent:
                 # Execute index queries
                 for query in index_queries:
                     try:
-                        logger.info(f"Creating index: {query}")
+                        logger.info("Creating index: %s", query)
                         memgraph.query(query)
                         created_indexes.append(query)
                     except Exception as e:
@@ -374,10 +443,10 @@ class SQLToMemgraphAgent:
             # Store results in state
             state["created_indexes"] = created_indexes
             state["created_constraints"] = created_constraints
-            state["current_step"] = "Indexes and constraints created"
+            state["current_step"] = "Fallback indexes and constraints created"
 
             logger.info(
-                "Created %d constraints and %d indexes",
+                "Created %d constraints and %d indexes using fallback method",
                 len(created_constraints),
                 len(created_indexes),
             )
@@ -619,11 +688,14 @@ SET n += row;"""
 
         # Get primary key from source table
         from_table_info = hygm_data.get("entity_tables", {}).get(from_table, {})
-        from_pk = self._get_primary_key(from_table_info)
+        primary_keys = from_table_info.get("primary_keys", [])
 
-        if not from_pk:
+        if not primary_keys:
             logger.warning(f"Could not determine primary key for table {from_table}")
             return ""
+
+        # Use the first primary key (most common case)
+        from_pk = primary_keys[0]
 
         return f"""
 // Create {rel_name} relationships (HyGM: {from_label} -> {to_label})
@@ -666,19 +738,6 @@ YIELD row
 MATCH (from:{from_label} {{{from_pk}: row.{from_fk}}})
 MATCH (to:{to_label} {{{to_pk}: row.{to_fk}}})
 CREATE (from)-[:{rel_name}]->(to);"""
-
-    def _get_primary_key(self, table_info: Dict[str, Any]) -> str:
-        """Get the primary key column name from table info."""
-        schema_list = table_info.get("schema", [])
-        for col_info in schema_list:
-            if col_info.get("key") == "PRI":
-                return col_info.get("field", "")
-
-        # Fallback: assume first column is primary key
-        if schema_list:
-            return schema_list[0].get("field", "id")
-
-        return "id"  # Default assumption
 
     def _generate_cypher_queries_fallback(
         self, state: MigrationState
@@ -896,54 +955,123 @@ CREATE (from)-[:{rel_name}]->(to);"""
 
         return state
 
-    def _verify_migration(self, state: MigrationState) -> MigrationState:
-        """Verify the migration results."""
-        logger.info("Verifying migration results...")
+    def _validate_post_migration(self, state: MigrationState) -> MigrationState:
+        """Validate post-migration results using HyGM schema comparison."""
+        logger.info("Running post-migration validation...")
 
         try:
-            # Count nodes and relationships in Memgraph
-            node_count_query = "MATCH (n) RETURN count(n) as node_count"
-            relationship_count_query = "MATCH ()-[r]->() RETURN count(r) as rel_count"
+            # Check if we have a graph model to validate against
+            if not state.get("graph_model"):
+                logger.warning("No graph model available for validation")
+                state["validation_report"] = {
+                    "success": False,
+                    "reason": "No graph model available",
+                }
+                state["current_step"] = "Post-migration validation skipped"
+                return state
 
-            node_result = self.memgraph_client.query(node_count_query)
-            rel_result = self.memgraph_client.query(relationship_count_query)
+            # Reuse existing Memgraph connection from previous steps
+            if not self.memgraph_client:
+                logger.error("No Memgraph connection available for validation")
+                state["validation_report"] = {
+                    "success": False,
+                    "reason": "No Memgraph connection available",
+                }
+                state["current_step"] = "Post-migration validation failed"
+                return state
 
-            node_count = node_result[0]["node_count"] if node_result else 0
-            rel_count = rel_result[0]["rel_count"] if rel_result else 0
+            # Get the graph model from state
+            graph_model = state.get("graph_model")
 
-            # Calculate expected counts from MySQL
+            # Calculate expected data counts from MySQL (moved from removed _verify_migration)
             structure = state["database_structure"]
-            expected_nodes = sum(structure.get("table_counts", {}).values())
+            expected_nodes = 0
+            selected_tables = structure.get("selected_tables", [])
+            table_counts = structure.get("table_counts", {})
 
-            logger.info(f"Migration verification:")
-            logger.info(f"  - Nodes created: {node_count} (expected: {expected_nodes})")
-            logger.info(f"  - Relationships created: {rel_count}")
-            logger.info(
-                f"  - Tables migrated: {len(state['completed_tables'])}/{state['total_tables']}"
+            for table_name in selected_tables:
+                if table_name in table_counts:
+                    expected_nodes += table_counts[table_name]
+
+            # Create expected data counts for the validator
+            expected_data_counts = {
+                "nodes": expected_nodes,
+                "selected_tables": selected_tables,
+            }
+
+            # Run post-migration validation using existing connection with data counts
+            logger.info("Executing post-migration validation...")
+            validation_result = validate_memgraph_data(
+                expected_model=graph_model,
+                memgraph_connection=self.memgraph_client,
+                expected_data_counts=expected_data_counts,
+                detailed_report=True,
             )
 
-            state["current_step"] = "Migration verification completed"
+            # Store validation results in state
+            state["validation_report"] = {
+                "success": validation_result.success,
+                "summary": validation_result.summary,
+                "validation_score": validation_result.details.get(
+                    "validation_score", 0
+                ),
+                "issues": [
+                    {
+                        "severity": issue.severity.value,
+                        "category": issue.category,
+                        "message": issue.message,
+                        "expected": issue.expected,
+                        "actual": issue.actual,
+                        "recommendation": issue.recommendation,
+                    }
+                    for issue in validation_result.issues
+                ],
+                "metrics": validation_result.metrics,
+            }
+
+            # Log validation summary
+            if validation_result.success:
+                logger.info("✅ Post-migration validation PASSED")
+                score = int(validation_result.details.get("validation_score", 0))
+                logger.info(f"Validation score: {score}/100")
+            else:
+                logger.warning("⚠️ Post-migration validation found issues")
+                score = int(validation_result.details.get("validation_score", 0))
+                logger.warning(f"Validation score: {score}/100")
+
+                # Log critical issues
+                critical_issues = [
+                    issue
+                    for issue in validation_result.issues
+                    if issue.severity.value == "CRITICAL"
+                ]
+                if critical_issues:
+                    count = len(critical_issues)
+                    logger.error(f"Found {count} critical validation issues:")
+                    # Show first 3 critical issues
+                    for issue in critical_issues[:3]:
+                        logger.error(f"  - {issue.message}")
+
+            state["current_step"] = "Post-migration validation completed"
 
         except Exception as e:
-            logger.error(f"Error verifying migration: {e}")
-            state["errors"].append(f"Migration verification failed: {e}")
+            logger.error(f"Error during post-migration validation: {e}")
+            state["errors"].append(f"Post-migration validation failed: {e}")
+            state["validation_report"] = {
+                "validation_performed": False,
+                "reason": f"Validation error: {e}",
+            }
+            state["current_step"] = "Post-migration validation failed"
 
         return state
 
     def migrate(
-        self, source_db_config: Dict[str, str], memgraph_config: Dict[str, str] = None
+        self,
+        source_db_config: Dict[str, str],
+        memgraph_config: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """Execute the complete migration workflow."""
         logger.info("Starting SQL database to Memgraph migration...")
-
-        # Default Memgraph configuration
-        if not memgraph_config:
-            memgraph_config = {
-                "url": os.getenv("MEMGRAPH_URL", "bolt://localhost:7687"),
-                "username": os.getenv("MEMGRAPH_USER", ""),
-                "password": os.getenv("MEMGRAPH_PASSWORD", ""),
-                "database": os.getenv("MEMGRAPH_DATABASE", "memgraph"),
-            }
 
         # Initialize state
         initial_state = MigrationState(
@@ -958,11 +1086,12 @@ CREATE (from)-[:{rel_name}]->(to);"""
             total_tables=0,
             created_indexes=[],
             created_constraints=[],
+            validation_report={},
         )
 
         try:
-            # For non-interactive graph modeling mode, compile workflow without checkpointer
-            if not self.interactive_graph_modeling:
+            # For automatic graph modeling mode, compile workflow without checkpointer
+            if self.modeling_mode == ModelingMode.AUTOMATIC:
                 compiled_workflow = self.workflow.compile()
                 final_state = compiled_workflow.invoke(initial_state)
             else:
@@ -988,6 +1117,7 @@ CREATE (from)-[:{rel_name}]->(to);"""
                 "total_tables": final_state["total_tables"],
                 "errors": final_state["errors"],
                 "final_step": final_state["current_step"],
+                "validation_report": final_state.get("validation_report", {}),
             }
 
         except Exception as e:
@@ -998,4 +1128,5 @@ CREATE (from)-[:{rel_name}]->(to);"""
                 "completed_tables": [],
                 "total_tables": 0,
                 "final_step": "Failed",
+                "validation_report": {},
             }

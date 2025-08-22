@@ -23,7 +23,7 @@ from utils import (
     print_troubleshooting_help,
 )
 from core import SQLToMemgraphAgent
-from core.hygm import GraphModelingStrategy
+from core.hygm import GraphModelingStrategy, ModelingMode
 
 # Configure logging
 logging.basicConfig(
@@ -42,29 +42,30 @@ def print_banner() -> None:
     print()
 
 
-def get_graph_modeling_mode() -> bool:
+def get_graph_modeling_mode() -> ModelingMode:
     """
     Get user choice for graph modeling mode.
 
     Returns:
-        bool: True for interactive graph modeling, False for automatic
+        ModelingMode: Selected modeling mode
     """
     print("Graph modeling mode:")
-    print("  1. Interactive - Refine the graph model with natural language")
-    print("                   feedback")
-    print("  2. Automatic - Generate graph model automatically")
+    print()
+    print("  1. Interactive - Generate graph model with user feedback")
+    print()
+    print("  2. Automatic - Generate graph model automatically without user feedback")
     print()
 
     while True:
         try:
             choice = input("Select mode (1-2) or press Enter for automatic: ").strip()
             if not choice:
-                return False  # Default to automatic
+                return ModelingMode.AUTOMATIC  # Default to automatic
 
             if choice == "1":
-                return True  # Interactive
+                return ModelingMode.INTERACTIVE  # Interactive
             elif choice == "2":
-                return False  # Automatic
+                return ModelingMode.AUTOMATIC  # Automatic
             else:
                 print("Invalid choice. Please select 1-2.")
         except ValueError:
@@ -79,9 +80,11 @@ def get_graph_modeling_strategy() -> GraphModelingStrategy:
         GraphModelingStrategy: Selected strategy
     """
     print("Graph modeling strategy:")
-    print("  1. Deterministic - Rule-based graph creation (fast, predictable)")
-    print("  2. LLM-Powered - AI generates optimal graph model")
-    print("                   (flexible, smart)")
+    print()
+    print("  1. Deterministic - Rule-based graph model creation (predictable)")
+    print()
+    print("  2. AI-Powered - LLM-based graph model creation (non-deterministic)")
+    print()
     print()
 
     while True:
@@ -105,7 +108,7 @@ def get_graph_modeling_strategy() -> GraphModelingStrategy:
 def run_migration(
     source_db_config: Dict[str, Any],
     memgraph_config: Dict[str, Any],
-    interactive_graph_modeling: bool,
+    modeling_mode: ModelingMode,
     graph_modeling_strategy: GraphModelingStrategy,
 ) -> Dict[str, Any]:
     """
@@ -114,7 +117,7 @@ def run_migration(
     Args:
         source_db_config: Source database connection configuration
         memgraph_config: Memgraph connection configuration
-        interactive_graph_modeling: Whether to use interactive graph modeling
+        modeling_mode: Graph modeling mode (interactive or automatic)
         graph_modeling_strategy: Strategy for graph model creation
 
     Returns:
@@ -122,14 +125,16 @@ def run_migration(
     """
     print("🔧 Creating migration agent...")
 
-    graph_mode = "interactive" if interactive_graph_modeling else "automatic"
+    mode_name = (
+        "interactive" if modeling_mode == ModelingMode.INTERACTIVE else "automatic"
+    )
     strategy_name = graph_modeling_strategy.value
-    print(f"🎯 Graph modeling: {graph_mode} with {strategy_name} strategy")
+    print(f"🎯 Graph modeling: {mode_name} with {strategy_name} strategy")
     print()
 
     # Create agent with graph modeling settings
     agent = SQLToMemgraphAgent(
-        interactive_graph_modeling=interactive_graph_modeling,
+        modeling_mode=modeling_mode,
         graph_modeling_strategy=graph_modeling_strategy,
     )
 
@@ -144,7 +149,7 @@ def run_migration(
     print()
 
     # Handle interactive vs automatic mode
-    if interactive_graph_modeling:
+    if modeling_mode == ModelingMode.INTERACTIVE:
         print("🔄 Interactive mode: You'll be prompted to review and refine")
         print("   the graph model")
         print()
@@ -179,6 +184,59 @@ def print_migration_results(result: Dict[str, Any]) -> None:
     completed = len(result.get("completed_tables", []))
     total = result.get("total_tables", 0)
     print(f"\n📋 Tables processed: {completed}/{total}")
+
+    # Print post-migration validation results
+    validation_report = result.get("validation_report")
+    if validation_report:
+        print("\n✅ Post-migration Validation:")
+        if validation_report.get("success"):
+            print("  🎯 Status: PASSED")
+        else:
+            print("  ⚠️  Status: Issues found")
+
+        # Display validation score and metrics if available
+        validation_score = validation_report.get("validation_score", 0)
+        print(f"  📊 Validation Score: {int(validation_score)}/100")
+
+        metrics = validation_report.get("metrics")
+        if metrics:
+            print(f"  📁 Tables: {metrics.tables_covered}/{metrics.tables_total}")
+            print(
+                f"  🏷️  Properties: {metrics.properties_covered}/{metrics.properties_total}"
+            )
+            print(
+                f"  🔗 Relationships: {metrics.relationships_covered}/{metrics.relationships_total}"
+            )
+            print(f"  📇 Indexes: {metrics.indexes_covered}/{metrics.indexes_total}")
+            print(
+                f"  🔒 Constraints: {metrics.constraints_covered}/{metrics.constraints_total}"
+            )
+
+        # Show validation issues summary
+        issues = validation_report.get("issues", [])
+        if issues:
+            critical_count = sum(
+                1 for issue in issues if issue.get("severity") == "CRITICAL"
+            )
+            warning_count = sum(
+                1 for issue in issues if issue.get("severity") == "WARNING"
+            )
+            info_count = sum(1 for issue in issues if issue.get("severity") == "INFO")
+
+            print(
+                f"  🚨 Issues: {critical_count} critical, {warning_count} warnings, {info_count} info"
+            )
+
+            # Show top critical issues
+            critical_issues = [
+                issue for issue in issues if issue.get("severity") == "CRITICAL"
+            ]
+            if critical_issues:
+                print("  📋 Top Critical Issues:")
+                for issue in critical_issues[:3]:
+                    print(f"    - {issue.get('message', 'Unknown issue')}")
+        else:
+            print("  ✅ No validation issues found")
 
     # Print schema analysis details
     if result.get("database_structure"):

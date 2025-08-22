@@ -61,6 +61,10 @@ class DeterministicStrategy(BaseModelingStrategy):
         # Convert entity tables to nodes
         entity_tables = database_structure.get("entity_tables", {})
         for table_name, table_info in entity_tables.items():
+            # Get primary key from explicit field
+            primary_keys = table_info.get("primary_keys", [])
+            id_field = primary_keys[0] if primary_keys else "id"
+
             # Create source information
             source = NodeSource(
                 type="table",
@@ -68,7 +72,7 @@ class DeterministicStrategy(BaseModelingStrategy):
                 location=f"database.schema.{table_name}",
                 mapping={
                     "labels": [table_name.title()],
-                    "id_field": self._find_primary_key(table_info),
+                    "id_field": id_field,
                 },
             )
 
@@ -82,7 +86,9 @@ class DeterministicStrategy(BaseModelingStrategy):
 
             # Create node
             node = GraphNode(
-                labels=[table_name.title()], properties=properties, source=source
+                labels=[table_name.title()],
+                properties=properties,
+                source=source,
             )
             nodes.append(node)
 
@@ -170,34 +176,52 @@ class DeterministicStrategy(BaseModelingStrategy):
         """Extract properties that should be included in the node."""
         properties = []
 
-        # Get schema from table_info - it's a list of column dictionaries
+        # Use standardized schema format (always available from models.py)
         schema_list = table_info.get("schema", [])
         for col_info in schema_list:
             col_name = col_info.get("field")
             if not col_name:
                 continue
 
-            # Include all columns except foreign key columns (ending with _id
-            # but not primary keys)
-            if not (col_name.endswith("_id") and col_info.get("key") != "PRI"):
+            # Include all columns except foreign key columns that aren't PKs
+            # Primary keys (PRI) included, foreign keys (MUL) excluded
+            if col_info.get("key") != "MUL":
                 properties.append(col_name)
         return properties
 
     def _extract_indexes_from_table(self, table_info: Dict[str, Any]) -> List[str]:
         """Extract properties that should have indexes."""
         indexes = []
-        for col_name, col_info in table_info.get("columns", {}).items():
-            # Add indexes for primary keys and unique columns
-            if col_info.get("key") in ["PRI", "UNI"]:
+
+        # Use standardized schema format (always available from models.py)
+        schema_list = table_info.get("schema", [])
+        for col_info in schema_list:
+            col_name = col_info.get("field")
+            if not col_name:
+                continue
+
+            # Add indexes for PKs, unique columns, and foreign keys
+            # Foreign keys need indexes for efficient relationship lookups
+            if col_info.get("key") in ["PRI", "UNI", "MUL"]:
                 indexes.append(col_name)
+
         return indexes
 
     def _extract_constraints_from_table(self, table_info: Dict[str, Any]) -> List[str]:
         """Extract constraint definitions from table info."""
         constraints = []
-        for col_name, col_info in table_info.get("columns", {}).items():
-            if col_info.get("key") == "UNI":
+
+        # Use standardized schema format (always available from models.py)
+        schema_list = table_info.get("schema", [])
+        for col_info in schema_list:
+            col_name = col_info.get("field")
+            if not col_name:
+                continue
+
+            # Add unique constraints for primary keys and unique columns
+            if col_info.get("key") in ["PRI", "UNI"]:
                 constraints.append(f"UNIQUE({col_name})")
+
         return constraints
 
     def _generate_relationship_name(self, rel_data: Dict[str, Any]) -> str:
@@ -211,17 +235,10 @@ class DeterministicStrategy(BaseModelingStrategy):
                 join_table = constraint_name
 
             if join_table:
-                return join_table.upper().replace("_", "_")
+                return join_table.upper()
             else:
                 return "CONNECTS"
         else:
             from_table = rel_data.get("from_table", "")
             to_table = rel_data.get("to_table", "")
             return f"{from_table.upper()}_TO_{to_table.upper()}"
-
-    def _find_primary_key(self, table_info: Dict[str, Any]) -> str:
-        """Find the primary key column for a table."""
-        for col_name, col_info in table_info.get("columns", {}).items():
-            if col_info.get("key") == "PRI":
-                return col_name
-        return "id"  # Fallback

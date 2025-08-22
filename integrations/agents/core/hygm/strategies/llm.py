@@ -84,39 +84,33 @@ class LLMStrategy(BaseModelingStrategy):
             # Prepare the prompt
             prompt = self._build_modeling_prompt(database_structure, domain_context)
 
-            # Call LLM with structured output using LangChain
-            # Note: LangChain's ChatOpenAI doesn't support structured output directly
-            # We'll use the regular invoke method and parse the response manually
-            messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an expert database architect specializing "
-                        "in converting relational schemas to graph models. "
-                        "Always respond with valid JSON matching the exact schema provided."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ]
+            # Call LLM with LangChain's structured output support
+            # LangChain's ChatOpenAI supports structured output via with_structured_output()
+            if not self.llm_client:
+                raise ValueError("No LLM client configured")
 
-            response = self.llm_client.invoke(messages)
+            # Create structured output chain using the Pydantic model
+            structured_llm = self.llm_client.with_structured_output(LLMGraphModel)
 
-            # Debug: Log the actual response
-            logger.info(f"LLM Response: {response.content[:500]}...")
+            # Create system message for graph modeling
+            system_message = (
+                "You are an expert database architect specializing "
+                "in converting relational schemas to graph models. "
+                "Analyze the provided database structure and create an optimal "
+                "graph model that preserves relationships and enables efficient querying."
+            )
 
-            # Parse the response as JSON and validate against our model
-            import json
+            # Generate the structured output directly as LLMGraphModel
+            llm_model = structured_llm.invoke(
+                [
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": prompt},
+                ]
+            )
 
-            try:
-                response_dict = json.loads(response.content)
-                llm_model = LLMGraphModel(**response_dict)
-            except (json.JSONDecodeError, ValueError) as parse_error:
-                error_msg = (
-                    f"Failed to parse LLM response as structured output: {parse_error}"
-                )
-                logger.error(error_msg)
-                logger.error(f"Raw response: {response.content}")
-                raise ValueError(error_msg) from parse_error
+            logger.info(
+                f"LLM generated {len(llm_model.nodes)} nodes and {len(llm_model.relationships)} relationships"
+            )
 
             # Extract and convert LLM response to internal graph model
             return self._convert_llm_to_graph_model(llm_model)
@@ -136,17 +130,34 @@ class LLMStrategy(BaseModelingStrategy):
         """Build the prompt for LLM graph modeling."""
 
         prompt_parts = [
-            "Convert this relational database schema to a graph model:",
+            "Convert this relational database schema to an optimal graph model.",
+            "Analyze the database structure and create nodes and relationships that:",
             "",
             "Database Structure:",
             str(database_structure),
             "",
-            "Guidelines:",
-            "- Create meaningful node labels (not just table names)",
-            "- Identify semantic relationships between entities",
-            "- Consider domain-specific modeling patterns",
-            "- Optimize for query performance with appropriate indexes",
-            "- Add constraints to maintain data integrity",
+            "Requirements:",
+            "- Create semantic node labels (not just table names)",
+            "- Identify meaningful relationships based on foreign keys",
+            "- Include relevant properties from source tables on nodes",
+            "- Set appropriate primary keys for each node",
+            "- **CRITICAL: Recommend indexes for ALL relation properties**",
+            "- **CRITICAL: Both relationship ends MUST have indexes**",
+            "- Include unique constraints for primary keys and unique fields",
+            "- Use descriptive relationship names (e.g., 'OWNS', 'BELONGS_TO')",
+            "- Consider one-to-many, many-to-many, and one-to-one types",
+            "- Optimize for both data integrity and query performance",
+            "",
+            "Index Guidelines:",
+            "- Primary keys should always have indexes",
+            "- Foreign key properties should always have indexes",
+            "- Unique fields should have indexes",
+            "- Properties in WHERE clauses should have indexes",
+            "",
+            "Constraint Guidelines:",
+            "- Primary key properties should have unique constraints",
+            "- Unique business fields should have unique constraints",
+            "- Consider data integrity requirements from source database",
         ]
 
         if domain_context:
@@ -249,41 +260,45 @@ class LLMStrategy(BaseModelingStrategy):
             )
             relationships.append(relationship)
 
-        # Convert indexes
+        # Convert indexes from node-level index specifications
         indexes = []
-        for llm_index in llm_model.indexes:
-            index_source = IndexSource(
-                origin="llm_recommendation",
-                reason=llm_index.reasoning,
-                created_by="ai_analysis",
-                index_name=None,
-                migrated_from=None,
-            )
+        for llm_node in llm_model.nodes:
+            for index_prop in llm_node.indexes:
+                index_source = IndexSource(
+                    origin="llm_recommendation",
+                    reason=f"Index recommended by LLM for {llm_node.name}."
+                    f"{index_prop}",
+                    created_by="ai_analysis",
+                    index_name=None,
+                    migrated_from=None,
+                )
 
-            graph_index = GraphIndex(
-                labels=llm_index.labels,
-                properties=llm_index.properties,
-                type=llm_index.type,
-                source=index_source,
-            )
-            indexes.append(graph_index)
+                graph_index = GraphIndex(
+                    labels=llm_node.labels,
+                    properties=[index_prop],
+                    type="btree",  # Default index type
+                    source=index_source,
+                )
+                indexes.append(graph_index)
 
-        # Convert constraints
+        # Convert constraints from node-level constraint specifications
         constraints = []
-        for llm_constraint in llm_model.constraints:
-            constraint_source = ConstraintSource(
-                origin="llm_recommendation",
-                constraint_name=f"ai_{llm_constraint.type}_constraint",
-                migrated_from="ai_analysis",
-            )
+        for llm_node in llm_model.nodes:
+            for constraint_prop in llm_node.constraints:
+                constraint_source = ConstraintSource(
+                    origin="llm_recommendation",
+                    constraint_name=f"ai_unique_constraint_{llm_node.name}_"
+                    f"{constraint_prop}",
+                    migrated_from="ai_analysis",
+                )
 
-            graph_constraint = GraphConstraint(
-                type=llm_constraint.type,
-                labels=llm_constraint.labels,
-                properties=llm_constraint.properties,
-                source=constraint_source,
-            )
-            constraints.append(graph_constraint)
+                graph_constraint = GraphConstraint(
+                    type="unique",  # Assume unique constraints
+                    labels=llm_node.labels,
+                    properties=[constraint_prop],
+                    source=constraint_source,
+                )
+                constraints.append(graph_constraint)
 
         return GraphModel(
             nodes=nodes,
@@ -375,14 +390,10 @@ class LLMStrategy(BaseModelingStrategy):
     def _map_node_name_to_labels(self, node_name: str, llm_model) -> List[str]:
         """Map LLM node name to the actual labels defined in the model."""
         for llm_node in llm_model.nodes:
-            if (
-                llm_node.name.lower() == node_name.lower()
-                or llm_node.label.lower() == node_name.lower()
+            if llm_node.name.lower() == node_name.lower() or any(
+                label.lower() == node_name.lower() for label in llm_node.labels
             ):
-                if isinstance(llm_node.labels, list):
-                    return llm_node.labels
-                else:
-                    return [llm_node.label]
+                return llm_node.labels
 
         # Fallback to the node name itself as label
         return [node_name]
