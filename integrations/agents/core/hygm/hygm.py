@@ -306,6 +306,7 @@ class HyGM:
 
                 # Use LLM to parse natural language into operations
                 if self.llm:
+                    print("🤖 Processing your request... " "(this may take a moment)")
                     operations = self._parse_natural_language_to_operations(
                         user_input, model
                     )
@@ -365,6 +366,9 @@ class HyGM:
             "- add_constraint: Add a constraint "
             "(unique, existence, data_type)\n"
             "- drop_constraint: Remove a constraint\n\n"
+            "IMPORTANT: When user says 'all' (e.g., 'drop all unique constraints'), "
+            "you must identify ALL matching items from the current model context "
+            "and create operations for each one."
             "Parse the user's request into appropriate operations. "
             "Return a ModelModifications object with the operations and "
             "reasoning."
@@ -429,6 +433,15 @@ class HyGM:
                 labels = " | ".join(index.labels or [])
                 props = ", ".join(index.properties)
                 context_parts.append(f"  - {labels}.{props}")
+
+        # Constraints
+        if model.node_constraints:
+            context_parts.append("\nCONSTRAINTS:")
+            for constraint in model.node_constraints:
+                labels = " | ".join(constraint.labels or [])
+                props = ", ".join(constraint.properties)
+                constraint_desc = f"{constraint.type.upper()}: {labels}.{props}"
+                context_parts.append(f"  - {constraint_desc}")
 
         return "\n".join(context_parts)
 
