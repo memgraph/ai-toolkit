@@ -285,6 +285,8 @@ class HyGM:
         print("  - 'Remove the last_update property from all nodes'")
         print("  - 'Change ACTED_IN relationship to PERFORMED_IN'")
         print("  - 'Add an index on Customer email property'")
+        print("  - 'Add a unique constraint on User email property'")
+        print("  - 'Remove the existence constraint on Product name'")
         print("\nType 'done' when finished, or 'cancel' to return unchanged.")
 
         while True:
@@ -359,7 +361,10 @@ class HyGM:
             "- change_relationship_name: Change a relationship name\n"
             "- drop_relationship: Remove a relationship\n"
             "- add_index: Add an index on a property\n"
-            "- drop_index: Remove an index\n\n"
+            "- drop_index: Remove an index\n"
+            "- add_constraint: Add a constraint "
+            "(unique, existence, data_type)\n"
+            "- drop_constraint: Remove a constraint\n\n"
             "Parse the user's request into appropriate operations. "
             "Return a ModelModifications object with the operations and "
             "reasoning."
@@ -482,6 +487,33 @@ class HyGM:
                     print(f"  - Drop index: {op.node_label}.{op.property_name}")
                     modified_model = self._apply_drop_index(
                         modified_model, op.node_label, op.property_name
+                    )
+                elif op.operation_type == "add_constraint":
+                    constraint_desc = f"{op.constraint_type.upper()}"
+                    if op.constraint_type == "data_type" and op.data_type:
+                        constraint_desc += f" ({op.data_type})"
+                    print(
+                        f"  - Add constraint: {constraint_desc} on "
+                        f"{op.node_label}.{op.property_name}"
+                    )
+                    modified_model = self._apply_add_constraint(
+                        modified_model,
+                        op.node_label,
+                        op.property_name,
+                        op.constraint_type,
+                        op.data_type,
+                    )
+                elif op.operation_type == "drop_constraint":
+                    constraint_desc = f"{op.constraint_type.upper()}"
+                    print(
+                        f"  - Drop constraint: {constraint_desc} on "
+                        f"{op.node_label}.{op.property_name}"
+                    )
+                    modified_model = self._apply_drop_constraint(
+                        modified_model,
+                        op.node_label,
+                        op.property_name,
+                        op.constraint_type,
                     )
 
         return modified_model
@@ -640,6 +672,64 @@ class HyGM:
                 index.labels
                 and node_label in index.labels
                 and property_name in index.properties
+            )
+        ]
+        return model
+
+    def _apply_add_constraint(
+        self,
+        model: "GraphModel",
+        node_label: str,
+        property_name: str,
+        constraint_type: str,
+        data_type: str = "",
+    ) -> "GraphModel":
+        """Apply add constraint operation."""
+        from .models.graph_models import GraphConstraint
+        from .models.sources import ConstraintSource
+
+        # Check if constraint already exists
+        for constraint in model.node_constraints:
+            if (
+                constraint.labels
+                and node_label in constraint.labels
+                and property_name in constraint.properties
+                and constraint.type == constraint_type
+            ):
+                return model  # Constraint already exists
+
+        # Create new constraint
+        constraint_source = ConstraintSource(
+            origin="user_request",
+            reason="data_integrity",
+            created_by="interactive_modification",
+        )
+        new_constraint = GraphConstraint(
+            type=constraint_type,
+            labels=[node_label],
+            properties=[property_name],
+            data_type=data_type if constraint_type == "data_type" else None,
+            source=constraint_source,
+        )
+        model.node_constraints.append(new_constraint)
+        return model
+
+    def _apply_drop_constraint(
+        self,
+        model: "GraphModel",
+        node_label: str,
+        property_name: str,
+        constraint_type: str,
+    ) -> "GraphModel":
+        """Apply drop constraint operation."""
+        model.node_constraints = [
+            constraint
+            for constraint in model.node_constraints
+            if not (
+                constraint.labels
+                and node_label in constraint.labels
+                and property_name in constraint.properties
+                and constraint.type == constraint_type
             )
         ]
         return model

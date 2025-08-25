@@ -85,6 +85,31 @@ class DropIndexOperation(ModelOperation):
     property_name: str = Field(description="Property name for the index")
 
 
+class AddConstraintOperation(ModelOperation):
+    """Operation to add a constraint."""
+
+    operation_type: Literal["add_constraint"] = "add_constraint"
+    node_label: str = Field(description="Node label for the constraint")
+    property_name: str = Field(description="Property name for the constraint")
+    constraint_type: Literal["unique", "existence", "data_type"] = Field(
+        description="Type of constraint (unique, existence, or data_type)"
+    )
+    data_type: str = Field(
+        default="", description="Data type for data_type constraints"
+    )
+
+
+class DropConstraintOperation(ModelOperation):
+    """Operation to drop a constraint."""
+
+    operation_type: Literal["drop_constraint"] = "drop_constraint"
+    node_label: str = Field(description="Node label for the constraint")
+    property_name: str = Field(description="Property name for the constraint")
+    constraint_type: Literal["unique", "existence", "data_type"] = Field(
+        description="Type of constraint to drop"
+    )
+
+
 # Union type for all operations with discriminator
 OperationType = Union[
     ChangeNodeLabelOperation,
@@ -95,6 +120,8 @@ OperationType = Union[
     DropRelationshipOperation,
     AddIndexOperation,
     DropIndexOperation,
+    AddConstraintOperation,
+    DropConstraintOperation,
 ]
 
 
