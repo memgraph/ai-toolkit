@@ -21,7 +21,7 @@ from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 
 from query_generation.cypher_generator import CypherGenerator
-from core.hygm import HyGM, GraphModel, ModelingMode, GraphModelingStrategy
+from core.hygm import HyGM, ModelingMode, GraphModelingStrategy
 from core.hygm.validation import validate_memgraph_data
 from memgraph_toolbox.api.memgraph import Memgraph
 from database.factory import DatabaseAnalyzerFactory
@@ -145,9 +145,6 @@ class SQLToMemgraphAgent:
 
             # Get standardized database structure
             db_structure = database_analyzer.get_database_structure()
-
-            # Store database structure for later use (e.g., primary key lookup)
-            self._database_structure = db_structure
 
             # Use the built-in HyGM format conversion
             hygm_data = db_structure.to_hygm_format()
@@ -281,42 +278,46 @@ class SQLToMemgraphAgent:
 
         return state
 
-    def _convert_dict_to_graph_model(self, model_dict: Dict[str, Any]) -> GraphModel:
-        """Convert dictionary representation back to GraphModel object."""
-        from .hygm import GraphModel, GraphNode, GraphRelationship
+    def _execute_queries_with_logging(
+        self,
+        queries: List[str],
+        query_type: str,
+        memgraph_client: Memgraph,
+        success_list: List[str],
+        warning_prefix: str = "warning",
+    ) -> None:
+        """Execute queries with consistent logging and error handling."""
+        for query in queries:
+            try:
+                logger.info(f"Creating {query_type}: %s", query)
+                memgraph_client.query(query)
+                success_list.append(query)
+            except Exception as e:
+                # Some queries might already exist, log but continue
+                logger.warning(
+                    f"{query_type.capitalize()} creation {warning_prefix}: %s", e
+                )
 
-        # Convert nodes
-        nodes = []
-        for node_dict in model_dict.get("nodes", []):
-            node = GraphNode(
-                name=node_dict.get("name", ""),
-                label=node_dict.get("label", ""),
-                properties=node_dict.get("properties", []),
-                primary_key=node_dict.get("primary_key", "id"),
-                indexes=node_dict.get("indexes", []),
-                constraints=node_dict.get("constraints", []),
-                source_table=node_dict.get("source_table", ""),
-            )
-            nodes.append(node)
+    def _handle_step_error(
+        self,
+        state: MigrationState,
+        step_name: str,
+        error: Exception,
+        fallback_step: str = None,
+    ) -> MigrationState:
+        """Standardized error handling for workflow steps."""
+        error_msg = f"Error {step_name}: {error}"
+        failure_msg = f"{step_name.capitalize()} failed: {error}"
 
-        # Convert relationships
-        relationships = []
-        for rel_dict in model_dict.get("relationships", []):
-            rel = GraphRelationship(
-                name=rel_dict.get("name", ""),
-                type=rel_dict.get("type", ""),
-                from_node=rel_dict.get("from_node", ""),
-                to_node=rel_dict.get("to_node", ""),
-                properties=rel_dict.get("properties", []),
-                directionality=rel_dict.get("directionality", "directed"),
-                source_info=rel_dict.get("source_info", {}),
-            )
-            relationships.append(rel)
+        logger.error(error_msg)
+        state["errors"].append(failure_msg)
 
-        return GraphModel(
-            nodes=nodes,
-            relationships=relationships,
-        )
+        if fallback_step:
+            state["current_step"] = fallback_step
+        else:
+            state["current_step"] = f"{step_name.capitalize()} failed"
+
+        return state
 
     # TODO: This should be human visible and configurable.
     def _create_indexes(self, state: MigrationState) -> MigrationState:
@@ -358,24 +359,14 @@ class SQLToMemgraphAgent:
                 return self._create_indexes_fallback(state)
 
             # Execute constraint queries first
-            for query in constraint_queries:
-                try:
-                    logger.info("Creating constraint: %s", query)
-                    memgraph.query(query)
-                    created_constraints.append(query)
-                except Exception as e:
-                    # Some constraints might already exist, continue
-                    logger.warning("Constraint creation warning: %s", e)
+            self._execute_queries_with_logging(
+                constraint_queries, "constraint", memgraph, created_constraints
+            )
 
             # Execute index queries
-            for query in index_queries:
-                try:
-                    logger.info("Creating index: %s", query)
-                    memgraph.query(query)
-                    created_indexes.append(query)
-                except Exception as e:
-                    # Some indexes might already exist, log but continue
-                    logger.warning("Index creation warning: %s", e)
+            self._execute_queries_with_logging(
+                index_queries, "index", memgraph, created_indexes
+            )
 
             # Store results in state
             state["created_indexes"] = created_indexes
@@ -389,8 +380,9 @@ class SQLToMemgraphAgent:
             )
 
         except Exception as e:
-            logger.error("Error creating indexes: %s", e)
-            state["errors"].append(f"Index creation failed: {e}")
+            return self._handle_step_error(
+                state, "creating indexes", e, "Index creation failed"
+            )
 
         return state
 
@@ -421,24 +413,14 @@ class SQLToMemgraphAgent:
                 )
 
                 # Execute constraint queries first
-                for query in constraint_queries:
-                    try:
-                        logger.info("Creating constraint: %s", query)
-                        memgraph.query(query)
-                        created_constraints.append(query)
-                    except Exception as e:
-                        # Some constraints might already exist, continue
-                        logger.warning("Constraint creation warning: %s", e)
+                self._execute_queries_with_logging(
+                    constraint_queries, "constraint", memgraph, created_constraints
+                )
 
                 # Execute index queries
-                for query in index_queries:
-                    try:
-                        logger.info("Creating index: %s", query)
-                        memgraph.query(query)
-                        created_indexes.append(query)
-                    except Exception as e:
-                        # Some indexes might already exist, log but continue
-                        logger.warning("Index creation warning: %s", e)
+                self._execute_queries_with_logging(
+                    index_queries, "index", memgraph, created_indexes
+                )
 
             # Store results in state
             state["created_indexes"] = created_indexes
@@ -452,8 +434,9 @@ class SQLToMemgraphAgent:
             )
 
         except Exception as e:
-            logger.error("Error creating indexes: %s", e)
-            state["errors"].append(f"Index creation failed: {e}")
+            return self._handle_step_error(
+                state, "creating indexes", e, "Index creation failed"
+            )
 
         return state
 
@@ -489,26 +472,15 @@ class SQLToMemgraphAgent:
                 source_table = node_def.source.name if node_def.source else "unknown"
                 node_label = node_def.primary_label
 
-                # Extract property names from GraphProperty objects
-                properties = []
-                for prop in node_def.properties:
-                    if isinstance(prop, type(node_def.properties[0])) and hasattr(
-                        prop, "key"
-                    ):
-                        properties.append(prop.key)
-                    else:
-                        properties.append(str(prop))
+                # Extract property names from HyGM GraphProperty objects
+                properties = [
+                    prop.key if hasattr(prop, "key") else str(prop)
+                    for prop in node_def.properties
+                ]
 
-                # Get table info for column validation
-                table_info = hygm_data.get("entity_tables", {}).get(source_table, {})
-
-                # Validate properties exist in source table
-                valid_properties = self._validate_node_properties(
-                    properties, table_info
-                )
-
-                if valid_properties:
-                    properties_str = ", ".join(valid_properties)
+                # Use validated properties from HyGM graph model
+                if properties:
+                    properties_str = ", ".join(properties)
                     node_query = f"""
 // Create {node_label} nodes from {source_table} table (HyGM optimized)
 CALL migrate.mysql('SELECT {properties_str} FROM {source_table}',
@@ -519,11 +491,12 @@ SET n += row;"""
                     queries.append(node_query)
                     logger.info(
                         f"Added node creation for {node_label} with "
-                        f"{len(valid_properties)} properties"
+                        f"{len(properties)} properties"
                     )
                 else:
                     logger.warning(
-                        f"No valid properties found for node {node_label} from table {source_table}"
+                        f"No properties found for node {node_label} "
+                        f"from table {source_table}"
                     )
 
             # Generate relationship creation queries based on HyGM recommendations
@@ -554,30 +527,6 @@ SET n += row;"""
 
         return state
 
-    def _validate_node_properties(
-        self, properties: List[str], table_info: Dict[str, Any]
-    ) -> List[str]:
-        """Validate that properties exist in the source table schema."""
-        if not table_info or not properties:
-            return []
-
-        # Get available columns from table schema
-        available_columns = set()
-        schema_list = table_info.get("schema", [])
-        for col_info in schema_list:
-            col_name = col_info.get("field")
-            if col_name:
-                available_columns.add(col_name)
-
-        # Return only properties that exist in the table
-        valid_properties = [prop for prop in properties if prop in available_columns]
-
-        if len(valid_properties) != len(properties):
-            missing = set(properties) - set(valid_properties)
-            logger.warning(f"Some properties not found in table schema: {missing}")
-
-        return valid_properties
-
     def _generate_hygm_relationship_query(
         self, rel_def, hygm_data: Dict[str, Any], mysql_config_str: str
     ) -> str:
@@ -601,9 +550,17 @@ SET n += row;"""
             else:
                 rel_type = "many_to_many"  # Default fallback
 
-            # Find the corresponding node labels from HyGM
-            from_label = self._find_hygm_node_label(from_node, hygm_data)
-            to_label = self._find_hygm_node_label(to_node, hygm_data)
+            # Find the corresponding node labels from HyGM model
+            from_label = from_node
+            to_label = to_node
+
+            # Try to get actual labels from the graph model if available
+            if hasattr(self, "_current_graph_model") and self._current_graph_model:
+                for node in self._current_graph_model.nodes:
+                    if node.primary_label.lower() == from_node.lower():
+                        from_label = node.primary_label
+                    if node.primary_label.lower() == to_node.lower():
+                        to_label = node.primary_label
 
             if not from_label or not to_label:
                 logger.warning(
@@ -638,26 +595,6 @@ SET n += row;"""
                 f"Error generating relationship query for {rel_def.edge_type}: {e}"
             )
             return ""
-
-    def _find_hygm_node_label(self, node_name: str, hygm_data: Dict[str, Any]) -> str:
-        """Find the HyGM node label for a given node name."""
-        # Access the graph model from the current state to get actual node labels
-        if hasattr(self, "_current_graph_model") and self._current_graph_model:
-            for node in self._current_graph_model.nodes:
-                # First try to match by primary label (for LLM-generated models)
-                if node.primary_label.lower() == node_name.lower():
-                    return node.primary_label
-                # Then try to match by source table (for deterministic models)
-                source_table = node.source.name if node.source else ""
-                if source_table.lower() == node_name.lower():
-                    return node.primary_label
-                # Also check all labels
-                for label in node.labels:
-                    if label.lower() == node_name.lower():
-                        return label
-
-        # Fallback to table name transformation if graph model not available
-        return self.cypher_generator._table_name_to_label(node_name)
 
     def _generate_one_to_many_hygm_query(
         self,
@@ -756,9 +693,7 @@ CREATE (from)-[:{rel_name}]->(to);"""
             mysql_config_str = self._get_db_config_for_migrate(source_db_config)
 
             # Generate node creation queries for each entity table
-            entity_tables = structure.get("entity_tables", {})
-
-            for table_name, table_info in entity_tables.items():
+            for table_name, table_info in structure.get("entity_tables", {}).items():
                 label = self.cypher_generator._table_name_to_label(table_name)
 
                 # Get columns excluding foreign keys for node properties
@@ -842,8 +777,9 @@ CREATE (from)-[:{rel_name}]->(to);"""
             )
 
         except Exception as e:
-            logger.error(f"Error generating fallback Cypher queries: {e}")
-            state["errors"].append(f"Fallback Cypher generation failed: {e}")
+            return self._handle_step_error(
+                state, "generating fallback Cypher queries", e
+            )
 
         return state
 
