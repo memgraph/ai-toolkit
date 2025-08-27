@@ -4,6 +4,7 @@ Main HyGM (Hypothetical Graph Modeling) class.
 This is the primary interface for the modular HyGM system.
 """
 
+import copy
 import logging
 from enum import Enum
 from typing import Dict, Any, Optional, TYPE_CHECKING
@@ -186,11 +187,15 @@ class HyGM:
         self.current_graph_model = current_model
         return current_model
 
+    def _print_banner(self, title: str, width: int = 60) -> None:
+        """Print a formatted banner with title."""
+        print("\n" + "=" * width)
+        print(title)
+        print("=" * width)
+
     def _display_current_model(self, model: "GraphModel") -> None:
         """Display the current graph model to the user."""
-        print("\n" + "=" * 60)
-        print(f"GRAPH MODEL - ITERATION {self.iteration_count}")
-        print("=" * 60)
+        self._print_banner(f"GRAPH MODEL - ITERATION {self.iteration_count}")
 
         print(f"\nNODES ({len(model.nodes)}):")
         for i, node in enumerate(model.nodes, 1):
@@ -216,6 +221,31 @@ class HyGM:
             props = ", ".join(constraint.properties)
             print(f"  {i}. {constraint.type.upper()}: {labels}.{props}")
 
+    def _get_user_input_choice(
+        self, prompt: str, choices: Dict[str, str], default_action: str = "accept"
+    ) -> str:
+        """Get validated user input from multiple choices.
+
+        Args:
+            prompt: The prompt to display to user
+            choices: Dict mapping choice keys to return values
+            default_action: Action to return on EOF/interrupt
+
+        Returns:
+            The selected choice value
+        """
+        while True:
+            try:
+                choice = input(prompt).strip()
+                if choice in choices:
+                    return choices[choice]
+                else:
+                    valid_choices = ", ".join(sorted(choices.keys()))
+                    print(f"Invalid choice. Please enter {valid_choices}.")
+            except (EOFError, KeyboardInterrupt):
+                print(f"\nDefaulting to {default_action}...")
+                return default_action
+
     def _get_user_choice(self) -> str:
         """Get user choice for next action."""
         print("\nWhat would you like to do?")
@@ -224,22 +254,15 @@ class HyGM:
         print("3. Regenerate model (same strategy)")
         print("4. Switch modeling strategy")
 
-        while True:
-            try:
-                choice = input("\nEnter your choice (1-4): ").strip()
-                if choice == "1":
-                    return "accept"
-                elif choice == "2":
-                    return "modify"
-                elif choice == "3":
-                    return "regenerate"
-                elif choice == "4":
-                    return "switch_strategy"
-                else:
-                    print("Invalid choice. Please enter 1, 2, 3, or 4.")
-            except (EOFError, KeyboardInterrupt):
-                print("\nExiting interactive modeling...")
-                return "accept"
+        choices = {
+            "1": "accept",
+            "2": "modify",
+            "3": "regenerate",
+            "4": "switch_strategy",
+        }
+        return self._get_user_input_choice(
+            "\nEnter your choice (1-4): ", choices, "accept"
+        )
 
     def _switch_strategy(
         self, current_strategy: GraphModelingStrategy
@@ -450,8 +473,6 @@ class HyGM:
     ) -> "GraphModel":
         """Apply structured operations to the graph model."""
         # Create a deep copy of the model to modify
-        import copy
-
         modified_model = copy.deepcopy(model)
 
         print(f"\nApplying {len(operations.operations)} operations:")
@@ -942,16 +963,24 @@ class HyGM:
             print("\n✅ All validation checks passed!")
             print("Your changes maintain proper database coverage.")
 
+    def _handle_llm_error(self, operation: str, error: Exception, fallback_result=None):
+        """Handle LLM errors with consistent logging and fallback."""
+        logger.error("Error %s: %s", operation, error)
+        print(f"❌ Error {operation}: {error}")
+        return fallback_result
+
     def _handle_llm_validation(
         self,
         validation_result,
         model: "GraphModel",
         operations: "ModelModifications",
     ) -> "GraphModel":
-        """Handle validation results for LLM strategy with automatic model regeneration."""
+        """Handle validation results for LLM strategy with regeneration."""
         if not validation_result.success and self.llm:
             print("\n🤖 LLM STRATEGY: AUTOMATIC MODEL IMPROVEMENT")
-            print("The LLM will analyze validation issues and regenerate the model...")
+            print(
+                "The LLM will analyze validation issues and regenerate " "the model..."
+            )
 
             # Prepare context for LLM
             validation_context = self._prepare_validation_context_for_llm(
@@ -1026,7 +1055,7 @@ class HyGM:
     def _regenerate_model_with_llm_fixes(
         self, current_model: "GraphModel", validation_context: str, validation_result
     ) -> Optional["GraphModel"]:
-        """Use LLM to regenerate an improved model based on validation issues."""
+        """Use LLM to regenerate an improved model based on validation."""
         if not self.llm or not self.database_structure:
             return None
 
@@ -1040,20 +1069,8 @@ class HyGM:
             current_model, validation_result, validation_context
         )
 
-        system_prompt = (
-            "You are an expert graph modeling assistant. You need to regenerate "
-            "an improved graph model that addresses the validation issues "
-            "identified in the current model. Focus on:\n\n"
-            "1. Adding any missing entities (tables) to achieve full coverage\n"
-            "2. Including all required properties from the original database\n"
-            "3. Ensuring all relationships are properly modeled\n"
-            "4. Maintaining data integrity and proper graph structure\n\n"
-            "Generate a complete, improved graph model that resolves the "
-            "validation issues while preserving the user's modifications."
-        )
-
         try:
-            print("🔄 LLM is analyzing validation issues and regenerating model...")
+            print("🔄 LLM is analyzing validation issues and regenerating " "model...")
 
             # Use the LLM strategy but with enhanced context
             improved_model = strategy_instance.create_model(
@@ -1111,13 +1128,13 @@ class HyGM:
         print("=" * 60)
 
         # Show comparison
-        print(f"\nCURRENT MODEL:")
+        print("\nCURRENT MODEL:")
         print(f"  Nodes: {len(current_model.nodes)}")
         print(f"  Relationships: {len(current_model.edges)}")
         print(f"  Indexes: {len(current_model.node_indexes)}")
         print(f"  Constraints: {len(current_model.node_constraints)}")
 
-        print(f"\nIMPROVED MODEL:")
+        print("\nIMPROVED MODEL:")
         print(f"  Nodes: {len(improved_model.nodes)}")
         print(f"  Relationships: {len(improved_model.edges)}")
         print(f"  Indexes: {len(improved_model.node_indexes)}")
@@ -1141,7 +1158,8 @@ class HyGM:
                 elif choice == "3":
                     self._display_current_model(improved_model)
                     print(
-                        "\nAfter reviewing, would you like to apply these improvements?"
+                        "\nAfter reviewing, would you like to apply these "
+                        "improvements?"
                     )
                     print("1. Yes - Apply improvements")
                     print("2. No - Keep current model")
@@ -1212,7 +1230,7 @@ class HyGM:
                     property_changes.append((label, new_props, removed_props))
 
             if property_changes:
-                print(f"\n🔄 PROPERTY CHANGES:")
+                print("\n🔄 PROPERTY CHANGES:")
                 for label, new_props, removed_props in property_changes:
                     if new_props:
                         for prop in sorted(new_props):
@@ -1241,11 +1259,10 @@ class HyGM:
                     {
                         "role": "user",
                         "content": (
-                            f"Please analyze these validation results and suggest "
-                            f"fixes:\n\n"
-                            f"{validation_context}\n\n"
-                            f"Provide specific, actionable recommendations to fix "
-                            f"the critical issues."
+                            "Please analyze these validation results and "
+                            f"suggest fixes:\n\n{validation_context}\n\n"
+                            "Provide specific, actionable recommendations "
+                            "to fix the critical issues."
                         ),
                     },
                 ]
