@@ -7,7 +7,7 @@ This is the primary interface for the modular HyGM system.
 import copy
 import logging
 from enum import Enum
-from typing import Dict, Any, Optional, TYPE_CHECKING
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .models.graph_models import GraphModel
@@ -307,6 +307,9 @@ class HyGM:
         print("  - 'Add a birth_date property to Actor nodes'")
         print("  - 'Remove the last_update property from all nodes'")
         print("  - 'Change ACTED_IN relationship to PERFORMED_IN'")
+        print("  - 'Add a new Category node with name and description'")
+        print("  - 'Drop the Audit node completely'")
+        print("  - 'Add a BELONGS_TO relationship from Product to Category'")
         print("  - 'Add an index on Customer email property'")
         print("  - 'Add a unique constraint on User email property'")
         print("  - 'Remove the existence constraint on Product name'")
@@ -384,6 +387,9 @@ class HyGM:
             "- add_property: Add a new property to a node\n"
             "- change_relationship_name: Change a relationship name\n"
             "- drop_relationship: Remove a relationship\n"
+            "- add_node: Add a new node type with specified properties\n"
+            "- drop_node: Remove a node type (and related relationships)\n"
+            "- add_relationship: Add a new relationship between nodes\n"
             "- add_index: Add an index on a property\n"
             "- drop_index: Remove an index\n"
             "- add_constraint: Add a constraint "
@@ -548,6 +554,28 @@ class HyGM:
                         op.node_label,
                         op.property_name,
                         op.constraint_type,
+                    )
+                elif op.operation_type == "add_node":
+                    print(f"  - Add node: {op.node_label}")
+                    modified_model = self._apply_add_node(
+                        modified_model, op.node_label, op.properties, op.source_table
+                    )
+                elif op.operation_type == "drop_node":
+                    print(f"  - Drop node: {op.node_label}")
+                    modified_model = self._apply_drop_node(
+                        modified_model, op.node_label
+                    )
+                elif op.operation_type == "add_relationship":
+                    print(
+                        f"  - Add relationship: ({op.start_node_label})"
+                        f"-[:{op.relationship_name}]->({op.end_node_label})"
+                    )
+                    modified_model = self._apply_add_relationship(
+                        modified_model,
+                        op.relationship_name,
+                        op.start_node_label,
+                        op.end_node_label,
+                        op.properties,
                     )
 
         return modified_model
@@ -766,6 +794,129 @@ class HyGM:
                 and constraint.type == constraint_type
             )
         ]
+        return model
+
+    def _apply_add_node(
+        self,
+        model: "GraphModel",
+        node_label: str,
+        properties: List[str],
+        source_table: str = "",
+    ) -> "GraphModel":
+        """Apply add node operation."""
+        from .models.graph_models import GraphNode, GraphProperty
+        from .models.sources import PropertySource, NodeSource
+
+        # Check if node already exists
+        for node in model.nodes:
+            if node_label in node.labels:
+                print(f"  ⚠️  Node {node_label} already exists, skipping")
+                return model
+
+        # Create node source
+        node_source = NodeSource(
+            origin="user_request",
+            table=source_table or node_label.lower(),
+            created_by="interactive_modification",
+        )
+
+        # Create properties
+        node_properties = []
+        for prop_name in properties:
+            prop_source = PropertySource(
+                field=f"{source_table or node_label.lower()}.{prop_name}"
+            )
+            node_properties.append(GraphProperty(key=prop_name, source=prop_source))
+
+        # Create new node
+        new_node = GraphNode(
+            labels=[node_label],
+            properties=node_properties,
+            source=node_source,
+        )
+        model.nodes.append(new_node)
+        return model
+
+    def _apply_drop_node(self, model: "GraphModel", node_label: str) -> "GraphModel":
+        """Apply drop node operation."""
+        # Remove the node
+        model.nodes = [node for node in model.nodes if node_label not in node.labels]
+
+        # Remove relationships involving this node
+        model.edges = [
+            edge
+            for edge in model.edges
+            if (
+                node_label not in edge.start_node_labels
+                and node_label not in edge.end_node_labels
+            )
+        ]
+
+        # Remove indexes for this node
+        model.node_indexes = [
+            index
+            for index in model.node_indexes
+            if not (index.labels and node_label in index.labels)
+        ]
+
+        # Remove constraints for this node
+        model.node_constraints = [
+            constraint
+            for constraint in model.node_constraints
+            if not (constraint.labels and node_label in constraint.labels)
+        ]
+
+        return model
+
+    def _apply_add_relationship(
+        self,
+        model: "GraphModel",
+        relationship_name: str,
+        start_node_label: str,
+        end_node_label: str,
+        properties: List[str],
+    ) -> "GraphModel":
+        """Apply add relationship operation."""
+        from .models.graph_models import GraphEdge, GraphProperty
+        from .models.sources import PropertySource, EdgeSource
+
+        # Check if relationship already exists
+        for edge in model.edges:
+            if (
+                edge.edge_type == relationship_name
+                and start_node_label in edge.start_node_labels
+                and end_node_label in edge.end_node_labels
+            ):
+                print(
+                    f"  ⚠️  Relationship {relationship_name} already exists "
+                    f"between {start_node_label} and {end_node_label}, "
+                    "skipping"
+                )
+                return model
+
+        # Create edge source
+        edge_source = EdgeSource(
+            origin="user_request",
+            created_by="interactive_modification",
+        )
+
+        # Create properties
+        edge_properties = []
+        for prop_name in properties:
+            prop_source = PropertySource(
+                field=f"{relationship_name.lower()}.{prop_name}"
+            )
+            edge_properties.append(GraphProperty(key=prop_name, source=prop_source))
+
+        # Create new relationship
+        new_edge = GraphEdge(
+            edge_type=relationship_name,
+            start_node_labels=[start_node_label],
+            end_node_labels=[end_node_label],
+            properties=edge_properties,
+            source=edge_source,
+        )
+        model.edges.append(new_edge)
         return model
 
     def validate_graph_model(

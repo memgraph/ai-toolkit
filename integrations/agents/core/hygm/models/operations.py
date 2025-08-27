@@ -110,6 +110,38 @@ class DropConstraintOperation(ModelOperation):
     )
 
 
+class AddNodeOperation(ModelOperation):
+    """Operation to add a new node type."""
+
+    operation_type: Literal["add_node"] = "add_node"
+    node_label: str = Field(description="Label for the new node")
+    properties: List[str] = Field(
+        default_factory=list, description="List of property names for the new node"
+    )
+    source_table: str = Field(
+        default="", description="Source table name if mapping from database"
+    )
+
+
+class DropNodeOperation(ModelOperation):
+    """Operation to drop a node type."""
+
+    operation_type: Literal["drop_node"] = "drop_node"
+    node_label: str = Field(description="Label of the node to drop")
+
+
+class AddRelationshipOperation(ModelOperation):
+    """Operation to add a new relationship."""
+
+    operation_type: Literal["add_relationship"] = "add_relationship"
+    relationship_name: str = Field(description="Name of the new relationship")
+    start_node_label: str = Field(description="Label of the start node")
+    end_node_label: str = Field(description="Label of the end node")
+    properties: List[str] = Field(
+        default_factory=list, description="List of property names for the relationship"
+    )
+
+
 # Union type for all operations with discriminator
 OperationType = Union[
     ChangeNodeLabelOperation,
@@ -122,6 +154,9 @@ OperationType = Union[
     DropIndexOperation,
     AddConstraintOperation,
     DropConstraintOperation,
+    AddNodeOperation,
+    DropNodeOperation,
+    AddRelationshipOperation,
 ]
 
 
