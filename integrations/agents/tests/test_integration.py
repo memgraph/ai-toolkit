@@ -1001,12 +1001,6 @@ def test_comprehensive_sql_to_graph_conversion():
         return False
 
 
-def test_graph_modeler_standalone():
-    """Legacy test - kept for backward compatibility but calls comprehensive test."""
-    logger.info("Running legacy standalone test (redirecting to comprehensive test)...")
-    return test_comprehensive_sql_to_graph_conversion()
-
-
 def test_environment_setup():
     """Test that the environment is properly configured."""
     logger.info("Testing environment setup...")

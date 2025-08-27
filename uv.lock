@@ -35,6 +35,11 @@ dependencies = [
     { name = "sqlalchemy" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "langchain", specifier = ">=0.3.0" },
@@ -52,7 +57,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = []
+dev = [{ name = "pytest", specifier = ">=8.3.5" }]
 
 [[package]]
 name = "aiohappyeyeballs"

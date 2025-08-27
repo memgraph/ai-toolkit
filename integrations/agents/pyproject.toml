@@ -30,6 +30,8 @@ packages = ["."]
 allow-direct-references = true
 
 [tool.uv]
-dev-dependencies = []
+dev-dependencies = [
+    "pytest>=8.3.5",
+]
 
 

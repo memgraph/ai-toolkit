@@ -725,7 +725,7 @@ SET n += row;"""
                     from_label = self.cypher_generator._table_name_to_label(from_table)
                     to_label = self.cypher_generator._table_name_to_label(to_table)
                     rel_name = self.cypher_generator.generate_relationship_type(
-                        from_table, to_table
+                        to_table
                     )
 
                     # FK column and what it references
@@ -752,7 +752,7 @@ CREATE (from_node)-[:{rel_name}]->(to_node);"""
                     from_label = self.cypher_generator._table_name_to_label(from_table)
                     to_label = self.cypher_generator._table_name_to_label(to_table)
                     rel_name = self.cypher_generator.generate_relationship_type(
-                        from_table, to_table, join_table
+                        to_table, join_table
                     )
 
                     from_fk = rel["join_from_column"]  # FK column in join table
@@ -919,7 +919,7 @@ CREATE (from)-[:{rel_name}]->(to);"""
             # Get the graph model from state
             graph_model = state.get("graph_model")
 
-            # Calculate expected data counts from MySQL (moved from removed _verify_migration)
+            # Calculate expected data counts from MySQL for validation
             structure = state["database_structure"]
             expected_nodes = 0
             selected_tables = structure.get("selected_tables", [])
