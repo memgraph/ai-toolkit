@@ -42,7 +42,10 @@ class LLMStrategy(BaseModelingStrategy):
         return "llm"
 
     def create_model(
-        self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
+        self,
+        database_structure: Dict[str, Any],
+        domain_context: Optional[str] = None,
+        user_operation_context: Optional[str] = None,
     ) -> "GraphModel":
         """
         Create a sophisticated graph model using LLM analysis.
@@ -50,6 +53,7 @@ class LLMStrategy(BaseModelingStrategy):
         Args:
             database_structure: Database schema and structure
             domain_context: Optional domain context for better modeling
+            user_operation_context: Context about user operations to preserve
 
         Returns:
             GraphModel: AI-generated graph model
@@ -69,10 +73,15 @@ class LLMStrategy(BaseModelingStrategy):
                 "Please configure OpenAI API key or use deterministic strategy."
             )
 
-        return self._create_llm_model(database_structure, domain_context)
+        return self._create_llm_model(
+            database_structure, domain_context, user_operation_context
+        )
 
     def _create_llm_model(
-        self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
+        self,
+        database_structure: Dict[str, Any],
+        domain_context: Optional[str] = None,
+        user_operation_context: Optional[str] = None,
     ) -> "GraphModel":
         """Create model using LLM structured output."""
         logger.info("Using LLM to generate graph model...")
@@ -82,12 +91,14 @@ class LLMStrategy(BaseModelingStrategy):
             from core.hygm.models.llm_models import LLMGraphModel
 
             # Prepare the prompt
-            prompt = self._build_modeling_prompt(database_structure, domain_context)
+            prompt = self._build_modeling_prompt(
+                database_structure, domain_context, user_operation_context
+            )
 
             # Call LLM with LangChain's structured output support
-            # LangChain's ChatOpenAI supports structured output via with_structured_output()
+            # LangChain's ChatOpenAI supports structured output via structured_output()
             if not self.llm_client:
-                raise ValueError("No LLM client configured")
+                raise ValueError("No LLM client available")
 
             # Create structured output chain using the Pydantic model
             structured_llm = self.llm_client.with_structured_output(LLMGraphModel)
@@ -97,7 +108,8 @@ class LLMStrategy(BaseModelingStrategy):
                 "You are an expert database architect specializing "
                 "in converting relational schemas to graph models. "
                 "Analyze the provided database structure and create an optimal "
-                "graph model that preserves relationships and enables efficient querying."
+                "graph model that preserves relationships and enables efficient "
+                "querying."
             )
 
             # Generate the structured output directly as LLMGraphModel
@@ -109,7 +121,9 @@ class LLMStrategy(BaseModelingStrategy):
             )
 
             logger.info(
-                f"LLM generated {len(llm_model.nodes)} nodes and {len(llm_model.relationships)} relationships"
+                "LLM generated %d nodes and %d relationships",
+                len(llm_model.nodes),
+                len(llm_model.relationships),
             )
 
             # Extract and convert LLM response to internal graph model
@@ -125,7 +139,10 @@ class LLMStrategy(BaseModelingStrategy):
             raise RuntimeError(error_msg) from e
 
     def _build_modeling_prompt(
-        self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
+        self,
+        database_structure: Dict[str, Any],
+        domain_context: Optional[str] = None,
+        user_operation_context: Optional[str] = None,
     ) -> str:
         """Build the prompt for LLM graph modeling."""
 
@@ -159,6 +176,10 @@ class LLMStrategy(BaseModelingStrategy):
             "- Unique business fields should have unique constraints",
             "- Consider data integrity requirements from source database",
         ]
+
+        # Add user operation context if provided (critical for preserving user changes)
+        if user_operation_context:
+            prompt_parts.extend(["", user_operation_context, ""])
 
         if domain_context:
             prompt_parts.extend(

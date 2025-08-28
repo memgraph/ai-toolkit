@@ -3,6 +3,34 @@ Main HyGM (Hypothetical Graph Modeling) class.
 
 This is the primary interface for the modular HyGM system.
 """
+import uuid
+import logging
+from enum import Enum
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .models.graph_models import GraphModel
+    from .models.operations import ModelModifications
+    from .models.user_operations import UserOperationHistory
+
+try:
+    from .strategies import (
+        BaseModelingStrategy,
+        DeterministicStrategy,
+        LLMStrategy,
+    )
+    from .validation import GraphSchemaValidator
+    from .models.user_operations import UserOperationHistory
+except ImportError:
+    from core.hygm.strategies import (
+        BaseModelingStrategy,
+        DeterministicStrategy,
+        LLMStrategy,
+    )
+    from core.hygm.validation import GraphSchemaValidator
+    from core.hygm.models.user_operations import UserOperationHistory
+
+logger = logging.getLogger(__name__)
 
 import copy
 import logging
@@ -74,6 +102,9 @@ class HyGM:
         self.iteration_count = 0
         self.database_structure = None
         self._strategy_cache = {}
+        # User operation tracking
+        self.user_operation_history: Optional["UserOperationHistory"] = None
+        self.session_id = str(uuid.uuid4())
 
     def create_graph_model(
         self,
@@ -338,6 +369,17 @@ class HyGM:
                     )
                     if operations:
                         print(f"✅ Understood: {operations.reasoning}")
+
+                        # Initialize user operation history if not exists
+                        if not self.user_operation_history:
+                            self.user_operation_history = UserOperationHistory(
+                                self.session_id
+                            )
+
+                        # Track user operations before applying them
+                        for operation in operations.operations:
+                            self.user_operation_history.add_operation(operation)
+
                         # Apply operations to model
                         model = self._apply_operations_to_model(model, operations)
                         print("Changes applied!")
@@ -1244,6 +1286,13 @@ class HyGM:
     ) -> str:
         """Prepare comprehensive context for LLM model improvement."""
         context_parts = []
+
+        # User operations must be preserved - add this FIRST
+        if self.user_operation_history and self.user_operation_history.operations:
+            user_context = self.user_operation_history.to_llm_context()
+            if user_context:  # Only add if there's actual content
+                context_parts.append(user_context)
+                context_parts.append("")
 
         # Previous model structure
         context_parts.append("CURRENT MODEL TO IMPROVE:")
