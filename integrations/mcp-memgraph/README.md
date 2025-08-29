@@ -17,14 +17,15 @@ following content:
 {
     "mcpServers": {
       "mpc-memgraph": {
-        "command": "uv",
+        "command": "{{ uv | /abs/path/to/uv }}",
         "args": [
             "run",
             "--with",
             "mcp-memgraph",
             "--python",
             "3.13",
-            "mcp-memgraph"
+            "--project", "/abs/path/to/ai-toolkit",
+            "/abs/path/to/ai-toolkit/integrations/mcp-memgraph/src/mcp_memgraph/main.py"
         ]
      }
    }
