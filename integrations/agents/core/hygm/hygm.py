@@ -3,10 +3,39 @@ Main HyGM (Hypothetical Graph Modeling) class.
 
 This is the primary interface for the modular HyGM system.
 """
-
+import uuid
 import logging
 from enum import Enum
-from typing import Dict, Any, Optional, TYPE_CHECKING
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .models.graph_models import GraphModel
+    from .models.operations import ModelModifications
+    from .models.user_operations import UserOperationHistory
+
+try:
+    from .strategies import (
+        BaseModelingStrategy,
+        DeterministicStrategy,
+        LLMStrategy,
+    )
+    from .validation import GraphSchemaValidator
+    from .models.user_operations import UserOperationHistory
+except ImportError:
+    from core.hygm.strategies import (
+        BaseModelingStrategy,
+        DeterministicStrategy,
+        LLMStrategy,
+    )
+    from core.hygm.validation import GraphSchemaValidator
+    from core.hygm.models.user_operations import UserOperationHistory
+
+logger = logging.getLogger(__name__)
+
+import copy
+import logging
+from enum import Enum
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .models.graph_models import GraphModel
@@ -73,6 +102,9 @@ class HyGM:
         self.iteration_count = 0
         self.database_structure = None
         self._strategy_cache = {}
+        # User operation tracking
+        self.user_operation_history: Optional["UserOperationHistory"] = None
+        self.session_id = str(uuid.uuid4())
 
     def create_graph_model(
         self,
@@ -186,11 +218,15 @@ class HyGM:
         self.current_graph_model = current_model
         return current_model
 
+    def _print_banner(self, title: str, width: int = 60) -> None:
+        """Print a formatted banner with title."""
+        print("\n" + "=" * width)
+        print(title)
+        print("=" * width)
+
     def _display_current_model(self, model: "GraphModel") -> None:
         """Display the current graph model to the user."""
-        print("\n" + "=" * 60)
-        print(f"GRAPH MODEL - ITERATION {self.iteration_count}")
-        print("=" * 60)
+        self._print_banner(f"GRAPH MODEL - ITERATION {self.iteration_count}")
 
         print(f"\nNODES ({len(model.nodes)}):")
         for i, node in enumerate(model.nodes, 1):
@@ -216,6 +252,31 @@ class HyGM:
             props = ", ".join(constraint.properties)
             print(f"  {i}. {constraint.type.upper()}: {labels}.{props}")
 
+    def _get_user_input_choice(
+        self, prompt: str, choices: Dict[str, str], default_action: str = "accept"
+    ) -> str:
+        """Get validated user input from multiple choices.
+
+        Args:
+            prompt: The prompt to display to user
+            choices: Dict mapping choice keys to return values
+            default_action: Action to return on EOF/interrupt
+
+        Returns:
+            The selected choice value
+        """
+        while True:
+            try:
+                choice = input(prompt).strip()
+                if choice in choices:
+                    return choices[choice]
+                else:
+                    valid_choices = ", ".join(sorted(choices.keys()))
+                    print(f"Invalid choice. Please enter {valid_choices}.")
+            except (EOFError, KeyboardInterrupt):
+                print(f"\nDefaulting to {default_action}...")
+                return default_action
+
     def _get_user_choice(self) -> str:
         """Get user choice for next action."""
         print("\nWhat would you like to do?")
@@ -224,22 +285,15 @@ class HyGM:
         print("3. Regenerate model (same strategy)")
         print("4. Switch modeling strategy")
 
-        while True:
-            try:
-                choice = input("\nEnter your choice (1-4): ").strip()
-                if choice == "1":
-                    return "accept"
-                elif choice == "2":
-                    return "modify"
-                elif choice == "3":
-                    return "regenerate"
-                elif choice == "4":
-                    return "switch_strategy"
-                else:
-                    print("Invalid choice. Please enter 1, 2, 3, or 4.")
-            except (EOFError, KeyboardInterrupt):
-                print("\nExiting interactive modeling...")
-                return "accept"
+        choices = {
+            "1": "accept",
+            "2": "modify",
+            "3": "regenerate",
+            "4": "switch_strategy",
+        }
+        return self._get_user_input_choice(
+            "\nEnter your choice (1-4): ", choices, "accept"
+        )
 
     def _switch_strategy(
         self, current_strategy: GraphModelingStrategy
@@ -284,6 +338,9 @@ class HyGM:
         print("  - 'Add a birth_date property to Actor nodes'")
         print("  - 'Remove the last_update property from all nodes'")
         print("  - 'Change ACTED_IN relationship to PERFORMED_IN'")
+        print("  - 'Add a new Category node with name and description'")
+        print("  - 'Drop the Audit node completely'")
+        print("  - 'Add a BELONGS_TO relationship from Product to Category'")
         print("  - 'Add an index on Customer email property'")
         print("  - 'Add a unique constraint on User email property'")
         print("  - 'Remove the existence constraint on Product name'")
@@ -312,6 +369,17 @@ class HyGM:
                     )
                     if operations:
                         print(f"✅ Understood: {operations.reasoning}")
+
+                        # Initialize user operation history if not exists
+                        if not self.user_operation_history:
+                            self.user_operation_history = UserOperationHistory(
+                                self.session_id
+                            )
+
+                        # Track user operations before applying them
+                        for operation in operations.operations:
+                            self.user_operation_history.add_operation(operation)
+
                         # Apply operations to model
                         model = self._apply_operations_to_model(model, operations)
                         print("Changes applied!")
@@ -361,6 +429,9 @@ class HyGM:
             "- add_property: Add a new property to a node\n"
             "- change_relationship_name: Change a relationship name\n"
             "- drop_relationship: Remove a relationship\n"
+            "- add_node: Add a new node type with specified properties\n"
+            "- drop_node: Remove a node type (and related relationships)\n"
+            "- add_relationship: Add a new relationship between nodes\n"
             "- add_index: Add an index on a property\n"
             "- drop_index: Remove an index\n"
             "- add_constraint: Add a constraint "
@@ -450,8 +521,6 @@ class HyGM:
     ) -> "GraphModel":
         """Apply structured operations to the graph model."""
         # Create a deep copy of the model to modify
-        import copy
-
         modified_model = copy.deepcopy(model)
 
         print(f"\nApplying {len(operations.operations)} operations:")
@@ -527,6 +596,28 @@ class HyGM:
                         op.node_label,
                         op.property_name,
                         op.constraint_type,
+                    )
+                elif op.operation_type == "add_node":
+                    print(f"  - Add node: {op.node_label}")
+                    modified_model = self._apply_add_node(
+                        modified_model, op.node_label, op.properties, op.source_table
+                    )
+                elif op.operation_type == "drop_node":
+                    print(f"  - Drop node: {op.node_label}")
+                    modified_model = self._apply_drop_node(
+                        modified_model, op.node_label
+                    )
+                elif op.operation_type == "add_relationship":
+                    print(
+                        f"  - Add relationship: ({op.start_node_label})"
+                        f"-[:{op.relationship_name}]->({op.end_node_label})"
+                    )
+                    modified_model = self._apply_add_relationship(
+                        modified_model,
+                        op.relationship_name,
+                        op.start_node_label,
+                        op.end_node_label,
+                        op.properties,
                     )
 
         return modified_model
@@ -747,6 +838,129 @@ class HyGM:
         ]
         return model
 
+    def _apply_add_node(
+        self,
+        model: "GraphModel",
+        node_label: str,
+        properties: List[str],
+        source_table: str = "",
+    ) -> "GraphModel":
+        """Apply add node operation."""
+        from .models.graph_models import GraphNode, GraphProperty
+        from .models.sources import PropertySource, NodeSource
+
+        # Check if node already exists
+        for node in model.nodes:
+            if node_label in node.labels:
+                print(f"  ⚠️  Node {node_label} already exists, skipping")
+                return model
+
+        # Create node source
+        node_source = NodeSource(
+            origin="user_request",
+            table=source_table or node_label.lower(),
+            created_by="interactive_modification",
+        )
+
+        # Create properties
+        node_properties = []
+        for prop_name in properties:
+            prop_source = PropertySource(
+                field=f"{source_table or node_label.lower()}.{prop_name}"
+            )
+            node_properties.append(GraphProperty(key=prop_name, source=prop_source))
+
+        # Create new node
+        new_node = GraphNode(
+            labels=[node_label],
+            properties=node_properties,
+            source=node_source,
+        )
+        model.nodes.append(new_node)
+        return model
+
+    def _apply_drop_node(self, model: "GraphModel", node_label: str) -> "GraphModel":
+        """Apply drop node operation."""
+        # Remove the node
+        model.nodes = [node for node in model.nodes if node_label not in node.labels]
+
+        # Remove relationships involving this node
+        model.edges = [
+            edge
+            for edge in model.edges
+            if (
+                node_label not in edge.start_node_labels
+                and node_label not in edge.end_node_labels
+            )
+        ]
+
+        # Remove indexes for this node
+        model.node_indexes = [
+            index
+            for index in model.node_indexes
+            if not (index.labels and node_label in index.labels)
+        ]
+
+        # Remove constraints for this node
+        model.node_constraints = [
+            constraint
+            for constraint in model.node_constraints
+            if not (constraint.labels and node_label in constraint.labels)
+        ]
+
+        return model
+
+    def _apply_add_relationship(
+        self,
+        model: "GraphModel",
+        relationship_name: str,
+        start_node_label: str,
+        end_node_label: str,
+        properties: List[str],
+    ) -> "GraphModel":
+        """Apply add relationship operation."""
+        from .models.graph_models import GraphEdge, GraphProperty
+        from .models.sources import PropertySource, EdgeSource
+
+        # Check if relationship already exists
+        for edge in model.edges:
+            if (
+                edge.edge_type == relationship_name
+                and start_node_label in edge.start_node_labels
+                and end_node_label in edge.end_node_labels
+            ):
+                print(
+                    f"  ⚠️  Relationship {relationship_name} already exists "
+                    f"between {start_node_label} and {end_node_label}, "
+                    "skipping"
+                )
+                return model
+
+        # Create edge source
+        edge_source = EdgeSource(
+            origin="user_request",
+            created_by="interactive_modification",
+        )
+
+        # Create properties
+        edge_properties = []
+        for prop_name in properties:
+            prop_source = PropertySource(
+                field=f"{relationship_name.lower()}.{prop_name}"
+            )
+            edge_properties.append(GraphProperty(key=prop_name, source=prop_source))
+
+        # Create new relationship
+        new_edge = GraphEdge(
+            edge_type=relationship_name,
+            start_node_labels=[start_node_label],
+            end_node_labels=[end_node_label],
+            properties=edge_properties,
+            source=edge_source,
+        )
+        model.edges.append(new_edge)
+        return model
+
     def validate_graph_model(
         self, graph_model: "GraphModel", database_structure: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -942,16 +1156,24 @@ class HyGM:
             print("\n✅ All validation checks passed!")
             print("Your changes maintain proper database coverage.")
 
+    def _handle_llm_error(self, operation: str, error: Exception, fallback_result=None):
+        """Handle LLM errors with consistent logging and fallback."""
+        logger.error("Error %s: %s", operation, error)
+        print(f"❌ Error {operation}: {error}")
+        return fallback_result
+
     def _handle_llm_validation(
         self,
         validation_result,
         model: "GraphModel",
         operations: "ModelModifications",
     ) -> "GraphModel":
-        """Handle validation results for LLM strategy with automatic model regeneration."""
+        """Handle validation results for LLM strategy with regeneration."""
         if not validation_result.success and self.llm:
             print("\n🤖 LLM STRATEGY: AUTOMATIC MODEL IMPROVEMENT")
-            print("The LLM will analyze validation issues and regenerate the model...")
+            print(
+                "The LLM will analyze validation issues and regenerate " "the model..."
+            )
 
             # Prepare context for LLM
             validation_context = self._prepare_validation_context_for_llm(
@@ -1026,7 +1248,7 @@ class HyGM:
     def _regenerate_model_with_llm_fixes(
         self, current_model: "GraphModel", validation_context: str, validation_result
     ) -> Optional["GraphModel"]:
-        """Use LLM to regenerate an improved model based on validation issues."""
+        """Use LLM to regenerate an improved model based on validation."""
         if not self.llm or not self.database_structure:
             return None
 
@@ -1040,20 +1262,8 @@ class HyGM:
             current_model, validation_result, validation_context
         )
 
-        system_prompt = (
-            "You are an expert graph modeling assistant. You need to regenerate "
-            "an improved graph model that addresses the validation issues "
-            "identified in the current model. Focus on:\n\n"
-            "1. Adding any missing entities (tables) to achieve full coverage\n"
-            "2. Including all required properties from the original database\n"
-            "3. Ensuring all relationships are properly modeled\n"
-            "4. Maintaining data integrity and proper graph structure\n\n"
-            "Generate a complete, improved graph model that resolves the "
-            "validation issues while preserving the user's modifications."
-        )
-
         try:
-            print("🔄 LLM is analyzing validation issues and regenerating model...")
+            print("🔄 LLM is analyzing validation issues and regenerating " "model...")
 
             # Use the LLM strategy but with enhanced context
             improved_model = strategy_instance.create_model(
@@ -1076,6 +1286,13 @@ class HyGM:
     ) -> str:
         """Prepare comprehensive context for LLM model improvement."""
         context_parts = []
+
+        # User operations must be preserved - add this FIRST
+        if self.user_operation_history and self.user_operation_history.operations:
+            user_context = self.user_operation_history.to_llm_context()
+            if user_context:  # Only add if there's actual content
+                context_parts.append(user_context)
+                context_parts.append("")
 
         # Previous model structure
         context_parts.append("CURRENT MODEL TO IMPROVE:")
@@ -1111,13 +1328,13 @@ class HyGM:
         print("=" * 60)
 
         # Show comparison
-        print(f"\nCURRENT MODEL:")
+        print("\nCURRENT MODEL:")
         print(f"  Nodes: {len(current_model.nodes)}")
         print(f"  Relationships: {len(current_model.edges)}")
         print(f"  Indexes: {len(current_model.node_indexes)}")
         print(f"  Constraints: {len(current_model.node_constraints)}")
 
-        print(f"\nIMPROVED MODEL:")
+        print("\nIMPROVED MODEL:")
         print(f"  Nodes: {len(improved_model.nodes)}")
         print(f"  Relationships: {len(improved_model.edges)}")
         print(f"  Indexes: {len(improved_model.node_indexes)}")
@@ -1141,7 +1358,8 @@ class HyGM:
                 elif choice == "3":
                     self._display_current_model(improved_model)
                     print(
-                        "\nAfter reviewing, would you like to apply these improvements?"
+                        "\nAfter reviewing, would you like to apply these "
+                        "improvements?"
                     )
                     print("1. Yes - Apply improvements")
                     print("2. No - Keep current model")
@@ -1212,7 +1430,7 @@ class HyGM:
                     property_changes.append((label, new_props, removed_props))
 
             if property_changes:
-                print(f"\n🔄 PROPERTY CHANGES:")
+                print("\n🔄 PROPERTY CHANGES:")
                 for label, new_props, removed_props in property_changes:
                     if new_props:
                         for prop in sorted(new_props):
@@ -1241,11 +1459,10 @@ class HyGM:
                     {
                         "role": "user",
                         "content": (
-                            f"Please analyze these validation results and suggest "
-                            f"fixes:\n\n"
-                            f"{validation_context}\n\n"
-                            f"Provide specific, actionable recommendations to fix "
-                            f"the critical issues."
+                            "Please analyze these validation results and "
+                            f"suggest fixes:\n\n{validation_context}\n\n"
+                            "Provide specific, actionable recommendations "
+                            "to fix the critical issues."
                         ),
                     },
                 ]

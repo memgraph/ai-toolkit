@@ -111,19 +111,17 @@ class CypherGenerator:
         return "".join(word.capitalize() for word in table_name.split("_"))
 
     def generate_relationship_type(
-        self, from_table: str, to_table: str, join_table: str | None = None
+        self, to_table: str, join_table: str | None = None
     ) -> str:
         """Generate relationship type based on table names.
 
         Args:
-            from_table: Source table name (unused, kept for compatibility)
             to_table: Target table name
             join_table: Join table name (for many-to-many relationships)
 
         Returns:
             Relationship type in UPPER_CASE format
         """
-        # pylint: disable=unused-argument
         # Table-based naming strategy
         if join_table:
             return self._table_name_to_label(join_table).upper()

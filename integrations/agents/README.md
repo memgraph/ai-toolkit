@@ -61,6 +61,8 @@ MEMGRAPH_PASSWORD=
 OPENAI_API_KEY=your_openai_key
 ```
 
+Make sure that Memgraph is started with the `--schema-info-enabled=true`, since agent uses the schema information from Memgraph `SHOW SCHEMA INFO`.
+
 # Arhitecture
 
 core/hygm/

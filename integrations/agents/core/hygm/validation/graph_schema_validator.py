@@ -169,15 +169,45 @@ class GraphSchemaValidator(BaseValidator):
         # Check for missing tables
         missing_tables = set(entity_tables.keys()) - covered_tables
         if missing_tables:
+            # Get details about missing tables
+            missing_table_details = []
+            for table_name in sorted(missing_tables):
+                if hasattr(database_structure, "entity_tables"):
+                    table_info = entity_tables[table_name]
+                    column_count = len(table_info.columns)
+                    pk_count = len(table_info.primary_keys)
+                    fk_count = len(table_info.foreign_keys)
+                else:
+                    table_info = entity_tables[table_name]
+                    column_count = len(table_info.get("schema", []))
+                    pk_count = len(table_info.get("primary_keys", []))
+                    fk_count = len(table_info.get("foreign_keys", []))
+
+                missing_table_details.append(
+                    f"'{table_name}' ({column_count} cols, {pk_count} PKs, "
+                    f"{fk_count} FKs)"
+                )
+
+            details_str = "; ".join(missing_table_details)
+
             self.add_issue(
                 ValidationSeverity.CRITICAL,
                 ValidationCategory.COVERAGE,
-                f"Missing {len(missing_tables)} entity tables in graph model",
+                (
+                    f"Missing {len(missing_tables)} entity tables in graph "
+                    f"model: {details_str}. These tables should be "
+                    f"represented as nodes in the graph model."
+                ),
                 expected=list(entity_tables.keys()),
                 actual=list(covered_tables),
                 recommendation=(
-                    "Ensure all entity tables are modeled as nodes. "
-                    f"Missing: {', '.join(sorted(missing_tables))}"
+                    "Create nodes for each missing table. For example:\n"
+                    + "\n".join(
+                        [
+                            f"  - Add '{table}' node with appropriate labels"
+                            for table in sorted(missing_tables)
+                        ]
+                    )
                 ),
                 details={"missing_tables": list(missing_tables)},
             )
@@ -286,18 +316,37 @@ class GraphSchemaValidator(BaseValidator):
 
         if missing_by_table:
             total_missing = sum(len(props) for props in missing_by_table.values())
+
+            # Create detailed message about missing properties
+            missing_details = []
+            for table_name, missing_props in missing_by_table.items():
+                props_str = ", ".join(sorted(missing_props))
+                missing_details.append(f"Table '{table_name}': {props_str}")
+
+            details_message = "; ".join(missing_details)
+
             self.add_issue(
                 ValidationSeverity.CRITICAL,
                 ValidationCategory.COVERAGE,
                 (
-                    f"Missing {total_missing} non-foreign-key properties across "
-                    f"{len(missing_by_table)} tables"
+                    f"Missing {total_missing} non-foreign-key properties "
+                    f"across {len(missing_by_table)} tables. Details: "
+                    f"{details_message}. These properties may contain "
+                    "important data that should be preserved in "
+                    "the graph model."
                 ),
                 expected=f"{total_properties} properties",
                 actual=f"{covered_properties} properties",
                 recommendation=(
-                    "Ensure all non-foreign-key columns are mapped to node properties. "
-                    "Foreign key columns are expected to become relationships."
+                    "Add missing properties to corresponding nodes:\n"
+                    + "\n".join(
+                        [
+                            f"  - Add to '{table}' node: {', '.join(props)}"
+                            for table, props in missing_by_table.items()
+                        ]
+                    )
+                    + "\nNote: Foreign key columns are correctly modeled "
+                    "as relationships, not properties."
                 ),
                 details={"missing_by_table": missing_by_table},
             )
@@ -329,13 +378,43 @@ class GraphSchemaValidator(BaseValidator):
         self.metrics.relationships_covered = min(modeled_count, len(relationships))
 
         if modeled_count < len(relationships):
+            # Get details about database relationships
+            db_relationship_details = []
+            for rel in relationships[:5]:  # Show first 5 for brevity
+                if isinstance(rel, dict):
+                    from_table = rel.get("from_table", "unknown")
+                    to_table = rel.get("to_table", "unknown")
+                    column = rel.get("column", "unknown")
+                    db_relationship_details.append(
+                        f"{from_table}.{column} -> {to_table}"
+                    )
+                else:
+                    # Handle object format if needed
+                    db_relationship_details.append(str(rel))
+
+            missing_count = len(relationships) - modeled_count
+            details_str = "; ".join(db_relationship_details)
+            if len(relationships) > 5:
+                details_str += f" (and {len(relationships) - 5} more)"
+
             self.add_issue(
                 ValidationSeverity.WARNING,
                 ValidationCategory.COVERAGE,
-                f"Fewer relationships modeled ({modeled_count}) than in database ({len(relationships)})",
+                (
+                    f"Fewer relationships modeled ({modeled_count}) than in "
+                    f"database ({len(relationships)}). Missing "
+                    f"{missing_count} potential relationships. Database "
+                    f"relationships include: {details_str}. These foreign key "
+                    "relationships may represent important "
+                    "connections that should be modeled as graph "
+                    "relationships."
+                ),
                 expected=f"{len(relationships)} relationships",
                 actual=f"{modeled_count} relationships",
-                recommendation="Review if all important relationships are modeled",
+                recommendation=(
+                    "Review database foreign keys and consider adding "
+                    "missing relationships."
+                ),
             )
 
         logger.debug(

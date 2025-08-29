@@ -36,20 +36,16 @@ class SchemaUtilities:
         return column_name
 
     @staticmethod
-    def generate_relationship_name(
-        from_table: str, to_table: str, join_table: str = None
-    ) -> str:
+    def generate_relationship_name(to_table: str, join_table: str | None = None) -> str:
         """Generate semantic relationship name.
 
         Args:
-            from_table: Source table name (unused, kept for compatibility)
             to_table: Target table name
             join_table: Join table name for many-to-many relationships
 
         Returns:
             Relationship name in UPPER_CASE
         """
-        # pylint: disable=unused-argument
         if join_table:
             return SchemaUtilities.table_name_to_label(join_table).upper()
         else:
