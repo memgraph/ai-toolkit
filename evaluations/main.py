@@ -314,6 +314,94 @@ class ContextualPrecisionMetric(BaseMetric):
         )
 
 
+class InformationDensityMetric(BaseMetric):
+    """Evaluates how information-dense and concise the answer is"""
+
+    def __init__(self, threshold: float = 3.0):
+        super().__init__(threshold)
+
+    def evaluate(self, test_case: TestCase) -> EvaluationResult:
+        """
+        Stub implementation for information density evaluation.
+        In a real implementation, this would use an LLM to assess if the answer
+        provides sufficient information without being overly verbose or too brief.
+        """
+        # Stub logic: analyze answer length, content richness, and relevance
+        question_lower = test_case.question.lower()
+        answer_lower = test_case.answer.lower()
+        context_text = " ".join(test_case.context).lower()
+
+        # Calculate various density factors
+        answer_length = len(test_case.answer.split())
+        question_length = len(test_case.question.split())
+
+        # Information richness: unique informative words in answer
+        answer_words = set(answer_lower.split())
+        context_words = set(context_text.split())
+        question_words = set(question_lower.split())
+
+        # Count informative words (words that add value beyond common words)
+        # fmt: off
+        common_words = { "the", "a", "an", "and", "or", "but", "in", "on", "at",
+        "to", "for", "of", "with", "by", "is", "are", "was", "were", "be",
+        "been", "have", "has", "had", "do", "does", "did", "will", "would",
+        "could", "should", "may", "might", "can", }
+        # fmt: on
+        informative_words = answer_words - common_words
+
+        # Relevance density: how many informative words are relevant to the question
+        relevant_informative = informative_words.intersection(
+            question_words.union(context_words)
+        )
+
+        # Calculate density scores
+        if answer_length == 0:
+            density_score = 0.0
+        else:
+            # Information density: informative words per total words
+            info_density = len(informative_words) / answer_length
+
+            # Relevance density: relevant informative words per informative words
+            relevance_density = len(relevant_informative) / max(
+                len(informative_words), 1
+            )
+
+            # Length appropriateness: not too short, not too long
+            expected_length = max(question_length * 2, 5)  # Rough heuristic
+            length_appropriateness = 1.0 - min(
+                abs(answer_length - expected_length) / expected_length, 1.0
+            )
+
+            # Combined density score
+            density_score = (
+                info_density * 0.4
+                + relevance_density * 0.4
+                + length_appropriateness * 0.2
+            ) * 5
+
+        reasoning = f"Info density: {len(informative_words)}/{answer_length} words, Relevance: {len(relevant_informative)}/{len(informative_words)} relevant, Length appropriateness: {length_appropriateness:.2f}"
+        passed = self._determine_pass(density_score)
+
+        return EvaluationResult(
+            test_case_id=test_case.id,
+            metric_name="information_density",
+            score=self._score_to_enum(density_score),
+            score_numeric=density_score,
+            reasoning=reasoning,
+            passed=passed,
+            metadata={
+                "answer_length": answer_length,
+                "question_length": question_length,
+                "informative_words": len(informative_words),
+                "relevant_informative": len(relevant_informative),
+                "length_appropriateness": length_appropriateness,
+                "info_density": len(informative_words) / max(answer_length, 1),
+                "relevance_density": len(relevant_informative)
+                / max(len(informative_words), 1),
+            },
+        )
+
+
 class Evaluator:
     """Main evaluation orchestrator."""
 
@@ -323,6 +411,7 @@ class Evaluator:
             "answer_relevancy": AnswerRelevancyMetric(),
             "faithfulness": FaithfulnessMetric(),
             "contextual_precision": ContextualPrecisionMetric(),
+            "information_density": InformationDensityMetric(),
         }
 
     def evaluate(
@@ -432,13 +521,16 @@ def main():
     """Example usage of the evaluation"""
     test_cases = create_sample_test_cases()
 
-    print("Using evaluate([test_cases], metrics=[answer_relevancy, faithfulness])")
+    print(
+        "Using evaluate([test_cases], metrics=[answer_relevancy, faithfulness, contextual_precision, information_density])"
+    )
     test_run = evaluate(
         test_cases,
         metrics=[
             AnswerRelevancyMetric(),
             FaithfulnessMetric(),
             ContextualPrecisionMetric(),
+            InformationDensityMetric(),
         ],
     )
 
