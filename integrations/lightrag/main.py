@@ -1,9 +1,13 @@
 import os
+import csv
+
 import asyncio
 from lightrag import LightRAG, QueryParam
 from lightrag.llm.openai import gpt_4o_mini_complete, gpt_4o_complete, openai_embed
 from lightrag.kg.shared_storage import initialize_pipeline_status
 from lightrag.utils import setup_logger
+import kagglehub
+from tqdm import tqdm
 
 setup_logger("lightrag", level="INFO")
 
@@ -25,23 +29,53 @@ async def initialize_rag():
     await initialize_pipeline_status()  # Initialize processing pipeline
     return rag
 
+
+async def naive_search(rag: LightRAG, query: str):
+    return await rag.aquery(query, param=QueryParam(mode="naive"))
+
+
+async def hybrid_search(rag: LightRAG, query: str):
+    return await rag.aquery(query, param=QueryParam(mode="hybrid"))
+
+
 async def main():
     try:
-        # Initialize RAG instance
+        # Initialize the dataset
         rag = await initialize_rag()
-        await rag.ainsert("Your text, testing graph creation, GraphRAG FTW")
+        path = os.path.join(kagglehub.dataset_download("dkhundley/sample-rag-knowledge-item-dataset"), "rag_sample_qas_from_kis.csv")
+        with open(path, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                await rag.ainsert(row["ki_text"])
+        
+        # Get answers to the test questions (naive RAG) -> BaselineRAG
+        test_cases_naive = []
+        with open(path, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                answer = await naive_search(rag, row["sample_question"])
+                test_cases_naive.append({
+                    "query": row["sample_question"],
+                    "expected_answer": row["sample_ground_truth"],
+                    "answer": answer,
+                })
 
-        # Perform hybrid search
-        mode = "hybrid"
-        print("----")
-        print(
-          await rag.aquery(
-              "What are the top themes in this story?",
-              param=QueryParam(mode=mode)
-          )
-        )
-        print("----")
+        # Get answers to the test questions (hybrid RAG) -> GraphRAG
+        test_cases_hybrid = []
+        with open(path, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                answer = await hybrid_search(rag, row["sample_question"])
+                expected_answer = row["sample_ground_truth"]
+                test_cases_hybrid.append({
+                    "query": row["sample_question"],
+                    "expected_answer": expected_answer,
+                    "answer": answer,
+                })
 
+        # TODO: Evaluation
+        print(f"The number of naive RAG tests: {len(test_cases_naive)}")
+        print(f"The number of hybrid RAG tests: {len(test_cases_hybrid)}")
     except Exception as e:
         print(f"An error occurred: {e}")
     finally:
