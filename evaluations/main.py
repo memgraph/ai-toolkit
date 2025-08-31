@@ -517,6 +517,26 @@ def create_sample_test_cases() -> List[TestCase]:
     ]
 
 
+def print_evaluation_summary(test_run: TestRun, title: str = "Evaluation Summary"):
+    """
+    Print a formatted evaluation summary for a test run.
+
+    Args:
+        test_run: The TestRun object to summarize
+        title: Optional title for the summary
+    """
+    print(f"{title}:")
+    summary = test_run.get_summary()
+
+    for key, value in summary.items():
+        if key == "metric_summary":
+            print(f"  {key}:")
+            for metric, details in value.items():
+                print(f"   {metric}: {details}")
+        else:
+            print(f"  {key}: {value}")
+
+
 def main():
     """Example usage of the evaluation"""
     test_cases = create_sample_test_cases()
@@ -557,18 +577,7 @@ def main():
 
         print("-" * 50)
 
-    # Display summary
-    print("\nTest Run Summary:")
-    print("=" * 20)
-    summary = test_run.get_summary()
-
-    for key, value in summary.items():
-        if key == "metric_summary":
-            print(f"{key}:")
-            for metric, details in value.items():
-                print(f"  {metric}: {details}")
-        else:
-            print(f"{key}: {value}")
+    print_evaluation_summary(test_run, "Test Run Summary")
 
 
 if __name__ == "__main__":

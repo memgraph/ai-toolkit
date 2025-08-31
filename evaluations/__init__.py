@@ -18,6 +18,7 @@ from .main import (
     InformationDensityMetric,
     Evaluator,
     evaluate,
+    print_evaluation_summary,
 )
 
 __version__ = "0.1.0"
@@ -34,4 +35,5 @@ __all__ = [
     "InformationDensityMetric",
     "Evaluator",
     "evaluate",
+    "print_evaluation_summary",
 ]
