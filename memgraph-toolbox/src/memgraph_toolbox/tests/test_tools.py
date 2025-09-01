@@ -253,10 +253,32 @@ def test_node_vector_search_tool():
     user = ""
     password = ""
     memgraph_client = Memgraph(url=url, username=user, password=password)
-
+    memgraph_client.query(
+        'MATCH (n:Person) WHERE "embedding" IN keys(n) DETACH DELETE n'
+    )
+    memgraph_client.query("DROP VECTOR INDEX my_index")
+    memgraph_client.query(
+        "CREATE (:Person {name: 'Alice', embedding: [1.0, 2.0, 3.0]})"
+    )
+    memgraph_client.query("CREATE (:Person {name: 'Bob', embedding: [1.0, 2.0, 4.0]})")
+    memgraph_client.query(
+        "CREATE (:Person {name: 'Charlie', embedding: [1.0, 2.0, 5.0]})"
+    )
+    memgraph_client.query(
+        "CREATE VECTOR INDEX my_index ON :Person(embedding) WITH CONFIG {'dimension': 3, 'capacity': 1000}"
+    )
     node_vector_search_tool = NodeVectorSearchTool(db=memgraph_client)
     result = node_vector_search_tool.call(
-        {"index_name": "my_index", "node_label": "Person", "query_vector": [1, 2, 3]}
+        {
+            "index_name": "my_index",
+            "node_label": "Person",
+            "query_vector": [1.0, 2.0, 3.0],
+        }
     )
     assert isinstance(result, list)
+    assert len(result) == 3
     # TODO(gitbuda): Make sure everything is working and test for real.
+    memgraph_client.query(
+        'MATCH (n:Person) WHERE "embedding" IN keys(n) DETACH DELETE n'
+    )
+    memgraph_client.query("DROP VECTOR INDEX my_index")
