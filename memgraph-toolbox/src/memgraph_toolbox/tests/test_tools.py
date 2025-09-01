@@ -248,11 +248,11 @@ def test_betweenness_centrality_tool():
 
 def test_node_vector_search_tool():
     """Test the NodeVectorSearch tool."""
-
     url = "bolt://localhost:7687"
     user = ""
     password = ""
     memgraph_client = Memgraph(url=url, username=user, password=password)
+
     memgraph_client.query(
         'MATCH (n:Person) WHERE "embedding" IN keys(n) DETACH DELETE n'
     )
@@ -267,6 +267,7 @@ def test_node_vector_search_tool():
     memgraph_client.query(
         "CREATE VECTOR INDEX my_index ON :Person(embedding) WITH CONFIG {'dimension': 3, 'capacity': 1000}"
     )
+
     node_vector_search_tool = NodeVectorSearchTool(db=memgraph_client)
     result = node_vector_search_tool.call(
         {
@@ -277,7 +278,6 @@ def test_node_vector_search_tool():
     )
     assert isinstance(result, list)
     assert len(result) == 3
-    # TODO(gitbuda): Make sure everything is working and test for real.
     memgraph_client.query(
         'MATCH (n:Person) WHERE "embedding" IN keys(n) DETACH DELETE n'
     )

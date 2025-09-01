@@ -10,8 +10,6 @@ class NodeVectorSearchTool(BaseTool):
     """
 
     def __init__(self, db: Memgraph):
-        # TODO(gitbuda): The problem is that we have index_name instead of label
-        # :thinking: -> ask for stuff via schema.
         super().__init__(
             name="node_vector_search",
             description="Performs vector similarity search on nodes in Memgraph using cosine similarity",
@@ -47,9 +45,8 @@ class NodeVectorSearchTool(BaseTool):
         query = f"""
             CALL vector_search.search(\"{index_name}\", {limit}, {query_vector}) YIELD * RETURN *;
         """
-        params = {}
         try:
-            results = self.db.query(query, params)
+            results = self.db.query(query, {})
             records = []
             for record in results:
                 node = record["node"]
@@ -60,7 +57,7 @@ class NodeVectorSearchTool(BaseTool):
                     # because the record.data() is returning a dict of only
                     # properties
                     # (https://neo4j.com/docs/api/python-driver/current/api.html#neo4j.Record.data)
-                    # FIX in another PR.
+                    # FIX under https://github.com/memgraph/ai-toolkit/pull/68.
                     "properties": properties,
                     "distance": record["distance"],
                 }
