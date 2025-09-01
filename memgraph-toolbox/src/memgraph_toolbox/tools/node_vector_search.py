@@ -69,7 +69,7 @@ class NodeVectorSearchTool(BaseTool):
 
         # Create the Cypher query for vector similarity search
         query = f"""
-            CALL vector_search.search({index_name}, {limit}, {query_vector.tolist()}) YIELD * RETURN *;"
+            CALL vector_search.search({index_name}, {limit}, {query_vector}) YIELD * RETURN *;"
         """
         # TODO(gitbuda): Pass other params.
         params = {

@@ -6,6 +6,7 @@ from ..tools.config import ShowConfigTool
 from ..tools.constraint import ShowConstraintInfoTool
 from ..tools.cypher import CypherTool
 from ..tools.index import ShowIndexInfoTool
+from ..tools.node_vector_search import NodeVectorSearchTool
 from ..tools.page_rank import PageRankTool
 from ..tools.schema import ShowSchemaInfoTool
 from ..tools.storage import ShowStorageInfoTool
@@ -243,3 +244,19 @@ def test_betweenness_centrality_tool():
     assert len(result) > 0
     assert "node" in result[0]
     assert "betweenness_centrality" in result[0]
+
+
+def test_node_vector_search_tool():
+    """Test the NodeVectorSearch tool."""
+
+    url = "bolt://localhost:7687"
+    user = ""
+    password = ""
+    memgraph_client = Memgraph(url=url, username=user, password=password)
+
+    node_vector_search_tool = NodeVectorSearchTool(db=memgraph_client)
+    result = node_vector_search_tool.call(
+        {"index_name": "my_index", "node_label": "Person", "query_vector": [1, 2, 3]}
+    )
+    assert isinstance(result, list)
+    # TODO(gitbuda): Make sure everything is working and test for real.
