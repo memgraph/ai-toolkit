@@ -292,13 +292,22 @@ def test_node_neighborhood_tool():
     password = ""
     memgraph_client = Memgraph(url=url, username=user, password=password)
 
-    memgraph_client.query("CREATE (:Person {id: 1})")
-    memgraph_client.query("CREATE (:Person {id: 2})")
-    memgraph_client.query("CREATE (:Person {id: 3})")
+    label = "TestNodeNeighborhoodToolLabel"
+    memgraph_client.query(f"MATCH (n:{label}) DETACH DELETE n;")
+    memgraph_client.query(
+        f"CREATE (p1:{label} {{id: 1}})-[:KNOWS]->(p2:{label} {{id: 2}}), (p2)-[:KNOWS]->(p3:{label} {{id: 3}});"
+    )
+    memgraph_client.query(
+        f"CREATE (p4:{label} {{id: 4}})-[:KNOWS]->(p5:{label} {{id: 5}});"
+    )
+    ids = memgraph_client.query(
+        f"MATCH (p1:{label} {{id:1}}) RETURN id(p1) AS node_id;"
+    )
+    assert len(ids) == 1
+    node_id = ids[0]["node_id"]
 
     node_neighborhood_tool = NodeNeighborhoodTool(db=memgraph_client)
-    result = node_neighborhood_tool.call(
-        {"node_id": 1, "max_distance": 2, "relationship_types": ["KNOWS"]}
-    )
+    result = node_neighborhood_tool.call({"node_id": node_id, "max_distance": 2})
     assert isinstance(result, list)
     assert len(result) == 2
+    memgraph_client.query(f"MATCH (n:{label}) DETACH DELETE n;")
