@@ -6,6 +6,7 @@ from ..tools.config import ShowConfigTool
 from ..tools.constraint import ShowConstraintInfoTool
 from ..tools.cypher import CypherTool
 from ..tools.index import ShowIndexInfoTool
+from ..tools.node_neighborhood import NodeNeighborhoodTool
 from ..tools.node_vector_search import NodeVectorSearchTool
 from ..tools.page_rank import PageRankTool
 from ..tools.schema import ShowSchemaInfoTool
@@ -282,3 +283,22 @@ def test_node_vector_search_tool():
         'MATCH (n:Person) WHERE "embedding" IN keys(n) DETACH DELETE n'
     )
     memgraph_client.query("DROP VECTOR INDEX my_index")
+
+
+def test_node_neighborhood_tool():
+    """Test the NodeNeighborhood tool."""
+    url = "bolt://localhost:7687"
+    user = ""
+    password = ""
+    memgraph_client = Memgraph(url=url, username=user, password=password)
+
+    memgraph_client.query("CREATE (:Person {id: 1})")
+    memgraph_client.query("CREATE (:Person {id: 2})")
+    memgraph_client.query("CREATE (:Person {id: 3})")
+
+    node_neighborhood_tool = NodeNeighborhoodTool(db=memgraph_client)
+    result = node_neighborhood_tool.call(
+        {"node_id": 1, "max_distance": 2, "relationship_types": ["KNOWS"]}
+    )
+    assert isinstance(result, list)
+    assert len(result) == 2
