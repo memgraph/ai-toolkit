@@ -6,6 +6,7 @@ from ..tools.config import ShowConfigTool
 from ..tools.constraint import ShowConstraintInfoTool
 from ..tools.cypher import CypherTool
 from ..tools.index import ShowIndexInfoTool
+from ..tools.node_vector_search import NodeVectorSearchTool
 from ..tools.page_rank import PageRankTool
 from ..tools.schema import ShowSchemaInfoTool
 from ..tools.storage import ShowStorageInfoTool
@@ -243,3 +244,41 @@ def test_betweenness_centrality_tool():
     assert len(result) > 0
     assert "node" in result[0]
     assert "betweenness_centrality" in result[0]
+
+
+def test_node_vector_search_tool():
+    """Test the NodeVectorSearch tool."""
+    url = "bolt://localhost:7687"
+    user = ""
+    password = ""
+    memgraph_client = Memgraph(url=url, username=user, password=password)
+
+    memgraph_client.query(
+        'MATCH (n:Person) WHERE "embedding" IN keys(n) DETACH DELETE n'
+    )
+    memgraph_client.query("DROP VECTOR INDEX my_index")
+    memgraph_client.query(
+        "CREATE (:Person {name: 'Alice', embedding: [1.0, 2.0, 3.0]})"
+    )
+    memgraph_client.query("CREATE (:Person {name: 'Bob', embedding: [1.0, 2.0, 4.0]})")
+    memgraph_client.query(
+        "CREATE (:Person {name: 'Charlie', embedding: [1.0, 2.0, 5.0]})"
+    )
+    memgraph_client.query(
+        "CREATE VECTOR INDEX my_index ON :Person(embedding) WITH CONFIG {'dimension': 3, 'capacity': 1000}"
+    )
+
+    node_vector_search_tool = NodeVectorSearchTool(db=memgraph_client)
+    result = node_vector_search_tool.call(
+        {
+            "index_name": "my_index",
+            "node_label": "Person",
+            "query_vector": [1.0, 2.0, 3.0],
+        }
+    )
+    assert isinstance(result, list)
+    assert len(result) == 3
+    memgraph_client.query(
+        'MATCH (n:Person) WHERE "embedding" IN keys(n) DETACH DELETE n'
+    )
+    memgraph_client.query("DROP VECTOR INDEX my_index")
