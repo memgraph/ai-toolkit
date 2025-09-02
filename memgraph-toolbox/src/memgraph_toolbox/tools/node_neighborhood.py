@@ -26,7 +26,7 @@ class NodeNeighborhoodTool(BaseTool):
                     },
                     "max_distance": {
                         "type": "integer",
-                        "description": "Maximum distance (hops) to search from the starting node. Default is 2.",
+                        "description": "Maximum distance (hops) to search from the starting node. Default is 1.",
                         "default": 1,
                     },
                     "limit": {
