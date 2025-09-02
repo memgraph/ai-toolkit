@@ -19,6 +19,8 @@ Below is a list of tools included in the toolbox, along with their descriptions:
 7. `CypherTool` - Executes arbitrary [Cypher queries](https://memgraph.com/docs/querying) on a Memgraph database.
 8. `ShowConstraintInfoTool` - Shows [constraint](https://memgraph.com/docs/fundamentals/constraints) information from a Memgraph database.
 9. `ShowConfigTool` - Shows [configuration](https://memgraph.com/docs/database-management/configuration) information from a Memgraph database.
+10. `NodeVectorSearchTool` - Searches the most similar nodes using the Memgraph's [vector search](https://memgraph.com/docs/querying/vector-search).
+11. `NodeNeighborhoodTool` - Searches for the data attached to a given node using Memgraph's [deep-path traversals](https://memgraph.com/docs/advanced-algorithms/deep-path-traversal).
 
 ## Usage
 
