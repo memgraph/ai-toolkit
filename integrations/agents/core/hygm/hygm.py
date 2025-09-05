@@ -1156,7 +1156,7 @@ class HyGM:
 
                     # Try LLM improvement
                     improved_model = self._handle_llm_validation(
-                        validation_result, current_model, operations
+                        validation_result, current_model, operations, mode
                     )
 
                     if improved_model != current_model:
@@ -1330,6 +1330,7 @@ class HyGM:
         validation_result,
         model: "GraphModel",
         operations: "ModelModifications",
+        mode: str = "interactive",
     ) -> "GraphModel":
         """Handle validation results for LLM strategy with regeneration."""
         if not validation_result.success and self.llm:
@@ -1353,8 +1354,11 @@ class HyGM:
                     print("\n✅ LLM has generated an improved model!")
 
                     # Offer the user to review the improved model
-                    if self._should_apply_llm_improvements(improved_model, model):
-                        print("� Applying LLM improvements...")
+                    should_apply = self._should_apply_llm_improvements(
+                        improved_model, model, mode
+                    )
+                    if should_apply:
+                        print("✅ Applying LLM improvements...")
                         return improved_model
                     else:
                         print("❌ User rejected LLM improvements")
@@ -1483,9 +1487,19 @@ class HyGM:
         return "\n".join(context_parts)
 
     def _should_apply_llm_improvements(
-        self, improved_model: "GraphModel", current_model: "GraphModel"
+        self,
+        improved_model: "GraphModel",
+        current_model: "GraphModel",
+        mode: str = "interactive",
     ) -> bool:
-        """Ask user whether to apply LLM improvements."""
+        """Ask user to apply LLM improvements or auto-apply in automatic mode."""
+
+        # In automatic mode, always apply improvements
+        if mode == "automatic":
+            print("🤖 Automatic mode: Applying LLM improvements...")
+            return True
+
+        # In interactive mode, ask the user
         print("\n" + "=" * 60)
         print("🤖 LLM MODEL IMPROVEMENT REVIEW")
         print("=" * 60)
