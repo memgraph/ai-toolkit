@@ -112,7 +112,6 @@ class SQLToMemgraphAgent:
         workflow.add_node("create_graph_model", self._create_graph_model)
         workflow.add_node("create_indexes", self._create_indexes)
         workflow.add_node("generate_cypher_queries", self._generate_cypher_queries)
-        workflow.add_node("validate_queries", self._validate_queries)
         workflow.add_node("prepare_target_database", self._prepare_target_database)
         workflow.add_node("execute_data_migration", self._execute_data_migration)
         workflow.add_node("validate_post_migration", self._validate_post_migration)
@@ -122,16 +121,7 @@ class SQLToMemgraphAgent:
         workflow.add_edge("create_graph_model", "prepare_target_database")
         workflow.add_edge("prepare_target_database", "create_indexes")
         workflow.add_edge("create_indexes", "generate_cypher_queries")
-        workflow.add_edge("generate_cypher_queries", "validate_queries")
-        workflow.add_conditional_edges(
-            "validate_queries",
-            self._should_proceed_with_migration,
-            {
-                "proceed": "execute_data_migration",
-                "retry": "validate_queries",
-                "abort": END,
-            },
-        )
+        workflow.add_edge("generate_cypher_queries", "execute_data_migration")
         workflow.add_edge("execute_data_migration", "validate_post_migration")
         workflow.add_edge("validate_post_migration", END)
 
@@ -295,34 +285,6 @@ class SQLToMemgraphAgent:
             state["current_step"] = "Graph model validation failed"
 
         return state
-
-    def _should_proceed_with_migration(self, state: MigrationState) -> str:
-        """Determine if we should proceed with migration or handle errors."""
-        errors = state.get("errors", [])
-
-        # Check for critical errors that should abort migration
-        critical_errors = [
-            error
-            for error in errors
-            if any(
-                keyword in error.lower()
-                for keyword in [
-                    "connection failed",
-                    "authentication",
-                    "database not found",
-                ]
-            )
-        ]
-
-        if critical_errors:
-            logger.error("Critical errors detected, aborting migration")
-            return "abort"
-
-        # If we have non-critical errors, we can still proceed
-        if errors:
-            logger.warning(f"Found {len(errors)} non-critical issues, proceeding")
-
-        return "proceed"
 
     def _prepare_target_database(self, state: MigrationState) -> MigrationState:
         """Prepare the target Memgraph database for migration."""
@@ -832,29 +794,6 @@ MATCH (from:{from_label} {{{from_pk}: row.{from_fk}}})
 MATCH (to:{to_label} {{{to_pk}: row.{to_fk}}})
 CREATE (from)-[:{rel_name}]->(to);"""
         return query
-
-    def _validate_queries(self, state: MigrationState) -> MigrationState:
-        """Validate generated Cypher queries and test MySQL connection."""
-        logger.info("Validating queries and testing connections...")
-
-        try:
-            # We'll test the MySQL connection in the prepare_target_database step
-            # For now, just validate that we have queries to execute
-            queries = state.get("migration_queries", [])
-            if not queries:
-                raise Exception("No migration queries generated")
-
-            logger.info(
-                f"Validation passed: {len(queries)} queries ready for execution"
-            )
-            state["current_step"] = "Queries validated successfully"
-
-        except Exception as e:
-            logger.error(f"Error validating queries: {e}")
-            state["errors"].append(f"Query validation failed: {e}")
-            state["current_step"] = "Query validation failed"
-
-        return state
 
     def _validate_post_migration(self, state: MigrationState) -> MigrationState:
         """Validate post-migration results using HyGM schema comparison."""
