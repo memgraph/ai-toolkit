@@ -140,6 +140,13 @@ class DeterministicStrategy(BaseModelingStrategy):
             start_labels = [from_table.title()]
             end_labels = [to_table.title()]
 
+            # Get primary key for the from_table
+            from_table_info = database_structure.get("entity_tables", {}).get(
+                from_table, {}
+            )
+            primary_keys = from_table_info.get("primary_keys", [])
+            from_pk = primary_keys[0] if primary_keys else f"{from_table}_id"
+
             # Create relationship source
             rel_source = RelationshipSource(
                 type="table",
@@ -149,6 +156,7 @@ class DeterministicStrategy(BaseModelingStrategy):
                     "start_node": (f"{from_table}.{rel_data.get('from_column', 'id')}"),
                     "end_node": (f"{to_table}.{rel_data.get('to_column', 'id')}"),
                     "edge_type": rel_name,
+                    "from_pk": from_pk,  # Add primary key for migration agent
                 },
             )
 

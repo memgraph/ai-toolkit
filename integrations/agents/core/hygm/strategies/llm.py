@@ -447,10 +447,14 @@ class LLMStrategy(BaseModelingStrategy):
                 db_rel, "join_from_column" if reverse else "join_to_column", None
             )
 
+        # Get primary keys for the tables from database structure
+        from_table_pk = self._get_table_primary_key(from_table)
+
         mapping = {
             "start_node": f"{from_table}.{from_col}",
             "end_node": f"{to_table}.{to_col}",
             "edge_type": llm_rel.name,
+            "from_pk": from_table_pk,  # Add primary key for migration agent
         }
 
         # Add many-to-many specific information if available
@@ -468,7 +472,7 @@ class LLMStrategy(BaseModelingStrategy):
             )
 
         # Determine source type
-        source_type = "junction_table" if rel_type == "many_to_many" else "table"
+        source_type = "many_to_many" if rel_type == "many_to_many" else "table"
 
         # Get constraint name with proper handling
         constraint_name = llm_rel.name
@@ -532,10 +536,12 @@ class LLMStrategy(BaseModelingStrategy):
 
             if referenced_table.lower() == to_table_name.lower():
                 # Found a matching foreign key
+                from_table_pk = self._get_table_primary_key(from_table_name)
                 mapping = {
                     "start_node": f"{from_table_name}.{fk_column}",
                     "end_node": f"{to_table_name}.{referenced_column}",
                     "edge_type": llm_rel.name,
+                    "from_pk": from_table_pk,
                 }
 
                 return {
@@ -562,10 +568,12 @@ class LLMStrategy(BaseModelingStrategy):
 
             if referenced_table.lower() == from_table_name.lower():
                 # Found a reverse foreign key - reverse direction
+                to_table_pk = self._get_table_primary_key(to_table_name)
                 mapping = {
                     "start_node": f"{to_table_name}.{fk_column}",
                     "end_node": f"{from_table_name}.{referenced_column}",
                     "edge_type": llm_rel.name,
+                    "from_pk": to_table_pk,
                 }
 
                 return {
@@ -803,3 +811,30 @@ class LLMStrategy(BaseModelingStrategy):
 
         # Fallback to the node name itself as label
         return [node_name]
+
+    def _get_table_primary_key(self, table_name: str) -> str:
+        """Get the primary key column name for a table from database structure."""
+        if not hasattr(self, "_database_structure"):
+            return f"{table_name}_id"  # Default fallback
+
+        # Check entity tables first
+        entity_tables = self._database_structure.get("entity_tables", {})
+        table_info = entity_tables.get(table_name)
+
+        if table_info:
+            # Get primary keys from table info
+            primary_keys = table_info.get("primary_keys", [])
+            if primary_keys:
+                return primary_keys[0]  # Return first primary key
+
+            # Fallback: look in schema for primary key
+            schema = table_info.get("schema", [])
+            for col_info in schema:
+                if isinstance(col_info, dict):
+                    if col_info.get("key") == "PRI":
+                        return col_info.get("field", f"{table_name}_id")
+                elif hasattr(col_info, "is_primary_key") and col_info.is_primary_key:
+                    return col_info.name
+
+        # Final fallback: conventional naming
+        return f"{table_name}_id"

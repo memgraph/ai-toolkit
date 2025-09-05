@@ -132,11 +132,11 @@ class SQLToMemgraphAgent:
         return workflow
 
     def _connect_and_analyze_schema(self, state: MigrationState) -> MigrationState:
-        """Connect to source database and analyze schema structure."""
-        logger.info("Connecting to source database and analyzing schema...")
+        """Connect to source database and prepare basic connection info for HyGM."""
+        logger.info("Preparing database connection for HyGM analysis...")
 
         try:
-            # Initialize database analyzer using factory
+            # Initialize database analyzer to test connection
             database_analyzer = DatabaseAnalyzerFactory.create_analyzer(
                 database_type="mysql", **state["source_db_config"]
             )
@@ -144,53 +144,20 @@ class SQLToMemgraphAgent:
             if not database_analyzer.connect():
                 raise Exception("Failed to connect to source database")
 
-            # Get standardized database structure
+            # Get basic database structure for HyGM
             db_structure = database_analyzer.get_database_structure()
-
-            # Use the built-in HyGM format conversion
             hygm_data = db_structure.to_hygm_format()
 
-            # Store the database structure for next steps
+            # Store the database structure for HyGM
             state["database_structure"] = hygm_data
+            state["total_tables"] = len(hygm_data.get("entity_tables", {}))
+            state["current_step"] = "Database connection established"
 
-            # Only count entity tables for migration progress
-            state["total_tables"] = len(hygm_data["entity_tables"])
-
-            # Automatically select all entity tables for migration
-            entity_tables = hygm_data.get("entity_tables", {})
-            if entity_tables:
-                selected_tables = list(entity_tables.keys())
-                logger.info(
-                    f"Automatically selecting all {len(selected_tables)} "
-                    f"entity tables for migration"
-                )
-                hygm_data["selected_tables"] = selected_tables
-                state["database_structure"] = hygm_data
-            else:
-                logger.warning("No entity tables found for migration")
-                state["errors"].append("No entity tables available for migration")
-
-            state["current_step"] = "Schema analysis completed"
-
-            # Log detailed analysis
-            views_count = len(hygm_data.get("views", {}))
-            join_tables_count = len(hygm_data.get("join_tables", {}))
-            entity_tables_count = len(hygm_data.get("entity_tables", {}))
-
-            logger.info(
-                f"Found {len(hygm_data['tables'])} total tables: "
-                f"{entity_tables_count} entities, "
-                f"{join_tables_count} join tables, "
-                f"{views_count} views, "
-                f"and {len(hygm_data['relationships'])} relationships"
-            )
-
-            if views_count > 0:
-                logger.info(f"Skipping {views_count} view tables from migration")
+            logger.info("Database structure prepared for HyGM analysis")
 
         except Exception as e:
-            logger.error(f"Error analyzing database schema: {e}")
-            state["errors"].append(f"Schema analysis failed: {e}")
+            logger.error(f"Error connecting to database: {e}")
+            state["errors"].append(f"Database connection failed: {e}")
 
         return state
 
@@ -238,51 +205,6 @@ class SQLToMemgraphAgent:
             logger.error(f"Graph modeling failed: {e}")
             # HyGM is required - propagate the error
             return self._handle_step_error(state, "creating graph model", e)
-
-        return state
-
-    def _validate_graph_model(self, state: MigrationState) -> MigrationState:
-        """Validate the created graph model."""
-        logger.info("Validating graph model...")
-
-        # Validate that we have a graph model
-        if not state.get("graph_model"):
-            logger.error("No graph model found - this should not happen")
-            state["errors"].append("Graph modeling failed to produce a model")
-            state["current_step"] = "Graph model validation failed"
-            return state
-
-        # Perform validation
-        try:
-            from core.hygm import HyGM
-
-            # Store graph model for later use in query generation
-            self._current_graph_model = state["graph_model"]
-
-            validator = HyGM(llm=self.llm)
-            validation_result = validator.validate_graph_model(
-                state["graph_model"], state["database_structure"]
-            )
-
-            if not validation_result["is_valid"]:
-                logger.warning("Graph model has validation issues:")
-                for issue in validation_result["issues"]:
-                    logger.warning(f"- {issue}")
-                state["errors"].extend(validation_result["issues"])
-
-            if validation_result["warnings"]:
-                logger.info("Graph model validation warnings:")
-                for warning in validation_result["warnings"]:
-                    logger.info(f"- {warning}")
-
-            state[
-                "current_step"
-            ] = f"Graph model validated - {validation_result['summary']}"
-
-        except Exception as e:
-            logger.error(f"Error validating graph model: {e}")
-            state["errors"].append(f"Graph model validation failed: {e}")
-            state["current_step"] = "Graph model validation failed"
 
         return state
 
@@ -496,7 +418,6 @@ class SQLToMemgraphAgent:
         logger.info("Generating Cypher queries based on HyGM graph model...")
 
         try:
-            hygm_data = state["database_structure"]
             source_db_config = state["source_db_config"]
 
             # Get the HyGM graph model (required)
@@ -554,7 +475,7 @@ SET n += row;"""
 
             for rel_def in graph_model.edges:
                 rel_query = self._generate_hygm_relationship_query(
-                    rel_def, hygm_data, db_config_str
+                    rel_def, db_config_str
                 )
                 if rel_query:
                     queries.append(rel_query)
@@ -573,74 +494,30 @@ SET n += row;"""
 
         return state
 
-    def _generate_hygm_relationship_query(
-        self, rel_def, hygm_data: Dict[str, Any], mysql_config_str: str
-    ) -> str:
+    def _generate_hygm_relationship_query(self, rel_def, mysql_config_str: str) -> str:
         """Generate relationship query based on HyGM relationship definition."""
 
         try:
-            rel_name = rel_def.edge_type
-            from_node = (
-                rel_def.start_node_labels[0] if rel_def.start_node_labels else ""
-            )
-            to_node = rel_def.end_node_labels[0] if rel_def.end_node_labels else ""
-            source_info = rel_def.source.mapping if rel_def.source else {}
-
-            # Determine relationship type based on source information
-            # If we have start_node and end_node mapping, it's likely one_to_many (foreign key)
-            # If we have a junction table type, it's many_to_many
-            if rel_def.source and rel_def.source.type == "junction_table":
-                rel_type = "many_to_many"
-            elif "start_node" in source_info and "end_node" in source_info:
-                rel_type = "one_to_many"
-            else:
-                # Try to infer relationship type from mapping
-                if source_info.get("join_table"):
-                    rel_type = "many_to_many"
-                else:
-                    # HyGM should provide relationship type
-                    raise Exception(
-                        f"HyGM must specify relationship type for {rel_name}"
-                    )
-
-            # Find the corresponding node labels from HyGM model
-            from_label = from_node
-            to_label = to_node
-
-            # Try to get actual labels from the graph model if available
-            if hasattr(self, "_current_graph_model") and self._current_graph_model:
-                for node in self._current_graph_model.nodes:
-                    if node.primary_label.lower() == from_node.lower():
-                        from_label = node.primary_label
-                    if node.primary_label.lower() == to_node.lower():
-                        to_label = node.primary_label
-
-            if not from_label or not to_label:
+            if not rel_def.source or not rel_def.source.mapping:
                 logger.warning(
-                    "Could not find node labels for relationship %s", rel_name
+                    f"No source mapping for relationship {rel_def.edge_type}"
                 )
                 return ""
 
-            if rel_type == "one_to_many":
-                return self._generate_one_to_many_hygm_query(
-                    rel_name,
-                    from_label,
-                    to_label,
-                    source_info,
-                    mysql_config_str,
-                    hygm_data,
-                )
-            elif rel_type == "many_to_many":
+            rel_name = rel_def.edge_type
+            source_info = rel_def.source.mapping
+
+            # Determine relationship type from HyGM source
+            if rel_def.source.type == "many_to_many":
                 return self._generate_many_to_many_hygm_query(
-                    rel_name,
-                    from_label,
-                    to_label,
-                    source_info,
-                    mysql_config_str,
-                    hygm_data,
+                    rel_name, rel_def, source_info, mysql_config_str
+                )
+            elif rel_def.source.type in ["table", "foreign_key"]:
+                return self._generate_one_to_many_hygm_query(
+                    rel_name, rel_def, source_info, mysql_config_str
                 )
             else:
-                logger.warning("Unsupported relationship type: %s", rel_type)
+                logger.warning(f"Unsupported relationship type: {rel_def.source.type}")
                 return ""
 
         except Exception as e:
@@ -652,17 +529,16 @@ SET n += row;"""
     def _generate_one_to_many_hygm_query(
         self,
         rel_name: str,
-        from_label: str,
-        to_label: str,
+        rel_def,
         source_info: Dict[str, Any],
         mysql_config_str: str,
-        hygm_data: Dict[str, Any],
     ) -> str:
-        """Generate one-to-many relationship query using HyGM information."""
+        """Generate one-to-many relationship query using HyGM source information."""
 
-        # Extract table and column information from the mapping
+        # All mapping information should come from HyGM source
         start_node = source_info.get("start_node", "")  # e.g., "address.city_id"
         end_node = source_info.get("end_node", "")  # e.g., "city.city_id"
+        from_pk = source_info.get("from_pk")  # Primary key provided by HyGM
 
         if not start_node or not end_node:
             logger.error("Missing relationship information for %s", rel_name)
@@ -674,43 +550,21 @@ SET n += row;"""
         try:
             from_table, fk_column = start_node.split(".", 1)
             to_table, to_column = end_node.split(".", 1)
-            logger.info(
-                "Parsed relationship mapping for %s: from_table=%s, fk_column=%s, to_table=%s, to_column=%s",
-                rel_name,
-                from_table,
-                fk_column,
-                to_table,
-                to_column,
-            )
         except ValueError:
             logger.error("Invalid mapping format for %s: %s", rel_name, source_info)
             raise Exception(
                 f"HyGM must provide valid relationship mapping for {rel_name}"
             )
 
-        # Get primary key from source table
-        from_table_info = hygm_data.get("entity_tables", {}).get(from_table, {})
-        primary_keys = from_table_info.get("primary_keys", [])
+        # HyGM should provide the primary key information
+        if not from_pk:
+            raise Exception(f"HyGM must provide primary key information for {rel_name}")
 
-        if not primary_keys:
-            logger.error("Could not determine primary key for table %s", from_table)
-            raise Exception(
-                f"HyGM must provide complete table information with primary keys for {from_table}"
-            )
-
-        # Use the first primary key (most common case)
-        from_pk = primary_keys[0]
-
-        # Debug the actual query components
-        logger.info(
-            "Generating query for %s: from_pk=%s, fk_column=%s, from_table=%s, to_column=%s, to_table=%s",
-            rel_name,
-            from_pk,
-            fk_column,
-            from_table,
-            to_column,
-            to_table,
+        # Get node labels from the relationship definition
+        from_label = (
+            rel_def.start_node_labels[0] if rel_def.start_node_labels else from_table
         )
+        to_label = rel_def.end_node_labels[0] if rel_def.end_node_labels else to_table
 
         query = f"""
 // Create {rel_name} relationships (HyGM: {from_label} -> {to_label})
@@ -720,60 +574,23 @@ MATCH (from_node:{from_label} {{{from_pk}: row.{from_pk}}})
 MATCH (to_node:{to_label} {{{to_column}: row.{fk_column}}})
 CREATE (from_node)-[:{rel_name}]->(to_node);"""
 
-        logger.info("Generated query for %s: %s", rel_name, query[:200] + "...")
         return query
-
-    def _find_table_for_label(self, label: str, hygm_data: Dict[str, Any]) -> str:
-        """Find the database table that corresponds to a graph label."""
-        # First, try to find the table using the graph model source information
-        if hasattr(self, "_current_graph_model") and self._current_graph_model:
-            for node in self._current_graph_model.nodes:
-                # Check if this node has the label we're looking for
-                if label in node.labels and node.source and node.source.name:
-                    return node.source.name
-
-        # Use HyGM data for table mapping if no graph model source
-        entity_tables = hygm_data.get("entity_tables", {})
-
-        # Direct match
-        if label.lower() in entity_tables:
-            return label.lower()
-
-        # Try pluralized version
-        plural_label = label.lower() + "s"
-        if plural_label in entity_tables:
-            return plural_label
-
-        # Try without 's' (singularize)
-        if label.lower().endswith("s"):
-            singular_label = label.lower()[:-1]
-            if singular_label in entity_tables:
-                return singular_label
-
-        # Try case variations
-        for table_name in entity_tables.keys():
-            if table_name.lower() == label.lower():
-                return table_name
-
-        return ""
 
     def _generate_many_to_many_hygm_query(
         self,
         rel_name: str,
-        from_label: str,
-        to_label: str,
+        rel_def,
         source_info: Dict[str, Any],
         mysql_config_str: str,
-        hygm_data: Dict[str, Any],
     ) -> str:
-        """Generate many-to-many relationship query using HyGM information."""
+        """Generate many-to-many relationship query using HyGM source information."""
 
-        # Extract junction table information from the mapping
+        # All many-to-many join table information should come from HyGM source
         join_table = source_info.get("join_table")
         from_table = source_info.get("from_table")
         to_table = source_info.get("to_table")
-        from_fk = source_info.get("join_from_column")  # FK in junction table
-        to_fk = source_info.get("join_to_column")  # FK in junction table
+        from_fk = source_info.get("join_from_column")  # FK in many-to-many join table
+        to_fk = source_info.get("join_to_column")  # FK in many-to-many join table
         from_pk = source_info.get("from_column")  # PK in source table
         to_pk = source_info.get("to_column")  # PK in target table
 
@@ -784,6 +601,12 @@ CREATE (from_node)-[:{rel_name}]->(to_node);"""
             raise Exception(
                 f"HyGM must provide complete many-to-many mapping for {rel_name}"
             )
+
+        # Get node labels from the relationship definition
+        from_label = (
+            rel_def.start_node_labels[0] if rel_def.start_node_labels else from_table
+        )
+        to_label = rel_def.end_node_labels[0] if rel_def.end_node_labels else to_table
 
         query = f"""
 // Create {rel_name} relationships via {join_table}

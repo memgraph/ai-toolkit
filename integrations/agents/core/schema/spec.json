@@ -57,14 +57,14 @@
           "filling_factor": 100.0,
           "types": [{ "type": "String", "count": 1, "examples": [] }],
           "source": {
-            "field": "junction_table.property_column",
+            "field": "many_to_many_table.property_column",
             "transformation": "DATE(created_at) | null"
           }
         }
       ],
       "examples": [{}],
       "source": {
-        "type": "table|view|junction_table|derived",
+        "type": "table|view|many_to_many|derived",
         "name": "relationships_table",
         "location": "database.schema.relationships_table",
         "mapping": {

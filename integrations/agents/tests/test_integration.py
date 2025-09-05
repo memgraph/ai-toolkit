@@ -342,7 +342,7 @@ def test_comprehensive_sql_to_graph_conversion():
                     ],
                     "type": "entity",
                 },
-                # Junction table for product tags (many-to-many)
+                # Many-to-many join table for product tags
                 "product_tags": {
                     "schema": [
                         {
@@ -371,7 +371,7 @@ def test_comprehensive_sql_to_graph_conversion():
                             "referenced_column": "tag_id",
                         },
                     ],
-                    "type": "junction",
+                    "type": "many_to_many",
                 },
                 "tags": {
                     "schema": [
@@ -592,7 +592,7 @@ def test_comprehensive_sql_to_graph_conversion():
                     "foreign_keys": [],
                 },
             },
-            "junction_tables": {
+            "join_tables": {
                 "product_tags": {
                     "left_table": "products",
                     "right_table": "tags",
@@ -666,7 +666,7 @@ def test_comprehensive_sql_to_graph_conversion():
                     "from_table": "products",
                     "to_table": "tags",
                     "type": "many_to_many",
-                    "junction_table": "product_tags",
+                    "join_table": "product_tags",
                     "from_column": "product_id",
                     "to_column": "tag_id",
                 },
@@ -889,12 +889,12 @@ def test_comprehensive_sql_to_graph_conversion():
         logger.info("Expected entities: %s", expected_entities)
         logger.info("Found entity nodes: %s", [node.labels for node in entity_nodes])
 
-        # Validate relationships include both foreign key and junction table relationships
+        # Validate relationships include both foreign key and many-to-many relationships
         relationship_types = [rel.edge_type for rel in graph_model.edges]
         logger.info("Found relationship types: %s", relationship_types)
 
-        # Check for many-to-many relationships (junction table handling)
-        junction_relationships = [
+        # Check for many-to-many relationships (join table handling)
+        many_to_many_relationships = [
             rel
             for rel in graph_model.edges
             if any(
@@ -902,8 +902,8 @@ def test_comprehensive_sql_to_graph_conversion():
             )
         ]
         logger.info(
-            "Junction table relationships: %s",
-            [rel.edge_type for rel in junction_relationships],
+            "Many-to-many join table relationships: %s",
+            [rel.edge_type for rel in many_to_many_relationships],
         )
 
         # Test that source tracking is properly set
@@ -938,7 +938,7 @@ def test_comprehensive_sql_to_graph_conversion():
         # Test data structure compatibility
         logger.info("Testing data structure compatibility...")
         for entity_name, data_rows in sample_data.items():
-            if entity_name == "product_tags":  # Skip junction table data
+            if entity_name == "product_tags":  # Skip many-to-many join table data
                 continue
 
             # Find corresponding node in graph model
@@ -1211,7 +1211,7 @@ def test_full_migration_workflow_simulation():
                             "referenced_column": "tag_id",
                         },
                     ],
-                    "type": "junction",
+                    "type": "many_to_many",
                 },
                 "tags": {
                     "schema": [
@@ -1323,7 +1323,7 @@ def test_full_migration_workflow_simulation():
                     "foreign_keys": [],
                 },
             },
-            "junction_tables": {
+            "join_tables": {
                 "product_tags": {
                     "left_table": "products",
                     "right_table": "tags",
@@ -1362,7 +1362,7 @@ def test_full_migration_workflow_simulation():
                     "from_table": "products",
                     "to_table": "tags",
                     "type": "many_to_many",
-                    "junction_table": "product_tags",
+                    "join_table": "product_tags",
                     "from_column": "product_id",
                     "to_column": "tag_id",
                 },
