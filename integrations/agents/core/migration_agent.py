@@ -8,6 +8,7 @@ and migrates data to Memgraph using LangGraph workflow.
 import os
 import sys
 import logging
+from time import sleep
 from typing import Dict, List, Any, TypedDict, Optional
 from pathlib import Path
 
@@ -101,38 +102,48 @@ class SQLToMemgraphAgent:
         }}"""
 
     def _build_workflow(self) -> StateGraph:
-        """Build the LangGraph workflow."""
+        """Build the LangGraph workflow with improved separation of concerns."""
         workflow = StateGraph(MigrationState)
 
-        # Add nodes
-        workflow.add_node("analyze_database", self._analyze_database_schema)
+        # Add nodes - refactored for better modularity
         workflow.add_node(
-            "interactive_graph_modeling", self._interactive_graph_modeling
+            "connect_and_analyze_schema", self._connect_and_analyze_schema
         )
+        workflow.add_node("create_graph_model", self._create_graph_model)
         workflow.add_node("create_indexes", self._create_indexes)
         workflow.add_node("generate_cypher_queries", self._generate_cypher_queries)
         workflow.add_node("validate_queries", self._validate_queries)
-        workflow.add_node("execute_migration", self._execute_migration)
+        workflow.add_node("prepare_target_database", self._prepare_target_database)
+        workflow.add_node("execute_data_migration", self._execute_data_migration)
         workflow.add_node("validate_post_migration", self._validate_post_migration)
 
-        # Add edges - direct flow without table selection
-        workflow.add_edge("analyze_database", "interactive_graph_modeling")
-        workflow.add_edge("interactive_graph_modeling", "create_indexes")
+        # Add conditional edges for better error handling
+        workflow.add_edge("connect_and_analyze_schema", "create_graph_model")
+        workflow.add_edge("create_graph_model", "prepare_target_database")
+        workflow.add_edge("prepare_target_database", "create_indexes")
         workflow.add_edge("create_indexes", "generate_cypher_queries")
         workflow.add_edge("generate_cypher_queries", "validate_queries")
-        workflow.add_edge("validate_queries", "execute_migration")
-        workflow.add_edge("execute_migration", "validate_post_migration")
+        workflow.add_conditional_edges(
+            "validate_queries",
+            self._should_proceed_with_migration,
+            {
+                "proceed": "execute_data_migration",
+                "retry": "validate_queries",
+                "abort": END,
+            },
+        )
+        workflow.add_edge("execute_data_migration", "validate_post_migration")
         workflow.add_edge("validate_post_migration", END)
 
         # Set entry point
-        workflow.set_entry_point("analyze_database")
+        workflow.set_entry_point("connect_and_analyze_schema")
 
         # Return the workflow (not compiled) so caller can add checkpointer
         return workflow
 
-    def _analyze_database_schema(self, state: MigrationState) -> MigrationState:
-        """Analyze source database schema and structure."""
-        logger.info("Analyzing source database schema...")
+    def _connect_and_analyze_schema(self, state: MigrationState) -> MigrationState:
+        """Connect to source database and analyze schema structure."""
+        logger.info("Connecting to source database and analyzing schema...")
 
         try:
             # Initialize database analyzer using factory
@@ -149,48 +160,10 @@ class SQLToMemgraphAgent:
             # Use the built-in HyGM format conversion
             hygm_data = db_structure.to_hygm_format()
 
-            # Enhance with intelligent graph modeling
-            logger.info("Starting graph modeling analysis...")
-            try:
-                # Log the modeling mode being used
-                if self.modeling_mode == ModelingMode.INTERACTIVE:
-                    logger.info("Using interactive graph modeling mode")
-                else:
-                    logger.info("Using automatic graph modeling mode")
+            # Store the database structure for next steps
+            state["database_structure"] = hygm_data
 
-                # Create graph modeler with strategy and mode
-                graph_modeler = HyGM(
-                    llm=self.llm,
-                    mode=self.modeling_mode,
-                    strategy=self.graph_modeling_strategy,
-                )
-
-                # Log the strategy being used
-                strategy_name = self.graph_modeling_strategy.value
-                logger.info(f"Using {strategy_name} graph modeling strategy")
-
-                # Generate graph model using new unified interface
-                graph_model = graph_modeler.create_graph_model(
-                    hygm_data, domain_context="Database migration to graph database"
-                )
-
-                # Store the graph model in state for use by migration agent
-                state["database_structure"] = hygm_data
-                state["graph_model"] = graph_model
-
-                logger.info(
-                    f"Graph model created with {len(graph_model.nodes)} "
-                    f"node types and {len(graph_model.edges)} "
-                    f"relationship types"
-                )
-
-            except Exception as e:
-                logger.warning(f"Graph modeling enhancement failed: {e}")
-                # Continue without graph modeling enhancement
-                state["database_structure"] = hygm_data
-                state["graph_model"] = None
-
-            # Only count entity tables for migration progress (exclude views and join tables)
+            # Only count entity tables for migration progress
             state["total_tables"] = len(hygm_data["entity_tables"])
 
             # Automatically select all entity tables for migration
@@ -198,7 +171,8 @@ class SQLToMemgraphAgent:
             if entity_tables:
                 selected_tables = list(entity_tables.keys())
                 logger.info(
-                    f"Automatically selecting all {len(selected_tables)} entity tables for migration"
+                    f"Automatically selecting all {len(selected_tables)} "
+                    f"entity tables for migration"
                 )
                 hygm_data["selected_tables"] = selected_tables
                 state["database_structure"] = hygm_data
@@ -230,21 +204,65 @@ class SQLToMemgraphAgent:
 
         return state
 
-    def _interactive_graph_modeling(self, state: MigrationState) -> MigrationState:
-        """
-        Graph modeling step - now handled by HyGM class internally.
-        This method validates the completed graph model.
-        """
-        logger.info("Validating completed graph model...")
+    def _create_graph_model(self, state: MigrationState) -> MigrationState:
+        """Create graph model using HyGM based on analyzed schema."""
+        logger.info("Creating graph model using HyGM...")
+
+        try:
+            hygm_data = state["database_structure"]
+
+            # Log the modeling mode being used
+            if self.modeling_mode == ModelingMode.INTERACTIVE:
+                logger.info("Using interactive graph modeling mode")
+            else:
+                logger.info("Using automatic graph modeling mode")
+
+            # Create graph modeler with strategy and mode
+            graph_modeler = HyGM(
+                llm=self.llm,
+                mode=self.modeling_mode,
+                strategy=self.graph_modeling_strategy,
+            )
+
+            # Log the strategy being used
+            strategy_name = self.graph_modeling_strategy.value
+            logger.info(f"Using {strategy_name} graph modeling strategy")
+
+            # Generate graph model using new unified interface
+            graph_model = graph_modeler.create_graph_model(
+                hygm_data, domain_context="Database migration to graph database"
+            )
+
+            # Store the graph model in state
+            state["graph_model"] = graph_model
+
+            logger.info(
+                f"Graph model created with {len(graph_model.nodes)} "
+                f"node types and {len(graph_model.edges)} "
+                f"relationship types"
+            )
+
+            state["current_step"] = "Graph model created successfully"
+
+        except Exception as e:
+            logger.error(f"Graph modeling failed: {e}")
+            # HyGM is required - propagate the error
+            return self._handle_step_error(state, "creating graph model", e)
+
+        return state
+
+    def _validate_graph_model(self, state: MigrationState) -> MigrationState:
+        """Validate the created graph model."""
+        logger.info("Validating graph model...")
 
         # Validate that we have a graph model
         if not state.get("graph_model"):
             logger.error("No graph model found - this should not happen")
             state["errors"].append("Graph modeling failed to produce a model")
-            state["current_step"] = "Graph modeling failed"
+            state["current_step"] = "Graph model validation failed"
             return state
 
-        # Perform final validation
+        # Perform validation
         try:
             from core.hygm import HyGM
 
@@ -278,6 +296,136 @@ class SQLToMemgraphAgent:
 
         return state
 
+    def _should_proceed_with_migration(self, state: MigrationState) -> str:
+        """Determine if we should proceed with migration or handle errors."""
+        errors = state.get("errors", [])
+
+        # Check for critical errors that should abort migration
+        critical_errors = [
+            error
+            for error in errors
+            if any(
+                keyword in error.lower()
+                for keyword in [
+                    "connection failed",
+                    "authentication",
+                    "database not found",
+                ]
+            )
+        ]
+
+        if critical_errors:
+            logger.error("Critical errors detected, aborting migration")
+            return "abort"
+
+        # If we have non-critical errors, we can still proceed
+        if errors:
+            logger.warning(f"Found {len(errors)} non-critical issues, proceeding")
+
+        return "proceed"
+
+    def _prepare_target_database(self, state: MigrationState) -> MigrationState:
+        """Prepare the target Memgraph database for migration."""
+        logger.info("Preparing target database for migration...")
+
+        try:
+            # Initialize Memgraph connection
+            config = state["memgraph_config"]
+            self.memgraph_client = Memgraph(
+                url=config.get("url"),
+                username=config.get("username"),
+                password=config.get("password"),
+                database=config.get("database"),
+            )
+
+            # Test Memgraph connection
+            test_query = "MATCH (n) RETURN count(n) as node_count LIMIT 1"
+            self.memgraph_client.query(test_query)
+            logger.info("Memgraph connection established successfully")
+
+            # Clear the database first to avoid constraint violations
+            try:
+                logger.info("Clearing existing data from Memgraph...")
+                self.memgraph_client.query("STORAGE MODE IN_MEMORY_ANALYTICAL;")
+                sleep(1)
+                self.memgraph_client.query("DROP GRAPH")
+                sleep(5)
+                self.memgraph_client.query("STORAGE MODE IN_MEMORY_TRANSACTIONAL;")
+                sleep(1)
+                logger.info("Database cleared successfully")
+            except Exception as e:
+                logger.warning(f"Database clearing failed (might be empty): {e}")
+
+            state["current_step"] = "Target database prepared successfully"
+
+        except Exception as e:
+            logger.error(f"Error preparing target database: {e}")
+            state["errors"].append(f"Database preparation failed: {e}")
+            state["current_step"] = "Database preparation failed"
+
+        return state
+
+    def _execute_data_migration(self, state: MigrationState) -> MigrationState:
+        """Execute the actual data migration queries."""
+        logger.info("Executing data migration...")
+
+        try:
+            queries = state["migration_queries"]
+
+            # Execute all migration queries sequentially
+            successful_queries = 0
+            for i, query in enumerate(queries):
+                # Skip empty queries, but don't skip queries that contain comments
+                query_lines = [line.strip() for line in query.strip().split("\n")]
+                non_comment_lines = [
+                    line for line in query_lines if line and not line.startswith("//")
+                ]
+
+                if non_comment_lines:  # Has actual Cypher code
+                    try:
+                        logger.info(f"Executing query {i+1}/{len(queries)}...")
+                        self.memgraph_client.query(query)
+                        successful_queries += 1
+
+                        # Log progress for node creation queries
+                        if "CREATE (n:" in query:
+                            # Extract table name from query comment or FROM clause
+                            table_name = None
+                            if "FROM " in query:
+                                try:
+                                    from_part = query.split("FROM ")[1]
+                                    table_name = from_part.split()[0].rstrip(",")
+                                except (IndexError, AttributeError):
+                                    pass
+
+                            if table_name:
+                                logger.info(
+                                    f"Successfully migrated data from table: "
+                                    f"{table_name}"
+                                )
+                                # Update completed tables list
+                                if table_name not in state["completed_tables"]:
+                                    state["completed_tables"].append(table_name)
+                        elif "CREATE (" in query and "-[:" in query:
+                            logger.info("Successfully created relationships")
+
+                    except Exception as e:
+                        logger.error(f"Failed to execute query {i+1}: {e}")
+                        logger.error(f"Query: {query[:100]}...")
+                        state["errors"].append(f"Query execution failed: {e}")
+
+            logger.info(
+                f"Migration completed: {successful_queries}/{len(queries)} "
+                f"queries executed successfully"
+            )
+            state["current_step"] = "Data migration completed"
+
+        except Exception as e:
+            logger.error(f"Error executing data migration: {e}")
+            state["errors"].append(f"Data migration failed: {e}")
+
+        return state
+
     def _execute_queries_with_logging(
         self,
         queries: List[str],
@@ -303,7 +451,6 @@ class SQLToMemgraphAgent:
         state: MigrationState,
         step_name: str,
         error: Exception,
-        fallback_step: str = None,
     ) -> MigrationState:
         """Standardized error handling for workflow steps."""
         error_msg = f"Error {step_name}: {error}"
@@ -311,61 +458,59 @@ class SQLToMemgraphAgent:
 
         logger.error(error_msg)
         state["errors"].append(failure_msg)
-
-        if fallback_step:
-            state["current_step"] = fallback_step
-        else:
-            state["current_step"] = f"{step_name.capitalize()} failed"
+        state["current_step"] = f"{step_name.capitalize()} failed"
 
         return state
 
-    # TODO: This should be human visible and configurable.
     def _create_indexes(self, state: MigrationState) -> MigrationState:
         """Create indexes and constraints in Memgraph before migration."""
         logger.info("Creating indexes and constraints from HyGM graph model...")
 
         try:
-            memgraph = Memgraph(**state["memgraph_config"])
+            # Use the existing Memgraph connection from prepare_target_database
+            if not self.memgraph_client:
+                raise Exception("No Memgraph connection available")
 
             # Track created indexes and constraints
             created_indexes = []
             created_constraints = []
 
-            # Check if we have a HyGM graph model with indexes and constraints
+            # Get the HyGM graph model (required)
             graph_model = state.get("graph_model")
-            if graph_model and hasattr(graph_model, "node_indexes"):
-                logger.info("Using HyGM-provided indexes and constraints")
+            if not graph_model or not hasattr(graph_model, "node_indexes"):
+                raise Exception("HyGM graph model with indexes is required")
 
-                # Generate index queries from HyGM graph model
-                index_queries = self.cypher_generator.generate_index_queries_from_hygm(
-                    graph_model.node_indexes
-                )
+            logger.info("Using HyGM-provided indexes and constraints")
 
-                # Generate constraint queries from HyGM graph model
-                constraint_queries = (
-                    self.cypher_generator.generate_constraint_queries_from_hygm(
-                        graph_model.node_constraints
-                    )
-                )
+            # Generate index queries from HyGM graph model
+            index_queries = self.cypher_generator.generate_index_queries_from_hygm(
+                graph_model.node_indexes
+            )
 
-                logger.info(
-                    "HyGM provided %d indexes and %d constraints",
-                    len(index_queries),
-                    len(constraint_queries),
+            # Generate constraint queries from HyGM graph model
+            constraint_queries = (
+                self.cypher_generator.generate_constraint_queries_from_hygm(
+                    graph_model.node_constraints
                 )
-            else:
-                # Fallback to legacy method if no HyGM model available
-                logger.warning("No HyGM graph model found, using fallback method")
-                return self._create_indexes_fallback(state)
+            )
+
+            logger.info(
+                "HyGM provided %d indexes and %d constraints",
+                len(index_queries),
+                len(constraint_queries),
+            )
 
             # Execute constraint queries first
             self._execute_queries_with_logging(
-                constraint_queries, "constraint", memgraph, created_constraints
+                constraint_queries,
+                "constraint",
+                self.memgraph_client,
+                created_constraints,
             )
 
             # Execute index queries
             self._execute_queries_with_logging(
-                index_queries, "index", memgraph, created_indexes
+                index_queries, "index", self.memgraph_client, created_indexes
             )
 
             # Store results in state
@@ -380,63 +525,7 @@ class SQLToMemgraphAgent:
             )
 
         except Exception as e:
-            return self._handle_step_error(
-                state, "creating indexes", e, "Index creation failed"
-            )
-
-        return state
-
-    def _create_indexes_fallback(self, state: MigrationState) -> MigrationState:
-        """Fallback method for creating indexes when no HyGM model available."""
-        logger.info("Creating indexes and constraints using fallback method...")
-
-        try:
-            memgraph = Memgraph(**state["memgraph_config"])
-            structure = state["database_structure"]
-
-            # Track created indexes
-            created_indexes = []
-            created_constraints = []
-
-            # Create indexes and constraints for each entity table
-            for table_name, table_info in structure["entity_tables"].items():
-                schema = table_info["schema"]
-
-                # Generate index queries
-                index_queries = self.cypher_generator.generate_index_queries(
-                    table_name, schema
-                )
-
-                # Generate constraint queries
-                constraint_queries = self.cypher_generator.generate_constraint_queries(
-                    table_name, schema
-                )
-
-                # Execute constraint queries first
-                self._execute_queries_with_logging(
-                    constraint_queries, "constraint", memgraph, created_constraints
-                )
-
-                # Execute index queries
-                self._execute_queries_with_logging(
-                    index_queries, "index", memgraph, created_indexes
-                )
-
-            # Store results in state
-            state["created_indexes"] = created_indexes
-            state["created_constraints"] = created_constraints
-            state["current_step"] = "Fallback indexes and constraints created"
-
-            logger.info(
-                "Created %d constraints and %d indexes using fallback method",
-                len(created_constraints),
-                len(created_indexes),
-            )
-
-        except Exception as e:
-            return self._handle_step_error(
-                state, "creating indexes", e, "Index creation failed"
-            )
+            return self._handle_step_error(state, "creating indexes", e)
 
         return state
 
@@ -448,14 +537,11 @@ class SQLToMemgraphAgent:
             hygm_data = state["database_structure"]
             source_db_config = state["source_db_config"]
 
-            # Check if we have HyGM graph model
-            if not state.get("graph_model"):
-                logger.warning(
-                    "No HyGM graph model found, falling back to basic migration"
-                )
-                return self._generate_cypher_queries_fallback(state)
+            # Get the HyGM graph model (required)
+            graph_model = state.get("graph_model")
+            if not graph_model:
+                raise Exception("HyGM graph model is required for migration")
 
-            graph_model = state["graph_model"]
             # Store graph model in instance for use by helper methods
             self._current_graph_model = graph_model
             queries = []
@@ -521,9 +607,7 @@ SET n += row;"""
 
         except Exception as e:
             logger.error(f"Error generating HyGM-based Cypher queries: {e}")
-            state["errors"].append(f"HyGM Cypher generation failed: {e}")
-            # Fallback to basic migration
-            return self._generate_cypher_queries_fallback(state)
+            return self._handle_step_error(state, "generating cypher queries", e)
 
         return state
 
@@ -548,7 +632,14 @@ SET n += row;"""
             elif "start_node" in source_info and "end_node" in source_info:
                 rel_type = "one_to_many"
             else:
-                rel_type = "many_to_many"  # Default fallback
+                # Try to infer relationship type from mapping
+                if source_info.get("join_table"):
+                    rel_type = "many_to_many"
+                else:
+                    # HyGM should provide relationship type
+                    raise Exception(
+                        f"HyGM must specify relationship type for {rel_name}"
+                    )
 
             # Find the corresponding node labels from HyGM model
             from_label = from_node
@@ -564,7 +655,7 @@ SET n += row;"""
 
             if not from_label or not to_label:
                 logger.warning(
-                    f"Could not find node labels for relationship {rel_name}"
+                    "Could not find node labels for relationship %s", rel_name
                 )
                 return ""
 
@@ -587,12 +678,12 @@ SET n += row;"""
                     hygm_data,
                 )
             else:
-                logger.warning(f"Unsupported relationship type: {rel_type}")
+                logger.warning("Unsupported relationship type: %s", rel_type)
                 return ""
 
         except Exception as e:
             logger.error(
-                f"Error generating relationship query for {rel_def.edge_type}: {e}"
+                "Error generating relationship query for %s: %s", rel_def.edge_type, e
             )
             return ""
 
@@ -612,35 +703,97 @@ SET n += row;"""
         end_node = source_info.get("end_node", "")  # e.g., "city.city_id"
 
         if not start_node or not end_node:
-            logger.warning(f"Missing relationship information for {rel_name}")
-            return ""
+            logger.error("Missing relationship information for %s", rel_name)
+            raise Exception(
+                f"HyGM must provide complete relationship mapping for {rel_name}"
+            )
 
         # Parse the table.column format
         try:
             from_table, fk_column = start_node.split(".", 1)
             to_table, to_column = end_node.split(".", 1)
+            logger.info(
+                "Parsed relationship mapping for %s: from_table=%s, fk_column=%s, to_table=%s, to_column=%s",
+                rel_name,
+                from_table,
+                fk_column,
+                to_table,
+                to_column,
+            )
         except ValueError:
-            logger.warning(f"Invalid mapping format for {rel_name}: {source_info}")
-            return ""
+            logger.error("Invalid mapping format for %s: %s", rel_name, source_info)
+            raise Exception(
+                f"HyGM must provide valid relationship mapping for {rel_name}"
+            )
 
         # Get primary key from source table
         from_table_info = hygm_data.get("entity_tables", {}).get(from_table, {})
         primary_keys = from_table_info.get("primary_keys", [])
 
         if not primary_keys:
-            logger.warning(f"Could not determine primary key for table {from_table}")
-            return ""
+            logger.error("Could not determine primary key for table %s", from_table)
+            raise Exception(
+                f"HyGM must provide complete table information with primary keys for {from_table}"
+            )
 
         # Use the first primary key (most common case)
         from_pk = primary_keys[0]
 
-        return f"""
+        # Debug the actual query components
+        logger.info(
+            "Generating query for %s: from_pk=%s, fk_column=%s, from_table=%s, to_column=%s, to_table=%s",
+            rel_name,
+            from_pk,
+            fk_column,
+            from_table,
+            to_column,
+            to_table,
+        )
+
+        query = f"""
 // Create {rel_name} relationships (HyGM: {from_label} -> {to_label})
 CALL migrate.mysql('SELECT {from_pk}, {fk_column} FROM {from_table} WHERE {fk_column} IS NOT NULL', {mysql_config_str})
 YIELD row
 MATCH (from_node:{from_label} {{{from_pk}: row.{from_pk}}})
 MATCH (to_node:{to_label} {{{to_column}: row.{fk_column}}})
 CREATE (from_node)-[:{rel_name}]->(to_node);"""
+
+        logger.info("Generated query for %s: %s", rel_name, query[:200] + "...")
+        return query
+
+    def _find_table_for_label(self, label: str, hygm_data: Dict[str, Any]) -> str:
+        """Find the database table that corresponds to a graph label."""
+        # First, try to find the table using the graph model source information
+        if hasattr(self, "_current_graph_model") and self._current_graph_model:
+            for node in self._current_graph_model.nodes:
+                # Check if this node has the label we're looking for
+                if label in node.labels and node.source and node.source.name:
+                    return node.source.name
+
+        # Use HyGM data for table mapping if no graph model source
+        entity_tables = hygm_data.get("entity_tables", {})
+
+        # Direct match
+        if label.lower() in entity_tables:
+            return label.lower()
+
+        # Try pluralized version
+        plural_label = label.lower() + "s"
+        if plural_label in entity_tables:
+            return plural_label
+
+        # Try without 's' (singularize)
+        if label.lower().endswith("s"):
+            singular_label = label.lower()[:-1]
+            if singular_label in entity_tables:
+                return singular_label
+
+        # Try case variations
+        for table_name in entity_tables.keys():
+            if table_name.lower() == label.lower():
+                return table_name
+
+        return ""
 
     def _generate_many_to_many_hygm_query(
         self,
@@ -663,231 +816,43 @@ CREATE (from_node)-[:{rel_name}]->(to_node);"""
         to_pk = source_info.get("to_column")  # PK in target table
 
         if not all([join_table, from_table, to_table, from_fk, to_fk, from_pk, to_pk]):
-            logger.warning(
-                f"Missing many-to-many relationship information for {rel_name}"
+            logger.error(
+                "Missing many-to-many relationship information for %s", rel_name
             )
-            return ""
+            raise Exception(
+                f"HyGM must provide complete many-to-many mapping for {rel_name}"
+            )
 
-        return f"""
-// Create {rel_name} relationships via {join_table} (HyGM: {from_label} <-> {to_label})
+        query = f"""
+// Create {rel_name} relationships via {join_table}
+// (HyGM: {from_label} <-> {to_label})
 CALL migrate.mysql('SELECT {from_fk}, {to_fk} FROM {join_table}', {mysql_config_str})
 YIELD row
 MATCH (from:{from_label} {{{from_pk}: row.{from_fk}}})
 MATCH (to:{to_label} {{{to_pk}: row.{to_fk}}})
 CREATE (from)-[:{rel_name}]->(to);"""
-
-    def _generate_cypher_queries_fallback(
-        self, state: MigrationState
-    ) -> MigrationState:
-        """Fallback method for generating Cypher queries without HyGM model."""
-        logger.info("Using fallback migration query generation...")
-
-        try:
-            structure = state["database_structure"]
-            source_db_config = state["source_db_config"]
-
-            # Generate migration queries using migrate.mysql() procedure
-            queries = []
-
-            # Create MySQL connection config for migrate module
-            mysql_config_str = self._get_db_config_for_migrate(source_db_config)
-
-            # Generate node creation queries for each entity table
-            for table_name, table_info in structure.get("entity_tables", {}).items():
-                label = self.cypher_generator._table_name_to_label(table_name)
-
-                # Get columns excluding foreign keys for node properties
-                node_columns = []
-                fk_columns = {fk["column"] for fk in table_info.get("foreign_keys", [])}
-
-                # Schema is a list of column dictionaries, not a dict
-                schema_list = table_info.get("schema", [])
-                for col_info in schema_list:
-                    col_name = col_info.get("field")
-                    if col_name and col_name not in fk_columns:
-                        node_columns.append(col_name)
-
-                if node_columns:
-                    columns_str = ", ".join(node_columns)
-                    node_query = f"""
-// Create {label} nodes from {table_name} table (fallback)
-CALL migrate.mysql('SELECT {columns_str} FROM {table_name}', {mysql_config_str})
-YIELD row
-CREATE (n:{label})
-SET n += row;"""
-                    queries.append(node_query)
-
-            # Generate relationship creation queries
-            for rel in structure["relationships"]:
-                if rel["type"] == "one_to_many":
-                    from_table = rel["from_table"]  # Table with FK
-                    to_table = rel["to_table"]  # Referenced table
-                    from_label = self.cypher_generator._table_name_to_label(from_table)
-                    to_label = self.cypher_generator._table_name_to_label(to_table)
-                    rel_name = self.cypher_generator.generate_relationship_type(
-                        to_table
-                    )
-
-                    # FK column and what it references
-                    fk_column = rel["from_column"]  # FK column name
-                    to_column = rel["to_column"]  # Referenced column name
-
-                    # Get the PK of the from_table (assume first column is PK)
-                    from_table_info = structure["entity_tables"][from_table]
-                    from_pk = from_table_info["schema"][0]["field"]
-
-                    rel_query = f"""
-// Create {rel_name} relationships between {from_label} and {to_label} (fallback)
-CALL migrate.mysql('SELECT {from_pk}, {fk_column} FROM {from_table} WHERE {fk_column} IS NOT NULL', {mysql_config_str})
-YIELD row
-MATCH (from_node:{from_label} {{{from_pk}: row.{from_pk}}})
-MATCH (to_node:{to_label} {{{to_column}: row.{fk_column}}})
-CREATE (from_node)-[:{rel_name}]->(to_node);"""
-                    queries.append(rel_query)
-
-                elif rel["type"] == "many_to_many":
-                    join_table = rel["join_table"]
-                    from_table = rel["from_table"]
-                    to_table = rel["to_table"]
-                    from_label = self.cypher_generator._table_name_to_label(from_table)
-                    to_label = self.cypher_generator._table_name_to_label(to_table)
-                    rel_name = self.cypher_generator.generate_relationship_type(
-                        to_table, join_table
-                    )
-
-                    from_fk = rel["join_from_column"]  # FK column in join table
-                    to_fk = rel["join_to_column"]  # FK column in join table
-                    from_pk = rel["from_column"]  # PK column in from_table
-                    to_pk = rel["to_column"]  # PK column in to_table
-
-                    rel_query = f"""
-// Create {rel_name} relationships via {join_table} table (fallback)
-CALL migrate.mysql('SELECT {from_fk}, {to_fk} FROM {join_table}', {mysql_config_str})
-YIELD row
-MATCH (from:{from_label} {{{from_pk}: row.{from_fk}}})
-MATCH (to:{to_label} {{{to_pk}: row.{to_fk}}})
-CREATE (from)-[:{rel_name}]->(to);"""
-                    queries.append(rel_query)
-
-            state["migration_queries"] = queries
-            state["current_step"] = "Cypher queries generated (fallback mode)"
-
-            logger.info(
-                f"Generated {len(queries)} migration queries using fallback method"
-            )
-
-        except Exception as e:
-            return self._handle_step_error(
-                state, "generating fallback Cypher queries", e
-            )
-
-        return state
+        return query
 
     def _validate_queries(self, state: MigrationState) -> MigrationState:
-        """Validate generated Cypher queries and test Memgraph connection."""
+        """Validate generated Cypher queries and test MySQL connection."""
         logger.info("Validating queries and testing connections...")
 
         try:
-            # Initialize Memgraph connection for validation
-            config = state["memgraph_config"]
-            self.memgraph_client = Memgraph(
-                url=config.get("url"),
-                username=config.get("username"),
-                password=config.get("password"),
-                database=config.get("database"),
+            # We'll test the MySQL connection in the prepare_target_database step
+            # For now, just validate that we have queries to execute
+            queries = state.get("migration_queries", [])
+            if not queries:
+                raise Exception("No migration queries generated")
+
+            logger.info(
+                f"Validation passed: {len(queries)} queries ready for execution"
             )
-
-            # Test Memgraph connection
-            test_query = "MATCH (n) RETURN count(n) as node_count LIMIT 1"
-            self.memgraph_client.query(test_query)
-            logger.info("Memgraph connection established successfully")
-
-            # Test migrate.mysql connection by querying a small dataset
-            source_db_config = state["source_db_config"]
-            mysql_config_str = self._get_db_config_for_migrate(source_db_config)
-
-            test_mysql_query = f"""
-            CALL migrate.mysql('SELECT 1 as test_column LIMIT 1', {mysql_config_str})
-            YIELD row
-            RETURN row.test_column as test_result
-            """
-
-            self.memgraph_client.query(test_mysql_query)
-            logger.info("MySQL connection through migrate module validated")
-
-            state["current_step"] = "Queries and connections validated successfully"
+            state["current_step"] = "Queries validated successfully"
 
         except Exception as e:
             logger.error(f"Error validating queries: {e}")
             state["errors"].append(f"Query validation failed: {e}")
-
-        return state
-
-    def _execute_migration(self, state: MigrationState) -> MigrationState:
-        """Execute the migration using Memgraph migrate module."""
-        logger.info("Executing migration using migrate module...")
-
-        try:
-            queries = state["migration_queries"]
-
-            # Clear the database first to avoid constraint violations
-            try:
-                logger.info("Clearing existing data from Memgraph...")
-                self.memgraph_client.query("MATCH (n) DETACH DELETE n")
-                # Skip constraint dropping as it's not critical and has syntax issues
-                logger.info("Database cleared successfully")
-            except Exception as e:
-                logger.warning(f"Database clearing failed (might be empty): {e}")
-
-            # Execute all migration queries sequentially
-            successful_queries = 0
-            for i, query in enumerate(queries):
-                # Skip empty queries, but don't skip queries that contain comments
-                query_lines = [line.strip() for line in query.strip().split("\n")]
-                non_comment_lines = [
-                    line for line in query_lines if line and not line.startswith("//")
-                ]
-
-                if non_comment_lines:  # Has actual Cypher code
-                    try:
-                        logger.info(f"Executing query {i+1}/{len(queries)}...")
-                        self.memgraph_client.query(query)
-                        successful_queries += 1
-
-                        # Log progress for node creation queries
-                        if "CREATE (n:" in query:
-                            # Extract table name from query comment or FROM clause
-                            table_name = None
-                            if "FROM " in query:
-                                try:
-                                    from_part = query.split("FROM ")[1]
-                                    table_name = from_part.split()[0].rstrip(",")
-                                except (IndexError, AttributeError):
-                                    pass
-
-                            if table_name:
-                                logger.info(
-                                    f"Successfully migrated data from table: {table_name}"
-                                )
-                                # Update completed tables list
-                                if table_name not in state["completed_tables"]:
-                                    state["completed_tables"].append(table_name)
-                        elif "CREATE (" in query and "-[:" in query:
-                            logger.info("Successfully created relationships")
-
-                    except Exception as e:
-                        logger.error(f"Failed to execute query {i+1}: {e}")
-                        logger.error(f"Query: {query[:100]}...")
-                        state["errors"].append(f"Query execution failed: {e}")
-
-            logger.info(
-                f"Migration completed: {successful_queries}/{len(queries)} queries executed successfully"
-            )
-            state["current_step"] = "Migration execution completed"
-
-        except Exception as e:
-            logger.error(f"Error executing migration: {e}")
-            state["errors"].append(f"Migration execution failed: {e}")
+            state["current_step"] = "Query validation failed"
 
         return state
 
