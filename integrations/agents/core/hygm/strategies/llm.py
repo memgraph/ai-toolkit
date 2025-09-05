@@ -180,7 +180,16 @@ class LLMStrategy(BaseModelingStrategy):
 
         # Add user operation context if provided (critical for preserving user changes)
         if user_operation_context:
-            prompt_parts.extend(["", user_operation_context, ""])
+            prompt_parts.extend(
+                [
+                    "",
+                    "⚠️ CRITICAL REQUIREMENT:",
+                    user_operation_context,
+                    "⚠️ YOU MUST PRESERVE ALL USER CHANGES LISTED ABOVE.",
+                    "DO NOT REVERT ANY USER OPERATIONS WHEN CREATING THE MODEL.",
+                    "",
+                ]
+            )
 
         if domain_context:
             prompt_parts.extend(
@@ -254,15 +263,42 @@ class LLMStrategy(BaseModelingStrategy):
                     mapping=db_rel_info.get("mapping", {}),
                 )
             else:
-                # Fallback for relationships without database mapping
-                rel_source = RelationshipSource(
-                    type="llm_generated",
-                    name=llm_rel.name,
-                    location="ai_analysis",
-                    mapping={
+                # Get source tables for the relationship nodes
+                from_table = self._get_source_table_for_node(llm_rel.from_node)
+                to_table = self._get_source_table_for_node(llm_rel.to_node)
+
+                # If we can't find direct mapping, create basic table mapping
+                if from_table and to_table:
+                    # Get primary keys for proper mapping
+                    from_pk = self._get_table_primary_key(from_table)
+                    to_pk = self._get_table_primary_key(to_table)
+
+                    mapping = {
+                        "start_node": f"{from_table}.{from_pk}",
+                        "end_node": f"{to_table}.{to_pk}",
+                        "from_pk": from_pk,
                         "edge_type": llm_rel.name,
                         "directionality": llm_rel.directionality,
-                    },
+                    }
+                    location = f"database.schema.{from_table}"
+                else:
+                    mapping = {
+                        "edge_type": llm_rel.name,
+                        "directionality": llm_rel.directionality,
+                        # Still need start_node and end_node for migration agent
+                        "start_node": "unknown.id",
+                        "end_node": "unknown.id",
+                        "from_pk": "id",
+                    }
+                    location = "ai_analysis"
+
+                # Fallback for relationships without database mapping
+                # Use "table" as a supported type for migration agent
+                rel_source = RelationshipSource(
+                    type="table",
+                    name=llm_rel.name,
+                    location=location,
+                    mapping=mapping,
                 )
 
             properties = []
@@ -412,12 +448,18 @@ class LLMStrategy(BaseModelingStrategy):
         """Get the source table name for a given LLM node name."""
         # This should be called within _convert_llm_to_graph_model
         # where we have access to the LLM model context
-        if hasattr(self, "_current_llm_model") and self._current_llm_model is not None:
+        if hasattr(self, "_current_llm_model") and self._current_llm_model:
             for llm_node in self._current_llm_model.nodes:
+                # Check by node name or any of the labels
                 if llm_node.name.lower() == node_name.lower() or any(
                     label.lower() == node_name.lower() for label in llm_node.labels
                 ):
                     return llm_node.source_table
+
+                # Also check if node_name matches any variation of source_table
+                source_table = llm_node.source_table
+                if self._tables_match_nodes(source_table, node_name):
+                    return source_table
         return ""
 
     def _build_relationship_mapping(self, db_rel, llm_rel, rel_type, reverse=False):
@@ -503,13 +545,25 @@ class LLMStrategy(BaseModelingStrategy):
 
         if not from_table_name or not to_table_name:
             logger.warning(
-                "Could not find matching tables for relationship %s: from_node=%s->%s, to_node=%s->%s",
+                "Could not find matching tables for relationship %s: "
+                "from_node=%s->%s, to_node=%s->%s",
                 llm_rel.name,
                 llm_rel.from_node,
                 from_table_name,
                 llm_rel.to_node,
                 to_table_name,
             )
+
+            # Additional debug info: show available node mappings
+            if hasattr(self, "_current_llm_model") and self._current_llm_model:
+                logger.debug("Available LLM nodes:")
+                for node in self._current_llm_model.nodes:
+                    logger.debug(
+                        "  Node: %s -> Source table: %s (Labels: %s)",
+                        node.name,
+                        node.source_table,
+                        node.labels,
+                    )
 
             # Try additional inference for known problematic patterns
             inferred_mapping = self._infer_problematic_relationships(
@@ -619,10 +673,14 @@ class LLMStrategy(BaseModelingStrategy):
         # Try to infer foreign key column based on common patterns
         fk_column = self._infer_foreign_key_column(from_table, to_table, entity_tables)
 
+        # Get primary key for from_table
+        from_table_pk = self._get_table_primary_key(from_table)
+
         mapping = {
             "start_node": f"{from_table}.{fk_column}",
             "end_node": f"{to_table}.{fk_column}",
             "edge_type": llm_rel.name,
+            "from_pk": from_table_pk,
         }
 
         logger.info(
@@ -635,7 +693,7 @@ class LLMStrategy(BaseModelingStrategy):
         )
 
         return {
-            "source_type": "inferred",
+            "source_type": "table",  # Use supported type for migration agent
             "constraint_name": llm_rel.name,
             "from_table": from_table,
             "to_table": to_table,

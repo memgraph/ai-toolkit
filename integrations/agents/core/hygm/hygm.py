@@ -337,26 +337,19 @@ class HyGM:
         self, model: "GraphModel", strategy: GraphModelingStrategy
     ) -> "GraphModel":
         """Allow user to modify the model using natural language commands."""
-        print("\n" + "=" * 60)
-        print("INTERACTIVE MODEL MODIFICATION")
-        print("=" * 60)
-        print("\nDescribe the changes you'd like to make to the graph model.")
-        print("You can use natural language like:")
-        print("  - 'Rename the Actor label to Person'")
-        print("  - 'Add a birth_date property to Actor nodes'")
-        print("  - 'Remove the last_update property from all nodes'")
-        print("  - 'Change ACTED_IN relationship to PERFORMED_IN'")
-        print("  - 'Add a new Category node with name and description'")
-        print("  - 'Drop the Audit node completely'")
-        print("  - 'Add a BELONGS_TO relationship from Product to Category'")
-        print("  - 'Add an index on Customer email property'")
-        print("  - 'Add a unique constraint on User email property'")
-        print("  - 'Remove the existence constraint on Product name'")
-        print("\nType 'done' when finished, or 'cancel' to return unchanged.")
-
         while True:
             try:
-                print("\n" + "-" * 60)
+                print("\n" + "=" * 60)
+                print("INTERACTIVE MODEL MODIFICATION")
+                print("=" * 60)
+                print("\nDescribe the changes you'd like to make to the graph model.")
+                print("You can use natural language like:")
+                print(" - Change the label...")
+                print(" - Delete a relationship...")
+                print(" - Add a new property...")
+                print(" - Remove a property...")
+
+                print("\nType 'done' when finished, 'cancel' to return unchanged.")
                 user_input = input("Describe your change: ").strip()
 
                 if user_input.lower() == "done":
@@ -1339,6 +1332,12 @@ class HyGM:
                 "The LLM will analyze validation issues and regenerate " "the model..."
             )
 
+            # Preserve user operation history before LLM improvement
+            saved_user_operations = None
+            if self.user_operation_history and mode == "interactive":
+                saved_user_operations = self.user_operation_history.copy()
+                print("📋 Preserving your operation history...")
+
             # Prepare context for LLM
             validation_context = self._prepare_validation_context_for_llm(
                 validation_result, model, operations
@@ -1359,16 +1358,40 @@ class HyGM:
                     )
                     if should_apply:
                         print("✅ Applying LLM improvements...")
+
+                        # Restore user operation history after improvements
+                        if saved_user_operations and mode == "interactive":
+                            self.user_operation_history = saved_user_operations
+                            print("📋 Restored your operation history!")
+
                         return improved_model
                     else:
                         print("❌ User rejected LLM improvements")
+
+                        # Restore history if improvements were rejected
+                        if saved_user_operations and mode == "interactive":
+                            self.user_operation_history = saved_user_operations
+                            print("📋 Restored your operation history!")
+
                         return model
                 else:
                     print("❌ LLM could not generate improved model")
+
+                    # Restore history if no improvement was generated
+                    if saved_user_operations and mode == "interactive":
+                        self.user_operation_history = saved_user_operations
+                        print("📋 Restored your operation history!")
+
                     return model
             except Exception as e:
                 logger.error("Error getting LLM model improvements: %s", e)
                 print(f"❌ Error getting LLM improvements: {e}")
+
+                # Restore user operation history if there was an error
+                if saved_user_operations and mode == "interactive":
+                    self.user_operation_history = saved_user_operations
+                    print("📋 Restored your operation history!")
+
                 return model
         else:
             print("\n✅ All validation checks passed!")
@@ -1429,13 +1452,28 @@ class HyGM:
             current_model, validation_result, validation_context
         )
 
+        # Extract user operation context separately to preserve user changes
+        user_context = None
+        if self.user_operation_history and self.user_operation_history.operations:
+            user_context = self.user_operation_history.to_llm_context()
+
         try:
-            print("🔄 LLM is analyzing validation issues and regenerating " "model...")
+            print("🔄 LLM is analyzing validation issues and regenerating model...")
 
             # Use the LLM strategy but with enhanced context
-            improved_model = strategy_instance.create_model(
-                self.database_structure, domain_context=improvement_context
-            )
+            # Pass user operations as user_operation_context to ensure preservation
+            if isinstance(strategy_instance, LLMStrategy):
+                # LLM strategy supports user_operation_context
+                improved_model = strategy_instance.create_model(
+                    self.database_structure,
+                    domain_context=improvement_context,
+                    user_operation_context=user_context,
+                )
+            else:
+                # Fallback for strategies that don't support user_operation_context
+                improved_model = strategy_instance.create_model(
+                    self.database_structure, domain_context=improvement_context
+                )
 
             if improved_model:
                 print("✅ LLM generated improved model")
