@@ -649,8 +649,14 @@ CREATE (from)-[:{rel_name}]->(to);"""
             # Calculate expected data counts from MySQL for validation
             structure = state["database_structure"]
             expected_nodes = 0
-            selected_tables = structure.get("selected_tables", [])
             table_counts = structure.get("table_counts", {})
+
+            # If selected_tables is not set, use all entity tables that were migrated
+            selected_tables = structure.get("selected_tables", [])
+            if not selected_tables:
+                # Use entity tables (exclude views and system tables)
+                entity_tables = structure.get("entity_tables", {})
+                selected_tables = list(entity_tables.keys())
 
             for table_name in selected_tables:
                 if table_name in table_counts:
