@@ -30,7 +30,7 @@ class NodeSource:
 class RelationshipSource:
     """Source information for a relationship."""
 
-    type: str  # "table", "view", "junction_table", "derived"
+    type: str  # "table", "view", "many_to_many", "derived"
     name: str  # Source name
     location: str  # Full location path
     mapping: Dict[str, Any]  # Mapping for start_node, end_node, edge_type
