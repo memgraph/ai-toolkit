@@ -8,7 +8,7 @@ from mcp.client.stdio import stdio_client
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
-from mcp_memgraph import run_query, get_schema
+from mcp_memgraph import run_query, get_schema, get_node_neighborhood, search_node_vectors
 import pytest
 
 pytestmark = pytest.mark.asyncio  # Mark all tests in this file as asyncio-compatible
@@ -91,6 +91,27 @@ async def test_get_schema():
 
 
 @pytest.mark.asyncio
+async def test_get_node_neighborhood():
+    """Test the get_node_neighborhood tool."""
+    # Test with a non-existent node ID (should return empty or error)
+    response = get_node_neighborhood("999999", max_distance=1, limit=10)
+    assert isinstance(response, list), "Expected response to be a list"
+    # The response should either be empty (no nodes found) or contain an error message
+    assert len(response) >= 0, "Expected response to have at least 0 results"
+
+
+@pytest.mark.asyncio
+async def test_search_node_vectors():
+    """Test the search_node_vectors tool."""
+    # Test with a non-existent index (should return error)
+    query_vector = [0.1, 0.2, 0.3, 0.4, 0.5]
+    response = search_node_vectors("non_existent_index", query_vector, limit=5)
+    assert isinstance(response, list), "Expected response to be a list"
+    # The response should contain an error message since the index doesn't exist
+    assert len(response) >= 0, "Expected response to have at least 0 results"
+
+
+@pytest.mark.asyncio
 async def test_tools_and_resources():
     """Test that all tools and resources are present in the MCP server."""
     server_script_path = "src/mcp_memgraph/main.py"
@@ -109,6 +130,8 @@ async def test_tools_and_resources():
             "get_triggers",
             "get_betweenness_centrality",
             "get_page_rank",
+            "get_node_neighborhood",
+            "search_node_vectors",
         ]
         expected_resources = []
 

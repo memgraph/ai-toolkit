@@ -108,6 +108,28 @@ Uses `BetweennessCentralityTool` under the hood.
 Compute PageRank scores for all nodes.  
 Uses `PageRankTool` under the hood.
 
+### get_node_neighborhood(node_id: str, max_distance: int = 1, limit: int = 100)
+
+Find nodes within a specified distance from a given node.
+Parameters:
+
+- `node_id`: The ID of the starting node to find neighborhood around
+- `max_distance`: Maximum distance (hops) to search from the starting node. Default is 1
+- `limit`: Maximum number of nodes to return. Default is 100
+
+Uses `NodeNeighborhoodTool` under the hood.
+
+### search_node_vectors(index_name: str, query_vector: List[float], limit: int = 10)
+
+Perform vector similarity search on nodes in Memgraph using cosine similarity.
+Parameters:
+
+- `index_name`: Name of the index to use for the vector search
+- `query_vector`: Query vector to search for similarity
+- `limit`: Number of similar nodes to return. Default is 10
+
+Uses `NodeVectorSearchTool` under the hood.
+
 ## 🐳 Run Memgraph MCP server with Docker
 
 ### Building Memgraph MCP image
