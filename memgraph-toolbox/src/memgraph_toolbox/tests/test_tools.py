@@ -6,6 +6,8 @@ from ..tools.config import ShowConfigTool
 from ..tools.constraint import ShowConstraintInfoTool
 from ..tools.cypher import CypherTool
 from ..tools.index import ShowIndexInfoTool
+from ..tools.node_neighborhood import NodeNeighborhoodTool
+from ..tools.node_vector_search import NodeVectorSearchTool
 from ..tools.page_rank import PageRankTool
 from ..tools.schema import ShowSchemaInfoTool
 from ..tools.storage import ShowStorageInfoTool
@@ -243,3 +245,69 @@ def test_betweenness_centrality_tool():
     assert len(result) > 0
     assert "node" in result[0]
     assert "betweenness_centrality" in result[0]
+
+
+def test_node_vector_search_tool():
+    """Test the NodeVectorSearch tool."""
+    url = "bolt://localhost:7687"
+    user = ""
+    password = ""
+    memgraph_client = Memgraph(url=url, username=user, password=password)
+
+    memgraph_client.query(
+        'MATCH (n:Person) WHERE "embedding" IN keys(n) DETACH DELETE n'
+    )
+    memgraph_client.query("DROP VECTOR INDEX my_index")
+    memgraph_client.query(
+        "CREATE (:Person {name: 'Alice', embedding: [1.0, 2.0, 3.0]})"
+    )
+    memgraph_client.query("CREATE (:Person {name: 'Bob', embedding: [1.0, 2.0, 4.0]})")
+    memgraph_client.query(
+        "CREATE (:Person {name: 'Charlie', embedding: [1.0, 2.0, 5.0]})"
+    )
+    memgraph_client.query(
+        "CREATE VECTOR INDEX my_index ON :Person(embedding) WITH CONFIG {'dimension': 3, 'capacity': 1000}"
+    )
+
+    node_vector_search_tool = NodeVectorSearchTool(db=memgraph_client)
+    result = node_vector_search_tool.call(
+        {
+            "index_name": "my_index",
+            "node_label": "Person",
+            "query_vector": [1.0, 2.0, 3.0],
+        }
+    )
+    assert isinstance(result, list)
+    assert len(result) == 3
+    memgraph_client.query(
+        'MATCH (n:Person) WHERE "embedding" IN keys(n) DETACH DELETE n'
+    )
+    memgraph_client.query("DROP VECTOR INDEX my_index")
+
+
+def test_node_neighborhood_tool():
+    """Test the NodeNeighborhood tool."""
+    url = "bolt://localhost:7687"
+    user = ""
+    password = ""
+    memgraph_client = Memgraph(url=url, username=user, password=password)
+
+    label = "TestNodeNeighborhoodToolLabel"
+    memgraph_client.query(f"MATCH (n:{label}) DETACH DELETE n;")
+    memgraph_client.query(
+        f"CREATE (p1:{label} {{id: 1}})-[:KNOWS]->(p2:{label} {{id: 2}}), (p2)-[:KNOWS]->(p3:{label} {{id: 3}});"
+    )
+    memgraph_client.query(
+        f"CREATE (p4:{label} {{id: 4}})-[:KNOWS]->(p5:{label} {{id: 5}});"
+    )
+    ids = memgraph_client.query(
+        f"MATCH (p1:{label} {{id:1}}) RETURN id(p1) AS node_id;"
+    )
+    assert len(ids) == 1
+    node_id = ids[0]["node_id"]
+
+    node_neighborhood_tool = NodeNeighborhoodTool(db=memgraph_client)
+    result = node_neighborhood_tool.call({"node_id": node_id, "max_distance": 2})
+    assert isinstance(result, list)
+    assert len(result) == 2
+    memgraph_client.query(f"MATCH (n:{label}) DETACH DELETE n;")

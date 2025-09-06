@@ -140,6 +140,13 @@ class DeterministicStrategy(BaseModelingStrategy):
             start_labels = [from_table.title()]
             end_labels = [to_table.title()]
 
+            # Get primary key for the from_table
+            from_table_info = database_structure.get("entity_tables", {}).get(
+                from_table, {}
+            )
+            primary_keys = from_table_info.get("primary_keys", [])
+            from_pk = primary_keys[0] if primary_keys else f"{from_table}_id"
+
             # Create relationship source
             rel_source = RelationshipSource(
                 type="table",
@@ -149,6 +156,7 @@ class DeterministicStrategy(BaseModelingStrategy):
                     "start_node": (f"{from_table}.{rel_data.get('from_column', 'id')}"),
                     "end_node": (f"{to_table}.{rel_data.get('to_column', 'id')}"),
                     "edge_type": rel_name,
+                    "from_pk": from_pk,  # Add primary key for migration agent
                 },
             )
 
@@ -191,9 +199,18 @@ class DeterministicStrategy(BaseModelingStrategy):
 
     def _extract_indexes_from_table(self, table_info: Dict[str, Any]) -> List[str]:
         """Extract properties that should have indexes."""
-        indexes = []
+        indexes = set()  # Use set to avoid duplicates
 
-        # Use standardized schema format (always available from models.py)
+        # First, preserve indexes from the source database
+        source_indexes = table_info.get("indexes", [])
+        for index_info in source_indexes:
+            # Each index_info is a dict with 'columns' list
+            if isinstance(index_info, dict) and "columns" in index_info:
+                for column in index_info["columns"]:
+                    indexes.add(column)
+
+        # Then add essential indexes for PKs, unique columns, and foreign keys
+        # This ensures we have indexes even if source DB doesn't have them
         schema_list = table_info.get("schema", [])
         for col_info in schema_list:
             col_name = col_info.get("field")
@@ -203,9 +220,9 @@ class DeterministicStrategy(BaseModelingStrategy):
             # Add indexes for PKs, unique columns, and foreign keys
             # Foreign keys need indexes for efficient relationship lookups
             if col_info.get("key") in ["PRI", "UNI", "MUL"]:
-                indexes.append(col_name)
+                indexes.add(col_name)
 
-        return indexes
+        return list(indexes)
 
     def _extract_constraints_from_table(self, table_info: Dict[str, Any]) -> List[str]:
         """Extract constraint definitions from table info."""
@@ -219,6 +236,7 @@ class DeterministicStrategy(BaseModelingStrategy):
                 continue
 
             # Add unique constraints for primary keys and unique columns
+            # This preserves the source database constraint information
             if col_info.get("key") in ["PRI", "UNI"]:
                 constraints.append(f"UNIQUE({col_name})")
 

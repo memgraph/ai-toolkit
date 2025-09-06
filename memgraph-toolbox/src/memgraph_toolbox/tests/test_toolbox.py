@@ -51,7 +51,7 @@ def test_memgraph_toolbox():
     tools = toolkit.get_all_tools()
 
     # Check if we have all 9 tools
-    assert len(tools) == 9
+    assert len(tools) == 11
 
     # Check for specific tool names
     tool_names = [tool.name for tool in tools]
@@ -61,10 +61,12 @@ def test_memgraph_toolbox():
         "show_constraint_info",
         "run_cypher",
         "show_index_info",
+        "node_vector_search",
         "page_rank",
         "show_schema_info",
         "show_storage_info",
         "show_triggers",
+        "node_neighborhood",
     ]
 
     for expected_tool in expected_tools:

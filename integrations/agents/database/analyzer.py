@@ -134,6 +134,19 @@ class DatabaseAnalyzer(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_indexes(self, table_name: str) -> List[Dict[str, Any]]:
+        """
+        Get indexes for a specific table.
+
+        Args:
+            table_name: Name of the table
+
+        Returns:
+            List of dictionaries representing the table's indexes
+        """
+        pass
+
     def is_connected(self) -> bool:
         """
         Check if the database connection is active.
@@ -278,6 +291,13 @@ class DatabaseAnalyzer(ABC):
             # Get primary keys
             primary_keys = [col.name for col in columns if col.is_primary_key]
 
+            # Get indexes for this table
+            try:
+                table_indexes = self.get_indexes(table_name)
+            except (NotImplementedError, AttributeError):
+                # If get_indexes is not implemented, use empty list
+                table_indexes = []
+
             # Create TableInfo object
             table_info = TableInfo(
                 name=table_name,
@@ -286,7 +306,7 @@ class DatabaseAnalyzer(ABC):
                 foreign_keys=foreign_keys,
                 row_count=row_count,
                 primary_keys=primary_keys,
-                indexes=[],  # Can be implemented by specific analyzers
+                indexes=table_indexes,
             )
 
             # Determine table type

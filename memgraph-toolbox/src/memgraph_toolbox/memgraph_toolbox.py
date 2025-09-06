@@ -7,6 +7,8 @@ from .tools.config import ShowConfigTool
 from .tools.constraint import ShowConstraintInfoTool
 from .tools.cypher import CypherTool
 from .tools.index import ShowIndexInfoTool
+from .tools.node_neighborhood import NodeNeighborhoodTool
+from .tools.node_vector_search import NodeVectorSearchTool
 from .tools.page_rank import PageRankTool
 from .tools.schema import ShowSchemaInfoTool
 from .tools.storage import ShowStorageInfoTool
@@ -36,6 +38,8 @@ class MemgraphToolbox(BaseToolbox):
             self.add_tool(ShowConstraintInfoTool(db))
             self.add_tool(CypherTool(db))
             self.add_tool(ShowIndexInfoTool(db))
+            self.add_tool(NodeNeighborhoodTool(db))
+            self.add_tool(NodeVectorSearchTool(db))
             self.add_tool(PageRankTool(db))
             self.add_tool(ShowSchemaInfoTool(db))
             self.add_tool(ShowStorageInfoTool(db))

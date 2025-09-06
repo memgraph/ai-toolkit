@@ -140,6 +140,14 @@ class HyGM:
 
         # Store the created model as current
         self.current_graph_model = graph_model
+
+        # For LLM strategy in automatic mode, perform validation and retry if needed
+        if used_strategy == GraphModelingStrategy.LLM_POWERED:
+            graph_model = self._validate_and_improve_automatic_llm_model(
+                graph_model, database_structure, domain_context
+            )
+            self.current_graph_model = graph_model
+
         return graph_model
 
     def _get_strategy_instance(
@@ -329,26 +337,19 @@ class HyGM:
         self, model: "GraphModel", strategy: GraphModelingStrategy
     ) -> "GraphModel":
         """Allow user to modify the model using natural language commands."""
-        print("\n" + "=" * 60)
-        print("INTERACTIVE MODEL MODIFICATION")
-        print("=" * 60)
-        print("\nDescribe the changes you'd like to make to the graph model.")
-        print("You can use natural language like:")
-        print("  - 'Rename the Actor label to Person'")
-        print("  - 'Add a birth_date property to Actor nodes'")
-        print("  - 'Remove the last_update property from all nodes'")
-        print("  - 'Change ACTED_IN relationship to PERFORMED_IN'")
-        print("  - 'Add a new Category node with name and description'")
-        print("  - 'Drop the Audit node completely'")
-        print("  - 'Add a BELONGS_TO relationship from Product to Category'")
-        print("  - 'Add an index on Customer email property'")
-        print("  - 'Add a unique constraint on User email property'")
-        print("  - 'Remove the existence constraint on Product name'")
-        print("\nType 'done' when finished, or 'cancel' to return unchanged.")
-
         while True:
             try:
-                print("\n" + "-" * 60)
+                print("\n" + "=" * 60)
+                print("INTERACTIVE MODEL MODIFICATION")
+                print("=" * 60)
+                print("\nDescribe the changes you'd like to make to the graph model.")
+                print("You can use natural language like:")
+                print(" - Change the label...")
+                print(" - Delete a relationship...")
+                print(" - Add a new property...")
+                print(" - Remove a property...")
+
+                print("\nType 'done' when finished, 'cancel' to return unchanged.")
                 user_input = input("Describe your change: ").strip()
 
                 if user_input.lower() == "done":
@@ -961,6 +962,41 @@ class HyGM:
         model.edges.append(new_edge)
         return model
 
+    def _validate_and_improve_automatic_llm_model(
+        self,
+        graph_model: "GraphModel",
+        database_structure: Dict[str, Any],
+        domain_context: Optional[str] = None,
+    ) -> "GraphModel":
+        """
+        Validate and automatically improve LLM-generated model in automatic mode.
+
+        This method performs validation and gives the LLM an opportunity to fix
+        itself based on validation feedback without user interaction.
+
+        Args:
+            graph_model: Initial LLM-generated graph model
+            database_structure: Original database structure
+            domain_context: Optional domain context for modeling
+
+        Returns:
+            Final graph model (potentially improved)
+        """
+        # Create dummy operations for automatic mode
+        from .models.operations import ModelModifications
+
+        dummy_operations = ModelModifications(
+            operations=[], reasoning="Automatic validation improvement iteration"
+        )
+
+        return self._validate_and_improve_model(
+            model=graph_model,
+            strategy=GraphModelingStrategy.LLM_POWERED,
+            operations=dummy_operations,
+            database_structure=database_structure,
+            mode="automatic",
+        )
+
     def validate_graph_model(
         self, graph_model: "GraphModel", database_structure: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -1008,6 +1044,179 @@ class HyGM:
             "validation_result": result,
         }
 
+    def _validate_and_improve_model(
+        self,
+        model: "GraphModel",
+        strategy: GraphModelingStrategy,
+        operations: "ModelModifications",
+        database_structure: Dict[str, Any],
+        mode: str = "interactive",
+    ) -> "GraphModel":
+        """
+        Unified validation and improvement method for both automatic and interactive modes.
+
+        Args:
+            model: Graph model to validate
+            strategy: Current modeling strategy
+            operations: Operations that were applied (or dummy for automatic mode)
+            database_structure: Original database structure
+            mode: "automatic" or "interactive" - affects UI and logging behavior
+
+        Returns:
+            Final model (potentially improved)
+        """
+        # Mode-specific initialization
+        if mode == "automatic":
+            logger.info("Validating and improving LLM model in automatic mode...")
+            print("🔍 Performing automatic validation and improvement for LLM model...")
+        else:  # interactive mode
+            print("\n" + "=" * 60)
+            print("GRAPH SCHEMA VALIDATION")
+            print("=" * 60)
+
+        if not database_structure:
+            error_msg = "❌ Cannot validate: Original database structure not available"
+            print(error_msg)
+            return model
+
+        current_model = model
+        max_improvement_iterations = 3
+        improvement_count = 0
+
+        while improvement_count < max_improvement_iterations:
+            # Perform validation using the GraphSchemaValidator
+            validator = GraphSchemaValidator()
+            validation_result = validator.validate(current_model, database_structure)
+
+            # Mode-specific result display
+            if mode == "automatic":
+                # Compact display for automatic mode
+                status_emoji = "✅" if validation_result.success else "❌"
+                print(
+                    f"\n{status_emoji} Validation iteration {improvement_count + 1}: "
+                    f"{'PASSED' if validation_result.success else 'FAILED'}"
+                )
+
+                if validation_result.metrics:
+                    coverage = validation_result.metrics.coverage_percentage
+                    print(f"📊 Coverage: {coverage:.1f}%")
+
+                logger.info(
+                    "Validation iteration %d: %s (Coverage: %.1f%%)",
+                    improvement_count + 1,
+                    "PASSED" if validation_result.success else "FAILED",
+                    validation_result.metrics.coverage_percentage
+                    if validation_result.metrics
+                    else 0,
+                )
+            else:
+                # Detailed display for interactive mode
+                self._display_validation_results(validation_result, strategy)
+
+            # Handle validation results based on strategy
+            if strategy == GraphModelingStrategy.DETERMINISTIC:
+                if mode == "interactive":
+                    self._handle_deterministic_validation(validation_result)
+                break  # No automatic improvement for deterministic
+            elif strategy == GraphModelingStrategy.LLM_POWERED:
+                if validation_result.success:
+                    success_msg = "✅ Graph model validation passed successfully!"
+                    if mode == "automatic":
+                        logger.info(success_msg)
+                        print(success_msg)
+                    else:
+                        print("\n✅ All validation checks passed!")
+                    break
+                else:
+                    # Mode-specific improvement attempt messaging
+                    if mode == "automatic":
+                        critical_count = len(validation_result.critical_issues)
+                        warning_count = len(validation_result.warnings)
+                        print(
+                            f"🔧 Found {critical_count} critical issues and "
+                            f"{warning_count} warnings"
+                        )
+
+                        logger.info(
+                            "🤖 Attempting automatic LLM improvement (iteration %d/%d)",
+                            improvement_count + 1,
+                            max_improvement_iterations,
+                        )
+                        print(
+                            f"🤖 Attempting automatic LLM improvement "
+                            f"(iteration {improvement_count + 1}/{max_improvement_iterations})..."
+                        )
+
+                    # Try LLM improvement
+                    improved_model = self._handle_llm_validation(
+                        validation_result, current_model, operations, mode
+                    )
+
+                    if improved_model != current_model:
+                        # Model was improved, continue with the improved version
+                        current_model = improved_model
+                        improvement_count += 1
+
+                        if mode == "automatic":
+                            print("🔄 Model improved! Re-validating...")
+                            logger.info(
+                                "🔄 Model improved, re-validating (iteration %d)",
+                                improvement_count,
+                            )
+                        else:
+                            # Interactive mode - show detailed iteration info
+                            self.iteration_count += 1
+                            print(
+                                f"\n🔄 ITERATION {self.iteration_count} - IMPROVED MODEL"
+                            )
+                            self._display_current_model(current_model)
+
+                            if improvement_count < max_improvement_iterations:
+                                print(
+                                    f"\n🔍 Re-validating improved model "
+                                    f"(iteration {improvement_count + 1}/{max_improvement_iterations})..."
+                                )
+                            else:
+                                print(
+                                    f"\n⚠️ Reached maximum improvement iterations "
+                                    f"({max_improvement_iterations})"
+                                )
+                                break
+                        continue
+                    else:
+                        # No improvement was made, break the loop
+                        if mode == "automatic":
+                            logger.warning("❌ LLM could not improve the model further")
+                            print("❌ LLM could not improve the model further")
+                        else:
+                            # Interactive mode - no improvement accepted
+                            pass
+                        break
+
+            # Check if we should continue (only for automatic mode without improvement)
+            if mode == "automatic" and not validation_result.success and not self.llm:
+                reason = "LLM not available" if not self.llm else "Unknown issue"
+                logger.warning("⚠️ Cannot improve model: %s", reason)
+                print(f"⚠️ Cannot improve model: {reason}")
+                break
+
+        # Final summary for automatic mode
+        if mode == "automatic":
+            if improvement_count > 0:
+                logger.info(
+                    "✨ Automatic LLM improvement completed after %d iterations",
+                    improvement_count,
+                )
+                print(
+                    f"✨ Automatic LLM improvement completed after "
+                    f"{improvement_count} iterations"
+                )
+            else:
+                logger.info("📊 Using original LLM model (no improvements needed)")
+                print("📊 Using original LLM model")
+
+        return current_model
+
     def _perform_post_operation_validation(
         self,
         model: "GraphModel",
@@ -1030,66 +1239,13 @@ class HyGM:
         Returns:
             The final model (potentially improved by LLM)
         """
-        print("\n" + "=" * 60)
-        print("GRAPH SCHEMA VALIDATION")
-        print("=" * 60)
-
-        if not self.database_structure:
-            print("❌ Cannot validate: Original database structure not available")
-            return model
-
-        current_model = model
-        max_improvement_iterations = 3
-        improvement_count = 0
-
-        while improvement_count < max_improvement_iterations:
-            # Perform validation using the GraphSchemaValidator
-            validator = GraphSchemaValidator()
-            validation_result = validator.validate(
-                current_model, self.database_structure
-            )
-
-            # Print validation summary
-            self._display_validation_results(validation_result, strategy)
-
-            # Handle validation results based on strategy
-            if strategy == GraphModelingStrategy.DETERMINISTIC:
-                self._handle_deterministic_validation(validation_result)
-                break  # No automatic improvement for deterministic
-            elif strategy == GraphModelingStrategy.LLM_POWERED:
-                if validation_result.success:
-                    print("\n✅ All validation checks passed!")
-                    break
-                else:
-                    # Try LLM improvement
-                    improved_model = self._handle_llm_validation(
-                        validation_result, current_model, operations
-                    )
-
-                    if improved_model != current_model:
-                        # Model was improved, validate again
-                        current_model = improved_model
-                        improvement_count += 1
-                        self.iteration_count += 1
-
-                        print(f"\n🔄 ITERATION {self.iteration_count} - IMPROVED MODEL")
-                        self._display_current_model(current_model)
-
-                        if improvement_count < max_improvement_iterations:
-                            print(
-                                f"\n🔍 Re-validating improved model (iteration {improvement_count + 1}/{max_improvement_iterations})..."
-                            )
-                            continue
-                        else:
-                            print(
-                                f"\n⚠️ Reached maximum improvement iterations ({max_improvement_iterations})"
-                            )
-                            break
-                    else:
-                        # No improvement was made or accepted
-                        break
-
-        return current_model
+        return self._validate_and_improve_model(
+            model=model,
+            strategy=strategy,
+            operations=operations,
+            database_structure=self.database_structure or {},
+            mode="interactive",
+        )
 
     def _display_validation_results(
         self, validation_result, strategy: GraphModelingStrategy
@@ -1167,6 +1323,7 @@ class HyGM:
         validation_result,
         model: "GraphModel",
         operations: "ModelModifications",
+        mode: str = "interactive",
     ) -> "GraphModel":
         """Handle validation results for LLM strategy with regeneration."""
         if not validation_result.success and self.llm:
@@ -1174,6 +1331,12 @@ class HyGM:
             print(
                 "The LLM will analyze validation issues and regenerate " "the model..."
             )
+
+            # Preserve user operation history before LLM improvement
+            saved_user_operations = None
+            if self.user_operation_history and mode == "interactive":
+                saved_user_operations = self.user_operation_history.copy()
+                print("📋 Preserving your operation history...")
 
             # Prepare context for LLM
             validation_context = self._prepare_validation_context_for_llm(
@@ -1190,18 +1353,45 @@ class HyGM:
                     print("\n✅ LLM has generated an improved model!")
 
                     # Offer the user to review the improved model
-                    if self._should_apply_llm_improvements(improved_model, model):
-                        print("� Applying LLM improvements...")
+                    should_apply = self._should_apply_llm_improvements(
+                        improved_model, model, mode
+                    )
+                    if should_apply:
+                        print("✅ Applying LLM improvements...")
+
+                        # Restore user operation history after improvements
+                        if saved_user_operations and mode == "interactive":
+                            self.user_operation_history = saved_user_operations
+                            print("📋 Restored your operation history!")
+
                         return improved_model
                     else:
                         print("❌ User rejected LLM improvements")
+
+                        # Restore history if improvements were rejected
+                        if saved_user_operations and mode == "interactive":
+                            self.user_operation_history = saved_user_operations
+                            print("📋 Restored your operation history!")
+
                         return model
                 else:
                     print("❌ LLM could not generate improved model")
+
+                    # Restore history if no improvement was generated
+                    if saved_user_operations and mode == "interactive":
+                        self.user_operation_history = saved_user_operations
+                        print("📋 Restored your operation history!")
+
                     return model
             except Exception as e:
                 logger.error("Error getting LLM model improvements: %s", e)
                 print(f"❌ Error getting LLM improvements: {e}")
+
+                # Restore user operation history if there was an error
+                if saved_user_operations and mode == "interactive":
+                    self.user_operation_history = saved_user_operations
+                    print("📋 Restored your operation history!")
+
                 return model
         else:
             print("\n✅ All validation checks passed!")
@@ -1262,13 +1452,28 @@ class HyGM:
             current_model, validation_result, validation_context
         )
 
+        # Extract user operation context separately to preserve user changes
+        user_context = None
+        if self.user_operation_history and self.user_operation_history.operations:
+            user_context = self.user_operation_history.to_llm_context()
+
         try:
-            print("🔄 LLM is analyzing validation issues and regenerating " "model...")
+            print("🔄 LLM is analyzing validation issues and regenerating model...")
 
             # Use the LLM strategy but with enhanced context
-            improved_model = strategy_instance.create_model(
-                self.database_structure, domain_context=improvement_context
-            )
+            # Pass user operations as user_operation_context to ensure preservation
+            if isinstance(strategy_instance, LLMStrategy):
+                # LLM strategy supports user_operation_context
+                improved_model = strategy_instance.create_model(
+                    self.database_structure,
+                    domain_context=improvement_context,
+                    user_operation_context=user_context,
+                )
+            else:
+                # Fallback for strategies that don't support user_operation_context
+                improved_model = strategy_instance.create_model(
+                    self.database_structure, domain_context=improvement_context
+                )
 
             if improved_model:
                 print("✅ LLM generated improved model")
@@ -1320,9 +1525,19 @@ class HyGM:
         return "\n".join(context_parts)
 
     def _should_apply_llm_improvements(
-        self, improved_model: "GraphModel", current_model: "GraphModel"
+        self,
+        improved_model: "GraphModel",
+        current_model: "GraphModel",
+        mode: str = "interactive",
     ) -> bool:
-        """Ask user whether to apply LLM improvements."""
+        """Ask user to apply LLM improvements or auto-apply in automatic mode."""
+
+        # In automatic mode, always apply improvements
+        if mode == "automatic":
+            print("🤖 Automatic mode: Applying LLM improvements...")
+            return True
+
+        # In interactive mode, ask the user
         print("\n" + "=" * 60)
         print("🤖 LLM MODEL IMPROVEMENT REVIEW")
         print("=" * 60)
