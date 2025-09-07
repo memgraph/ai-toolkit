@@ -1,4 +1,4 @@
-import asyncio, os, json, logging, sys
+import asyncio, os, json, logging, sys, pathlib
 from litellm import acompletion, experimental_mcp_client
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -26,6 +26,10 @@ def configure_logging(level=logging.INFO, format_string=None):
 
 def ask_with_tools(prompt, model="openai/gpt-4o"):
     async def __call(prompt):
+        python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+        script_dir = pathlib.Path(__file__).parent.resolve()
+        mgmcp_project_dir = (script_dir / "../../integrations/mcp-memgraph/").resolve()
+        mgmcp_server_py = mgmcp_project_dir / "src/mcp_memgraph/main.py"
         server = StdioServerParameters(
             command="uv",
             args=[
@@ -33,10 +37,10 @@ def ask_with_tools(prompt, model="openai/gpt-4o"):
                 "--with",
                 "mcp-memgraph",
                 "--python",
-                "3.13",
+                python_version,
                 "--project",
-                "/Users/buda/Workspace/code/memgraph/ai-toolkit/integrations/mcp-memgraph/",
-                "/Users/buda/Workspace/code/memgraph/ai-toolkit/integrations/mcp-memgraph/src/mcp_memgraph/main.py",
+                str(mgmcp_project_dir),
+                str(mgmcp_server_py),
             ],
         )
 
