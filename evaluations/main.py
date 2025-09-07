@@ -14,6 +14,15 @@ import uuid
 from datetime import datetime
 
 
+# Centralized mapping from class names to metric names
+CLASS_NAME_TO_METRIC_NAME = {
+    "AnswerRelevancyMetric": "answer_relevancy",
+    "FaithfulnessMetric": "faithfulness",
+    "ContextualPrecisionMetric": "contextual_precision",
+    "InformationDensityMetric": "information_density",
+}
+
+
 class EvaluationScore(Enum):
     """Enum for evaluation scores"""
 
@@ -167,9 +176,13 @@ class AnswerRelevancyMetric(BaseMetric):
         Stub implementation for answer relevancy evaluation.
         In a real implementation, this would use an LLM or other model to assess relevancy.
         """
+        # Handle None values safely
+        question = test_case.question or ""
+        answer = test_case.answer or ""
+
         # Stub logic: simple keyword matching and length analysis
-        question_lower = test_case.question.lower()
-        answer_lower = test_case.answer.lower()
+        question_lower = question.lower()
+        answer_lower = answer.lower()
 
         # Count common words between question and answer
         question_words = set(question_lower.split())
@@ -178,9 +191,7 @@ class AnswerRelevancyMetric(BaseMetric):
 
         # Simple scoring based on word overlap and answer length
         word_overlap_ratio = len(common_words) / max(len(question_words), 1)
-        length_score = min(
-            len(test_case.answer) / 100, 1.0
-        )  # Normalize by expected length
+        length_score = min(len(answer) / 100, 1.0)  # Normalize by expected length
 
         # Combined score (stub implementation)
         score = (word_overlap_ratio * 0.7 + length_score * 0.3) * 5
@@ -215,9 +226,13 @@ class FaithfulnessMetric(BaseMetric):
         In a real implementation, this would use an LLM to check if the answer
         is supported by the provided context.
         """
+        # Handle None values safely
+        answer = test_case.answer or ""
+        context = test_case.context or []
+
         # Stub logic: check if key phrases from context appear in answer
-        context_text = " ".join(test_case.context).lower()
-        answer_lower = test_case.answer.lower()
+        context_text = " ".join(context).lower()
+        answer_lower = answer.lower()
 
         # Extract key phrases from context (simple approach)
         context_words = set(context_text.split())
@@ -267,14 +282,19 @@ class ContextualPrecisionMetric(BaseMetric):
         In a real implementation, this would use an LLM to assess if the
         retrieved context is relevant to answering the question.
         """
+        # Handle None values safely
+        question = test_case.question or ""
+        context = test_case.context or []
+
         # Stub logic: analyze context relevance to question
-        question_lower = test_case.question.lower()
+        question_lower = question.lower()
         question_words = set(question_lower.split())
 
         total_relevance_score = 0
         context_scores = []
 
-        for i, context_piece in enumerate(test_case.context):
+        for i, context_piece in enumerate(context):
+            context_piece = context_piece or ""
             context_lower = context_piece.lower()
             context_words = set(context_lower.split())
 
@@ -326,14 +346,19 @@ class InformationDensityMetric(BaseMetric):
         In a real implementation, this would use an LLM to assess if the answer
         provides sufficient information without being overly verbose or too brief.
         """
+        # Handle None values safely
+        question = test_case.question or ""
+        answer = test_case.answer or ""
+        context = test_case.context or []
+
         # Stub logic: analyze answer length, content richness, and relevance
-        question_lower = test_case.question.lower()
-        answer_lower = test_case.answer.lower()
-        context_text = " ".join(test_case.context).lower()
+        question_lower = question.lower()
+        answer_lower = answer.lower()
+        context_text = " ".join(context).lower()
 
         # Calculate various density factors
-        answer_length = len(test_case.answer.split())
-        question_length = len(test_case.question.split())
+        answer_length = len(answer.split())
+        question_length = len(question.split())
 
         # Information richness: unique informative words in answer
         answer_words = set(answer_lower.split())
@@ -357,6 +382,7 @@ class InformationDensityMetric(BaseMetric):
         # Calculate density scores
         if answer_length == 0:
             density_score = 0.0
+            length_appropriateness = 0.0
         else:
             # Information density: informative words per total words
             info_density = len(informative_words) / answer_length
@@ -442,9 +468,17 @@ class Evaluator:
                     test_run.add_result(result)
                 except Exception as e:
                     # Create error result
+                    # Use consistent naming convention (lowercase with underscores)
+                    metric_name = getattr(
+                        metric,
+                        "name",
+                        CLASS_NAME_TO_METRIC_NAME.get(
+                            metric.__class__.__name__, metric.__class__.__name__.lower()
+                        ),
+                    )
                     error_result = EvaluationResult(
                         test_case_id=test_case.id,
-                        metric_name=getattr(metric, "name", metric.__class__.__name__),
+                        metric_name=metric_name,
                         score=EvaluationScore.VERY_POOR,
                         score_numeric=0.0,
                         reasoning=f"Evaluation failed: {str(e)}",
@@ -457,7 +491,13 @@ class Evaluator:
 
     def add_metric(self, metric: BaseMetric):
         """Add a custom metric to the default metrics"""
-        metric_name = getattr(metric, "name", metric.__class__.__name__.lower())
+        metric_name = getattr(
+            metric,
+            "name",
+            CLASS_NAME_TO_METRIC_NAME.get(
+                metric.__class__.__name__, metric.__class__.__name__.lower()
+            ),
+        )
         self.default_metrics[metric_name] = metric
 
 
