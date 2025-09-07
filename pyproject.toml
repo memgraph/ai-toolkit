@@ -3,7 +3,7 @@ name = "memgraph-ai"
 version = "0.1.3"
 description = "Memgraph AI Toolkit"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 dependencies = [
     "memgraph-toolbox",
     "mcp[cli]>=1.6.0",
@@ -12,11 +12,14 @@ dependencies = [
 
 [tool.uv.sources]
 memgraph-toolbox = { workspace = true }
+mcp-prompt-lib = { workspace = true }
 
 [tool.uv.workspace] 
 members = [
     "memgraph-toolbox/",
     "integrations/langchain-memgraph/",
     "integrations/mcp-memgraph/",
-    "integrations/agents",
+    "integrations/agents", 
+    "experiments/mcp-prompt-lib",
+    "experiments/prompt-evals",
 ]

@@ -1,4 +1,4 @@
-import asyncio, os, json, logging, sys, pathlib
+import asyncio, os, json, logging, sys, pathlib, csv, argparse
 from litellm import acompletion, experimental_mcp_client
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -15,7 +15,6 @@ def configure_logging(level=logging.INFO, format_string=None):
     """
     if format_string is None:
         format_string = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-
     logging.basicConfig(
         level=level,
         format=format_string,
@@ -28,7 +27,7 @@ def ask_with_tools(prompt, model="openai/gpt-4o"):
     async def __call(prompt):
         python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
         script_dir = pathlib.Path(__file__).parent.resolve()
-        mgmcp_project_dir = (script_dir / "../../integrations/mcp-memgraph/").resolve()
+        mgmcp_project_dir = (script_dir / "../../../../integrations/mcp-memgraph/").resolve()
         mgmcp_server_py = mgmcp_project_dir / "src/mcp_memgraph/main.py"
         server = StdioServerParameters(
             command="uv",
@@ -143,11 +142,21 @@ def ask_with_tools(prompt, model="openai/gpt-4o"):
 
 if __name__ == "__main__":
     level = logging.WARNING
-    if len(sys.argv) > 1:
-        arg = sys.argv[1].upper()
-        level = getattr(logging, arg, logging.WARNING)
     configure_logging(level=level)
 
-    # ask_with_tools("What's the list of tool that you have?")
-    print(ask_with_tools("What's the most important entity in my dataset?"))
-    # print(ask_with_tools("Find me discussions related to the AI topics and give me a summary of connected entities."))
+    parser = argparse.ArgumentParser(description="Run prompt with tools from a CSV file.")
+    parser.add_argument("csv_file_path", help="Path to the CSV file containing prompts.")
+    parser.add_argument("prompt_id", help="ID of the prompt to use.")
+    args = parser.parse_args()
+
+    prompts = {}
+    with open(args.csv_file_path, newline="", encoding="utf-8") as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            prompts[row["id"]] = row["prompt"]
+    prompt_text = prompts.get(args.prompt_id)
+    if prompt_text is None:
+        print(f"Prompt with id '{args.prompt_id}' not found in prompts.csv.")
+    else:
+        print(prompt_text)
+        print(ask_with_tools(prompt_text))
