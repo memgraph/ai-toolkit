@@ -27,7 +27,9 @@ def ask_with_tools(prompt, model="openai/gpt-4o"):
     async def __call(prompt):
         python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
         script_dir = pathlib.Path(__file__).parent.resolve()
-        mgmcp_project_dir = (script_dir / "../../../../integrations/mcp-memgraph/").resolve()
+        mgmcp_project_dir = (
+            script_dir / "../../../../integrations/mcp-memgraph/"
+        ).resolve()
         mgmcp_server_py = mgmcp_project_dir / "src/mcp_memgraph/main.py"
         server = StdioServerParameters(
             command="uv",
@@ -49,12 +51,11 @@ def ask_with_tools(prompt, model="openai/gpt-4o"):
                 tools = await experimental_mcp_client.load_mcp_tools(
                     session=session, format="openai"
                 )
-                logger.info("Successfully loaded MCP tools:")
-                logger.info(
+                logger.debug(
                     "MCP tools details: %s",
                     json.dumps(tools, indent=2, ensure_ascii=False),
                 )
-                logger.info("MCP tools listed")
+                logger.info(f"{len(tools)} MCP tools loaded")
 
                 # Validation of the LLM requirements.
                 if model.startswith("openai/"):
@@ -68,7 +69,14 @@ def ask_with_tools(prompt, model="openai/gpt-4o"):
                             "OPENAI_API_KEY environment variable is not set. Please set it to use OpenAI models."
                         )
 
-                messages = [{"role": "user", "content": prompt}]
+                messages = [
+                    # NOTE: Some lower quality models/non-reasoning models will call unknown tools with wrong inputs.
+                    {
+                        "role": "developer",
+                        "content": "Don't call unknown tools. Call only the ones that are listed in the tools list.",
+                    },
+                    {"role": "user", "content": prompt},
+                ]
                 resp = await acompletion(
                     model=model,
                     messages=messages,
@@ -103,19 +111,39 @@ def ask_with_tools(prompt, model="openai/gpt-4o"):
                             result = await session.call_tool(
                                 name=tc["function"]["name"], arguments=arguments
                             )
+
+                            # Extract content from MCP response
+                            # TODO(gitbuda): Implement proper deserialization from Memgraph MCP server.
+                            if hasattr(result, "content") and result.content:
+                                if isinstance(result.content, list):
+                                    # Handle list of content objects
+                                    content_text = []
+                                    for content_item in result.content:
+                                        if hasattr(content_item, "text"):
+                                            content_text.append(content_item.text)
+                                        elif isinstance(content_item, str):
+                                            content_text.append(content_item)
+                                        else:
+                                            content_text.append(str(content_item))
+                                    content_str = "\n".join(content_text)
+                                elif hasattr(result.content, "text"):
+                                    content_str = result.content.text
+                                else:
+                                    content_str = str(result.content)
+                            else:
+                                content_str = "No content returned"
+
                             logger.info(
                                 "Tool %s result: %s",
                                 tc["function"]["name"],
-                                json.dumps(result.content, indent=2),
+                                content_str,
                             )
                             messages.append(
                                 {
                                     "role": "tool",
                                     "tool_call_id": tc["id"],
                                     "name": tc["function"]["name"],
-                                    "content": json.dumps(
-                                        result.content, ensure_ascii=False
-                                    ),
+                                    "content": content_str,
                                 }
                             )
                         except Exception as tool_error:
@@ -141,12 +169,19 @@ def ask_with_tools(prompt, model="openai/gpt-4o"):
 
 
 if __name__ == "__main__":
-    level = logging.WARNING
+    level = logging.INFO
     configure_logging(level=level)
 
-    parser = argparse.ArgumentParser(description="Run prompt with tools from a CSV file.")
-    parser.add_argument("csv_file_path", help="Path to the CSV file containing prompts.")
+    parser = argparse.ArgumentParser(
+        description="Run prompt with tools from a CSV file."
+    )
+    parser.add_argument(
+        "csv_file_path", help="Path to the CSV file containing prompts."
+    )
     parser.add_argument("prompt_id", help="ID of the prompt to use.")
+    parser.add_argument(
+        "--model", default="openai/gpt-4o", help="Pick the LLM model (LiteLLM names)"
+    )
     args = parser.parse_args()
 
     prompts = {}
@@ -159,4 +194,4 @@ if __name__ == "__main__":
         print(f"Prompt with id '{args.prompt_id}' not found in prompts.csv.")
     else:
         print(prompt_text)
-        print(ask_with_tools(prompt_text))
+        print(ask_with_tools(prompt_text, args.model))
