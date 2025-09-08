@@ -78,6 +78,9 @@ def ask_with_tools(prompt, model="openai/gpt-4o"):
                     {"role": "user", "content": prompt},
                 ]
                 resp = await acompletion(
+                    # TODO(gitbuda): Add option to add locally deployed vLLM model (more configuration options).
+                    # api_base="http://muhlo:8000/v1",
+                    # reasoning_effort="medium",
                     model=model,
                     messages=messages,
                     tools=tools,
@@ -155,6 +158,9 @@ def ask_with_tools(prompt, model="openai/gpt-4o"):
 
                     # After all tool calls are executed, get the final response.
                     final_resp = await acompletion(
+                        # TODO(gitbuda): Add option to add locally deployed vLLM model (more configuration options).
+                        # api_base="http://muhlo:8000/v1",
+                        # reasoning_effort="medium",
                         model=model,
                         messages=messages,
                     )
