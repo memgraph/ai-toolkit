@@ -13,6 +13,7 @@ dependencies = [
 [tool.uv.sources]
 memgraph-toolbox = { workspace = true }
 mcp-prompt-lib = { workspace = true }
+llm-model-resolver = { workspace = true }
 
 [tool.uv.workspace] 
 members = [
@@ -21,5 +22,6 @@ members = [
     "integrations/mcp-memgraph/",
     "integrations/agents", 
     "experiments/mcp-prompt-lib",
+    "experiments/llm-model-resolver",
     "experiments/prompt-evals",
 ]
