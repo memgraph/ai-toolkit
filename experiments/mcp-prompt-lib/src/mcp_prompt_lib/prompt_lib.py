@@ -24,6 +24,8 @@ def configure_logging(level=logging.INFO, format_string=None):
 
 
 def ask_with_tools(prompt, model="openai/gpt-4o"):
+    print(f"Using model: {model}")
+
     async def __call(prompt):
         python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
         script_dir = pathlib.Path(__file__).parent.resolve()

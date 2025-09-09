@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "mcp-prompt-lib",
+    "deepeval",
 ]
 
 [build-system]
