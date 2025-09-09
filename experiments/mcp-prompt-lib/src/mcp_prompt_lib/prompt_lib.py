@@ -9,22 +9,29 @@ logger = logging.getLogger(__name__)
 def configure_logging(level=logging.INFO, format_string=None):
     """
     Configure logging for the MCP prompt library.
+    This function is kept for backward compatibility but should be called
+    from the main application to avoid conflicts.
     Args:
         level: Logging level (default: logging.INFO)
         format_string: Custom format string for log messages
     """
     if format_string is None:
         format_string = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    logging.basicConfig(
-        level=level,
-        format=format_string,
-        force=True,  # Override any existing configuration
-    )
+
+    # Only configure if no handlers exist to avoid overriding parent configuration
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=level,
+            format=format_string,
+            force=True,  # Override any existing configuration
+        )
+
+    # Set level for this specific logger
     logger.setLevel(level)
 
 
 def ask_with_tools(prompt, model="openai/gpt-4o"):
-    print(f"Using model: {model}")
+    logger.info(f"Using model: {model}")
 
     async def __call(prompt):
         python_version = f"{sys.version_info.major}.{sys.version_info.minor}"

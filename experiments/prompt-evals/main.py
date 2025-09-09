@@ -17,28 +17,38 @@ logger = logging.getLogger(__name__)
 
 def configure_logging(level=logging.INFO, format_string=None):
     """
-    Configure logging for the MCP prompt library.
+    Configure logging for all modules in the prompt evaluation system.
+    Uses proper logging hierarchy - child loggers inherit from root logger.
     Args:
         level: Logging level (default: logging.INFO)
         format_string: Custom format string for log messages
     """
     if format_string is None:
         format_string = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    logging.basicConfig(
-        level=level,
-        format=format_string,
-        force=True,  # Override any existing configuration
-    )
+
+    # Configure root logger - all child loggers will inherit this configuration
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=level,
+            format=format_string,
+            force=True,  # Override any existing configuration
+        )
+    # Set level for this specific logger
     logger.setLevel(level)
+    # Optional: Set specific levels for noisy third-party libraries
+    # logging.getLogger('deepeval').setLevel(logging.WARNING)  # Reduce noise from deepeval
 
 
-def run_prompt_evaluation(csv_file_path, model="ollama/llama3.2:latest"):
+def run_prompt_evaluation(
+    csv_file_path, model="ollama/llama3.2:latest", skip_evaluations=False
+):
     """
     Run prompt evaluation with comprehensive evaluation metrics using DeepEval.
 
     Args:
         csv_file_path: Path to the CSV file containing prompts
         model: Model to use for generating answers
+        skip_evaluations: If True, skip the evaluation step and only generate answers
     """
     # Load prompts from CSV
     prompts = {}
@@ -47,8 +57,8 @@ def run_prompt_evaluation(csv_file_path, model="ollama/llama3.2:latest"):
         for row in reader:
             prompts[row["id"]] = row["prompt"]
 
-    print(f"Loaded {len(prompts)} prompts from {csv_file_path}")
-    print("=" * 80)
+    logger.info(f"Loaded {len(prompts)} prompts from {csv_file_path}")
+    logger.info("=" * 80)
 
     # Create test cases and collect answers
     test_cases = []
@@ -56,9 +66,9 @@ def run_prompt_evaluation(csv_file_path, model="ollama/llama3.2:latest"):
     litellm_model_resolver = LiteLLMModelResolver(model)
 
     for prompt_id, prompt in prompts.items():
-        print(f"\nProcessing prompt '{prompt_id}'...")
-        print(f"Prompt: {prompt}")
-        print("-" * 40)
+        logger.info(f"\nProcessing prompt '{prompt_id}'...")
+        logger.info(f"Prompt: {prompt}")
+        logger.info("-" * 40)
 
         try:
             # Get answer from the model
@@ -66,13 +76,13 @@ def run_prompt_evaluation(csv_file_path, model="ollama/llama3.2:latest"):
                 prompt, model=litellm_model_resolver.get_model_name()
             )
             answers[prompt_id] = answer
-            print(f"Answer: {answer}")
+            logger.info(f"Answer: {answer}")
 
             # Handle None or empty answers - DeepEval requires non-null actual_output
             if answer is None or answer == "":
                 answer = "No response generated"
-                print(
-                    f"Warning: No response generated for prompt '{prompt_id}', using placeholder"
+                logger.warning(
+                    f"No response generated for prompt '{prompt_id}', using placeholder"
                 )
 
             # For now, we'll use the prompt as context since the current ask_with_tools
@@ -93,7 +103,7 @@ def run_prompt_evaluation(csv_file_path, model="ollama/llama3.2:latest"):
             test_cases.append(test_case)
 
         except Exception as e:
-            print(f"Error processing prompt '{prompt_id}': {e}")
+            logger.error(f"Error processing prompt '{prompt_id}': {e}")
             # Create a test case with placeholder answer for evaluation
             test_case = LLMTestCase(
                 input=prompt,
@@ -104,16 +114,26 @@ def run_prompt_evaluation(csv_file_path, model="ollama/llama3.2:latest"):
             )
             test_cases.append(test_case)
 
-    print("\n" + "=" * 80)
-    print("EVALUATION RESULTS")
-    print("=" * 80)
+    if skip_evaluations:
+        logger.info("\n" + "=" * 80)
+        logger.info("EVALUATIONS SKIPPED")
+        logger.info("=" * 80)
+        logger.info(f"Generated answers for {len(test_cases)} prompts.")
+        logger.info("Evaluations were skipped as requested.")
+        return []
+
+    logger.info("\n" + "=" * 80)
+    logger.info("EVALUATION RESULTS")
+    logger.info("=" * 80)
 
     # Check if we have any valid test cases
     if not test_cases:
-        print("No test cases to evaluate!")
+        logger.warning("No test cases to evaluate!")
         return []
 
-    deepeval_model = DeepEvalModelResolver(model).get_model()
+    deepeval_model_resolver = DeepEvalModelResolver(model)
+    logger.info(f"Using DeepEval model: {deepeval_model_resolver.get_model_name()}")
+    deepeval_model = deepeval_model_resolver.get_model()
 
     # Define DeepEval metrics with Ollama model
     metrics = [
@@ -124,39 +144,41 @@ def run_prompt_evaluation(csv_file_path, model="ollama/llama3.2:latest"):
 
     try:
         # Run evaluation using DeepEval
-        print(f"Running evaluation with Ollama model: {model}")
+        logger.info(f"Running evaluation with Ollama model: {model}")
         results = evaluate(test_cases, metrics)
     except Exception as e:
-        print(f"Error during evaluation: {e}")
+        logger.error(f"Error during evaluation: {e}")
         if "api_key" in str(e).lower() or "openai" in str(e).lower():
-            print("\nDeepEval is trying to use OpenAI instead of Ollama.")
-            print("This might be due to model configuration issues.")
+            logger.error("\nDeepEval is trying to use OpenAI instead of Ollama.")
+            logger.error("This might be due to model configuration issues.")
         elif "ollama" in str(e).lower() or "connection" in str(e).lower():
-            print(f"\nOllama connection error. Please ensure:")
-            print(f"1. Ollama is running: ollama serve")
-            print(f"2. The model '{model}' is available: ollama list")
-            print(f"3. The model is pulled: ollama pull {model}")
-            print(f"4. Environment variable is set:")
-            print(f"   - OLLAMA_BASE_URL (default: http://localhost:11434)")
+            logger.error(f"\nOllama connection error. Please ensure:")
+            logger.error(f"1. Ollama is running: ollama serve")
+            logger.error(f"2. The model '{model}' is available: ollama list")
+            logger.error(f"3. The model is pulled: ollama pull {model}")
+            logger.error(f"4. Environment variable is set:")
+            logger.error(f"   - OLLAMA_BASE_URL (default: http://localhost:11434)")
         else:
-            print(
+            logger.error(
                 "This might be due to missing API keys or other configuration issues."
             )
-            print("Please ensure you have the required setup for DeepEval with Ollama.")
+            logger.error(
+                "Please ensure you have the required setup for DeepEval with Ollama."
+            )
         return []
 
     # DeepEval already provides comprehensive output, so we'll just show a simple summary
-    print(f"\nEvaluation completed for {len(test_cases)} test cases.")
-    print("Detailed results are shown above in the DeepEval output.")
+    logger.info(f"\nEvaluation completed for {len(test_cases)} test cases.")
+    logger.info("Detailed results are shown above in the DeepEval output.")
 
     # Print a simple summary
     if results:
-        print(f"\nEvaluation completed successfully!")
-        print(
+        logger.info(f"\nEvaluation completed successfully!")
+        logger.info(
             "See the detailed metrics summary above for individual test case results."
         )
     else:
-        print("No evaluation results to summarize.")
+        logger.warning("No evaluation results to summarize.")
 
     return results
 
@@ -169,11 +191,11 @@ def print_evaluation_summary(results, title="Evaluation Summary"):
         results: List of DeepEval evaluation results
         title: Optional title for the summary
     """
-    print(f"\n{title}:")
-    print("=" * 50)
+    logger.info(f"\n{title}:")
+    logger.info("=" * 50)
 
     if not results:
-        print("No evaluation results available")
+        logger.warning("No evaluation results available")
         return
 
     # Group results by metric
@@ -228,21 +250,21 @@ def print_evaluation_summary(results, title="Evaluation Summary"):
         passed_test_cases / total_test_cases if total_test_cases > 0 else 0
     )
 
-    print(f"Total Test Cases: {total_test_cases}")
-    print(f"Total Metric Evaluations: {total_metrics}")
-    print(
+    logger.info(f"Total Test Cases: {total_test_cases}")
+    logger.info(f"Total Metric Evaluations: {total_metrics}")
+    logger.info(
         f"Overall Pass Rate: {overall_pass_rate:.2%} ({passed_test_cases}/{total_test_cases})"
     )
-    print()
+    logger.info("")
 
-    print("Metric Summary:")
+    logger.info("Metric Summary:")
     for metric_name, summary in metric_summary.items():
-        print(f"  {metric_name.replace('_', ' ').title()}:")
-        print(
+        logger.info(f"  {metric_name.replace('_', ' ').title()}:")
+        logger.info(
             f"    Pass Rate: {summary['pass_rate']:.2%} ({summary['passed']}/{summary['total']})"
         )
-        print(f"    Average Score: {summary['avg_score']:.2f}")
-        print()
+        logger.info(f"    Average Score: {summary['avg_score']:.2f}")
+        logger.info("")
 
 
 if __name__ == "__main__":
@@ -259,6 +281,13 @@ if __name__ == "__main__":
         default="ollama/llama3.2:latest",
         help="Model to use for both generating answers and evaluating.",
     )
+    parser.add_argument(
+        "--skip-evaluations",
+        action="store_true",
+        help="Skip the evaluation step and only generate answers.",
+    )
     args = parser.parse_args()
 
-    test_run = run_prompt_evaluation(args.csv_file_path, args.model)
+    test_run = run_prompt_evaluation(
+        args.csv_file_path, args.model, args.skip_evaluations
+    )
