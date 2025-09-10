@@ -8,6 +8,7 @@ dependencies = [
     "mcp-prompt-lib",
     "deepeval",
     "llm-model-resolver",
+    "numpy>=2.3.2",
 ]
 
 [build-system]

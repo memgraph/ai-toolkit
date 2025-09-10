@@ -84,12 +84,19 @@ def ask_with_tools(prompt, model="openai/gpt-4o"):
                         "role": "developer",
                         "content": "Don't call unknown tools. Call only the ones that are listed in the tools list.",
                     },
+                    # NOTE: Give hints about the tools to use.
+                    {
+                        "role": "developer",
+                        "content": (
+                            "If a question is of a retrieval type (e.g., direct lookups, specific and well-defined queries about particular entities, nodes, or relationships), "
+                            "it is recommended to use the 'run_query' tool. "
+                            "If a question is about the structure of the graph (e.g., exploratory queries, understanding relationships between entities, or properties of nodes), "
+                            "it is recommended to use a combination of the 'search_node_vectors' tool and the 'get_node_neighborhood' tool."
+                        ),
+                    },
                     {"role": "user", "content": prompt},
                 ]
                 resp = await acompletion(
-                    # TODO(gitbuda): Add option to add locally deployed vLLM model (more configuration options).
-                    # api_base="http://muhlo:8000/v1",
-                    # reasoning_effort="medium",
                     model=model,
                     messages=messages,
                     tools=tools,
@@ -167,9 +174,6 @@ def ask_with_tools(prompt, model="openai/gpt-4o"):
 
                     # After all tool calls are executed, get the final response.
                     final_resp = await acompletion(
-                        # TODO(gitbuda): Add option to add locally deployed vLLM model (more configuration options).
-                        # api_base="http://muhlo:8000/v1",
-                        # reasoning_effort="medium",
                         model=model,
                         messages=messages,
                     )

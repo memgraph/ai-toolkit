@@ -49,6 +49,14 @@ class LiteLLMModelResolver(BaseModelResolver):
                 return {"api_base": "http://localhost:11434"}
             else:
                 return {"api_base": self.base_url}
+        if model_name.startswith("vllm/"):
+            if self.base_url is None:
+                return {
+                    "api_base": "http://localhost:8000/v1",
+                    "reasoning_effort": "medium",
+                }
+            else:
+                return {"api_base": self.base_url, "reasoning_effort": "medium"}
         elif model_name in [
             "gpt-3.5-turbo",
             "gpt-4",
