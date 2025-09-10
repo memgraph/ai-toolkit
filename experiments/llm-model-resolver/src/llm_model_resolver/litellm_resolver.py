@@ -12,8 +12,8 @@ class LiteLLMModelResolver(BaseModelResolver):
     Resolves model names and configurations for LiteLLM, supporting Ollama and OpenAI models.
     """
 
-    def __init__(self, model_name: str):
-        super().__init__(model_name)
+    def __init__(self, model_name: str, base_url: str = None):
+        super().__init__(model_name, base_url)
 
     def get_model_name(self) -> str:
         """
@@ -45,7 +45,10 @@ class LiteLLMModelResolver(BaseModelResolver):
         """
         model_name = self.model_name.lower()
         if model_name.startswith("ollama/"):
-            return {"api_base": "http://localhost:11434"}
+            if self.base_url is None:
+                return {"api_base": "http://localhost:11434"}
+            else:
+                return {"api_base": self.base_url}
         elif model_name in [
             "gpt-3.5-turbo",
             "gpt-4",

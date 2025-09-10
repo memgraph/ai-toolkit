@@ -5,12 +5,15 @@ Base model resolver abstract class.
 from abc import ABC, abstractmethod
 
 
+# TODO(gitbud): Make the openrouer resolver (add it under the existing resolvers).
+
+
 class BaseModelResolver(ABC):
     """
     Abstract base class for resolving model names and their configuration.
     """
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, base_url: str = None):
         """
         Initialize the resolver with the project-specific model name.
 
@@ -18,6 +21,7 @@ class BaseModelResolver(ABC):
             model_name: The model name to resolve
         """
         self.model_name = model_name
+        self.base_url = base_url
 
     @abstractmethod
     def get_model_name(self) -> str:
