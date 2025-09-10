@@ -8,6 +8,8 @@ from .server import (
     get_triggers,
     get_betweenness_centrality,
     get_page_rank,
+    get_node_neighborhood,
+    search_node_vectors,
     mcp,
     logger,
 )
@@ -22,6 +24,8 @@ __all__ = [
     "get_triggers",
     "get_betweenness_centrality",
     "get_page_rank",
+    "get_node_neighborhood",
+    "search_node_vectors",
     "mcp",
     "logger",
 ]
