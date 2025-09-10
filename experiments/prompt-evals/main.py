@@ -1,6 +1,7 @@
 import argparse
 import csv
 import logging
+import asyncio
 
 from mcp_prompt_lib.prompt_lib import ask_with_tools
 from deepeval import evaluate
@@ -41,7 +42,7 @@ def configure_logging(level=logging.INFO, format_string=None):
     logging.getLogger("deepeval").setLevel(logging.DEBUG)  # Reduce noise from deepeval
 
 
-def run_prompt_evaluation(args):
+async def run_prompt_evaluation(args):
     """
     Run prompt evaluation with comprehensive evaluation metrics using DeepEval.
 
@@ -103,7 +104,7 @@ def run_prompt_evaluation(args):
 
         try:
             # Get answer from the model
-            answer = ask_with_tools(
+            answer = await ask_with_tools(
                 prompt, model=litellm_model_resolver.get_model_name()
             )
             answers[prompt_id] = answer
@@ -296,4 +297,4 @@ if __name__ == "__main__":
         help="Verbosity level for the evaluation.",
     )
     args = parser.parse_args()
-    test_run = run_prompt_evaluation(args)
+    asyncio.run(run_prompt_evaluation(args))
