@@ -1,4 +1,5 @@
 import asyncio, os, json, logging, sys, pathlib, csv, argparse
+from typing import Optional
 from litellm import acompletion, experimental_mcp_client
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -31,18 +32,13 @@ def configure_logging(level=logging.INFO, format_string=None):
 
 
 async def ask_with_tools(
-    prompt: str, model="openai/gpt-4o", mcp_server: StdioServerParameters = None
+    prompt: str,
+    model: str = "openai/gpt-4o",
+    mcp_server_params: Optional[StdioServerParameters] = None,
 ):
-    python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-    if mcp_server is None:
-        # TODO(gitbuda): This is wrong because it's not the correct path to the mcp-memgraph project.
-        #   * Server/servers should probably be injected so people can use it with their own servers.
-        script_dir = pathlib.Path(__file__).parent.resolve()
-        mgmcp_project_dir = (
-            script_dir / "../../../../integrations/mcp-memgraph/"
-        ).resolve()
-        mgmcp_server_py = mgmcp_project_dir / "src/mcp_memgraph/main.py"
-        mcp_server = StdioServerParameters(
+    if mcp_server_params is None:  # Use Memgraph MCP server.
+        python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+        server_params = StdioServerParameters(
             command="uv",
             args=[
                 "run",
@@ -50,25 +46,13 @@ async def ask_with_tools(
                 "mcp-memgraph",
                 "--python",
                 python_version,
-                "--project",
-                str(mgmcp_project_dir),
-                str(mgmcp_server_py),
+                "mcp-memgraph",
             ],
         )
     else:
-        mcp_server = StdioServerParameters(
-            command="uv",
-            args=[
-                "run",
-                "--with",
-                "mcp-memgraph",
-                "--python",
-                python_version,
-                "mcp-memgraph",
-            ],
-        )
+        server_params = mcp_server_params
 
-    async with stdio_client(mcp_server) as (read, write):
+    async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools = await experimental_mcp_client.load_mcp_tools(

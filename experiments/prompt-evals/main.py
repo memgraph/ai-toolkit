@@ -2,7 +2,10 @@ import argparse
 import csv
 import logging
 import asyncio
+import pathlib
+import sys
 
+from mcp import StdioServerParameters
 from mcp_prompt_lib.prompt_lib import ask_with_tools
 from deepeval import evaluate
 from deepeval.test_case import LLMTestCase
@@ -40,6 +43,27 @@ def configure_logging(level=logging.INFO, format_string=None):
     logger.setLevel(level)
     # Optional: Set specific levels for noisy third-party libraries
     logging.getLogger("deepeval").setLevel(logging.DEBUG)  # Reduce noise from deepeval
+
+
+def configure_mcp_server():
+    python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    script_dir = pathlib.Path(__file__).parent.resolve()
+    mgmcp_project_dir = (script_dir / "../../integrations/mcp-memgraph/").resolve()
+    mgmcp_server_py = mgmcp_project_dir / "src/mcp_memgraph/main.py"
+    server_params = StdioServerParameters(
+        command="uv",
+        args=[
+            "run",
+            "--with",
+            "mcp-memgraph",
+            "--python",
+            python_version,
+            "--project",
+            str(mgmcp_project_dir),
+            str(mgmcp_server_py),
+        ],
+    )
+    return server_params
 
 
 async def run_prompt_evaluation(args):
@@ -97,6 +121,7 @@ async def run_prompt_evaluation(args):
 
     answers = {}
     test_cases = []
+    server = configure_mcp_server()
     for prompt_id, prompt in prompts.items():
         logger.info(f"\nProcessing prompt '{prompt_id}'...")
         logger.info(f"Prompt: {prompt}")
@@ -105,7 +130,9 @@ async def run_prompt_evaluation(args):
         try:
             # Get answer from the model
             answer = await ask_with_tools(
-                prompt, model=litellm_model_resolver.get_model_name()
+                prompt,
+                model=litellm_model_resolver.get_model_name(),
+                mcp_server_params=server,
             )
             answers[prompt_id] = answer
             logger.info(f"Answer: {answer}")
