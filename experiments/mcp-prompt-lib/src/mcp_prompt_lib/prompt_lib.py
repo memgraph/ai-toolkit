@@ -30,28 +30,45 @@ def configure_logging(level=logging.INFO, format_string=None):
     logger.setLevel(level)
 
 
-async def ask_with_tools(prompt, model="openai/gpt-4o"):
+async def ask_with_tools(
+    prompt: str, model="openai/gpt-4o", mcp_server: StdioServerParameters = None
+):
     python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-    script_dir = pathlib.Path(__file__).parent.resolve()
-    mgmcp_project_dir = (
-        script_dir / "../../../../integrations/mcp-memgraph/"
-    ).resolve()
-    mgmcp_server_py = mgmcp_project_dir / "src/mcp_memgraph/main.py"
-    server = StdioServerParameters(
-        command="uv",
-        args=[
-            "run",
-            "--with",
-            "mcp-memgraph",
-            "--python",
-            python_version,
-            "--project",
-            str(mgmcp_project_dir),
-            str(mgmcp_server_py),
-        ],
-    )
+    if mcp_server is None:
+        # TODO(gitbuda): This is wrong because it's not the correct path to the mcp-memgraph project.
+        #   * Server/servers should probably be injected so people can use it with their own servers.
+        script_dir = pathlib.Path(__file__).parent.resolve()
+        mgmcp_project_dir = (
+            script_dir / "../../../../integrations/mcp-memgraph/"
+        ).resolve()
+        mgmcp_server_py = mgmcp_project_dir / "src/mcp_memgraph/main.py"
+        mcp_server = StdioServerParameters(
+            command="uv",
+            args=[
+                "run",
+                "--with",
+                "mcp-memgraph",
+                "--python",
+                python_version,
+                "--project",
+                str(mgmcp_project_dir),
+                str(mgmcp_server_py),
+            ],
+        )
+    else:
+        mcp_server = StdioServerParameters(
+            command="uv",
+            args=[
+                "run",
+                "--with",
+                "mcp-memgraph",
+                "--python",
+                python_version,
+                "mcp-memgraph",
+            ],
+        )
 
-    async with stdio_client(server) as (read, write):
+    async with stdio_client(mcp_server) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools = await experimental_mcp_client.load_mcp_tools(
@@ -76,21 +93,23 @@ async def ask_with_tools(prompt, model="openai/gpt-4o"):
                     )
 
             messages = [
-                # NOTE: Some lower quality models/non-reasoning models will call unknown tools with wrong inputs.
-                {
-                    "role": "developer",
-                    "content": "Don't call unknown tools. Call only the ones that are listed in the tools list.",
-                },
-                # NOTE: Give hints about the tools to use.
-                {
-                    "role": "developer",
-                    "content": (
-                        "If a question is of a retrieval type (e.g., direct lookups, specific and well-defined queries about particular entities, nodes, or relationships), "
-                        "it is recommended to use the 'run_query' tool. "
-                        "If a question is about the structure of the graph (e.g., exploratory queries, understanding relationships between entities, or properties of nodes), "
-                        "it is recommended to use a combination of the 'search_node_vectors' tool and the 'get_node_neighborhood' tool."
-                    ),
-                },
+                {"role": "developer", "content": "Always run the vector search tool."},
+                # TODO(gitbuda): This should also be injectable because then the user can "program" the prompt lib to pick the right tools.
+                # # NOTE: Some lower quality models/non-reasoning models will call unknown tools with wrong inputs.
+                # {
+                #     "role": "developer",
+                #     "content": "Don't call unknown tools. Call only the ones that are listed in the tools list.",
+                # },
+                # # NOTE: Give hints about the tools to use.
+                # {
+                #     "role": "developer",
+                #     "content": (
+                #         "If a question is of a retrieval type (e.g., direct lookups, specific and well-defined queries about particular entities, nodes, or relationships), "
+                #         "it is recommended to use the 'run_query' tool. "
+                #         "If a question is about the structure of the graph (e.g., exploratory queries, understanding relationships between entities, or properties of nodes), "
+                #         "it is recommended to use a combination of the 'search_node_vectors' tool and the 'get_node_neighborhood' tool."
+                #     ),
+                # },
                 {"role": "user", "content": prompt},
             ]
             resp = await acompletion(
