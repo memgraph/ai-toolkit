@@ -1,0 +1,12 @@
+[project]
+name = "entity-graph"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "ai-knowledge-graph",
+]
+
+[tool.uv.sources]
+ai-knowledge-graph = { git = "https://github.com/robert-mcdermott/ai-knowledge-graph.git" }

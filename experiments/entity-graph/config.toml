@@ -1,0 +1,19 @@
+[llm]
+model = "llama3.2"
+api_key = ""
+base_url = "http://localhost:11434/v1/chat/completions" # Local Ollama instance running locally (but can be any OpenAI compatible endpoint)
+max_tokens = 8192
+temperature = 0.2
+
+[chunking]
+chunk_size = 200  # Number of words per chunk
+overlap = 20      # Number of words to overlap between chunks
+
+[standardization]
+enabled = true            # Enable entity standardization
+use_llm_for_entities = true  # Use LLM for additional entity resolution
+
+[inference]
+enabled = true             # Enable relationship inference
+use_llm_for_inference = true  # Use LLM for relationship inference
+apply_transitive = true    # Apply transitive inference rules

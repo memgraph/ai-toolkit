@@ -76,6 +76,7 @@ async def ask_with_tools(
                         "OPENAI_API_KEY environment variable is not set. Please set it to use OpenAI models."
                     )
 
+            # Introduction to explain the model how to operate.
             messages = [
                 {"role": "developer", "content": "Always run the vector search tool."},
                 # TODO(gitbuda): This should also be injectable because then the user can "program" the prompt lib to pick the right tools.

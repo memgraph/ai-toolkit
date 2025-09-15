@@ -23,5 +23,5 @@ members = [
     "integrations/agents", 
     "experiments/mcp-prompt-lib",
     "experiments/llm-model-resolver",
-    "experiments/prompt-evals",
+    "experiments/prompt-evals", "experiments/entity-graph",
 ]
