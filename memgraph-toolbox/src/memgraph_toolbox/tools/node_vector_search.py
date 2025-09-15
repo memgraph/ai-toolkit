@@ -43,10 +43,10 @@ class NodeVectorSearchTool(BaseTool):
         limit = arguments.get("limit", 10)
 
         query = f"""
-            CALL vector_search.search(\"{index_name}\", {limit}, {query_vector}) YIELD * RETURN *;
+            CALL vector_search.search(\"{index_name}\", {limit}, $query_vector) YIELD * RETURN *;
         """
         try:
-            results = self.db.query(query, {})
+            results = self.db.query(query, {"query_vector": query_vector})
             records = []
             for record in results:
                 node = record["node"]

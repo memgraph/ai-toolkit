@@ -152,7 +152,7 @@ async def ask_with_tools(
                         else:
                             content_str = "No content returned"
 
-                        logger.info(
+                        logger.debug(
                             "Tool %s result: %s",
                             tc["function"]["name"],
                             content_str,
