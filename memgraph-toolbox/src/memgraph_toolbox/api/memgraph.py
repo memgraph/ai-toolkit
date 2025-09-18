@@ -1,7 +1,11 @@
-from typing import Any, Dict, List, Optional
 import os
+from typing import Any, Dict, List, Optional
+import logging
+
 from neo4j import GraphDatabase
 from ..utils.serialization import serialize_record_data
+
+logger = logging.getLogger(__name__)
 
 
 class Memgraph:
@@ -38,11 +42,10 @@ class Memgraph:
         url = url or os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687")
         username = username or os.environ.get("MEMGRAPH_USER", "")
         password = password or os.environ.get("MEMGRAPH_PASSWORD", "")
-
+        logger.info(f"Connecting to Memgraph database at '{url}' with user '{username}'...")
         self.driver = GraphDatabase.driver(
             url, auth=(username, password), **(driver_config or {})
         )
-
         self.database = database or os.environ.get("MEMGRAPH_DATABASE", "memgraph")
 
         try:
