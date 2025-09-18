@@ -45,23 +45,25 @@ class LightRAGMemgraph:
             # embedding_func=EmbeddingFunc(
             #     embedding_dim=768,
             #     func=lambda texts: ollama_embed(texts, embed_model="nomic-embed-text")),
-            # #### OpenAI
-            # embedding_func=openai_embed,
-            # llm_model_func=gpt_4o_mini_complete,
-            llm_model_func=hf_model_complete,  # Use Hugging Face model for text generation
-            llm_model_name="microsoft/Phi-3-mini-128k-instruct",  # Model name from Hugging Face
-            embedding_func=EmbeddingFunc(
-                embedding_dim=384,
-                func=lambda texts: hf_embed(
-                    texts,
-                    tokenizer=AutoTokenizer.from_pretrained(
-                        "sentence-transformers/all-MiniLM-L6-v2"
-                    ),
-                    embed_model=AutoModel.from_pretrained(
-                        "sentence-transformers/all-MiniLM-L6-v2"
-                    ),
-                ),
-            ),
+            #### OpenAI
+            embedding_func=openai_embed,
+            llm_model_func=gpt_4o_mini_complete,
+            # #### HF Model
+            # llm_model_func=hf_model_complete,  # Use Hugging Face model for text generation
+            # # llm_model_name="microsoft/Phi-3-mini-128k-instruct",  # uses more then 12GB of vRAM
+            # llm_model_name="unsloth/Phi-3-mini-4k-instruct-bnb-4bit",
+            # embedding_func=EmbeddingFunc(
+            #     embedding_dim=384,
+            #     func=lambda texts: hf_embed(
+            #         texts,
+            #         tokenizer=AutoTokenizer.from_pretrained(
+            #             "sentence-transformers/all-MiniLM-L6-v2"
+            #         ),
+            #         embed_model=AutoModel.from_pretrained(
+            #             "sentence-transformers/all-MiniLM-L6-v2"
+            #         ),
+            #     ),
+            # ),
             # TODO: This should be read from environment variables
             # TODO: MemgraphStorage is missing from LightRAG documentation
             graph_storage="MemgraphStorage",

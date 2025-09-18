@@ -1,15 +1,19 @@
 [project]
 name = "lightrag-memgraph"
-version = "0.1.9"
+version = "0.1.18"
 description = "LightRAG integration with Memgraph for knowledge graph-based RAG"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    # "lightrag-hku[api] @ file:///home/buda/Workspace/tmp/LightRAG",
     "lightrag-hku[api]>=0.0.1",
     "openai>=1.0.0",
     "neo4j>=5.0.0",
     "accelerate>=1.10.1",
     "torch>=2.8.0",
+    "flash-attn>=2.8.3",
+    "transformers<=4.48.3",
+    "bitsandbytes>=0.47.0",
 ]
 
 [project.optional-dependencies]
