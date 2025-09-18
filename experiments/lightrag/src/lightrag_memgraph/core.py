@@ -6,8 +6,11 @@ from typing import Optional
 import asyncio
 from lightrag import LightRAG, QueryParam
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
+from lightrag.llm.ollama import ollama_model_complete, ollama_embed
 from lightrag.kg.shared_storage import initialize_pipeline_status
-from lightrag.utils import setup_logger
+from lightrag.utils import setup_logger, EmbeddingFunc
+from lightrag.llm.hf import hf_model_complete, hf_embed
+from transformers import AutoTokenizer, AutoModel
 
 
 class LightRAGMemgraph:
@@ -35,8 +38,30 @@ class LightRAGMemgraph:
 
         self.rag = LightRAG(
             working_dir=self.working_dir,
-            embedding_func=openai_embed,
-            llm_model_func=gpt_4o_mini_complete,
+            # #### Ollama -> NOTE: the small models don't work (timeouts, basically the whole ingestion of a graph is stuck)...
+            # llm_model_func=ollama_model_complete,  # Use Ollama model for text generation
+            # llm_model_name='llama3.2', # Your model name
+            # # Use Ollama embedding function
+            # embedding_func=EmbeddingFunc(
+            #     embedding_dim=768,
+            #     func=lambda texts: ollama_embed(texts, embed_model="nomic-embed-text")),
+            # #### OpenAI
+            # embedding_func=openai_embed,
+            # llm_model_func=gpt_4o_mini_complete,
+            llm_model_func=hf_model_complete,  # Use Hugging Face model for text generation
+            llm_model_name="microsoft/Phi-3-mini-128k-instruct",  # Model name from Hugging Face
+            embedding_func=EmbeddingFunc(
+                embedding_dim=384,
+                func=lambda texts: hf_embed(
+                    texts,
+                    tokenizer=AutoTokenizer.from_pretrained(
+                        "sentence-transformers/all-MiniLM-L6-v2"
+                    ),
+                    embed_model=AutoModel.from_pretrained(
+                        "sentence-transformers/all-MiniLM-L6-v2"
+                    ),
+                ),
+            ),
             # TODO: This should be read from environment variables
             # TODO: MemgraphStorage is missing from LightRAG documentation
             graph_storage="MemgraphStorage",
