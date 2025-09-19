@@ -11,8 +11,8 @@ dependencies = [
     "neo4j>=5.0.0",
     "accelerate>=1.10.1",
     "torch>=2.8.0",
-    "flash-attn>=2.8.3",
     "transformers<=4.48.3",
+    # "flash-attn>=2.8.3", # NOTE: It causes a lot of issue because explicit torch deps requried.
     # "bitsandbytes>=0.47.0", # NOTE: Doesn't work on Mac
 ]
 
