@@ -13,7 +13,7 @@ dependencies = [
     "torch>=2.8.0",
     "flash-attn>=2.8.3",
     "transformers<=4.48.3",
-    "bitsandbytes>=0.47.0",
+    # "bitsandbytes>=0.47.0", # NOTE: Doesn't work on Mac
 ]
 
 [project.optional-dependencies]
