@@ -22,11 +22,11 @@ classifiers = [
 
 dependencies = [
   "deepeval>=3.5.1",
+  "litellm>=1.77.1",
   "neo4j>=5.28.1",
   "numpy>=2.2.6",
-  "sentence-transformers>=5.1.0",
-  "litellm>=1.77.1",
   "mcp>=1.14.1",
+  "sentence-transformers>=5.1.0",
 ]
 
 [project.optional-dependencies]
