@@ -1,6 +1,7 @@
-import json, logging, sys
+import json, logging, sys, os
 from typing import Optional, List, Dict
 
+import asyncio
 from litellm import acompletion, experimental_mcp_client
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -28,17 +29,16 @@ async def prompt_with_tools(
             command="uv",
             args=[
                 "run",
-                # TODO(gitbuda): The --with is constantly using 0.1.0 of mcp-memgraph... -> FIX
-                # "--with",
-                # "mcp-memgraph",
-                "--directory",
-                "/Users/buda/Workspace/code/memgraph/ai-toolkit/integrations/mcp-memgraph",
+                "--with",
+                "mcp-memgraph",
                 "--python",
                 python_version,
                 "mcp-memgraph",
             ],
-            # TODO(gitbuda): Enable remote connections.
-            # env={"MEMGRAPH_URL": "bolt://localhost:7687"},
+            env={
+                "MEMGRAPH_URL": os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687"),
+                # NOTE: If you want to control where uv pulls the dependencies from inject UV_PYTHON or VIRTUAL_ENV.
+            },
         )
     else:
         server_params = mcp_server_params
@@ -139,3 +139,12 @@ async def prompt_with_tools(
                     messages=messages,
                 )
                 return final_resp["choices"][0]["message"].content
+
+
+async def __async_context():
+    response = await prompt_with_tools("Tell me anything using tools :pray:")
+    print(response)
+
+
+if __name__ == "__main__":
+    asyncio.run(__async_context())
