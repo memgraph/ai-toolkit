@@ -1,5 +1,8 @@
 import logging
 
+# NOTE: If a module is called logging, that might sometimes conflict with the
+# standard logging module.
+
 
 def logger_init(name: str, level: int = logging.INFO) -> logging.Logger:
     """Set up a logger with a consistent configuration."""

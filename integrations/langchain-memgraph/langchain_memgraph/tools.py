@@ -18,7 +18,6 @@ from memgraph_toolbox.tools.trigger import ShowTriggersTool
 from memgraph_toolbox.tools.index import ShowIndexInfoTool
 from memgraph_toolbox.tools.betweenness_centrality import BetweennessCentralityTool
 from memgraph_toolbox.tools.constraint import ShowConstraintInfoTool
-from memgraph_toolbox.utils.logging import logger_init
 
 
 class BaseMemgraphTool(BaseModel):

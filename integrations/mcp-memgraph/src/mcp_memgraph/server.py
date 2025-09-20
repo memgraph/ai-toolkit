@@ -12,6 +12,7 @@ from memgraph_toolbox.tools.betweenness_centrality import BetweennessCentralityT
 from memgraph_toolbox.tools.page_rank import PageRankTool
 from memgraph_toolbox.tools.node_neighborhood import NodeNeighborhoodTool
 from memgraph_toolbox.tools.node_vector_search import NodeVectorSearchTool
+# TODO: In the latest version of memgraph-toolbox changed to .utils.logger
 from memgraph_toolbox.utils.logging import logger_init
 
 import os
@@ -29,7 +30,9 @@ MEMGRAPH_USER = os.environ.get("MEMGRAPH_USER", "")
 MEMGRAPH_PASSWORD = os.environ.get("MEMGRAPH_PASSWORD", "")
 MEMGRAPH_DATABASE = os.environ.get("MEMGRAPH_DATABASE", "memgraph")
 
-logger.info(f"Connecting to Memgraph db '{MEMGRAPH_DATABASE}' at {MEMGRAPH_URL} with user '{MEMGRAPH_USER}'")
+logger.info(
+    f"Connecting to Memgraph db '{MEMGRAPH_DATABASE}' at {MEMGRAPH_URL} with user '{MEMGRAPH_USER}'"
+)
 
 # Initialize Memgraph client
 db = Memgraph(

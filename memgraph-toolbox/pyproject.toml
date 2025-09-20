@@ -27,6 +27,7 @@ dependencies = [
   "numpy>=2.2.6",
   "mcp>=1.14.1",
   "sentence-transformers>=5.1.0",
+  "torch>=2.8.0",
 ]
 
 [project.optional-dependencies]
