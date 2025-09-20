@@ -11,10 +11,10 @@ logger = logging.getLogger(__name__)
 
 async def prompt_with_tools(
     prompt: str,
-    tool_selection_system_messages: List[Dict[str, str]] = [],
     tool_selection_model_name: str = "openai/gpt-4o",
-    response_system_messages: List[Dict[str, str]] = [],
+    tool_selection_system_messages: List[Dict[str, str]] = [],
     response_model_name: str = "openai/gpt-4o",
+    response_system_messages: List[Dict[str, str]] = [],
     mcp_server_params: Optional[StdioServerParameters] = None,
 ):
     """
@@ -161,15 +161,18 @@ async def __async_context():
         tool_selection_system_messages=[
             {
                 "role": "system",
-                "content": "If you choose to run a query tool, use Cypher.",
+                "content": "If you choose to run a query tool, use Cypher. Use LIMIT 1.",
             }
         ],
         response_model_name="openai/gpt-4o",
+        response_system_messages=[],
     )
     print(response)
 
 
 if __name__ == "__main__":
+    # NOTE: Chaning how mcp-memgraph logs from here is not easy because the
+    # server is started in another process.
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
