@@ -5,7 +5,7 @@ import pytest
 from ..api.toolbox import BaseToolbox
 from ..memgraph_toolbox import MemgraphToolbox
 from ..api.tool import BaseTool
-from ..utils.logging import logger_init
+from ..utils.logger import logger_init
 from ..api.memgraph import Memgraph
 
 logger = logger_init("test-toolbox")  # Set up logger for the test
