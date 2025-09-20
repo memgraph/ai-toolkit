@@ -10,7 +10,8 @@ from memgraph_toolbox.tools.storage import ShowStorageInfoTool
 from memgraph_toolbox.tools.trigger import ShowTriggersTool
 from memgraph_toolbox.tools.betweenness_centrality import BetweennessCentralityTool
 from memgraph_toolbox.tools.page_rank import PageRankTool
-from memgraph_toolbox.utils.logger import logger_init
+# TODO: In the latest version of memgraph-toolbox changed to .utils.logger
+from memgraph_toolbox.utils.logging import logger_init
 
 import os
 from typing import Any, Dict, List
