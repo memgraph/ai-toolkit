@@ -47,8 +47,11 @@ async def prompt_with_tools(
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
+            # https://docs.litellm.ai/docs/mcp#litellm-python-sdk-mcp-bridge
             tools = await experimental_mcp_client.load_mcp_tools(
-                session=session, format="openai"
+                # NOTE: format="openai" works with everything tested, "mcp" does NOT work.
+                session=session,
+                format="openai",
             )
             logger.debug(
                 "MCP tools details: %s",
@@ -66,7 +69,6 @@ async def prompt_with_tools(
                 tools=tools,
             )
             msg = resp["choices"][0]["message"]
-
             # Tool calls by the MCP server.
             tool_calls = msg.get("tool_calls", [])
             if not tool_calls:
@@ -79,6 +81,14 @@ async def prompt_with_tools(
                         tc["function"]["name"],
                         tc["function"].get("description", "No description"),
                     )
+                # Ensure all tool call IDs are within OpenAI's 40-character limit
+                for tc in tool_calls:
+                    if len(tc["id"]) > 40:
+                        logger.warning(
+                            "Tool call ID is too long, truncating to 40 characters: %s",
+                            tc["id"],
+                        )
+                        tc["id"] = tc["id"][:40]
                 messages.append(
                     {
                         "role": "assistant",
@@ -142,9 +152,25 @@ async def prompt_with_tools(
 
 
 async def __async_context():
-    response = await prompt_with_tools("Tell me anything using tools :pray:")
+    response = await prompt_with_tools(
+        "Tell me anything using tools :pray:",
+        tool_selection_model_name="openai/gpt-4o",
+        # tool_selection_model_name="ollama/llama3.2",
+        # tool_selection_model_name="ollama/deepseek-r1:1.5b",
+        # tool_selection_model_name="azure/gpt-4o",
+        tool_selection_system_messages=[
+            {
+                "role": "system",
+                "content": "If you choose to run a query tool, use Cypher.",
+            }
+        ],
+        response_model_name="openai/gpt-4o",
+    )
     print(response)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
     asyncio.run(__async_context())
