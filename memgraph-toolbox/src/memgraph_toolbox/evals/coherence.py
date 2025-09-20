@@ -2,6 +2,7 @@
 
 import re
 from typing import List
+
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from deepeval.metrics import BaseMetric
@@ -252,31 +253,13 @@ def evaluate_text_coherence(
         "max_sentences": max_sentences,
     }
 
-
-# Example usage
 if __name__ == "__main__":
-    # Example coherent text
-    coherent_text = """
-    Artificial intelligence is transforming the way we work and live. 
-    Machine learning algorithms can now process vast amounts of data quickly. 
-    This enables businesses to make better decisions based on data insights. 
-    As a result, companies are becoming more efficient and competitive.
-    """
-
-    # Example incoherent text
-    incoherent_text = """
-    The weather is nice today. 
-    Quantum physics involves complex mathematical equations. 
-    I had pizza for lunch yesterday. 
-    Machine learning requires large datasets for training.
-    """
-
-    print("Evaluating coherent text:")
-    result1 = evaluate_text_coherence(coherent_text)
-    print(f"Coherence score: {result1['coherence_score']:.3f}")
-    print(f"Is successful: {result1['is_successful']}")
-
-    print("\nEvaluating incoherent text:")
-    result2 = evaluate_text_coherence(incoherent_text)
-    print(f"Coherence score: {result2['coherence_score']:.3f}")
-    print(f"Is successful: {result2['is_successful']}")
+    example_text = (
+        "Artificial intelligence is transforming industries. "
+        "Machine learning enables computers to learn from data. "
+        "This leads to smarter applications and better user experiences."
+    )
+    result = evaluate_text_coherence(example_text)
+    print("Coherence Evaluation Result:")
+    for k, v in result.items():
+        print(f"{k}: {v}")
