@@ -12,7 +12,7 @@ from memgraph_toolbox.tools.betweenness_centrality import BetweennessCentralityT
 from memgraph_toolbox.tools.page_rank import PageRankTool
 from memgraph_toolbox.tools.node_neighborhood import NodeNeighborhoodTool
 from memgraph_toolbox.tools.node_vector_search import NodeVectorSearchTool
-from memgraph_toolbox.utils.logging import logger_init
+from memgraph_toolbox.utils.logger import logger_init
 
 import os
 from typing import Any, Dict, List
