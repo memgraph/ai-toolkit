@@ -51,7 +51,7 @@ class NodeNeighborhoodTool(BaseTool):
             results = self.db.query(query, {})
             processed_results = []
             for record in results:
-                node_data = record["m"];
+                node_data = record["m"]
                 properties = {k: v for k, v in node_data.items()}
                 processed_results.append(properties)
             return processed_results
