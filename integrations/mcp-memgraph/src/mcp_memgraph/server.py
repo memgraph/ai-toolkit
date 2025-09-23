@@ -29,7 +29,9 @@ MEMGRAPH_USER = os.environ.get("MEMGRAPH_USER", "")
 MEMGRAPH_PASSWORD = os.environ.get("MEMGRAPH_PASSWORD", "")
 MEMGRAPH_DATABASE = os.environ.get("MEMGRAPH_DATABASE", "memgraph")
 
-logger.info(f"Connecting to Memgraph db '{MEMGRAPH_DATABASE}' at {MEMGRAPH_URL} with user '{MEMGRAPH_USER}'")
+logger.info(
+    f"Connecting to Memgraph db '{MEMGRAPH_DATABASE}' at {MEMGRAPH_URL} with user '{MEMGRAPH_USER}'"
+)
 
 # Initialize Memgraph client
 db = Memgraph(
