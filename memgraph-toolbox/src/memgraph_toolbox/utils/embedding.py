@@ -6,7 +6,7 @@ from sentence_transformers import SentenceTransformer
 
 # NOTE: HF_TOKEN has to be set in the environment variables.
 def get_sentence_transformer_model(
-    name: str = "sentence-transformers/all-MiniLM-L6-v2",
+    name: str = "all-MiniLM-L6-v2",
     device: Optional[str] = None,
     use_data_parallel: bool = False,
     gpu_ids: Optional[List[int]] = None,
