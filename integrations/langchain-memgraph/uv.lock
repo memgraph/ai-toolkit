@@ -687,7 +687,7 @@ wheels = [
 
 [[package]]
 name = "langchain-memgraph"
-version = "0.1.6"
+version = "0.1.7"
 source = { editable = "." }
 dependencies = [
     { name = "langchain" },
@@ -719,7 +719,7 @@ requires-dist = [
     { name = "langchain-openai", marker = "extra == 'test'", specifier = ">=0.3.12" },
     { name = "langchain-tests", marker = "extra == 'test'", specifier = ">=0.3.17" },
     { name = "langgraph", marker = "extra == 'test'", specifier = ">=0.3.11" },
-    { name = "memgraph-toolbox", specifier = ">=0.1.4" },
+    { name = "memgraph-toolbox", specifier = ">=0.1.5" },
     { name = "neo4j", specifier = ">=5.28.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.3.5" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.26.0" },
@@ -861,14 +861,14 @@ wheels = [
 
 [[package]]
 name = "memgraph-toolbox"
-version = "0.1.4"
+version = "0.1.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "neo4j" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f3/27/25d29e2cbd3a1d9969b8b1ec7a7fded05f05d5db883eadeb0840444df509/memgraph_toolbox-0.1.4.tar.gz", hash = "sha256:c80925c6f5f3a57a7cb4e8a57355e3b228be762e0b1d5bc0f81e335c7d0a57e4", size = 16581 }
+sdist = { url = "https://files.pythonhosted.org/packages/41/c6/fe74deca45abcc700dc0f45ae3f7d8d23d6ed835f4f9cc2efe5ef4fb1748/memgraph_toolbox-0.1.5.tar.gz", hash = "sha256:8d9deed887bba9dcc9f0ef019c36ec3eb7258e0cffd1951a377eea9bd9616d1b", size = 18229 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e1/90/ac0d6f724acbe10287ce4b081dff65bc8135911b83e434aa4d3a55521357/memgraph_toolbox-0.1.4-py3-none-any.whl", hash = "sha256:d93395304f2bd9aa8440c5419e4c23dcd97b6e99cf48e3fc01ec9ce61a17e874", size = 16913 },
+    { url = "https://files.pythonhosted.org/packages/2b/ff/010c8161d584339d0d0d26f6bf5ea594485af3ee17c45746d0953506073d/memgraph_toolbox-0.1.5-py3-none-any.whl", hash = "sha256:802296daf577aaa85e224a20de9ad68acaa2b9b393e1f49939c753fae7cad376", size = 19905 },
 ]
 
 [[package]]

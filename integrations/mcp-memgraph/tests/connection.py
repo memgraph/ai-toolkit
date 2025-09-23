@@ -8,7 +8,6 @@ from mcp.client.stdio import stdio_client
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
-import pytest
 
 load_dotenv()  # load environment variables from .env
 
