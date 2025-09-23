@@ -11,6 +11,8 @@ from langchain_memgraph.tools import (
     RunShowConfigTool,
     RunShowTriggersTool,
     RunBetweennessCentralityTool,
+    RunNodeNeighborhoodTool,
+    RunNodeVectorSearchTool,
 )
 from memgraph_toolbox.api.memgraph import Memgraph
 
@@ -157,3 +159,31 @@ class TestBetweennessCentralityIntegration(ToolsIntegrationTests):
     @property
     def tool_invoke_params_example(self) -> dict:
         return {"isDirectionIgnored": True, "limit": 5}
+
+
+class TestNodeNeighborhoodIntegration(ToolsIntegrationTests):
+    @property
+    def tool_constructor(self) -> Type[RunNodeNeighborhoodTool]:
+        return RunNodeNeighborhoodTool
+
+    @property
+    def tool_constructor_params(self) -> dict:
+        return {"db": Memgraph("bolt://localhost:7687", "", "")}
+
+    @property
+    def tool_invoke_params_example(self) -> dict:
+        return {"node_id": "1", "max_distance": 2, "limit": 10}
+
+
+class TestNodeVectorSearchIntegration(ToolsIntegrationTests):
+    @property
+    def tool_constructor(self) -> Type[RunNodeVectorSearchTool]:
+        return RunNodeVectorSearchTool
+
+    @property
+    def tool_constructor_params(self) -> dict:
+        return {"db": Memgraph("bolt://localhost:7687", "", "")}
+
+    @property
+    def tool_invoke_params_example(self) -> dict:
+        return {"index_name": "test_index", "query_vector": [1.0, 2.0, 3.0], "limit": 5}
