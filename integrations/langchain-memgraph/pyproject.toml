@@ -1,6 +1,6 @@
 [project]
 name = "langchain-memgraph"
-version = "0.1.7"
+version = "0.1.8"
 description = "An integration package connecting Memgraph and LangChain"
 authors = [{ name = "Ante Javor", email = "ante.javor@memgraph.com" }]
 readme = "README.md"
@@ -17,7 +17,7 @@ classifiers = [
 dependencies = [
     "langchain-core>=0.3.15",
     "neo4j>=5.28.1",
-    "memgraph-toolbox>=0.1.5",
+    "memgraph-toolbox>=0.1.6",
     "langchain>=0.3.25",
 ]
 
