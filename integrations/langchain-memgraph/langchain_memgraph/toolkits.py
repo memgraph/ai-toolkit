@@ -18,6 +18,8 @@ from langchain_memgraph.tools import (
     RunShowStorageInfoTool,
     RunShowTriggersTool,
     RunShowConstraintInfoTool,
+    RunNodeNeighborhoodTool,
+    RunNodeVectorSearchTool,
 )
 
 
@@ -79,4 +81,6 @@ class MemgraphToolkit(BaseToolkit):
             RunShowStorageInfoTool(db=self.db),
             RunShowTriggersTool(db=self.db),
             RunShowConstraintInfoTool(db=self.db),
+            RunNodeNeighborhoodTool(db=self.db),
+            RunNodeVectorSearchTool(db=self.db),
         ]
