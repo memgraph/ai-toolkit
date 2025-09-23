@@ -12,7 +12,7 @@ from ..tools.page_rank import PageRankTool
 from ..tools.schema import ShowSchemaInfoTool
 from ..tools.storage import ShowStorageInfoTool
 from ..tools.trigger import ShowTriggersTool
-from ..utils.logging import logger_init
+from ..utils.logger import logger_init
 
 logger = logger_init("test-tools")
 

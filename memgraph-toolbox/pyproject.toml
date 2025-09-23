@@ -1,6 +1,6 @@
 [project]
 name = "memgraph-toolbox"
-version = "0.1.4"
+version = "0.1.5"
 description = "Memgraph toolbox library for Memgraph AI tools and utilities"
 readme = "README.md"
 authors = [
@@ -21,9 +21,13 @@ classifiers = [
 ]
 
 dependencies = [
+  "deepeval>=3.5.2",
   "litellm>=1.77.1",
   "mcp>=1.14.1",
   "neo4j>=5.28.1",
+  "numpy>=2.2.6",
+  "sentence-transformers>=5.1.0",
+  "torch>=2.8.0",
 ]
 
 [project.optional-dependencies]
