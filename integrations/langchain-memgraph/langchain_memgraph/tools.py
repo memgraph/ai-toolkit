@@ -18,6 +18,8 @@ from memgraph_toolbox.tools.trigger import ShowTriggersTool
 from memgraph_toolbox.tools.index import ShowIndexInfoTool
 from memgraph_toolbox.tools.betweenness_centrality import BetweennessCentralityTool
 from memgraph_toolbox.tools.constraint import ShowConstraintInfoTool
+from memgraph_toolbox.tools.node_neighborhood import NodeNeighborhoodTool
+from memgraph_toolbox.tools.node_vector_search import NodeVectorSearchTool
 from memgraph_toolbox.utils.logging import logger_init
 
 
@@ -284,3 +286,87 @@ class RunBetweennessCentralityTool(BaseMemgraphTool, BaseTool):
         return BetweennessCentralityTool(
             db=self.db,
         ).call({"isDirectionIgnored": isDirectionIgnored, "limit": limit})
+
+
+class _NodeNeighborhoodToolInput(BaseModel):
+    """
+    Input schema for the Node Neighborhood Memgraph tool.
+    """
+
+    node_id: str = Field(
+        ...,
+        description="The ID of the starting node to find neighborhood around",
+    )
+    max_distance: int = Field(
+        1,
+        description="Maximum distance (hops) to search from the starting node. Default is 1.",
+    )
+    limit: int = Field(
+        100, description="Maximum number of nodes to return. Default is 100."
+    )
+
+
+class RunNodeNeighborhoodTool(BaseMemgraphTool, BaseTool):
+    """Tool for finding nodes within a specified neighborhood distance in Memgraph."""
+
+    name: str = NodeNeighborhoodTool(db=None).get_name()
+    """The name that is passed to the model when performing tool calling."""
+
+    description: str = NodeNeighborhoodTool(db=None).get_description()
+    """The description that is passed to the model when performing tool calling."""
+
+    args_schema: Type[BaseModel] = _NodeNeighborhoodToolInput
+    """The schema that is passed to the model when performing tool calling."""
+
+    def _run(
+        self,
+        node_id: str,
+        max_distance: int = 1,
+        limit: int = 100,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> List[Dict[str, Any]]:
+        return NodeNeighborhoodTool(
+            db=self.db,
+        ).call({"node_id": node_id, "max_distance": max_distance, "limit": limit})
+
+
+class _NodeVectorSearchToolInput(BaseModel):
+    """
+    Input schema for the Node Vector Search Memgraph tool.
+    """
+
+    index_name: str = Field(
+        ...,
+        description="Name of the index to use for the vector search",
+    )
+    query_vector: List[float] = Field(
+        ...,
+        description="Query vector to search for similarity",
+    )
+    limit: int = Field(
+        10, description="Number of similar nodes to return. Default is 10."
+    )
+
+
+class RunNodeVectorSearchTool(BaseMemgraphTool, BaseTool):
+    """Tool for performing vector similarity search on nodes in Memgraph."""
+
+    name: str = NodeVectorSearchTool(db=None).get_name()
+    """The name that is passed to the model when performing tool calling."""
+
+    description: str = NodeVectorSearchTool(db=None).get_description()
+    """The description that is passed to the model when performing tool calling."""
+
+    args_schema: Type[BaseModel] = _NodeVectorSearchToolInput
+    """The schema that is passed to the model when performing tool calling."""
+
+    def _run(
+        self,
+        index_name: str,
+        query_vector: List[float],
+        limit: int = 10,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> List[Dict[str, Any]]:
+        return NodeVectorSearchTool(
+            db=self.db,
+        ).call({"index_name": index_name, "query_vector": query_vector, "limit": limit})
