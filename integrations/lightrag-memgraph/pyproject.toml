@@ -1,0 +1,9 @@
+[project]
+name = "lightrag-memgraph"
+version = "0.1.0"
+description = "LightRAG integration with Memgraph"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "lightrag-hku[api]==1.4.8.2"
+]
