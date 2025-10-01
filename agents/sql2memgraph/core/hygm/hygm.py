@@ -64,6 +64,7 @@ class ModelingMode(Enum):
 
     AUTOMATIC = "automatic"
     INTERACTIVE = "interactive"
+    INCREMENTAL = "incremental"
 
 
 class GraphModelingStrategy(Enum):
@@ -131,6 +132,12 @@ class HyGM:
         # Check if interactive mode is enabled
         if self.mode == ModelingMode.INTERACTIVE:
             return self._interactive_modeling(
+                database_structure, domain_context, used_strategy
+            )
+
+        # Check if incremental mode is enabled
+        if self.mode == ModelingMode.INCREMENTAL:
+            return self._incremental_modeling(
                 database_structure, domain_context, used_strategy
             )
 
@@ -225,6 +232,275 @@ class HyGM:
 
         self.current_graph_model = current_model
         return current_model
+
+    def _incremental_modeling(
+        self,
+        database_structure: Dict[str, Any],
+        domain_context: Optional[str] = None,
+        strategy: GraphModelingStrategy = GraphModelingStrategy.DETERMINISTIC,
+    ) -> "GraphModel":
+        """
+        Incremental modeling process with table-by-table confirmation.
+
+        This method processes each table individually, showing the user
+        what node will be created and asking for confirmation before
+        proceeding to the next table.
+        """
+        logger.info("Starting incremental modeling session...")
+
+        # Get the strategy instance
+        strategy_instance = self._get_strategy_instance(strategy)
+
+        # Initialize an empty graph model to build incrementally
+        from .models.graph_models import GraphModel
+
+        incremental_model = GraphModel(
+            nodes=[], edges=[], node_indexes=[], node_constraints=[]
+        )
+
+        # Extract tables from database structure
+        tables = database_structure.get("tables", {})
+        if not tables:
+            print("❌ No tables found in database structure")
+            return incremental_model
+
+        self._print_banner("INCREMENTAL MODELING SESSION")
+        print(f"\nFound {len(tables)} tables to process")
+        print(
+            "You will review each table and its proposed node before " "proceeding.\n"
+        )
+
+        processed_tables = []
+        skipped_tables = []
+
+        # Process each table individually
+        for table_name, table_info in tables.items():
+            print("=" * 60)
+            print(f"PROCESSING TABLE: {table_name}")
+            print("=" * 60)
+
+            # Create a temporary database structure with just this table
+            single_table_structure = {
+                "tables": {table_name: table_info},
+                "relationships": database_structure.get("relationships", {}),
+                "constraints": database_structure.get("constraints", {}),
+                "indexes": database_structure.get("indexes", {}),
+            }
+
+            # Generate model for this single table
+            try:
+                table_model = strategy_instance.create_model(
+                    single_table_structure, domain_context
+                )
+
+                # Display the proposed node for this table
+                proposed_nodes = [
+                    node
+                    for node in table_model.nodes
+                    if any(table_name.lower() in label.lower() for label in node.labels)
+                ]
+
+                if not proposed_nodes:
+                    proposed_nodes = table_model.nodes
+
+                self._display_table_and_proposed_node(
+                    table_name, table_info, proposed_nodes
+                )
+
+                # Get user decision
+                user_choice = self._get_incremental_choice(table_name)
+
+                if user_choice == "accept":
+                    # Add this table's nodes to the incremental model
+                    self._merge_table_model_into_incremental(
+                        incremental_model, table_model
+                    )
+                    processed_tables.append(table_name)
+                    print(f"✅ Added {table_name} to the graph model")
+                elif user_choice == "skip":
+                    skipped_tables.append(table_name)
+                    print(f"⏭️  Skipped {table_name}")
+                elif user_choice == "modify":
+                    # Allow user to modify the proposed node
+                    modified_model = self._modify_table_node_interactively(
+                        table_model, table_name
+                    )
+                    self._merge_table_model_into_incremental(
+                        incremental_model, modified_model
+                    )
+                    processed_tables.append(table_name)
+                    print(f"✅ Added modified {table_name} to the graph model")
+                elif user_choice == "finish":
+                    print("🏁 Finishing incremental modeling session...")
+                    break
+
+            except Exception as e:
+                logger.error("Error processing table %s: %s", table_name, e)
+                print(f"❌ Error processing {table_name}: {e}")
+                continue
+
+        # Final summary
+        self._print_banner("INCREMENTAL MODELING SUMMARY")
+        print(f"✅ Processed tables: {len(processed_tables)}")
+        if processed_tables:
+            print(f"   {', '.join(processed_tables)}")
+
+        if skipped_tables:
+            print(f"⏭️  Skipped tables: {len(skipped_tables)}")
+            print(f"   {', '.join(skipped_tables)}")
+
+        print("\n📊 Final model statistics:")
+        print(f"   Nodes: {len(incremental_model.nodes)}")
+        print(f"   Relationships: {len(incremental_model.edges)}")
+        print(f"   Indexes: {len(incremental_model.node_indexes)}")
+        print(f"   Constraints: {len(incremental_model.node_constraints)}")
+
+        self.current_graph_model = incremental_model
+        return incremental_model
+
+    def _display_table_and_proposed_node(
+        self,
+        table_name: str,
+        table_info: Dict[str, Any],
+        proposed_nodes: List["GraphNode"],
+    ) -> None:
+        """Display table information and proposed graph node."""
+        print(f"\n📋 TABLE: {table_name}")
+
+        # Show table columns
+        columns = table_info.get("columns", {})
+        if columns:
+            print(f"   Columns ({len(columns)}):")
+            for col_name, col_info in columns.items():
+                col_type = col_info.get("type", "unknown")
+                nullable = " (nullable)" if col_info.get("nullable", False) else ""
+                print(f"     - {col_name}: {col_type}{nullable}")
+
+        # Show primary keys
+        primary_keys = table_info.get("primary_keys", [])
+        if primary_keys:
+            print(f"   Primary Keys: {', '.join(primary_keys)}")
+
+        # Show proposed node(s)
+        print("\n🎯 PROPOSED NODE(S):")
+        if proposed_nodes:
+            for i, node in enumerate(proposed_nodes, 1):
+                labels = " | ".join(node.labels)
+                properties = [p.key for p in node.properties]
+                print(f"   {i}. Node Labels: {labels}")
+                print(f"      Properties: {properties}")
+        else:
+            print("   ❌ No nodes proposed for this table")
+
+    def _get_incremental_choice(self, table_name: str) -> str:
+        """Get user choice for incremental modeling."""
+        print(f"\nWhat would you like to do with table '{table_name}'?")
+        print("1. Accept - Add this node to the graph model")
+        print("2. Skip - Skip this table for now")
+        print("3. Modify - Modify the proposed node before adding")
+        print("4. Finish - Stop incremental modeling and return current model")
+
+        choices = {
+            "1": "accept",
+            "2": "skip",
+            "3": "modify",
+            "4": "finish",
+        }
+        return self._get_user_input_choice(
+            f"\nEnter your choice for {table_name} (1-4): ", choices, "accept"
+        )
+
+    def _merge_table_model_into_incremental(
+        self, incremental_model: "GraphModel", table_model: "GraphModel"
+    ) -> None:
+        """Merge a single table's model into the incremental model."""
+        # Add nodes (avoid duplicates based on labels)
+        existing_node_labels = {
+            tuple(sorted(node.labels)) for node in incremental_model.nodes
+        }
+
+        for node in table_model.nodes:
+            node_labels_tuple = tuple(sorted(node.labels))
+            if node_labels_tuple not in existing_node_labels:
+                incremental_model.nodes.append(node)
+                existing_node_labels.add(node_labels_tuple)
+
+        # Add edges (avoid duplicates)
+        existing_edges = {
+            (edge.edge_type, tuple(edge.start_node_labels), tuple(edge.end_node_labels))
+            for edge in incremental_model.edges
+        }
+
+        for edge in table_model.edges:
+            edge_key = (
+                edge.edge_type,
+                tuple(edge.start_node_labels),
+                tuple(edge.end_node_labels),
+            )
+            if edge_key not in existing_edges:
+                incremental_model.edges.append(edge)
+                existing_edges.add(edge_key)
+
+        # Add indexes
+        incremental_model.node_indexes.extend(table_model.node_indexes)
+
+        # Add constraints
+        incremental_model.node_constraints.extend(table_model.node_constraints)
+
+    def _modify_table_node_interactively(
+        self, table_model: "GraphModel", table_name: str
+    ) -> "GraphModel":
+        """Allow user to modify the proposed node for a table."""
+        print(f"\n🔧 MODIFYING NODE FOR TABLE: {table_name}")
+        print("You can use natural language to modify the proposed node.")
+        print("Examples:")
+        print(" - Change the label from 'User' to 'Person'")
+        print(" - Remove the 'email' property")
+        print(" - Add a 'full_name' property")
+
+        if not self.llm:
+            print("❌ LLM not available for natural language modifications.")
+            print("Returning original model.")
+            return table_model
+
+        while True:
+            try:
+                user_input = input(
+                    f"\nDescribe changes for {table_name} " f"(or 'done' to finish): "
+                ).strip()
+
+                if user_input.lower() == "done":
+                    break
+                elif not user_input:
+                    print("Please describe the change you'd like to make.")
+                    continue
+
+                # Use existing natural language parsing
+                operations = self._parse_natural_language_to_operations(
+                    user_input, table_model
+                )
+
+                if operations:
+                    print(f"✅ Understood: {operations.reasoning}")
+                    table_model = self._apply_operations_to_model(
+                        table_model, operations
+                    )
+
+                    # Show updated model
+                    print(f"\n📋 UPDATED NODE FOR {table_name}:")
+                    for node in table_model.nodes:
+                        labels = " | ".join(node.labels)
+                        properties = [p.key for p in node.properties]
+                        print(f"   Labels: {labels}")
+                        print(f"   Properties: {properties}")
+                else:
+                    print("❌ I didn't understand that command. " "Please try again.")
+
+            except (EOFError, KeyboardInterrupt):
+                print(f"\nFinished modifying {table_name}")
+                break
+
+        return table_model
 
     def _print_banner(self, title: str, width: int = 60) -> None:
         """Print a formatted banner with title."""
