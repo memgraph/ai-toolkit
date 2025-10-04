@@ -1683,10 +1683,14 @@ version = "0.1.0"
 source = { virtual = "integrations/lightrag-memgraph" }
 dependencies = [
     { name = "lightrag-hku", extra = ["api"] },
+    { name = "memgraph-toolbox" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "lightrag-hku", extras = ["api"], specifier = "==1.4.8.2" }]
+requires-dist = [
+    { name = "lightrag-hku", extras = ["api"], specifier = "==1.4.8.2" },
+    { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
+]
 
 [[package]]
 name = "litellm"

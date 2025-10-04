@@ -5,5 +5,9 @@ description = "LightRAG integration with Memgraph"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "lightrag-hku[api]==1.4.8.2"
+    "lightrag-hku[api]==1.4.8.2",
+    "memgraph-toolbox",
 ]
+
+[tool.uv.sources]
+memgraph-toolbox = { workspace = true }
