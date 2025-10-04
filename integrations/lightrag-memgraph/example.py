@@ -6,7 +6,7 @@ import asyncio
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
 import shutil
 
-from core import MemgraphLightRAGWrapper
+from lightrag_memgraph import MemgraphLightRAGWrapper
 from memgraph_toolbox.api.memgraph import Memgraph
 
 

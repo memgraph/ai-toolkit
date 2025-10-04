@@ -1,13 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "lightrag-memgraph"
 version = "0.1.0"
 description = "LightRAG integration with Memgraph"
 readme = "README.md"
 requires-python = ">=3.10"
+authors = [
+    {name = "Memgraph Tech Team", email = "tech@memgraph.com"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "lightrag-hku[api]==1.4.8.2",
     "memgraph-toolbox",
+    "numpy>=1.21.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=22.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
 ]
 
 [tool.uv.sources]
 memgraph-toolbox = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lightrag_memgraph"]
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
