@@ -4,7 +4,7 @@ import logging
 # standard logging module.
 
 
-def logger_init(name: str) -> logging.Logger:
+def logger_init(name: str, level: int = logging.INFO) -> logging.Logger:
     """Set up a logger with a consistent configuration."""
     logger = logging.getLogger(name)
     if not logger.hasHandlers():
@@ -14,5 +14,5 @@ def logger_init(name: str) -> logging.Logger:
         )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
+        logger.setLevel(level)
     return logger
