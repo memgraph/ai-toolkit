@@ -20,9 +20,10 @@ from typing import Any, Dict, List
 # Configure logging
 logger = logger_init("mcp-memgraph")
 
+MCP_HOST = os.environ.get("MCP_HOST")
 
 # Initialize FastMCP server with stateless HTTP (for streamable-http transport)
-mcp = FastMCP("mcp-memgraph", stateless_http=True)
+mcp = FastMCP("mcp-memgraph", host=MCP_HOST, stateless_http=True)
 
 MEMGRAPH_URL = os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687")
 MEMGRAPH_USER = os.environ.get("MEMGRAPH_USER", "")
