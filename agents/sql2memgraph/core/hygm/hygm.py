@@ -3,15 +3,15 @@ Main HyGM (Hypothetical Graph Modeling) class.
 
 This is the primary interface for the modular HyGM system.
 """
+import copy
 import uuid
 import logging
 from enum import Enum
 from typing import Dict, Any, Optional, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .models.graph_models import GraphModel
+    from .models.graph_models import GraphModel, GraphNode
     from .models.operations import ModelModifications
-    from .models.user_operations import UserOperationHistory
 
 try:
     from .strategies import (
@@ -20,7 +20,6 @@ try:
         LLMStrategy,
     )
     from .validation import GraphSchemaValidator
-    from .models.user_operations import UserOperationHistory
 except ImportError:
     from core.hygm.strategies import (
         BaseModelingStrategy,
@@ -28,33 +27,11 @@ except ImportError:
         LLMStrategy,
     )
     from core.hygm.validation import GraphSchemaValidator
+
+try:
+    from .models.user_operations import UserOperationHistory
+except ImportError:
     from core.hygm.models.user_operations import UserOperationHistory
-
-logger = logging.getLogger(__name__)
-
-import copy
-import logging
-from enum import Enum
-from typing import Dict, Any, Optional, List, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .models.graph_models import GraphModel
-    from .models.operations import ModelModifications
-
-try:
-    from .strategies import (
-        BaseModelingStrategy,
-        DeterministicStrategy,
-        LLMStrategy,
-    )
-    from .validation import GraphSchemaValidator
-except ImportError:
-    from core.hygm.strategies import (
-        BaseModelingStrategy,
-        DeterministicStrategy,
-        LLMStrategy,
-    )
-    from core.hygm.validation import GraphSchemaValidator
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +241,17 @@ class HyGM:
             print("❌ No tables found in database structure")
             return incremental_model
 
+        entity_tables = database_structure.get("entity_tables", {})
+        join_tables = database_structure.get("join_tables", {})
+        view_tables = database_structure.get("views") or database_structure.get(
+            "view_tables", {}
+        )
+        all_relationships = database_structure.get("relationships", [])
+        sample_data = database_structure.get("sample_data", {})
+        table_counts = database_structure.get("table_counts", {})
+        database_name = database_structure.get("database_name")
+        database_type = database_structure.get("database_type")
+
         self._print_banner("INCREMENTAL MODELING SESSION")
         print(f"\nFound {len(tables)} tables to process")
         print(
@@ -280,12 +268,48 @@ class HyGM:
             print("=" * 60)
 
             # Create a temporary database structure with just this table
-            single_table_structure = {
+            relevant_relationships = [
+                rel
+                for rel in all_relationships
+                if table_name
+                in {
+                    rel.get("from_table"),
+                    rel.get("to_table"),
+                    rel.get("join_table"),
+                }
+            ]
+
+            single_table_structure: Dict[str, Any] = {
                 "tables": {table_name: table_info},
-                "relationships": database_structure.get("relationships", {}),
-                "constraints": database_structure.get("constraints", {}),
-                "indexes": database_structure.get("indexes", {}),
+                "entity_tables": {},
+                "join_tables": {},
+                "views": {},
+                "relationships": relevant_relationships,
             }
+
+            if table_name in entity_tables:
+                single_table_structure["entity_tables"][table_name] = entity_tables[
+                    table_name
+                ]
+            if table_name in join_tables:
+                single_table_structure["join_tables"][table_name] = join_tables[
+                    table_name
+                ]
+            if table_name in view_tables:
+                single_table_structure["views"][table_name] = view_tables[table_name]
+
+            if sample_data:
+                single_table_structure["sample_data"] = {
+                    table_name: sample_data.get(table_name, [])
+                }
+            if table_counts:
+                single_table_structure["table_counts"] = {
+                    table_name: table_counts.get(table_name, 0)
+                }
+            if database_name:
+                single_table_structure["database_name"] = database_name
+            if database_type:
+                single_table_structure["database_type"] = database_type
 
             # Generate model for this single table
             try:
@@ -368,12 +392,30 @@ class HyGM:
         print(f"\n📋 TABLE: {table_name}")
 
         # Show table columns
-        columns = table_info.get("columns", {})
+        columns = table_info.get("schema") or table_info.get("columns", [])
         if columns:
+            if isinstance(columns, dict):
+                items = columns.items()
+            else:
+                items = [
+                    (
+                        col.get("field") or col.get("name"),
+                        {
+                            "type": col.get("type") or col.get("data_type"),
+                            "null": col.get("null"),
+                        },
+                    )
+                    for col in columns
+                ]
+
             print(f"   Columns ({len(columns)}):")
-            for col_name, col_info in columns.items():
+            for col_name, col_info in items:
+                if not col_name:
+                    continue
                 col_type = col_info.get("type", "unknown")
-                nullable = " (nullable)" if col_info.get("nullable", False) else ""
+                nullable_flag = col_info.get("null")
+                is_nullable = nullable_flag not in {"NO", False, "false", 0}
+                nullable = " (nullable)" if is_nullable else ""
                 print(f"     - {col_name}: {col_type}{nullable}")
 
         # Show primary keys
