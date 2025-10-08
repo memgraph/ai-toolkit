@@ -51,14 +51,16 @@ def get_graph_modeling_mode() -> ModelingMode:
     """
     print("Graph modeling mode:")
     print()
-    print("  1. Interactive - Generate graph model with user feedback")
-    print()
-    print("  2. Automatic - Generate graph model automatically without user feedback")
+    print("  1. Interactive   - Generate graph model with user feedback")
+    print(
+        "  2. Automatic     - Generate graph model automatically without user feedback"
+    )
+    print("  3. Incremental   - Go table by table and confirm each node interactively")
     print()
 
     while True:
         try:
-            choice = input("Select mode (1-2) or press Enter for automatic: ").strip()
+            choice = input("Select mode (1-3) or press Enter for automatic: ").strip()
             if not choice:
                 return ModelingMode.AUTOMATIC  # Default to automatic
 
@@ -66,8 +68,10 @@ def get_graph_modeling_mode() -> ModelingMode:
                 return ModelingMode.INTERACTIVE  # Interactive
             elif choice == "2":
                 return ModelingMode.AUTOMATIC  # Automatic
+            elif choice == "3":
+                return ModelingMode.INCREMENTAL  # Incremental
             else:
-                print("Invalid choice. Please select 1-2.")
+                print("Invalid choice. Please select 1-3.")
         except ValueError:
             print("Invalid input. Please enter 1-2.")
 
