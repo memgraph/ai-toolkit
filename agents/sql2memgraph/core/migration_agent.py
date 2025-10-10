@@ -63,7 +63,7 @@ class SQLToMemgraphAgent:
         Args:
             modeling_mode: Graph modeling mode
                 - AUTOMATIC: Generate graph model automatically (default)
-                - INTERACTIVE: Allow user to modify and refine graph model
+                - INCREMENTAL: Review tables and refine the model interactively
             graph_modeling_strategy: Strategy for graph model creation
                 - DETERMINISTIC: Rule-based graph creation (default)
                 - LLM_POWERED: LLM generates the graph model
@@ -169,8 +169,8 @@ class SQLToMemgraphAgent:
             hygm_data = state["database_structure"]
 
             # Log the modeling mode being used
-            if self.modeling_mode == ModelingMode.INTERACTIVE:
-                logger.info("Using interactive graph modeling mode")
+            if self.modeling_mode == ModelingMode.INCREMENTAL:
+                logger.info("Using incremental graph modeling mode")
             else:
                 logger.info("Using automatic graph modeling mode")
 
@@ -187,7 +187,8 @@ class SQLToMemgraphAgent:
 
             # Generate graph model using new unified interface
             graph_model = graph_modeler.create_graph_model(
-                hygm_data, domain_context="Database migration to graph database"
+                hygm_data,
+                domain_context="Database migration to graph database",
             )
 
             # Store the graph model in state
@@ -327,7 +328,8 @@ class SQLToMemgraphAgent:
             except Exception as e:
                 # Some queries might already exist, log but continue
                 logger.warning(
-                    f"{query_type.capitalize()} creation {warning_prefix}: %s", e
+                    f"{query_type.capitalize()} creation {warning_prefix}: %s",
+                    e,
                 )
 
     def _handle_step_error(
@@ -522,7 +524,9 @@ SET n += row;"""
 
         except Exception as e:
             logger.error(
-                "Error generating relationship query for %s: %s", rel_def.edge_type, e
+                "Error generating relationship query for %s: %s",
+                rel_def.edge_type,
+                e,
             )
             return ""
 
@@ -596,7 +600,8 @@ CREATE (from_node)-[:{rel_name}]->(to_node);"""
 
         if not all([join_table, from_table, to_table, from_fk, to_fk, from_pk, to_pk]):
             logger.error(
-                "Missing many-to-many relationship information for %s", rel_name
+                "Missing many-to-many relationship information for %s",
+                rel_name,
             )
             raise Exception(
                 f"HyGM must provide complete many-to-many mapping for {rel_name}"
@@ -764,7 +769,7 @@ CREATE (from)-[:{rel_name}]->(to);"""
                 compiled_workflow = self.workflow.compile()
                 final_state = compiled_workflow.invoke(initial_state)
             else:
-                # For interactive graph modeling mode, import and use checkpointer
+                # For incremental graph modeling mode, import and use checkpointer
                 from langgraph.checkpoint.memory import MemorySaver
 
                 memory = MemorySaver()

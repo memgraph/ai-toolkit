@@ -27,7 +27,8 @@ from core.hygm import GraphModelingStrategy, ModelingMode
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
 logger = logging.getLogger(__name__)
@@ -51,27 +52,22 @@ def get_graph_modeling_mode() -> ModelingMode:
     """
     print("Graph modeling mode:")
     print()
-    print("  1. Interactive   - Generate graph model with user feedback")
-    print(
-        "  2. Automatic     - Generate graph model automatically without user feedback"
-    )
-    print("  3. Incremental   - Go table by table and confirm each node interactively")
+    print("  1. Automatic     - Generate graph model without prompts")
+    print("  2. Incremental   - Review each table with interactive refinement")
     print()
 
     while True:
         try:
-            choice = input("Select mode (1-3) or press Enter for automatic: ").strip()
+            choice = input("Select mode (1-2) or press Enter for automatic: ").strip()
             if not choice:
                 return ModelingMode.AUTOMATIC  # Default to automatic
 
             if choice == "1":
-                return ModelingMode.INTERACTIVE  # Interactive
+                return ModelingMode.AUTOMATIC
             elif choice == "2":
-                return ModelingMode.AUTOMATIC  # Automatic
-            elif choice == "3":
-                return ModelingMode.INCREMENTAL  # Incremental
+                return ModelingMode.INCREMENTAL
             else:
-                print("Invalid choice. Please select 1-3.")
+                print("Invalid choice. Please select 1-2.")
         except ValueError:
             print("Invalid input. Please enter 1-2.")
 
@@ -121,7 +117,7 @@ def run_migration(
     Args:
         source_db_config: Source database connection configuration
         memgraph_config: Memgraph connection configuration
-        modeling_mode: Graph modeling mode (interactive or automatic)
+        modeling_mode: Graph modeling mode (automatic or incremental)
         graph_modeling_strategy: Strategy for graph model creation
 
     Returns:
@@ -129,9 +125,10 @@ def run_migration(
     """
     print("🔧 Creating migration agent...")
 
-    mode_name = (
-        "interactive" if modeling_mode == ModelingMode.INTERACTIVE else "automatic"
-    )
+    if modeling_mode == ModelingMode.INCREMENTAL:
+        mode_name = "incremental"
+    else:
+        mode_name = "automatic"
     strategy_name = graph_modeling_strategy.value
     print(f"🎯 Graph modeling: {mode_name} with {strategy_name} strategy")
     print()
@@ -152,10 +149,10 @@ def run_migration(
     print("  6. ✅ Verify the migration results")
     print()
 
-    # Handle interactive vs automatic mode
-    if modeling_mode == ModelingMode.INTERACTIVE:
-        print("🔄 Interactive mode: You'll be prompted to review and refine")
-        print("   the graph model")
+    # Handle incremental vs automatic mode
+    if modeling_mode == ModelingMode.INCREMENTAL:
+        print("🔄 Incremental mode: You'll confirm each table and can refine")
+        print("   the combined graph model before continuing")
         print()
 
     # Run the migration with the user's chosen settings
@@ -308,12 +305,15 @@ def main() -> None:
         print()
 
         # Get user preferences
-        graph_interactive = get_graph_modeling_mode()
+        graph_mode = get_graph_modeling_mode()
         graph_strategy = get_graph_modeling_strategy()
 
         # Run migration
         result = run_migration(
-            source_db_config, memgraph_config, graph_interactive, graph_strategy
+            source_db_config,
+            memgraph_config,
+            graph_mode,
+            graph_strategy,
         )
 
         # Display results

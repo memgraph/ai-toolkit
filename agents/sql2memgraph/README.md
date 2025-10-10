@@ -10,7 +10,7 @@ This package provides a sophisticated migration agent that:
 - **Generates optimal graph models** - Uses AI to create node and relationship structures
 - **Creates indexes and constraints** - Ensures performance and data integrity
 - **Handles complex relationships** - Converts foreign keys to graph relationships
-- **Interactive refinement** - Allows users to review and adjust the graph model
+- **Incremental refinement** - Review each table and adjust the graph model before continuing
 - **Comprehensive validation** - Verifies migration results and data integrity
 
 ## Installation
@@ -35,7 +35,7 @@ The agent will guide you through:
 
 1. Environment setup and database connections
 2. Graph modeling strategy selection
-3. Interactive or automatic migration mode
+3. Automatic or incremental migration mode
 4. Complete migration workflow with progress tracking
 
 ## Configuration

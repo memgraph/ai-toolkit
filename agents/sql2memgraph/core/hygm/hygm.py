@@ -3,6 +3,7 @@ Main HyGM (Hypothetical Graph Modeling) class.
 
 This is the primary interface for the modular HyGM system.
 """
+
 import copy
 import uuid
 import logging
@@ -40,7 +41,6 @@ class ModelingMode(Enum):
     """Modeling modes for HyGM."""
 
     AUTOMATIC = "automatic"
-    INTERACTIVE = "interactive"
     INCREMENTAL = "incremental"
 
 
@@ -56,7 +56,8 @@ class HyGM:
     Main Hypothetical Graph Modeling class.
 
     Uses different strategies to create intelligent graph models from
-    relational schemas. Supports both automatic and interactive modes.
+    relational schemas. Supports automatic generation or incremental
+    refinement with user feedback.
     """
 
     def __init__(
@@ -70,7 +71,7 @@ class HyGM:
 
         Args:
             llm: LLM instance for AI-powered modeling (optional)
-            mode: AUTOMATIC or INTERACTIVE modeling mode
+            mode: AUTOMATIC or INCREMENTAL modeling mode
             strategy: DETERMINISTIC or LLM_POWERED strategy
         """
         self.llm = llm
@@ -105,12 +106,6 @@ class HyGM:
         self.database_structure = database_structure
 
         logger.info("Creating graph model using %s strategy...", used_strategy.value)
-
-        # Check if interactive mode is enabled
-        if self.mode == ModelingMode.INTERACTIVE:
-            return self._interactive_modeling(
-                database_structure, domain_context, used_strategy
-            )
 
         # Check if incremental mode is enabled
         if self.mode == ModelingMode.INCREMENTAL:
@@ -156,6 +151,7 @@ class HyGM:
         database_structure: Dict[str, Any],
         domain_context: Optional[str] = None,
         strategy: GraphModelingStrategy = GraphModelingStrategy.DETERMINISTIC,
+        initial_model: Optional["GraphModel"] = None,
     ) -> "GraphModel":
         """
         Interactive modeling process with user feedback.
@@ -167,9 +163,12 @@ class HyGM:
 
         # Create initial model using the specified strategy
         strategy_instance = self._get_strategy_instance(strategy)
-        current_model = strategy_instance.create_model(
-            database_structure, domain_context
-        )
+        if initial_model is not None:
+            current_model = initial_model
+        else:
+            current_model = strategy_instance.create_model(
+                database_structure, domain_context
+            )
         self.current_graph_model = current_model
         self.iteration_count = 1
 
@@ -379,6 +378,26 @@ class HyGM:
         print(f"   Indexes: {len(incremental_model.node_indexes)}")
         print(f"   Constraints: {len(incremental_model.node_constraints)}")
 
+        review_choice = self._get_user_input_choice(
+            "\nWould you like to review and refine the combined model?\n"
+            "1. Finish with the incremental result\n"
+            "2. Enter the interactive refinement loop\n"
+            "\nSelect option (1-2) or press Enter to finish: ",
+            {"1": "finish", "2": "review", "": "finish"},
+            "finish",
+        )
+
+        if review_choice == "review":
+            logger.info(
+                "Switching from incremental flow to interactive refinement",
+            )
+            return self._interactive_modeling(
+                database_structure,
+                domain_context,
+                strategy,
+                initial_model=incremental_model,
+            )
+
         self.current_graph_model = incremental_model
         return incremental_model
 
@@ -469,7 +488,11 @@ class HyGM:
 
         # Add edges (avoid duplicates)
         existing_edges = {
-            (edge.edge_type, tuple(edge.start_node_labels), tuple(edge.end_node_labels))
+            (
+                edge.edge_type,
+                tuple(edge.start_node_labels),
+                tuple(edge.end_node_labels),
+            )
             for edge in incremental_model.edges
         }
 
@@ -579,7 +602,10 @@ class HyGM:
             print(f"  {i}. {constraint.type.upper()}: {labels}.{props}")
 
     def _get_user_input_choice(
-        self, prompt: str, choices: Dict[str, str], default_action: str = "accept"
+        self,
+        prompt: str,
+        choices: Dict[str, str],
+        default_action: str = "accept",
     ) -> str:
         """Get validated user input from multiple choices.
 
@@ -857,7 +883,10 @@ class HyGM:
                         f"{op.old_property} → {op.new_property}"
                     )
                     modified_model = self._apply_rename_property(
-                        modified_model, op.node_label, op.old_property, op.new_property
+                        modified_model,
+                        op.node_label,
+                        op.old_property,
+                        op.new_property,
                     )
                 elif op.operation_type == "drop_property":
                     print(f"  - Drop property: {op.node_label}.{op.property_name}")
@@ -919,7 +948,10 @@ class HyGM:
                 elif op.operation_type == "add_node":
                     print(f"  - Add node: {op.node_label}")
                     modified_model = self._apply_add_node(
-                        modified_model, op.node_label, op.properties, op.source_table
+                        modified_model,
+                        op.node_label,
+                        op.properties,
+                        op.source_table,
                     )
                 elif op.operation_type == "drop_node":
                     print(f"  - Drop node: {op.node_label}")
@@ -987,7 +1019,11 @@ class HyGM:
         return model
 
     def _apply_rename_property(
-        self, model: "GraphModel", node_label: str, old_property: str, new_property: str
+        self,
+        model: "GraphModel",
+        node_label: str,
+        old_property: str,
+        new_property: str,
     ) -> "GraphModel":
         """Apply rename property operation."""
         for node in model.nodes:
@@ -1304,7 +1340,8 @@ class HyGM:
         from .models.operations import ModelModifications
 
         dummy_operations = ModelModifications(
-            operations=[], reasoning="Automatic validation improvement iteration"
+            operations=[],
+            reasoning="Automatic validation improvement iteration",
         )
 
         return self._validate_and_improve_model(
@@ -1423,9 +1460,11 @@ class HyGM:
                     "Validation iteration %d: %s (Coverage: %.1f%%)",
                     improvement_count + 1,
                     "PASSED" if validation_result.success else "FAILED",
-                    validation_result.metrics.coverage_percentage
-                    if validation_result.metrics
-                    else 0,
+                    (
+                        validation_result.metrics.coverage_percentage
+                        if validation_result.metrics
+                        else 0
+                    ),
                 )
             else:
                 # Detailed display for interactive mode
@@ -1754,7 +1793,10 @@ class HyGM:
         return "\n".join(context_parts)
 
     def _regenerate_model_with_llm_fixes(
-        self, current_model: "GraphModel", validation_context: str, validation_result
+        self,
+        current_model: "GraphModel",
+        validation_context: str,
+        validation_result,
     ) -> Optional["GraphModel"]:
         """Use LLM to regenerate an improved model based on validation."""
         if not self.llm or not self.database_structure:
@@ -1805,7 +1847,10 @@ class HyGM:
             return None
 
     def _prepare_improvement_context(
-        self, current_model: "GraphModel", validation_result, validation_context: str
+        self,
+        current_model: "GraphModel",
+        validation_result,
+        validation_context: str,
     ) -> str:
         """Prepare comprehensive context for LLM model improvement."""
         context_parts = []

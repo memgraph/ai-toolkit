@@ -22,8 +22,7 @@ Always maintain the CLI experience (`main.py`) and respect the line-length < 79 
 
 - **HyGM (Hypothetical Graph Modeling)** lives in `core/hygm/hygm.py` and exposes modeling modes via `ModelingMode`:
   - `AUTOMATIC` – one-shot graph generation.
-  - `INTERACTIVE` – iterative refinement loop in the CLI.
-  - `INCREMENTAL` – table-by-table confirmation flow (recently added).
+  - `INCREMENTAL` – table-by-table confirmation flow that now includes the full interactive refinement loop.
 - **GraphModelingStrategy**: `DETERMINISTIC` (rule-based) and `LLM_POWERED` (needs an LLM+API key).
 - **SQLToMemgraphAgent** (`core/migration_agent.py`) coordinates schema analysis, HyGM modeling, query generation, execution, and validation.
 - **Database analyzers** in `database/` introspect MySQL/PostgreSQL schemas and emit a normalized metadata structure consumed by HyGM.
@@ -38,9 +37,9 @@ Always maintain the CLI experience (`main.py`) and respect the line-length < 79 
 
 - Run with `uv run main.py` (banner, env checks, connection probes, then the migration workflow).
 - CLI prompts include:
-  - Graph modeling mode (interactive / automatic / incremental).
+  - Graph modeling mode (automatic / incremental with interactive refinement).
   - Modeling strategy (deterministic / AI-powered).
-  - Confirmation dialogs during interactive or incremental flows.
+  - Confirmation dialogs during automatic or incremental flows.
 - Environment validation happens before migration; failures raise `MigrationEnvironmentError` or `DatabaseConnectionError` from `utils/`.
 
 ## Configuration & Environment
