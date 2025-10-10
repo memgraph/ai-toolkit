@@ -146,68 +146,43 @@ class HyGM:
 
         return self._strategy_cache[strategy]
 
-    def _interactive_modeling(
+    def _interactive_refinement_loop(
         self,
-        database_structure: Dict[str, Any],
-        domain_context: Optional[str] = None,
-        strategy: GraphModelingStrategy = GraphModelingStrategy.DETERMINISTIC,
-        initial_model: Optional["GraphModel"] = None,
+        model: "GraphModel",
+        strategy: GraphModelingStrategy,
     ) -> "GraphModel":
         """
-        Interactive modeling process with user feedback.
+        Interactive refinement loop for the incremental modeling flow.
 
-        This method provides an interactive terminal interface for users
-        to iteratively refine the graph model.
+        Allows users to inspect the aggregated graph model, provide feedback,
+        and iteratively refine nodes, relationships, indexes, and constraints
+        using the natural-language modification helpers.
         """
-        logger.info("Starting interactive modeling session...")
+        logger.info("Entering interactive refinement loop for incremental modeling")
 
-        # Create initial model using the specified strategy
-        strategy_instance = self._get_strategy_instance(strategy)
-        if initial_model is not None:
-            current_model = initial_model
-        else:
-            current_model = strategy_instance.create_model(
-                database_structure, domain_context
-            )
-        self.current_graph_model = current_model
-        self.iteration_count = 1
+        self.current_graph_model = model
+        if self.iteration_count == 0:
+            self.iteration_count = 1
 
-        # Interactive refinement loop
         while True:
-            self._display_current_model(current_model)
+            self._display_current_model(model)
 
-            user_choice = self._get_user_choice()
+            user_choice = self._get_refinement_choice()
 
             if user_choice == "accept":
-                logger.info("Model accepted by user")
+                logger.info("Combined model accepted by user")
                 break
-            elif user_choice == "modify":
-                logger.info("Starting interactive model modification...")
-                current_model = self._modify_model_interactively(
-                    current_model, strategy
-                )
-                self.iteration_count += 1
-            elif user_choice == "regenerate":
-                logger.info("Regenerating model with same strategy...")
-                # Regenerate with the same strategy
-                current_model = strategy_instance.create_model(
-                    database_structure, domain_context
-                )
-                self.iteration_count += 1
-            elif user_choice == "switch_strategy":
-                logger.info("Switching modeling strategy...")
-                # Switch between strategies
-                new_strategy = self._switch_strategy(strategy)
-                if new_strategy != strategy:
-                    strategy_instance = self._get_strategy_instance(new_strategy)
-                    current_model = strategy_instance.create_model(
-                        database_structure, domain_context
-                    )
-                    strategy = new_strategy
-                    self.iteration_count += 1
+            if user_choice == "modify":
+                logger.info("Modifying combined model interactively...")
+                model = self._modify_model_interactively(model, strategy)
+                self.current_graph_model = model
+                continue
+            if user_choice == "validate":
+                logger.info("Validating combined model on user request")
+                model = self._perform_manual_validation(model, strategy)
+                self.current_graph_model = model
 
-        self.current_graph_model = current_model
-        return current_model
+        return model
 
     def _incremental_modeling(
         self,
@@ -340,6 +315,11 @@ class HyGM:
                     )
                     processed_tables.append(table_name)
                     print(f"✅ Added {table_name} to the graph model")
+                    incremental_model = self._maybe_refine_combined_model(
+                        incremental_model,
+                        strategy,
+                        table_name,
+                    )
                 elif user_choice == "skip":
                     skipped_tables.append(table_name)
                     print(f"⏭️  Skipped {table_name}")
@@ -353,6 +333,11 @@ class HyGM:
                     )
                     processed_tables.append(table_name)
                     print(f"✅ Added modified {table_name} to the graph model")
+                    incremental_model = self._maybe_refine_combined_model(
+                        incremental_model,
+                        strategy,
+                        table_name,
+                    )
                 elif user_choice == "finish":
                     print("🏁 Finishing incremental modeling session...")
                     break
@@ -391,11 +376,9 @@ class HyGM:
             logger.info(
                 "Switching from incremental flow to interactive refinement",
             )
-            return self._interactive_modeling(
-                database_structure,
-                domain_context,
+            incremental_model = self._interactive_refinement_loop(
+                incremental_model,
                 strategy,
-                initial_model=incremental_model,
             )
 
         self.current_graph_model = incremental_model
@@ -470,6 +453,34 @@ class HyGM:
         return self._get_user_input_choice(
             f"\nEnter your choice for {table_name} (1-4): ", choices, "accept"
         )
+
+    def _maybe_refine_combined_model(
+        self,
+        incremental_model: "GraphModel",
+        strategy: GraphModelingStrategy,
+        table_name: str,
+    ) -> "GraphModel":
+        """Offer the user a chance to refine the combined model mid-session."""
+        prompt = (
+            "\nWould you like to refine the combined graph model before "
+            f"continuing after '{table_name}'?\n"
+            "1. Continue to the next table\n"
+            "2. Enter interactive refinement now\n"
+            "\nSelect option (1-2) or press Enter to continue: "
+        )
+
+        choices = {
+            "1": "continue",
+            "2": "refine",
+            "": "continue",
+        }
+
+        decision = self._get_user_input_choice(prompt, choices, "continue")
+
+        if decision == "refine":
+            return self._interactive_refinement_loop(incremental_model, strategy)
+
+        return incremental_model
 
     def _merge_table_model_into_incremental(
         self, incremental_model: "GraphModel", table_model: "GraphModel"
@@ -645,6 +656,22 @@ class HyGM:
         }
         return self._get_user_input_choice(
             "\nEnter your choice (1-4): ", choices, "accept"
+        )
+
+    def _get_refinement_choice(self) -> str:
+        """Get user choice while refining the combined graph model."""
+        print("\nWhat would you like to do with the combined graph model?")
+        print("1. Accept and continue")
+        print("2. Modify the model using natural language commands")
+        print("3. Run graph schema validation")
+
+        choices = {
+            "1": "accept",
+            "2": "modify",
+            "3": "validate",
+        }
+        return self._get_user_input_choice(
+            "\nEnter your choice (1-3): ", choices, "accept"
         )
 
     def _switch_strategy(
@@ -972,6 +999,30 @@ class HyGM:
                     )
 
         return modified_model
+
+    def _perform_manual_validation(
+        self,
+        model: "GraphModel",
+        strategy: GraphModelingStrategy,
+    ) -> "GraphModel":
+        """Run validation on demand without additional user operations."""
+        try:
+            from .models.operations import ModelModifications
+        except ImportError:
+            from core.hygm.models.operations import ModelModifications
+
+        dummy_operations = ModelModifications(
+            operations=[],
+            reasoning="Interactive refinement validation request",
+        )
+
+        return self._validate_and_improve_model(
+            model=model,
+            strategy=strategy,
+            operations=dummy_operations,
+            database_structure=self.database_structure or {},
+            mode="interactive",
+        )
 
     def _apply_change_node_label(
         self, model: "GraphModel", old_label: str, new_label: str

@@ -40,6 +40,7 @@ Always maintain the CLI experience (`main.py`) and respect the line-length < 79 
   - Graph modeling mode (automatic / incremental with interactive refinement).
   - Modeling strategy (deterministic / AI-powered).
   - Confirmation dialogs during automatic or incremental flows.
+  - Mid-session prompts that let users launch the interactive refinement loop after accepting or modifying a table during incremental runs.
 - Environment validation happens before migration; failures raise `MigrationEnvironmentError` or `DatabaseConnectionError` from `utils/`.
 
 ## Configuration & Environment

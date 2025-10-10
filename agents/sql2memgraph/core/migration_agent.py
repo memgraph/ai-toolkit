@@ -95,10 +95,10 @@ class SQLToMemgraphAgent:
             migrate_host = "host.docker.internal"
 
         return f"""{{
-            user: '{db_config['user']}',
-            password: '{db_config['password']}',
+            user: '{db_config["user"]}',
+            password: '{db_config["password"]}',
             host: '{migrate_host}',
-            database: '{db_config['database']}'
+            database: '{db_config["database"]}'
         }}"""
 
     def _build_workflow(self) -> StateGraph:
@@ -170,7 +170,10 @@ class SQLToMemgraphAgent:
 
             # Log the modeling mode being used
             if self.modeling_mode == ModelingMode.INCREMENTAL:
-                logger.info("Using incremental graph modeling mode")
+                logger.info(
+                    "Using incremental graph modeling mode with integrated "
+                    "interactive refinement"
+                )
             else:
                 logger.info("Using automatic graph modeling mode")
 
@@ -268,7 +271,7 @@ class SQLToMemgraphAgent:
 
                 if non_comment_lines:  # Has actual Cypher code
                     try:
-                        logger.info(f"Executing query {i+1}/{len(queries)}...")
+                        logger.info(f"Executing query {i + 1}/{len(queries)}...")
                         self.memgraph_client.query(query)
                         successful_queries += 1
 
@@ -295,7 +298,7 @@ class SQLToMemgraphAgent:
                             logger.info("Successfully created relationships")
 
                     except Exception as e:
-                        logger.error(f"Failed to execute query {i+1}: {e}")
+                        logger.error(f"Failed to execute query {i + 1}: {e}")
                         logger.error(f"Query: {query[:100]}...")
                         state["errors"].append(f"Query execution failed: {e}")
 

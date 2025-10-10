@@ -151,8 +151,8 @@ def run_migration(
 
     # Handle incremental vs automatic mode
     if modeling_mode == ModelingMode.INCREMENTAL:
-        print("🔄 Incremental mode: You'll confirm each table and can refine")
-        print("   the combined graph model before continuing")
+        print("🔄 Incremental mode: You'll confirm each table, adjust nodes")
+        print("   and relationships, and can refine the combined graph any time")
         print()
 
     # Run the migration with the user's chosen settings
