@@ -1,3 +1,4 @@
+# flake8: noqa
 """
 Main HyGM (Hypothetical Graph Modeling) class.
 
@@ -8,7 +9,7 @@ import copy
 import uuid
 import logging
 from enum import Enum
-from typing import Dict, Any, Optional, List, TYPE_CHECKING
+from typing import Dict, Any, Optional, List, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .models.graph_models import GraphModel, GraphNode
@@ -28,6 +29,21 @@ except ImportError:
         LLMStrategy,
     )
     from core.hygm.validation import GraphSchemaValidator
+
+try:
+    from ..utils.meta_graph import (
+        node_key as meta_node_key,
+        summarize_node as meta_summarize_node,
+        relationship_key as meta_relationship_key,
+        summarize_relationship as meta_summarize_relationship,
+    )
+except ImportError:
+    from core.utils.meta_graph import (  # type: ignore
+        node_key as meta_node_key,
+        summarize_node as meta_summarize_node,
+        relationship_key as meta_relationship_key,
+        summarize_relationship as meta_summarize_relationship,
+    )
 
 try:
     from .models.user_operations import UserOperationHistory
@@ -65,6 +81,7 @@ class HyGM:
         llm=None,
         mode: ModelingMode = ModelingMode.AUTOMATIC,
         strategy: GraphModelingStrategy = GraphModelingStrategy.DETERMINISTIC,
+        existing_meta_graph: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize HyGM with modeling configuration.
@@ -84,6 +101,7 @@ class HyGM:
         # User operation tracking
         self.user_operation_history: Optional["UserOperationHistory"] = None
         self.session_id = str(uuid.uuid4())
+        self.existing_meta_graph = existing_meta_graph or {}
 
     def create_graph_model(
         self,
@@ -184,6 +202,113 @@ class HyGM:
 
         return model
 
+    def _table_review_decision(
+        self,
+        table_name: str,
+        table_model: "GraphModel",
+    ) -> Tuple[bool, List[str], str]:
+        """Determine whether a table needs user review based on metadata."""
+        if not self.existing_meta_graph:
+            return True, ["No stored migration metadata"], ""
+
+        node_summaries = self.existing_meta_graph.get("node_summaries", {}) or {}
+        rel_summaries = self.existing_meta_graph.get("relationship_summaries", {}) or {}
+        existing_counts = self.existing_meta_graph.get("table_counts", {}) or {}
+
+        current_counts: Dict[str, Any] = {}
+        if isinstance(self.database_structure, dict):
+            current_counts = self.database_structure.get("table_counts", {}) or {}
+
+        change_reasons: List[str] = []
+        produced_node_keys = set()
+        produced_rel_keys = set()
+
+        new_count = current_counts.get(table_name)
+        old_count = existing_counts.get(table_name)
+        if new_count is not None and old_count is not None and new_count != old_count:
+            if new_count > old_count:
+                change_reasons.append("Row count increased since last migration")
+            else:
+                change_reasons.append("Row count decreased since last migration")
+
+        for node_def in getattr(table_model, "nodes", []):
+            key = meta_node_key(node_def)
+            produced_node_keys.add(key)
+            summary = meta_summarize_node(node_def)
+            stored = node_summaries.get(key)
+            display_name = summary.get("source") or key.replace("source::", "")
+
+            if not stored:
+                change_reasons.append(f"New node definition for {display_name}")
+                continue
+
+            if summary.get("properties") != stored.get("properties", []):
+                change_reasons.append(f"Properties changed for {display_name}")
+            if summary.get("id_field") != stored.get("id_field"):
+                change_reasons.append(f"Identifier field changed for {display_name}")
+            if summary.get("mapping") != stored.get("mapping", {}):
+                change_reasons.append(f"Mapping changed for {display_name}")
+
+        stored_node_keys = {
+            key
+            for key, summary in node_summaries.items()
+            if summary.get("source") == table_name
+        }
+        missing_nodes = stored_node_keys - produced_node_keys
+        if missing_nodes:
+            change_reasons.append("Existing node definition removed from model")
+
+        for rel_def in getattr(table_model, "edges", []):
+            key = meta_relationship_key(rel_def)
+            produced_rel_keys.add(key)
+            summary = meta_summarize_relationship(rel_def)
+            if table_name not in {
+                summary.get("start_table"),
+                summary.get("end_table"),
+                summary.get("join_table"),
+            }:
+                continue
+
+            stored = rel_summaries.get(key)
+            rel_name = summary.get("edge_type") or key
+
+            if not stored:
+                change_reasons.append(f"New relationship {rel_name}")
+                continue
+
+            if summary.get("mapping") != stored.get("mapping", {}):
+                change_reasons.append(f"Relationship mapping changed for {rel_name}")
+            if summary.get("start") != stored.get("start", []):
+                change_reasons.append(
+                    f"Relationship start labels changed for {rel_name}"
+                )
+            if summary.get("end") != stored.get("end", []):
+                change_reasons.append(f"Relationship end labels changed for {rel_name}")
+
+        stored_rel_keys = {
+            key
+            for key, summary in rel_summaries.items()
+            if table_name
+            in {
+                summary.get("start_table"),
+                summary.get("end_table"),
+                summary.get("join_table"),
+            }
+        }
+        missing_rels = stored_rel_keys - produced_rel_keys
+        if missing_rels:
+            change_reasons.append("Existing relationship removed from model")
+
+        if change_reasons:
+            return True, change_reasons, ""
+
+        if new_count is not None:
+            skip_message = f"Metadata unchanged (rows: {new_count})"
+        else:
+            skip_message = "Metadata unchanged"
+
+        return False, [], skip_message
+
     def _incremental_modeling(
         self,
         database_structure: Dict[str, Any],
@@ -234,6 +359,7 @@ class HyGM:
 
         processed_tables = []
         skipped_tables = []
+        auto_accepted_tables: List[Tuple[str, str]] = []
 
         # Process each table individually
         for table_name, table_info in tables.items():
@@ -291,6 +417,27 @@ class HyGM:
                     single_table_structure, domain_context
                 )
 
+                (
+                    needs_review,
+                    change_reasons,
+                    skip_message,
+                ) = self._table_review_decision(table_name, table_model)
+
+                if not needs_review:
+                    self._merge_table_model_into_incremental(
+                        incremental_model, table_model
+                    )
+                    processed_tables.append(table_name)
+                    message = skip_message or "No changes detected"
+                    print(f"🤖 Auto-accepted {table_name}: {message}")
+                    auto_accepted_tables.append((table_name, message))
+                    continue
+
+                if change_reasons:
+                    print("⚠️  Changes detected:")
+                    for reason in change_reasons:
+                        print(f"   - {reason}")
+
                 # Display the proposed node for this table
                 proposed_nodes = [
                     node
@@ -344,6 +491,14 @@ class HyGM:
         print(f"✅ Processed tables: {len(processed_tables)}")
         if processed_tables:
             print(f"   {', '.join(processed_tables)}")
+
+        if auto_accepted_tables:
+            print(f"🤖 Auto-accepted tables: {len(auto_accepted_tables)}")
+            auto_details = [
+                f"{name}{f' ({msg})' if msg else ''}"
+                for name, msg in auto_accepted_tables
+            ]
+            print(f"   {', '.join(auto_details)}")
 
         if skipped_tables:
             print(f"⏭️  Skipped tables: {len(skipped_tables)}")
@@ -1225,11 +1380,17 @@ class HyGM:
                 print(f"  ⚠️  Node {node_label} already exists, skipping")
                 return model
 
-        # Create node source
+        # Create node source metadata
+        source_name = source_table or node_label.lower()
         node_source = NodeSource(
-            origin="user_request",
-            table=source_table or node_label.lower(),
-            created_by="interactive_modification",
+            type="manual",
+            name=source_name,
+            location=source_name,
+            mapping={
+                "labels": [node_label],
+                "properties": properties,
+                "created_by": "interactive_modification",
+            },
         )
 
         # Create properties
@@ -1289,8 +1450,8 @@ class HyGM:
         properties: List[str],
     ) -> "GraphModel":
         """Apply add relationship operation."""
-        from .models.graph_models import GraphEdge, GraphProperty
-        from .models.sources import PropertySource, EdgeSource
+        from .models.graph_models import GraphRelationship, GraphProperty
+        from .models.sources import PropertySource, RelationshipSource
 
         # Check if relationship already exists
         for edge in model.edges:
@@ -1306,10 +1467,17 @@ class HyGM:
                 )
                 return model
 
-        # Create edge source
-        edge_source = EdgeSource(
-            origin="user_request",
-            created_by="interactive_modification",
+        # Create edge source metadata
+        edge_source = RelationshipSource(
+            type="manual",
+            name=relationship_name,
+            location=relationship_name.lower(),
+            mapping={
+                "start_node": start_node_label,
+                "end_node": end_node_label,
+                "properties": properties,
+                "created_by": "interactive_modification",
+            },
         )
 
         # Create properties
@@ -1321,7 +1489,7 @@ class HyGM:
             edge_properties.append(GraphProperty(key=prop_name, source=prop_source))
 
         # Create new relationship
-        new_edge = GraphEdge(
+        new_edge = GraphRelationship(
             edge_type=relationship_name,
             start_node_labels=[start_node_label],
             end_node_labels=[end_node_label],

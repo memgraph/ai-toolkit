@@ -1,3 +1,4 @@
+# flake8: noqa
 """
 SQL Database to Memgraph Migration Agent
 
@@ -27,6 +28,14 @@ from core.hygm import HyGM, ModelingMode, GraphModelingStrategy  # noqa: E402
 from core.hygm.validation import validate_memgraph_data  # noqa: E402
 from memgraph_toolbox.api.memgraph import Memgraph  # noqa: E402
 from database.factory import DatabaseAnalyzerFactory  # noqa: E402
+from core.utils.meta_graph import (  # noqa: E402
+    node_key as meta_node_key,
+    relationship_key as meta_relationship_key,
+    summarize_node as meta_summarize_node,
+    summarize_relationship as meta_summarize_relationship,
+    summarize_nodes as meta_summarize_nodes,
+    summarize_relationships as meta_summarize_relationships,
+)
 
 # Load environment variables
 load_dotenv()
@@ -126,78 +135,19 @@ class SQLToMemgraphAgent:
 
     def _node_key(self, node: Any) -> str:
         """Generate a stable key for a graph node definition."""
-        source = getattr(node, "source", None)
-        source_name = getattr(source, "name", None)
-        if source_name:
-            return f"source::{source_name}"
-        labels = sorted(getattr(node, "labels", []))
-        return "labels::" + "|".join(labels)
+        return meta_node_key(node)
 
     def _relationship_key(self, rel: Any) -> str:
         """Generate a stable key for a graph relationship."""
-        source = getattr(rel, "source", None)
-        source_name = getattr(source, "name", None)
-        if source_name:
-            return f"source::{source_name}"
-        edge_type = getattr(rel, "edge_type", "")
-        start = "|".join(sorted(getattr(rel, "start_node_labels", [])))
-        end = "|".join(sorted(getattr(rel, "end_node_labels", [])))
-        return f"edge::{edge_type}:{start}->{end}"
+        return meta_relationship_key(rel)
 
     def _summarize_node(self, node: Any) -> Dict[str, Any]:
         """Create a JSON-serializable summary for a node definition."""
-        properties = sorted(
-            {
-                prop.key
-                for prop in getattr(node, "properties", [])
-                if hasattr(prop, "key")
-            }
-        )
-        node_source = getattr(node, "source", None)
-        mapping: Dict[str, Any] = {}
-        source_name = None
-        id_field = None
-        if node_source:
-            mapping = dict(getattr(node_source, "mapping", {}) or {})
-            source_name = getattr(node_source, "name", None)
-            id_field = mapping.get("id_field")
-        return {
-            "labels": sorted(getattr(node, "labels", [])),
-            "properties": properties,
-            "id_field": id_field,
-            "source": source_name,
-            "mapping": mapping,
-        }
+        return meta_summarize_node(node)
 
     def _summarize_relationship(self, rel: Any) -> Dict[str, Any]:
         """Create a JSON-serializable summary for a relationship."""
-        rel_source = getattr(rel, "source", None)
-        mapping: Dict[str, Any] = {}
-        source_name = None
-        source_type = None
-        if rel_source:
-            mapping = dict(getattr(rel_source, "mapping", {}) or {})
-            source_name = getattr(rel_source, "name", None)
-            source_type = getattr(rel_source, "type", None)
-        start_labels = sorted(getattr(rel, "start_node_labels", []))
-        end_labels = sorted(getattr(rel, "end_node_labels", []))
-        start_table = mapping.get("from_table")
-        end_table = mapping.get("to_table")
-        if not start_table and mapping.get("start_node"):
-            start_table = str(mapping["start_node"]).split(".")[0]
-        if not end_table and mapping.get("end_node"):
-            end_table = str(mapping["end_node"]).split(".")[0]
-        return {
-            "edge_type": getattr(rel, "edge_type", ""),
-            "start": start_labels,
-            "end": end_labels,
-            "source": source_name,
-            "source_type": source_type,
-            "mapping": mapping,
-            "start_table": start_table,
-            "end_table": end_table,
-            "join_table": mapping.get("join_table"),
-        }
+        return meta_summarize_relationship(rel)
 
     def _graph_model_schema(self, model: Any) -> Dict[str, Any]:
         """Convert a graph model to schema format if possible."""
@@ -212,19 +162,11 @@ class SQLToMemgraphAgent:
 
     def _build_node_summaries(self, model: Any) -> Dict[str, Any]:
         """Build summaries for all nodes in a model."""
-        summaries: Dict[str, Any] = {}
-        for node in getattr(model, "nodes", []):
-            key = self._node_key(node)
-            summaries[key] = self._summarize_node(node)
-        return summaries
+        return meta_summarize_nodes(getattr(model, "nodes", []))
 
     def _build_relationship_summaries(self, model: Any) -> Dict[str, Any]:
         """Build summaries for all relationships in a model."""
-        summaries: Dict[str, Any] = {}
-        for rel in getattr(model, "edges", []):
-            key = self._relationship_key(rel)
-            summaries[key] = self._summarize_relationship(rel)
-        return summaries
+        return meta_summarize_relationships(getattr(model, "edges", []))
 
     def _load_existing_meta_graph(self, state: MigrationState) -> None:
         """Read stored migration metadata from Memgraph if available."""
@@ -462,9 +404,15 @@ class SQLToMemgraphAgent:
         )
 
         # Add conditional edges for better error handling
-        workflow.add_edge("connect_and_analyze_schema", "create_graph_model")
-        workflow.add_edge("create_graph_model", "prepare_target_database")
-        workflow.add_edge("prepare_target_database", "create_indexes")
+        workflow.add_edge(
+            "connect_and_analyze_schema",
+            "prepare_target_database",
+        )
+        workflow.add_edge(
+            "prepare_target_database",
+            "create_graph_model",
+        )
+        workflow.add_edge("create_graph_model", "create_indexes")
         workflow.add_edge("create_indexes", "generate_cypher_queries")
         workflow.add_edge("generate_cypher_queries", "execute_data_migration")
         workflow.add_edge("execute_data_migration", "validate_post_migration")
@@ -530,6 +478,7 @@ class SQLToMemgraphAgent:
                 llm=self.llm,
                 mode=self.modeling_mode,
                 strategy=self.graph_modeling_strategy,
+                existing_meta_graph=state.get("existing_meta_graph"),
             )
 
             # Log the strategy being used
