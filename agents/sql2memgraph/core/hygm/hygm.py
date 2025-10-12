@@ -315,11 +315,7 @@ class HyGM:
                     )
                     processed_tables.append(table_name)
                     print(f"✅ Added {table_name} to the graph model")
-                    incremental_model = self._maybe_refine_combined_model(
-                        incremental_model,
-                        strategy,
-                        table_name,
-                    )
+                    # Refinement is now offered after the full session summary.
                 elif user_choice == "skip":
                     skipped_tables.append(table_name)
                     print(f"⏭️  Skipped {table_name}")
@@ -333,11 +329,7 @@ class HyGM:
                     )
                     processed_tables.append(table_name)
                     print(f"✅ Added modified {table_name} to the graph model")
-                    incremental_model = self._maybe_refine_combined_model(
-                        incremental_model,
-                        strategy,
-                        table_name,
-                    )
+                    # Refinement is now offered after the full session summary.
                 elif user_choice == "finish":
                     print("🏁 Finishing incremental modeling session...")
                     break
@@ -453,34 +445,6 @@ class HyGM:
         return self._get_user_input_choice(
             f"\nEnter your choice for {table_name} (1-4): ", choices, "accept"
         )
-
-    def _maybe_refine_combined_model(
-        self,
-        incremental_model: "GraphModel",
-        strategy: GraphModelingStrategy,
-        table_name: str,
-    ) -> "GraphModel":
-        """Offer the user a chance to refine the combined model mid-session."""
-        prompt = (
-            "\nWould you like to refine the combined graph model before "
-            f"continuing after '{table_name}'?\n"
-            "1. Continue to the next table\n"
-            "2. Enter interactive refinement now\n"
-            "\nSelect option (1-2) or press Enter to continue: "
-        )
-
-        choices = {
-            "1": "continue",
-            "2": "refine",
-            "": "continue",
-        }
-
-        decision = self._get_user_input_choice(prompt, choices, "continue")
-
-        if decision == "refine":
-            return self._interactive_refinement_loop(incremental_model, strategy)
-
-        return incremental_model
 
     def _merge_table_model_into_incremental(
         self, incremental_model: "GraphModel", table_model: "GraphModel"

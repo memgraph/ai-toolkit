@@ -53,7 +53,7 @@ def get_graph_modeling_mode() -> ModelingMode:
     print("Graph modeling mode:")
     print()
     print("  1. Automatic     - Generate graph model without prompts")
-    print("  2. Incremental   - Review each table with interactive refinement")
+    print("  2. Incremental   - Review each table with end-of-session refinement")
     print()
 
     while True:
@@ -152,7 +152,7 @@ def run_migration(
     # Handle incremental vs automatic mode
     if modeling_mode == ModelingMode.INCREMENTAL:
         print("🔄 Incremental mode: You'll confirm each table, adjust nodes")
-        print("   and relationships, and can refine the combined graph any time")
+        print("   and relationships, then refine the combined graph at the end")
         print()
 
     # Run the migration with the user's chosen settings

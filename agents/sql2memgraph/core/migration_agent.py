@@ -171,8 +171,8 @@ class SQLToMemgraphAgent:
             # Log the modeling mode being used
             if self.modeling_mode == ModelingMode.INCREMENTAL:
                 logger.info(
-                    "Using incremental graph modeling mode with integrated "
-                    "interactive refinement"
+                    "Using incremental graph modeling mode with an "
+                    "end-of-session interactive refinement option"
                 )
             else:
                 logger.info("Using automatic graph modeling mode")
