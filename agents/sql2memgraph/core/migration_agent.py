@@ -5,11 +5,11 @@ This agent analyzes SQL databases, generates appropriate Cypher queries,
 and migrates data to Memgraph using LangGraph workflow.
 """
 
-import os
-import sys
+import hashlib
+import json
 import logging
-from time import sleep
-from typing import Dict, List, Any, TypedDict, Optional
+import sys
+from typing import Dict, List, Any, TypedDict, Optional, cast
 from pathlib import Path
 
 # Add parent directories to path for imports
@@ -17,15 +17,16 @@ sys.path.append(str(Path(__file__).parent.parent.parent / "memgraph-toolbox" / "
 sys.path.append(str(Path(__file__).parent.parent / "langchain-memgraph"))
 sys.path.append(str(Path(__file__).parent.parent))  # Add agents root to path
 
-from langgraph.graph import StateGraph, END
-from langchain_openai import ChatOpenAI
-from dotenv import load_dotenv
+from langgraph.graph import StateGraph, END  # noqa: E402
+from langchain_openai import ChatOpenAI  # noqa: E402
+from langchain_core.runnables.config import RunnableConfig  # noqa: E402
+from dotenv import load_dotenv  # noqa: E402
 
-from query_generation.cypher_generator import CypherGenerator
-from core.hygm import HyGM, ModelingMode, GraphModelingStrategy
-from core.hygm.validation import validate_memgraph_data
-from memgraph_toolbox.api.memgraph import Memgraph
-from database.factory import DatabaseAnalyzerFactory
+from query_generation.cypher_generator import CypherGenerator  # noqa: E402
+from core.hygm import HyGM, ModelingMode, GraphModelingStrategy  # noqa: E402
+from core.hygm.validation import validate_memgraph_data  # noqa: E402
+from memgraph_toolbox.api.memgraph import Memgraph  # noqa: E402
+from database.factory import DatabaseAnalyzerFactory  # noqa: E402
 
 # Load environment variables
 load_dotenv()
@@ -37,7 +38,7 @@ class MigrationState(TypedDict):
     """State for the migration workflow."""
 
     source_db_config: Dict[str, str]
-    memgraph_config: Dict[str, str]
+    memgraph_config: Optional[Dict[str, str]]
     database_structure: Dict[str, Any]
     graph_model: Any  # HyGM GraphModel object
     migration_queries: List[str]
@@ -48,6 +49,7 @@ class MigrationState(TypedDict):
     created_indexes: List[str]
     created_constraints: List[str]
     validation_report: Dict[str, Any]  # Post-migration validation results
+    existing_meta_graph: Optional[Dict[str, Any]]
 
 
 class SQLToMemgraphAgent:
@@ -56,7 +58,9 @@ class SQLToMemgraphAgent:
     def __init__(
         self,
         modeling_mode: ModelingMode = ModelingMode.AUTOMATIC,
-        graph_modeling_strategy: GraphModelingStrategy = GraphModelingStrategy.DETERMINISTIC,
+        graph_modeling_strategy: GraphModelingStrategy = (
+            GraphModelingStrategy.DETERMINISTIC
+        ),
     ):
         """Initialize the migration agent.
 
@@ -68,18 +72,17 @@ class SQLToMemgraphAgent:
                 - DETERMINISTIC: Rule-based graph creation (default)
                 - LLM_POWERED: LLM generates the graph model
         """
-
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-
-        self.llm = ChatOpenAI(
-            model="gpt-4o-mini", temperature=0.1, api_key=openai_api_key
-        )
+        self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
         self.database_analyzer = None
         self.cypher_generator = CypherGenerator()
         self.modeling_mode = modeling_mode
         self.graph_modeling_strategy = graph_modeling_strategy
 
-        self.memgraph_client = None
+        self.memgraph_client: Optional[Memgraph] = None
+        self._existing_meta_graph: Optional[Dict[str, Any]] = None
+        self._current_graph_model: Optional[Any] = None
+        self._ingestion_plan: Dict[str, Any] = {}
+        self._source_signature: Dict[str, str] = {}
 
         # Build the workflow graph
         self.workflow = self._build_workflow()
@@ -101,20 +104,362 @@ class SQLToMemgraphAgent:
             database: '{db_config["database"]}'
         }}"""
 
+    def _compute_source_signature(
+        self,
+        state: MigrationState,
+    ) -> Dict[str, str]:
+        """Create a deterministic signature for the source database."""
+        config = state.get("source_db_config", {})
+        structure = state.get("database_structure", {})
+        host = config.get("host", "")
+        database = config.get("database", "")
+        db_type = (
+            structure.get("database_type") or config.get("database_type") or "mysql"
+        )
+        signature = {
+            "host": host,
+            "database": database,
+            "type": db_type,
+        }
+        self._source_signature = signature
+        return signature
+
+    def _node_key(self, node: Any) -> str:
+        """Generate a stable key for a graph node definition."""
+        source = getattr(node, "source", None)
+        source_name = getattr(source, "name", None)
+        if source_name:
+            return f"source::{source_name}"
+        labels = sorted(getattr(node, "labels", []))
+        return "labels::" + "|".join(labels)
+
+    def _relationship_key(self, rel: Any) -> str:
+        """Generate a stable key for a graph relationship."""
+        source = getattr(rel, "source", None)
+        source_name = getattr(source, "name", None)
+        if source_name:
+            return f"source::{source_name}"
+        edge_type = getattr(rel, "edge_type", "")
+        start = "|".join(sorted(getattr(rel, "start_node_labels", [])))
+        end = "|".join(sorted(getattr(rel, "end_node_labels", [])))
+        return f"edge::{edge_type}:{start}->{end}"
+
+    def _summarize_node(self, node: Any) -> Dict[str, Any]:
+        """Create a JSON-serializable summary for a node definition."""
+        properties = sorted(
+            {
+                prop.key
+                for prop in getattr(node, "properties", [])
+                if hasattr(prop, "key")
+            }
+        )
+        node_source = getattr(node, "source", None)
+        mapping: Dict[str, Any] = {}
+        source_name = None
+        id_field = None
+        if node_source:
+            mapping = dict(getattr(node_source, "mapping", {}) or {})
+            source_name = getattr(node_source, "name", None)
+            id_field = mapping.get("id_field")
+        return {
+            "labels": sorted(getattr(node, "labels", [])),
+            "properties": properties,
+            "id_field": id_field,
+            "source": source_name,
+            "mapping": mapping,
+        }
+
+    def _summarize_relationship(self, rel: Any) -> Dict[str, Any]:
+        """Create a JSON-serializable summary for a relationship."""
+        rel_source = getattr(rel, "source", None)
+        mapping: Dict[str, Any] = {}
+        source_name = None
+        source_type = None
+        if rel_source:
+            mapping = dict(getattr(rel_source, "mapping", {}) or {})
+            source_name = getattr(rel_source, "name", None)
+            source_type = getattr(rel_source, "type", None)
+        start_labels = sorted(getattr(rel, "start_node_labels", []))
+        end_labels = sorted(getattr(rel, "end_node_labels", []))
+        start_table = mapping.get("from_table")
+        end_table = mapping.get("to_table")
+        if not start_table and mapping.get("start_node"):
+            start_table = str(mapping["start_node"]).split(".")[0]
+        if not end_table and mapping.get("end_node"):
+            end_table = str(mapping["end_node"]).split(".")[0]
+        return {
+            "edge_type": getattr(rel, "edge_type", ""),
+            "start": start_labels,
+            "end": end_labels,
+            "source": source_name,
+            "source_type": source_type,
+            "mapping": mapping,
+            "start_table": start_table,
+            "end_table": end_table,
+            "join_table": mapping.get("join_table"),
+        }
+
+    def _graph_model_schema(self, model: Any) -> Dict[str, Any]:
+        """Convert a graph model to schema format if possible."""
+        if hasattr(model, "to_schema_format"):
+            return model.to_schema_format()
+        return {}
+
+    def _graph_model_hash(self, schema: Dict[str, Any]) -> str:
+        """Compute a stable hash for a schema dictionary."""
+        schema_json = json.dumps(schema, sort_keys=True)
+        return hashlib.sha256(schema_json.encode("utf-8")).hexdigest()
+
+    def _build_node_summaries(self, model: Any) -> Dict[str, Any]:
+        """Build summaries for all nodes in a model."""
+        summaries: Dict[str, Any] = {}
+        for node in getattr(model, "nodes", []):
+            key = self._node_key(node)
+            summaries[key] = self._summarize_node(node)
+        return summaries
+
+    def _build_relationship_summaries(self, model: Any) -> Dict[str, Any]:
+        """Build summaries for all relationships in a model."""
+        summaries: Dict[str, Any] = {}
+        for rel in getattr(model, "edges", []):
+            key = self._relationship_key(rel)
+            summaries[key] = self._summarize_relationship(rel)
+        return summaries
+
+    def _load_existing_meta_graph(self, state: MigrationState) -> None:
+        """Read stored migration metadata from Memgraph if available."""
+        if not self.memgraph_client:
+            return
+
+        signature = self._compute_source_signature(state)
+        query = (
+            "MATCH (meta:MigrationAgent {source_host: $host, "
+            "source_database: $database, source_type: $type}) "
+            "RETURN meta LIMIT 1"
+        )
+        result = self.memgraph_client.query(
+            query,
+            {
+                "host": signature["host"],
+                "database": signature["database"],
+                "type": signature["type"],
+            },
+        )
+
+        if result:
+            meta = result[0].get("meta", {})
+            node_data = meta.get("node_summaries") or "{}"
+            rel_data = meta.get("relationship_summaries") or "{}"
+            table_counts = meta.get("table_counts") or "{}"
+            self._existing_meta_graph = {
+                "model_hash": meta.get("model_hash"),
+                "node_summaries": json.loads(node_data),
+                "relationship_summaries": json.loads(rel_data),
+                "table_counts": json.loads(table_counts),
+            }
+            state["existing_meta_graph"] = self._existing_meta_graph
+            logger.info(
+                "Loaded existing migration metadata for %s/%s",
+                signature["host"],
+                signature["database"],
+            )
+        else:
+            self._existing_meta_graph = None
+            state["existing_meta_graph"] = None
+            logger.info(
+                "No existing migration metadata found for %s/%s",
+                signature["host"],
+                signature["database"],
+            )
+
+    def _calculate_ingestion_plan(
+        self,
+        graph_model: Any,
+        structure: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Determine which nodes and relationships need migration."""
+        plan = {
+            "nodes": set(),
+            "relationships": set(),
+            "node_reasons": {},
+            "relationship_reasons": {},
+        }
+
+        table_counts = structure.get("table_counts", {}) or {}
+        existing = self._existing_meta_graph or {}
+        existing_nodes = existing.get("node_summaries", {}) or {}
+        existing_rels = existing.get("relationship_summaries", {}) or {}
+        existing_counts = existing.get("table_counts", {}) or {}
+
+        node_keys_by_source: Dict[str, str] = {}
+        label_keys: Dict[str, str] = {}
+
+        for node in getattr(graph_model, "nodes", []):
+            key = self._node_key(node)
+            summary = self._summarize_node(node)
+            source_name = summary.get("source")
+            if source_name:
+                node_keys_by_source[source_name] = key
+            label_key = "|".join(sorted(summary.get("labels", [])))
+            label_keys[label_key] = key
+
+            reasons: List[str] = []
+            stored = existing_nodes.get(key)
+            if not stored:
+                reasons.append("new node definition")
+            else:
+                if summary["properties"] != stored.get("properties", []):
+                    reasons.append("properties changed")
+                if summary["id_field"] != stored.get("id_field"):
+                    reasons.append("identifier changed")
+
+            table_name = summary.get("source")
+            if table_name:
+                new_count = table_counts.get(table_name)
+                old_count = existing_counts.get(table_name)
+                if new_count is not None:
+                    if old_count is None:
+                        reasons.append("table count unavailable previously")
+                    elif new_count != old_count:
+                        if new_count > old_count:
+                            reasons.append("source data increased")
+                        else:
+                            reasons.append("source data changed")
+
+            if reasons or not existing_nodes:
+                plan["nodes"].add(key)
+                plan["node_reasons"][key] = reasons or ["initial migration"]
+
+        for rel in getattr(graph_model, "edges", []):
+            key = self._relationship_key(rel)
+            summary = self._summarize_relationship(rel)
+            reasons: List[str] = []
+            stored = existing_rels.get(key)
+            if not stored:
+                reasons.append("new relationship definition")
+            else:
+                if summary["mapping"] != stored.get("mapping", {}):
+                    reasons.append("mapping changed")
+                if summary["start"] != stored.get("start", []):
+                    reasons.append("start labels changed")
+                if summary["end"] != stored.get("end", []):
+                    reasons.append("end labels changed")
+
+            start_key = None
+            end_key = None
+            start_table = summary.get("start_table")
+            end_table = summary.get("end_table")
+            if start_table and start_table in node_keys_by_source:
+                start_key = node_keys_by_source[start_table]
+            if end_table and end_table in node_keys_by_source:
+                end_key = node_keys_by_source[end_table]
+            if not start_key:
+                label = "|".join(summary.get("start", []))
+                start_key = label_keys.get(label)
+            if not end_key:
+                label = "|".join(summary.get("end", []))
+                end_key = label_keys.get(label)
+
+            dependent_update = False
+            if start_key and start_key in plan["nodes"]:
+                dependent_update = True
+            if end_key and end_key in plan["nodes"]:
+                dependent_update = True
+            if dependent_update and "dependent node update" not in reasons:
+                reasons.append("dependent node update")
+
+            if reasons or not existing_rels:
+                plan["relationships"].add(key)
+                plan["relationship_reasons"][key] = reasons or ["initial migration"]
+
+        self._ingestion_plan = plan
+        return plan
+
+    def _store_meta_graph(self, state: MigrationState) -> None:
+        """Persist the current graph model metadata to Memgraph."""
+        if not self.memgraph_client:
+            return
+
+        graph_model = state.get("graph_model")
+        if not graph_model:
+            return
+
+        structure = state.get("database_structure", {})
+        schema = self._graph_model_schema(graph_model)
+        node_summaries = self._build_node_summaries(graph_model)
+        rel_summaries = self._build_relationship_summaries(graph_model)
+        table_counts = structure.get("table_counts", {}) or {}
+
+        model_hash = self._graph_model_hash(schema)
+        signature = self._source_signature or self._compute_source_signature(state)
+
+        query = (
+            "MERGE (meta:MigrationAgent {source_host: $host, "
+            "source_database: $database, source_type: $type}) "
+            "SET meta.last_migrated_at = datetime(), "
+            "meta.model_hash = $model_hash, "
+            "meta.schema = $schema, "
+            "meta.node_summaries = $node_summaries, "
+            "meta.relationship_summaries = $relationship_summaries, "
+            "meta.table_counts = $table_counts"
+        )
+
+        self.memgraph_client.query(
+            query,
+            {
+                "host": signature.get("host", ""),
+                "database": signature.get("database", ""),
+                "type": signature.get("type", ""),
+                "model_hash": model_hash,
+                "schema": json.dumps(schema, sort_keys=True),
+                "node_summaries": json.dumps(node_summaries, sort_keys=True),
+                "relationship_summaries": json.dumps(
+                    rel_summaries,
+                    sort_keys=True,
+                ),
+                "table_counts": json.dumps(table_counts, sort_keys=True),
+            },
+        )
+
+        logger.info(
+            "Stored migration metadata for %s/%s",
+            signature.get("host", ""),
+            signature.get("database", ""),
+        )
+
     def _build_workflow(self) -> StateGraph:
-        """Build the LangGraph workflow with improved separation of concerns."""
+        """Build the LangGraph workflow with clear separation of concerns."""
         workflow = StateGraph(MigrationState)
 
         # Add nodes - refactored for better modularity
         workflow.add_node(
-            "connect_and_analyze_schema", self._connect_and_analyze_schema
+            "connect_and_analyze_schema",
+            self._connect_and_analyze_schema,
         )
-        workflow.add_node("create_graph_model", self._create_graph_model)
-        workflow.add_node("create_indexes", self._create_indexes)
-        workflow.add_node("generate_cypher_queries", self._generate_cypher_queries)
-        workflow.add_node("prepare_target_database", self._prepare_target_database)
-        workflow.add_node("execute_data_migration", self._execute_data_migration)
-        workflow.add_node("validate_post_migration", self._validate_post_migration)
+        workflow.add_node(
+            "create_graph_model",
+            self._create_graph_model,
+        )
+        workflow.add_node(
+            "create_indexes",
+            self._create_indexes,
+        )
+        workflow.add_node(
+            "generate_cypher_queries",
+            self._generate_cypher_queries,
+        )
+        workflow.add_node(
+            "prepare_target_database",
+            self._prepare_target_database,
+        )
+        workflow.add_node(
+            "execute_data_migration",
+            self._execute_data_migration,
+        )
+        workflow.add_node(
+            "validate_post_migration",
+            self._validate_post_migration,
+        )
 
         # Add conditional edges for better error handling
         workflow.add_edge("connect_and_analyze_schema", "create_graph_model")
@@ -131,8 +476,11 @@ class SQLToMemgraphAgent:
         # Return the workflow (not compiled) so caller can add checkpointer
         return workflow
 
-    def _connect_and_analyze_schema(self, state: MigrationState) -> MigrationState:
-        """Connect to source database and prepare basic connection info for HyGM."""
+    def _connect_and_analyze_schema(
+        self,
+        state: MigrationState,
+    ) -> MigrationState:
+        """Connect to source database and prepare info for HyGM."""
         logger.info("Preparing database connection for HyGM analysis...")
 
         try:
@@ -212,18 +560,33 @@ class SQLToMemgraphAgent:
 
         return state
 
-    def _prepare_target_database(self, state: MigrationState) -> MigrationState:
+    def _prepare_target_database(
+        self,
+        state: MigrationState,
+    ) -> MigrationState:
         """Prepare the target Memgraph database for migration."""
         logger.info("Preparing target database for migration...")
 
         try:
             # Initialize Memgraph connection
-            config = state["memgraph_config"]
+            config_value = state.get("memgraph_config")
+            if not config_value:
+                raise Exception("Memgraph configuration is required")
+            config = cast(Dict[str, str], config_value)
+
+            url = config.get("url")
+            if not url:
+                raise Exception("Memgraph configuration must include 'url'")
+
+            username = config.get("username") or ""
+            password = config.get("password") or ""
+            database = config.get("database") or "memgraph"
+
             self.memgraph_client = Memgraph(
-                url=config.get("url"),
-                username=config.get("username"),
-                password=config.get("password"),
-                database=config.get("database"),
+                url=url,
+                username=username,
+                password=password,
+                database=database,
             )
 
             # Test Memgraph connection
@@ -231,18 +594,14 @@ class SQLToMemgraphAgent:
             self.memgraph_client.query(test_query)
             logger.info("Memgraph connection established successfully")
 
-            # Clear the database first to avoid constraint violations
-            try:
-                logger.info("Clearing existing data from Memgraph...")
-                self.memgraph_client.query("STORAGE MODE IN_MEMORY_ANALYTICAL;")
-                sleep(1)
-                self.memgraph_client.query("DROP GRAPH")
-                sleep(5)
-                self.memgraph_client.query("STORAGE MODE IN_MEMORY_TRANSACTIONAL;")
-                sleep(1)
-                logger.info("Database cleared successfully")
-            except Exception as e:
-                logger.warning(f"Database clearing failed (might be empty): {e}")
+            # Load existing meta graph to plan incremental ingestion
+            self._load_existing_meta_graph(state)
+            if self._existing_meta_graph:
+                logger.info("Existing migration metadata detected; data will be merged")
+            else:
+                logger.info(
+                    "No migration metadata found; treating this as an " "initial run"
+                )
 
             state["current_step"] = "Target database prepared successfully"
 
@@ -258,12 +617,16 @@ class SQLToMemgraphAgent:
         logger.info("Executing data migration...")
 
         try:
+            memgraph_client = self.memgraph_client
+            if not memgraph_client:
+                raise Exception("Memgraph client is not initialized")
+
             queries = state["migration_queries"]
 
             # Execute all migration queries sequentially
             successful_queries = 0
             for i, query in enumerate(queries):
-                # Skip empty queries, but don't skip queries that contain comments
+                # Skip empty queries but keep comment-only blocks for context
                 query_lines = [line.strip() for line in query.strip().split("\n")]
                 non_comment_lines = [
                     line for line in query_lines if line and not line.startswith("//")
@@ -271,13 +634,17 @@ class SQLToMemgraphAgent:
 
                 if non_comment_lines:  # Has actual Cypher code
                     try:
-                        logger.info(f"Executing query {i + 1}/{len(queries)}...")
-                        self.memgraph_client.query(query)
+                        logger.info(
+                            "Executing query %d/%d...",
+                            i + 1,
+                            len(queries),
+                        )
+                        memgraph_client.query(query)
                         successful_queries += 1
 
                         # Log progress for node creation queries
                         if "CREATE (n:" in query:
-                            # Extract table name from query comment or FROM clause
+                            # Extract table name from comment or FROM clause
                             table_name = None
                             if "FROM " in query:
                                 try:
@@ -325,7 +692,7 @@ class SQLToMemgraphAgent:
         """Execute queries with consistent logging and error handling."""
         for query in queries:
             try:
-                logger.info(f"Creating {query_type}: %s", query)
+                logger.info("Creating %s: %s", query_type, query)
                 memgraph_client.query(query)
                 success_list.append(query)
             except Exception as e:
@@ -353,7 +720,7 @@ class SQLToMemgraphAgent:
 
     def _create_indexes(self, state: MigrationState) -> MigrationState:
         """Create indexes and constraints in Memgraph before migration."""
-        logger.info("Creating indexes and constraints from HyGM graph model...")
+        logger.info("Creating HyGM indexes and constraints...")
 
         try:
             # Use the existing Memgraph connection from prepare_target_database
@@ -418,89 +785,139 @@ class SQLToMemgraphAgent:
 
         return state
 
-    def _generate_cypher_queries(self, state: MigrationState) -> MigrationState:
-        """Generate Cypher queries based on HyGM graph model recommendations."""
+    def _generate_cypher_queries(
+        self,
+        state: MigrationState,
+    ) -> MigrationState:
+        """Generate merge-based Cypher queries using the ingestion plan."""
         logger.info("Generating Cypher queries based on HyGM graph model...")
 
         try:
             source_db_config = state["source_db_config"]
-
-            # Get the HyGM graph model (required)
             graph_model = state.get("graph_model")
             if not graph_model:
                 raise Exception("HyGM graph model is required for migration")
 
-            # Store graph model in instance for use by helper methods
             self._current_graph_model = graph_model
-            queries = []
 
-            # Create database connection config for migrate module
+            structure = state.get("database_structure", {})
+            plan = self._calculate_ingestion_plan(graph_model, structure)
+            nodes_to_migrate = plan["nodes"]
+            relationships_to_migrate = plan["relationships"]
+
+            if not nodes_to_migrate and not relationships_to_migrate:
+                logger.info(
+                    "Schema and table counts already match stored metadata; "
+                    "no migration queries generated"
+                )
+                state["migration_queries"] = []
+                state["current_step"] = "No new data to migrate"
+                return state
+
+            for node_key in sorted(nodes_to_migrate):
+                reasons = plan["node_reasons"].get(node_key, [])
+                reason_text = ", ".join(reasons) if reasons else "initial migration"
+                logger.info("Node plan %s → %s", node_key, reason_text)
+
+            for rel_key in sorted(relationships_to_migrate):
+                reasons = plan["relationship_reasons"].get(rel_key, [])
+                reason_text = ", ".join(reasons) if reasons else "initial migration"
+                logger.info("Relationship plan %s → %s", rel_key, reason_text)
+
+            queries: List[str] = []
             db_config_str = self._get_db_config_for_migrate(source_db_config)
 
-            # Generate node creation queries based on HyGM recommendations
-            logger.info(
-                f"Creating nodes based on {len(graph_model.nodes)} HyGM node definitions"
-            )
-
             for node_def in graph_model.nodes:
-                source_table = node_def.source.name if node_def.source else "unknown"
+                node_key = self._node_key(node_def)
+                if nodes_to_migrate and node_key not in nodes_to_migrate:
+                    continue
+
+                source = getattr(node_def, "source", None)
+                source_table = getattr(source, "name", None) or "unknown"
                 node_label = node_def.primary_label
 
-                # Extract property names from HyGM GraphProperty objects
                 properties = [
                     prop.key if hasattr(prop, "key") else str(prop)
-                    for prop in node_def.properties
+                    for prop in getattr(node_def, "properties", [])
                 ]
 
-                # Use validated properties from HyGM graph model
-                if properties:
-                    properties_str = ", ".join(properties)
-                    node_query = f"""
-// Create {node_label} nodes from {source_table} table (HyGM optimized)
-CALL migrate.mysql('SELECT {properties_str} FROM {source_table}',
-                   {db_config_str})
-YIELD row
-CREATE (n:{node_label})
-SET n += row;"""
-                    queries.append(node_query)
-                    logger.info(
-                        f"Added node creation for {node_label} with "
-                        f"{len(properties)} properties"
-                    )
-                else:
-                    logger.warning(
-                        f"No properties found for node {node_label} "
-                        f"from table {source_table}"
-                    )
+                node_mapping = getattr(source, "mapping", {}) if source else {}
+                id_field = node_mapping.get("id_field")
+                if not id_field and properties:
+                    id_field = properties[0]
 
-            # Generate relationship creation queries based on HyGM recommendations
+                if id_field and id_field not in properties:
+                    properties.append(id_field)
+
+                if not id_field:
+                    logger.warning(
+                        "Skipping node %s: identifier field missing",
+                        node_label,
+                    )
+                    continue
+
+                if not properties:
+                    logger.warning(
+                        "No properties found for node %s from table %s",
+                        node_label,
+                        source_table,
+                    )
+                    continue
+
+                properties_str = ", ".join(properties)
+                node_query = f"""
+// Merge {node_label} nodes from {source_table} table (HyGM optimized)
+CALL migrate.mysql(
+    'SELECT {properties_str} FROM {source_table}',
+    {db_config_str}
+)
+YIELD row
+MERGE (n:{node_label} {{{id_field}: row.{id_field}}})
+SET n += row;"""
+                queries.append(node_query)
+                logger.info("Prepared merge query for %s", node_label)
+
             logger.info(
-                f"Creating relationships based on {len(graph_model.edges)} HyGM relationship definitions"
+                "Preparing relationship queries for %d definitions",
+                len(graph_model.edges),
             )
 
             for rel_def in graph_model.edges:
+                rel_key = self._relationship_key(rel_def)
+                if relationships_to_migrate and rel_key not in relationships_to_migrate:
+                    continue
+
                 rel_query = self._generate_hygm_relationship_query(
                     rel_def, db_config_str
                 )
                 if rel_query:
                     queries.append(rel_query)
-                    logger.info(f"Added relationship creation: {rel_def.edge_type}")
+                    logger.info(
+                        "Prepared merge query for relationship %s",
+                        rel_def.edge_type,
+                    )
 
             state["migration_queries"] = queries
-            state["current_step"] = "Cypher queries generated using HyGM graph model"
+            state["current_step"] = "Migration queries prepared"
 
-            logger.info(
-                f"Generated {len(queries)} migration queries based on HyGM recommendations"
-            )
+            logger.info("Generated %d migration queries", len(queries))
 
         except Exception as e:
             logger.error(f"Error generating HyGM-based Cypher queries: {e}")
-            return self._handle_step_error(state, "generating cypher queries", e)
+            return self._handle_step_error(
+                state,
+                "generating cypher queries",
+                e,
+            )
 
         return state
 
-    def _generate_hygm_relationship_query(self, rel_def, mysql_config_str: str) -> str:
-        """Generate relationship query based on HyGM relationship definition."""
+    def _generate_hygm_relationship_query(
+        self,
+        rel_def,
+        mysql_config_str: str,
+    ) -> str:
+        """Create relationship query from HyGM definition."""
 
         try:
             if not rel_def.source or not rel_def.source.mapping:
@@ -522,7 +939,10 @@ SET n += row;"""
                     rel_name, rel_def, source_info, mysql_config_str
                 )
             else:
-                logger.warning(f"Unsupported relationship type: {rel_def.source.type}")
+                logger.warning(
+                    "Unsupported relationship type: %s",
+                    rel_def.source.type,
+                )
                 return ""
 
         except Exception as e:
@@ -540,46 +960,55 @@ SET n += row;"""
         source_info: Dict[str, Any],
         mysql_config_str: str,
     ) -> str:
-        """Generate one-to-many relationship query using HyGM source information."""
+        """Generate one-to-many relationship query from HyGM mapping."""
 
-        # All mapping information should come from HyGM source
-        start_node = source_info.get("start_node", "")  # e.g., "address.city_id"
-        end_node = source_info.get("end_node", "")  # e.g., "city.city_id"
-        from_pk = source_info.get("from_pk")  # Primary key provided by HyGM
+        start_node = source_info.get("start_node", "")
+        end_node = source_info.get("end_node", "")
+        from_pk = source_info.get("from_pk")
 
         if not start_node or not end_node:
             logger.error("Missing relationship information for %s", rel_name)
             raise Exception(
-                f"HyGM must provide complete relationship mapping for {rel_name}"
+                "HyGM must provide complete relationship mapping for " f"{rel_name}"
             )
 
-        # Parse the table.column format
         try:
             from_table, fk_column = start_node.split(".", 1)
             to_table, to_column = end_node.split(".", 1)
         except ValueError:
-            logger.error("Invalid mapping format for %s: %s", rel_name, source_info)
+            logger.error(
+                "Invalid mapping format for %s: %s",
+                rel_name,
+                source_info,
+            )
             raise Exception(
                 f"HyGM must provide valid relationship mapping for {rel_name}"
             )
 
-        # HyGM should provide the primary key information
         if not from_pk:
             raise Exception(f"HyGM must provide primary key information for {rel_name}")
 
-        # Get node labels from the relationship definition
         from_label = (
             rel_def.start_node_labels[0] if rel_def.start_node_labels else from_table
         )
         to_label = rel_def.end_node_labels[0] if rel_def.end_node_labels else to_table
 
+        select_sql = (
+            f"SELECT {from_pk}, {fk_column} "
+            f"FROM {from_table} "
+            f"WHERE {fk_column} IS NOT NULL"
+        )
+
         query = f"""
-// Create {rel_name} relationships (HyGM: {from_label} -> {to_label})
-CALL migrate.mysql('SELECT {from_pk}, {fk_column} FROM {from_table} WHERE {fk_column} IS NOT NULL', {mysql_config_str})
+// Merge {rel_name} relationships (HyGM: {from_label} -> {to_label})
+CALL migrate.mysql(
+    '{select_sql}',
+    {mysql_config_str}
+)
 YIELD row
 MATCH (from_node:{from_label} {{{from_pk}: row.{from_pk}}})
 MATCH (to_node:{to_label} {{{to_column}: row.{fk_column}}})
-CREATE (from_node)-[:{rel_name}]->(to_node);"""
+MERGE (from_node)-[:{rel_name}]->(to_node);"""
 
         return query
 
@@ -590,16 +1019,15 @@ CREATE (from_node)-[:{rel_name}]->(to_node);"""
         source_info: Dict[str, Any],
         mysql_config_str: str,
     ) -> str:
-        """Generate many-to-many relationship query using HyGM source information."""
+        """Generate many-to-many relationship query from HyGM mapping."""
 
-        # All many-to-many join table information should come from HyGM source
         join_table = source_info.get("join_table")
         from_table = source_info.get("from_table")
         to_table = source_info.get("to_table")
-        from_fk = source_info.get("join_from_column")  # FK in many-to-many join table
-        to_fk = source_info.get("join_to_column")  # FK in many-to-many join table
-        from_pk = source_info.get("from_column")  # PK in source table
-        to_pk = source_info.get("to_column")  # PK in target table
+        from_fk = source_info.get("join_from_column")
+        to_fk = source_info.get("join_to_column")
+        from_pk = source_info.get("from_column")
+        to_pk = source_info.get("to_column")
 
         if not all([join_table, from_table, to_table, from_fk, to_fk, from_pk, to_pk]):
             logger.error(
@@ -607,26 +1035,33 @@ CREATE (from_node)-[:{rel_name}]->(to_node);"""
                 rel_name,
             )
             raise Exception(
-                f"HyGM must provide complete many-to-many mapping for {rel_name}"
+                "HyGM must provide complete many-to-many mapping for " f"{rel_name}"
             )
 
-        # Get node labels from the relationship definition
         from_label = (
             rel_def.start_node_labels[0] if rel_def.start_node_labels else from_table
         )
         to_label = rel_def.end_node_labels[0] if rel_def.end_node_labels else to_table
 
+        select_sql = f"SELECT {from_fk}, {to_fk} " f"FROM {join_table}"
+
         query = f"""
-// Create {rel_name} relationships via {join_table}
+// Merge {rel_name} relationships via {join_table}
 // (HyGM: {from_label} <-> {to_label})
-CALL migrate.mysql('SELECT {from_fk}, {to_fk} FROM {join_table}', {mysql_config_str})
+CALL migrate.mysql(
+    '{select_sql}',
+    {mysql_config_str}
+)
 YIELD row
 MATCH (from:{from_label} {{{from_pk}: row.{from_fk}}})
 MATCH (to:{to_label} {{{to_pk}: row.{to_fk}}})
-CREATE (from)-[:{rel_name}]->(to);"""
+MERGE (from)-[:{rel_name}]->(to);"""
         return query
 
-    def _validate_post_migration(self, state: MigrationState) -> MigrationState:
+    def _validate_post_migration(
+        self,
+        state: MigrationState,
+    ) -> MigrationState:
         """Validate post-migration results using HyGM schema comparison."""
         logger.info("Running post-migration validation...")
 
@@ -659,7 +1094,7 @@ CREATE (from)-[:{rel_name}]->(to);"""
             expected_nodes = 0
             table_counts = structure.get("table_counts", {})
 
-            # If selected_tables is not set, use all entity tables that were migrated
+            # Default to all migrated tables when nothing specific is selected
             selected_tables = structure.get("selected_tables", [])
             if not selected_tables:
                 # Use entity tables (exclude views and system tables)
@@ -676,7 +1111,7 @@ CREATE (from)-[:{rel_name}]->(to);"""
                 "selected_tables": selected_tables,
             }
 
-            # Run post-migration validation using existing connection with data counts
+            # Run validation using existing connection and data counts
             logger.info("Executing post-migration validation...")
             validation_result = validate_memgraph_data(
                 expected_model=graph_model,
@@ -731,6 +1166,9 @@ CREATE (from)-[:{rel_name}]->(to);"""
 
             state["current_step"] = "Post-migration validation completed"
 
+            if not state["errors"]:
+                self._store_meta_graph(state)
+
         except Exception as e:
             logger.error(f"Error during post-migration validation: {e}")
             state["errors"].append(f"Post-migration validation failed: {e}")
@@ -764,23 +1202,29 @@ CREATE (from)-[:{rel_name}]->(to);"""
             created_indexes=[],
             created_constraints=[],
             validation_report={},
+            existing_meta_graph=None,
         )
 
         try:
-            # For automatic graph modeling mode, compile workflow without checkpointer
+            # Automatic mode compiles workflow without a checkpointer
             if self.modeling_mode == ModelingMode.AUTOMATIC:
                 compiled_workflow = self.workflow.compile()
                 final_state = compiled_workflow.invoke(initial_state)
             else:
-                # For incremental graph modeling mode, import and use checkpointer
+                # Incremental mode enables a persistent checkpointer
                 from langgraph.checkpoint.memory import MemorySaver
 
                 memory = MemorySaver()
                 compiled_workflow = self.workflow.compile(checkpointer=memory)
 
                 # Provide required configuration for checkpointer
-                config = {"configurable": {"thread_id": "migration_thread_1"}}
-                final_state = compiled_workflow.invoke(initial_state, config=config)
+                config: RunnableConfig = {
+                    "configurable": {"thread_id": "migration_thread_1"}
+                }
+                final_state = compiled_workflow.invoke(
+                    initial_state,
+                    config=config,
+                )
 
             # Cleanup connections
             if self.database_analyzer:
