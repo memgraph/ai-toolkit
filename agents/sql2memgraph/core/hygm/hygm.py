@@ -1,17 +1,19 @@
+# flake8: noqa
 """
 Main HyGM (Hypothetical Graph Modeling) class.
 
 This is the primary interface for the modular HyGM system.
 """
+
+import copy
 import uuid
 import logging
 from enum import Enum
-from typing import Dict, Any, Optional, List, TYPE_CHECKING
+from typing import Dict, Any, Optional, List, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .models.graph_models import GraphModel
+    from .models.graph_models import GraphModel, GraphNode, GraphRelationship
     from .models.operations import ModelModifications
-    from .models.user_operations import UserOperationHistory
 
 try:
     from .strategies import (
@@ -20,7 +22,6 @@ try:
         LLMStrategy,
     )
     from .validation import GraphSchemaValidator
-    from .models.user_operations import UserOperationHistory
 except ImportError:
     from core.hygm.strategies import (
         BaseModelingStrategy,
@@ -28,33 +29,26 @@ except ImportError:
         LLMStrategy,
     )
     from core.hygm.validation import GraphSchemaValidator
+
+try:
+    from ..utils.meta_graph import (
+        node_key as meta_node_key,
+        summarize_node as meta_summarize_node,
+        relationship_key as meta_relationship_key,
+        summarize_relationship as meta_summarize_relationship,
+    )
+except ImportError:
+    from core.utils.meta_graph import (  # type: ignore
+        node_key as meta_node_key,
+        summarize_node as meta_summarize_node,
+        relationship_key as meta_relationship_key,
+        summarize_relationship as meta_summarize_relationship,
+    )
+
+try:
+    from .models.user_operations import UserOperationHistory
+except ImportError:
     from core.hygm.models.user_operations import UserOperationHistory
-
-logger = logging.getLogger(__name__)
-
-import copy
-import logging
-from enum import Enum
-from typing import Dict, Any, Optional, List, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .models.graph_models import GraphModel
-    from .models.operations import ModelModifications
-
-try:
-    from .strategies import (
-        BaseModelingStrategy,
-        DeterministicStrategy,
-        LLMStrategy,
-    )
-    from .validation import GraphSchemaValidator
-except ImportError:
-    from core.hygm.strategies import (
-        BaseModelingStrategy,
-        DeterministicStrategy,
-        LLMStrategy,
-    )
-    from core.hygm.validation import GraphSchemaValidator
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +57,7 @@ class ModelingMode(Enum):
     """Modeling modes for HyGM."""
 
     AUTOMATIC = "automatic"
-    INTERACTIVE = "interactive"
+    INCREMENTAL = "incremental"
 
 
 class GraphModelingStrategy(Enum):
@@ -78,7 +72,8 @@ class HyGM:
     Main Hypothetical Graph Modeling class.
 
     Uses different strategies to create intelligent graph models from
-    relational schemas. Supports both automatic and interactive modes.
+    relational schemas. Supports automatic generation or incremental
+    refinement with user feedback.
     """
 
     def __init__(
@@ -86,13 +81,14 @@ class HyGM:
         llm=None,
         mode: ModelingMode = ModelingMode.AUTOMATIC,
         strategy: GraphModelingStrategy = GraphModelingStrategy.DETERMINISTIC,
+        existing_meta_graph: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize HyGM with modeling configuration.
 
         Args:
             llm: LLM instance for AI-powered modeling (optional)
-            mode: AUTOMATIC or INTERACTIVE modeling mode
+            mode: AUTOMATIC or INCREMENTAL modeling mode
             strategy: DETERMINISTIC or LLM_POWERED strategy
         """
         self.llm = llm
@@ -105,6 +101,7 @@ class HyGM:
         # User operation tracking
         self.user_operation_history: Optional["UserOperationHistory"] = None
         self.session_id = str(uuid.uuid4())
+        self.existing_meta_graph = existing_meta_graph or {}
 
     def create_graph_model(
         self,
@@ -128,9 +125,9 @@ class HyGM:
 
         logger.info("Creating graph model using %s strategy...", used_strategy.value)
 
-        # Check if interactive mode is enabled
-        if self.mode == ModelingMode.INTERACTIVE:
-            return self._interactive_modeling(
+        # Check if incremental mode is enabled
+        if self.mode == ModelingMode.INCREMENTAL:
+            return self._incremental_modeling(
                 database_structure, domain_context, used_strategy
             )
 
@@ -167,64 +164,654 @@ class HyGM:
 
         return self._strategy_cache[strategy]
 
-    def _interactive_modeling(
+    def _interactive_refinement_loop(
+        self,
+        model: "GraphModel",
+        strategy: GraphModelingStrategy,
+    ) -> "GraphModel":
+        """
+        Interactive refinement loop for the incremental modeling flow.
+
+        Allows users to inspect the aggregated graph model, provide feedback,
+        and iteratively refine nodes, relationships, indexes, and constraints
+        using the natural-language modification helpers.
+        """
+        logger.info("Entering interactive refinement loop for incremental modeling")
+
+        self.current_graph_model = model
+        if self.iteration_count == 0:
+            self.iteration_count = 1
+
+        while True:
+            self._display_current_model(model)
+
+            user_choice = self._get_refinement_choice()
+
+            if user_choice == "accept":
+                logger.info("Combined model accepted by user")
+                break
+            if user_choice == "modify":
+                logger.info("Modifying combined model interactively...")
+                model = self._modify_model_interactively(model, strategy)
+                self.current_graph_model = model
+                continue
+            if user_choice == "validate":
+                logger.info("Validating combined model on user request")
+                model = self._perform_manual_validation(model, strategy)
+                self.current_graph_model = model
+
+        return model
+
+    def _table_review_decision(
+        self,
+        table_name: str,
+        table_model: "GraphModel",
+    ) -> Tuple[bool, List[str], str]:
+        """Determine whether a table needs user review based on metadata."""
+        if not self.existing_meta_graph:
+            return True, ["No stored migration metadata"], ""
+
+        node_summaries = self.existing_meta_graph.get("node_summaries", {}) or {}
+        rel_summaries = self.existing_meta_graph.get("relationship_summaries", {}) or {}
+        existing_counts = self.existing_meta_graph.get("table_counts", {}) or {}
+
+        current_counts: Dict[str, Any] = {}
+        if isinstance(self.database_structure, dict):
+            current_counts = self.database_structure.get("table_counts", {}) or {}
+
+        change_reasons: List[str] = []
+        produced_node_keys = set()
+        produced_rel_keys = set()
+
+        new_count = current_counts.get(table_name)
+        old_count = existing_counts.get(table_name)
+        if new_count is not None and old_count is not None and new_count != old_count:
+            if new_count > old_count:
+                change_reasons.append("Row count increased since last migration")
+            else:
+                change_reasons.append("Row count decreased since last migration")
+
+        for node_def in getattr(table_model, "nodes", []):
+            key = meta_node_key(node_def)
+            produced_node_keys.add(key)
+            summary = meta_summarize_node(node_def)
+            stored = node_summaries.get(key)
+            display_name = summary.get("source") or key.replace("source::", "")
+
+            if not stored:
+                change_reasons.append(f"New node definition for {display_name}")
+                continue
+
+            if summary.get("properties") != stored.get("properties", []):
+                change_reasons.append(f"Properties changed for {display_name}")
+            if summary.get("id_field") != stored.get("id_field"):
+                change_reasons.append(f"Identifier field changed for {display_name}")
+            if summary.get("mapping") != stored.get("mapping", {}):
+                change_reasons.append(f"Mapping changed for {display_name}")
+
+        stored_node_keys = {
+            key
+            for key, summary in node_summaries.items()
+            if summary.get("source") == table_name
+        }
+        missing_nodes = stored_node_keys - produced_node_keys
+        if missing_nodes:
+            change_reasons.append("Existing node definition removed from model")
+
+        for rel_def in getattr(table_model, "edges", []):
+            key = meta_relationship_key(rel_def)
+            produced_rel_keys.add(key)
+            summary = meta_summarize_relationship(rel_def)
+            if table_name not in {
+                summary.get("start_table"),
+                summary.get("end_table"),
+                summary.get("join_table"),
+            }:
+                continue
+
+            stored = rel_summaries.get(key)
+            rel_name = summary.get("edge_type") or key
+
+            if not stored:
+                change_reasons.append(f"New relationship {rel_name}")
+                continue
+
+            if summary.get("mapping") != stored.get("mapping", {}):
+                change_reasons.append(f"Relationship mapping changed for {rel_name}")
+            if summary.get("start") != stored.get("start", []):
+                change_reasons.append(
+                    f"Relationship start labels changed for {rel_name}"
+                )
+            if summary.get("end") != stored.get("end", []):
+                change_reasons.append(f"Relationship end labels changed for {rel_name}")
+
+        stored_rel_keys = {
+            key
+            for key, summary in rel_summaries.items()
+            if table_name
+            in {
+                summary.get("start_table"),
+                summary.get("end_table"),
+                summary.get("join_table"),
+            }
+        }
+        missing_rels = stored_rel_keys - produced_rel_keys
+        if missing_rels:
+            change_reasons.append("Existing relationship removed from model")
+
+        if change_reasons:
+            return True, change_reasons, ""
+
+        if new_count is not None:
+            skip_message = f"Metadata unchanged (rows: {new_count})"
+        else:
+            skip_message = "Metadata unchanged"
+
+        return False, [], skip_message
+
+    def _incremental_modeling(
         self,
         database_structure: Dict[str, Any],
         domain_context: Optional[str] = None,
         strategy: GraphModelingStrategy = GraphModelingStrategy.DETERMINISTIC,
     ) -> "GraphModel":
         """
-        Interactive modeling process with user feedback.
+        Incremental modeling process with table-by-table confirmation.
 
-        This method provides an interactive terminal interface for users
-        to iteratively refine the graph model.
+        This method processes each table individually, showing the user
+        what node will be created and asking for confirmation before
+        proceeding to the next table.
         """
-        logger.info("Starting interactive modeling session...")
+        logger.info("Starting incremental modeling session...")
 
-        # Create initial model using the specified strategy
+        # Get the strategy instance
         strategy_instance = self._get_strategy_instance(strategy)
-        current_model = strategy_instance.create_model(
-            database_structure, domain_context
+
+        # Generate a complete draft model once using the selected strategy
+        logger.info(
+            "Generating full graph model before incremental review using %s strategy",
+            strategy.value,
         )
-        self.current_graph_model = current_model
-        self.iteration_count = 1
+        full_model = strategy_instance.create_model(database_structure, domain_context)
+        self.current_graph_model = full_model
 
-        # Interactive refinement loop
-        while True:
-            self._display_current_model(current_model)
+        # Initialize an empty graph model to build incrementally
+        from .models.graph_models import GraphModel
 
-            user_choice = self._get_user_choice()
+        incremental_model = GraphModel(
+            nodes=[], edges=[], node_indexes=[], node_constraints=[]
+        )
 
-            if user_choice == "accept":
-                logger.info("Model accepted by user")
-                break
-            elif user_choice == "modify":
-                logger.info("Starting interactive model modification...")
-                current_model = self._modify_model_interactively(
-                    current_model, strategy
-                )
-                self.iteration_count += 1
-            elif user_choice == "regenerate":
-                logger.info("Regenerating model with same strategy...")
-                # Regenerate with the same strategy
-                current_model = strategy_instance.create_model(
-                    database_structure, domain_context
-                )
-                self.iteration_count += 1
-            elif user_choice == "switch_strategy":
-                logger.info("Switching modeling strategy...")
-                # Switch between strategies
-                new_strategy = self._switch_strategy(strategy)
-                if new_strategy != strategy:
-                    strategy_instance = self._get_strategy_instance(new_strategy)
-                    current_model = strategy_instance.create_model(
-                        database_structure, domain_context
+        # Extract tables from database structure
+        tables = database_structure.get("tables", {})
+        if not tables:
+            print("❌ No tables found in database structure")
+            return incremental_model
+
+        self._print_banner("INCREMENTAL MODELING SESSION")
+        print("\n🧠 Generated a draft graph model for the entire database.")
+        print(
+            "We will now review tables with detected changes so you can "
+            "approve or adjust them one by one.\n"
+        )
+
+        table_models = self._build_table_model_map(full_model, tables)
+
+        processed_tables = []
+        skipped_tables = []
+        auto_accepted_tables: List[Tuple[str, str]] = []
+
+        # Process each table individually
+        for table_name, table_info in tables.items():
+            print("=" * 60)
+            print(f"PROCESSING TABLE: {table_name}")
+            print("=" * 60)
+            try:
+                table_model = table_models.get(table_name)
+                if table_model is None:
+                    table_model = GraphModel(
+                        nodes=[],
+                        edges=[],
+                        node_indexes=[],
+                        node_constraints=[],
                     )
-                    strategy = new_strategy
-                    self.iteration_count += 1
 
-        self.current_graph_model = current_model
-        return current_model
+                (
+                    needs_review,
+                    change_reasons,
+                    skip_message,
+                ) = self._table_review_decision(table_name, table_model)
+
+                if not needs_review:
+                    self._merge_table_model_into_incremental(
+                        incremental_model, table_model
+                    )
+                    processed_tables.append(table_name)
+                    message = skip_message or "No changes detected"
+                    print(f"🤖 Auto-accepted {table_name}: {message}")
+                    auto_accepted_tables.append((table_name, message))
+                    continue
+
+                if change_reasons:
+                    print("⚠️  Changes detected:")
+                    for reason in change_reasons:
+                        print(f"   - {reason}")
+
+                self._display_table_details_and_proposals(
+                    table_name,
+                    table_info,
+                    table_model,
+                )
+
+                # Get user decision
+                user_choice = self._get_incremental_choice(table_name)
+
+                if user_choice == "accept":
+                    # Add this table's nodes to the incremental model
+                    self._merge_table_model_into_incremental(
+                        incremental_model, table_model
+                    )
+                    processed_tables.append(table_name)
+                    print(f"✅ Added {table_name} to the graph model")
+                    # Refinement is now offered after the full session summary.
+                elif user_choice == "skip":
+                    skipped_tables.append(table_name)
+                    print(f"⏭️  Skipped {table_name}")
+                elif user_choice == "modify":
+                    # Allow user to modify the proposed node
+                    modified_model = self._modify_table_node_interactively(
+                        table_model, table_name
+                    )
+                    self._merge_table_model_into_incremental(
+                        incremental_model, modified_model
+                    )
+                    processed_tables.append(table_name)
+                    print(f"✅ Added modified {table_name} to the graph model")
+                    # Refinement is now offered after the full session summary.
+                elif user_choice == "finish":
+                    print("🏁 Finishing incremental modeling session...")
+                    break
+
+            except Exception as e:
+                logger.error("Error processing table %s: %s", table_name, e)
+                print(f"❌ Error processing {table_name}: {e}")
+                continue
+
+        # Final summary
+        self._merge_source_less_elements(incremental_model, full_model)
+        self._print_banner("INCREMENTAL MODELING SUMMARY")
+        print(f"✅ Processed tables: {len(processed_tables)}")
+        if processed_tables:
+            print(f"   {', '.join(processed_tables)}")
+
+        if auto_accepted_tables:
+            print(f"🤖 Auto-accepted tables: {len(auto_accepted_tables)}")
+            auto_details = [
+                f"{name}{f' ({msg})' if msg else ''}"
+                for name, msg in auto_accepted_tables
+            ]
+            print(f"   {', '.join(auto_details)}")
+
+        if skipped_tables:
+            print(f"⏭️  Skipped tables: {len(skipped_tables)}")
+            print(f"   {', '.join(skipped_tables)}")
+
+        print("\n📊 Final model statistics:")
+        print(f"   Nodes: {len(incremental_model.nodes)}")
+        print(f"   Relationships: {len(incremental_model.edges)}")
+        print(f"   Indexes: {len(incremental_model.node_indexes)}")
+        print(f"   Constraints: {len(incremental_model.node_constraints)}")
+
+        review_choice = self._get_user_input_choice(
+            "\nWould you like to review and refine the combined model?\n"
+            "1. Finish with the incremental result\n"
+            "2. Enter the interactive refinement loop\n"
+            "\nSelect option (1-2) or press Enter to finish: ",
+            {"1": "finish", "2": "review", "": "finish"},
+            "finish",
+        )
+
+        if review_choice == "review":
+            logger.info(
+                "Switching from incremental flow to interactive refinement",
+            )
+            incremental_model = self._interactive_refinement_loop(
+                incremental_model,
+                strategy,
+            )
+
+        self.current_graph_model = incremental_model
+        return incremental_model
+
+    def _display_table_details_and_proposals(
+        self,
+        table_name: str,
+        table_info: Dict[str, Any],
+        table_model: "GraphModel",
+    ) -> None:
+        """Display table information and proposed graph elements."""
+        print(f"\n📋 TABLE: {table_name}")
+
+        # Show table columns
+        columns = table_info.get("schema") or table_info.get("columns", [])
+        if columns:
+            if isinstance(columns, dict):
+                items = columns.items()
+            else:
+                items = [
+                    (
+                        col.get("field") or col.get("name"),
+                        {
+                            "type": col.get("type") or col.get("data_type"),
+                            "null": col.get("null"),
+                        },
+                    )
+                    for col in columns
+                ]
+
+            print(f"   Columns ({len(columns)}):")
+            for col_name, col_info in items:
+                if not col_name:
+                    continue
+                col_type = col_info.get("type", "unknown")
+                nullable_flag = col_info.get("null")
+                is_nullable = nullable_flag not in {"NO", False, "false", 0}
+                nullable = " (nullable)" if is_nullable else ""
+                print(f"     - {col_name}: {col_type}{nullable}")
+
+        # Show primary keys
+        primary_keys = table_info.get("primary_keys", [])
+        if primary_keys:
+            print(f"   Primary Keys: {', '.join(primary_keys)}")
+
+        # Show proposed node(s)
+        print("\n🎯 PROPOSED NODE(S):")
+        proposed_nodes = table_model.nodes
+        if proposed_nodes:
+            for i, node in enumerate(proposed_nodes, 1):
+                labels = " | ".join(node.labels)
+                properties = [p.key for p in node.properties]
+                print(f"   {i}. Node Labels: {labels}")
+                print(f"      Properties: {properties}")
+        else:
+            print("   ❌ No nodes proposed for this table")
+
+        # Show proposed relationships related to this table
+        relationships = table_model.edges
+        print("\n🔗 PROPOSED RELATIONSHIPS:")
+        if relationships:
+            for i, relationship in enumerate(relationships, 1):
+                start_labels = " | ".join(relationship.start_node_labels)
+                end_labels = " | ".join(relationship.end_node_labels)
+                props = [p.key for p in relationship.properties]
+                print(
+                    f"   {i}. ({start_labels})-[:{relationship.edge_type}]->({end_labels})"
+                )
+                if props:
+                    print(f"      Properties: {props}")
+        else:
+            print("   ❌ No relationships proposed for this table")
+
+    def _get_incremental_choice(self, table_name: str) -> str:
+        """Get user choice for incremental modeling."""
+        print(f"\nWhat would you like to do with table '{table_name}'?")
+        print("1. Accept - Add this node to the graph model")
+        print("2. Skip - Skip this table for now")
+        print("3. Modify - Modify the proposed node before adding")
+        print("4. Finish - Stop incremental modeling and return current model")
+
+        choices = {
+            "1": "accept",
+            "2": "skip",
+            "3": "modify",
+            "4": "finish",
+        }
+        return self._get_user_input_choice(
+            f"\nEnter your choice for {table_name} (1-4): ", choices, "accept"
+        )
+
+    def _merge_table_model_into_incremental(
+        self, incremental_model: "GraphModel", table_model: "GraphModel"
+    ) -> None:
+        """Merge a single table's model into the incremental model."""
+        # Add nodes (avoid duplicates based on labels)
+        existing_node_labels = {
+            tuple(sorted(node.labels)) for node in incremental_model.nodes
+        }
+
+        for node in table_model.nodes:
+            node_labels_tuple = tuple(sorted(node.labels))
+            if node_labels_tuple not in existing_node_labels:
+                incremental_model.nodes.append(node)
+                existing_node_labels.add(node_labels_tuple)
+
+        # Add edges (avoid duplicates)
+        existing_edges = {
+            (
+                edge.edge_type,
+                tuple(edge.start_node_labels),
+                tuple(edge.end_node_labels),
+            )
+            for edge in incremental_model.edges
+        }
+
+        for edge in table_model.edges:
+            edge_key = (
+                edge.edge_type,
+                tuple(edge.start_node_labels),
+                tuple(edge.end_node_labels),
+            )
+            if edge_key not in existing_edges:
+                incremental_model.edges.append(edge)
+                existing_edges.add(edge_key)
+
+        # Add indexes
+        incremental_model.node_indexes.extend(table_model.node_indexes)
+
+        # Add constraints
+        incremental_model.node_constraints.extend(table_model.node_constraints)
+
+    def _build_table_model_map(
+        self,
+        full_model: "GraphModel",
+        tables: Dict[str, Any],
+    ) -> Dict[str, "GraphModel"]:
+        """Build lightweight sub-models per table from the complete model."""
+        from .models.graph_models import GraphModel
+
+        table_models: Dict[str, GraphModel] = {}
+        for table_name in tables.keys():
+            table_nodes = [
+                copy.deepcopy(node)
+                for node in full_model.nodes
+                if self._node_matches_table(node, table_name)
+            ]
+
+            table_edges = [
+                copy.deepcopy(edge)
+                for edge in full_model.edges
+                if self._relationship_matches_table(edge, table_name)
+            ]
+
+            node_label_keys = {tuple(sorted(node.labels)) for node in table_nodes}
+
+            table_indexes = [
+                copy.deepcopy(index)
+                for index in full_model.node_indexes
+                if index.labels and tuple(sorted(index.labels)) in node_label_keys
+            ]
+
+            table_constraints = [
+                copy.deepcopy(constraint)
+                for constraint in full_model.node_constraints
+                if constraint.labels
+                and tuple(sorted(constraint.labels)) in node_label_keys
+            ]
+
+            table_models[table_name] = GraphModel(
+                nodes=table_nodes,
+                edges=table_edges,
+                node_indexes=table_indexes,
+                node_constraints=table_constraints,
+            )
+
+        return table_models
+
+    def _node_matches_table(self, node: "GraphNode", table_name: str) -> bool:
+        """Return True if a node traces back to the specified table."""
+        source = getattr(node, "source", None)
+        if not source:
+            return False
+
+        source_name = getattr(source, "name", None)
+        if isinstance(source_name, str) and source_name.lower() == table_name.lower():
+            return True
+
+        mapping = getattr(source, "mapping", {}) or {}
+        for key in ("table", "source", "source_table", "primary_table"):
+            value = mapping.get(key)
+            if isinstance(value, str) and value.lower() == table_name.lower():
+                return True
+
+        for value in mapping.values():
+            if isinstance(value, str) and value.lower() == table_name.lower():
+                return True
+
+        labels = getattr(node, "labels", []) or []
+        for label in labels:
+            if isinstance(label, str) and table_name.lower() in label.lower():
+                return True
+
+        return False
+
+    def _relationship_matches_table(
+        self, relationship: "GraphRelationship", table_name: str
+    ) -> bool:
+        """Return True if a relationship is associated with the table."""
+        source = getattr(relationship, "source", None)
+        mapping = getattr(source, "mapping", {}) or {}
+
+        if source:
+            source_name = getattr(source, "name", None)
+            if (
+                isinstance(source_name, str)
+                and source_name.lower() == table_name.lower()
+            ):
+                return True
+
+        for key in (
+            "from_table",
+            "to_table",
+            "join_table",
+            "through_table",
+            "source",
+        ):
+            value = mapping.get(key)
+            if isinstance(value, str) and value.lower() == table_name.lower():
+                return True
+
+        for value in mapping.values():
+            if isinstance(value, str) and value.lower() == table_name.lower():
+                return True
+
+        # Fallback to matching on label names when mapping metadata is unavailable
+        combined_labels = list(relationship.start_node_labels) + list(
+            relationship.end_node_labels
+        )
+        for label in combined_labels:
+            if isinstance(label, str) and table_name.lower() in label.lower():
+                return True
+
+        return False
+
+    def _merge_source_less_elements(
+        self,
+        incremental_model: "GraphModel",
+        full_model: "GraphModel",
+    ) -> None:
+        """Add global elements that don't belong to a specific table."""
+        if not full_model:
+            return
+
+        from .models.graph_models import GraphModel
+
+        anonymous_nodes = [
+            copy.deepcopy(node)
+            for node in full_model.nodes
+            if getattr(node, "source", None) is None
+        ]
+        anonymous_edges = [
+            copy.deepcopy(edge)
+            for edge in full_model.edges
+            if getattr(edge, "source", None) is None
+        ]
+
+        if not anonymous_nodes and not anonymous_edges:
+            return
+
+        placeholder_model = GraphModel(
+            nodes=anonymous_nodes,
+            edges=anonymous_edges,
+            node_indexes=[],
+            node_constraints=[],
+        )
+
+        self._merge_table_model_into_incremental(incremental_model, placeholder_model)
+
+    def _modify_table_node_interactively(
+        self, table_model: "GraphModel", table_name: str
+    ) -> "GraphModel":
+        """Allow user to modify the proposed node for a table."""
+        print(f"\n🔧 MODIFYING NODE FOR TABLE: {table_name}")
+        print("You can use natural language to modify the proposed node.")
+        print("Examples:")
+        print(" - Change the label from 'User' to 'Person'")
+        print(" - Remove the 'email' property")
+        print(" - Add a 'full_name' property")
+
+        if not self.llm:
+            print("❌ LLM not available for natural language modifications.")
+            print("Returning original model.")
+            return table_model
+
+        while True:
+            try:
+                user_input = input(
+                    f"\nDescribe changes for {table_name} " f"(or 'done' to finish): "
+                ).strip()
+
+                if user_input.lower() == "done":
+                    break
+                elif not user_input:
+                    print("Please describe the change you'd like to make.")
+                    continue
+
+                # Use existing natural language parsing
+                operations = self._parse_natural_language_to_operations(
+                    user_input, table_model
+                )
+
+                if operations:
+                    print(f"✅ Understood: {operations.reasoning}")
+                    table_model = self._apply_operations_to_model(
+                        table_model, operations
+                    )
+
+                    # Show updated model
+                    print(f"\n📋 UPDATED NODE FOR {table_name}:")
+                    for node in table_model.nodes:
+                        labels = " | ".join(node.labels)
+                        properties = [p.key for p in node.properties]
+                        print(f"   Labels: {labels}")
+                        print(f"   Properties: {properties}")
+                else:
+                    print("❌ I didn't understand that command. " "Please try again.")
+
+            except (EOFError, KeyboardInterrupt):
+                print(f"\nFinished modifying {table_name}")
+                break
+
+        return table_model
 
     def _print_banner(self, title: str, width: int = 60) -> None:
         """Print a formatted banner with title."""
@@ -261,7 +848,10 @@ class HyGM:
             print(f"  {i}. {constraint.type.upper()}: {labels}.{props}")
 
     def _get_user_input_choice(
-        self, prompt: str, choices: Dict[str, str], default_action: str = "accept"
+        self,
+        prompt: str,
+        choices: Dict[str, str],
+        default_action: str = "accept",
     ) -> str:
         """Get validated user input from multiple choices.
 
@@ -301,6 +891,22 @@ class HyGM:
         }
         return self._get_user_input_choice(
             "\nEnter your choice (1-4): ", choices, "accept"
+        )
+
+    def _get_refinement_choice(self) -> str:
+        """Get user choice while refining the combined graph model."""
+        print("\nWhat would you like to do with the combined graph model?")
+        print("1. Accept and continue")
+        print("2. Modify the model using natural language commands")
+        print("3. Run graph schema validation")
+
+        choices = {
+            "1": "accept",
+            "2": "modify",
+            "3": "validate",
+        }
+        return self._get_user_input_choice(
+            "\nEnter your choice (1-3): ", choices, "accept"
         )
 
     def _switch_strategy(
@@ -539,7 +1145,10 @@ class HyGM:
                         f"{op.old_property} → {op.new_property}"
                     )
                     modified_model = self._apply_rename_property(
-                        modified_model, op.node_label, op.old_property, op.new_property
+                        modified_model,
+                        op.node_label,
+                        op.old_property,
+                        op.new_property,
                     )
                 elif op.operation_type == "drop_property":
                     print(f"  - Drop property: {op.node_label}.{op.property_name}")
@@ -601,7 +1210,10 @@ class HyGM:
                 elif op.operation_type == "add_node":
                     print(f"  - Add node: {op.node_label}")
                     modified_model = self._apply_add_node(
-                        modified_model, op.node_label, op.properties, op.source_table
+                        modified_model,
+                        op.node_label,
+                        op.properties,
+                        op.source_table,
                     )
                 elif op.operation_type == "drop_node":
                     print(f"  - Drop node: {op.node_label}")
@@ -622,6 +1234,30 @@ class HyGM:
                     )
 
         return modified_model
+
+    def _perform_manual_validation(
+        self,
+        model: "GraphModel",
+        strategy: GraphModelingStrategy,
+    ) -> "GraphModel":
+        """Run validation on demand without additional user operations."""
+        try:
+            from .models.operations import ModelModifications
+        except ImportError:
+            from core.hygm.models.operations import ModelModifications
+
+        dummy_operations = ModelModifications(
+            operations=[],
+            reasoning="Interactive refinement validation request",
+        )
+
+        return self._validate_and_improve_model(
+            model=model,
+            strategy=strategy,
+            operations=dummy_operations,
+            database_structure=self.database_structure or {},
+            mode="interactive",
+        )
 
     def _apply_change_node_label(
         self, model: "GraphModel", old_label: str, new_label: str
@@ -669,7 +1305,11 @@ class HyGM:
         return model
 
     def _apply_rename_property(
-        self, model: "GraphModel", node_label: str, old_property: str, new_property: str
+        self,
+        model: "GraphModel",
+        node_label: str,
+        old_property: str,
+        new_property: str,
     ) -> "GraphModel":
         """Apply rename property operation."""
         for node in model.nodes:
@@ -856,11 +1496,17 @@ class HyGM:
                 print(f"  ⚠️  Node {node_label} already exists, skipping")
                 return model
 
-        # Create node source
+        # Create node source metadata
+        source_name = source_table or node_label.lower()
         node_source = NodeSource(
-            origin="user_request",
-            table=source_table or node_label.lower(),
-            created_by="interactive_modification",
+            type="manual",
+            name=source_name,
+            location=source_name,
+            mapping={
+                "labels": [node_label],
+                "properties": properties,
+                "created_by": "interactive_modification",
+            },
         )
 
         # Create properties
@@ -920,8 +1566,8 @@ class HyGM:
         properties: List[str],
     ) -> "GraphModel":
         """Apply add relationship operation."""
-        from .models.graph_models import GraphEdge, GraphProperty
-        from .models.sources import PropertySource, EdgeSource
+        from .models.graph_models import GraphRelationship, GraphProperty
+        from .models.sources import PropertySource, RelationshipSource
 
         # Check if relationship already exists
         for edge in model.edges:
@@ -937,10 +1583,17 @@ class HyGM:
                 )
                 return model
 
-        # Create edge source
-        edge_source = EdgeSource(
-            origin="user_request",
-            created_by="interactive_modification",
+        # Create edge source metadata
+        edge_source = RelationshipSource(
+            type="manual",
+            name=relationship_name,
+            location=relationship_name.lower(),
+            mapping={
+                "start_node": start_node_label,
+                "end_node": end_node_label,
+                "properties": properties,
+                "created_by": "interactive_modification",
+            },
         )
 
         # Create properties
@@ -952,7 +1605,7 @@ class HyGM:
             edge_properties.append(GraphProperty(key=prop_name, source=prop_source))
 
         # Create new relationship
-        new_edge = GraphEdge(
+        new_edge = GraphRelationship(
             edge_type=relationship_name,
             start_node_labels=[start_node_label],
             end_node_labels=[end_node_label],
@@ -986,7 +1639,8 @@ class HyGM:
         from .models.operations import ModelModifications
 
         dummy_operations = ModelModifications(
-            operations=[], reasoning="Automatic validation improvement iteration"
+            operations=[],
+            reasoning="Automatic validation improvement iteration",
         )
 
         return self._validate_and_improve_model(
@@ -1105,9 +1759,11 @@ class HyGM:
                     "Validation iteration %d: %s (Coverage: %.1f%%)",
                     improvement_count + 1,
                     "PASSED" if validation_result.success else "FAILED",
-                    validation_result.metrics.coverage_percentage
-                    if validation_result.metrics
-                    else 0,
+                    (
+                        validation_result.metrics.coverage_percentage
+                        if validation_result.metrics
+                        else 0
+                    ),
                 )
             else:
                 # Detailed display for interactive mode
@@ -1436,7 +2092,10 @@ class HyGM:
         return "\n".join(context_parts)
 
     def _regenerate_model_with_llm_fixes(
-        self, current_model: "GraphModel", validation_context: str, validation_result
+        self,
+        current_model: "GraphModel",
+        validation_context: str,
+        validation_result,
     ) -> Optional["GraphModel"]:
         """Use LLM to regenerate an improved model based on validation."""
         if not self.llm or not self.database_structure:
@@ -1487,7 +2146,10 @@ class HyGM:
             return None
 
     def _prepare_improvement_context(
-        self, current_model: "GraphModel", validation_result, validation_context: str
+        self,
+        current_model: "GraphModel",
+        validation_result,
+        validation_context: str,
     ) -> str:
         """Prepare comprehensive context for LLM model improvement."""
         context_parts = []

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# flake8: noqa
 """
 SQL Database to Memgraph Migration Agent - Main Entry Point
 
@@ -6,15 +7,17 @@ This is the main entry point for the SQL database to Memgraph migration agent.
 Run with: uv run main.py
 """
 
+import argparse
 import logging
+import os
 import sys
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from pathlib import Path
 
 # Add current directory to Python path for absolute imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from utils import (
+from utils import (  # noqa: E402
     MigrationEnvironmentError,
     DatabaseConnectionError,
     setup_and_validate_environment,
@@ -22,15 +25,129 @@ from utils import (
     print_environment_help,
     print_troubleshooting_help,
 )
-from core import SQLToMemgraphAgent
-from core.hygm import GraphModelingStrategy, ModelingMode
+from core import SQLToMemgraphAgent  # noqa: E402
+from core.hygm import GraphModelingStrategy, ModelingMode  # noqa: E402
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
 logger = logging.getLogger(__name__)
+
+MODE_CHOICES = {
+    "automatic": ModelingMode.AUTOMATIC,
+    "incremental": ModelingMode.INCREMENTAL,
+}
+
+STRATEGY_CHOICES = {
+    "deterministic": GraphModelingStrategy.DETERMINISTIC,
+    "llm": GraphModelingStrategy.LLM_POWERED,
+    "llm_powered": GraphModelingStrategy.LLM_POWERED,
+}
+
+META_GRAPH_POLICIES = {"auto", "skip", "reset"}
+
+LOG_LEVEL_CHOICES = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"]
+
+
+def _lower_env(name: str) -> Optional[str]:
+    value = os.getenv(name)
+    return value.lower() if value else None
+
+
+def _upper_env(name: str) -> Optional[str]:
+    value = os.getenv(name)
+    return value.upper() if value else None
+
+
+def parse_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    """Parse command-line arguments for the migration agent."""
+
+    env_mode = _lower_env("SQL2MG_MODE")
+    env_strategy = _lower_env("SQL2MG_STRATEGY")
+    env_meta_policy = _lower_env("SQL2MG_META_POLICY")
+    env_log_level = _upper_env("SQL2MG_LOG_LEVEL")
+
+    parser = argparse.ArgumentParser(
+        description="SQL database to Memgraph migration agent",
+    )
+
+    parser.add_argument(
+        "--mode",
+        choices=sorted(MODE_CHOICES.keys()),
+        default=env_mode,
+        type=str.lower,
+        help="Graph modeling mode (automatic|incremental). Overrides SQL2MG_MODE.",
+    )
+
+    parser.add_argument(
+        "--strategy",
+        choices=["deterministic", "llm"],
+        default=env_strategy,
+        type=str.lower,
+        help="Graph modeling strategy (deterministic|llm). Overrides SQL2MG_STRATEGY.",
+    )
+
+    parser.add_argument(
+        "--meta-graph",
+        choices=sorted(META_GRAPH_POLICIES),
+        default=env_meta_policy,
+        type=str.lower,
+        help=(
+            "Meta graph policy: auto (default), skip stored metadata, or reset to "
+            "ignore previous migrations. Overrides SQL2MG_META_POLICY."
+        ),
+    )
+
+    parser.add_argument(
+        "--log-level",
+        choices=LOG_LEVEL_CHOICES,
+        default=env_log_level,
+        type=str.upper,
+        help="Logging level for the agent. Overrides SQL2MG_LOG_LEVEL.",
+    )
+
+    return parser.parse_args(argv)
+
+
+def _configure_log_level(level_name: Optional[str]) -> None:
+    """Configure global logging level if provided."""
+
+    if not level_name:
+        return
+
+    numeric_level = getattr(logging, level_name.upper(), None)
+    if not isinstance(numeric_level, int):
+        logger.warning("Unknown log level '%s'; falling back to INFO", level_name)
+        numeric_level = logging.INFO
+
+    logging.getLogger().setLevel(numeric_level)
+    for handler in logging.getLogger().handlers:
+        handler.setLevel(numeric_level)
+    logger.setLevel(numeric_level)
+
+
+def _resolve_mode(cli_mode: Optional[str]) -> Optional[ModelingMode]:
+    if not cli_mode:
+        return None
+    resolved = MODE_CHOICES.get(cli_mode)
+    if not resolved:
+        logger.warning("Unrecognised mode '%s'; falling back to prompt", cli_mode)
+    return resolved
+
+
+def _resolve_strategy(cli_strategy: Optional[str]) -> Optional[GraphModelingStrategy]:
+    if not cli_strategy:
+        return None
+    resolved = STRATEGY_CHOICES.get(cli_strategy)
+    if not resolved:
+        logger.warning(
+            "Unrecognised strategy '%s'; falling back to prompt",
+            cli_strategy,
+        )
+    return resolved
 
 
 def print_banner() -> None:
@@ -51,9 +168,8 @@ def get_graph_modeling_mode() -> ModelingMode:
     """
     print("Graph modeling mode:")
     print()
-    print("  1. Interactive - Generate graph model with user feedback")
-    print()
-    print("  2. Automatic - Generate graph model automatically without user feedback")
+    print("  1. Automatic     - Generate graph model without prompts")
+    print("  2. Incremental   - Review each table with end-of-session refinement")
     print()
 
     while True:
@@ -63,9 +179,9 @@ def get_graph_modeling_mode() -> ModelingMode:
                 return ModelingMode.AUTOMATIC  # Default to automatic
 
             if choice == "1":
-                return ModelingMode.INTERACTIVE  # Interactive
+                return ModelingMode.AUTOMATIC
             elif choice == "2":
-                return ModelingMode.AUTOMATIC  # Automatic
+                return ModelingMode.INCREMENTAL
             else:
                 print("Invalid choice. Please select 1-2.")
         except ValueError:
@@ -110,6 +226,7 @@ def run_migration(
     memgraph_config: Dict[str, Any],
     modeling_mode: ModelingMode,
     graph_modeling_strategy: GraphModelingStrategy,
+    meta_graph_policy: str,
 ) -> Dict[str, Any]:
     """
     Run the migration with the specified configuration.
@@ -117,17 +234,19 @@ def run_migration(
     Args:
         source_db_config: Source database connection configuration
         memgraph_config: Memgraph connection configuration
-        modeling_mode: Graph modeling mode (interactive or automatic)
-        graph_modeling_strategy: Strategy for graph model creation
+        modeling_mode: Graph modeling mode (automatic or incremental)
+    graph_modeling_strategy: Strategy for graph model creation
+    meta_graph_policy: Meta graph handling policy (auto|skip|reset)
 
     Returns:
         Migration result dictionary
     """
     print("🔧 Creating migration agent...")
 
-    mode_name = (
-        "interactive" if modeling_mode == ModelingMode.INTERACTIVE else "automatic"
-    )
+    if modeling_mode == ModelingMode.INCREMENTAL:
+        mode_name = "incremental"
+    else:
+        mode_name = "automatic"
     strategy_name = graph_modeling_strategy.value
     print(f"🎯 Graph modeling: {mode_name} with {strategy_name} strategy")
     print()
@@ -136,6 +255,7 @@ def run_migration(
     agent = SQLToMemgraphAgent(
         modeling_mode=modeling_mode,
         graph_modeling_strategy=graph_modeling_strategy,
+        meta_graph_policy=meta_graph_policy,
     )
 
     print("🚀 Starting migration workflow...")
@@ -148,10 +268,10 @@ def run_migration(
     print("  6. ✅ Verify the migration results")
     print()
 
-    # Handle interactive vs automatic mode
-    if modeling_mode == ModelingMode.INTERACTIVE:
-        print("🔄 Interactive mode: You'll be prompted to review and refine")
-        print("   the graph model")
+    # Handle incremental vs automatic mode
+    if modeling_mode == ModelingMode.INCREMENTAL:
+        print("🔄 Incremental mode: Review LLM-generated graph changes table by table")
+        print("   then approve or tweak differences before refining the model")
         print()
 
     # Run the migration with the user's chosen settings
@@ -286,8 +406,12 @@ def print_migration_results(result: Dict[str, Any]) -> None:
     print("=" * 60)
 
 
-def main() -> None:
+def main(argv: Optional[list[str]] = None) -> None:
     """Main entry point for the migration agent."""
+    args = parse_cli_args(argv)
+
+    _configure_log_level(args.log_level)
+
     print_banner()
 
     try:
@@ -304,12 +428,26 @@ def main() -> None:
         print()
 
         # Get user preferences
-        graph_interactive = get_graph_modeling_mode()
-        graph_strategy = get_graph_modeling_strategy()
+        graph_mode = _resolve_mode(args.mode) or get_graph_modeling_mode()
+        graph_strategy = (
+            _resolve_strategy(args.strategy) or get_graph_modeling_strategy()
+        )
+
+        meta_graph_policy = (args.meta_graph or "auto").lower()
+        if meta_graph_policy not in META_GRAPH_POLICIES:
+            logger.warning(
+                "Unrecognised meta graph policy '%s'; defaulting to auto",
+                meta_graph_policy,
+            )
+            meta_graph_policy = "auto"
 
         # Run migration
         result = run_migration(
-            source_db_config, memgraph_config, graph_interactive, graph_strategy
+            source_db_config,
+            memgraph_config,
+            graph_mode,
+            graph_strategy,
+            meta_graph_policy,
         )
 
         # Display results
