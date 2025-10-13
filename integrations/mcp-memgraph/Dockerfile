@@ -11,7 +11,7 @@ RUN uv pip install --system -e /app/integrations/mcp-memgraph
 
 WORKDIR /app/integrations/mcp-memgraph/src
 
-ENV FASTMCP_HOST=0.0.0.0
+ENV MCP_HOST=0.0.0.0
 ENV MCP_TRANSPORT=streamable-http
 ENV MEMGRAPH_URL=bolt://host.docker.internal:7687
 

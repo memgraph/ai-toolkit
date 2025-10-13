@@ -45,7 +45,7 @@ Or you can open the config file in your favorite text editor. The location of th
 %APPDATA%/Claude/claude_desktop_config.json
 ```
 
-> [!NOTE]  
+> [!NOTE]
 > You may need to put the full path to the uv executable in the command field. You can get this by running `which uv` on MacOS/Linux or `where uv` on Windows. Make sure you pass in the absolute path to your server.
 
 ### Chat with the database
@@ -63,49 +63,49 @@ The Memgraph MCP Server exposes the following tools over MCP. Each tool runs a M
 
 ### run_query(query: str)
 
-Run any arbitrary Cypher query against the connected Memgraph database.  
+Run any arbitrary Cypher query against the connected Memgraph database.
 Parameters:
 
 - `query`: A valid Cypher query string.
 
 ### get_configuration()
 
-Fetch the current Memgraph configuration settings.  
+Fetch the current Memgraph configuration settings.
 Equivalent to running `SHOW CONFIGURATION`.
 
 ### get_index()
 
-Retrieve information about existing indexes.  
+Retrieve information about existing indexes.
 Equivalent to running `SHOW INDEX INFO`.
 
 ### get_constraint()
 
-Retrieve information about existing constraints.  
+Retrieve information about existing constraints.
 Equivalent to running `SHOW CONSTRAINT INFO`.
 
 ### get_schema()
 
-Fetch the graph schema (labels, relationships, property keys).  
+Fetch the graph schema (labels, relationships, property keys).
 Equivalent to running `SHOW SCHEMA INFO`.
 
 ### get_storage()
 
-Retrieve storage usage metrics for nodes, relationships, and properties.  
+Retrieve storage usage metrics for nodes, relationships, and properties.
 Equivalent to running `SHOW STORAGE INFO`.
 
 ### get_triggers()
 
-List all database triggers.  
+List all database triggers.
 Equivalent to running `SHOW TRIGGERS`.
 
 ### get_betweenness_centrality()
 
-Compute betweenness centrality on the entire graph.  
+Compute betweenness centrality on the entire graph.
 Uses `BetweennessCentralityTool` under the hood.
 
 ### get_page_rank()
 
-Compute PageRank scores for all nodes.  
+Compute PageRank scores for all nodes.
 Uses `PageRankTool` under the hood.
 
 ### get_node_neighborhood(node_id: str, max_distance: int = 1, limit: int = 100)
@@ -188,9 +188,9 @@ The following environment variables can be used to configure the Memgraph MCP Se
 - `MEMGRAPH_USER`: The username for authentication. Default: `memgraph`
 - `MEMGRAPH_PASSWORD`: The password for authentication. Default: empty
 - `MEMGRAPH_DATABASE`: The database name to connect to. Default: `memgraph`
-- `MCP_TRANSPORT`: The transport protocol to use. Options: `http` (default), `stdio`
+- `MCP_TRANSPORT`: The transport protocol to use. Options: `streamable-http` (default), `stdio`
 
-You can set these environment variables in your shell, in your Docker run command, or in your deployment environment. 
+You can set these environment variables in your shell, in your Docker run command, or in your deployment environment.
 
 ### Connecting from VS Code (HTTP server)
 
