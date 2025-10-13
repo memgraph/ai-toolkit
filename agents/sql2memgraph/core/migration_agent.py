@@ -70,6 +70,7 @@ class SQLToMemgraphAgent:
         graph_modeling_strategy: GraphModelingStrategy = (
             GraphModelingStrategy.DETERMINISTIC
         ),
+        meta_graph_policy: str = "auto",
     ):
         """Initialize the migration agent.
 
@@ -86,6 +87,14 @@ class SQLToMemgraphAgent:
         self.cypher_generator = CypherGenerator()
         self.modeling_mode = modeling_mode
         self.graph_modeling_strategy = graph_modeling_strategy
+        policy = (meta_graph_policy or "auto").lower()
+        if policy not in {"auto", "skip", "reset"}:
+            logger.warning(
+                "Unknown meta graph policy '%s'; defaulting to auto",
+                meta_graph_policy,
+            )
+            policy = "auto"
+        self.meta_graph_policy = policy
 
         self.memgraph_client: Optional[Memgraph] = None
         self._existing_meta_graph: Optional[Dict[str, Any]] = None
@@ -544,13 +553,28 @@ class SQLToMemgraphAgent:
             logger.info("Memgraph connection established successfully")
 
             # Load existing meta graph to plan incremental ingestion
-            self._load_existing_meta_graph(state)
-            if self._existing_meta_graph:
-                logger.info("Existing migration metadata detected; data will be merged")
+            policy = getattr(self, "meta_graph_policy", "auto")
+            if policy == "skip":
+                logger.info("Meta graph loading skipped by configuration")
+                self._existing_meta_graph = None
+                state["existing_meta_graph"] = None
             else:
-                logger.info(
-                    "No migration metadata found; treating this as an " "initial run"
-                )
+                self._load_existing_meta_graph(state)
+                if self._existing_meta_graph:
+                    if policy == "reset":
+                        logger.info(
+                            "Existing migration metadata ignored due to reset policy",
+                        )
+                        self._existing_meta_graph = None
+                        state["existing_meta_graph"] = None
+                    else:
+                        logger.info(
+                            "Existing migration metadata detected; data will be merged",
+                        )
+                else:
+                    logger.info(
+                        "No migration metadata found; treating this as an initial run",
+                    )
 
             state["current_step"] = "Target database prepared successfully"
 

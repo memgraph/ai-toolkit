@@ -40,35 +40,54 @@ The agent will guide you through:
 3. Automatic or incremental migration mode
 4. Complete migration workflow with progress tracking
 
+You can also preconfigure the workflow using CLI flags or environment variables:
+
+```bash
+uv run main --mode incremental --strategy llm --meta-graph reset --log-level DEBUG
+```
+
+| Option                           | Environment          | Description                                                   |
+| -------------------------------- | -------------------- | ------------------------------------------------------------- |
+| `--mode {automatic,incremental}` | `SQL2MG_MODE`        | Selects automatic or incremental modeling flow.               |
+| `--strategy {deterministic,llm}` | `SQL2MG_STRATEGY`    | Chooses deterministic or LLM-powered HyGM strategy.           |
+| `--meta-graph {auto,skip,reset}` | `SQL2MG_META_POLICY` | Controls how stored meta graph data is used (default `auto`). |
+| `--log-level LEVEL`              | `SQL2MG_LOG_LEVEL`   | Sets logging verbosity (`DEBUG`, `INFO`, etc.).               |
+
 ## Configuration
 
 Set up your environment variables in `.env`:
 
 ```bash
-# Source Database (MySQL/PostgreSQL)
-SOURCE_DB_HOST=localhost
-SOURCE_DB_PORT=3306
-SOURCE_DB_NAME=your_database
-SOURCE_DB_USER=username
-SOURCE_DB_PASSWORD=password
-SOURCE_DB_TYPE=mysql  # or postgresql
+# MySQL Database (primary source)
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_DATABASE=sakila
+MYSQL_USER=username
+MYSQL_PASSWORD=password
 
 # Memgraph Database
-MEMGRAPH_HOST=localhost
-MEMGRAPH_PORT=7687
-MEMGRAPH_USER=
+MEMGRAPH_URL=bolt://localhost:7687
+MEMGRAPH_USERNAME=
 MEMGRAPH_PASSWORD=
+MEMGRAPH_DATABASE=memgraph
 
 # OpenAI (for LLM-powered features)
 OPENAI_API_KEY=your_openai_key
+
+# Optional migration defaults (override CLI prompts)
+SQL2MG_MODE=automatic
+SQL2MG_STRATEGY=deterministic
+SQL2MG_META_POLICY=auto
+SQL2MG_LOG_LEVEL=INFO
 ```
 
 Make sure that Memgraph is started with the `--schema-info-enabled=true`, since agent uses the schema information from Memgraph `SHOW SCHEMA INFO`.
 
 # Arhitecture
 
+```
 core/hygm/
-├── hygm.py # Main orchestrator class  
+├── hygm.py # Main orchestrator class
 ├── models/ # Data models and structures
 │ ├── graph_models.py # Core graph representation
 │ ├── llm_models.py # LLM-specific models
@@ -78,3 +97,4 @@ core/hygm/
 ├── base.py # Abstract interface
 ├── deterministic.py # Rule-based modeling
 └── llm.py # AI-powered modeling
+```
