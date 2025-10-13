@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Dict, Any, Optional, List, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .models.graph_models import GraphModel, GraphNode
+    from .models.graph_models import GraphModel, GraphNode, GraphRelationship
     from .models.operations import ModelModifications
 
 try:
@@ -327,6 +327,14 @@ class HyGM:
         # Get the strategy instance
         strategy_instance = self._get_strategy_instance(strategy)
 
+        # Generate a complete draft model once using the selected strategy
+        logger.info(
+            "Generating full graph model before incremental review using %s strategy",
+            strategy.value,
+        )
+        full_model = strategy_instance.create_model(database_structure, domain_context)
+        self.current_graph_model = full_model
+
         # Initialize an empty graph model to build incrementally
         from .models.graph_models import GraphModel
 
@@ -340,22 +348,14 @@ class HyGM:
             print("❌ No tables found in database structure")
             return incremental_model
 
-        entity_tables = database_structure.get("entity_tables", {})
-        join_tables = database_structure.get("join_tables", {})
-        view_tables = database_structure.get("views") or database_structure.get(
-            "view_tables", {}
-        )
-        all_relationships = database_structure.get("relationships", [])
-        sample_data = database_structure.get("sample_data", {})
-        table_counts = database_structure.get("table_counts", {})
-        database_name = database_structure.get("database_name")
-        database_type = database_structure.get("database_type")
-
         self._print_banner("INCREMENTAL MODELING SESSION")
-        print(f"\nFound {len(tables)} tables to process")
+        print("\n🧠 Generated a draft graph model for the entire database.")
         print(
-            "You will review each table and its proposed node before " "proceeding.\n"
+            "We will now review tables with detected changes so you can "
+            "approve or adjust them one by one.\n"
         )
+
+        table_models = self._build_table_model_map(full_model, tables)
 
         processed_tables = []
         skipped_tables = []
@@ -366,56 +366,15 @@ class HyGM:
             print("=" * 60)
             print(f"PROCESSING TABLE: {table_name}")
             print("=" * 60)
-
-            # Create a temporary database structure with just this table
-            relevant_relationships = [
-                rel
-                for rel in all_relationships
-                if table_name
-                in {
-                    rel.get("from_table"),
-                    rel.get("to_table"),
-                    rel.get("join_table"),
-                }
-            ]
-
-            single_table_structure: Dict[str, Any] = {
-                "tables": {table_name: table_info},
-                "entity_tables": {},
-                "join_tables": {},
-                "views": {},
-                "relationships": relevant_relationships,
-            }
-
-            if table_name in entity_tables:
-                single_table_structure["entity_tables"][table_name] = entity_tables[
-                    table_name
-                ]
-            if table_name in join_tables:
-                single_table_structure["join_tables"][table_name] = join_tables[
-                    table_name
-                ]
-            if table_name in view_tables:
-                single_table_structure["views"][table_name] = view_tables[table_name]
-
-            if sample_data:
-                single_table_structure["sample_data"] = {
-                    table_name: sample_data.get(table_name, [])
-                }
-            if table_counts:
-                single_table_structure["table_counts"] = {
-                    table_name: table_counts.get(table_name, 0)
-                }
-            if database_name:
-                single_table_structure["database_name"] = database_name
-            if database_type:
-                single_table_structure["database_type"] = database_type
-
-            # Generate model for this single table
             try:
-                table_model = strategy_instance.create_model(
-                    single_table_structure, domain_context
-                )
+                table_model = table_models.get(table_name)
+                if table_model is None:
+                    table_model = GraphModel(
+                        nodes=[],
+                        edges=[],
+                        node_indexes=[],
+                        node_constraints=[],
+                    )
 
                 (
                     needs_review,
@@ -438,18 +397,10 @@ class HyGM:
                     for reason in change_reasons:
                         print(f"   - {reason}")
 
-                # Display the proposed node for this table
-                proposed_nodes = [
-                    node
-                    for node in table_model.nodes
-                    if any(table_name.lower() in label.lower() for label in node.labels)
-                ]
-
-                if not proposed_nodes:
-                    proposed_nodes = table_model.nodes
-
-                self._display_table_and_proposed_node(
-                    table_name, table_info, proposed_nodes
+                self._display_table_details_and_proposals(
+                    table_name,
+                    table_info,
+                    table_model,
                 )
 
                 # Get user decision
@@ -487,6 +438,7 @@ class HyGM:
                 continue
 
         # Final summary
+        self._merge_source_less_elements(incremental_model, full_model)
         self._print_banner("INCREMENTAL MODELING SUMMARY")
         print(f"✅ Processed tables: {len(processed_tables)}")
         if processed_tables:
@@ -531,13 +483,13 @@ class HyGM:
         self.current_graph_model = incremental_model
         return incremental_model
 
-    def _display_table_and_proposed_node(
+    def _display_table_details_and_proposals(
         self,
         table_name: str,
         table_info: Dict[str, Any],
-        proposed_nodes: List["GraphNode"],
+        table_model: "GraphModel",
     ) -> None:
-        """Display table information and proposed graph node."""
+        """Display table information and proposed graph elements."""
         print(f"\n📋 TABLE: {table_name}")
 
         # Show table columns
@@ -574,6 +526,7 @@ class HyGM:
 
         # Show proposed node(s)
         print("\n🎯 PROPOSED NODE(S):")
+        proposed_nodes = table_model.nodes
         if proposed_nodes:
             for i, node in enumerate(proposed_nodes, 1):
                 labels = " | ".join(node.labels)
@@ -582,6 +535,22 @@ class HyGM:
                 print(f"      Properties: {properties}")
         else:
             print("   ❌ No nodes proposed for this table")
+
+        # Show proposed relationships related to this table
+        relationships = table_model.edges
+        print("\n🔗 PROPOSED RELATIONSHIPS:")
+        if relationships:
+            for i, relationship in enumerate(relationships, 1):
+                start_labels = " | ".join(relationship.start_node_labels)
+                end_labels = " | ".join(relationship.end_node_labels)
+                props = [p.key for p in relationship.properties]
+                print(
+                    f"   {i}. ({start_labels})-[:{relationship.edge_type}]->({end_labels})"
+                )
+                if props:
+                    print(f"      Properties: {props}")
+        else:
+            print("   ❌ No relationships proposed for this table")
 
     def _get_incremental_choice(self, table_name: str) -> str:
         """Get user choice for incremental modeling."""
@@ -641,6 +610,153 @@ class HyGM:
 
         # Add constraints
         incremental_model.node_constraints.extend(table_model.node_constraints)
+
+    def _build_table_model_map(
+        self,
+        full_model: "GraphModel",
+        tables: Dict[str, Any],
+    ) -> Dict[str, "GraphModel"]:
+        """Build lightweight sub-models per table from the complete model."""
+        from .models.graph_models import GraphModel
+
+        table_models: Dict[str, GraphModel] = {}
+        for table_name in tables.keys():
+            table_nodes = [
+                copy.deepcopy(node)
+                for node in full_model.nodes
+                if self._node_matches_table(node, table_name)
+            ]
+
+            table_edges = [
+                copy.deepcopy(edge)
+                for edge in full_model.edges
+                if self._relationship_matches_table(edge, table_name)
+            ]
+
+            node_label_keys = {tuple(sorted(node.labels)) for node in table_nodes}
+
+            table_indexes = [
+                copy.deepcopy(index)
+                for index in full_model.node_indexes
+                if index.labels and tuple(sorted(index.labels)) in node_label_keys
+            ]
+
+            table_constraints = [
+                copy.deepcopy(constraint)
+                for constraint in full_model.node_constraints
+                if constraint.labels
+                and tuple(sorted(constraint.labels)) in node_label_keys
+            ]
+
+            table_models[table_name] = GraphModel(
+                nodes=table_nodes,
+                edges=table_edges,
+                node_indexes=table_indexes,
+                node_constraints=table_constraints,
+            )
+
+        return table_models
+
+    def _node_matches_table(self, node: "GraphNode", table_name: str) -> bool:
+        """Return True if a node traces back to the specified table."""
+        source = getattr(node, "source", None)
+        if not source:
+            return False
+
+        source_name = getattr(source, "name", None)
+        if isinstance(source_name, str) and source_name.lower() == table_name.lower():
+            return True
+
+        mapping = getattr(source, "mapping", {}) or {}
+        for key in ("table", "source", "source_table", "primary_table"):
+            value = mapping.get(key)
+            if isinstance(value, str) and value.lower() == table_name.lower():
+                return True
+
+        for value in mapping.values():
+            if isinstance(value, str) and value.lower() == table_name.lower():
+                return True
+
+        labels = getattr(node, "labels", []) or []
+        for label in labels:
+            if isinstance(label, str) and table_name.lower() in label.lower():
+                return True
+
+        return False
+
+    def _relationship_matches_table(
+        self, relationship: "GraphRelationship", table_name: str
+    ) -> bool:
+        """Return True if a relationship is associated with the table."""
+        source = getattr(relationship, "source", None)
+        mapping = getattr(source, "mapping", {}) or {}
+
+        if source:
+            source_name = getattr(source, "name", None)
+            if (
+                isinstance(source_name, str)
+                and source_name.lower() == table_name.lower()
+            ):
+                return True
+
+        for key in (
+            "from_table",
+            "to_table",
+            "join_table",
+            "through_table",
+            "source",
+        ):
+            value = mapping.get(key)
+            if isinstance(value, str) and value.lower() == table_name.lower():
+                return True
+
+        for value in mapping.values():
+            if isinstance(value, str) and value.lower() == table_name.lower():
+                return True
+
+        # Fallback to matching on label names when mapping metadata is unavailable
+        combined_labels = list(relationship.start_node_labels) + list(
+            relationship.end_node_labels
+        )
+        for label in combined_labels:
+            if isinstance(label, str) and table_name.lower() in label.lower():
+                return True
+
+        return False
+
+    def _merge_source_less_elements(
+        self,
+        incremental_model: "GraphModel",
+        full_model: "GraphModel",
+    ) -> None:
+        """Add global elements that don't belong to a specific table."""
+        if not full_model:
+            return
+
+        from .models.graph_models import GraphModel
+
+        anonymous_nodes = [
+            copy.deepcopy(node)
+            for node in full_model.nodes
+            if getattr(node, "source", None) is None
+        ]
+        anonymous_edges = [
+            copy.deepcopy(edge)
+            for edge in full_model.edges
+            if getattr(edge, "source", None) is None
+        ]
+
+        if not anonymous_nodes and not anonymous_edges:
+            return
+
+        placeholder_model = GraphModel(
+            nodes=anonymous_nodes,
+            edges=anonymous_edges,
+            node_indexes=[],
+            node_constraints=[],
+        )
+
+        self._merge_table_model_into_incremental(incremental_model, placeholder_model)
 
     def _modify_table_node_interactively(
         self, table_model: "GraphModel", table_name: str

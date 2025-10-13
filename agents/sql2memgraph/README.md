@@ -40,6 +40,10 @@ The agent will guide you through:
 3. Automatic or incremental migration mode
 4. Complete migration workflow with progress tracking
 
+> **Incremental review:** The LLM now drafts the entire graph model in a single
+> shot and then walks you through table-level changes detected since the last
+> migration. You only need to approve (or tweak) the differences that matter.
+
 You can also preconfigure the workflow using CLI flags or environment variables:
 
 ```bash
