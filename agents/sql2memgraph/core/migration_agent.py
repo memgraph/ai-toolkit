@@ -126,10 +126,6 @@ class SQLToMemgraphAgent:
         if port:
             config_lines.append(f"port: {port}")
 
-        schema = db_config.get("schema")
-        if db_config.get("database_type") == "postgresql" and schema:
-            config_lines.append(f"schema: '{schema}'")
-
         config_body = ",\n    ".join(config_lines)
         return f"""{{
     {config_body}
