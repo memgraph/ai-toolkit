@@ -32,14 +32,14 @@ def run_basic_migration():
 
     try:
         # Setup and validate environment
-        mysql_config, memgraph_config = setup_and_validate_environment()
+        source_db_config, memgraph_config = setup_and_validate_environment()
 
         # Create migration agent in automatic mode (non-interactive)
         agent = SQLToMemgraphAgent(interactive_graph_modeling=False)
 
         # Run migration
         print("Starting automatic migration...")
-        result = agent.migrate(mysql_config, memgraph_config)
+        result = agent.migrate(source_db_config, memgraph_config)
 
         # Display results
         if result["success"]:

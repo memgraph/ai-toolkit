@@ -5,9 +5,10 @@ This module provides a factory pattern for creating appropriate database
 analyzers based on the database type or connection parameters.
 """
 
-from typing import Dict, Any, Type
+from typing import Dict, Type
 from .analyzer import DatabaseAnalyzer
 from .adapters.mysql import MySQLAnalyzer
+from .adapters.postgresql import PostgreSQLAnalyzer
 
 
 class DatabaseAnalyzerFactory:
@@ -16,8 +17,8 @@ class DatabaseAnalyzerFactory:
     # Registry of available analyzers
     _analyzers: Dict[str, Type[DatabaseAnalyzer]] = {
         "mysql": MySQLAnalyzer,
+        "postgresql": PostgreSQLAnalyzer,
         # Future database types can be added here:
-        # "postgresql": PostgreSQLAnalyzer,
         # "duckdb": DuckDBAnalyzer,
         # "oracle": OracleAnalyzer,
         # "sqlserver": SQLServerAnalyzer,
@@ -49,26 +50,24 @@ class DatabaseAnalyzerFactory:
                 f"Supported types: {supported_types}"
             )
 
-        analyzer_class = cls._analyzers[database_type]
-
         # Create analyzer with appropriate parameters based on database type
         if database_type == "mysql":
-            return analyzer_class(
+            return MySQLAnalyzer(
                 host=connection_params.get("host", "localhost"),
                 user=connection_params.get("user", "root"),
                 password=connection_params.get("password", ""),
-                database=connection_params.get("database"),
+                database=connection_params.get("database") or "",
                 port=connection_params.get("port", 3306),
             )
-        # Future database types can be handled here:
-        # elif database_type == "postgresql":
-        #     return analyzer_class(
-        #         host=connection_params.get("host", "localhost"),
-        #         user=connection_params.get("user", "postgres"),
-        #         password=connection_params.get("password", ""),
-        #         database=connection_params.get("database"),
-        #         port=connection_params.get("port", 5432),
-        #     )
+        if database_type == "postgresql":
+            return PostgreSQLAnalyzer(
+                host=connection_params.get("host", "localhost"),
+                user=connection_params.get("user", "postgres"),
+                password=connection_params.get("password", ""),
+                database=connection_params.get("database") or "",
+                port=connection_params.get("port", 5432),
+                schema=connection_params.get("schema", "public"),
+            )
         # elif database_type == "duckdb":
         #     return analyzer_class(
         #         database_path=connection_params.get("database_path"),
@@ -83,7 +82,8 @@ class DatabaseAnalyzerFactory:
         Create a database analyzer from a database URI.
 
         Args:
-            database_uri: Database connection URI (e.g., mysql://user:pass@host/db)
+            database_uri: Database connection URI
+                (e.g., mysql://user:pass@host/db)
 
         Returns:
             DatabaseAnalyzer instance
@@ -102,15 +102,15 @@ class DatabaseAnalyzerFactory:
             # Parse connection parameters based on database type
             if database_type == "mysql":
                 return cls._parse_mysql_uri(rest)
-            # elif database_type == "postgresql":
-            #     return cls._parse_postgresql_uri(rest)
+            if database_type == "postgresql":
+                return cls._parse_postgresql_uri(rest)
             # elif database_type == "duckdb":
             #     return cls._parse_duckdb_uri(rest)
             else:
                 raise ValueError(f"Unsupported database type in URI: {database_type}")
 
         except Exception as e:
-            raise ValueError(f"Failed to parse database URI: {e}")
+            raise ValueError(f"Failed to parse database URI: {e}") from e
 
     @classmethod
     def _parse_mysql_uri(cls, uri_part: str) -> MySQLAnalyzer:
@@ -147,6 +147,49 @@ class DatabaseAnalyzerFactory:
             password=password,
             database=database,
             port=port,
+        )
+
+    @classmethod
+    def _parse_postgresql_uri(cls, uri_part: str) -> PostgreSQLAnalyzer:
+        """Parse PostgreSQL URI and create analyzer."""
+
+        if "@" not in uri_part:
+            raise ValueError("Invalid PostgreSQL URI: missing credentials")
+
+        credentials, host_db = uri_part.split("@", 1)
+
+        if ":" in credentials:
+            user, password = credentials.split(":", 1)
+        else:
+            user = credentials
+            password = ""
+
+        if "/" not in host_db:
+            raise ValueError("Invalid PostgreSQL URI: missing database name")
+
+        host_port, database = host_db.rsplit("/", 1)
+
+        schema = "public"
+        if "?" in database:
+            database, query = database.split("?", 1)
+            for part in query.split("&"):
+                if part.startswith("schema="):
+                    schema = part.split("=", 1)[1] or "public"
+
+        if ":" in host_port:
+            host, port_str = host_port.split(":", 1)
+            port = int(port_str)
+        else:
+            host = host_port
+            port = 5432
+
+        return PostgreSQLAnalyzer(
+            host=host,
+            user=user,
+            password=password,
+            database=database,
+            port=port,
+            schema=schema,
         )
 
     @classmethod

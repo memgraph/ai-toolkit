@@ -10,15 +10,17 @@ import os
 import sys
 import logging
 from dotenv import load_dotenv
-from typing import Dict, Any
 
 # Add the parent directory to the path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.environment import probe_mysql_connection, probe_memgraph_connection
-from utils.config import get_preset_config
-from core.hygm import HyGM
-from langchain_openai import ChatOpenAI
+from utils.environment import (  # noqa: E402
+    probe_source_connection,
+    probe_memgraph_connection,
+    setup_and_validate_environment,
+)
+from core.hygm import HyGM  # noqa: E402
+from langchain_openai import ChatOpenAI  # noqa: E402
 
 # Load environment variables
 load_dotenv()
@@ -1006,38 +1008,46 @@ def test_environment_setup():
     logger.info("Testing environment setup...")
 
     try:
-        # Test configuration loading
-        config = get_preset_config("local_development")
+        source_config, memgraph_config = setup_and_validate_environment()
         logger.info("✅ Configuration loading successful")
 
         # Test database connections (if available)
-        mysql_available = False
+        source_available = False
         memgraph_available = False
 
         try:
-            mysql_result = probe_mysql_connection(config["mysql_config"])
-            mysql_available = mysql_result["success"]
-            logger.info(
-                "MySQL connection: %s",
-                "✅ Available" if mysql_available else "❌ Not available",
-            )
-        except Exception as e:
-            logger.warning("MySQL probe failed: %s", str(e))
+            source_available, source_error = probe_source_connection(source_config)
+            db_label = source_config.get("database_type", "mysql").capitalize()
+            if source_available:
+                logger.info("%s connection: ✅ Available", db_label)
+            else:
+                logger.info(
+                    "%s connection: ❌ Not available (%s)",
+                    db_label,
+                    source_error,
+                )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("Source database probe failed: %s", str(exc))
 
         try:
-            memgraph_result = probe_memgraph_connection(config["memgraph_config"])
-            memgraph_available = memgraph_result["success"]
-            logger.info(
-                "Memgraph connection: %s",
-                "✅ Available" if memgraph_available else "❌ Not available",
+            memgraph_available, memgraph_error = probe_memgraph_connection(
+                memgraph_config
             )
-        except Exception as e:
-            logger.warning("Memgraph probe failed: %s", str(e))
+            if memgraph_available:
+                logger.info("Memgraph connection: ✅ Available")
+            else:
+                logger.info(
+                    "Memgraph connection: ❌ Not available (%s)",
+                    memgraph_error,
+                )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("Memgraph probe failed: %s", str(exc))
 
         # Check OpenAI API key
         openai_available = bool(os.getenv("OPENAI_API_KEY"))
         logger.info(
-            f"OpenAI API key: {'✅ Available' if openai_available else '❌ Not available'}"
+            "OpenAI API key: %s",
+            "✅ Available" if openai_available else "❌ Not available",
         )
 
         if not openai_available:
@@ -1059,12 +1069,12 @@ def test_full_migration_workflow_simulation():
 
     try:
         # Initialize components
-        from core.hygm import GraphModelingStrategy
+        from core.hygm import GraphModelingStrategy, ModelingMode
         from core.migration_agent import SQLToMemgraphAgent
 
         # Create migration agent with deterministic strategy
         agent = SQLToMemgraphAgent(
-            interactive_graph_modeling=False,
+            modeling_mode=ModelingMode.AUTOMATIC,
             graph_modeling_strategy=GraphModelingStrategy.DETERMINISTIC,
         )
 

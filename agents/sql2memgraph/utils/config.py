@@ -9,17 +9,21 @@ import os
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
+from .environment import get_source_db_type
+
 
 @dataclass
 class MigrationConfig:
     """Configuration class for migration settings."""
 
-    # MySQL settings
-    mysql_host: str
-    mysql_user: str
-    mysql_password: str
-    mysql_database: str
-    mysql_port: int
+    # Source database settings
+    source_db_type: str
+    source_db_host: str
+    source_db_user: str
+    source_db_password: str
+    source_db_database: str
+    source_db_port: int
+    source_db_schema: Optional[str]
 
     # Memgraph settings
     memgraph_url: str
@@ -37,21 +41,35 @@ class MigrationConfig:
     @classmethod
     def from_environment(cls) -> "MigrationConfig":
         """Create configuration from environment variables."""
+        db_type = get_source_db_type()
+        if db_type == "postgresql":
+            source_host = os.getenv("POSTGRES_HOST", "localhost")
+            source_user = os.getenv("POSTGRES_USER", "postgres")
+            source_password = os.getenv("POSTGRES_PASSWORD", "")
+            source_database = os.getenv("POSTGRES_DATABASE", "postgres")
+            source_port = int(os.getenv("POSTGRES_PORT", "5432"))
+            source_schema = os.getenv("POSTGRES_SCHEMA", "public")
+        else:
+            source_host = os.getenv("MYSQL_HOST", "host.docker.internal")
+            source_user = os.getenv("MYSQL_USER", "root")
+            source_password = os.getenv("MYSQL_PASSWORD", "")
+            source_database = os.getenv("MYSQL_DATABASE", "sakila")
+            source_port = int(os.getenv("MYSQL_PORT", "3306"))
+            source_schema = None
+
         return cls(
-            # MySQL settings
-            mysql_host=os.getenv("MYSQL_HOST", "host.docker.internal"),
-            mysql_user=os.getenv("MYSQL_USER", "root"),
-            mysql_password=os.getenv("MYSQL_PASSWORD", ""),
-            mysql_database=os.getenv("MYSQL_DATABASE", "sakila"),
-            mysql_port=int(os.getenv("MYSQL_PORT", "3306")),
-            # Memgraph settings
+            source_db_type=db_type,
+            source_db_host=source_host,
+            source_db_user=source_user,
+            source_db_password=source_password,
+            source_db_database=source_database,
+            source_db_port=source_port,
+            source_db_schema=source_schema,
             memgraph_url=os.getenv("MEMGRAPH_URL", "bolt://localhost:7687"),
             memgraph_username=os.getenv("MEMGRAPH_USERNAME", ""),
             memgraph_password=os.getenv("MEMGRAPH_PASSWORD", ""),
             memgraph_database=os.getenv("MEMGRAPH_DATABASE", "memgraph"),
-            # OpenAI settings
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
-            # Migration settings
             relationship_naming_strategy=os.getenv(
                 "RELATIONSHIP_NAMING_STRATEGY", "table_based"
             ),
@@ -61,15 +79,19 @@ class MigrationConfig:
             == "true",
         )
 
-    def to_mysql_config(self) -> Dict[str, str]:
-        """Convert to MySQL configuration dictionary."""
-        return {
-            "host": self.mysql_host,
-            "user": self.mysql_user,
-            "password": self.mysql_password,
-            "database": self.mysql_database,
-            "port": self.mysql_port,
+    def to_source_db_config(self) -> Dict[str, Any]:
+        """Convert to a dictionary suitable for analyzer creation."""
+        config: Dict[str, Any] = {
+            "database_type": self.source_db_type,
+            "host": self.source_db_host,
+            "user": self.source_db_user,
+            "password": self.source_db_password,
+            "database": self.source_db_database,
+            "port": self.source_db_port,
         }
+        if self.source_db_type == "postgresql" and self.source_db_schema:
+            config["schema"] = self.source_db_schema
+        return config
 
     def to_memgraph_config(self) -> Dict[str, str]:
         """Convert to Memgraph configuration dictionary."""
@@ -87,27 +109,25 @@ class MigrationConfig:
         Returns:
             Tuple of (is_valid, validation_errors)
         """
-        errors = []
+        errors: list[str] = []
 
-        # Required fields
         if not self.openai_api_key:
             errors.append("OPENAI_API_KEY is required")
 
-        if not self.mysql_password:
-            errors.append("MYSQL_PASSWORD is required")
+        if self.source_db_type == "postgresql":
+            if not 1 <= self.source_db_port <= 65535:
+                errors.append(f"Invalid PostgreSQL port: {self.source_db_port}")
+        else:
+            if not 1 <= self.source_db_port <= 65535:
+                errors.append(f"Invalid MySQL port: {self.source_db_port}")
 
-        # Validate strategy
         valid_strategies = ["table_based", "llm"]
         if self.relationship_naming_strategy not in valid_strategies:
             errors.append(
-                f"Invalid relationship_naming_strategy: "
-                f"{self.relationship_naming_strategy}. "
-                f"Must be one of: {valid_strategies}"
+                "Invalid relationship_naming_strategy: "
+                f"{self.relationship_naming_strategy}. Must be one of: "
+                f"{valid_strategies}"
             )
-
-        # Validate port
-        if not 1 <= self.mysql_port <= 65535:
-            errors.append(f"Invalid MySQL port: {self.mysql_port}")
 
         return len(errors) == 0, errors
 
@@ -124,27 +144,30 @@ def get_preset_config(preset_name: str) -> Optional[Dict[str, Any]]:
     """
     presets = {
         "local_development": {
-            "mysql_host": "localhost",
-            "mysql_port": 3306,
-            "mysql_user": "root",
-            "mysql_database": "sakila",
+            "source_db_type": "mysql",
+            "source_db_host": "localhost",
+            "source_db_port": 3306,
+            "source_db_user": "root",
+            "source_db_database": "sakila",
             "memgraph_url": "bolt://localhost:7687",
             "relationship_naming_strategy": "table_based",
             "interactive_table_selection": True,
         },
         "docker_development": {
-            "mysql_host": "host.docker.internal",
-            "mysql_port": 3306,
-            "mysql_user": "root",
-            "mysql_database": "sakila",
+            "source_db_type": "mysql",
+            "source_db_host": "host.docker.internal",
+            "source_db_port": 3306,
+            "source_db_user": "root",
+            "source_db_database": "sakila",
             "memgraph_url": "bolt://localhost:7687",
             "relationship_naming_strategy": "table_based",
             "interactive_table_selection": True,
         },
         "production": {
-            "mysql_host": "mysql-server",
-            "mysql_port": 3306,
-            "mysql_user": "migration_user",
+            "source_db_type": "mysql",
+            "source_db_host": "mysql-server",
+            "source_db_port": 3306,
+            "source_db_user": "migration_user",
             "memgraph_url": "bolt://memgraph-server:7687",
             "relationship_naming_strategy": "llm",
             "interactive_table_selection": False,
@@ -173,17 +196,16 @@ def merge_config_with_preset(
 
     config_dict = config.__dict__.copy()
 
-    # Apply preset values only for empty/default values
     for key, preset_value in preset.items():
-        if hasattr(config, key):
-            current_value = getattr(config, key)
-            # Apply preset if current value is empty or default
-            if (
-                not current_value
-                or (key == "mysql_host" and current_value == "host.docker.internal")
-                or (key == "memgraph_url" and current_value == "bolt://localhost:7687")
-            ):
-                config_dict[key] = preset_value
+        if key not in config_dict:
+            continue
+        current_value = config_dict[key]
+        if (
+            not current_value
+            or (key == "source_db_host" and current_value == "host.docker.internal")
+            or (key == "memgraph_url" and current_value == "bolt://localhost:7687")
+        ):
+            config_dict[key] = preset_value
 
     return MigrationConfig(**config_dict)
 
@@ -192,8 +214,15 @@ def print_config_summary(config: MigrationConfig) -> None:
     """Print a summary of the configuration."""
     print("🔧 Configuration Summary:")
     print("-" * 30)
-    print(f"MySQL: {config.mysql_user}@{config.mysql_host}:{config.mysql_port}")
-    print(f"Database: {config.mysql_database}")
+    source_details = (
+        f"Source DB: {config.source_db_type}://"
+        f"{config.source_db_user}@{config.source_db_host}:"
+        f"{config.source_db_port}"
+    )
+    print(source_details)
+    print(f"Database: {config.source_db_database}")
+    if config.source_db_type == "postgresql" and config.source_db_schema:
+        print(f"Schema: {config.source_db_schema}")
     print(f"Memgraph: {config.memgraph_url}")
     print(f"Strategy: {config.relationship_naming_strategy}")
     print(f"Interactive: {config.interactive_table_selection}")
