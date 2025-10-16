@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 class MigrationState(TypedDict):
     """State for the migration workflow."""
 
-    source_db_config: Dict[str, str]
+    source_db_config: Dict[str, Any]
     memgraph_config: Optional[Dict[str, str]]
     database_structure: Dict[str, Any]
     graph_model: Any  # HyGM GraphModel object
@@ -105,7 +105,7 @@ class SQLToMemgraphAgent:
         # Build the workflow graph
         self.workflow = self._build_workflow()
 
-    def _get_db_config_for_migrate(self, db_config: Dict[str, str]) -> str:
+    def _get_db_config_for_migrate(self, db_config: Dict[str, Any]) -> str:
         """
         Convert database config for use with migrate module in Memgraph.
 
@@ -115,12 +115,35 @@ class SQLToMemgraphAgent:
         if migrate_host == "localhost" or migrate_host == "127.0.0.1":
             migrate_host = "host.docker.internal"
 
+        config_lines = [
+            f"user: '{db_config['user']}'",
+            f"password: '{db_config['password']}'",
+            f"host: '{migrate_host}'",
+            f"database: '{db_config['database']}'",
+        ]
+
+        port = db_config.get("port")
+        if port:
+            config_lines.append(f"port: {port}")
+
+        config_body = ",\n    ".join(config_lines)
         return f"""{{
-            user: '{db_config["user"]}',
-            password: '{db_config["password"]}',
-            host: '{migrate_host}',
-            database: '{db_config["database"]}'
-        }}"""
+    {config_body}
+}}"""
+
+    def _qualify_table_name(self, table_name: str, db_config: Dict[str, Any]) -> str:
+        """Add schema qualification when needed for the source database."""
+
+        if not table_name:
+            return table_name
+
+        db_type = db_config.get("database_type", "mysql")
+        schema = db_config.get("schema")
+
+        if db_type == "postgresql" and schema and "." not in table_name:
+            return f"{schema}.{table_name}"
+
+        return table_name
 
     def _compute_source_signature(
         self,
@@ -442,8 +465,12 @@ class SQLToMemgraphAgent:
 
         try:
             # Initialize database analyzer to test connection
+            source_config = state["source_db_config"].copy()
+            db_type = source_config.pop("database_type", "mysql")
+
             database_analyzer = DatabaseAnalyzerFactory.create_analyzer(
-                database_type="mysql", **state["source_db_config"]
+                database_type=db_type,
+                **source_config,
             )
 
             if not database_analyzer.connect():
@@ -799,6 +826,9 @@ class SQLToMemgraphAgent:
 
             queries: List[str] = []
             db_config_str = self._get_db_config_for_migrate(source_db_config)
+            db_type = source_db_config.get("database_type", "mysql")
+            procedure_name = f"migrate.{db_type}"
+            logger.info("Using %s procedure for data ingestion", procedure_name)
 
             for node_def in graph_model.nodes:
                 node_key = self._node_key(node_def)
@@ -807,6 +837,9 @@ class SQLToMemgraphAgent:
 
                 source = getattr(node_def, "source", None)
                 source_table = getattr(source, "name", None) or "unknown"
+                qualified_table = self._qualify_table_name(
+                    source_table, source_db_config
+                )
                 node_label = node_def.primary_label
 
                 properties = [
@@ -840,8 +873,8 @@ class SQLToMemgraphAgent:
                 properties_str = ", ".join(properties)
                 node_query = f"""
 // Merge {node_label} nodes from {source_table} table (HyGM optimized)
-CALL migrate.mysql(
-    'SELECT {properties_str} FROM {source_table}',
+CALL {procedure_name}(
+    'SELECT {properties_str} FROM {qualified_table}',
     {db_config_str}
 )
 YIELD row
@@ -861,7 +894,10 @@ SET n += row;"""
                     continue
 
                 rel_query = self._generate_hygm_relationship_query(
-                    rel_def, db_config_str
+                    rel_def,
+                    db_config_str,
+                    source_db_config,
+                    procedure_name,
                 )
                 if rel_query:
                     queries.append(rel_query)
@@ -888,7 +924,9 @@ SET n += row;"""
     def _generate_hygm_relationship_query(
         self,
         rel_def,
-        mysql_config_str: str,
+        db_config_str: str,
+        source_db_config: Dict[str, Any],
+        procedure_name: str,
     ) -> str:
         """Create relationship query from HyGM definition."""
 
@@ -905,11 +943,21 @@ SET n += row;"""
             # Determine relationship type from HyGM source
             if rel_def.source.type == "many_to_many":
                 return self._generate_many_to_many_hygm_query(
-                    rel_name, rel_def, source_info, mysql_config_str
+                    rel_name,
+                    rel_def,
+                    source_info,
+                    db_config_str,
+                    source_db_config,
+                    procedure_name,
                 )
             elif rel_def.source.type in ["table", "foreign_key"]:
                 return self._generate_one_to_many_hygm_query(
-                    rel_name, rel_def, source_info, mysql_config_str
+                    rel_name,
+                    rel_def,
+                    source_info,
+                    db_config_str,
+                    source_db_config,
+                    procedure_name,
                 )
             else:
                 logger.warning(
@@ -931,7 +979,9 @@ SET n += row;"""
         rel_name: str,
         rel_def,
         source_info: Dict[str, Any],
-        mysql_config_str: str,
+        db_config_str: str,
+        source_db_config: Dict[str, Any],
+        procedure_name: str,
     ) -> str:
         """Generate one-to-many relationship query from HyGM mapping."""
 
@@ -966,17 +1016,19 @@ SET n += row;"""
         )
         to_label = rel_def.end_node_labels[0] if rel_def.end_node_labels else to_table
 
+        qualified_from_table = self._qualify_table_name(from_table, source_db_config)
+
         select_sql = (
             f"SELECT {from_pk}, {fk_column} "
-            f"FROM {from_table} "
+            f"FROM {qualified_from_table} "
             f"WHERE {fk_column} IS NOT NULL"
         )
 
         query = f"""
 // Merge {rel_name} relationships (HyGM: {from_label} -> {to_label})
-CALL migrate.mysql(
+CALL {procedure_name}(
     '{select_sql}',
-    {mysql_config_str}
+    {db_config_str}
 )
 YIELD row
 MATCH (from_node:{from_label} {{{from_pk}: row.{from_pk}}})
@@ -990,7 +1042,9 @@ MERGE (from_node)-[:{rel_name}]->(to_node);"""
         rel_name: str,
         rel_def,
         source_info: Dict[str, Any],
-        mysql_config_str: str,
+        db_config_str: str,
+        source_db_config: Dict[str, Any],
+        procedure_name: str,
     ) -> str:
         """Generate many-to-many relationship query from HyGM mapping."""
 
@@ -1016,14 +1070,19 @@ MERGE (from_node)-[:{rel_name}]->(to_node);"""
         )
         to_label = rel_def.end_node_labels[0] if rel_def.end_node_labels else to_table
 
-        select_sql = f"SELECT {from_fk}, {to_fk} " f"FROM {join_table}"
+        join_table_name = cast(str, join_table)
+        qualified_join_table = self._qualify_table_name(
+            join_table_name, source_db_config
+        )
+
+        select_sql = f"SELECT {from_fk}, {to_fk} FROM {qualified_join_table}"
 
         query = f"""
 // Merge {rel_name} relationships via {join_table}
 // (HyGM: {from_label} <-> {to_label})
-CALL migrate.mysql(
+CALL {procedure_name}(
     '{select_sql}',
-    {mysql_config_str}
+    {db_config_str}
 )
 YIELD row
 MATCH (from:{from_label} {{{from_pk}: row.{from_fk}}})

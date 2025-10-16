@@ -1,5 +1,5 @@
 """
-Utilities package for the MySQL to Memgraph migration agent.
+Utilities package for the SQL to Memgraph migration agent.
 
 This package contains reusable utility modules for environment management,
 database probing, configuration management, and other common functionality.
@@ -12,9 +12,9 @@ from .environment import (
     get_required_environment_variables,
     get_optional_environment_variables,
     validate_environment_variables,
-    get_mysql_config,
+    get_source_db_config,
     get_memgraph_config,
-    probe_mysql_connection,
+    probe_source_connection,
     probe_memgraph_connection,
     validate_openai_api_key,
     setup_and_validate_environment,
@@ -39,9 +39,9 @@ __all__ = [
     "get_required_environment_variables",
     "get_optional_environment_variables",
     "validate_environment_variables",
-    "get_mysql_config",
+    "get_source_db_config",
     "get_memgraph_config",
-    "probe_mysql_connection",
+    "probe_source_connection",
     "probe_memgraph_connection",
     "validate_openai_api_key",
     "setup_and_validate_environment",

@@ -62,7 +62,18 @@ uv run main --mode incremental --strategy llm --meta-graph reset --log-level DEB
 Set up your environment variables in `.env`:
 
 ```bash
-# MySQL Database (primary source)
+# Select source database (mysql or postgresql)
+SOURCE_DB_TYPE=postgresql
+
+# PostgreSQL Database (used when SOURCE_DB_TYPE=postgresql)
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DATABASE=pagila
+POSTGRES_USER=username
+POSTGRES_PASSWORD=password
+POSTGRES_SCHEMA=public
+
+# MySQL Database (used when SOURCE_DB_TYPE=mysql)
 MYSQL_HOST=localhost
 MYSQL_PORT=3306
 MYSQL_DATABASE=sakila
@@ -84,6 +95,8 @@ SQL2MG_STRATEGY=deterministic
 SQL2MG_META_POLICY=auto
 SQL2MG_LOG_LEVEL=INFO
 ```
+
+When switching `SOURCE_DB_TYPE` remember to update the matching credential block and rerun `uv sync` so dependencies like `psycopg2-binary` are installed for PostgreSQL support.
 
 Make sure that Memgraph is started with the `--schema-info-enabled=true`, since agent uses the schema information from Memgraph `SHOW SCHEMA INFO`.
 
