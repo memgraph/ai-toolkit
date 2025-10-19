@@ -6,5 +6,4 @@ This package provides a wrapper around LightRAG that uses Memgraph as the graph 
 
 from .core import MemgraphLightRAGWrapper
 
-__version__ = "0.1.0"
 __all__ = ["MemgraphLightRAGWrapper"]
