@@ -21,7 +21,7 @@ from agents.core.hygm import ModelingMode
 from agents.utils import setup_and_validate_environment
 
 # Setup environment
-source_db_config, memgraph_config = setup_and_validate_environment()
+mysql_config, memgraph_config = setup_and_validate_environment()
 
 # Create migration agent
 agent = SQLToMemgraphAgent(modeling_mode=ModelingMode.AUTOMATIC)
