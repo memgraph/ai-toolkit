@@ -27,7 +27,7 @@ mysql_config, memgraph_config = setup_and_validate_environment()
 agent = SQLToMemgraphAgent(modeling_mode=ModelingMode.AUTOMATIC)
 
 # Run migration
-result = agent.migrate(mysql_config, memgraph_config)
+result = agent.migrate(source_db_config, memgraph_config)
 ```
 """
 
