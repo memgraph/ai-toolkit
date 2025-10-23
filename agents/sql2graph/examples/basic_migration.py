@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Basic SQL to Memgraph migration example.
+Basic SQL to graph migration example.
 
 This example demonstrates how to use the migration agent to migrate
-a SQL database to Memgraph with minimal configuration.
+a SQL database to a graph database with minimal configuration.
 """
 
 import logging
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 def run_basic_migration():
     """Run a basic migration with automatic graph modeling."""
-    print("🚀 Basic SQL to Memgraph Migration Example")
+    print("🚀 Basic SQL to Graph Migration Example")
     print("=" * 50)
 
     try:

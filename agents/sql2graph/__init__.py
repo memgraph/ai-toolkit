@@ -1,8 +1,8 @@
 """
-SQL Database to Memgraph Migration Agent
+SQL Database to Graph Migration Agent
 
 This package provides intelligent database migration capabilities from SQL databases
-to Memgraph with LLM-powered graph modeling and analysis.
+to graph databases with LLM-powered graph modeling and analysis.
 
 ## Package Structure
 

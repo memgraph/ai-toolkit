@@ -2,7 +2,7 @@
 Environment and Database Configuration Utilities
 
 This module handles environment variable validation, database connection
-probing, and configuration setup for the SQL to Memgraph migration agent.
+probing, and configuration setup for the SQL to graph migration agent.
 """
 
 import os

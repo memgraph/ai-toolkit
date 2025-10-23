@@ -18,6 +18,6 @@ members = [
     "memgraph-toolbox/",
     "integrations/langchain-memgraph/",
     "integrations/mcp-memgraph/",
-    "integrations/agents",
     "integrations/lightrag-memgraph",
+    "agents/sql2graph/",
 ]

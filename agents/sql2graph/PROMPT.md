@@ -1,8 +1,8 @@
-# SQL → Memgraph Migration Agent Prompt
+# SQL → Graph Migration Agent Prompt
 
 ## TL;DR
 
-You are working inside the `agents/sql2memgraph` package, a UV-managed Python project that turns relational schemas (MySQL/PostgreSQL) into Memgraph graph schemas and data. The primary entry point is `main.py`, which wires configuration, environment validation, database analyzers, and the HyGM graph-modeling subsystem. Changes usually touch:
+You are working inside the `agents/sql2graph` package, a UV-managed Python project that turns relational schemas (MySQL/PostgreSQL) into graph schemas and data. The primary entry point is `main.py`, which wires configuration, environment validation, database analyzers, and the HyGM graph-modeling subsystem. Changes usually touch:
 
 - `core/` — Orchestrates the migration workflow (`migration_agent.py`) and HyGM graph modeling (`hygm/`).
 - `database/` — Connectors and analyzers for the source RDBMSs.
@@ -25,7 +25,7 @@ Always maintain the CLI experience (`main.py`) and respect the line-length < 79 
   - `INCREMENTAL` – table-by-table confirmation flow with an optional refinement
     loop after processing all tables.
 - **GraphModelingStrategy**: `DETERMINISTIC` (rule-based) and `LLM_POWERED` (needs an LLM+API key).
-- **SQLToMemgraphAgent** (`core/migration_agent.py`) coordinates schema analysis, HyGM modeling, query generation, execution, and validation.
+- **SQLToMemgraphAgent** (`core/migration_agent.py`) coordinates schema analysis, HyGM modeling, query generation, execution, and validation (note: class name retained for compatibility).
 - **Database analyzers** in `database/` introspect MySQL/PostgreSQL schemas and emit a normalized metadata structure consumed by HyGM.
 - **Query generation** in `query_generation/` converts the graph model + metadata into Cypher migrations, indexes, and constraints.
 - **Database data interfaces** in `database/models.py` define the canonical `TableInfo`, `ColumnInfo`, `RelationshipInfo`, and `DatabaseStructure` data classes. These objects flow from analyzers into HyGM via the `to_hygm_format()` helpers, ensuring consistent schema metadata for every modeling mode.

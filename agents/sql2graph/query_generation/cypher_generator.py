@@ -1,5 +1,5 @@
 """
-Cypher query generation utilities for SQL to Memgraph migration.
+Cypher query generation utilities for SQL to graph migration.
 Provides label naming, relationship naming, and index generation.
 """
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class CypherGenerator:
-    """Utilities for Cypher query generation in SQL to Memgraph migration."""
+    """Utilities for Cypher query generation in SQL to graph migration."""
 
     def __init__(self):
         """Initialize the Cypher query generator."""

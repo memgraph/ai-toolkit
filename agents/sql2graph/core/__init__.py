@@ -1,5 +1,5 @@
 """
-Core business logic for SQL to Memgraph migration.
+Core business logic for SQL to graph migration.
 
 This package contains the main migration orchestration and graph modeling
 logic.

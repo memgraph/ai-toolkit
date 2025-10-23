@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # flake8: noqa
 """
-SQL Database to Memgraph Migration Agent - Main Entry Point
+SQL Database to Graph Migration Agent - Main Entry Point
 
-This is the main entry point for the SQL database to Memgraph migration agent.
+This is the main entry point for the SQL database to graph migration agent.
 Run with: uv run main.py
 """
 
@@ -71,7 +71,7 @@ def parse_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     env_log_level = _upper_env("SQL2MG_LOG_LEVEL")
 
     parser = argparse.ArgumentParser(
-        description="SQL database to Memgraph migration agent",
+        description="SQL database to graph migration agent",
     )
 
     parser.add_argument(
@@ -153,7 +153,7 @@ def _resolve_strategy(cli_strategy: Optional[str]) -> Optional[GraphModelingStra
 def print_banner() -> None:
     """Print application banner."""
     print("=" * 60)
-    print("🚀 SQL Database to Memgraph Migration Agent")
+    print("🚀 SQL Database to Graph Migration Agent")
     print("=" * 60)
     print("Intelligent database migration with LLM-powered analysis")
     print()
@@ -197,9 +197,9 @@ def get_graph_modeling_strategy() -> GraphModelingStrategy:
     """
     print("Graph modeling strategy:")
     print()
-    print("  1. Deterministic - Rule-based graph model creation (predictable)")
+    print("  1. Deterministic - Rule-based graph model creation ")
     print()
-    print("  2. AI-Powered - LLM-based graph model creation (non-deterministic)")
+    print("  2. AI - LLM-based graph model creation (full HyGM capabilities)")
     print()
     print()
 

@@ -1,5 +1,5 @@
 """
-Schema transformation utilities for SQL to Memgraph migration.
+Schema transformation utilities for SQL to graph migration.
 Provides utilities for transforming SQL schema elements to graph equivalents.
 """
 
