@@ -555,9 +555,9 @@ class HyGM:
     def _get_incremental_choice(self, table_name: str) -> str:
         """Get user choice for incremental modeling."""
         print(f"\nWhat would you like to do with table '{table_name}'?")
-        print("1. Accept - Add this node to the graph model")
+        print("1. Accept - Add proposed changes to the graph model")
         print("2. Skip - Skip this table for now")
-        print("3. Modify - Modify the proposed node before adding")
+        print("3. Modify - Modify the proposed graph entities before adding")
         print("4. Finish - Stop incremental modeling and return current model")
 
         choices = {

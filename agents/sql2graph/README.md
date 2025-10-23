@@ -1,6 +1,6 @@
-# SQL Database to Memgraph Migration Agent
+# SQL Database to Graph Migration Agent
 
-Intelligent database migration agent that transforms SQL databases (MySQL, PostgreSQL) into graph databases using Memgraph, powered by LLM analysis and LangGraph workflows.
+Intelligent database migration agent that transforms SQL databases (MySQL, PostgreSQL) into graph databases, powered by LLM analysis and LangGraph workflows.
 
 ## Overview
 

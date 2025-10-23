@@ -1,9 +1,9 @@
 # flake8: noqa
 """
-SQL Database to Memgraph Migration Agent
+SQL Database to Graph Migration Agent
 
 This agent analyzes SQL databases, generates appropriate Cypher queries,
-and migrates data to Memgraph using LangGraph workflow.
+and migrates data to graph databases using LangGraph workflow.
 """
 
 import hashlib
@@ -62,7 +62,7 @@ class MigrationState(TypedDict):
 
 
 class SQLToMemgraphAgent:
-    """Agent for migrating SQL databases to Memgraph."""
+    """Agent for migrating SQL databases to graph databases."""
 
     def __init__(
         self,
@@ -1218,7 +1218,7 @@ MERGE (from)-[:{rel_name}]->(to);"""
         memgraph_config: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """Execute the complete migration workflow."""
-        logger.info("Starting SQL database to Memgraph migration...")
+        logger.info("Starting SQL database to graph migration...")
 
         # Initialize state
         initial_state = MigrationState(

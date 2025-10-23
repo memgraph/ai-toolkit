@@ -1,5 +1,5 @@
 """
-Utilities package for the SQL to Memgraph migration agent.
+Utilities package for the SQL to graph migration agent.
 
 This package contains reusable utility modules for environment management,
 database probing, configuration management, and other common functionality.
