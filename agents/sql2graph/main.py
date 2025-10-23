@@ -193,6 +193,7 @@ def get_graph_modeling_mode() -> ModelingMode:
     print("Graph modeling mode:")
     print()
     print("  1. Automatic     - Generate graph model without prompts")
+    print()
     print("  2. Incremental   - Review each table with end-of-session refinement")
     print()
 
