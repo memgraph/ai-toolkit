@@ -2,10 +2,12 @@
 LLM-powered modeling strategy for Hypothetical Graph Modeling (HyGM).
 
 This strategy uses AI/LLM models to create sophisticated graph models.
+Supports multiple providers: OpenAI, Anthropic, Gemini via LangChain.
 """
 
 import logging
 from typing import Dict, Any, Optional, List, TYPE_CHECKING
+from langchain_core.language_models import BaseChatModel
 
 if TYPE_CHECKING:
     from core.hygm.models.graph_models import GraphModel
@@ -19,16 +21,23 @@ logger = logging.getLogger(__name__)
 
 
 class LLMStrategy(BaseModelingStrategy):
-    """LLM-powered graph modeling strategy using AI for intelligent mapping."""
+    """
+    LLM-powered graph modeling strategy using AI for intelligent mapping.
+
+    Uses LangChain's BaseChatModel interface to support multiple providers.
+    """
 
     def __init__(
-        self, llm_client=None, model_name: str = "gpt-4", temperature: float = 0.1
+        self,
+        llm_client: Optional[BaseChatModel] = None,
+        model_name: str = "gpt-4o-mini",
+        temperature: float = 0.1,
     ):
         """
         Initialize LLM strategy.
 
         Args:
-            llm_client: OpenAI client instance
+            llm_client: LangChain chat model (ChatOpenAI/ChatAnthropic/ChatGoogleGenerativeAI)
             model_name: Model to use for graph generation
             temperature: Temperature for generation (lower=more deterministic)
         """
@@ -96,24 +105,21 @@ class LLMStrategy(BaseModelingStrategy):
                 database_structure, domain_context, user_operation_context
             )
 
-            # Call LLM with LangChain's structured output support
-            # LangChain's ChatOpenAI supports structured output via structured_output()
+            # Call LLM with unified client interface
             if not self.llm_client:
                 raise ValueError("No LLM client available")
-
-            # Create structured output chain using the Pydantic model
-            structured_llm = self.llm_client.with_structured_output(LLMGraphModel)
 
             # Create system message for graph modeling
             system_message = (
                 "You are an expert database architect specializing "
                 "in converting relational schemas to graph models. "
-                "Analyze the provided database structure and create an optimal "
-                "graph model that preserves relationships and enables efficient "
-                "querying."
+                "Analyze the provided database structure and create "
+                "an optimal graph model that preserves relationships "
+                "and enables efficient querying."
             )
 
-            # Generate the structured output directly as LLMGraphModel
+            # Generate the structured output using LangChain's with_structured_output
+            structured_llm = self.llm_client.with_structured_output(LLMGraphModel)
             llm_model = structured_llm.invoke(
                 [
                     {"role": "system", "content": system_message},
