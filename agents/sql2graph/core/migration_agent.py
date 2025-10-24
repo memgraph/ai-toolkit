@@ -9,6 +9,7 @@ and migrates data to graph databases using LangGraph workflow.
 import hashlib
 import json
 import logging
+import os
 import sys
 from typing import Dict, List, Any, TypedDict, Optional, cast
 from pathlib import Path
@@ -19,8 +20,10 @@ sys.path.append(str(Path(__file__).parent.parent / "langchain-memgraph"))
 sys.path.append(str(Path(__file__).parent.parent))  # Add agents root to path
 
 from langgraph.graph import StateGraph, END  # noqa: E402
-from langchain_openai import ChatOpenAI  # noqa: E402
 from langchain_core.runnables.config import RunnableConfig  # noqa: E402
+from langchain_openai import ChatOpenAI  # noqa: E402
+from langchain_anthropic import ChatAnthropic  # noqa: E402
+from langchain_google_genai import ChatGoogleGenerativeAI  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
 from query_generation.cypher_generator import CypherGenerator  # noqa: E402
@@ -71,18 +74,79 @@ class SQLToMemgraphAgent:
             GraphModelingStrategy.DETERMINISTIC
         ),
         meta_graph_policy: str = "auto",
+        llm_provider: Optional[str] = None,
+        llm_model: Optional[str] = None,
     ):
         """Initialize the migration agent.
 
         Args:
             modeling_mode: Graph modeling mode
                 - AUTOMATIC: Generate graph model automatically (default)
-                - INCREMENTAL: Review tables and refine the model interactively
+                - INCREMENTAL: Review tables and refine interactively
             graph_modeling_strategy: Strategy for graph model creation
                 - DETERMINISTIC: Rule-based graph creation (default)
                 - LLM_POWERED: LLM generates the graph model
+            meta_graph_policy: Meta graph handling policy
+            llm_provider: LLM provider name (openai/anthropic/gemini)
+            llm_model: Specific model name to use
         """
-        self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
+        # Initialize LLM client if using LLM strategy
+        self.llm = None
+        if graph_modeling_strategy == GraphModelingStrategy.LLM_POWERED:
+            # Auto-detect provider from environment if not specified
+            if llm_provider is None:
+                llm_provider = os.getenv("LLM_PROVIDER")
+                if llm_provider:
+                    llm_provider = llm_provider.lower()
+                    logger.info("Using LLM provider from environment: %s", llm_provider)
+                else:
+                    # Auto-detect based on available API keys
+                    if os.getenv("OPENAI_API_KEY"):
+                        llm_provider = "openai"
+                        logger.info("Auto-detected LLM provider: OpenAI")
+                    elif os.getenv("ANTHROPIC_API_KEY"):
+                        llm_provider = "anthropic"
+                        logger.info("Auto-detected LLM provider: Anthropic")
+                    elif os.getenv("GOOGLE_API_KEY"):
+                        llm_provider = "gemini"
+                        logger.info("Auto-detected LLM provider: Gemini")
+                    else:
+                        raise ValueError(
+                            "No LLM provider configured. Please set one of: "
+                            "OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY, "
+                            "or set LLM_PROVIDER environment variable"
+                        )
+
+            # Create LangChain chat model based on provider
+            provider_lower = llm_provider.lower()
+
+            if provider_lower == "openai":
+                model = llm_model or os.getenv("LLM_MODEL", "gpt-4o")
+                self.llm = ChatOpenAI(model=model, temperature=0.1)
+                logger.info("Initialized OpenAI client with model: %s", model)
+
+            elif provider_lower == "anthropic":
+                model = llm_model or os.getenv(
+                    "LLM_MODEL", "claude-3-5-sonnet-20241022"
+                )
+                self.llm = ChatAnthropic(model=model, temperature=0.1)
+                logger.info("Initialized Anthropic client with model: %s", model)
+
+            elif provider_lower == "gemini":
+                model = llm_model or os.getenv("LLM_MODEL", "gemini-2.0-flash-exp")
+                self.llm = ChatGoogleGenerativeAI(
+                    model=model,
+                    temperature=0.1,
+                    google_api_key=os.getenv("GOOGLE_API_KEY"),
+                )
+                logger.info("Initialized Gemini client with model: %s", model)
+
+            else:
+                raise ValueError(
+                    f"Unsupported LLM provider: {llm_provider}. "
+                    "Supported providers: openai, anthropic, gemini"
+                )
+
         self.database_analyzer = None
         self.cypher_generator = CypherGenerator()
         self.modeling_mode = modeling_mode

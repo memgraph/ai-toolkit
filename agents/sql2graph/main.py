@@ -51,6 +51,8 @@ META_GRAPH_POLICIES = {"auto", "skip", "reset"}
 
 LOG_LEVEL_CHOICES = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"]
 
+PROVIDER_CHOICES = ["openai", "anthropic", "gemini"]
+
 
 def _lower_env(name: str) -> Optional[str]:
     value = os.getenv(name)
@@ -69,6 +71,8 @@ def parse_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     env_strategy = _lower_env("SQL2MG_STRATEGY")
     env_meta_policy = _lower_env("SQL2MG_META_POLICY")
     env_log_level = _upper_env("SQL2MG_LOG_LEVEL")
+    env_provider = _lower_env("LLM_PROVIDER")
+    env_model = os.getenv("LLM_MODEL")
 
     parser = argparse.ArgumentParser(
         description="SQL database to graph migration agent",
@@ -88,6 +92,26 @@ def parse_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default=env_strategy,
         type=str.lower,
         help="Graph modeling strategy (deterministic|llm). Overrides SQL2MG_STRATEGY.",
+    )
+
+    parser.add_argument(
+        "--provider",
+        choices=PROVIDER_CHOICES,
+        default=env_provider,
+        type=str.lower,
+        help=(
+            "LLM provider (openai|anthropic|gemini). "
+            "Overrides LLM_PROVIDER. Auto-detects if not specified."
+        ),
+    )
+
+    parser.add_argument(
+        "--model",
+        default=env_model,
+        help=(
+            "LLM model name. Overrides LLM_MODEL. "
+            "Uses provider default if not specified."
+        ),
     )
 
     parser.add_argument(
@@ -169,6 +193,7 @@ def get_graph_modeling_mode() -> ModelingMode:
     print("Graph modeling mode:")
     print()
     print("  1. Automatic     - Generate graph model without prompts")
+    print()
     print("  2. Incremental   - Review each table with end-of-session refinement")
     print()
 
@@ -227,6 +252,8 @@ def run_migration(
     modeling_mode: ModelingMode,
     graph_modeling_strategy: GraphModelingStrategy,
     meta_graph_policy: str,
+    llm_provider: Optional[str] = None,
+    llm_model: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Run the migration with the specified configuration.
@@ -235,8 +262,10 @@ def run_migration(
         source_db_config: Source database connection configuration
         memgraph_config: Memgraph connection configuration
         modeling_mode: Graph modeling mode (automatic or incremental)
-    graph_modeling_strategy: Strategy for graph model creation
-    meta_graph_policy: Meta graph handling policy (auto|skip|reset)
+        graph_modeling_strategy: Strategy for graph model creation
+        meta_graph_policy: Meta graph handling policy (auto|skip|reset)
+        llm_provider: LLM provider (openai|anthropic|gemini)
+        llm_model: Specific LLM model name
 
     Returns:
         Migration result dictionary
@@ -249,6 +278,11 @@ def run_migration(
         mode_name = "automatic"
     strategy_name = graph_modeling_strategy.value
     print(f"🎯 Graph modeling: {mode_name} with {strategy_name} strategy")
+
+    if llm_provider:
+        print(f"🤖 LLM Provider: {llm_provider}")
+    if llm_model:
+        print(f"🎯 Model: {llm_model}")
     print()
 
     # Create agent with graph modeling settings
@@ -256,6 +290,8 @@ def run_migration(
         modeling_mode=modeling_mode,
         graph_modeling_strategy=graph_modeling_strategy,
         meta_graph_policy=meta_graph_policy,
+        llm_provider=llm_provider,
+        llm_model=llm_model,
     )
 
     print("🚀 Starting migration workflow...")
@@ -448,6 +484,8 @@ def main(argv: Optional[list[str]] = None) -> None:
             graph_mode,
             graph_strategy,
             meta_graph_policy,
+            llm_provider=args.provider,
+            llm_model=args.model,
         )
 
         # Display results

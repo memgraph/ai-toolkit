@@ -46,10 +46,14 @@ def get_required_environment_variables() -> Dict[str, str]:
     db_type = get_source_db_type()
 
     base_vars: Dict[str, str] = {
-        "OPENAI_API_KEY": "OpenAI API key for migration planning",
         "SOURCE_DB_TYPE": "Source database type (mysql|postgresql)",
         "MEMGRAPH_URL": ("Memgraph connection URL (default: bolt://localhost:7687)"),
     }
+
+    # Note: LLM API keys are optional, at least one needed for LLM strategy
+    # - OPENAI_API_KEY: OpenAI (GPT models)
+    # - ANTHROPIC_API_KEY: Anthropic (Claude models)
+    # - GOOGLE_API_KEY: Google (Gemini models)
 
     if db_type == "postgresql":
         base_vars.update(
@@ -104,8 +108,7 @@ def validate_environment_variables() -> Tuple[bool, List[str]]:
 
     db_type = get_source_db_type()
 
-    if not os.getenv("OPENAI_API_KEY"):
-        missing_vars.append(f"OPENAI_API_KEY ({required_vars['OPENAI_API_KEY']})")
+    # LLM API keys are no longer required - checked separately if using LLM strategy
 
     if db_type == "postgresql":
         if not os.getenv("POSTGRES_PASSWORD"):
@@ -220,28 +223,64 @@ def probe_memgraph_connection(
         return False, f"Connection error: {e}"
 
 
-def validate_openai_api_key() -> Tuple[bool, Optional[str]]:
+def validate_llm_providers() -> Tuple[bool, List[str], List[str]]:
     """
-    Validate OpenAI API key by making a test request.
+    Validate LLM provider API keys by making test requests.
 
     Returns:
-        Tuple of (is_valid, error_message)
+        Tuple of (has_valid_provider, valid_providers, error_messages)
     """
-    try:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            return False, "OPENAI_API_KEY not set"
+    valid_providers = []
+    errors = []
 
-        from langchain_openai import ChatOpenAI
+    # Check OpenAI
+    openai_key = os.getenv("OPENAI_API_KEY")
+    if openai_key:
+        try:
+            from langchain_openai import ChatOpenAI
 
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
-        llm.invoke("Test")
-        return True, None
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
+            llm.invoke("Test")
+            valid_providers.append("OpenAI")
+        except ImportError:
+            errors.append("OpenAI: Missing dependencies (langchain-openai)")
+        except Exception as e:  # pylint: disable=broad-except
+            errors.append(f"OpenAI: {e}")
 
-    except ImportError as e:
-        return False, f"Missing OpenAI dependencies: {e}"
-    except Exception as e:  # pylint: disable=broad-except
-        return False, f"API key validation error: {e}"
+    # Check Anthropic
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    if anthropic_key:
+        try:
+            from langchain_anthropic import ChatAnthropic
+
+            llm = ChatAnthropic(model="claude-3-5-sonnet-20241022", temperature=0.1)
+            llm.invoke("Test")
+            valid_providers.append("Anthropic")
+        except ImportError:
+            errors.append("Anthropic: Missing dependencies (langchain-anthropic)")
+        except Exception as e:  # pylint: disable=broad-except
+            errors.append(f"Anthropic: {e}")
+
+    # Check Google (Gemini)
+    google_key = os.getenv("GOOGLE_API_KEY")
+    if google_key:
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+
+            llm = ChatGoogleGenerativeAI(
+                model="gemini-2.0-flash-exp",
+                temperature=0.1,
+                google_api_key=google_key,
+            )
+            llm.invoke("Test")
+            valid_providers.append("Gemini")
+        except ImportError:
+            errors.append("Gemini: Missing dependencies (langchain-google-genai)")
+        except Exception as e:  # pylint: disable=broad-except
+            errors.append(f"Gemini: {e}")
+
+    has_valid = len(valid_providers) > 0
+    return has_valid, valid_providers, errors
 
 
 def setup_and_validate_environment() -> Tuple[Dict[str, Any], Dict[str, str]]:
@@ -289,12 +328,15 @@ def probe_all_connections(
     """
     errors: List[str] = []
 
-    logger.info("Validating OpenAI API key...")
-    openai_valid, openai_error = validate_openai_api_key()
-    if not openai_valid:
-        errors.append(f"OpenAI: {openai_error}")
+    logger.info("Validating LLM provider API keys...")
+    has_valid, valid_providers, llm_errors = validate_llm_providers()
+    if has_valid:
+        logger.info("✅ Valid LLM providers: %s", ", ".join(valid_providers))
     else:
-        logger.info("✅ OpenAI API key validated successfully")
+        logger.warning("⚠️  No valid LLM providers found")
+
+    for error in llm_errors:
+        logger.warning("  %s", error)
 
     db_type = source_db_config.get("database_type", "mysql")
     logger.info("Testing %s connection...", db_type.capitalize())

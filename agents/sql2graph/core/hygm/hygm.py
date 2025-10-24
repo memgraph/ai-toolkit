@@ -87,9 +87,10 @@ class HyGM:
         Initialize HyGM with modeling configuration.
 
         Args:
-            llm: LLM instance for AI-powered modeling (optional)
+            llm: Unified LLM client instance for AI-powered modeling
             mode: AUTOMATIC or INCREMENTAL modeling mode
             strategy: DETERMINISTIC or LLM_POWERED strategy
+            existing_meta_graph: Existing meta graph for incremental modeling
         """
         self.llm = llm
         self.mode = mode

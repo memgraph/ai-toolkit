@@ -50,12 +50,14 @@ You can also preconfigure the workflow using CLI flags or environment variables:
 uv run main --mode incremental --strategy llm --meta-graph reset --log-level DEBUG
 ```
 
-| Option                           | Environment          | Description                                                   |
-| -------------------------------- | -------------------- | ------------------------------------------------------------- |
-| `--mode {automatic,incremental}` | `SQL2MG_MODE`        | Selects automatic or incremental modeling flow.               |
-| `--strategy {deterministic,llm}` | `SQL2MG_STRATEGY`    | Chooses deterministic or LLM-powered HyGM strategy.           |
-| `--meta-graph {auto,skip,reset}` | `SQL2MG_META_POLICY` | Controls how stored meta graph data is used (default `auto`). |
-| `--log-level LEVEL`              | `SQL2MG_LOG_LEVEL`   | Sets logging verbosity (`DEBUG`, `INFO`, etc.).               |
+| Option                                 | Environment          | Description                                                   |
+| -------------------------------------- | -------------------- | ------------------------------------------------------------- |
+| `--mode {automatic,incremental}`       | `SQL2MG_MODE`        | Selects automatic or incremental modeling flow.               |
+| `--strategy {deterministic,llm}`       | `SQL2MG_STRATEGY`    | Chooses deterministic or LLM-powered HyGM strategy.           |
+| `--provider {openai,anthropic,gemini}` | `LLM_PROVIDER`       | Selects LLM provider (auto-detects if not specified).         |
+| `--model MODEL_NAME`                   | `LLM_MODEL`          | Specifies LLM model name (uses provider default if not set).  |
+| `--meta-graph {auto,skip,reset}`       | `SQL2MG_META_POLICY` | Controls how stored meta graph data is used (default `auto`). |
+| `--log-level LEVEL`                    | `SQL2MG_LOG_LEVEL`   | Sets logging verbosity (`DEBUG`, `INFO`, etc.).               |
 
 ## Configuration
 
@@ -86,8 +88,14 @@ MEMGRAPH_USERNAME=
 MEMGRAPH_PASSWORD=
 MEMGRAPH_DATABASE=memgraph
 
-# OpenAI (for LLM-powered features)
-OPENAI_API_KEY=your_openai_key
+# LLM API Keys (for LLM-powered features - choose one or more)
+OPENAI_API_KEY=your_openai_key         # For GPT models
+# ANTHROPIC_API_KEY=your_anthropic_key # For Claude models
+# GOOGLE_API_KEY=your_google_key       # For Gemini models
+
+# LLM Provider Configuration (optional - auto-detects if not set)
+# LLM_PROVIDER=openai                  # Options: openai, anthropic, gemini
+# LLM_MODEL=gpt-4o-mini                # Specific model name
 
 # Optional migration defaults (override CLI prompts)
 SQL2MG_MODE=automatic
@@ -99,6 +107,36 @@ SQL2MG_LOG_LEVEL=INFO
 When switching `SOURCE_DB_TYPE` remember to update the matching credential block and rerun `uv sync` so dependencies like `psycopg2-binary` are installed for PostgreSQL support.
 
 Make sure that Memgraph is started with the `--schema-info-enabled=true`, since agent uses the schema information from Memgraph `SHOW SCHEMA INFO`.
+
+## Multi-LLM Provider Support
+
+The agent supports multiple LLM providers for AI-powered graph modeling:
+
+### Supported Providers
+
+- **OpenAI** (GPT models) - Default: `gpt-4o-mini`
+- **Anthropic** (Claude models) - Default: `claude-3-5-sonnet-20241022`
+- **Google** (Gemini models) - Default: `gemini-1.5-pro`
+
+### Usage Examples
+
+```bash
+# Auto-detect provider based on API keys
+uv run main --strategy llm
+
+# Use specific provider
+uv run main --strategy llm --provider anthropic
+
+# Use specific model
+uv run main --strategy llm --provider openai --model gpt-4o
+
+# All options together
+uv run main --mode incremental --strategy llm --provider gemini --model gemini-1.5-flash
+```
+
+All providers support **structured outputs** for consistent graph model generation. The system automatically validates schemas using Pydantic models.
+
+📖 **[Full Multi-Provider Documentation](docs/MULTI_PROVIDER_SUPPORT.md)**
 
 # Arhitecture
 
