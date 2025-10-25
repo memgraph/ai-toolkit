@@ -19,5 +19,5 @@ members = [
     "integrations/langchain-memgraph/",
     "integrations/mcp-memgraph/",
     "integrations/lightrag-memgraph",
-    "agents/sql2graph/",
+    "agents/sql2graph/", "ingestion",
 ]
