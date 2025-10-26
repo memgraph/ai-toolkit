@@ -28,7 +28,7 @@ def parse_docx(docx_path):
 def parse_xls(xls_path):
     # NOTE: engines=['openpyxl', 'xlrd']
     dfs = pandas.read_excel(xls_path, sheet_name=None, engine="openpyxl")
-    return [(sheet_name, df) for sheet_name, df in dfs.items()]
+    return [df.to_string() for sheet_name, df in dfs.items()]
 
 
 def parse_url(url):
@@ -37,7 +37,7 @@ def parse_url(url):
         response = requests.get(url, headers={"User-Agent": "Memgraph AI Toolkit"})
         response.raise_for_status()
         text_xml = BeautifulSoup(response.text, "html.parser")
-        return text_xml.get_text(separator="\n", strip=True)
+        return [text_xml.get_text(separator="\n", strip=True)]
     except Exception as e:
         raise ValueError(f"Error while fetching or parsing from URL: {url} - {e}")
 

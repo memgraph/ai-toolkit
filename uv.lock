@@ -1446,6 +1446,7 @@ dependencies = [
     { name = "pandas" },
     { name = "pdfplumber" },
     { name = "python-docx" },
+    { name = "requests" },
 ]
 
 [package.metadata]
@@ -1455,6 +1456,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.3.2" },
     { name = "pdfplumber", specifier = ">=0.11.7" },
     { name = "python-docx", specifier = ">=1.2.0" },
+    { name = "requests", specifier = ">=2.31.0" },
 ]
 
 [[package]]
