@@ -43,3 +43,24 @@ def connect_chunks_to_entities(memgraph: Memgraph, chunk_label: str, entity_labe
     memgraph.query(
         f"MATCH (n:{entity_label}), (m:{chunk_label}) WHERE n.file_path = m.id CREATE (n)-[:MENTIONED_IN]->(m);"
     )
+
+
+def create_vector_search_index(memgraph: Memgraph, label: str, property: str):
+    # TODO(gitbuda): Add proper error handling.
+    try:
+        memgraph.query(
+            f"CREATE VECTOR INDEX vs_name ON :{label}({property}) WITH CONFIG {{'dimension': 384, 'capacity': 10000}};"
+        )
+    except Exception as _:
+        pass
+
+
+def compute_embeddings(memgraph: Memgraph, label: str):
+    # TODO(gitbuda): Implement batching on the Cypher side as well.
+    memgraph.query(
+        f"""
+            MATCH (n:{label})
+            WITH collect(n) AS nodes
+            CALL embeddings.compute_node_sentence(nodes) YIELD *;
+        """
+    )
