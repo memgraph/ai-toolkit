@@ -1447,6 +1447,7 @@ dependencies = [
     { name = "pdfplumber" },
     { name = "python-docx" },
     { name = "requests" },
+    { name = "tqdm" },
 ]
 
 [package.metadata]
@@ -1457,6 +1458,7 @@ requires-dist = [
     { name = "pdfplumber", specifier = ">=0.11.7" },
     { name = "python-docx", specifier = ">=1.2.0" },
     { name = "requests", specifier = ">=2.31.0" },
+    { name = "tqdm", specifier = ">=4.65.0" },
 ]
 
 [[package]]

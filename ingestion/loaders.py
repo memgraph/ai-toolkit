@@ -1,4 +1,5 @@
 import os
+import uuid
 
 import asyncio
 import shutil
@@ -6,6 +7,8 @@ from lightrag_memgraph import MemgraphLightRAGWrapper
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
 from parsers import parse_pdf, parse_docx, parse_xls, parse_url
 from memgraph_toolbox.api.memgraph import Memgraph
+
+from memgraph import create_nodes_from_list, connect_chunks_to_entities
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 WORKING_DIR = os.path.join(SCRIPT_DIR, "lightrag_storage.out")
@@ -40,11 +43,14 @@ async def from_unstructured(sources):
         llm_model_func=gpt_4o_mini_complete,
     )
     for document in documents:
+        memgraph_node_props = []
         for chunk in document:
-            await lightrag_wrapper.ainsert(
-                input=chunk,
-            )
+            chunk_id = f"chunk-{uuid.uuid4()}"
+            await lightrag_wrapper.ainsert(input=chunk, file_paths=[chunk_id])
+            memgraph_node_props.append({"id": chunk_id, "text": chunk})
+        create_nodes_from_list(memgraph, memgraph_node_props, "Chunk", 100)
     await lightrag_wrapper.afinalize()
+    connect_chunks_to_entities(memgraph, "Chunk", "base")
 
 
 if __name__ == "__main__":
