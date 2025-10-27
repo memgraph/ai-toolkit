@@ -1,5 +1,5 @@
 [project]
-name = "ingestion"
+name = "unstructured2graph"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"

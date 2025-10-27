@@ -17,12 +17,12 @@ resolution-markers = [
 [manifest]
 members = [
     "agents",
-    "ingestion",
     "langchain-memgraph",
     "lightrag-memgraph",
     "mcp-memgraph",
     "memgraph-ai",
     "memgraph-toolbox",
+    "unstructured2graph",
 ]
 
 [[package]]
@@ -1434,31 +1434,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/76/66/650a33bd90f786193e4de4b3ad86ea60b53c89b669a5c7be931fac31cdb0/importlib_metadata-8.7.0.tar.gz", hash = "sha256:d13b81ad223b890aa16c5471f2ac3056cf76c5f10f82d6f9292f0b415f389000", size = 56641 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/20/b0/36bd937216ec521246249be3bf9855081de4c5e06a0c9b4219dbeda50373/importlib_metadata-8.7.0-py3-none-any.whl", hash = "sha256:e5dd1551894c77868a30651cef00984d50e1002d06942a7101d34870c5f02afd", size = 27656 },
-]
-
-[[package]]
-name = "ingestion"
-version = "0.1.0"
-source = { virtual = "ingestion" }
-dependencies = [
-    { name = "beautifulsoup4" },
-    { name = "openpyxl" },
-    { name = "pandas" },
-    { name = "pdfplumber" },
-    { name = "python-docx" },
-    { name = "requests" },
-    { name = "tqdm" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "beautifulsoup4", specifier = ">=4.14.2" },
-    { name = "openpyxl", specifier = ">=3.1.5" },
-    { name = "pandas", specifier = ">=2.3.2" },
-    { name = "pdfplumber", specifier = ">=0.11.7" },
-    { name = "python-docx", specifier = ">=1.2.0" },
-    { name = "requests", specifier = ">=2.31.0" },
-    { name = "tqdm", specifier = ">=4.65.0" },
 ]
 
 [[package]]
@@ -5125,6 +5100,31 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/95/32/1a225d6164441be760d75c2c42e2780dc0873fe382da3e98a2e1e48361e5/tzdata-2025.2.tar.gz", hash = "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9", size = 196380 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5c/23/c7abc0ca0a1526a0774eca151daeb8de62ec457e77262b66b359c3c7679e/tzdata-2025.2-py2.py3-none-any.whl", hash = "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8", size = 347839 },
+]
+
+[[package]]
+name = "unstructured2graph"
+version = "0.1.0"
+source = { virtual = "unstructured2graph" }
+dependencies = [
+    { name = "beautifulsoup4" },
+    { name = "openpyxl" },
+    { name = "pandas" },
+    { name = "pdfplumber" },
+    { name = "python-docx" },
+    { name = "requests" },
+    { name = "tqdm" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "beautifulsoup4", specifier = ">=4.14.2" },
+    { name = "openpyxl", specifier = ">=3.1.5" },
+    { name = "pandas", specifier = ">=2.3.2" },
+    { name = "pdfplumber", specifier = ">=0.11.7" },
+    { name = "python-docx", specifier = ">=1.2.0" },
+    { name = "requests", specifier = ">=2.31.0" },
+    { name = "tqdm", specifier = ">=4.65.0" },
 ]
 
 [[package]]
