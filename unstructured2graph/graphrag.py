@@ -7,14 +7,21 @@ if __name__ == "__main__":
 
     memgraph = Memgraph()
     # TODO(gitbuda): Add options to skip the below steps.
-    # create_vector_search_index(memgraph, "Chunk", "embedding")
-    # compute_embeddings(memgraph, "Chunk")
+    compute_embeddings(memgraph, "Chunk")
+    create_vector_search_index(memgraph, "Chunk", "embedding")
 
-    for node in memgraph.query(
+    # The Native/One-query GraphRAG!
+    # TODO(gitbuda): In the current small graph, the Chunks are not connected via the entity graph.
+    for row in memgraph.query(
         f"""
         CALL embeddings.compute_text(['Hello world prompt']) YIELD embeddings, success
-        CALL vector_search.search('vs_name', 10, embeddings[0]) YIELD * RETURN *;
+        CALL vector_search.search('vs_name', 10, embeddings[0]) YIELD distance, node, similarity
+        MATCH (node)-[r*bfs]-(dst)
+        WITH DISTINCT dst, degree(dst) AS degree ORDER BY degree DESC
+        RETURN dst;
     """
     ):
-        print(node["node"]["text"])
+        print(row["dst"]["description"])
         print("----")
+
+    # TODO(gitbuda): Call LLM to generate the final answer.
