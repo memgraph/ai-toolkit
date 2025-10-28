@@ -3,13 +3,14 @@ from memgraph import compute_embeddings, create_vector_search_index
 
 
 if __name__ == "__main__":
+    #### INGESTION
     # TODO(gitbuda): Add the import here.
-
     memgraph = Memgraph()
     # TODO(gitbuda): Add options to skip the below steps.
     compute_embeddings(memgraph, "Chunk")
     create_vector_search_index(memgraph, "Chunk", "embedding")
 
+    #### RETRIEVAL / GRAPHRAG
     # The Native/One-query GraphRAG!
     # TODO(gitbuda): In the current small graph, the Chunks are not connected via the entity graph.
     for row in memgraph.query(
@@ -24,4 +25,5 @@ if __name__ == "__main__":
         print(row["dst"]["description"])
         print("----")
 
+    #### SUMMARIZATION
     # TODO(gitbuda): Call LLM to generate the final answer.

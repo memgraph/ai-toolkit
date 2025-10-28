@@ -18,6 +18,7 @@ async def from_unstructured(sources):
     documents = []
 
     ## PARSE
+    # TODO(gitbuda): Replace below with https://github.com/Unstructured-IO/unstructured
     # NOTE: Each element is a list of chunks from a Document (each source is an abstract Document)
     # TODO: Add chunking support + the way of referencting original sources and chunks once they end up in the database.
     #     * NOTE: LightRAG uses { source_id: "chunk-ID..." } to reference its chunks.
@@ -75,5 +76,4 @@ if __name__ == "__main__":
         ),
         os.path.join(docx_samples_dir, "sample3.docx"),
     ]
-
     asyncio.run(from_unstructured(sources))
