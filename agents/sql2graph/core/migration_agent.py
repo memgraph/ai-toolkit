@@ -90,9 +90,15 @@ class SQLToMemgraphAgent:
             llm_provider: LLM provider name (openai/anthropic/gemini)
             llm_model: Specific model name to use
         """
-        # Initialize LLM client if using LLM strategy
+        # Initialize LLM client if using LLM strategy OR incremental mode
+        # (incremental mode needs LLM for natural language modifications)
         self.llm = None
-        if graph_modeling_strategy == GraphModelingStrategy.LLM_POWERED:
+        needs_llm = (
+            graph_modeling_strategy == GraphModelingStrategy.LLM_POWERED
+            or modeling_mode == ModelingMode.INCREMENTAL
+        )
+
+        if needs_llm:
             # Auto-detect provider from environment if not specified
             if llm_provider is None:
                 llm_provider = os.getenv("LLM_PROVIDER")
