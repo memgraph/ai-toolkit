@@ -61,6 +61,6 @@ def compute_embeddings(memgraph: Memgraph, label: str):
         f"""
             MATCH (n:{label})
             WITH collect(n) AS nodes
-            CALL embeddings.compute_node_sentence(nodes) YIELD *;
+            CALL embeddings.node_sentence(nodes) YIELD *;
         """
     )
