@@ -20,7 +20,7 @@ from typing import Any, Dict, List
 # Configure logging
 logger = logger_init("mcp-memgraph")
 
-MCP_HOST = os.environ.get("MCP_HOST")
+MCP_HOST = os.environ.get("MCP_HOST", "127.0.0.1")
 
 # Initialize FastMCP server with stateless HTTP (for streamable-http transport)
 mcp = FastMCP("mcp-memgraph", host=MCP_HOST, stateless_http=True)
@@ -143,30 +143,32 @@ def get_page_rank() -> List[Dict[str, Any]]:
 
 
 @mcp.tool()
-def get_node_neighborhood(node_id: str, max_distance: int = 1, limit: int = 100) -> List[Dict[str, Any]]:
+def get_node_neighborhood(
+    node_id: str, max_distance: int = 1, limit: int = 100
+) -> List[Dict[str, Any]]:
     """Find nodes within a specified distance from a given node"""
-    logger.info(f"Finding neighborhood for node {node_id} with max distance {max_distance}")
+    logger.info(
+        f"Finding neighborhood for node {node_id} with max distance {max_distance}"
+    )
     try:
-        neighborhood = NodeNeighborhoodTool(db=db).call({
-            "node_id": node_id,
-            "max_distance": max_distance,
-            "limit": limit
-        })
+        neighborhood = NodeNeighborhoodTool(db=db).call(
+            {"node_id": node_id, "max_distance": max_distance, "limit": limit}
+        )
         return neighborhood
     except Exception as e:
         return [f"Error finding node neighborhood: {str(e)}"]
 
 
 @mcp.tool()
-def search_node_vectors(index_name: str, query_vector: List[float], limit: int = 10) -> List[Dict[str, Any]]:
+def search_node_vectors(
+    index_name: str, query_vector: List[float], limit: int = 10
+) -> List[Dict[str, Any]]:
     """Perform vector similarity search on nodes in Memgraph"""
     logger.info(f"Performing vector search on index {index_name} with limit {limit}")
     try:
-        vector_search = NodeVectorSearchTool(db=db).call({
-            "index_name": index_name,
-            "query_vector": query_vector,
-            "limit": limit
-        })
+        vector_search = NodeVectorSearchTool(db=db).call(
+            {"index_name": index_name, "query_vector": query_vector, "limit": limit}
+        )
         return vector_search
     except Exception as e:
         return [f"Error performing vector search: {str(e)}"]
