@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import Optional
 from contextlib import AsyncExitStack
 
@@ -8,7 +9,12 @@ from mcp.client.stdio import stdio_client
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
-from mcp_memgraph import run_query, get_schema, get_node_neighborhood, search_node_vectors
+from mcp_memgraph import (
+    run_query,
+    get_schema,
+    get_node_neighborhood,
+    search_node_vectors,
+)
 import pytest
 
 pytestmark = pytest.mark.asyncio  # Mark all tests in this file as asyncio-compatible
@@ -38,7 +44,7 @@ class MCPClient:
 
         command = "python" if is_python else "node"
         server_params = StdioServerParameters(
-            command=command, args=[server_script_path], env=None
+            command=command, args=[server_script_path], env=os.environ.copy()
         )
 
         stdio_transport = await self.exit_stack.enter_async_context(
