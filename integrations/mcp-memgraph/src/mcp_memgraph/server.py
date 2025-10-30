@@ -1,4 +1,5 @@
 from mcp.server.fastmcp import FastMCP
+from regex import F
 
 from memgraph_toolbox.api.memgraph import Memgraph
 from memgraph_toolbox.tools.cypher import CypherTool
@@ -22,8 +23,9 @@ logger = logger_init("mcp-memgraph")
 
 MCP_HOST = os.environ.get("MCP_HOST", "127.0.0.1")
 
-# Initialize FastMCP server with stateless HTTP (for streamable-http transport)
-mcp = FastMCP("mcp-memgraph", host=MCP_HOST, stateless_http=True)
+# Initialize FastMCP server
+mcp = FastMCP("mcp-memgraph", host=MCP_HOST)
+
 
 MEMGRAPH_URL = os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687")
 MEMGRAPH_USER = os.environ.get("MEMGRAPH_USER", "")
