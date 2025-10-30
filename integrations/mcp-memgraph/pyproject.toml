@@ -26,6 +26,7 @@ dependencies = [
   "neo4j>=5.28.1",
   "memgraph-toolbox>=0.1.6",
   "pytest>=8.3.5",
+  "fastmcp>=2.13.0.2",
 ]
 
 [project.optional-dependencies]
