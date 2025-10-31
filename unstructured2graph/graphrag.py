@@ -1,5 +1,6 @@
 from memgraph_toolbox.api.memgraph import Memgraph
-from memgraph import compute_embeddings, create_vector_search_index
+
+from unstructured2graph import compute_embeddings, create_vector_search_index
 
 
 if __name__ == "__main__":

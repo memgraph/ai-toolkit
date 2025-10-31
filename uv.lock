@@ -6467,17 +6467,24 @@ wheels = [
 [[package]]
 name = "unstructured2graph"
 version = "0.1.0"
-source = { virtual = "unstructured2graph" }
+source = { editable = "unstructured2graph" }
 dependencies = [
     { name = "tqdm" },
     { name = "unstructured", extra = ["all-docs"] },
 ]
 
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "tqdm", specifier = ">=4.65.0" },
     { name = "unstructured", extras = ["all-docs"], specifier = ">=0.12.6" },
 ]
+provides-extras = ["dev"]
 
 [[package]]
 name = "uritemplate"

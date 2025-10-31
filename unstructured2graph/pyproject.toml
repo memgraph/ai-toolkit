@@ -1,10 +1,25 @@
 [project]
 name = "unstructured2graph"
 version = "0.1.0"
-description = "Add your description here"
+description = "Convert unstructured documents into knowledge graphs"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "unstructured[all-docs]>=0.12.6",
     "tqdm>=4.65.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
