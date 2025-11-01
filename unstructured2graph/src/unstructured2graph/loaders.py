@@ -1,116 +1,128 @@
-import os
-import uuid
 from pathlib import Path
 from typing import List, Union
 import logging
+from dataclasses import dataclass
+import hashlib
+import statistics
+import os
 
-import asyncio
-import shutil
 from unstructured.partition.auto import partition
 from unstructured.chunking.title import chunk_by_title
-from lightrag_memgraph import MemgraphLightRAGWrapper
-from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
 from memgraph_toolbox.api.memgraph import Memgraph
+from lightrag_memgraph import MemgraphLightRAGWrapper
 
 from .memgraph import create_nodes_from_list, connect_chunks_to_entities
 
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class Chunk:
+    text: str
+    hash: str
+
+
+@dataclass
+class ChunkedDocument:
+    chunks: List[Chunk]
+    source: Union[str, Path]
 
 
 def parse_source(source: Union[str, Path]) -> List[str]:
     """
-    Parse a source file or URL using the unstructured library.
-
-    The unstructured library supports many data sources including:
-    PDF, DOCX, DOC, XLSX, XLS, PPTX, PPT, HTML, XML, JSON, CSV, RTF,
-    ODT, EPUB, MSG, EML, TXT, MD, and more.
-
+    Parse a source file or URL using the unstructured library. The unstructured
+    library supports many types of data sources and various parsing options.
     Args:
         source: Path to file or URL string
     Returns:
         List of text chunks extracted from the source
     """
+
     source_str = str(source)
     try:
-        # Use unstructured's partition function which auto-detects file type
         if source_str.startswith(("http://", "https://")):
-            # For URLs, unstructured can handle them directly
             elements = partition(url=source_str)
         else:
-            # For local files
             elements = partition(filename=source_str)
-        # Chunk the elements by title for better semantic grouping
         chunks = chunk_by_title(elements)
-        # Extract text from each chunk
         text_chunks = [
-            str(chunk) for chunk in chunks if chunk.text and chunk.text.strip()
+            Chunk(text=str(chunk), hash=hashlib.sha256(str(chunk).encode()).hexdigest())
+            for chunk in chunks
+            if chunk.text and chunk.text.strip()
         ]
         return text_chunks
     except Exception as e:
         raise ValueError(f"Error parsing source {source_str}: {str(e)}")
 
 
-async def from_unstructured(sources: List[Union[str, Path]], memgraph: Memgraph):
+def make_chunks(sources: List[Union[str, Path]]) -> List[ChunkedDocument]:
     """
-    Process unstructured sources and ingest them into Memgraph using LightRAG.
-
+    Chunk a list of sources into a list of ChunkedDocuments.
     Args:
         sources: List of file paths or URLs to process
-        memgraph: Memgraph instance for database operations
+    Returns:
+        List of ChunkedDocuments
     """
-    documents = []
 
-    ## PARSE
-    # NOTE: Using unstructured library which supports many data sources
-    # NOTE: Each element is a list of chunks from a Document (each source is an abstract Document)
-    # TODO: Add chunking support + the way of referencting original sources and chunks once they end up in the database.
-    #     * NOTE: LightRAG uses { source_id: "chunk-ID..." } to reference its chunks.
+    documents = []
     for source in sources:
         try:
             chunks = parse_source(source)
-            logger.info(
+            logger.debug(
                 f"Source: {source}; No Chunks: {len(chunks)}; Chunks: {chunks};"
             )
-            documents.append(chunks)
+            documents.append(ChunkedDocument(chunks=chunks, source=source))
         except Exception as e:
-            print(f"Warning: Failed to parse {source}: {e}")
-            continue
+            raise ValueError(f"Failed to parse {source}: {e}")
 
-    # Calculate statistics about chunk sizes (number of characters per chunk) across all documents
-    all_chunk_lengths = [len(chunk) for doc in documents for chunk in doc]
+    # Get statistics about chunks, e.g., important because of the token limits
+    # (LLM/embedding).
+    all_chunk_lengths = [len(chunk.text) for doc in documents for chunk in doc.chunks]
     if all_chunk_lengths:
         min_chunk = min(all_chunk_lengths)
         max_chunk = max(all_chunk_lengths)
         avg_chunk = sum(all_chunk_lengths) / len(all_chunk_lengths)
-        import statistics
-
         mean_chunk = statistics.mean(all_chunk_lengths)
         logger.info(
-            f"Chunk size statistics - min: {min_chunk}, max: {max_chunk}, avg: {avg_chunk:.2f}, mean: {mean_chunk:.2f}"
-        )
-        print(
-            f"Chunk size statistics - min: {min_chunk}, max: {max_chunk}, avg: {avg_chunk:.2f}, mean: {mean_chunk:.2f}"
+            f"Chunk size statistics (chars) - min: {min_chunk}, max: {max_chunk}, avg: {avg_chunk:.2f}, mean: {mean_chunk:.2f}"
         )
     else:
         logger.info("No chunks found, statistics unavailable.")
-        print("No chunks found, statistics unavailable.")
+    return documents
 
-    ## INGEST
+
+async def from_unstructured(
+    sources: List[Union[str, Path]],
+    memgraph: Memgraph,
+    lightrag_wrapper: MemgraphLightRAGWrapper,
+):
+    """
+    Process unstructured sources and ingest them into Memgraph using LightRAG.
+    Args:
+        sources: List of file paths or URLs to process
+        memgraph: Memgraph instance for database operations
+    """
+
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    if not openai_api_key:
+        raise EnvironmentError(
+            "OPENAI_API_KEY environment variable is not set. Please set your OpenAI API key."
+        )
+
     # TODO(gitbuda): Print progress bar and estimete how long it will take to process all chunks.
-    # TODO: Seems like all chunks are processed without the LLM KEY -> imporove.
-    lightrag_wrapper = MemgraphLightRAGWrapper(disable_embeddings=True)
-    await lightrag_wrapper.initialize(
-        working_dir="./lightrag_storage.out",
-        # set those two as defaults under the wrapper
-        embedding_func=openai_embed,
-        llm_model_func=gpt_4o_mini_complete,
-    )
-    for document in documents:
+    # TODO(gitbuda): Add proper error handling.
+    # ----> RELEASE READY
+    # TODO: set LLM params as defaults under the wrapper
+    # TODO(gitbuda): Add option to link chunks coming from the same source.
+    # TODO(gitbuda): Make the calls idempotent.
+    # TODO(gitbuda): Create all required indexes.
+    # NOTE: LightRAG uses { source_id: "chunk-ID..." } to reference its chunks.
+    chunked_documents = make_chunks(sources)
+    for document in chunked_documents:
         memgraph_node_props = []
-        for chunk in document:
-            chunk_id = f"chunk-{uuid.uuid4()}"
-            await lightrag_wrapper.ainsert(input=chunk, file_paths=[chunk_id])
-            memgraph_node_props.append({"id": chunk_id, "text": chunk})
+        for chunk in document.chunks:
+            await lightrag_wrapper.ainsert(input=chunk.text, file_paths=[chunk.hash])
+            memgraph_node_props.append({"hash": chunk.hash, "text": chunk.text})
         create_nodes_from_list(memgraph, memgraph_node_props, "Chunk", 100)
-    await lightrag_wrapper.afinalize()
     connect_chunks_to_entities(memgraph, "Chunk", "base")

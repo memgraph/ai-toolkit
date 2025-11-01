@@ -6476,11 +6476,13 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "pytest-asyncio" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
     { name = "tqdm", specifier = ">=4.65.0" },
     { name = "unstructured", extras = ["all-docs"], specifier = ">=0.12.6" },
 ]
