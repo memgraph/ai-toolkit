@@ -20,4 +20,5 @@ members = [
     "integrations/mcp-memgraph/",
     "integrations/lightrag-memgraph",
     "agents/sql2graph/",
+    "unstructured2graph",
 ]
