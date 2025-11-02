@@ -1,1 +1,1 @@
-# ai-toolkit > unstructured2graph
+# memgraph ai-toolkit > unstructured2graph

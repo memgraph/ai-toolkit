@@ -4,10 +4,12 @@ version = "0.1.0"
 description = "Convert unstructured documents into knowledge graphs"
 readme = "README.md"
 requires-python = ">=3.10"
+
 dependencies = [
     "unstructured[all-docs]>=0.12.6",
+    "lightrag-memgraph>=0.1.1",
+    "memgraph-toolbox>=0.1.6",
 ]
-
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
