@@ -31,7 +31,9 @@ def create_nodes_from_list(
         for attempt in range(max_retries):
             try:
                 memgraph.query(insert_query, params={"batch": batch_nodes})
-                logger.info(f"Created {len(batch_nodes)} nodes")
+                logger.info(
+                    f"Created {len(batch_nodes)} nodes with label :{node_label}"
+                )
                 break
             except Exception as e:
                 if attempt < max_retries:

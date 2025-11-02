@@ -127,6 +127,9 @@ async def from_unstructured(
             logger.warning(f"No chunks found in document: {document.source}")
             continue
 
+        logger.info(
+            f"Processing {len(document.chunks)} chunks from {document.source}..."
+        )
         memgraph_node_props = []
         for chunk in document.chunks:
             if not only_chunks:
@@ -157,8 +160,13 @@ async def from_unstructured(
             time_str = f"{estimated_time_remaining / 60:.2f} minutes"
         else:
             time_str = f"{estimated_time_remaining:.2f} seconds"
-        logger.info(
-            f"Processed {processed_chunks} chunks out of {total_chunks}. Estimated time remaining: {time_str}"
-        )
+        if total_chunks == processed_chunks:
+            logger.info(
+                f"All {total_chunks} chunks processed in {elapsed_time:.2f} seconds"
+            )
+        else:
+            logger.info(
+                f"Processed {processed_chunks} chunks out of {total_chunks}. Estimated time remaining: {time_str}"
+            )
     if not only_chunks:
         connect_chunks_to_entities(memgraph, "Chunk", "base")
