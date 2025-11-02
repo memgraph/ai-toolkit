@@ -19,7 +19,7 @@ if __name__ == "__main__":
         CALL vector_search.search('vs_name', 10, embeddings[0]) YIELD distance, node, similarity
         MATCH (node)-[r*bfs]-(dst)
         WITH DISTINCT dst, degree(dst) AS degree ORDER BY degree DESC
-        RETURN dst;
+        RETURN dst LIMIT 10;
     """
     ):
         if "description" in row["dst"]:

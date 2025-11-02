@@ -2476,7 +2476,7 @@ api = [
 
 [[package]]
 name = "lightrag-memgraph"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "integrations/lightrag-memgraph" }
 dependencies = [
     { name = "lightrag-hku", extra = ["api"] },
@@ -6469,6 +6469,8 @@ name = "unstructured2graph"
 version = "0.1.0"
 source = { editable = "unstructured2graph" }
 dependencies = [
+    { name = "lightrag-memgraph" },
+    { name = "memgraph-toolbox" },
     { name = "unstructured", extra = ["all-docs"] },
 ]
 
@@ -6480,6 +6482,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "lightrag-memgraph", editable = "integrations/lightrag-memgraph" },
+    { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
     { name = "unstructured", extras = ["all-docs"], specifier = ">=0.12.6" },

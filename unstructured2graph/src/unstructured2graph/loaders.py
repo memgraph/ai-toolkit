@@ -109,12 +109,14 @@ async def from_unstructured(
     Args:
         sources: List of file paths or URLs to process
         memgraph: Memgraph instance for database operations
+        lightrag_wrapper: MemgraphLightRAGWrapper instance (requires lightrag-memgraph)
+        only_chunks: If True, only create chunk nodes without LightRAG processing
+        link_chunks: If True, link chunks in order with NEXT relationship
     """
 
-    # TODO(gitbuda): Add proper error handling (under memgraph).
-    # ----> RELEASE READY
-    # TODO(gitbuda): Make the calls idempotent.
     # TODO(gitbuda): Create all required indexes.
+    # TODO(gitbuda): Make the calls idempotent.
+    # TODO(gitbuda): Implement batching on the Cypher side as well under memgraph.compute_embeddings
     # NOTE: LightRAG uses { source_id: "chunk-ID..." } to reference its chunks.
     chunked_documents = make_chunks(sources)
     total_chunks = sum(len(document.chunks) for document in chunked_documents)

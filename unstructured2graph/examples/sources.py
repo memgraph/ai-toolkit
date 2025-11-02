@@ -11,6 +11,6 @@ SOURCES = [
         pypdf_samples_dir, "011-google-doc-document", "google-doc-document.pdf"
     ),
     os.path.join(docx_samples_dir, "sample3.docx"),
-    os.path.join(xls_samples_dir, "financial-sample.xlsx"),
+    # os.path.join(xls_samples_dir, "financial-sample.xlsx"),
     # "https://memgraph.com/docs/ai-ecosystem/graph-rag",
 ]

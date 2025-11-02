@@ -64,8 +64,8 @@ def link_nodes_in_order(
 def create_index(memgraph: Memgraph, label: str, property: str):
     try:
         memgraph.query(f"CREATE INDEX ON :{label}({property});")
-    except Exception as _:
-        pass
+    except Exception as e:
+        logger.warning(f"Error creating index: {e}")
 
 
 def create_vector_search_index(memgraph: Memgraph, label: str, property: str):
@@ -73,12 +73,11 @@ def create_vector_search_index(memgraph: Memgraph, label: str, property: str):
         memgraph.query(
             f"CREATE VECTOR INDEX vs_name ON :{label}({property}) WITH CONFIG {{'dimension': 384, 'capacity': 10000}};"
         )
-    except Exception as _:
-        pass
+    except Exception as e:
+        logger.warning(f"Error creating vector search index: {e}")
 
 
 def compute_embeddings(memgraph: Memgraph, label: str):
-    # TODO(gitbuda): Implement batching on the Cypher side as well.
     memgraph.query(
         f"""
             MATCH (n:{label})

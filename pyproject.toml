@@ -12,6 +12,7 @@ dependencies = [
 
 [tool.uv.sources]
 memgraph-toolbox = { workspace = true }
+lightrag-memgraph = { workspace = true }
 
 [tool.uv.workspace] 
 members = [
