@@ -17,6 +17,8 @@ from .memgraph import (
     connect_chunks_to_entities,
     create_vector_search_index,
     compute_embeddings,
+    create_index,
+    link_nodes_in_order,
 )
 
 __version__ = "0.1.0"
@@ -30,4 +32,6 @@ __all__ = [
     "connect_chunks_to_entities",
     "create_vector_search_index",
     "compute_embeddings",
+    "create_index",
+    "link_nodes_in_order",
 ]

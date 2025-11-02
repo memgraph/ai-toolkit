@@ -45,8 +45,34 @@ def connect_chunks_to_entities(memgraph: Memgraph, chunk_label: str, entity_labe
     )
 
 
+def link_nodes_in_order(
+    memgraph: Memgraph,
+    find_label: str,
+    find_property: str,
+    from_to_dicts: list[dict],
+    create_edge_type: str,
+):
+    try:
+        memgraph.query(
+            f"""
+            UNWIND $relationships AS rel
+            MATCH (a:{find_label} {{{find_property}: rel.from}}), (b:{find_label} {{{find_property}: rel.to}})
+            MERGE (a)-[:{create_edge_type}]->(b)
+            """,
+            params={"relationships": from_to_dicts},
+        )
+    except Exception as e:
+        logger.error(f"Error creating chunk chain relationships: {e}")
+
+
+def create_index(memgraph: Memgraph, label: str, property: str):
+    try:
+        memgraph.query(f"CREATE INDEX ON :{label}({property});")
+    except Exception as _:
+        pass
+
+
 def create_vector_search_index(memgraph: Memgraph, label: str, property: str):
-    # TODO(gitbuda): Add proper error handling.
     try:
         memgraph.query(
             f"CREATE VECTOR INDEX vs_name ON :{label}({property}) WITH CONFIG {{'dimension': 384, 'capacity': 10000}};"

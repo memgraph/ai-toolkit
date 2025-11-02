@@ -11,7 +11,11 @@ from unstructured.chunking.title import chunk_by_title
 from memgraph_toolbox.api.memgraph import Memgraph
 from lightrag_memgraph import MemgraphLightRAGWrapper
 
-from .memgraph import create_nodes_from_list, connect_chunks_to_entities
+from .memgraph import (
+    create_nodes_from_list,
+    connect_chunks_to_entities,
+    link_nodes_in_order,
+)
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 logger = logging.getLogger(__name__)
@@ -96,6 +100,8 @@ async def from_unstructured(
     sources: List[Union[str, Path]],
     memgraph: Memgraph,
     lightrag_wrapper: MemgraphLightRAGWrapper,
+    only_chunks: bool = False,
+    link_chunks: bool = False,
 ):
     """
     Process unstructured sources and ingest them into Memgraph using LightRAG.
@@ -114,7 +120,6 @@ async def from_unstructured(
     # TODO(gitbuda): Add proper error handling.
     # ----> RELEASE READY
     # TODO: set LLM params as defaults under the wrapper
-    # TODO(gitbuda): Add option to link chunks coming from the same source.
     # TODO(gitbuda): Make the calls idempotent.
     # TODO(gitbuda): Create all required indexes.
     # NOTE: LightRAG uses { source_id: "chunk-ID..." } to reference its chunks.
@@ -122,7 +127,22 @@ async def from_unstructured(
     for document in chunked_documents:
         memgraph_node_props = []
         for chunk in document.chunks:
-            await lightrag_wrapper.ainsert(input=chunk.text, file_paths=[chunk.hash])
+            if not only_chunks:
+                await lightrag_wrapper.ainsert(
+                    input=chunk.text, file_paths=[chunk.hash]
+                )
             memgraph_node_props.append({"hash": chunk.hash, "text": chunk.text})
         create_nodes_from_list(memgraph, memgraph_node_props, "Chunk", 100)
-    connect_chunks_to_entities(memgraph, "Chunk", "base")
+        if link_chunks:
+            hash_pairs = [
+                (document.chunks[i].hash, document.chunks[i + 1].hash)
+                for i in range(len(document.chunks) - 1)
+            ]
+            if hash_pairs:
+                relationships = [
+                    {"from": from_hash, "to": to_hash}
+                    for from_hash, to_hash in hash_pairs
+                ]
+                link_nodes_in_order(memgraph, "Chunk", "hash", relationships, "NEXT")
+    if not only_chunks:
+        connect_chunks_to_entities(memgraph, "Chunk", "base")

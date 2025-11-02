@@ -7,7 +7,7 @@ from lightrag_memgraph import MemgraphLightRAGWrapper
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
 
 from memgraph_toolbox.api.memgraph import Memgraph
-from unstructured2graph import from_unstructured
+from unstructured2graph import from_unstructured, create_index
 from sources import SOURCES
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -16,7 +16,7 @@ LIGHTRAG_DIR = os.path.join(SCRIPT_DIR, "..", "lightrag_storage.out")
 
 async def from_unstructured_with_prep():
     # Delete & create LightRAG working directory.
-    lightrag_log_file = os.path.join(SCRIPT_DIR, "..", "lightrag.log")
+    lightrag_log_file = os.path.join(LIGHTRAG_DIR, "lightrag.log")
     if os.path.exists(lightrag_log_file):
         os.remove(lightrag_log_file)
     if os.path.exists(LIGHTRAG_DIR):
@@ -27,6 +27,7 @@ async def from_unstructured_with_prep():
     # Cleanup Memgraph database.
     memgraph = Memgraph()
     memgraph.query("MATCH (n) DETACH DELETE n;")
+    create_index(memgraph, "Chunk", "hash")
 
     lightrag_wrapper = MemgraphLightRAGWrapper(disable_embeddings=True)
     await lightrag_wrapper.initialize(
@@ -35,7 +36,9 @@ async def from_unstructured_with_prep():
         llm_model_func=gpt_4o_mini_complete,
     )
 
-    await from_unstructured(SOURCES, memgraph, lightrag_wrapper)
+    await from_unstructured(
+        SOURCES, memgraph, lightrag_wrapper, only_chunks=False, link_chunks=True
+    )
     await lightrag_wrapper.afinalize()
 
 
