@@ -4,8 +4,6 @@ import logging
 import asyncio
 import shutil
 from lightrag_memgraph import MemgraphLightRAGWrapper
-from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
-from lightrag.utils import setup_logger
 
 from memgraph_toolbox.api.memgraph import Memgraph
 from unstructured2graph import from_unstructured, create_index

@@ -1,28 +1,29 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
 name = "lightrag-memgraph"
 version = "0.1.0"
 description = "LightRAG integration with Memgraph"
 readme = "README.md"
 requires-python = ">=3.10"
+
 authors = [
     {name = "Memgraph Tech Team", email = "tech@memgraph.com"},
 ]
+license = { text = "MIT" }
+keywords = ["memgraph", "graph", "integration", "toolkit", "lightrag"]
+
 classifiers = [
-    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
+
 dependencies = [
     "lightrag-hku[api]==1.4.8.2",
-    "memgraph-toolbox",
+    "memgraph-toolbox>=0.1.6",
     "numpy>=1.21.0",
 ]
 
@@ -35,8 +36,19 @@ dev = [
     "mypy>=1.0.0",
 ]
 
-[tool.uv.sources]
-memgraph-toolbox = { workspace = true }
+[project.urls]
+"Homepage" = "https://github.com/memgraph/ai-toolkit"
+"Source" = "https://github.com/memgraph/ai-toolkit/tree/main/integrations/mcp-memgraph"
+"Issues" = "https://github.com/memgraph/ai-toolkit/issues"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+
+[build-system]
+requires = ["hatchling", "build", "setuptools"]
+build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lightrag_memgraph"]
