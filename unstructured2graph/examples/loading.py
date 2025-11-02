@@ -5,6 +5,7 @@ import asyncio
 import shutil
 from lightrag_memgraph import MemgraphLightRAGWrapper
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
+from lightrag.utils import setup_logger
 
 from memgraph_toolbox.api.memgraph import Memgraph
 from unstructured2graph import from_unstructured, create_index
@@ -29,12 +30,10 @@ async def from_unstructured_with_prep():
     memgraph.query("MATCH (n) DETACH DELETE n;")
     create_index(memgraph, "Chunk", "hash")
 
-    lightrag_wrapper = MemgraphLightRAGWrapper(disable_embeddings=True)
-    await lightrag_wrapper.initialize(
-        working_dir=LIGHTRAG_DIR,
-        embedding_func=openai_embed,
-        llm_model_func=gpt_4o_mini_complete,
+    lightrag_wrapper = MemgraphLightRAGWrapper(
+        log_level="WARNING", disable_embeddings=True
     )
+    await lightrag_wrapper.initialize(working_dir=LIGHTRAG_DIR)
 
     await from_unstructured(
         SOURCES, memgraph, lightrag_wrapper, only_chunks=False, link_chunks=True
@@ -43,5 +42,6 @@ async def from_unstructured_with_prep():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.WARNING)
+    logging.basicConfig(level=logging.INFO)
+
     asyncio.run(from_unstructured_with_prep())

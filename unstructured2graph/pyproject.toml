@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "unstructured[all-docs]>=0.12.6",
-    "tqdm>=4.65.0",
 ]
 
 [project.optional-dependencies]

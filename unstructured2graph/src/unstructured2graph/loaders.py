@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import hashlib
 import statistics
 import os
+import time
 
 from unstructured.partition.auto import partition
 from unstructured.chunking.title import chunk_by_title
@@ -110,20 +111,15 @@ async def from_unstructured(
         memgraph: Memgraph instance for database operations
     """
 
-    openai_api_key = os.environ.get("OPENAI_API_KEY")
-    if not openai_api_key:
-        raise EnvironmentError(
-            "OPENAI_API_KEY environment variable is not set. Please set your OpenAI API key."
-        )
-
-    # TODO(gitbuda): Print progress bar and estimete how long it will take to process all chunks.
-    # TODO(gitbuda): Add proper error handling.
+    # TODO(gitbuda): Add proper error handling (under memgraph).
     # ----> RELEASE READY
-    # TODO: set LLM params as defaults under the wrapper
     # TODO(gitbuda): Make the calls idempotent.
     # TODO(gitbuda): Create all required indexes.
     # NOTE: LightRAG uses { source_id: "chunk-ID..." } to reference its chunks.
     chunked_documents = make_chunks(sources)
+    total_chunks = sum(len(document.chunks) for document in chunked_documents)
+    start_time = time.time()
+    processed_chunks = 0
     for document in chunked_documents:
         memgraph_node_props = []
         for chunk in document.chunks:
@@ -144,5 +140,19 @@ async def from_unstructured(
                     for from_hash, to_hash in hash_pairs
                 ]
                 link_nodes_in_order(memgraph, "Chunk", "hash", relationships, "NEXT")
+        processed_chunks += len(document.chunks)
+        elapsed_time = time.time() - start_time
+        estimated_time_remaining = (
+            elapsed_time / processed_chunks * (total_chunks - processed_chunks)
+        )
+        if estimated_time_remaining >= 3600:
+            time_str = f"{estimated_time_remaining / 3600:.2f} hours"
+        elif estimated_time_remaining >= 60:
+            time_str = f"{estimated_time_remaining / 60:.2f} minutes"
+        else:
+            time_str = f"{estimated_time_remaining:.2f} seconds"
+        logger.info(
+            f"Processed {processed_chunks} chunks out of {total_chunks}. Estimated time remaining: {time_str}"
+        )
     if not only_chunks:
         connect_chunks_to_entities(memgraph, "Chunk", "base")
