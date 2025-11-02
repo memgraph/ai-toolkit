@@ -1,0 +1,87 @@
+import logging
+import time
+
+from memgraph_toolbox.api.memgraph import Memgraph
+
+logger = logging.getLogger(__name__)
+
+
+def create_nodes_from_list(
+    memgraph: Memgraph, nodes: list[dict], node_label: str, batch_size: int
+) -> None:
+    """
+    Import data from the given list of dictionaries to Memgraph by batching.
+    """
+    num_nodes = len(nodes)
+    max_retries = 3
+    retry_delay = 3
+    properties_string = ", ".join([f"{key}: data.{key}" for key in nodes[0].keys()])
+    insert_query = f"""
+    UNWIND $batch AS data
+    CREATE (n:{node_label} {{{properties_string}}})
+    """
+    for offset in range(0, num_nodes, batch_size):
+        batch_nodes = nodes[offset : offset + batch_size]
+        for attempt in range(max_retries):
+            try:
+                memgraph.query(insert_query, params={"batch": batch_nodes})
+                logger.info(f"Created {len(batch_nodes)} nodes")
+                break
+            except Exception as e:
+                if attempt < max_retries:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                else:
+                    raise e
+
+
+def connect_chunks_to_entities(memgraph: Memgraph, chunk_label: str, entity_label: str):
+    memgraph.query(
+        f"MATCH (n:{entity_label}), (m:{chunk_label}) WHERE n.file_path = m.hash CREATE (n)-[:MENTIONED_IN]->(m);"
+    )
+
+
+def link_nodes_in_order(
+    memgraph: Memgraph,
+    find_label: str,
+    find_property: str,
+    from_to_dicts: list[dict],
+    create_edge_type: str,
+):
+    try:
+        memgraph.query(
+            f"""
+            UNWIND $relationships AS rel
+            MATCH (a:{find_label} {{{find_property}: rel.from}}), (b:{find_label} {{{find_property}: rel.to}})
+            MERGE (a)-[:{create_edge_type}]->(b)
+            """,
+            params={"relationships": from_to_dicts},
+        )
+    except Exception as e:
+        logger.error(f"Error creating chunk chain relationships: {e}")
+
+
+def create_index(memgraph: Memgraph, label: str, property: str):
+    try:
+        memgraph.query(f"CREATE INDEX ON :{label}({property});")
+    except Exception as e:
+        logger.warning(f"Error creating index: {e}")
+
+
+def create_vector_search_index(memgraph: Memgraph, label: str, property: str):
+    try:
+        memgraph.query(
+            f"CREATE VECTOR INDEX vs_name ON :{label}({property}) WITH CONFIG {{'dimension': 384, 'capacity': 10000}};"
+        )
+    except Exception as e:
+        logger.warning(f"Error creating vector search index: {e}")
+
+
+def compute_embeddings(memgraph: Memgraph, label: str):
+    memgraph.query(
+        f"""
+            MATCH (n:{label})
+            WITH collect(n) AS nodes
+            CALL embeddings.node_sentence(nodes) YIELD *;
+        """
+    )
