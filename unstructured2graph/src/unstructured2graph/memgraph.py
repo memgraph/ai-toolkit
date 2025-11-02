@@ -12,6 +12,12 @@ def create_nodes_from_list(
     """
     Import data from the given list of dictionaries to Memgraph by batching.
     """
+    if not nodes:
+        logger.warning(
+            f"No nodes provided to create_nodes_from_list for label {node_label}"
+        )
+        return
+
     num_nodes = len(nodes)
     max_retries = 3
     retry_delay = 3

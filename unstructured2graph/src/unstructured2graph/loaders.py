@@ -123,6 +123,10 @@ async def from_unstructured(
     start_time = time.time()
     processed_chunks = 0
     for document in chunked_documents:
+        if not document.chunks:
+            logger.warning(f"No chunks found in document: {document.source}")
+            continue
+
         memgraph_node_props = []
         for chunk in document.chunks:
             if not only_chunks:
