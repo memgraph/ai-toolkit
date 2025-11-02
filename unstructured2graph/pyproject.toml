@@ -1,6 +1,6 @@
 [project]
 name = "unstructured2graph"
-version = "0.1.0"
+version = "0.1.2"
 description = "Convert unstructured documents into knowledge graphs"
 readme = "README.md"
 requires-python = ">=3.10"
