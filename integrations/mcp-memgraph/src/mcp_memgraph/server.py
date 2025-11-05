@@ -1,5 +1,5 @@
-from mcp.server.fastmcp import FastMCP
-from regex import F
+from fastmcp import FastMCP
+from fastmcp.server.middleware import Middleware, MiddlewareContext
 
 from memgraph_toolbox.api.memgraph import Memgraph
 from memgraph_toolbox.tools.cypher import CypherTool
@@ -9,40 +9,64 @@ from memgraph_toolbox.tools.constraint import ShowConstraintInfoTool
 from memgraph_toolbox.tools.schema import ShowSchemaInfoTool
 from memgraph_toolbox.tools.storage import ShowStorageInfoTool
 from memgraph_toolbox.tools.trigger import ShowTriggersTool
-from memgraph_toolbox.tools.betweenness_centrality import BetweennessCentralityTool
+from memgraph_toolbox.tools.betweenness_centrality import (
+    BetweennessCentralityTool,
+)
 from memgraph_toolbox.tools.page_rank import PageRankTool
 from memgraph_toolbox.tools.node_neighborhood import NodeNeighborhoodTool
 from memgraph_toolbox.tools.node_vector_search import NodeVectorSearchTool
 from memgraph_toolbox.utils.logger import logger_init
 
-import os
 from typing import Any, Dict, List
+
+from .config import get_memgraph_config, get_mcp_config
+
+# Get configuration instances
+memgraph_config = get_memgraph_config()
+mcp_config = get_mcp_config()
 
 # Configure logging
 logger = logger_init("mcp-memgraph")
 
-MCP_HOST = os.environ.get("MCP_HOST", "127.0.0.1")
-
 # Initialize FastMCP server
-mcp = FastMCP("mcp-memgraph", host=MCP_HOST)
+mcp = FastMCP("mcp-memgraph")
 
 
-MEMGRAPH_URL = os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687")
-MEMGRAPH_USER = os.environ.get("MEMGRAPH_USER", "")
-MEMGRAPH_PASSWORD = os.environ.get("MEMGRAPH_PASSWORD", "")
-MEMGRAPH_DATABASE = os.environ.get("MEMGRAPH_DATABASE", "memgraph")
+# Middleware to capture client information during initialization
+class ClientInfoMiddleware(Middleware):
+    """Middleware to capture and log client information."""
 
+    async def on_initialize(self, context: MiddlewareContext, call_next) -> None:
+        """
+        Called when a client connects and initializes the session.
+        Captures client information for logging and context state.
+        """
+        # Access initialization request details
+        if hasattr(context, "message") and context.message:
+            # Client info is in message.params.clientInfo, not message.clientInfo
+            params = getattr(context.message, "params", None)
+            if params:
+                client_info = getattr(params, "clientInfo", None)
+
+                if client_info:
+                    client_name = getattr(client_info, "name", "Unknown")
+                    client_version = getattr(client_info, "version", "Unknown")
+
+                    logger.info(f"Client connected: {client_name} v{client_version}")
+
+        await call_next(context)
+
+
+# Add middleware to the server
+mcp.add_middleware(ClientInfoMiddleware())
+
+
+# Initialize Memgraph client using configuration
 logger.info(
-    f"Connecting to Memgraph db '{MEMGRAPH_DATABASE}' at {MEMGRAPH_URL} with user '{MEMGRAPH_USER}'"
+    f"Connecting to Memgraph db '{memgraph_config.database}' at {memgraph_config.url} with user '{memgraph_config.username}'"
 )
 
-# Initialize Memgraph client
-db = Memgraph(
-    url=MEMGRAPH_URL,
-    username=MEMGRAPH_USER,
-    password=MEMGRAPH_PASSWORD,
-    database=MEMGRAPH_DATABASE,
-)
+db = Memgraph(**memgraph_config.get_client_config())
 
 
 @mcp.tool()
