@@ -70,8 +70,6 @@ async def main():
     try:
         await lightrag_wrapper.initialize(
             working_dir=WORKING_DIR,
-            llm_model_func=gpt_4o_mini_complete,
-            embedding_func=openai_embed,
             max_parallel_insert=8,
         )
 

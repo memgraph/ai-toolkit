@@ -1,7 +1,7 @@
 [project]
-name = "lightrag-memgraph"
-version = "0.1.1"
-description = "LightRAG integration with Memgraph"
+name = "unstructured2graph"
+version = "0.1.2"
+description = "Convert unstructured documents into knowledge graphs"
 readme = "README.md"
 requires-python = ">=3.10"
 
@@ -22,47 +22,39 @@ classifiers = [
 ]
 
 dependencies = [
-    "lightrag-hku[api]==1.4.8.2",
+    "unstructured[all-docs]>=0.12.6",
+    "lightrag-memgraph>=0.1.1",
     "memgraph-toolbox>=0.1.6",
-    "numpy>=1.21.0",
 ]
-
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
-    "black>=22.0.0",
-    "isort>=5.0.0",
-    "mypy>=1.0.0",
 ]
 
 [project.urls]
 "Homepage" = "https://github.com/memgraph/ai-toolkit"
-"Source" = "https://github.com/memgraph/ai-toolkit/tree/main/integrations/lightrag-memgraph"
+"Source" = "https://github.com/memgraph/ai-toolkit/tree/main/unstructured2graph"
 "Issues" = "https://github.com/memgraph/ai-toolkit/issues"
-
-[tool.pytest.ini_options]
-pythonpath = ["src"]
-asyncio_mode = "strict"
-asyncio_default_fixture_loop_scope = "function"
 
 [build-system]
 requires = ["hatchling", "build", "setuptools"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/lightrag_memgraph"]
+packages = ["src/unstructured2graph"]
 
-[tool.black]
-line-length = 88
-target-version = ['py310']
-
-[tool.isort]
-profile = "black"
-line_length = 88
-
-[tool.mypy]
-python_version = "3.10"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# Logging configuration - set log_cli_level to INFO to see logs during test execution
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)8s] %(name)s: %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+# Capture logs for all tests
+log_capture = true
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
