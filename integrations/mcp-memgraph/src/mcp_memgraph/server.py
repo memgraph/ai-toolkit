@@ -1,4 +1,4 @@
-from fastmcp import FastMCP, Context
+from fastmcp import FastMCP
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 
 from memgraph_toolbox.api.memgraph import Memgraph
@@ -17,16 +17,19 @@ from memgraph_toolbox.tools.node_neighborhood import NodeNeighborhoodTool
 from memgraph_toolbox.tools.node_vector_search import NodeVectorSearchTool
 from memgraph_toolbox.utils.logger import logger_init
 
-import os
 from typing import Any, Dict, List
+
+from .config import get_memgraph_config, get_mcp_config
+
+# Get configuration instances
+memgraph_config = get_memgraph_config()
+mcp_config = get_mcp_config()
 
 # Configure logging
 logger = logger_init("mcp-memgraph")
 
-MCP_HOST = os.environ.get("MCP_HOST", "127.0.0.1")
-
 # Initialize FastMCP server
-mcp = FastMCP("mcp-memgraph", host=MCP_HOST)
+mcp = FastMCP("mcp-memgraph")
 
 
 # Middleware to capture client information during initialization
@@ -58,22 +61,12 @@ class ClientInfoMiddleware(Middleware):
 mcp.add_middleware(ClientInfoMiddleware())
 
 
-MEMGRAPH_URL = os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687")
-MEMGRAPH_USER = os.environ.get("MEMGRAPH_USER", "")
-MEMGRAPH_PASSWORD = os.environ.get("MEMGRAPH_PASSWORD", "")
-MEMGRAPH_DATABASE = os.environ.get("MEMGRAPH_DATABASE", "memgraph")
-
+# Initialize Memgraph client using configuration
 logger.info(
-    f"Connecting to Memgraph db '{MEMGRAPH_DATABASE}' at {MEMGRAPH_URL} with user '{MEMGRAPH_USER}'"
+    f"Connecting to Memgraph db '{memgraph_config.database}' at {memgraph_config.url} with user '{memgraph_config.username}'"
 )
 
-# Initialize Memgraph client
-db = Memgraph(
-    url=MEMGRAPH_URL,
-    username=MEMGRAPH_USER,
-    password=MEMGRAPH_PASSWORD,
-    database=MEMGRAPH_DATABASE,
-)
+db = Memgraph(**memgraph_config.get_client_config())
 
 
 @mcp.tool()
