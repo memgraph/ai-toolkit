@@ -3,7 +3,7 @@ import os
 from typing import Optional
 from contextlib import AsyncExitStack
 
-from mcp import ClientSession, StdioServerParameters
+from mcp import ClientSession, StdioServerParameters, Implementation
 from mcp.client.stdio import stdio_client
 
 from anthropic import Anthropic
@@ -52,7 +52,11 @@ class MCPClient:
         )
         self.stdio, self.write = stdio_transport
         self.session = await self.exit_stack.enter_async_context(
-            ClientSession(self.stdio, self.write)
+            ClientSession(
+                self.stdio,
+                self.write,
+                client_info=Implementation(name="MCP Test Client", version="1.0.0"),
+            )
         )
 
         await self.session.initialize()
@@ -81,7 +85,7 @@ async def test_mcp_client():
 async def test_run_query():
     """Test the run_query tool."""
     query = "MATCH (n) RETURN n LIMIT 1;"
-    response = run_query(query)
+    response = run_query.fn(query)
     assert isinstance(response, list), "Expected response to be a list"
     assert len(response) >= 0, "Expected response to have at least 0 results"
     # Add more assertions based on expected query results
@@ -90,7 +94,7 @@ async def test_run_query():
 @pytest.mark.asyncio
 async def test_get_schema():
     """Test the get_schema tool."""
-    response = get_schema()
+    response = get_schema.fn()
     assert isinstance(response, list), "Expected response to be a list"
     assert len(response) >= 0, "Expected response to have at least 0 results"
     # Add more assertions based on expected schema information
@@ -100,7 +104,7 @@ async def test_get_schema():
 async def test_get_node_neighborhood():
     """Test the get_node_neighborhood tool."""
     # Test with a non-existent node ID (should return empty or error)
-    response = get_node_neighborhood("999999", max_distance=1, limit=10)
+    response = get_node_neighborhood.fn("999999", max_distance=1, limit=10)
     assert isinstance(response, list), "Expected response to be a list"
     # The response should either be empty (no nodes found) or contain an error message
     assert len(response) >= 0, "Expected response to have at least 0 results"
@@ -111,7 +115,7 @@ async def test_search_node_vectors():
     """Test the search_node_vectors tool."""
     # Test with a non-existent index (should return error)
     query_vector = [0.1, 0.2, 0.3, 0.4, 0.5]
-    response = search_node_vectors("non_existent_index", query_vector, limit=5)
+    response = search_node_vectors.fn("non_existent_index", query_vector, limit=5)
     assert isinstance(response, list), "Expected response to be a list"
     # The response should contain an error message since the index doesn't exist
     assert len(response) >= 0, "Expected response to have at least 0 results"
