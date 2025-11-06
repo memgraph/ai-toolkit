@@ -68,6 +68,7 @@ async def prompt_with_tools(
                 messages=messages,
                 tools=tools,
             )
+            # TODO(gitbuda): Replace the code below with tools.atool_calls
             msg = resp["choices"][0]["message"]
             # Tool calls by the MCP server.
             tool_calls = msg.get("tool_calls", [])
