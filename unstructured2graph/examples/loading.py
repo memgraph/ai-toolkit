@@ -7,7 +7,7 @@ from lightrag_memgraph import MemgraphLightRAGWrapper
 
 from memgraph_toolbox.api.memgraph import Memgraph
 from unstructured2graph import from_unstructured, create_index
-from sources import SOURCES
+import sources as SOURCES
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 LIGHTRAG_DIR = os.path.join(SCRIPT_DIR, "..", "lightrag_storage.out")
@@ -34,7 +34,7 @@ async def from_unstructured_with_prep():
     await lightrag_wrapper.initialize(working_dir=LIGHTRAG_DIR)
 
     await from_unstructured(
-        SOURCES, memgraph, lightrag_wrapper, only_chunks=False, link_chunks=True
+        SOURCES.MEMGRAPH_DOCS_GITHUB_LATEST_RAW, memgraph, lightrag_wrapper, only_chunks=False, link_chunks=True
     )
     await lightrag_wrapper.afinalize()
 

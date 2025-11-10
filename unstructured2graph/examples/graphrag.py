@@ -17,7 +17,7 @@ if __name__ == "__main__":
         f"""
         CALL embeddings.text(['Hello world prompt']) YIELD embeddings, success
         CALL vector_search.search('vs_name', 10, embeddings[0]) YIELD distance, node, similarity
-        MATCH (node)-[r*bfs]-(dst)
+        MATCH (node)-[r*bfs]-(dst:Chunk)
         WITH DISTINCT dst, degree(dst) AS degree ORDER BY degree DESC
         RETURN dst LIMIT 10;
     """
