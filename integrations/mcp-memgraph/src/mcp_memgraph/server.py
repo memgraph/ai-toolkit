@@ -32,35 +32,6 @@ logger = logger_init("mcp-memgraph")
 mcp = FastMCP("mcp-memgraph")
 
 
-# Middleware to capture client information during initialization
-class ClientInfoMiddleware(Middleware):
-    """Middleware to capture and log client information."""
-
-    async def on_initialize(self, context: MiddlewareContext, call_next) -> None:
-        """
-        Called when a client connects and initializes the session.
-        Captures client information for logging and context state.
-        """
-        # Access initialization request details
-        if hasattr(context, "message") and context.message:
-            # Client info is in message.params.clientInfo, not message.clientInfo
-            params = getattr(context.message, "params", None)
-            if params:
-                client_info = getattr(params, "clientInfo", None)
-
-                if client_info:
-                    client_name = getattr(client_info, "name", "Unknown")
-                    client_version = getattr(client_info, "version", "Unknown")
-
-                    logger.info(f"Client connected: {client_name} v{client_version}")
-
-        await call_next(context)
-
-
-# Add middleware to the server
-mcp.add_middleware(ClientInfoMiddleware())
-
-
 # Initialize Memgraph client using configuration
 logger.info(
     f"Connecting to Memgraph db '{memgraph_config.database}' at {memgraph_config.url} with user '{memgraph_config.username}'"
