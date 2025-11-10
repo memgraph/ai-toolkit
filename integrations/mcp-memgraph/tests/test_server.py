@@ -83,12 +83,104 @@ async def test_mcp_client():
 
 @pytest.mark.asyncio
 async def test_run_query():
-    """Test the run_query tool."""
+    """Test the run_query tool with read operations."""
     query = "MATCH (n) RETURN n LIMIT 1;"
     response = run_query.fn(query)
     assert isinstance(response, list), "Expected response to be a list"
     assert len(response) >= 0, "Expected response to have at least 0 results"
-    # Add more assertions based on expected query results
+    # Verify no error in response for read queries
+    if len(response) > 0:
+        assert "error" not in response[0], "Read query should not error"
+
+
+@pytest.mark.asyncio
+async def test_write_query_blocked_in_readonly_mode():
+    """Test write queries are blocked when MCP_READ_ONLY=true (default)."""
+    # Ensure we're in read-only mode (default)
+    original_value = os.environ.get("MCP_READ_ONLY")
+    os.environ["MCP_READ_ONLY"] = "true"
+
+    # Reimport to reload config
+    import importlib
+    import mcp_memgraph.server
+
+    importlib.reload(mcp_memgraph.server)
+    from mcp_memgraph import run_query
+
+    try:
+        # Test CREATE query
+        create_query = "CREATE (n:TestNode {name: 'test'}) RETURN n;"
+        response = run_query.fn(create_query)
+
+        assert isinstance(response, list), "Expected response to be a list"
+        assert len(response) > 0, "Expected error response"
+        assert "error" in response[0], "Expected error for write operation"
+        assert (
+            "read-only" in response[0]["error"].lower()
+        ), "Error should mention read-only mode"
+
+        # Test MERGE query
+        merge_query = "MERGE (n:TestNode {id: 1}) RETURN n;"
+        response = run_query.fn(merge_query)
+        assert "error" in response[0], "MERGE should be blocked in read-only mode"
+
+        # Test DELETE query
+        delete_query = "MATCH (n:TestNode) DELETE n;"
+        response = run_query.fn(delete_query)
+        assert "error" in response[0], "DELETE should be blocked in read-only mode"
+
+        # Test SET query
+        set_query = "MATCH (n:TestNode) SET n.name = 'updated' RETURN n;"
+        response = run_query.fn(set_query)
+        assert "error" in response[0], "SET should be blocked in read-only mode"
+
+    finally:
+        # Restore original value
+        if original_value is not None:
+            os.environ["MCP_READ_ONLY"] = original_value
+        else:
+            os.environ.pop("MCP_READ_ONLY", None)
+
+
+@pytest.mark.asyncio
+async def test_write_query_allowed_when_readonly_disabled():
+    """Test that write queries work when MCP_READ_ONLY=false."""
+    # Set read-only mode to false
+    original_value = os.environ.get("MCP_READ_ONLY")
+    os.environ["MCP_READ_ONLY"] = "false"
+
+    # Reimport to reload config
+    import importlib
+    import mcp_memgraph.server
+
+    importlib.reload(mcp_memgraph.server)
+    from mcp_memgraph import run_query
+
+    try:
+        # Test CREATE query (should work now)
+        create_query = (
+            "CREATE (n:TestNode {name: 'test', test_marker: true}) " "RETURN n;"
+        )
+        response = run_query.fn(create_query)
+
+        assert isinstance(response, list), "Expected response to be a list"
+        # Should not have an error about read-only mode
+        if len(response) > 0 and "error" in response[0]:
+            # Could have other errors, but not read-only error
+            assert (
+                "read-only" not in response[0]["error"].lower()
+            ), "Should not block write when read-only is disabled"
+
+        # Clean up: delete the test node
+        cleanup_query = "MATCH (n:TestNode {test_marker: true}) DELETE n;"
+        run_query.fn(cleanup_query)
+
+    finally:
+        # Restore original value
+        if original_value is not None:
+            os.environ["MCP_READ_ONLY"] = original_value
+        else:
+            os.environ.pop("MCP_READ_ONLY", None)
 
 
 @pytest.mark.asyncio
