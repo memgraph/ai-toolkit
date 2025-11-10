@@ -92,7 +92,8 @@ class MCPServerConfig:
         MCP_TRANSPORT: "stdio" or "streamable-http" (default: stdio)
         MCP_HOST: Bind host for HTTP transport (default: 127.0.0.1)
         MCP_PORT: Bind port for HTTP transport (default: 8000)
-        #TODO(antejavor): Implement log file handling
+        MCP_READ_ONLY: Enable read-only mode to prevent write operations (default: true)
+        # TODO(antejavor): Implement log file handling
         MCP_LOG_FILE: Path to log file (default: None, disables file logging)
         MCP_LOG_LEVEL: Logging level - DEBUG, INFO, WARNING, ERROR (default: INFO)
     """
@@ -126,6 +127,16 @@ class MCPServerConfig:
         Default: 8000
         """
         return int(os.getenv("MCP_PORT", "8000"))
+
+    @property
+    def read_only(self) -> bool:
+        """Get the read-only mode setting.
+
+        When enabled, write operations (CREATE, MERGE, DELETE, etc.) are blocked.
+
+        Default: True
+        """
+        return os.getenv("MCP_READ_ONLY", "true").lower() in ("true", "1", "yes")
 
     @property
     def log_file(self) -> Optional[str]:
