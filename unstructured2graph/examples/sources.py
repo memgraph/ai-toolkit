@@ -16,7 +16,7 @@ RANDOM = [
 ]
 MEMGRAPH_DOCS = [
     "https://memgraph.com/docs/querying/clauses",
-    "https://memgraph.com/docs/clustering/high-availability"
+    "https://memgraph.com/docs/clustering/high-availability",
 ]
 
 MEMGRAPH_DOCS_GITHUB_LATEST = [

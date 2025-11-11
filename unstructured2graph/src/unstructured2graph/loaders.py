@@ -175,4 +175,3 @@ async def from_unstructured(
             logger.info(
                 f"Processed {processed_chunks} chunks out of {total_chunks}. Estimated time remaining: {time_str}"
             )
-

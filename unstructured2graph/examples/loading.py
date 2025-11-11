@@ -34,7 +34,11 @@ async def from_unstructured_with_prep():
     await lightrag_wrapper.initialize(working_dir=LIGHTRAG_DIR)
 
     await from_unstructured(
-        SOURCES.MEMGRAPH_DOCS_GITHUB_LATEST_RAW, memgraph, lightrag_wrapper, only_chunks=False, link_chunks=True
+        SOURCES.MEMGRAPH_DOCS_GITHUB_LATEST_RAW,
+        memgraph,
+        lightrag_wrapper,
+        only_chunks=False,
+        link_chunks=True,
     )
     await lightrag_wrapper.afinalize()
 
