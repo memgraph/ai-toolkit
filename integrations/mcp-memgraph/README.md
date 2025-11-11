@@ -64,6 +64,9 @@ The Memgraph MCP Server exposes the following tools over MCP. Each tool runs a M
 ### run_query(query: str)
 
 Run any arbitrary Cypher query against the connected Memgraph database.
+
+**Read-Only Mode:** By default, the server runs in read-only mode to prevent accidental data modifications. Write operations (CREATE, MERGE, DELETE, SET, DROP, REMOVE) are automatically blocked and will return an error. Set `MCP_READ_ONLY=false` to enable write operations.
+
 Parameters:
 
 - `query`: A valid Cypher query string.
@@ -176,7 +179,6 @@ docker run --rm \
   mcp-memgraph:latest
 ```
 
-
 ## ⚙️ Configuration
 
 ### Environment Variables
@@ -184,11 +186,14 @@ docker run --rm \
 The following environment variables can be used to configure the Memgraph MCP Server, whether running with Docker or directly (e.g., with `uv` or `python`).
 
 - `MEMGRAPH_URL`: The Bolt URL of the Memgraph instance to connect to. Default: `bolt://host.docker.internal:7687`
-    - The default value allows you to connect to a Memgraph instance running on your host machine from within the Docker container.
+  - The default value allows you to connect to a Memgraph instance running on your host machine from within the Docker container.
 - `MEMGRAPH_USER`: The username for authentication. Default: `memgraph`
 - `MEMGRAPH_PASSWORD`: The password for authentication. Default: empty
 - `MEMGRAPH_DATABASE`: The database name to connect to. Default: `memgraph`
 - `MCP_TRANSPORT`: The transport protocol to use. Options: `streamable-http` (default), `stdio`
+- `MCP_READ_ONLY`: Enable read-only mode to prevent write operations (CREATE, MERGE, DELETE, SET, DROP, REMOVE). Options: `true` (default), `false`
+  - When set to `true`, all write queries will be blocked with an error message
+  - Set to `false` to allow write operations on the database
 
 You can set these environment variables in your shell, in your Docker run command, or in your deployment environment.
 
@@ -198,11 +203,11 @@ If you are using VS Code MCP extension or similar, your configuration for an HTT
 
 ```json
 {
-    "servers": {
-        "mcp-memgraph-http": {
-            "url": "http://localhost:8000/mcp/"
-        }
+  "servers": {
+    "mcp-memgraph-http": {
+      "url": "http://localhost:8000/mcp/"
     }
+  }
 }
 ```
 
@@ -224,19 +229,20 @@ When the settings open, enhance the args as follows:
 
 ```json
 {
-    "servers": {
-        "mcp-memgraph": {
-            "type": "stdio",
-            "command": "docker",
-            "args": [
-                "run",
-                "--rm",
-                "-i",
-                "-e", "MCP_TRANSPORT=stdio",
-                "mcp-memgraph:latest"
-            ]
-        }
+  "servers": {
+    "mcp-memgraph": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-e",
+        "MCP_TRANSPORT=stdio",
+        "mcp-memgraph:latest"
+      ]
     }
+  }
 }
 ```
 
@@ -244,22 +250,26 @@ To connect to a remote Memgraph instance with authentication, add environment va
 
 ```json
 {
-    "servers": {
-        "mcp-memgraph": {
-            "type": "stdio",
-            "command": "docker",
-            "args": [
-                "run",
-                "--rm",
-                "-i",
-                "-e", "MCP_TRANSPORT=stdio",
-                "-e", "MEMGRAPH_URL=bolt://memgraph:7687",
-                "-e", "MEMGRAPH_USER=myuser",
-                "-e", "MEMGRAPH_PASSWORD=mypassword",
-                "mcp-memgraph:latest"
-            ]
-        }
+  "servers": {
+    "mcp-memgraph": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-e",
+        "MCP_TRANSPORT=stdio",
+        "-e",
+        "MEMGRAPH_URL=bolt://memgraph:7687",
+        "-e",
+        "MEMGRAPH_USER=myuser",
+        "-e",
+        "MEMGRAPH_PASSWORD=mypassword",
+        "mcp-memgraph:latest"
+      ]
     }
+  }
 }
 ```
 

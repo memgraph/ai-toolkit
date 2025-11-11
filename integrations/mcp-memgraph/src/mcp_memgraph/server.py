@@ -18,6 +18,7 @@ from memgraph_toolbox.tools.node_vector_search import NodeVectorSearchTool
 from memgraph_toolbox.utils.logger import logger_init
 
 from typing import Any, Dict, List
+import re
 
 from .config import get_memgraph_config, get_mcp_config
 
@@ -31,53 +32,64 @@ logger = logger_init("mcp-memgraph")
 # Initialize FastMCP server
 mcp = FastMCP("mcp-memgraph")
 
+# Read-only mode flag (from config)
+READ_ONLY_MODE = mcp_config.read_only
 
-# Middleware to capture client information during initialization
-class ClientInfoMiddleware(Middleware):
-    """Middleware to capture and log client information."""
-
-    async def on_initialize(self, context: MiddlewareContext, call_next) -> None:
-        """
-        Called when a client connects and initializes the session.
-        Captures client information for logging and context state.
-        """
-        # Access initialization request details
-        if hasattr(context, "message") and context.message:
-            # Client info is in message.params.clientInfo, not message.clientInfo
-            params = getattr(context.message, "params", None)
-            if params:
-                client_info = getattr(params, "clientInfo", None)
-
-                if client_info:
-                    client_name = getattr(client_info, "name", "Unknown")
-                    client_version = getattr(client_info, "version", "Unknown")
-
-                    logger.info(f"Client connected: {client_name} v{client_version}")
-
-        await call_next(context)
+# Patterns for write operations in Cypher
+WRITE_PATTERNS = [
+    r"\bCREATE\b",
+    r"\bMERGE\b",
+    r"\bDELETE\b",
+    r"\bREMOVE\b",
+    r"\bSET\b",
+    r"\bDROP\b",
+    r"\bCREATE\s+INDEX\b",
+    r"\bDROP\s+INDEX\b",
+    r"\bCREATE\s+CONSTRAINT\b",
+    r"\bDROP\s+CONSTRAINT\b",
+]
 
 
-# Add middleware to the server
-mcp.add_middleware(ClientInfoMiddleware())
+def is_write_query(query: str) -> bool:
+    """Check if a Cypher query contains write operations"""
+    query_upper = query.upper()
+    for pattern in WRITE_PATTERNS:
+        if re.search(pattern, query_upper):
+            return True
+    return False
 
 
 # Initialize Memgraph client using configuration
 logger.info(
     f"Connecting to Memgraph db '{memgraph_config.database}' at {memgraph_config.url} with user '{memgraph_config.username}'"
 )
+logger.info(f"Read-only mode: {READ_ONLY_MODE}")
 
 db = Memgraph(**memgraph_config.get_client_config())
 
 
 @mcp.tool()
 def run_query(query: str) -> List[Dict[str, Any]]:
-    """Run a Cypher query on Memgraph"""
+    """Run a Cypher query on Memgraph. Write operations are blocked if server is in read-only mode."""
     logger.info(f"Running query: {query}")
+
+    # Check if query is a write operation in read-only mode
+    if READ_ONLY_MODE and is_write_query(query):
+        logger.warning(f"Write operation blocked in read-only mode: {query}")
+        return [
+            {
+                "error": "Write operations are not allowed in read-only mode",
+                "query": query,
+                "mode": "read-only",
+                "hint": "Set MCP_READ_ONLY=false to enable write operations",
+            }
+        ]
+
     try:
         result = CypherTool(db=db).call({"query": query})
         return result
     except Exception as e:
-        return [f"Error running query: {str(e)}"]
+        return [{"error": f"Error running query: {str(e)}"}]
 
 
 @mcp.tool()
@@ -88,7 +100,7 @@ def get_configuration() -> List[Dict[str, Any]]:
         config = ShowConfigTool(db=db).call({})
         return config
     except Exception as e:
-        return [f"Error fetching configuration: {str(e)}"]
+        return [{"error": f"Error fetching configuration: {str(e)}"}]
 
 
 @mcp.tool()
@@ -99,7 +111,7 @@ def get_index() -> List[Dict[str, Any]]:
         index = ShowIndexInfoTool(db=db).call({})
         return index
     except Exception as e:
-        return [f"Error fetching index: {str(e)}"]
+        return [{"error": f"Error fetching index: {str(e)}"}]
 
 
 @mcp.tool()
@@ -110,7 +122,7 @@ def get_constraint() -> List[Dict[str, Any]]:
         constraint = ShowConstraintInfoTool(db=db).call({})
         return constraint
     except Exception as e:
-        return [f"Error fetching constraint: {str(e)}"]
+        return [{"error": f"Error fetching constraint: {str(e)}"}]
 
 
 @mcp.tool()
@@ -121,7 +133,7 @@ def get_schema() -> List[Dict[str, Any]]:
         schema = ShowSchemaInfoTool(db=db).call({})
         return schema
     except Exception as e:
-        return [f"Error fetching schema: {str(e)}"]
+        return [{"error": f"Error fetching schema: {str(e)}"}]
 
 
 @mcp.tool()
@@ -132,7 +144,7 @@ def get_storage() -> List[Dict[str, Any]]:
         storage = ShowStorageInfoTool(db=db).call({})
         return storage
     except Exception as e:
-        return [f"Error fetching storage: {str(e)}"]
+        return [{"error": f"Error fetching storage: {str(e)}"}]
 
 
 @mcp.tool()
@@ -143,7 +155,7 @@ def get_triggers() -> List[Dict[str, Any]]:
         triggers = ShowTriggersTool(db=db).call({})
         return triggers
     except Exception as e:
-        return [f"Error fetching triggers: {str(e)}"]
+        return [{"error": f"Error fetching triggers: {str(e)}"}]
 
 
 @mcp.tool()
@@ -154,7 +166,7 @@ def get_betweenness_centrality() -> List[Dict[str, Any]]:
         betweenness = BetweennessCentralityTool(db=db).call({})
         return betweenness
     except Exception as e:
-        return [f"Error fetching betweenness centrality: {str(e)}"]
+        return [{"error": f"Error fetching betweenness centrality: {str(e)}"}]
 
 
 @mcp.tool()
@@ -165,7 +177,7 @@ def get_page_rank() -> List[Dict[str, Any]]:
         page_rank = PageRankTool(db=db).call({})
         return page_rank
     except Exception as e:
-        return [f"Error fetching page rank: {str(e)}"]
+        return [{"error": f"Error fetching page rank: {str(e)}"}]
 
 
 @mcp.tool()
@@ -182,7 +194,7 @@ def get_node_neighborhood(
         )
         return neighborhood
     except Exception as e:
-        return [f"Error finding node neighborhood: {str(e)}"]
+        return [{"error": f"Error finding node neighborhood: {str(e)}"}]
 
 
 @mcp.tool()
@@ -197,4 +209,4 @@ def search_node_vectors(
         )
         return vector_search
     except Exception as e:
-        return [f"Error performing vector search: {str(e)}"]
+        return [{"error": f"Error performing vector search: {str(e)}"}]
