@@ -132,12 +132,10 @@ async def from_unstructured(
         )
         memgraph_node_props = []
         for chunk in document.chunks:
-            if not only_chunks:
-                await lightrag_wrapper.ainsert(
-                    input=chunk.text, file_paths=[chunk.hash]
-                )
+            logger.info(f"Chunk: {chunk.hash} - {chunk.text}")
             memgraph_node_props.append({"hash": chunk.hash, "text": chunk.text})
         create_nodes_from_list(memgraph, memgraph_node_props, "Chunk", 100)
+
         if link_chunks:
             hash_pairs = [
                 (document.chunks[i].hash, document.chunks[i + 1].hash)
@@ -149,6 +147,15 @@ async def from_unstructured(
                     for from_hash, to_hash in hash_pairs
                 ]
                 link_nodes_in_order(memgraph, "Chunk", "hash", relationships, "NEXT")
+
+        for chunk in document.chunks:
+            if not only_chunks:
+                await lightrag_wrapper.ainsert(
+                    input=chunk.text, file_paths=[chunk.hash]
+                )
+            if not only_chunks:
+                connect_chunks_to_entities(memgraph, "Chunk", "base")
+
         processed_chunks += len(document.chunks)
         elapsed_time = time.time() - start_time
         estimated_time_remaining = (
@@ -168,5 +175,3 @@ async def from_unstructured(
             logger.info(
                 f"Processed {processed_chunks} chunks out of {total_chunks}. Estimated time remaining: {time_str}"
             )
-    if not only_chunks:
-        connect_chunks_to_entities(memgraph, "Chunk", "base")
