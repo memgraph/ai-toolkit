@@ -15,30 +15,31 @@ classifiers = [
 ]
 
 dependencies = [
-    "langchain-core>=0.3.15",
+    "langchain-core>=1.0.0",
+    "langchain-classic>=1.0.0",
     "neo4j>=5.28.1",
     "memgraph-toolbox>=0.1.6",
-    "langchain>=0.3.25",
+    "langchain>=1.0.0",
 ]
 
 [project.optional-dependencies]
 test = [
   "pytest>=8.3.5",
   "pytest-asyncio>=0.26.0",
-  "langgraph>=0.3.11",
+  "langgraph>=0.2.0",
   "python-dotenv>=1.0.1",
   "pytest-socket>=0.7.0",
   "pytest-watcher>=0.3.4",
-  "langchain-tests>=0.3.17",
-  "langchain-experimental>=0.3.4",
-  "langchain-core>=0.3.67",
-  "langchain-openai>=0.3.12",
+  "langchain-tests>=0.3.0",
+  "langchain-experimental>=0.3.0",
+  "langchain-core>=1.0.0",
+  "langchain-openai>=0.2.0",
 ]
 
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-asyncio_fixture_loop_scope = "function"
+asyncio_default_fixture_loop_scope = "function"
 
 [build-system]
 requires = ["hatchling", "build", "setuptools"]
