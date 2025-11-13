@@ -713,15 +713,27 @@ class SQLToMemgraphAgent:
                         successful_queries += 1
 
                         # Log progress for node creation queries
-                        if "CREATE (n:" in query:
-                            # Extract table name from comment or FROM clause
+                        if "MERGE (n:" in query or "CREATE (n:" in query:
+                            # Extract table name from comment line
+                            # Comment format: "// Merge {label} nodes from {table} table (HyGM optimized)"
                             table_name = None
-                            if "FROM " in query:
-                                try:
-                                    from_part = query.split("FROM ")[1]
-                                    table_name = from_part.split()[0].rstrip(",")
-                                except (IndexError, AttributeError):
-                                    pass
+                            for line in query_lines:
+                                if (
+                                    line.startswith("//")
+                                    and " from " in line
+                                    and " table" in line
+                                ):
+                                    try:
+                                        # Extract table name from comment
+                                        parts = (
+                                            line.split(" from ")[1]
+                                            .split(" table")[0]
+                                            .strip()
+                                        )
+                                        table_name = parts
+                                        break
+                                    except (IndexError, AttributeError):
+                                        pass
 
                             if table_name:
                                 logger.info(
@@ -731,7 +743,9 @@ class SQLToMemgraphAgent:
                                 # Update completed tables list
                                 if table_name not in state["completed_tables"]:
                                     state["completed_tables"].append(table_name)
-                        elif "CREATE (" in query and "-[:" in query:
+                        elif (
+                            "MERGE (" in query or "CREATE (" in query
+                        ) and "-[:" in query:
                             logger.info("Successfully created relationships")
 
                     except Exception as e:
