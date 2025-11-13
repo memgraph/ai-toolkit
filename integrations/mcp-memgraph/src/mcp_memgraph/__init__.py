@@ -1,4 +1,4 @@
-from .server import (
+from .servers.server import (
     run_query,
     get_configuration,
     get_index,
@@ -10,9 +10,14 @@ from .server import (
     get_page_rank,
     get_node_neighborhood,
     search_node_vectors,
-    mcp,
-    logger,
 )
+
+from .servers.experimental import (
+    experimental_query,
+)
+
+# Note: 'mcp' and 'logger' are server-specific and loaded dynamically
+# in main.py. They are not exported from the package level.
 
 __all__ = [
     "run_query",
@@ -26,6 +31,5 @@ __all__ = [
     "get_page_rank",
     "get_node_neighborhood",
     "search_node_vectors",
-    "mcp",
-    "logger",
+    "experimental_query",
 ]
