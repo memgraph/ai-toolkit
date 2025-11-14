@@ -1,11 +1,10 @@
-"""Memgraph Experimental.
+"""Memgraph Experimental (experimental).
 
-This server provides autonomous adapting capabilities that:
+This server provides autonomous adapting GraphRAG capabilities that:
 - Uses sampling to validate queries and check for required indexes
 - Uses elicitation to prompt users about creating missing indexes
 - Automatically detects vector, text, and label indexes in Memgraph
 - Adapts query execution based on available indexes
-
 """
 
 from fastmcp import FastMCP, Context
@@ -26,10 +25,10 @@ memgraph_config = get_memgraph_config()
 mcp_config = get_mcp_config()
 
 # Configure logging
-logger = logger_init("mcp-memgraph-adaptive-graphrag")
+logger = logger_init("mcp-memgraph-experimental")
 
 # Initialize FastMCP server
-mcp = FastMCP("mcp-memgraph-adaptive-graphrag")
+mcp = FastMCP("mcp-memgraph-experimental")
 
 # Initialize Memgraph client
 logger.info(
@@ -38,9 +37,9 @@ logger.info(
     memgraph_config.url,
     memgraph_config.username,
 )
-logger.info("Adaptive GraphRAG (experimental) server initialized")
+logger.info("Memgraph Experimental server initialized")
 logger.warning(
-    "Note: Read-only mode is not supported on GraphRAG server. "
+    "Note: Read-only mode is not supported on this server. "
     "This server requires write access to create indexes."
 )
 
@@ -867,7 +866,7 @@ async def analyze_query(query: str, ctx: Context) -> Dict[str, Any]:
         return {"error": f"Error analyzing query: {str(e)}"}
 
 
-logger.info("🔬 Adaptive GraphRAG (experimental) MCP server initialized")
+logger.info("🔬 Memgraph Experimental MCP server initialized")
 logger.info(
     "Available tools: query_tool, create_index, get_index_info, "
     "get_schema_info, analyze_query"

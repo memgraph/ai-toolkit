@@ -142,9 +142,8 @@ mcp-memgraph
 # Run specific server when installed
 MCP_SERVER=experimental mcp-memgraph
 
-# Future servers (when implemented):
-# MCP_SERVER=graphrag uv run mcp-memgraph
-# MCP_SERVER=hygm uv run mcp-memgraph
+# Run experimental Memgraph server
+MCP_SERVER=memgraph-experimental uv run mcp-memgraph
 ```
 
 ### Claude Desktop Integration
@@ -210,7 +209,7 @@ The server is designed to integrate with Claude Desktop. Add to `claude_desktop_
 ```json
 {
   "mcpServers": {
-    "memgraph-graphrag": {
+    "memgraph-experimental": {
       "command": "uv",
       "args": [
         "run",
@@ -221,7 +220,7 @@ The server is designed to integrate with Claude Desktop. Add to `claude_desktop_
         "mcp-memgraph"
       ],
       "env": {
-        "MCP_SERVER": "graphrag"
+        "MCP_SERVER": "memgraph-experimental"
       }
     },
     "memgraph-hygm": {
