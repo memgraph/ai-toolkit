@@ -195,9 +195,10 @@ The following environment variables can be used to configure the Memgraph MCP Se
 
 #### Server Configuration
 
-- `MCP_SERVER`: The server implementation to use. Options: `server` (default), `experimental`
+- `MCP_SERVER`: The server implementation to use. Options: `server` (default), `experimental`, `graphrag`
   - `server`: Production-ready server with all stable Memgraph tools
   - `experimental`: Experimental server for testing new features
+  - `graphrag`: GraphRAG server with adaptive query optimization and index management
 - `MCP_TRANSPORT`: The transport protocol to use. Options: `streamable-http` (default), `stdio`
 - `MCP_READ_ONLY`: Enable read-only mode to prevent write operations (CREATE, MERGE, DELETE, SET, DROP, REMOVE). Options: `true` (default), `false`
   - When set to `true`, all write queries will be blocked with an error message
@@ -211,15 +212,16 @@ The MCP server supports multiple server implementations that can be selected via
 
 - **`server`** (default): Production server with all stable tools (run_query, get_schema, get_configuration, etc.)
 - **`experimental`**: Experimental server for testing new features without affecting the stable server
+- **`graphrag`**: GraphRAG server with **FastMCP's native sampling and elicitation** for adaptive GraphRAG
 
-To use the experimental server:
+To use the GraphRAG server:
 
 ```bash
 # With uv
-MCP_SERVER=experimental uv run mcp-memgraph
+MCP_SERVER=graphrag uv run mcp-memgraph
 
 # With Docker
-docker run --rm -e MCP_SERVER=experimental mcp-memgraph:latest
+docker run --rm -e MCP_SERVER=graphrag mcp-memgraph:latest
 ```
 
 To add a new server implementation, create a new file in `src/mcp_memgraph/servers/` and register it in the `AVAILABLE_SERVERS` dictionary in `src/mcp_memgraph/servers/__init__.py`.
