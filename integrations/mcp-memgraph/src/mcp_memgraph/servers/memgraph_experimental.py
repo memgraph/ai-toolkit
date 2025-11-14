@@ -1,4 +1,4 @@
-"""Memgraph Experimental (experimental).
+"""Memgraph Experimental.
 
 This server provides autonomous adapting GraphRAG capabilities that:
 - Uses sampling to validate queries and check for required indexes
