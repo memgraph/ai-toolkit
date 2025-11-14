@@ -15,11 +15,6 @@ AVAILABLE_SERVERS: Dict[str, Dict[str, Any]] = {
         "emoji": "🚀",
         "description": "MCP server with stable tools",
     },
-    "experimental": {
-        "module": "mcp_memgraph.servers.experimental",
-        "emoji": "🧪",
-        "description": "Experimental server for testing new features",
-    },
     "graphrag": {
         "module": "mcp_memgraph.servers.graphrag",
         "emoji": "🔬",
