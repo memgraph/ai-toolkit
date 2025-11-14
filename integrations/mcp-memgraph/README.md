@@ -185,17 +185,44 @@ docker run --rm \
 
 The following environment variables can be used to configure the Memgraph MCP Server, whether running with Docker or directly (e.g., with `uv` or `python`).
 
+#### Memgraph Connection
+
 - `MEMGRAPH_URL`: The Bolt URL of the Memgraph instance to connect to. Default: `bolt://host.docker.internal:7687`
   - The default value allows you to connect to a Memgraph instance running on your host machine from within the Docker container.
 - `MEMGRAPH_USER`: The username for authentication. Default: `memgraph`
 - `MEMGRAPH_PASSWORD`: The password for authentication. Default: empty
 - `MEMGRAPH_DATABASE`: The database name to connect to. Default: `memgraph`
+
+#### Server Configuration
+
+- `MCP_SERVER`: The server implementation to use. Options: `server` (default), `experimental`
+  - `server`: Production-ready server with all stable Memgraph tools
+  - `experimental`: Experimental server for testing new features
 - `MCP_TRANSPORT`: The transport protocol to use. Options: `streamable-http` (default), `stdio`
 - `MCP_READ_ONLY`: Enable read-only mode to prevent write operations (CREATE, MERGE, DELETE, SET, DROP, REMOVE). Options: `true` (default), `false`
   - When set to `true`, all write queries will be blocked with an error message
   - Set to `false` to allow write operations on the database
 
 You can set these environment variables in your shell, in your Docker run command, or in your deployment environment.
+
+### Multi-Server Architecture
+
+The MCP server supports multiple server implementations that can be selected via the `MCP_SERVER` environment variable:
+
+- **`server`** (default): Production server with all stable tools (run_query, get_schema, get_configuration, etc.)
+- **`experimental`**: Experimental server for testing new features without affecting the stable server
+
+To use the experimental server:
+
+```bash
+# With uv
+MCP_SERVER=experimental uv run mcp-memgraph
+
+# With Docker
+docker run --rm -e MCP_SERVER=experimental mcp-memgraph:latest
+```
+
+To add a new server implementation, create a new file in `src/mcp_memgraph/servers/` and register it in the `AVAILABLE_SERVERS` dictionary in `src/mcp_memgraph/servers/__init__.py`.
 
 ### Connecting from VS Code (HTTP server)
 

@@ -100,11 +100,13 @@ async def test_write_query_blocked_in_readonly_mode():
     original_value = os.environ.get("MCP_READ_ONLY")
     os.environ["MCP_READ_ONLY"] = "true"
 
-    # Reimport to reload config
+    # Reimport to reload config and server
     import importlib
-    import mcp_memgraph.server
+    import mcp_memgraph.config
+    import mcp_memgraph.servers.server
 
-    importlib.reload(mcp_memgraph.server)
+    importlib.reload(mcp_memgraph.config)
+    importlib.reload(mcp_memgraph.servers.server)
     from mcp_memgraph import run_query
 
     try:
@@ -149,11 +151,13 @@ async def test_write_query_allowed_when_readonly_disabled():
     original_value = os.environ.get("MCP_READ_ONLY")
     os.environ["MCP_READ_ONLY"] = "false"
 
-    # Reimport to reload config
+    # Reimport to reload config and server
     import importlib
-    import mcp_memgraph.server
+    import mcp_memgraph.config
+    import mcp_memgraph.servers.server
 
-    importlib.reload(mcp_memgraph.server)
+    importlib.reload(mcp_memgraph.config)
+    importlib.reload(mcp_memgraph.servers.server)
     from mcp_memgraph import run_query
 
     try:
