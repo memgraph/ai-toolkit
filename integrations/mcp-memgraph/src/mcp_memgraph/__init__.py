@@ -12,10 +12,6 @@ from .servers.server import (
     search_node_vectors,
 )
 
-from .servers.experimental import (
-    experimental_query,
-)
-
 # Note: 'mcp' and 'logger' are server-specific and loaded dynamically
 # in main.py. They are not exported from the package level.
 
@@ -31,5 +27,4 @@ __all__ = [
     "get_page_rank",
     "get_node_neighborhood",
     "search_node_vectors",
-    "experimental_query",
 ]
