@@ -51,11 +51,26 @@ triggers = tool.call({})
 print(triggers)
 ```
 
+## Installation
+
+Install the base package:
+
+```bash
+pip install memgraph-toolbox
+```
+
+If you need embedding utilities or evaluation metrics that depend on PyTorch and sentence-transformers:
+
+```bash
+pip install 'memgraph-toolbox[evaluations]'
+```
+
 ## Requirements
 
 - Python 3.10+
 - Running [Memgraph instance](https://memgraph.com/docs/getting-started)
 - Memgraph [MAGE library](https://memgraph.com/docs/advanced-algorithms/install-mage) (for certain tools like `pagerank` and `run_betweenness_centrality`)
+- Optional: PyTorch and sentence-transformers (install with `evaluations` extra) for embedding utilities and coherence evaluation
 
 ## Contributing
 

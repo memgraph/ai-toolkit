@@ -4,7 +4,15 @@ import re
 from typing import List
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
+
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError as e:
+    raise ImportError(
+        "Coherence evaluation requires optional dependencies. "
+        "Install with: pip install 'memgraph-toolbox[evaluations]'"
+    ) from e
+
 from deepeval.metrics import BaseMetric
 from deepeval.test_case import LLMTestCase
 
@@ -252,6 +260,7 @@ def evaluate_text_coherence(
         "min_sentences": min_sentences,
         "max_sentences": max_sentences,
     }
+
 
 if __name__ == "__main__":
     example_text = (
