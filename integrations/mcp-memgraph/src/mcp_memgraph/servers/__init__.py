@@ -15,17 +15,15 @@ AVAILABLE_SERVERS: Dict[str, Dict[str, Any]] = {
         "emoji": "🚀",
         "description": "MCP server with stable tools",
     },
-    "experimental": {
-        "module": "mcp_memgraph.servers.experimental",
-        "emoji": "🧪",
-        "description": "Experimental server for testing new features",
+    "memgraph-experimental": {
+        "module": "mcp_memgraph.servers.memgraph_experimental",
+        "emoji": "🔬",
+        "description": (
+            "Memgraph experimental server with sampling and elicitation "
+            "support for autonomous index management"
+        ),
     },
     # Future servers can be added here:
-    # "graphrag": {
-    #     "module": "mcp_memgraph.servers.graphrag",
-    #     "emoji": "🔬",
-    #     "description": "GraphRAG experimental server",
-    # },
     # "hygm": {
     #     "module": "mcp_memgraph.servers.hygm",
     #     "emoji": "🧬",
