@@ -295,11 +295,14 @@ Or you can open the config file in your favorite text editor. The location of th
 > [!NOTE]
 > You may need to put the full path to the uv executable in the command field. You can get this by running `which uv` on MacOS/Linux or `where uv` on Windows. Make sure you pass in the absolute path to your server.
 
-### Chat with the database
+## Running Memgraph
 
-1. Run Memgraph MAGE:
-   ```
-   docker run -p 7687:7687 memgraph/memgraph-mage --schema-info-enabled=True
-   ```
-   The `--schema-info-enabled` configuration setting is set to `True` to allow LLM to run `SHOW SCHEMA INFO` query.
-2. Open Claude Desktop and see the Memgraph tools and resources listed. Try it out! (You can load dummy data from [Memgraph Lab](https://memgraph.com/docs/data-visualization) Datasets)
+For the examples above it is assumed that you have a Memgraph running:
+
+Run Memgraph MAGE:
+
+```
+docker run -p 7687:7687 memgraph/memgraph-mage --schema-info-enabled=True
+```
+
+The `--schema-info-enabled` configuration setting is set to `True` to allow LLM to run `SHOW SCHEMA INFO` query.
