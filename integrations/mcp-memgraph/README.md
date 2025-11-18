@@ -1,61 +1,6 @@
 # 🚀 Memgraph MCP Server
 
-Memgraph MCP Server is a lightweight server implementation of the Model Context Protocol (MCP) designed to connect Memgraph with LLMs.
-
-![mcp-server](./mcp-server.png)
-
-## Run Memgraph MCP server with Claude
-
-1. Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
-2. Install [Claude for Desktop](https://claude.ai/download).
-3. Add the Memgraph server to Claude config
-
-You can do it in the UI, by opening your Claude desktop app navigate to `Settings`, under the `Developer` section, click on `Edit Config` and add the
-following content:
-
-```
-{
-    "mcpServers": {
-      "mpc-memgraph": {
-        "command": "uv",
-        "args": [
-            "run",
-            "--with",
-            "mcp-memgraph",
-            "--python",
-            "3.13",
-            "mcp-memgraph"
-        ]
-     }
-   }
-}
-```
-
-Or you can open the config file in your favorite text editor. The location of the config file depends on your operating system:
-
-**MacOS/Linux**
-
-```
-~/Library/Application\ Support/Claude/claude_desktop_config.json
-```
-
-**Windows**
-
-```
-%APPDATA%/Claude/claude_desktop_config.json
-```
-
-> [!NOTE]
-> You may need to put the full path to the uv executable in the command field. You can get this by running `which uv` on MacOS/Linux or `where uv` on Windows. Make sure you pass in the absolute path to your server.
-
-### Chat with the database
-
-1. Run Memgraph MAGE:
-   ```
-   docker run -p 7687:7687 memgraph/memgraph-mage --schema-info-enabled=True
-   ```
-   The `--schema-info-enabled` configuration setting is set to `True` to allow LLM to run `SHOW SCHEMA INFO` query.
-2. Open Claude Desktop and see the Memgraph tools and resources listed. Try it out! (You can load dummy data from [Memgraph Lab](https://memgraph.com/docs/data-visualization) Datasets)
+Memgraph MCP Server is a lightweight server implementation of the Model Context Protocol (MCP) designed to connect Memgraph with LLMs and different clients.
 
 ## 🔧Tools
 
@@ -195,13 +140,15 @@ The following environment variables can be used to configure the Memgraph MCP Se
 
 #### Server Configuration
 
-- `MCP_SERVER`: The server implementation to use. Options: `server` (default), `experimental`, `memgraph-experimental`
+- `MCP_SERVER`: The server implementation to use. Options: `server` (default), `memgraph-experimental`
   - `server`: Production-ready server with all stable Memgraph tools
-  - `memgraph-experimental`: Experimental server with adaptive query optimization and index management
+  - `memgraph-experimental`: Experimental server with adaptive query optimization and autonomous index management
+    - **Note**: Read-only mode is not supported on this server as it requires write access to create indexes
 - `MCP_TRANSPORT`: The transport protocol to use. Options: `streamable-http` (default), `stdio`
 - `MCP_READ_ONLY`: Enable read-only mode to prevent write operations (CREATE, MERGE, DELETE, SET, DROP, REMOVE). Options: `true` (default), `false`
   - When set to `true`, all write queries will be blocked with an error message
   - Set to `false` to allow write operations on the database
+  - **Only applies to the default `server`** - the `memgraph-experimental` server ignores this setting
 
 You can set these environment variables in your shell, in your Docker run command, or in your deployment environment.
 
@@ -210,8 +157,7 @@ You can set these environment variables in your shell, in your Docker run comman
 The MCP server supports multiple server implementations that can be selected via the `MCP_SERVER` environment variable:
 
 - **`server`** (default): Production server with all stable tools (run_query, get_schema, get_configuration, etc.)
-- **`experimental`**: Experimental server for testing new features without affecting the stable server
-- **`memgraph-experimental`**: Experimental server with **FastMCP's native sampling and elicitation** for adaptive index management
+- **`memgraph-experimental`**: Experimental server with **autonomous GraphRAG capabilities** using FastMCP's native sampling and elicitation:
 
 To use the experimental Memgraph server:
 
@@ -225,7 +171,7 @@ docker run --rm -e MCP_SERVER=memgraph-experimental mcp-memgraph:latest
 
 To add a new server implementation, create a new file in `src/mcp_memgraph/servers/` and register it in the `AVAILABLE_SERVERS` dictionary in `src/mcp_memgraph/servers/__init__.py`.
 
-### Connecting from VS Code (HTTP server)
+## Connecting from VS Code (HTTP server)
 
 If you are using VS Code MCP extension or similar, your configuration for an HTTP server would look like:
 
@@ -243,7 +189,7 @@ If you are using VS Code MCP extension or similar, your configuration for an HTT
 
 ---
 
-#### Running the Docker image in Visual Studio Code using stdio
+## Running the Docker image in Visual Studio Code using stdio
 
 You can also run the server using stdio for integration with MCP stdio clients:
 
@@ -304,3 +250,59 @@ To connect to a remote Memgraph instance with authentication, add environment va
 ---
 
 Open GitHub Copilot in Agent mode and you'll be able to interact with the Memgraph MCP server.
+
+## Run Memgraph MCP server with Claude
+
+1. Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+2. Install [Claude for Desktop](https://claude.ai/download).
+3. Add the Memgraph server to Claude config
+
+You can do it in the UI, by opening your Claude desktop app navigate to `Settings`, under the `Developer` section, click on `Edit Config` and add the
+following content:
+
+```
+{
+    "mcpServers": {
+      "mpc-memgraph": {
+        "command": "uv",
+        "args": [
+            "run",
+            "--with",
+            "mcp-memgraph",
+            "--python",
+            "3.13",
+            "mcp-memgraph"
+        ]
+     }
+   }
+}
+```
+
+Or you can open the config file in your favorite text editor. The location of the config file depends on your operating system:
+
+**MacOS/Linux**
+
+```
+~/Library/Application\ Support/Claude/claude_desktop_config.json
+```
+
+**Windows**
+
+```
+%APPDATA%/Claude/claude_desktop_config.json
+```
+
+> [!NOTE]
+> You may need to put the full path to the uv executable in the command field. You can get this by running `which uv` on MacOS/Linux or `where uv` on Windows. Make sure you pass in the absolute path to your server.
+
+## Running Memgraph
+
+For the examples above it is assumed that you have a Memgraph running:
+
+Run Memgraph MAGE:
+
+```
+docker run -p 7687:7687 memgraph/memgraph-mage --schema-info-enabled=True
+```
+
+The `--schema-info-enabled` configuration setting is set to `True` to allow LLM to run `SHOW SCHEMA INFO` query.
