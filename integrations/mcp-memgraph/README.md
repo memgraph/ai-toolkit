@@ -171,7 +171,7 @@ docker run --rm -e MCP_SERVER=memgraph-experimental mcp-memgraph:latest
 
 To add a new server implementation, create a new file in `src/mcp_memgraph/servers/` and register it in the `AVAILABLE_SERVERS` dictionary in `src/mcp_memgraph/servers/__init__.py`.
 
-### Connecting from VS Code (HTTP server)
+## Connecting from VS Code (HTTP server)
 
 If you are using VS Code MCP extension or similar, your configuration for an HTTP server would look like:
 
@@ -189,7 +189,7 @@ If you are using VS Code MCP extension or similar, your configuration for an HTT
 
 ---
 
-#### Running the Docker image in Visual Studio Code using stdio
+## Running the Docker image in Visual Studio Code using stdio
 
 You can also run the server using stdio for integration with MCP stdio clients:
 
@@ -251,7 +251,7 @@ To connect to a remote Memgraph instance with authentication, add environment va
 
 Open GitHub Copilot in Agent mode and you'll be able to interact with the Memgraph MCP server.
 
-### Run Memgraph MCP server with Claude
+## Run Memgraph MCP server with Claude
 
 1. Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 2. Install [Claude for Desktop](https://claude.ai/download).
