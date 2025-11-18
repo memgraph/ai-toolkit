@@ -1,7 +1,13 @@
 from typing import List, Optional
 
-import torch
-from sentence_transformers import SentenceTransformer
+try:
+    import torch
+    from sentence_transformers import SentenceTransformer
+except ImportError as e:
+    raise ImportError(
+        "Embedding utilities require optional dependencies. "
+        "Install with: pip install 'memgraph-toolbox[evaluations]'"
+    ) from e
 
 
 # NOTE: HF_TOKEN has to be set in the environment variables.
