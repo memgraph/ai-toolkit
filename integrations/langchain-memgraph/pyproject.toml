@@ -32,8 +32,8 @@ test = [
   "pytest-watcher>=0.3.4",
   "langchain-tests>=0.3.0",
   "langchain-experimental>=0.3.0",
-  "langchain-core>=1.0.0",
-  "langchain-openai>=1.0.0",
+  "langchain-core>=1.1.0",
+  "langchain-openai>=1.1.0",
 ]
 
 
