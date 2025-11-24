@@ -33,7 +33,7 @@ test = [
   "langchain-tests>=0.3.0",
   "langchain-experimental>=0.3.0",
   "langchain-core>=1.0.0",
-  "langchain-openai>=0.2.0",
+  "langchain-openai>=1.0.0",
 ]
 
 

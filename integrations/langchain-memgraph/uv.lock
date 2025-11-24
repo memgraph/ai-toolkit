@@ -1366,7 +1366,7 @@ requires-dist = [
     { name = "langchain-core", specifier = ">=1.0.0" },
     { name = "langchain-core", marker = "extra == 'test'", specifier = ">=1.0.0" },
     { name = "langchain-experimental", marker = "extra == 'test'", specifier = ">=0.3.0" },
-    { name = "langchain-openai", marker = "extra == 'test'", specifier = ">=0.2.0" },
+    { name = "langchain-openai", marker = "extra == 'test'", specifier = ">=1.0.0" },
     { name = "langchain-tests", marker = "extra == 'test'", specifier = ">=0.3.0" },
     { name = "langgraph", marker = "extra == 'test'", specifier = ">=0.2.0" },
     { name = "memgraph-toolbox", specifier = ">=0.1.7" },
