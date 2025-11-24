@@ -45,7 +45,11 @@ def create_nodes_from_list(
 
 def connect_chunks_to_entities(memgraph: Memgraph, chunk_label: str, entity_label: str):
     memgraph.query(
-        f"MATCH (n:{entity_label}), (m:{chunk_label}) WHERE n.file_path = m.hash CREATE (n)-[:MENTIONED_IN]->(m);"
+        f"""
+        MATCH (n:{entity_label}), (m:{chunk_label})
+        WHERE n.file_path = m.hash
+        MERGE (n)-[:MENTIONED_IN]->(m);
+        """
     )
 
 
