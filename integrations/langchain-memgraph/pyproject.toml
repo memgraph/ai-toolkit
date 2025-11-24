@@ -1,6 +1,6 @@
 [project]
 name = "langchain-memgraph"
-version = "0.1.9"
+version = "0.1.11"
 description = "An integration package connecting Memgraph and LangChain"
 authors = [{ name = "Ante Javor", email = "ante.javor@memgraph.com" }]
 readme = "README.md"
@@ -18,7 +18,7 @@ dependencies = [
     "langchain-core>=1.0.0",
     "langchain-classic>=1.0.0",
     "neo4j>=5.28.1",
-    "memgraph-toolbox>=0.1.6",
+    "memgraph-toolbox>=0.1.7",
     "langchain>=1.0.0",
 ]
 
@@ -32,8 +32,8 @@ test = [
   "pytest-watcher>=0.3.4",
   "langchain-tests>=0.3.0",
   "langchain-experimental>=0.3.0",
-  "langchain-core>=1.0.0",
-  "langchain-openai>=0.2.0",
+  "langchain-core>=1.1.0",
+  "langchain-openai>=1.1.0",
 ]
 
 

@@ -974,7 +974,7 @@ wheels = [
 
 [[package]]
 name = "memgraph-toolbox"
-version = "0.1.5"
+version = "0.1.7"
 source = { editable = "." }
 dependencies = [
     { name = "deepeval" },
@@ -983,11 +983,13 @@ dependencies = [
     { name = "neo4j" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "sentence-transformers" },
-    { name = "torch" },
 ]
 
 [package.optional-dependencies]
+evaluations = [
+    { name = "sentence-transformers" },
+    { name = "torch" },
+]
 test = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1002,10 +1004,10 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.2.6" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.3.5" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.26.0" },
-    { name = "sentence-transformers", specifier = ">=5.1.0" },
-    { name = "torch", specifier = ">=2.8.0" },
+    { name = "sentence-transformers", marker = "extra == 'evaluations'", specifier = ">=5.1.0" },
+    { name = "torch", marker = "extra == 'evaluations'", specifier = ">=2.8.0" },
 ]
-provides-extras = ["test"]
+provides-extras = ["evaluations", "test"]
 
 [[package]]
 name = "mpmath"
