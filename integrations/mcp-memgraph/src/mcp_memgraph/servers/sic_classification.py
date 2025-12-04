@@ -153,6 +153,193 @@ def get_node_id_by_code(code: str, label: str = "IndustryGroup") -> int | None:
         return None
 
 
+async def generate_clarifying_facts(
+    prompt: str,
+    candidates: List[Dict[str, Any]],
+    ctx: Context,
+) -> Dict[str, Any]:
+    """
+    Generate 3 clarifying facts for the user to choose from when confidence is low.
+
+    Args:
+        prompt: The user's business description
+        candidates: List of candidate SIC entries with context
+        ctx: FastMCP context for sampling
+
+    Returns:
+        Dictionary with facts and initial analysis
+    """
+    # Format candidates for the LLM
+    candidates_text = _format_candidates_for_prompt(candidates)
+
+    analysis_prompt = f"""You are an expert in SIC (Standard Industrial Classification) codes.
+
+A user has described their business activity as follows:
+"{prompt}"
+
+Based on vector similarity search, here are the top candidate SIC classifications:
+{candidates_text}
+
+The description is ambiguous or could match multiple SIC codes. Generate exactly 3 clarifying statements that would help distinguish between the possible classifications.
+
+Each fact should be a simple statement that the user can confirm or deny about their business.
+
+Return your response as JSON with this structure:
+{{
+    "fact_1": "Your business primarily involves [specific activity A]",
+    "fact_2": "Your business primarily involves [specific activity B]",
+    "fact_3": "Your business primarily involves [specific activity C]",
+    "reasoning": "Brief explanation of why these facts help distinguish between candidates"
+}}
+
+IMPORTANT:
+- Each fact should clearly map to one of the candidate SIC codes
+- Facts should be mutually exclusive where possible
+- Use simple, clear language the user can easily understand
+"""
+
+    try:
+        response = await ctx.sample(
+            messages=analysis_prompt,
+            system_prompt=(
+                "You are a SIC classification expert. Generate clarifying facts "
+                "to help distinguish between possible SIC codes. "
+                "Return only valid JSON, no additional text or markdown."
+            ),
+            temperature=0.3,
+            max_tokens=500,
+        )
+
+        response_text = _extract_response_text(response)
+        result = json.loads(response_text)
+        return result
+
+    except json.JSONDecodeError as e:
+        logger.error("Failed to parse clarifying facts response: %s", str(e))
+        return {"error": "Failed to generate clarifying facts"}
+    except Exception as e:
+        logger.error("Clarifying facts generation failed: %s", str(e))
+        return {"error": f"Failed to generate facts: {str(e)}"}
+
+
+async def analyze_with_user_selection(
+    prompt: str,
+    candidates: List[Dict[str, Any]],
+    selected_fact: str,
+    ctx: Context,
+) -> Dict[str, Any]:
+    """
+    Final analysis after user has selected a clarifying fact.
+
+    Args:
+        prompt: The user's business description
+        candidates: List of candidate SIC entries with context
+        selected_fact: The fact the user confirmed
+        ctx: FastMCP context for sampling
+
+    Returns:
+        Dictionary with final SIC code selection
+    """
+    candidates_text = _format_candidates_for_prompt(candidates)
+
+    analysis_prompt = f"""You are an expert in SIC (Standard Industrial Classification) codes.
+
+A user has described their business activity as follows:
+"{prompt}"
+
+The user has confirmed the following fact about their business:
+"{selected_fact}"
+
+Based on vector similarity search, here are the candidate SIC classifications:
+{candidates_text}
+
+Given the user's confirmation, select the BEST matching SIC code.
+
+Return your response as JSON with this structure:
+{{
+    "selected_code": "XXXX",
+    "selected_name": "Name of the selected classification",
+    "confidence": "high",
+    "explanation": "Detailed explanation of why this code was selected based on the confirmed fact"
+}}
+
+IMPORTANT:
+- The confidence should now be "high" since the user has clarified their business
+- Use the most specific code possible (4-digit Industry code if available)
+"""
+
+    try:
+        response = await ctx.sample(
+            messages=analysis_prompt,
+            system_prompt=(
+                "You are a SIC classification expert. Select the best SIC code "
+                "based on the user's confirmed business activity. "
+                "Return only valid JSON, no additional text or markdown."
+            ),
+            temperature=0.1,
+            max_tokens=500,
+        )
+
+        response_text = _extract_response_text(response)
+        result = json.loads(response_text)
+        return result
+
+    except json.JSONDecodeError as e:
+        logger.error("Failed to parse final analysis response: %s", str(e))
+        return {"error": "Failed to parse final classification"}
+    except Exception as e:
+        logger.error("Final analysis failed: %s", str(e))
+        return {"error": f"Final classification failed: {str(e)}"}
+
+
+def _format_candidates_for_prompt(candidates: List[Dict[str, Any]]) -> str:
+    """Format candidates list into text for LLM prompts."""
+    candidates_text = ""
+    for i, candidate in enumerate(candidates, 1):
+        candidates_text += f"\n--- Candidate {i} ---\n"
+        candidates_text += f"Industry Group Code: {candidate.get('code', 'N/A')}\n"
+        candidates_text += f"Industry Group Name: {candidate.get('name', 'N/A')}\n"
+        candidates_text += f"Context: {candidate.get('context_text', 'N/A')}\n"
+
+        if "related_industries" in candidate:
+            candidates_text += "Related Industries:\n"
+            for industry in candidate["related_industries"][:5]:
+                ind_code = industry.get("code", "")
+                ind_name = industry.get("name", "")
+                ind_desc = industry.get("description", "")
+                candidates_text += f"  - {ind_code}: {ind_name} - {ind_desc}\n"
+
+        if "major_group" in candidate:
+            mg = candidate["major_group"]
+            mg_code = mg.get("code", "")
+            mg_name = mg.get("name", "")
+            mg_desc = mg.get("description", "")
+            candidates_text += f"Major Group: {mg_code}: {mg_name} - {mg_desc}\n"
+
+    return candidates_text
+
+
+def _extract_response_text(response) -> str:
+    """Extract text from various response types."""
+    if isinstance(response, str):
+        response_text = response.strip()
+    elif hasattr(response, "text"):
+        response_text = response.text.strip()
+    else:
+        response_text = str(response).strip()
+
+    # Remove markdown code blocks if present
+    if response_text.startswith("```"):
+        lines = response_text.split("\n")
+        response_text = "\n".join(
+            line
+            for line in lines
+            if not line.strip().startswith("```") and line.strip().lower() != "json"
+        ).strip()
+
+    return response_text
+
+
 async def analyze_and_select_sic_code(
     prompt: str,
     candidates: List[Dict[str, Any]],
@@ -160,6 +347,7 @@ async def analyze_and_select_sic_code(
 ) -> Dict[str, Any]:
     """
     Use LLM sampling to analyze candidates and select the best SIC code.
+    Returns confidence as either "high" or "low".
 
     Args:
         prompt: The user's business description
@@ -169,24 +357,7 @@ async def analyze_and_select_sic_code(
     Returns:
         Dictionary with selected SIC code and explanation
     """
-    # Format candidates for the LLM
-    candidates_text = ""
-    for i, candidate in enumerate(candidates, 1):
-        candidates_text += f"\n--- Candidate {i} ---\n"
-        candidates_text += f"Industry Group Code: {candidate.get('code', 'N/A')}\n"
-        candidates_text += f"Industry Group Name: {candidate.get('name', 'N/A')}\n"
-        candidates_text += f"Context: {candidate.get('context_text', 'N/A')}\n"
-
-        # Add related industries if available
-        if "related_industries" in candidate:
-            candidates_text += "Related Industries:\n"
-            for industry in candidate["related_industries"][:5]:  # Limit to 5
-                candidates_text += f"  - {industry.get('code', '')}: {industry.get('name', '')} - {industry.get('description', '')}\n"
-
-        # Add parent major group if available
-        if "major_group" in candidate:
-            mg = candidate["major_group"]
-            candidates_text += f"Major Group: {mg.get('code', '')}: {mg.get('name', '')} - {mg.get('description', '')}\n"
+    candidates_text = _format_candidates_for_prompt(candidates)
 
     analysis_prompt = f"""You are an expert in SIC (Standard Industrial Classification) codes.
 
@@ -199,22 +370,24 @@ Based on vector similarity search, here are the top candidate SIC classification
 Your task:
 1. Analyze how well each candidate matches the user's business description
 2. Select the BEST matching SIC code (4-digit code from Industries if specific match, or Industry Group code if more general)
-3. Explain why this is the best match
+3. Determine if you are confident in this match
 
 Return your response as JSON with this structure:
 {{
     "selected_code": "XXXX",
     "selected_name": "Name of the selected classification",
-    "confidence": "high|medium|low",
-    "explanation": "Detailed explanation of why this code was selected",
-    "alternative_codes": ["YYYY", "ZZZZ"],
-    "alternative_reasons": "Brief explanation of alternatives if confidence is not high"
+    "confidence": "high" or "low",
+    "explanation": "Detailed explanation of why this code was selected"
 }}
 
-IMPORTANT: 
-- Use the most specific code possible (4-digit Industry code if available and appropriate)
+CONFIDENCE RULES:
+- "high": The user's description clearly and unambiguously matches one SIC code
+- "low": The description is vague, ambiguous, or could match multiple SIC codes
+
+IMPORTANT:
+- Use the most specific code possible (4-digit Industry code if available)
+- Be conservative - if there's any ambiguity, use "low" confidence
 - Consider the full context including related industries and major groups
-- Be precise - match the actual business activity, not just keywords
 """
 
     try:
@@ -226,27 +399,16 @@ IMPORTANT:
                 "Return only valid JSON, no additional text or markdown."
             ),
             temperature=0.2,
-            max_tokens=1000,
+            max_tokens=500,
         )
 
-        # Parse the response
-        if isinstance(response, str):
-            response_text = response.strip()
-        elif hasattr(response, "text"):
-            response_text = response.text.strip()
-        else:
-            response_text = str(response).strip()
-
-        # Remove markdown code blocks if present
-        if response_text.startswith("```"):
-            lines = response_text.split("\n")
-            response_text = "\n".join(
-                line
-                for line in lines
-                if not line.strip().startswith("```") and line.strip().lower() != "json"
-            ).strip()
-
+        response_text = _extract_response_text(response)
         result = json.loads(response_text)
+
+        # Normalize confidence to only high/low
+        conf = result.get("confidence", "low").lower()
+        result["confidence"] = "high" if conf == "high" else "low"
+
         return result
 
     except json.JSONDecodeError as e:
@@ -269,6 +431,9 @@ async def get_sic(prompt: str, ctx: Context) -> Dict[str, Any]:
     retrieves context about matching industry groups, and uses AI to determine
     the most appropriate SIC code for the described business activity.
 
+    If the initial classification has low confidence, the tool will ask
+    clarifying questions to better understand the business activity.
+
     Args:
         prompt: A description of the business activity (e.g., "I work with private
                 citizens in a private bank providing them commercial credits")
@@ -278,9 +443,8 @@ async def get_sic(prompt: str, ctx: Context) -> Dict[str, Any]:
         Dictionary containing:
         - selected_code: The best matching SIC code
         - selected_name: Name of the classification
-        - confidence: Confidence level (high/medium/low)
+        - confidence: Confidence level (high/low)
         - explanation: Why this code was selected
-        - alternative_codes: Other potential matches
         - candidates: The raw candidate data used for selection
     """
     logger.info("get_sic called with prompt: %s", prompt)
@@ -363,11 +527,14 @@ async def get_sic(prompt: str, ctx: Context) -> Dict[str, Any]:
         candidates.append(candidate)
 
         # Log context gathered for this candidate
+        mg_code = None
+        if candidate["major_group"]:
+            mg_code = candidate["major_group"].get("code")
         logger.info(
             "  Context for %s: %d related industries, major_group=%s",
             code,
             len(candidate["related_industries"]),
-            candidate["major_group"].get("code") if candidate["major_group"] else None,
+            mg_code,
         )
         for ind in candidate["related_industries"]:
             logger.info(
@@ -376,15 +543,101 @@ async def get_sic(prompt: str, ctx: Context) -> Dict[str, Any]:
                 ind.get("name", ""),
             )
 
-    # Step 4: Use LLM sampling to analyze and select the best SIC code
-    logger.info("Analyzing candidates with LLM...")
+    # Step 4: Initial LLM analysis
+    logger.info("Performing initial analysis with LLM...")
     analysis_result = await analyze_and_select_sic_code(prompt, candidates, ctx)
 
-    # Add the raw candidates to the result for transparency
-    analysis_result["candidates"] = candidates
-    analysis_result["prompt"] = prompt
+    # Check for errors
+    if "error" in analysis_result:
+        analysis_result["candidates"] = candidates
+        analysis_result["prompt"] = prompt
+        return analysis_result
 
-    return analysis_result
+    # Step 5: If confidence is high, return immediately
+    if analysis_result.get("confidence") == "high":
+        logger.info("High confidence result, returning immediately")
+        analysis_result["candidates"] = candidates
+        analysis_result["prompt"] = prompt
+        return analysis_result
+
+    # Step 6: Low confidence - generate clarifying facts
+    logger.info("Low confidence, generating clarifying facts...")
+    facts_result = await generate_clarifying_facts(prompt, candidates, ctx)
+
+    if "error" in facts_result:
+        # Fallback to initial result if fact generation fails
+        logger.warning("Failed to generate facts, returning initial result")
+        analysis_result["candidates"] = candidates
+        analysis_result["prompt"] = prompt
+        analysis_result["clarification_failed"] = True
+        return analysis_result
+
+    # Step 7: Elicit user to select a fact
+    fact_1 = facts_result.get("fact_1", "Option 1")
+    fact_2 = facts_result.get("fact_2", "Option 2")
+    fact_3 = facts_result.get("fact_3", "Option 3")
+
+    elicit_message = (
+        "To better classify your business, please select the statement "
+        "that best describes your primary activity:\n\n"
+        f"1. {fact_1}\n\n"
+        f"2. {fact_2}\n\n"
+        f"3. {fact_3}"
+    )
+
+    logger.info("Eliciting user selection...")
+
+    try:
+        elicit_result = await ctx.elicit(
+            message=elicit_message,
+            response_type=["1", "2", "3"],
+        )
+
+        if elicit_result.action == "accept":
+            selected_option = elicit_result.data
+            logger.info("User selected option: %s", selected_option)
+
+            # Map selection to the fact
+            if selected_option == "1":
+                selected_fact = fact_1
+            elif selected_option == "2":
+                selected_fact = fact_2
+            else:
+                selected_fact = fact_3
+
+            # Step 8: Final analysis with user's selection
+            logger.info("Performing final analysis with user selection...")
+            final_result = await analyze_with_user_selection(
+                prompt, candidates, selected_fact, ctx
+            )
+
+            final_result["candidates"] = candidates
+            final_result["prompt"] = prompt
+            final_result["user_clarification"] = selected_fact
+            return final_result
+
+        elif elicit_result.action == "decline":
+            logger.info("User declined clarification")
+            analysis_result["candidates"] = candidates
+            analysis_result["prompt"] = prompt
+            analysis_result["user_declined_clarification"] = True
+            return analysis_result
+
+        else:  # cancel
+            logger.info("User cancelled")
+            return {
+                "status": "cancelled",
+                "message": "Classification cancelled by user",
+                "prompt": prompt,
+            }
+
+    except Exception as e:
+        logger.error("Elicitation failed: %s", str(e))
+        # Fallback to initial low-confidence result
+        analysis_result["candidates"] = candidates
+        analysis_result["prompt"] = prompt
+        analysis_result["elicitation_error"] = str(e)
+        return analysis_result
 
 
 logger.info("🏭 SIC Classification MCP server initialized")
