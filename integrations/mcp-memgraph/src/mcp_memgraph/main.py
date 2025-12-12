@@ -35,16 +35,16 @@ def main():
 
         logger.warning("Failed to load server '%s', using default server", server_name)
 
-    logger.info("Server on %s with transport: %s", config.host, config.transport)
+    logger.info("Server on %s:%s with transport: %s", config.host, config.port, config.transport)
 
     # Run server with configuration
-    # Note: host parameter is only used for HTTP/SSE transports, not stdio
-    transport = cast(Literal["stdio", "streamable-http"], config.transport)
+    # Note: host and port parameters are only used for HTTP/SSE transports, not stdio
+    transport = cast(Literal["stdio", "streamable-http", "sse"], config.transport)
 
     if config.transport == "stdio":
         mcp.run(transport=transport)
     else:
-        mcp.run(host=config.host, transport=transport)
+        mcp.run(host=config.host, port=config.port, transport=transport)
 
 
 if __name__ == "__main__":

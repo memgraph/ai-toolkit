@@ -15,6 +15,7 @@ class TransportType(str, Enum):
 
     STDIO = "stdio"
     STREAMABLE_HTTP = "streamable-http"
+    SSE = "sse"
 
     @classmethod
     def values(cls) -> list[str]:
