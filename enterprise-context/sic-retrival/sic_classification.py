@@ -18,11 +18,12 @@ from memgraph_toolbox.utils.logger import logger_init
 from typing import Any, Dict, List
 import json
 
-from mcp_memgraph.config import get_memgraph_config, get_mcp_config
-
-# Get configuration instances
-memgraph_config = get_memgraph_config()
-mcp_config = get_mcp_config()
+# Memgraph connection configuration (localhost defaults)
+MEMGRAPH_HOST = "localhost"
+MEMGRAPH_PORT = 7687
+MEMGRAPH_USERNAME = ""
+MEMGRAPH_PASSWORD = ""
+MEMGRAPH_DATABASE = "memgraph"
 
 # Configure logging
 logger = logger_init("mcp-memgraph-sic")
@@ -32,13 +33,19 @@ mcp = FastMCP("mcp-memgraph-sic")
 
 # Initialize Memgraph client
 logger.info(
-    "Connecting to Memgraph db '%s' at %s with user '%s'",
-    memgraph_config.database,
-    memgraph_config.url,
-    memgraph_config.username,
+    "Connecting to Memgraph db '%s' at %s:%s",
+    MEMGRAPH_DATABASE,
+    MEMGRAPH_HOST,
+    MEMGRAPH_PORT,
 )
 
-db = Memgraph(**memgraph_config.get_client_config())
+db = Memgraph(
+    host=MEMGRAPH_HOST,
+    port=MEMGRAPH_PORT,
+    username=MEMGRAPH_USERNAME,
+    password=MEMGRAPH_PASSWORD,
+    database=MEMGRAPH_DATABASE,
+)
 
 # Vector index configuration
 SIC_VECTOR_INDEX = "sic_industry_group_embedding"

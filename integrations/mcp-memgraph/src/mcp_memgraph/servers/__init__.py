@@ -23,14 +23,6 @@ AVAILABLE_SERVERS: Dict[str, Dict[str, Any]] = {
             "support for autonomous index management"
         ),
     },
-    "sic-classification": {
-        "module": "mcp_memgraph.servers.sic_classification",
-        "emoji": "🏭",
-        "description": (
-            "SIC Classification server for looking up Standard Industrial "
-            "Classification codes using vector search and AI"
-        ),
-    },
     # Future servers can be added here:
     # "hygm": {
     #     "module": "mcp_memgraph.servers.hygm",
