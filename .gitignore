@@ -179,4 +179,4 @@ cython_debug/
 
 
 # Project specfic files
-/enterprise-context/sic-retrival/sic-scrapper/output/*
+/enterprise-context/sic-agent/sic-scrapper/output/*
