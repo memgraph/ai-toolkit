@@ -19,8 +19,7 @@ from typing import Any, Dict, List
 import json
 
 # Memgraph connection configuration (localhost defaults)
-MEMGRAPH_HOST = "localhost"
-MEMGRAPH_PORT = 7687
+MEMGRAPH_URL = "bolt://localhost:7687"
 MEMGRAPH_USERNAME = ""
 MEMGRAPH_PASSWORD = ""
 MEMGRAPH_DATABASE = "memgraph"
@@ -33,15 +32,13 @@ mcp = FastMCP("mcp-memgraph-sic")
 
 # Initialize Memgraph client
 logger.info(
-    "Connecting to Memgraph db '%s' at %s:%s",
+    "Connecting to Memgraph db '%s' at %s",
     MEMGRAPH_DATABASE,
-    MEMGRAPH_HOST,
-    MEMGRAPH_PORT,
+    MEMGRAPH_URL,
 )
 
 db = Memgraph(
-    host=MEMGRAPH_HOST,
-    port=MEMGRAPH_PORT,
+    url=MEMGRAPH_URL,
     username=MEMGRAPH_USERNAME,
     password=MEMGRAPH_PASSWORD,
     database=MEMGRAPH_DATABASE,
@@ -649,3 +646,6 @@ async def get_sic(prompt: str, ctx: Context) -> Dict[str, Any]:
 
 logger.info("🏭 SIC Classification MCP server initialized")
 logger.info("Available tools: get_sic")
+
+if __name__ == "__main__":
+    mcp.run()
