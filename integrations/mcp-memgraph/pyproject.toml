@@ -27,7 +27,6 @@ dependencies = [
   "memgraph-toolbox>=0.1.7",
   "pytest>=8.3.5",
   "fastmcp>=2.13.0.2",
-  "sentence-transformers>=2.2.0",
 ]
 
 [project.optional-dependencies]
