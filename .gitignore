@@ -176,3 +176,7 @@ cython_debug/
 
 # VS Code
 .vscode/
+
+
+# Project specfic files
+/enterprise-context/sic-agent/sic-scrapper/output/*

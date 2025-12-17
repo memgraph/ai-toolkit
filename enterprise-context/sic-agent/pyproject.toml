@@ -1,0 +1,14 @@
+[project]
+name = "sic-classification"
+version = "0.1.0"
+description = "SIC Classification MCP Server using Memgraph vector search"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastmcp>=0.1.0",
+    "sentence-transformers>=2.2.0",
+    "memgraph-toolbox",
+]
+
+[tool.uv.sources]
+memgraph-toolbox = { path = "../../memgraph-toolbox", editable = true }
