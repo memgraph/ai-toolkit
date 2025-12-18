@@ -77,7 +77,7 @@ jobs:
       - name: Install dependencies for unstructured2graph package
         working-directory: unstructured2graph
         run: |
-          uv pip install -e .[dev]
+          uv pip install -e .[test]
 
       - name: Run tests for unstructured2graph package
         working-directory: unstructured2graph

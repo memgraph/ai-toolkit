@@ -27,7 +27,7 @@ dependencies = [
     "memgraph-toolbox>=0.1.6",
 ]
 [project.optional-dependencies]
-dev = [
+test = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
 ]
