@@ -81,4 +81,4 @@ jobs:
 
       - name: Run tests for unstructured2graph package
         working-directory: unstructured2graph
-        run: uv run pytest .
+        run: uv run python -m pytest .
