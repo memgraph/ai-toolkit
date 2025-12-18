@@ -13,8 +13,14 @@ except ImportError as e:
         "Install with: pip install 'memgraph-toolbox[evaluations]'"
     ) from e
 
-from deepeval.metrics import BaseMetric
-from deepeval.test_case import LLMTestCase
+try:
+    from deepeval.metrics import BaseMetric
+    from deepeval.test_case import LLMTestCase
+except ImportError as e:
+    raise ImportError(
+        "Coherence evaluation requires deepeval. "
+        "Install with: pip install 'memgraph-toolbox[evaluations]'"
+    ) from e
 
 
 class CoherenceEmbeddingsBasedMetric(BaseMetric):

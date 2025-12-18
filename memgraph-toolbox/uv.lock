@@ -977,16 +977,18 @@ name = "memgraph-toolbox"
 version = "0.1.7"
 source = { editable = "." }
 dependencies = [
-    { name = "deepeval" },
-    { name = "litellm" },
-    { name = "mcp" },
     { name = "neo4j" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 
 [package.optional-dependencies]
+client = [
+    { name = "litellm" },
+    { name = "mcp" },
+]
 evaluations = [
+    { name = "deepeval" },
     { name = "sentence-transformers" },
     { name = "torch" },
 ]
@@ -997,9 +999,9 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "deepeval", specifier = ">=3.5.2" },
-    { name = "litellm", specifier = ">=1.77.1" },
-    { name = "mcp", specifier = ">=1.14.1" },
+    { name = "deepeval", marker = "extra == 'evaluations'", specifier = ">=3.5.2" },
+    { name = "litellm", marker = "extra == 'client'", specifier = ">=1.77.1" },
+    { name = "mcp", marker = "extra == 'client'", specifier = ">=1.14.1" },
     { name = "neo4j", specifier = ">=5.28.1" },
     { name = "numpy", specifier = ">=2.2.6" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.3.5" },
@@ -1007,7 +1009,7 @@ requires-dist = [
     { name = "sentence-transformers", marker = "extra == 'evaluations'", specifier = ">=5.1.0" },
     { name = "torch", marker = "extra == 'evaluations'", specifier = ">=2.8.0" },
 ]
-provides-extras = ["evaluations", "test"]
+provides-extras = ["evaluations", "client", "test"]
 
 [[package]]
 name = "mpmath"
