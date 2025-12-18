@@ -2,9 +2,16 @@ import json, logging, sys, os
 from typing import Optional, List, Dict
 
 import asyncio
-from litellm import acompletion, experimental_mcp_client
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+
+try:
+    from litellm import acompletion, experimental_mcp_client
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+except ImportError as e:
+    raise ImportError(
+        "MCP prompt client requires litellm and mcp. "
+        "Install with: pip install 'memgraph-toolbox[client]'"
+    ) from e
 
 logger = logging.getLogger(__name__)
 

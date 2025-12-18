@@ -21,17 +21,19 @@ classifiers = [
 ]
 
 dependencies = [
-  "deepeval>=3.5.2",
-  "litellm>=1.77.1",
-  "mcp>=1.14.1",
   "neo4j>=5.28.1",
   "numpy>=2.2.6",
 ]
 
 [project.optional-dependencies]
 evaluations = [
+  "deepeval>=3.5.2",
   "sentence-transformers>=5.1.0",
   "torch>=2.8.0",
+]
+client = [
+  "litellm>=1.77.1",
+  "mcp>=1.14.1",
 ]
 test = [
   "pytest>=8.3.5",
