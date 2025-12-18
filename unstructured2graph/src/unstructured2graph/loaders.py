@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Union
+from typing import Any, List, Union
 import logging
 from dataclasses import dataclass
 import hashlib
@@ -34,22 +34,28 @@ class ChunkedDocument:
     source: Union[str, Path]
 
 
-def parse_source(source: Union[str, Path]) -> List[str]:
+def parse_source(
+    source: Union[str, Path],
+    partition_kwargs: dict[str, Any] | None = None,
+) -> List[str]:
     """
     Parse a source file or URL using the unstructured library. The unstructured
     library supports many types of data sources and various parsing options.
     Args:
         source: Path to file or URL string
+        partition_kwargs: Additional keyword arguments to pass to unstructured's
+            partition function (e.g., strategy, languages, pdf_infer_table_structure,
+            ocr_languages, headers, ssl_verify, etc.)
     Returns:
         List of text chunks extracted from the source
     """
-
+    partition_kwargs = partition_kwargs or {}
     source_str = str(source)
     try:
         if source_str.startswith(("http://", "https://")):
-            elements = partition(url=source_str)
+            elements = partition(url=source_str, **partition_kwargs)
         else:
-            elements = partition(filename=source_str)
+            elements = partition(filename=source_str, **partition_kwargs)
         chunks = chunk_by_title(elements)
         text_chunks = [
             Chunk(text=str(chunk), hash=hashlib.sha256(str(chunk).encode()).hexdigest())
@@ -61,11 +67,17 @@ def parse_source(source: Union[str, Path]) -> List[str]:
         raise ValueError(f"Error parsing source {source_str}: {str(e)}")
 
 
-def make_chunks(sources: List[Union[str, Path]]) -> List[ChunkedDocument]:
+def make_chunks(
+    sources: List[Union[str, Path]],
+    partition_kwargs: dict[str, Any] | None = None,
+) -> List[ChunkedDocument]:
     """
     Chunk a list of sources into a list of ChunkedDocuments.
     Args:
         sources: List of file paths or URLs to process
+        partition_kwargs: Additional keyword arguments to pass to unstructured's
+            partition function (e.g., strategy, languages, pdf_infer_table_structure,
+            ocr_languages, headers, ssl_verify, etc.)
     Returns:
         List of ChunkedDocuments
     """
@@ -73,7 +85,7 @@ def make_chunks(sources: List[Union[str, Path]]) -> List[ChunkedDocument]:
     documents = []
     for source in sources:
         try:
-            chunks = parse_source(source)
+            chunks = parse_source(source, partition_kwargs=partition_kwargs)
             logger.debug(
                 f"Source: {source}; No Chunks: {len(chunks)}; Chunks: {chunks};"
             )
@@ -103,6 +115,7 @@ async def from_unstructured(
     lightrag_wrapper: MemgraphLightRAGWrapper,
     only_chunks: bool = False,
     link_chunks: bool = False,
+    partition_kwargs: dict[str, Any] | None = None,
 ):
     """
     Process unstructured sources and ingest them into Memgraph using LightRAG.
@@ -112,13 +125,16 @@ async def from_unstructured(
         lightrag_wrapper: MemgraphLightRAGWrapper instance (requires lightrag-memgraph)
         only_chunks: If True, only create chunk nodes without LightRAG processing
         link_chunks: If True, link chunks in order with NEXT relationship
+        partition_kwargs: Additional keyword arguments to pass to unstructured's
+            partition function (e.g., strategy, languages, pdf_infer_table_structure,
+            ocr_languages, headers, ssl_verify, etc.)
     """
 
     # TODO(gitbuda): Create all required indexes.
     # TODO(gitbuda): Make the calls idempotent.
     # TODO(gitbuda): Implement batching on the Cypher side as well under memgraph.compute_embeddings
     # NOTE: LightRAG uses { source_id: "chunk-ID..." } to reference its chunks.
-    chunked_documents = make_chunks(sources)
+    chunked_documents = make_chunks(sources, partition_kwargs=partition_kwargs)
     total_chunks = sum(len(document.chunks) for document in chunked_documents)
     start_time = time.time()
     processed_chunks = 0
