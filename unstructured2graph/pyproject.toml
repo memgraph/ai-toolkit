@@ -22,12 +22,15 @@ classifiers = [
 ]
 
 dependencies = [
-    "unstructured[all-docs]>=0.12.6",
+    "unstructured>=0.12.6",
     "lightrag-memgraph>=0.1.1",
     "memgraph-toolbox>=0.1.6",
 ]
 [project.optional-dependencies]
-dev = [
+all-docs = [
+    "unstructured[all-docs]>=0.12.6",
+]
+test = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
 ]

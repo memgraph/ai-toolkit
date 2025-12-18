@@ -7,9 +7,38 @@ on:
   pull_request:
 
 jobs:
-  test:
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      memgraph-toolbox: ${{ steps.filter.outputs.memgraph-toolbox }}
+      mcp-memgraph: ${{ steps.filter.outputs.mcp-memgraph }}
+      langchain-memgraph: ${{ steps.filter.outputs.langchain-memgraph }}
+      unstructured2graph: ${{ steps.filter.outputs.unstructured2graph }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Detect changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            memgraph-toolbox:
+              - 'memgraph-toolbox/**'
+            mcp-memgraph:
+              - 'integrations/mcp-memgraph/**'
+              - 'memgraph-toolbox/**'
+            langchain-memgraph:
+              - 'integrations/langchain-memgraph/**'
+              - 'memgraph-toolbox/**'
+            unstructured2graph:
+              - 'unstructured2graph/**'
+              - 'memgraph-toolbox/**'
+
+  test-memgraph-toolbox:
+    needs: changes
+    if: ${{ needs.changes.outputs.memgraph-toolbox == 'true' }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,50 +51,115 @@ jobs:
       - name: Start Memgraph container
         run: |
           docker run -d -p 7687:7687 --name memgraph memgraph/memgraph-mage:latest --schema-info-enabled=True --telemetry-enabled=false
-          sleep 5  # Wait for Memgraph to start
+          sleep 5
 
       - name: Install uv
         run: python -m pip install uv
 
-      - name: Create virtual environment for memgraph-toolbox
+      - name: Create virtual environment
         working-directory: memgraph-toolbox
         run: uv venv
 
-      - name: Install dependencies for core package
+      - name: Install dependencies
         working-directory: memgraph-toolbox
-        run: |
-          uv pip install -e .[test,evaluations,client]
+        run: uv pip install -e .[test,evaluations,client]
 
-      - name: Run tests for core package
+      - name: Run tests
         working-directory: memgraph-toolbox
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: uv run pytest .
 
-      - name: Create virtual environment for mcp package
+  test-mcp-memgraph:
+    needs: changes
+    if: ${{ needs.changes.outputs.mcp-memgraph == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11.0
+
+      - name: Start Memgraph container
+        run: |
+          docker run -d -p 7687:7687 --name memgraph memgraph/memgraph-mage:latest --schema-info-enabled=True --telemetry-enabled=false
+          sleep 5
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Create virtual environment
         working-directory: integrations/mcp-memgraph
         run: uv venv
 
-      - name: Install dependencies for mcp package
+      - name: Install dependencies
         working-directory: integrations/mcp-memgraph
-        run: |
-          uv pip install -e .[test]
+        run: uv pip install -e .[test]
 
-      - name: Run tests for mcp package
+      - name: Run tests
         working-directory: integrations/mcp-memgraph
         run: uv run pytest .
 
-      - name: Create virtual environment for langchain package
+  test-langchain-memgraph:
+    needs: changes
+    if: ${{ needs.changes.outputs.langchain-memgraph == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11.0
+
+      - name: Start Memgraph container
+        run: |
+          docker run -d -p 7687:7687 --name memgraph memgraph/memgraph-mage:latest --schema-info-enabled=True --telemetry-enabled=false
+          sleep 5
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Create virtual environment
         working-directory: integrations/langchain-memgraph
         run: uv venv
 
-      - name: Install dependencies for langchain package
+      - name: Install dependencies
         working-directory: integrations/langchain-memgraph
-        run: |
-          uv pip install -e .[test]
+        run: uv pip install -e .[test]
 
-      - name: Run tests for langchain package
+      - name: Run tests
         working-directory: integrations/langchain-memgraph
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: uv run pytest .
+
+  test-unstructured2graph:
+    needs: changes
+    if: ${{ needs.changes.outputs.unstructured2graph == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: unstructured2graph
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11.0
+
+      - name: Install uv
+        run: python -m pip install uv
+        working-directory: .
+
+      - name: Install dependencies and run tests
+        run: |
+          uv venv
+          uv pip install -e .[test]
+          .venv/bin/python -m pytest .

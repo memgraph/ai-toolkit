@@ -46,6 +46,38 @@ def test_parse_source_with_invalid_file():
         parse_source("/non/existent/file.txt")
 
 
+def test_make_chunks_with_text_files(tmp_path):
+    """Test that make_chunks works with multiple simple text files."""
+    # Create multiple text files
+    file1 = tmp_path / "doc1.txt"
+    file1.write_text("First document content.\nWith multiple sentences.")
+
+    file2 = tmp_path / "doc2.txt"
+    file2.write_text("Second document has different content.\nAlso multiple lines.")
+
+    sources = [str(file1), str(file2)]
+    chunked_documents = make_chunks(sources)
+
+    assert len(chunked_documents) == 2
+    assert all(isinstance(doc, ChunkedDocument) for doc in chunked_documents)
+    assert all(
+        isinstance(chunk, Chunk) for doc in chunked_documents for chunk in doc.chunks
+    )
+
+
+def test_partition_kwargs_passed_through(tmp_path):
+    """Test that partition_kwargs are accepted by parse_source."""
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("Test content for partition kwargs.")
+
+    # Should not raise - just verify kwargs are accepted
+    chunks = parse_source(test_file, partition_kwargs={"encoding": "utf-8"})
+    assert isinstance(chunks, list)
+
+
+@pytest.mark.skip(
+    reason="Requires sample-data files and network access - run locally with full deps"
+)
 def test_chunking_of_different_sources():
     pypdf_samples_dir = os.path.join(
         SCRIPT_DIR, "..", "sample-data", "pdf", "sample-files"
