@@ -59,10 +59,30 @@ Install the base package:
 pip install memgraph-toolbox
 ```
 
-If you need embedding utilities or evaluation metrics that depend on PyTorch and sentence-transformers:
+### Optional dependencies
+
+For the MCP prompt client (litellm + mcp):
+
+```bash
+pip install 'memgraph-toolbox[client]'
+```
+
+For evaluation metrics (deepeval, sentence-transformers, torch):
 
 ```bash
 pip install 'memgraph-toolbox[evaluations]'
+```
+
+For running tests:
+
+```bash
+pip install 'memgraph-toolbox[test]'
+```
+
+For all optional dependencies (e.g., CI):
+
+```bash
+pip install 'memgraph-toolbox[client,evaluations,test]'
 ```
 
 ## Requirements
@@ -70,7 +90,6 @@ pip install 'memgraph-toolbox[evaluations]'
 - Python 3.10+
 - Running [Memgraph instance](https://memgraph.com/docs/getting-started)
 - Memgraph [MAGE library](https://memgraph.com/docs/advanced-algorithms/install-mage) (for certain tools like `pagerank` and `run_betweenness_centrality`)
-- Optional: PyTorch and sentence-transformers (install with `evaluations` extra) for embedding utilities and coherence evaluation
 
 ## Contributing
 

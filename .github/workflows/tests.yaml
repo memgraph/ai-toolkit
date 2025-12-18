@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies for core package
         working-directory: memgraph-toolbox
         run: |
-          uv pip install -e .[test,evaluations]
+          uv pip install -e .[test,evaluations,client]
 
       - name: Run tests for core package
         working-directory: memgraph-toolbox
