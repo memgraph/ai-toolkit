@@ -18,6 +18,7 @@ from .memgraph import (
     create_vector_search_index,
     compute_embeddings,
     create_index,
+    create_label_index,
     link_nodes_in_order,
 )
 
@@ -33,5 +34,6 @@ __all__ = [
     "create_vector_search_index",
     "compute_embeddings",
     "create_index",
+    "create_label_index",
     "link_nodes_in_order",
 ]

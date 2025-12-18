@@ -80,6 +80,25 @@ def create_index(memgraph: Memgraph, label: str, property: str):
         logger.warning(f"Error creating index: {e}")
 
 
+def create_label_index(memgraph: Memgraph, label: str):
+    """
+    Create a label index for efficient node lookups by label.
+
+    Memgraph does not auto-create label indices, so this should be called
+    before performing queries that filter by label (e.g., MATCH (n:Label)).
+
+    Args:
+        memgraph: Memgraph instance for database operations
+        label: The node label to create an index for
+    """
+    try:
+        memgraph.query(f"CREATE INDEX ON :{label};")
+        logger.info(f"Created label index on :{label}")
+    except Exception as e:
+        # Index may already exist
+        logger.warning(f"Could not create label index on :{label}: {e}")
+
+
 def create_vector_search_index(memgraph: Memgraph, label: str, property: str):
     try:
         memgraph.query(
