@@ -2,6 +2,8 @@ name: Run Integration tests
 
 on:
   push:
+    branches:
+      - main
     paths:
       - "memgraph-toolbox/**"
       - "integrations/mcp-memgraph/**"
