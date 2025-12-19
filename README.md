@@ -12,7 +12,10 @@ This repository contains the following libraries:
 3. [**mcp-memgraph**](/integrations/mcp-memgraph/)
    An MCP (Model Context Protocol) server implementation, exposing Memgraph tools over a lightweight STDIO protocol. The package is available on the [PyPi](https://pypi.org/project/mcp-memgraph/)
 
-4. [**agents**](/agents/sql2graph/)
+4. [**unstructured2graph**](/unstructured2graph/)
+   A library that enables you to convert any data into a graph within Memgraph, enabling various GraphRAG techniques for enhanced information retrieval.
+
+5. [**agents**](/agents/sql2graph/)
    An intelligent database migration agent that automates the process of migrating from MySQL or Postgresql to Memgraph. Features automated schema analysis, intelligent graph modeling with interactive refinement, and data migration with validation.
 
 ## Usage examples
@@ -21,7 +24,8 @@ For individual examples on how to use the toolbox, LangChain, MCP, or agents, re
 
 - [Langchain examples](https://memgraph.com/docs/ai-ecosystem/integrations#langchain)
 - [MCP examples](https://memgraph.com/docs/ai-ecosystem/integrations#model-context-protocol-mcp)
-- [SQL2Graph migration examples](/agents/sql2graph/examples/) - Interactive MySQL to Memgraph migration workflow
+- [unstructured2graph examples](https://memgraph.com/docs/ai-ecosystem/unstructured2graph)
+- [SQL2Graph migration examples](https://memgraph.com/docs/ai-ecosystem/agents#sql2graph-agent)
 
 ## Developing locally
 
