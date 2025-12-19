@@ -23,6 +23,13 @@ AVAILABLE_SERVERS: Dict[str, Dict[str, Any]] = {
             "support for autonomous index management"
         ),
     },
+    "memgraph-docs": {
+        "module": "mcp_memgraph.servers.docs_server",
+        "emoji": "🚀",
+        "description": (
+            "Memgraph documentation server for searching Memgraph documentation information"
+        ),
+    },
     # Future servers can be added here:
     # "hygm": {
     #     "module": "mcp_memgraph.servers.hygm",
