@@ -4,7 +4,19 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "memgraph-toolbox/**"
+      - "integrations/mcp-memgraph/**"
+      - "integrations/langchain-memgraph/**"
+      - "integrations/lightrag-memgraph/**"
+      - "unstructured2graph/**"
   pull_request:
+    paths:
+      - "memgraph-toolbox/**"
+      - "integrations/mcp-memgraph/**"
+      - "integrations/langchain-memgraph/**"
+      - "integrations/lightrag-memgraph/**"
+      - "unstructured2graph/**"
 
 jobs:
   changes:
@@ -13,6 +25,7 @@ jobs:
       memgraph-toolbox: ${{ steps.filter.outputs.memgraph-toolbox }}
       mcp-memgraph: ${{ steps.filter.outputs.mcp-memgraph }}
       langchain-memgraph: ${{ steps.filter.outputs.langchain-memgraph }}
+      lightrag-memgraph: ${{ steps.filter.outputs.lightrag-memgraph }}
       unstructured2graph: ${{ steps.filter.outputs.unstructured2graph }}
     steps:
       - name: Checkout code
@@ -30,6 +43,9 @@ jobs:
               - 'memgraph-toolbox/**'
             langchain-memgraph:
               - 'integrations/langchain-memgraph/**'
+              - 'memgraph-toolbox/**'
+            lightrag-memgraph:
+              - 'integrations/lightrag-memgraph/**'
               - 'memgraph-toolbox/**'
             unstructured2graph:
               - 'unstructured2graph/**'
@@ -137,6 +153,38 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: uv run pytest .
+
+  test-lightrag-memgraph:
+    needs: changes
+    if: ${{ needs.changes.outputs.lightrag-memgraph == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/lightrag-memgraph
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11.0
+
+      - name: Start Memgraph container
+        run: |
+          docker run -d -p 7687:7687 --name memgraph memgraph/memgraph-mage:latest --schema-info-enabled=True --telemetry-enabled=false
+          sleep 5
+        working-directory: .
+
+      - name: Install uv
+        run: python -m pip install uv
+        working-directory: .
+
+      - name: Install dependencies and run tests
+        run: |
+          uv venv
+          uv pip install -e .[dev]
+          .venv/bin/python -m pytest .
 
   test-unstructured2graph:
     needs: changes

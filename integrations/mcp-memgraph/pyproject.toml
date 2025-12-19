@@ -1,6 +1,6 @@
 [project]
 name = "mcp-memgraph"
-version = "0.1.8"
+version = "0.1.9"
 description = "MCP integration and utilities for Memgraph MCP server"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,7 +24,7 @@ dependencies = [
   "httpx>=0.28.1",
   "mcp[cli]>=1.9.3",
   "neo4j>=5.28.1",
-  "memgraph-toolbox>=0.1.7",
+  "memgraph-toolbox>=0.1.8",
   "pytest>=8.3.5",
   "fastmcp>=2.13.0.2",
 ]
