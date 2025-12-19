@@ -156,6 +156,9 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.lightrag-memgraph == 'true' }}
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/lightrag-memgraph
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -169,21 +172,17 @@ jobs:
         run: |
           docker run -d -p 7687:7687 --name memgraph memgraph/memgraph-mage:latest --schema-info-enabled=True --telemetry-enabled=false
           sleep 5
+        working-directory: .
 
       - name: Install uv
         run: python -m pip install uv
+        working-directory: .
 
-      - name: Create virtual environment
-        working-directory: integrations/lightrag-memgraph
-        run: uv venv
-
-      - name: Install dependencies
-        working-directory: integrations/lightrag-memgraph
-        run: uv pip install -e .[dev]
-
-      - name: Run tests
-        working-directory: integrations/lightrag-memgraph
-        run: uv run pytest .
+      - name: Install dependencies and run tests
+        run: |
+          uv venv
+          uv pip install -e .[dev]
+          .venv/bin/python -m pytest .
 
   test-unstructured2graph:
     needs: changes
