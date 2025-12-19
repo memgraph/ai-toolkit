@@ -89,4 +89,11 @@ For detailed usage examples and getting started guides, check out the official d
 
 - Python 3.10+
 - Memgraph database instance
-- OpenAI API key (for LightRAG entity extraction)
+
+### LLM API Key
+
+This library uses LightRAG for entity and relationship extraction, which requires an LLM API key. Set your OpenAI API key as an environment variable:
+
+```bash
+export OPENAI_API_KEY="your-api-key"
+```
