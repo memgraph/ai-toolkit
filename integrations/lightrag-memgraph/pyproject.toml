@@ -1,6 +1,6 @@
 [project]
 name = "lightrag-memgraph"
-version = "0.1.2"
+version = "0.1.3"
 description = "LightRAG integration with Memgraph"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,7 +23,7 @@ classifiers = [
 
 dependencies = [
     "lightrag-hku[api]==1.4.8.2",
-    "memgraph-toolbox>=0.1.7",
+    "memgraph-toolbox>=0.1.8",
     "numpy>=1.21.0",
 ]
 
