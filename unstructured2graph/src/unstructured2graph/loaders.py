@@ -148,7 +148,7 @@ async def from_unstructured(
         )
         memgraph_node_props = []
         for chunk in document.chunks:
-            logger.info(f"Chunk: {chunk.hash} - {chunk.text}")
+            logger.debug(f"Chunk: {chunk.hash} - {chunk.text}")
             memgraph_node_props.append({"hash": chunk.hash, "text": chunk.text})
         create_nodes_from_list(memgraph, memgraph_node_props, "Chunk", 100)
 
