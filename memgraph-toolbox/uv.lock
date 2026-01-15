@@ -997,6 +997,11 @@ test = [
     { name = "pytest-asyncio" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "deepeval", marker = "extra == 'evaluations'", specifier = ">=3.5.2" },
@@ -1010,6 +1015,9 @@ requires-dist = [
     { name = "torch", marker = "extra == 'evaluations'", specifier = ">=2.8.0" },
 ]
 provides-extras = ["evaluations", "client", "test"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.4.2" }]
 
 [[package]]
 name = "mpmath"

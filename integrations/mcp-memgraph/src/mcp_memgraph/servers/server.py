@@ -8,6 +8,7 @@ from memgraph_toolbox.tools.constraint import ShowConstraintInfoTool
 from memgraph_toolbox.tools.schema import ShowSchemaInfoTool
 from memgraph_toolbox.tools.storage import ShowStorageInfoTool
 from memgraph_toolbox.tools.trigger import ShowTriggersTool
+from memgraph_toolbox.tools.procedures import ShowProceduresTool
 from memgraph_toolbox.tools.betweenness_centrality import (
     BetweennessCentralityTool,
 )
@@ -159,6 +160,22 @@ def get_triggers() -> List[Dict[str, Any]]:
         return triggers
     except Exception as e:
         return [{"error": f"Error fetching triggers: {str(e)}"}]
+
+
+@mcp.tool()
+def get_procedures() -> List[Dict[str, Any]]:
+    """List all available Memgraph procedures (query modules).
+
+    Returns information about all available procedures including MAGE algorithms
+    and custom query modules. Each procedure includes its name, signature, and
+    whether it performs write operations. Use this to discover available graph
+    algorithms and utility functions before executing them."""
+    logger.info("Fetching Memgraph procedures...")
+    try:
+        procedures = ShowProceduresTool(db=db).call({})
+        return procedures
+    except Exception as e:
+        return [{"error": f"Error fetching procedures: {str(e)}"}]
 
 
 @mcp.tool()
