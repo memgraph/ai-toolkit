@@ -46,6 +46,13 @@ Equivalent to running `SHOW STORAGE INFO`.
 List all database triggers.
 Equivalent to running `SHOW TRIGGERS`.
 
+### get_procedures()
+
+List all available Memgraph procedures (query modules).
+Returns information about all available procedures including MAGE algorithms and custom query modules. Each procedure includes its name, signature, and whether it performs write operations.
+Use this to discover available graph algorithms and utility functions before executing them.
+Equivalent to running `CALL mg.procedures() YIELD *`.
+
 ### get_betweenness_centrality()
 
 Compute betweenness centrality on the entire graph.

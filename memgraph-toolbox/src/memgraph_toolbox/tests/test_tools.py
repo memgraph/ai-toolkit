@@ -12,6 +12,7 @@ from ..tools.page_rank import PageRankTool
 from ..tools.schema import ShowSchemaInfoTool
 from ..tools.storage import ShowStorageInfoTool
 from ..tools.trigger import ShowTriggersTool
+from ..tools.procedures import ShowProceduresTool
 from ..utils.logger import logger_init
 
 logger = logger_init("test-tools")
@@ -311,3 +312,32 @@ def test_node_neighborhood_tool():
     assert isinstance(result, list)
     assert len(result) == 2
     memgraph_client.query(f"MATCH (n:{label}) DETACH DELETE n;")
+
+
+def test_show_procedures_tool():
+    """Test the ShowProcedures tool."""
+
+    url = "bolt://localhost:7687"
+    user = ""
+    password = ""
+
+    memgraph_client = Memgraph(url=url, username=user, password=password)
+
+    procedures_tool = ShowProceduresTool(db=memgraph_client)
+    assert "show_procedures" in procedures_tool.name
+
+    result = procedures_tool.call({})
+
+    assert isinstance(result, list)
+    # Memgraph should always have some built-in procedures
+    assert len(result) >= 1
+
+    # Verify the structure of the returned data
+    first_procedure = result[0]
+    assert "name" in first_procedure
+    assert "signature" in first_procedure
+    assert "is_write" in first_procedure
+
+    # Verify that mg.procedures is in the list (it's a built-in procedure)
+    procedure_names = [proc["name"] for proc in result]
+    assert "mg.procedures" in procedure_names

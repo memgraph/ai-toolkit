@@ -238,6 +238,7 @@ async def test_tools_and_resources():
             "get_page_rank",
             "get_node_neighborhood",
             "search_node_vectors",
+            "get_procedures",
         ]
         expected_resources = []
 
