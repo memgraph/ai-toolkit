@@ -10,8 +10,9 @@ import numpy as np
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-MEMGRAPH_URI = os.getenv("MEMGRAPH_URI", "bolt://localhost:7687")
-os.environ["MEMGRAPH_URI"] = MEMGRAPH_URI
+# Read from MEMGRAPH_URL (consistent with memgraph-toolbox) and set MEMGRAPH_URI for LightRAG
+MEMGRAPH_URL = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
+os.environ["MEMGRAPH_URI"] = MEMGRAPH_URL
 
 
 class DummyEmbed:
