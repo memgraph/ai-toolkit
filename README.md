@@ -3,6 +3,7 @@
 [![PyPI - memgraph-toolbox](https://img.shields.io/pypi/v/memgraph-toolbox?label=memgraph-toolbox)](https://pypi.org/project/memgraph-toolbox/)
 [![PyPI - langchain-memgraph](https://img.shields.io/pypi/v/langchain-memgraph?label=langchain-memgraph)](https://pypi.org/project/langchain-memgraph/)
 [![PyPI - mcp-memgraph](https://img.shields.io/pypi/v/mcp-memgraph?label=mcp-memgraph)](https://pypi.org/project/mcp-memgraph/)
+[![PyPI - unstructured2graph](https://img.shields.io/pypi/v/unstructured2graph?label=unstructured2graph)](https://pypi.org/project/unstructured2graph/)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-7289da)](https://discord.gg/memgraph)
 
 Build powerful AI applications with graph-powered RAG using [Memgraph](https://memgraph.com/). This toolkit provides everything you need to integrate knowledge graphs into your GenAI workflows.
