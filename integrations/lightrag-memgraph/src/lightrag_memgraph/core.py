@@ -5,7 +5,7 @@ import logging
 from lightrag import LightRAG
 from lightrag.kg.shared_storage import initialize_pipeline_status
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
-from lightrag.utils import setup_logger
+from lightrag.utils import EmbeddingFunc, setup_logger
 import numpy as np
 
 
@@ -15,12 +15,13 @@ MEMGRAPH_URL = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
 os.environ["MEMGRAPH_URI"] = MEMGRAPH_URL
 
 
-class DummyEmbed:
-    def __init__(self, dim: int = 1):
-        self.embedding_dim = dim
+def _dummy_embedding_func(dim: int = 1) -> EmbeddingFunc:
+    """Build an EmbeddingFunc that returns constant embeddings (for disable_embeddings=True)."""
 
-    async def __call__(self, texts: list[str]) -> np.ndarray:
-        return np.ones((len(texts), self.embedding_dim), dtype=float)
+    async def _dummy_embed_func(texts: list[str]) -> np.ndarray:
+        return np.ones((len(texts), dim), dtype=float)
+
+    return EmbeddingFunc(embedding_dim=dim, func=_dummy_embed_func)
 
 
 class MemgraphLightRAGWrapper:
@@ -40,7 +41,7 @@ class MemgraphLightRAGWrapper:
         logging.getLogger("nano-vectordb").setLevel(self.log_level)
         logging.getLogger("pikepdf").setLevel(self.log_level)
         if self.disable_embeddings:
-            lightrag_kwargs["embedding_func"] = DummyEmbed(dim=1)
+            lightrag_kwargs["embedding_func"] = _dummy_embedding_func(dim=1)
             lightrag_kwargs["vector_storage"] = "NanoVectorDBStorage"
         if "working_dir" in lightrag_kwargs:
             working_dir = lightrag_kwargs["working_dir"]

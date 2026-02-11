@@ -4,6 +4,7 @@ import traceback
 
 import asyncio
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
+from lightrag.llm.anthropic import anthropic_complete
 import shutil
 
 from lightrag_memgraph import MemgraphLightRAGWrapper
@@ -71,6 +72,8 @@ async def main():
         await lightrag_wrapper.initialize(
             working_dir=WORKING_DIR,
             max_parallel_insert=8,
+            llm_model_func=anthropic_complete,
+            llm_model_name="claude-haiku-4-5",
         )
 
         total_time = 0.0
