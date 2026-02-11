@@ -110,7 +110,7 @@ agent = create_react_agent(llm, toolkit.get_tools())
 events = agent.stream({"messages": [("user", "Find all Person nodes")]})
 ```
 
-👉 [Full Documentation](https://memgraph.com/docs/ai-ecosystem/integrations#langchain) | [Notebooks](/integrations/langchain-memgraph/docs/)
+👉 [Full Documentation](https://memgraph.com/docs/ai-ecosystem/integrations#langchain)
 
 ---
 
