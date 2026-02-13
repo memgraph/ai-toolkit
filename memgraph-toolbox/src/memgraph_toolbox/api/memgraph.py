@@ -83,6 +83,7 @@ class Memgraph:
                 parameters_=params,
                 database_=self.database,
             )
+            # TODO(gitbuda): r.data() hides Node/Edge info -> https://neo4j.com/docs/api/python-driver/current/api.html#neo4j.Record.data
             json_data = [serialize_record_data(r.data()) for r in data]
             return json_data
         except Neo4jError as e:
