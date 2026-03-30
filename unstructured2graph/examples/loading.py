@@ -24,7 +24,7 @@ async def from_unstructured_with_prep():
         os.mkdir(LIGHTRAG_DIR)
 
     # Cleanup Memgraph database.
-    memgraph = Memgraph()
+    memgraph = Memgraph(user_agent="unstructured2graph")
     memgraph.query("MATCH (n) DETACH DELETE n;")
     create_index(memgraph, "Chunk", "hash")
 
