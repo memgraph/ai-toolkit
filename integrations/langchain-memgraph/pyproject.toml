@@ -15,7 +15,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "langchain-core>=1.0.0",
+    "langchain-core>=1.1.0",
     "langchain-classic>=1.0.0",
     "neo4j>=5.28.1",
     "memgraph-toolbox>=0.1.10",
