@@ -21,7 +21,6 @@ jobs:
       - name: Build and release lightrag-memgraph
         working-directory: integrations/lightrag-memgraph
         env:
-          UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
         run: |
           uv build
