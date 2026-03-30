@@ -13,7 +13,7 @@ import prompt_templates
 
 async def full_graphrag(args):
     #### INGESTION
-    memgraph = Memgraph(user_agent="unstructured2graph")
+    memgraph = Memgraph()
     if args.ingestion:
         await from_unstructured_with_prep()
         compute_embeddings(memgraph, "Chunk")

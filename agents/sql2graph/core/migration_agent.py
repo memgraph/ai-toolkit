@@ -642,7 +642,6 @@ class SQLToMemgraphAgent:
                 username=username,
                 password=password,
                 database=database,
-                user_agent="sql2graph",
             )
 
             # Test Memgraph connection

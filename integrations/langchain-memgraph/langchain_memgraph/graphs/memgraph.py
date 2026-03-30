@@ -310,14 +310,7 @@ class MemgraphLangChain(GraphStore, Memgraph):
                 "MEMGRAPH_PASSWORD",
             )
 
-        Memgraph.__init__(
-            self,
-            url,
-            username,
-            password,
-            driver_config=driver_config,
-            user_agent="langchain-memgraph",
-        )
+        Memgraph.__init__(self, url, username, password, driver_config=driver_config)
 
         database = get_from_dict_or_env(
             {"database": database}, "database", "MEMGRAPH_DATABASE", "memgraph"

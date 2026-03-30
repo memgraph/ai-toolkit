@@ -35,7 +35,7 @@ from lightrag_memgraph import MemgraphLightRAGWrapper
 from unstructured2graph import from_unstructured, create_index
 
 async def main():
-    memgraph = Memgraph(user_agent="unstructured2graph")
+    memgraph = Memgraph()
     create_index(memgraph, "Chunk", "hash")
 
     lightrag = MemgraphLightRAGWrapper()
