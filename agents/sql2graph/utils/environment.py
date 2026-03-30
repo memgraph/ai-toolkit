@@ -211,6 +211,7 @@ def probe_memgraph_connection(
             username=str(memgraph_config.get("username", "")),
             password=str(memgraph_config.get("password", "")),
             database=str(memgraph_config.get("database", "memgraph")),
+            user_agent="sql2graph",
         )
 
         client.query("MATCH (n) RETURN count(n) as node_count LIMIT 1")

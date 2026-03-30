@@ -79,6 +79,7 @@ class MemgraphConfig:
             "username": self.username,
             "password": self.password,
             "database": self.database,
+            "user_agent": "mcp-memgraph",
         }
 
 

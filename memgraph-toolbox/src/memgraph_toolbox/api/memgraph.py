@@ -9,6 +9,8 @@ class Memgraph:
     Base Memgraph client for interacting with Memgraph database.
     """
 
+    DEFAULT_USER_AGENT = "memgraph-toolbox"
+
     def __init__(
         self,
         url: str = None,
@@ -16,6 +18,7 @@ class Memgraph:
         password: str = None,
         database: str = None,
         driver_config: Optional[Dict] = None,
+        user_agent: Optional[str] = None,
     ):
         """
         Initialize Memgraph client with connection parameters.
@@ -32,6 +35,7 @@ class Memgraph:
             password: Password for authentication
             database: The database name to connect to (default: "memgraph")
             driver_config: Additional Neo4j driver configuration
+            user_agent: Client name sent to the server (e.g. "mcp-memgraph", "langchain-memgraph", "sql2graph", etc.)
         """
 
         # Load from environment variables with fallbacks
@@ -39,9 +43,10 @@ class Memgraph:
         username = username or os.environ.get("MEMGRAPH_USER", "")
         password = password or os.environ.get("MEMGRAPH_PASSWORD", "")
 
-        self.driver = GraphDatabase.driver(
-            url, auth=(username, password), **(driver_config or {})
-        )
+        config = dict(driver_config or {})
+        config.setdefault("user_agent", user_agent or self.DEFAULT_USER_AGENT)
+
+        self.driver = GraphDatabase.driver(url, auth=(username, password), **config)
 
         self.database = database or os.environ.get("MEMGRAPH_DATABASE", "memgraph")
 
