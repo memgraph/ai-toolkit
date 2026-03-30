@@ -236,3 +236,8 @@ If you are running any test on macOS in zsh, add `""` to the command:
 ```bash
 uv pip install -e memgraph-toolbox"[test]"
 ```
+
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/memgraph-mcp-memgraph).
+
