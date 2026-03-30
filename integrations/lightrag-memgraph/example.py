@@ -17,7 +17,7 @@ if os.path.exists(WORKING_DIR):
     shutil.rmtree(WORKING_DIR)
 if not os.path.exists(WORKING_DIR):
     os.mkdir(WORKING_DIR)
-memgraph = Memgraph()
+memgraph = Memgraph(user_agent="lightrag-memgraph")
 memgraph.query("MATCH (n) DETACH DELETE n;")
 
 DUMMY_TEXTS = [
