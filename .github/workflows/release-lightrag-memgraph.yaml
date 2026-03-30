@@ -23,5 +23,5 @@ jobs:
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
         run: |
-          uv build
+          uv build --out-dir dist
           uv publish
