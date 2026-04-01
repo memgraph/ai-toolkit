@@ -82,6 +82,18 @@ curl -H "X-API-Key: $LIGHTRAG_API_KEY" http://localhost:9621/query -d '{"query":
 
 ## Token Rotation
 
+### Current limitation: restart required
+
+The API key **cannot be hot-reloaded** in upstream LightRAG. It is read once at startup and captured in a closure across three layers:
+
+1. `config.py` — `parse_args()` reads `LIGHTRAG_API_KEY` env var once into `global_args.key`
+2. `lightrag_server.py` — `create_app()` captures it into a local `api_key` via `os.getenv()` once
+3. `utils_api.py` — `get_combined_auth_dependency(api_key)` stores it in a closure compared on every request
+
+Even mutating `os.environ` at runtime has no effect — the closure still holds the old value.
+
+### Rotation without hot-reload
+
 ```bash
 # 1. Generate new token
 NEW_TOKEN=$(openssl rand -hex 32)
@@ -92,6 +104,10 @@ export LIGHTRAG_API_KEY=$NEW_TOKEN
 
 # 3. Distribute new token to users
 ```
+
+### Proposed patch: hot-reloadable API key
+
+A small change to `lightrag/api/utils_api.py` allows the key to be rotated by updating the env var without restarting the server. See `sso-shared-token-patch.md` for the full patch.
 
 ## When to Outgrow This
 
