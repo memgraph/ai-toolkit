@@ -8,6 +8,7 @@ Run with: uv run main.py
 """
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -22,6 +23,7 @@ from utils import (  # noqa: E402
     DatabaseConnectionError,
     setup_and_validate_environment,
     probe_all_connections,
+    probe_source_connection,
     print_environment_help,
     print_troubleshooting_help,
 )
@@ -131,6 +133,16 @@ def parse_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default=env_log_level,
         type=str.upper,
         help="Logging level for the agent. Overrides SQL2MG_LOG_LEVEL.",
+    )
+
+    parser.add_argument(
+        "--mapping",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Generate a mapping JSON file instead of running the migration. "
+            "The file maps graph nodes/edges back to SQL tables and columns."
+        ),
     )
 
     return parser.parse_args(argv)
@@ -254,7 +266,7 @@ def run_migration(
     meta_graph_policy: str,
     llm_provider: Optional[str] = None,
     llm_model: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> tuple[Dict[str, Any], SQLToMemgraphAgent]:
     """
     Run the migration with the specified configuration.
 
@@ -268,7 +280,7 @@ def run_migration(
         llm_model: Specific LLM model name
 
     Returns:
-        Migration result dictionary
+        Tuple of (migration result dictionary, agent instance)
     """
     print("🔧 Creating migration agent...")
 
@@ -311,7 +323,8 @@ def run_migration(
         print()
 
     # Run the migration with the user's chosen settings
-    return agent.migrate(source_db_config, memgraph_config)
+    result = agent.migrate(source_db_config, memgraph_config)
+    return result, agent
 
 
 def print_migration_results(result: Dict[str, Any]) -> None:
@@ -442,6 +455,115 @@ def print_migration_results(result: Dict[str, Any]) -> None:
     print("=" * 60)
 
 
+def graph_model_to_mapping(graph_model: Any) -> Dict[str, Any]:
+    """
+    Convert an internal GraphModel into the federated-GQL mapping format.
+
+    The output JSON contains ``nodes`` and ``edges`` arrays that map graph
+    labels / relationship types back to their source SQL tables and columns.
+    """
+    nodes = []
+    for node in graph_model.nodes:
+        entry: Dict[str, Any] = {
+            "label": node.primary_label,
+            "table": node.source.name if node.source else "",
+            "id_column": (
+                node.source.mapping.get("id_field", "") if node.source else ""
+            ),
+            "properties": {},
+        }
+        for prop in node.properties:
+            # prop.source.field is "table.column"; we only need the column part
+            if prop.source and prop.source.field:
+                column = prop.source.field.split(".", 1)[-1]
+            else:
+                column = prop.key
+            entry["properties"][prop.key] = column
+        nodes.append(entry)
+
+    edges = []
+    for edge in graph_model.edges:
+        source_mapping = edge.source.mapping if edge.source else {}
+        # start_node / end_node are stored as "table.column"
+        start_node_ref = source_mapping.get("start_node", "")
+        end_node_ref = source_mapping.get("end_node", "")
+
+        entry: Dict[str, Any] = {
+            "rel_type": edge.edge_type,
+            "table": edge.source.name if edge.source else "",
+            "source_column": start_node_ref.split(".", 1)[-1] if start_node_ref else "",
+            "target_column": end_node_ref.split(".", 1)[-1] if end_node_ref else "",
+            "source_label": edge.start_node_labels[0] if edge.start_node_labels else "",
+            "target_label": edge.end_node_labels[0] if edge.end_node_labels else "",
+        }
+        # Include edge properties when present
+        if edge.properties:
+            entry["properties"] = {}
+            for prop in edge.properties:
+                if prop.source and prop.source.field:
+                    column = prop.source.field.split(".", 1)[-1]
+                else:
+                    column = prop.key
+                entry["properties"][prop.key] = column
+        edges.append(entry)
+
+    return {"nodes": nodes, "edges": edges}
+
+
+def generate_mapping(
+    agent: SQLToMemgraphAgent,
+    source_db_config: Dict[str, Any],
+    mapping_path: str,
+) -> None:
+    """
+    Run only schema analysis and graph modeling, then write the mapping file.
+
+    This skips the full migration workflow entirely - no Memgraph connection
+    is required.
+    """
+    from database.factory import DatabaseAnalyzerFactory
+    from core.hygm import HyGM
+
+    # 1. Connect and analyse the source database
+    print("🔍 Analyzing source database schema...")
+    config = source_db_config.copy()
+    db_type = config.pop("database_type", "mysql")
+    analyzer = DatabaseAnalyzerFactory.create_analyzer(
+        database_type=db_type, **config
+    )
+    if not analyzer.connect():
+        raise DatabaseConnectionError("Failed to connect to source database")
+
+    db_structure = analyzer.get_database_structure()
+    hygm_data = db_structure.to_hygm_format()
+    analyzer.disconnect()
+    print(f"  Found {len(hygm_data.get('entity_tables', {}))} entity tables")
+
+    # 2. Build the graph model via HyGM
+    print("🎯 Creating graph model...")
+    graph_modeler = HyGM(
+        llm=agent.llm,
+        mode=agent.modeling_mode,
+        strategy=agent.graph_modeling_strategy,
+    )
+    graph_model = graph_modeler.create_graph_model(
+        hygm_data,
+        domain_context="Database migration to graph database",
+    )
+    print(
+        f"  {len(graph_model.nodes)} node types, "
+        f"{len(graph_model.edges)} relationship types"
+    )
+
+    # 3. Write mapping file
+    mapping = graph_model_to_mapping(graph_model)
+    output = Path(mapping_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, "w", encoding="utf-8") as f:
+        json.dump(mapping, f, indent=2)
+    print(f"\n📄 Mapping file written to {output}")
+
+
 def main(argv: Optional[list[str]] = None) -> None:
     """Main entry point for the migration agent."""
     args = parse_cli_args(argv)
@@ -457,39 +579,79 @@ def main(argv: Optional[list[str]] = None) -> None:
         print("✅ Environment validation completed")
         print()
 
-        # Probe database connections
-        print("🔌 Testing database connections...")
-        probe_all_connections(source_db_config, memgraph_config)
-        print("✅ All connections verified")
-        print()
+        if args.mapping:
+            # Mapping-only mode: connect to source DB, model, write file
+            db_type = source_db_config.get("database_type", "mysql")
+            db_name = source_db_config.get("database", "")
+            db_host = source_db_config.get("host", "")
+            print(f"🔌 Connecting to {db_type} database {db_name}@{db_host}...")
+            source_ok, source_err = probe_source_connection(source_db_config)
+            if not source_ok:
+                raise DatabaseConnectionError(
+                    f"Source database connection failed: {source_err}"
+                )
+            print(f"✅ Connected to {db_type} — ready for modeling")
+            print()
 
-        # Get user preferences
-        graph_mode = _resolve_mode(args.mode) or get_graph_modeling_mode()
-        graph_strategy = (
-            _resolve_strategy(args.strategy) or get_graph_modeling_strategy()
-        )
-
-        meta_graph_policy = (args.meta_graph or "auto").lower()
-        if meta_graph_policy not in META_GRAPH_POLICIES:
-            logger.warning(
-                "Unrecognised meta graph policy '%s'; defaulting to auto",
-                meta_graph_policy,
+            # Get user preferences
+            graph_mode = _resolve_mode(args.mode) or get_graph_modeling_mode()
+            graph_strategy = (
+                _resolve_strategy(args.strategy) or get_graph_modeling_strategy()
             )
-            meta_graph_policy = "auto"
 
-        # Run migration
-        result = run_migration(
-            source_db_config,
-            memgraph_config,
-            graph_mode,
-            graph_strategy,
-            meta_graph_policy,
-            llm_provider=args.provider,
-            llm_model=args.model,
-        )
+            meta_graph_policy = (args.meta_graph or "auto").lower()
+            if meta_graph_policy not in META_GRAPH_POLICIES:
+                logger.warning(
+                    "Unrecognised meta graph policy '%s'; defaulting to auto",
+                    meta_graph_policy,
+                )
+                meta_graph_policy = "auto"
 
-        # Display results
-        print_migration_results(result)
+            print("📄 Mapping mode: generating mapping file (no migration)...")
+            print()
+            agent = SQLToMemgraphAgent(
+                modeling_mode=graph_mode,
+                graph_modeling_strategy=graph_strategy,
+                meta_graph_policy=meta_graph_policy,
+                llm_provider=args.provider,
+                llm_model=args.model,
+            )
+            generate_mapping(agent, source_db_config, args.mapping)
+        else:
+            # Full migration (original flow)
+            # Probe database connections
+            print("🔌 Testing database connections...")
+            probe_all_connections(source_db_config, memgraph_config)
+            print("✅ All connections verified")
+            print()
+
+            # Get user preferences
+            graph_mode = _resolve_mode(args.mode) or get_graph_modeling_mode()
+            graph_strategy = (
+                _resolve_strategy(args.strategy) or get_graph_modeling_strategy()
+            )
+
+            meta_graph_policy = (args.meta_graph or "auto").lower()
+            if meta_graph_policy not in META_GRAPH_POLICIES:
+                logger.warning(
+                    "Unrecognised meta graph policy '%s'; defaulting to auto",
+                    meta_graph_policy,
+                )
+                meta_graph_policy = "auto"
+
+            # Run migration
+            result, agent = run_migration(
+                source_db_config,
+                memgraph_config,
+                graph_mode,
+                graph_strategy,
+                meta_graph_policy,
+                llm_provider=args.provider,
+                llm_model=args.model,
+            )
+
+            # Display results
+            print_migration_results(result)
 
     except MigrationEnvironmentError as e:
         print("\n❌ Environment Setup Error:")
