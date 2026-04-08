@@ -519,17 +519,207 @@ def graph_model_to_mapping(graph_model: Any) -> Dict[str, Any]:
     return {"nodes": nodes, "edges": edges}
 
 
+def mapping_to_graph_model(mapping: Dict[str, Any]) -> Any:
+    """Convert a mapping JSON dict back into a GraphModel."""
+    from core.hygm.models.graph_models import (
+        GraphModel,
+        GraphNode,
+        GraphRelationship,
+        GraphProperty,
+    )
+    from core.hygm.models.sources import (
+        NodeSource,
+        PropertySource,
+        RelationshipSource,
+    )
+
+    nodes = []
+    for entry in mapping.get("nodes", []):
+        table = entry.get("table", "")
+        id_column = entry.get("id_column", "")
+        label = entry.get("label", "")
+
+        source = NodeSource(
+            type="table",
+            name=table,
+            location=f"database.schema.{table}",
+            mapping={"labels": [label], "id_field": id_column},
+        )
+
+        properties = []
+        for prop_key, col_name in entry.get("properties", {}).items():
+            prop_source = PropertySource(field=f"{table}.{col_name}")
+            properties.append(GraphProperty(key=prop_key, source=prop_source))
+
+        nodes.append(GraphNode(labels=[label], properties=properties, source=source))
+
+    edges = []
+    for entry in mapping.get("edges", []):
+        table = entry.get("table", "")
+        source_col = entry.get("source_column", "")
+        target_col = entry.get("target_column", "")
+
+        rel_mapping: Dict[str, Any] = {
+            "start_node": f"{table}.{source_col}",
+            "end_node": f"{table}.{target_col}",
+            "edge_type": entry.get("rel_type", ""),
+        }
+        # Preserve join table info so round-trips are lossless
+        if table:
+            rel_mapping["join_table"] = table
+
+        rel_source = RelationshipSource(
+            type="table",
+            name=table,
+            location=f"database.schema.{table}",
+            mapping=rel_mapping,
+        )
+
+        properties = []
+        for prop_key, col_name in entry.get("properties", {}).items():
+            prop_source = PropertySource(field=f"{table}.{col_name}")
+            properties.append(GraphProperty(key=prop_key, source=prop_source))
+
+        edges.append(
+            GraphRelationship(
+                edge_type=entry.get("rel_type", ""),
+                start_node_labels=[entry.get("source_label", "")],
+                end_node_labels=[entry.get("target_label", "")],
+                properties=properties,
+                source=rel_source,
+            )
+        )
+
+    return GraphModel(nodes=nodes, edges=edges)
+
+
+def print_mapping_summary(mapping: Dict[str, Any]) -> None:
+    """Print a concise summary of a mapping file."""
+    print()
+    print("  Nodes:")
+    for n in mapping.get("nodes", []):
+        props = ", ".join(n.get("properties", {}).keys())
+        print(f"    :{n['label']}  (table: {n['table']}, id: {n['id_column']})")
+        if props:
+            print(f"      properties: {props}")
+
+    print("  Edges:")
+    for e in mapping.get("edges", []):
+        src = e.get("source_label", "?")
+        tgt = e.get("target_label", "?")
+        print(
+            f"    (:{src})-[:{e['rel_type']}]->(:{tgt})  "
+            f"(table: {e['table']}, {e['source_column']} -> {e['target_column']})"
+        )
+    print()
+
+
+def edit_mapping_interactive(
+    mapping: Dict[str, Any],
+    llm: Any,
+    mapping_path: str,
+) -> Dict[str, Any]:
+    """
+    Interactive loop: let the user edit a mapping via natural language.
+
+    Uses HyGM's operation parsing and application under the hood.
+    """
+    from core.hygm import HyGM, GraphModelingStrategy, ModelingMode
+
+    graph_model = mapping_to_graph_model(mapping)
+
+    # Create a HyGM instance just for the NL parsing / operation machinery
+    modeler = HyGM(
+        llm=llm,
+        mode=ModelingMode.AUTOMATIC,
+        strategy=GraphModelingStrategy.LLM_POWERED,
+    )
+
+    print("=" * 60)
+    print("INTERACTIVE MAPPING EDITOR")
+    print("=" * 60)
+    print("\nDescribe changes in natural language, e.g.:")
+    print("  - Rename label Person to User")
+    print("  - Add property email to Company")
+    print("  - Remove the KNOWS relationship")
+    print("  - Change WORKS_AT source_column to employee_id")
+    print("\nType 'done' to save, 'cancel' to discard changes.\n")
+
+    while True:
+        try:
+            user_input = input("edit> ").strip()
+
+            if user_input.lower() == "done":
+                break
+            elif user_input.lower() == "cancel":
+                print("Discarded changes.")
+                return mapping
+            elif not user_input:
+                continue
+
+            if not llm:
+                print("LLM is required for natural language editing.")
+                break
+
+            print("Processing...")
+            operations = modeler._parse_natural_language_to_operations(
+                user_input, graph_model
+            )
+
+            if operations and operations.operations:
+                graph_model = modeler._apply_operations_to_model(
+                    graph_model, operations
+                )
+                mapping = graph_model_to_mapping(graph_model)
+                print(f"Applied: {operations.reasoning}")
+                print_mapping_summary(mapping)
+            else:
+                print("Could not parse that instruction. Please try again.")
+
+        except (EOFError, KeyboardInterrupt):
+            print("\nDiscarded changes.")
+            return mapping
+
+    # Write updated mapping
+    output = Path(mapping_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, "w", encoding="utf-8") as f:
+        json.dump(mapping, f, indent=2)
+    print(f"📄 Mapping saved to {output}")
+    return mapping
+
+
 def generate_mapping(
     agent: SQLToMemgraphAgent,
     source_db_config: Dict[str, Any],
     mapping_path: str,
 ) -> None:
     """
-    Run only schema analysis and graph modeling, then write the mapping file.
+    Generate or edit a mapping file.
 
-    This skips the full migration workflow entirely - no Memgraph connection
-    is required.
+    If the file already exists it is loaded and the user enters an interactive
+    editing session. Otherwise the source database is analysed and a new
+    mapping is created from scratch.
     """
+    output = Path(mapping_path)
+
+    # If mapping already exists, load it and enter edit mode
+    if output.exists():
+        with open(output, "r", encoding="utf-8") as f:
+            mapping = json.load(f)
+
+        print(f"📄 Loaded existing mapping from {output}")
+        print_mapping_summary(mapping)
+
+        if agent.llm:
+            edit_mapping_interactive(mapping, agent.llm, mapping_path)
+        else:
+            print(
+                "LLM provider is required for interactive editing. "
+                "Use --provider/--strategy llm or set an API key."
+            )
+        return
+
     from database.factory import DatabaseAnalyzerFactory
     from core.hygm import HyGM
 
@@ -566,7 +756,6 @@ def generate_mapping(
 
     # 3. Write mapping file
     mapping = graph_model_to_mapping(graph_model)
-    output = Path(mapping_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     with open(output, "w", encoding="utf-8") as f:
         json.dump(mapping, f, indent=2)
@@ -589,43 +778,58 @@ def main(argv: Optional[list[str]] = None) -> None:
         print()
 
         if args.mapping:
-            # Mapping-only mode: connect to source DB, model, write file
-            db_type = source_db_config.get("database_type", "mysql")
-            db_name = source_db_config.get("database", "")
-            db_host = source_db_config.get("host", "")
-            print(f"🔌 Connecting to {db_type} database {db_name}@{db_host}...")
-            source_ok, source_err = probe_source_connection(source_db_config)
-            if not source_ok:
-                raise DatabaseConnectionError(
-                    f"Source database connection failed: {source_err}"
+            mapping_file = Path(args.mapping)
+
+            if mapping_file.exists():
+                # Edit existing mapping — only LLM needed, no DB connection
+                print("📄 Existing mapping found — entering edit mode")
+                agent = SQLToMemgraphAgent(
+                    modeling_mode=ModelingMode.AUTOMATIC,
+                    graph_modeling_strategy=GraphModelingStrategy.LLM_POWERED,
+                    meta_graph_policy="skip",
+                    llm_provider=args.provider,
+                    llm_model=args.model,
                 )
-            print(f"✅ Connected to {db_type} — ready for modeling")
-            print()
+                generate_mapping(agent, source_db_config, args.mapping)
+            else:
+                # Generate new mapping — needs source DB
+                db_type = source_db_config.get("database_type", "mysql")
+                db_name = source_db_config.get("database", "")
+                db_host = source_db_config.get("host", "")
+                print(f"🔌 Connecting to {db_type} database {db_name}@{db_host}...")
+                source_ok, source_err = probe_source_connection(source_db_config)
+                if not source_ok:
+                    raise DatabaseConnectionError(
+                        f"Source database connection failed: {source_err}"
+                    )
+                print(f"✅ Connected to {db_type} — ready for modeling")
+                print()
 
-            # Get user preferences
-            graph_mode = _resolve_mode(args.mode) or get_graph_modeling_mode()
-            graph_strategy = (
-                _resolve_strategy(args.strategy) or get_graph_modeling_strategy()
-            )
-
-            meta_graph_policy = (args.meta_graph or "auto").lower()
-            if meta_graph_policy not in META_GRAPH_POLICIES:
-                logger.warning(
-                    "Unrecognised meta graph policy '%s'; defaulting to auto",
-                    meta_graph_policy,
+                # Get user preferences
+                graph_mode = _resolve_mode(args.mode) or get_graph_modeling_mode()
+                graph_strategy = (
+                    _resolve_strategy(args.strategy)
+                    or get_graph_modeling_strategy()
                 )
-                meta_graph_policy = "auto"
 
-            print("📄 Mapping mode: generating mapping file (no migration)...")
-            print()
-            agent = SQLToMemgraphAgent(
-                modeling_mode=graph_mode,
-                graph_modeling_strategy=graph_strategy,
-                meta_graph_policy=meta_graph_policy,
-                llm_provider=args.provider,
-                llm_model=args.model,
-            )
-            generate_mapping(agent, source_db_config, args.mapping)
+                meta_graph_policy = (args.meta_graph or "auto").lower()
+                if meta_graph_policy not in META_GRAPH_POLICIES:
+                    logger.warning(
+                        "Unrecognised meta graph policy '%s'; defaulting to auto",
+                        meta_graph_policy,
+                    )
+                    meta_graph_policy = "auto"
+
+                print("📄 Mapping mode: generating mapping file (no migration)...")
+                print()
+                agent = SQLToMemgraphAgent(
+                    modeling_mode=graph_mode,
+                    graph_modeling_strategy=graph_strategy,
+                    meta_graph_policy=meta_graph_policy,
+                    llm_provider=args.provider,
+                    llm_model=args.model,
+                )
+                generate_mapping(agent, source_db_config, args.mapping)
         else:
             # Full migration (original flow)
             # Probe database connections
