@@ -464,12 +464,13 @@ def graph_model_to_mapping(graph_model: Any) -> Dict[str, Any]:
     """
     nodes = []
     for node in graph_model.nodes:
+        id_column = (
+            node.source.mapping.get("id_field", "") if node.source else ""
+        )
         entry: Dict[str, Any] = {
             "label": node.primary_label,
             "table": node.source.name if node.source else "",
-            "id_column": (
-                node.source.mapping.get("id_field", "") if node.source else ""
-            ),
+            "id_column": id_column,
             "properties": {},
         }
         for prop in node.properties:
@@ -478,6 +479,9 @@ def graph_model_to_mapping(graph_model: Any) -> Dict[str, Any]:
                 column = prop.source.field.split(".", 1)[-1]
             else:
                 column = prop.key
+            # Skip the id column — it's already represented by id_column
+            if id_column and column == id_column:
+                continue
             entry["properties"][prop.key] = column
         nodes.append(entry)
 
@@ -488,9 +492,14 @@ def graph_model_to_mapping(graph_model: Any) -> Dict[str, Any]:
         start_node_ref = source_mapping.get("start_node", "")
         end_node_ref = source_mapping.get("end_node", "")
 
+        # For many-to-many relationships, prefer the join table name
+        table_name = source_mapping.get("join_table", "")
+        if not table_name:
+            table_name = edge.source.name if edge.source else ""
+
         entry: Dict[str, Any] = {
             "rel_type": edge.edge_type,
-            "table": edge.source.name if edge.source else "",
+            "table": table_name,
             "source_column": start_node_ref.split(".", 1)[-1] if start_node_ref else "",
             "target_column": end_node_ref.split(".", 1)[-1] if end_node_ref else "",
             "source_label": edge.start_node_labels[0] if edge.start_node_labels else "",
