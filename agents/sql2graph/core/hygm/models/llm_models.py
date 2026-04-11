@@ -7,7 +7,7 @@ operations.
 
 from enum import Enum
 from typing import List, Literal, TYPE_CHECKING
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     from .graph_models import GraphModel
@@ -45,10 +45,7 @@ class LLMGraphNode(BaseModel):
     )
     source_table: str = Field(description="Source SQL table name")
 
-    class Config:
-        """Pydantic config for OpenAI structured output compatibility."""
-
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class LLMGraphRelationship(BaseModel):
@@ -67,10 +64,7 @@ class LLMGraphRelationship(BaseModel):
         description="Whether the relationship has direction"
     )
 
-    class Config:
-        """Pydantic config for OpenAI structured output compatibility."""
-
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class LLMGraphModel(BaseModel):
@@ -81,10 +75,7 @@ class LLMGraphModel(BaseModel):
         description="All relationships in the graph model"
     )
 
-    class Config:
-        """Pydantic config for OpenAI structured output compatibility."""
-
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
     def to_graph_model(self) -> "GraphModel":
         """Convert LLMGraphModel to GraphModel for schema export."""

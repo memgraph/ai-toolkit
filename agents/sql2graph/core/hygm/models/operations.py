@@ -6,7 +6,7 @@ graph models during interactive sessions.
 """
 
 from typing import List, Union, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelOperation(BaseModel):
@@ -15,10 +15,7 @@ class ModelOperation(BaseModel):
     operation_type: str = Field(description="Type of operation to perform")
     description: str = Field(description="Human-readable description of the operation")
 
-    class Config:
-        """Pydantic config for OpenAI structured output compatibility."""
-
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class ChangeNodeLabelOperation(ModelOperation):
@@ -170,7 +167,4 @@ class ModelModifications(BaseModel):
         description="Explanation of why these changes improve the model"
     )
 
-    class Config:
-        """Pydantic config for OpenAI structured output compatibility."""
-
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
