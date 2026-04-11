@@ -233,11 +233,12 @@ class LLMStrategy(BaseModelingStrategy):
         # Convert nodes - preserve original table mapping
         nodes = []
         for llm_node in llm_model.nodes:
+            id_field = self._get_table_primary_key(llm_node.source_table)
             source = NodeSource(
                 type="table",  # Keep as table source for migration
                 name=llm_node.source_table,  # Use actual source table name
                 location=f"database.schema.{llm_node.source_table}",
-                mapping={"labels": llm_node.labels},
+                mapping={"labels": llm_node.labels, "id_field": id_field},
             )
 
             properties = []
@@ -398,12 +399,16 @@ class LLMStrategy(BaseModelingStrategy):
                 if isinstance(db_rel, dict):
                     from_table = db_rel.get("from_table", "").lower()
                     to_table = db_rel.get("to_table", "").lower()
-                    rel_type = db_rel.get("relationship_type", "one_to_many")
+                    rel_type = db_rel.get(
+                        "type", db_rel.get("relationship_type", "one_to_many")
+                    )
                 else:
                     # Handle object format
                     from_table = db_rel.from_table.lower()
                     to_table = db_rel.to_table.lower()
-                    rel_type = db_rel.relationship_type
+                    rel_type = getattr(
+                        db_rel, "relationship_type", getattr(db_rel, "type", "one_to_many")
+                    )
 
                 # Check if this database relationship matches the source tables
                 if (
@@ -426,12 +431,16 @@ class LLMStrategy(BaseModelingStrategy):
             if isinstance(db_rel, dict):
                 from_table = db_rel.get("from_table", "").lower()
                 to_table = db_rel.get("to_table", "").lower()
-                rel_type = db_rel.get("relationship_type", "one_to_many")
+                rel_type = db_rel.get(
+                    "type", db_rel.get("relationship_type", "one_to_many")
+                )
             else:
                 # Handle object format
                 from_table = db_rel.from_table.lower()
                 to_table = db_rel.to_table.lower()
-                rel_type = db_rel.relationship_type
+                rel_type = getattr(
+                    db_rel, "relationship_type", getattr(db_rel, "type", "one_to_many")
+                )
 
             # Check if this database relationship matches the LLM relationship
             if self._tables_match_nodes(
@@ -498,26 +507,29 @@ class LLMStrategy(BaseModelingStrategy):
         # Get primary keys for the tables from database structure
         from_table_pk = self._get_table_primary_key(from_table)
 
-        mapping = {
-            "start_node": f"{from_table}.{from_col}",
-            "end_node": f"{to_table}.{to_col}",
-            "edge_type": llm_rel.name,
-            "from_pk": from_table_pk,  # Add primary key for migration agent
-        }
-
-        # Add many-to-many specific information if available
-        if rel_type == "many_to_many" and join_table:
-            mapping.update(
-                {
-                    "join_table": join_table,
-                    "join_from_column": join_from_col,
-                    "join_to_column": join_to_col,
-                    "from_table": from_table,
-                    "to_table": to_table,
-                    "from_column": from_col,
-                    "to_column": to_col,
-                }
-            )
+        # For many-to-many relationships, reference the join table FK columns
+        # so the mapping file points at the actual SQL join table
+        if rel_type == "many_to_many" and join_table and join_from_col and join_to_col:
+            mapping = {
+                "start_node": f"{join_table}.{join_from_col}",
+                "end_node": f"{join_table}.{join_to_col}",
+                "edge_type": llm_rel.name,
+                "from_pk": from_table_pk,
+                "join_table": join_table,
+                "join_from_column": join_from_col,
+                "join_to_column": join_to_col,
+                "from_table": from_table,
+                "to_table": to_table,
+                "from_column": from_col,
+                "to_column": to_col,
+            }
+        else:
+            mapping = {
+                "start_node": f"{from_table}.{from_col}",
+                "end_node": f"{to_table}.{to_col}",
+                "edge_type": llm_rel.name,
+                "from_pk": from_table_pk,
+            }
 
         # Determine source type
         source_type = "many_to_many" if rel_type == "many_to_many" else "table"
@@ -529,9 +541,15 @@ class LLMStrategy(BaseModelingStrategy):
         elif hasattr(db_rel, "constraint_name") and db_rel.constraint_name:
             constraint_name = db_rel.constraint_name
 
+        # For many-to-many relationships, use the join table as the source
+        # name so the mapping file references the actual SQL table
+        source_name = constraint_name
+        if rel_type == "many_to_many" and join_table:
+            source_name = join_table
+
         return {
             "source_type": source_type,
-            "constraint_name": constraint_name,
+            "constraint_name": source_name,
             "from_table": from_table,
             "to_table": to_table,
             "mapping": mapping,

@@ -1,6 +1,6 @@
 [project]
 name = "structured2graph"
-version = "0.1.1"
+version = "0.2.0"
 description = "Database migration agent from structured data (e.g. SQL) to graph."
 readme = "README.md"
 license = "MIT"

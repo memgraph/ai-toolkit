@@ -1017,7 +1017,10 @@ class HyGM:
         return model
 
     def _parse_natural_language_to_operations(
-        self, user_input: str, model: "GraphModel"
+        self,
+        user_input: str,
+        model: "GraphModel",
+        original_context: Optional[str] = None,
     ) -> Optional["ModelModifications"]:
         """Parse natural language input into structured operations."""
         if not self.llm:
@@ -1026,10 +1029,20 @@ class HyGM:
         # Get current model structure for context
         model_context = self._get_model_context_for_llm(model)
 
+        original_block = ""
+        if original_context:
+            original_block = (
+                f"Original graph model (before any edits):\n" f"{original_context}\n\n"
+            )
+
         system_prompt = (
             "You are an expert at translating natural language instructions "
             "into structured graph model operations.\n\n"
+            f"{original_block}"
             f"Current graph model structure:\n{model_context}\n\n"
+            "IMPORTANT: All label / name values must be plain identifiers "
+            "without Cypher punctuation (no leading colon, no brackets). "
+            "For example use Department, not :Department.\n\n"
             "Available operations:\n"
             "- change_node_label: Change a node's label\n"
             "- rename_property: Rename a property on a node\n"
@@ -1044,10 +1057,16 @@ class HyGM:
             "- drop_index: Remove an index\n"
             "- add_constraint: Add a constraint "
             "(unique, existence, data_type)\n"
-            "- drop_constraint: Remove a constraint\n\n"
+            "- drop_constraint: Remove a constraint\n"
+            "- change_node_table: Change the source SQL table mapped to a node\n"
+            "- change_node_id_column: Change the id column for a node mapping\n"
+            "- change_edge_table: Change the source/join table for an edge\n"
+            "- change_edge_columns: Change source_column and/or target_column for an edge\n\n"
             "IMPORTANT: When user says 'all' (e.g., 'drop all unique constraints'), "
             "you must identify ALL matching items from the current model context "
-            "and create operations for each one."
+            "and create operations for each one. "
+            "When user says 'original', 'revert', or 'go back', use the "
+            "original model above to determine the exact original values.\n\n"
             "Parse the user's request into appropriate operations. "
             "Return a ModelModifications object with the operations and "
             "reasoning."
@@ -1092,18 +1111,32 @@ class HyGM:
         """Get a text description of the current model for LLM context."""
         context_parts = []
 
-        # Nodes
+        # Nodes (with mapping info)
         context_parts.append("NODES:")
         for node in model.nodes:
             props = [p.key for p in node.properties]
-            context_parts.append(f"  - {node.primary_label}: {props}")
+            table = node.source.name if node.source else "?"
+            id_field = node.source.mapping.get("id_field", "?") if node.source else "?"
+            context_parts.append(
+                f"  - {node.primary_label}  table={table}, "
+                f"id_column={id_field}, properties={props}"
+            )
 
-        # Relationships
+        # Relationships (with mapping info)
         context_parts.append("\nRELATIONSHIPS:")
         for edge in model.edges:
             start = " | ".join(edge.start_node_labels)
             end = " | ".join(edge.end_node_labels)
-            context_parts.append(f"  - ({start})-[:{edge.edge_type}]->({end})")
+            mapping = edge.source.mapping if edge.source else {}
+            table = mapping.get("join_table", "") or (
+                edge.source.name if edge.source else "?"
+            )
+            src_col = mapping.get("start_node", "?").split(".", 1)[-1]
+            tgt_col = mapping.get("end_node", "?").split(".", 1)[-1]
+            context_parts.append(
+                f"  - ({start})-[:{edge.edge_type}]->({end})  "
+                f"table={table}, source_column={src_col}, target_column={tgt_col}"
+            )
 
         # Indexes
         if model.node_indexes:
@@ -1124,6 +1157,14 @@ class HyGM:
 
         return "\n".join(context_parts)
 
+    @staticmethod
+    def _sanitize_op(op: Any) -> None:
+        """Strip Cypher punctuation (leading ':') from string fields."""
+        for field_name in list(vars(op)):
+            val = getattr(op, field_name, None)
+            if isinstance(val, str) and val.startswith(":"):
+                setattr(op, field_name, val.lstrip(":"))
+
     def _apply_operations_to_model(
         self, model: "GraphModel", operations: "ModelModifications"
     ) -> "GraphModel":
@@ -1134,6 +1175,7 @@ class HyGM:
         print(f"\nApplying {len(operations.operations)} operations:")
 
         for op in operations.operations:
+            self._sanitize_op(op)
             if isinstance(op, type(op)) and hasattr(op, "operation_type"):
                 if op.operation_type == "change_node_label":
                     print(f"  - Change node label: {op.old_label} → {op.new_label}")
@@ -1232,6 +1274,38 @@ class HyGM:
                         op.start_node_label,
                         op.end_node_label,
                         op.properties,
+                    )
+                elif op.operation_type == "change_node_table":
+                    print(f"  - Change table for :{op.node_label}: → {op.new_table}")
+                    modified_model = self._apply_change_node_table(
+                        modified_model, op.node_label, op.new_table
+                    )
+                elif op.operation_type == "change_node_id_column":
+                    print(
+                        f"  - Change id column for :{op.node_label}: → {op.new_id_column}"
+                    )
+                    modified_model = self._apply_change_node_id_column(
+                        modified_model, op.node_label, op.new_id_column
+                    )
+                elif op.operation_type == "change_edge_table":
+                    print(f"  - Change table for [:{op.rel_type}]: → {op.new_table}")
+                    modified_model = self._apply_change_edge_table(
+                        modified_model, op.rel_type, op.new_table
+                    )
+                elif op.operation_type == "change_edge_columns":
+                    parts = []
+                    if op.new_source_column:
+                        parts.append(f"source_column={op.new_source_column}")
+                    if op.new_target_column:
+                        parts.append(f"target_column={op.new_target_column}")
+                    print(
+                        f"  - Change columns for [:{op.rel_type}]: {', '.join(parts)}"
+                    )
+                    modified_model = self._apply_change_edge_columns(
+                        modified_model,
+                        op.rel_type,
+                        op.new_source_column,
+                        op.new_target_column,
                     )
 
         return modified_model
@@ -1362,9 +1436,23 @@ class HyGM:
         for edge in model.edges:
             if edge.edge_type == old_name:
                 edge.edge_type = new_name
-                # Update source mapping if it exists
-                if edge.source and "edge_type" in edge.source.mapping:
-                    edge.source.mapping["edge_type"] = new_name
+                if edge.source:
+                    mapping = edge.source.mapping
+                    if "edge_type" in mapping:
+                        mapping["edge_type"] = new_name
+                    # Keep source name / join_table in sync so the
+                    # mapping round-trip picks up the new name.
+                    if edge.source.name == old_name:
+                        edge.source.name = new_name
+                    edge.source.location = f"database.schema.{new_name}"
+                    if mapping.get("join_table") == old_name:
+                        mapping["join_table"] = new_name
+                    # Update column reference prefixes
+                    for key in ("start_node", "end_node"):
+                        val = mapping.get(key, "")
+                        if val.startswith(f"{old_name}."):
+                            col = val.split(".", 1)[-1]
+                            mapping[key] = f"{new_name}.{col}"
         return model
 
     def _apply_drop_relationship(
@@ -1614,6 +1702,86 @@ class HyGM:
             source=edge_source,
         )
         model.edges.append(new_edge)
+        return model
+
+    # ------------------------------------------------------------------
+    # Mapping-level operations
+    # ------------------------------------------------------------------
+
+    def _apply_change_node_table(
+        self, model: "GraphModel", node_label: str, new_table: str
+    ) -> "GraphModel":
+        """Change the source table name mapped to a node."""
+        for node in model.nodes:
+            if node_label in node.labels and node.source:
+                old_table = node.source.name
+                node.source.name = new_table
+                node.source.location = f"database.schema.{new_table}"
+                # Update id_field prefix if it carried the old table name
+                id_field = node.source.mapping.get("id_field", "")
+                if "." in id_field:
+                    col = id_field.split(".", 1)[-1]
+                    node.source.mapping["id_field"] = f"{new_table}.{col}"
+                # Update property source fields
+                for prop in node.properties:
+                    if prop.source and prop.source.field:
+                        if prop.source.field.startswith(f"{old_table}."):
+                            col = prop.source.field.split(".", 1)[-1]
+                            prop.source.field = f"{new_table}.{col}"
+                break
+        return model
+
+    def _apply_change_node_id_column(
+        self, model: "GraphModel", node_label: str, new_id_column: str
+    ) -> "GraphModel":
+        """Change the id column for a node mapping."""
+        for node in model.nodes:
+            if node_label in node.labels and node.source:
+                table = node.source.name
+                if "." in new_id_column:
+                    node.source.mapping["id_field"] = new_id_column
+                else:
+                    node.source.mapping["id_field"] = f"{table}.{new_id_column}"
+                break
+        return model
+
+    def _apply_change_edge_table(
+        self, model: "GraphModel", rel_type: str, new_table: str
+    ) -> "GraphModel":
+        """Change the source/join table for an edge."""
+        for edge in model.edges:
+            if edge.edge_type == rel_type and edge.source:
+                edge.source.name = new_table
+                edge.source.location = f"database.schema.{new_table}"
+                mapping = edge.source.mapping
+                if "join_table" in mapping:
+                    mapping["join_table"] = new_table
+                # Update column references that carry the old table prefix
+                for key in ("start_node", "end_node"):
+                    val = mapping.get(key, "")
+                    if "." in val:
+                        col = val.split(".", 1)[-1]
+                        mapping[key] = f"{new_table}.{col}"
+                break
+        return model
+
+    def _apply_change_edge_columns(
+        self,
+        model: "GraphModel",
+        rel_type: str,
+        new_source_column: str,
+        new_target_column: str,
+    ) -> "GraphModel":
+        """Change source_column and/or target_column for an edge."""
+        for edge in model.edges:
+            if edge.edge_type == rel_type and edge.source:
+                mapping = edge.source.mapping
+                table = mapping.get("join_table", "") or edge.source.name
+                if new_source_column:
+                    mapping["start_node"] = f"{table}.{new_source_column}"
+                if new_target_column:
+                    mapping["end_node"] = f"{table}.{new_target_column}"
+                break
         return model
 
     def _validate_and_improve_automatic_llm_model(

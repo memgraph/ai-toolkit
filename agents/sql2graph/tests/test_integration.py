@@ -993,14 +993,12 @@ def test_comprehensive_sql_to_graph_conversion():
         logger.info("   - Validated data structure compatibility")
         logger.info("   - Confirmed source tracking implementation")
 
-        return True
-
     except Exception as e:
         logger.error("❌ Comprehensive graph modeling test failed: %s", str(e))
         import traceback
 
         logger.error("Traceback: %s", traceback.format_exc())
-        return False
+        raise
 
 
 def test_environment_setup():
@@ -1050,17 +1048,11 @@ def test_environment_setup():
             "✅ Available" if openai_available else "❌ Not available",
         )
 
-        if not openai_available:
-            logger.warning(
-                "OpenAI API key is required for graph modeling functionality"
-            )
-            return False
-
-        return True
+        assert openai_available, "OpenAI API key is required for graph modeling functionality"
 
     except Exception as e:
         logger.error(f"❌ Environment setup test failed: {e}")
-        return False
+        raise
 
 
 def test_full_migration_workflow_simulation():
@@ -1478,33 +1470,23 @@ def test_full_migration_workflow_simulation():
         logger.info("     * Index queries: %d", len(index_queries))
         logger.info("   - All components working together")
 
-        return True
-
     except Exception as e:
         logger.error("❌ Full migration workflow simulation failed: %s", str(e))
         import traceback
 
         logger.error("Traceback: %s", traceback.format_exc())
-        return False
+        raise
 
 
 def main():
     """Run all integration tests."""
     logger.info("🧪 Starting intelligent graph modeling integration tests...")
 
-    # Test environment setup
-    if not test_environment_setup():
-        logger.error("Environment setup failed - cannot continue with tests")
-        return False
-
-    # Test comprehensive SQL to graph conversion
-    if not test_comprehensive_sql_to_graph_conversion():
-        logger.error("Comprehensive graph modeling test failed")
-        return False
-
-    # Test full migration workflow simulation
-    if not test_full_migration_workflow_simulation():
-        logger.error("Full migration workflow simulation test failed")
+    try:
+        test_environment_setup()
+        test_comprehensive_sql_to_graph_conversion()
+        test_full_migration_workflow_simulation()
+    except Exception:
         return False
 
     logger.info("🎉 All integration tests passed!")

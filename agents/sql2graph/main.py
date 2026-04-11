@@ -8,9 +8,13 @@ Run with: uv run main.py
 """
 
 import argparse
+import json
 import logging
 import os
+import shlex
+import subprocess
 import sys
+import tempfile
 from typing import Dict, Any, Optional
 from pathlib import Path
 
@@ -21,7 +25,9 @@ from utils import (  # noqa: E402
     MigrationEnvironmentError,
     DatabaseConnectionError,
     setup_and_validate_environment,
+    validate_llm_providers,
     probe_all_connections,
+    probe_source_connection,
     print_environment_help,
     print_troubleshooting_help,
 )
@@ -131,6 +137,27 @@ def parse_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default=env_log_level,
         type=str.upper,
         help="Logging level for the agent. Overrides SQL2MG_LOG_LEVEL.",
+    )
+
+    parser.add_argument(
+        "--mapping",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Generate a mapping JSON file instead of running the migration. "
+            "The file maps graph nodes/edges back to SQL tables and columns."
+        ),
+    )
+
+    parser.add_argument(
+        "--editor",
+        default=None,
+        metavar="CMD",
+        help=(
+            "Editor command for opening mapping files "
+            "(e.g. nano, vim, 'code --wait'). "
+            "Overrides EDITOR / VISUAL env vars."
+        ),
     )
 
     return parser.parse_args(argv)
@@ -254,7 +281,7 @@ def run_migration(
     meta_graph_policy: str,
     llm_provider: Optional[str] = None,
     llm_model: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> tuple[Dict[str, Any], SQLToMemgraphAgent]:
     """
     Run the migration with the specified configuration.
 
@@ -268,7 +295,7 @@ def run_migration(
         llm_model: Specific LLM model name
 
     Returns:
-        Migration result dictionary
+        Tuple of (migration result dictionary, agent instance)
     """
     print("🔧 Creating migration agent...")
 
@@ -311,7 +338,8 @@ def run_migration(
         print()
 
     # Run the migration with the user's chosen settings
-    return agent.migrate(source_db_config, memgraph_config)
+    result = agent.migrate(source_db_config, memgraph_config)
+    return result, agent
 
 
 def print_migration_results(result: Dict[str, Any]) -> None:
@@ -442,9 +470,469 @@ def print_migration_results(result: Dict[str, Any]) -> None:
     print("=" * 60)
 
 
+def graph_model_to_mapping(graph_model: Any) -> Dict[str, Any]:
+    """
+    Convert an internal GraphModel into the federated-GQL mapping format.
+
+    The output JSON contains ``nodes`` and ``edges`` arrays that map graph
+    labels / relationship types back to their source SQL tables and columns.
+    """
+    nodes = []
+    for node in graph_model.nodes:
+        id_column = node.source.mapping.get("id_field", "") if node.source else ""
+        entry: Dict[str, Any] = {
+            "label": node.primary_label,
+            "table": node.source.name if node.source else "",
+            "id_column": id_column,
+            "properties": {},
+        }
+        for prop in node.properties:
+            # prop.source.field is "table.column"; we only need the column part
+            if prop.source and prop.source.field:
+                column = prop.source.field.split(".", 1)[-1]
+            else:
+                column = prop.key
+            # Skip the id column — it's already represented by id_column
+            if id_column and column == id_column:
+                continue
+            entry["properties"][prop.key] = column
+        nodes.append(entry)
+
+    edges = []
+    for edge in graph_model.edges:
+        source_mapping = edge.source.mapping if edge.source else {}
+        # start_node / end_node are stored as "table.column"
+        start_node_ref = source_mapping.get("start_node", "")
+        end_node_ref = source_mapping.get("end_node", "")
+
+        # For many-to-many relationships, prefer the join table name
+        table_name = source_mapping.get("join_table", "")
+        if not table_name:
+            table_name = edge.source.name if edge.source else ""
+
+        entry: Dict[str, Any] = {
+            "rel_type": edge.edge_type,
+            "table": table_name,
+            "source_column": start_node_ref.split(".", 1)[-1] if start_node_ref else "",
+            "target_column": end_node_ref.split(".", 1)[-1] if end_node_ref else "",
+            "source_label": edge.start_node_labels[0] if edge.start_node_labels else "",
+            "target_label": edge.end_node_labels[0] if edge.end_node_labels else "",
+        }
+        # Include edge properties when present
+        if edge.properties:
+            entry["properties"] = {}
+            for prop in edge.properties:
+                if prop.source and prop.source.field:
+                    column = prop.source.field.split(".", 1)[-1]
+                else:
+                    column = prop.key
+                entry["properties"][prop.key] = column
+        edges.append(entry)
+
+    return {"nodes": nodes, "edges": edges}
+
+
+def mapping_to_graph_model(mapping: Dict[str, Any]) -> Any:
+    """Convert a mapping JSON dict back into a GraphModel."""
+    from core.hygm.models.graph_models import (
+        GraphModel,
+        GraphNode,
+        GraphRelationship,
+        GraphProperty,
+    )
+    from core.hygm.models.sources import (
+        NodeSource,
+        PropertySource,
+        RelationshipSource,
+    )
+
+    nodes = []
+    for entry in mapping.get("nodes", []):
+        table = entry.get("table", "")
+        id_column = entry.get("id_column", "")
+        label = entry.get("label", "")
+
+        source = NodeSource(
+            type="table",
+            name=table,
+            location=f"database.schema.{table}",
+            mapping={"labels": [label], "id_field": id_column},
+        )
+
+        properties = []
+        for prop_key, col_name in entry.get("properties", {}).items():
+            prop_source = PropertySource(field=f"{table}.{col_name}")
+            properties.append(GraphProperty(key=prop_key, source=prop_source))
+
+        nodes.append(GraphNode(labels=[label], properties=properties, source=source))
+
+    edges = []
+    for entry in mapping.get("edges", []):
+        table = entry.get("table", "")
+        source_col = entry.get("source_column", "")
+        target_col = entry.get("target_column", "")
+
+        rel_mapping: Dict[str, Any] = {
+            "start_node": f"{table}.{source_col}",
+            "end_node": f"{table}.{target_col}",
+            "edge_type": entry.get("rel_type", ""),
+        }
+        # Preserve join table info so round-trips are lossless
+        if table:
+            rel_mapping["join_table"] = table
+
+        rel_source = RelationshipSource(
+            type="table",
+            name=table,
+            location=f"database.schema.{table}",
+            mapping=rel_mapping,
+        )
+
+        properties = []
+        for prop_key, col_name in entry.get("properties", {}).items():
+            prop_source = PropertySource(field=f"{table}.{col_name}")
+            properties.append(GraphProperty(key=prop_key, source=prop_source))
+
+        edges.append(
+            GraphRelationship(
+                edge_type=entry.get("rel_type", ""),
+                start_node_labels=[entry.get("source_label", "")],
+                end_node_labels=[entry.get("target_label", "")],
+                properties=properties,
+                source=rel_source,
+            )
+        )
+
+    return GraphModel(nodes=nodes, edges=edges)
+
+
+# ---------------------------------------------------------------------------
+# Editor integration
+# ---------------------------------------------------------------------------
+
+# Module-level override, set from --editor CLI flag.
+_editor_override: Optional[str] = None
+
+
+def _resolve_editor() -> str:
+    """Return the editor command: --editor flag > $EDITOR > $VISUAL > vi."""
+    return (
+        _editor_override or os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vi"
+    )
+
+
+def _open_in_editor(file_path: str) -> bool:
+    """Open *file_path* in the user's editor. Returns True on success."""
+    editor = _resolve_editor()
+    try:
+        subprocess.run(shlex.split(editor) + [file_path], check=True)
+        return True
+    except FileNotFoundError:
+        print(f"Editor not found: {editor}")
+        print("Set EDITOR or VISUAL, or pass --editor (e.g. --editor nano)")
+        return False
+    except subprocess.CalledProcessError:
+        return False
+
+
+def _prompt_open_editor(file_path: str) -> None:
+    """Ask the user whether to open the mapping file in an editor."""
+    editor = _resolve_editor()
+    try:
+        answer = input(f"Open mapping in editor ({editor})? [y/N] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+    if answer in ("y", "yes"):
+        _open_in_editor(file_path)
+
+
+def _edit_mapping_in_editor(mapping: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Write mapping to a temp file, open in $EDITOR, return parsed result or None."""
+    editor = _resolve_editor()
+    content = json.dumps(mapping, indent=2)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".json",
+        delete=False,
+        prefix="s2g_mapping_",
+    ) as f:
+        f.write(content)
+        if not content.endswith("\n"):
+            f.write("\n")
+        tmp_path = f.name
+    try:
+        try:
+            subprocess.run(shlex.split(editor) + [tmp_path], check=True)
+        except FileNotFoundError:
+            print(f"Editor not found: {editor}")
+            print("Set EDITOR or VISUAL, or pass --editor (e.g. --editor nano)")
+            return None
+        except subprocess.CalledProcessError:
+            return None
+        with open(tmp_path, "r") as f:
+            edited = f.read().strip()
+        if not edited:
+            print("Empty file; keeping previous mapping.")
+            return None
+        try:
+            return json.loads(edited)
+        except json.JSONDecodeError as exc:
+            print(f"Invalid JSON: {exc}")
+            print("Keeping previous mapping.")
+            return None
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+def print_mapping_summary(mapping: Dict[str, Any], max_lines: int = 5) -> None:
+    """Print a concise summary of a mapping file (first *max_lines* of each section)."""
+    nodes = mapping.get("nodes", [])
+    edges = mapping.get("edges", [])
+    print()
+    print(f"  Nodes ({len(nodes)}):")
+    for n in nodes[:max_lines]:
+        props = ", ".join(n.get("properties", {}).keys())
+        print(f"    :{n['label']}  (table: {n['table']}, id: {n['id_column']})")
+        if props:
+            print(f"      properties: {props}")
+    if len(nodes) > max_lines:
+        print(f"    ... and {len(nodes) - max_lines} more (use /edit to see all)")
+
+    print(f"  Edges ({len(edges)}):")
+    for e in edges[:max_lines]:
+        src = e.get("source_label", "?")
+        tgt = e.get("target_label", "?")
+        print(
+            f"    (:{src})-[:{e['rel_type']}]->(:{tgt})  "
+            f"(table: {e['table']}, {e['source_column']} -> {e['target_column']})"
+        )
+    if len(edges) > max_lines:
+        print(f"    ... and {len(edges) - max_lines} more (use /edit to see all)")
+    print()
+
+
+def _detect_llm() -> Any:
+    """Try to create an LLM client from available API keys. Returns None on failure."""
+    try:
+        if os.getenv("OPENAI_API_KEY"):
+            from langchain_openai import ChatOpenAI
+
+            return ChatOpenAI(model=os.getenv("LLM_MODEL", "gpt-4o"), temperature=0.1)
+        if os.getenv("ANTHROPIC_API_KEY"):
+            from langchain_anthropic import ChatAnthropic
+
+            return ChatAnthropic(
+                model=os.getenv("LLM_MODEL", "claude-sonnet-4-20250514"),
+                temperature=0.1,
+            )
+        if os.getenv("GOOGLE_API_KEY"):
+            from langchain_google_genai import ChatGoogleGenerativeAI
+
+            return ChatGoogleGenerativeAI(
+                model=os.getenv("LLM_MODEL", "gemini-2.0-flash-exp"),
+                temperature=0.1,
+                google_api_key=os.getenv("GOOGLE_API_KEY"),
+            )
+    except Exception:
+        pass
+    return None
+
+
+def edit_mapping_interactive(
+    mapping: Dict[str, Any],
+    llm: Any,
+    mapping_path: str,
+) -> Dict[str, Any]:
+    """
+    Interactive loop: let the user edit a mapping via natural language.
+
+    Uses HyGM's operation parsing and application under the hood.
+    """
+    from core.hygm import HyGM, GraphModelingStrategy, ModelingMode
+
+    # Auto-detect LLM if not provided (e.g. deterministic strategy)
+    if not llm:
+        llm = _detect_llm()
+
+    graph_model = mapping_to_graph_model(mapping)
+
+    # Create a HyGM instance just for the NL parsing / operation machinery
+    modeler = None
+    if llm:
+        modeler = HyGM(
+            llm=llm,
+            mode=ModelingMode.AUTOMATIC,
+            strategy=GraphModelingStrategy.LLM_POWERED,
+        )
+
+    # Snapshot the original state so the LLM can revert on request
+    original_context = (
+        modeler._get_model_context_for_llm(graph_model) if modeler else None
+    )
+
+    def _print_editor_banner():
+        editor = _resolve_editor()
+        print("=" * 60)
+        print("INTERACTIVE MAPPING EDITOR")
+        print("=" * 60)
+        print("\nCommands:")
+        print("  /edit    - open mapping in " + editor)
+        print("  /save    - save and exit")
+        print("  /cancel  - discard changes and exit")
+        print("\nOr describe changes in natural language (sent to LLM), e.g.:")
+        print("  Add a Person label node mapped from the people table")
+        print("  Rename label Person to User")
+        print("  Remove the KNOWS relationship\n")
+
+    _print_editor_banner()
+
+    while True:
+        try:
+            user_input = input("edit> ").strip()
+
+            if not user_input:
+                continue
+
+            # Slash commands — never touch the LLM
+            if user_input.startswith("/"):
+                cmd = user_input[1:].lower()
+                if cmd == "save":
+                    break
+                elif cmd == "cancel":
+                    return mapping
+                elif cmd == "edit":
+                    edited = _edit_mapping_in_editor(mapping)
+                    if edited is not None:
+                        mapping = edited
+                        graph_model = mapping_to_graph_model(mapping)
+                        print("Mapping updated from editor.")
+                        print_mapping_summary(mapping)
+                    _print_editor_banner()
+                else:
+                    print(f"Unknown command: {user_input}")
+                continue
+
+            # Natural language — requires LLM
+            if not modeler:
+                print(
+                    "LLM is required for natural language editing. Type /edit to open in an editor."
+                )
+                continue
+
+            print("Processing...")
+            operations = modeler._parse_natural_language_to_operations(
+                user_input, graph_model, original_context=original_context
+            )
+
+            if operations and operations.operations:
+                graph_model = modeler._apply_operations_to_model(
+                    graph_model, operations
+                )
+                mapping = graph_model_to_mapping(graph_model)
+                print(f"Applied: {operations.reasoning}")
+                print_mapping_summary(mapping)
+                _print_editor_banner()
+            else:
+                print("Could not parse that instruction. Please try again.")
+
+        except (EOFError, KeyboardInterrupt):
+            return mapping
+
+    # Write updated mapping
+    output = Path(mapping_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, "w", encoding="utf-8") as f:
+        json.dump(mapping, f, indent=2)
+    print(f"📄 Mapping saved to {output}")
+    return mapping
+
+
+def generate_mapping(
+    agent: SQLToMemgraphAgent,
+    source_db_config: Dict[str, Any],
+    mapping_path: str,
+) -> None:
+    """
+    Generate or edit a mapping file.
+
+    If the file already exists it is loaded and the user enters an interactive
+    editing session. Otherwise the source database is analysed and a new
+    mapping is created from scratch.
+    """
+    output = Path(mapping_path)
+
+    # If mapping already exists, load it and enter edit mode
+    if output.exists():
+        with open(output, "r", encoding="utf-8") as f:
+            mapping = json.load(f)
+
+        print(f"📄 Loaded existing mapping from {output}")
+        print_mapping_summary(mapping)
+        edit_mapping_interactive(mapping, agent.llm, mapping_path)
+        return
+
+    from database.factory import DatabaseAnalyzerFactory
+    from core.hygm import HyGM
+
+    # 1. Connect and analyse the source database
+    print("🔍 Analyzing source database schema...")
+    config = source_db_config.copy()
+    db_type = config.pop("database_type", "mysql")
+    analyzer = DatabaseAnalyzerFactory.create_analyzer(database_type=db_type, **config)
+    if not analyzer.connect():
+        raise DatabaseConnectionError("Failed to connect to source database")
+
+    db_structure = analyzer.get_database_structure()
+    hygm_data = db_structure.to_hygm_format()
+    analyzer.disconnect()
+    print(f"  Found {len(hygm_data.get('entity_tables', {}))} entity tables")
+
+    # 2. Build the graph model via HyGM
+    print("🎯 Creating graph model...")
+    graph_modeler = HyGM(
+        llm=agent.llm,
+        mode=agent.modeling_mode,
+        strategy=agent.graph_modeling_strategy,
+    )
+    graph_model = graph_modeler.create_graph_model(
+        hygm_data,
+        domain_context="Database migration to graph database",
+    )
+    print(
+        f"  {len(graph_model.nodes)} node types, "
+        f"{len(graph_model.edges)} relationship types"
+    )
+
+    # 3. Write mapping file
+    mapping = graph_model_to_mapping(graph_model)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, "w", encoding="utf-8") as f:
+        json.dump(mapping, f, indent=2)
+    print(f"\n📄 Mapping file written to {output}")
+    print_mapping_summary(mapping)
+
+    # 4. Enter interactive editing
+    edit_mapping_interactive(mapping, agent.llm, mapping_path)
+
+
 def main(argv: Optional[list[str]] = None) -> None:
     """Main entry point for the migration agent."""
+    global _editor_override
     args = parse_cli_args(argv)
+    _editor_override = args.editor
+
+    # Validate provider early (--provider is constrained by argparse, but
+    # LLM_PROVIDER env var is not).
+    if args.provider and args.provider not in PROVIDER_CHOICES:
+        print(
+            f"❌ Unknown LLM provider: '{args.provider}'. "
+            f"Supported providers: {', '.join(PROVIDER_CHOICES)}"
+        )
+        sys.exit(1)
 
     _configure_log_level(args.log_level)
 
@@ -454,42 +942,106 @@ def main(argv: Optional[list[str]] = None) -> None:
         # Setup and validate environment
         print("🔧 Setting up environment...")
         source_db_config, memgraph_config = setup_and_validate_environment()
+
+        # Validate LLM providers early (applies to all paths)
+        has_valid, valid_providers, llm_errors = validate_llm_providers()
+        if has_valid:
+            print(f"✅ LLM providers: {', '.join(valid_providers)}")
+        else:
+            print("⚠️  No valid LLM providers found")
+            for err in llm_errors:
+                print(f"  {err}")
+
         print("✅ Environment validation completed")
         print()
 
-        # Probe database connections
-        print("🔌 Testing database connections...")
-        probe_all_connections(source_db_config, memgraph_config)
-        print("✅ All connections verified")
-        print()
+        if args.mapping:
+            mapping_file = Path(args.mapping)
 
-        # Get user preferences
-        graph_mode = _resolve_mode(args.mode) or get_graph_modeling_mode()
-        graph_strategy = (
-            _resolve_strategy(args.strategy) or get_graph_modeling_strategy()
-        )
+            if mapping_file.exists():
+                # Edit existing mapping — only LLM needed, no DB connection
+                print("📄 Existing mapping found — entering edit mode")
+                agent = SQLToMemgraphAgent(
+                    modeling_mode=ModelingMode.AUTOMATIC,
+                    graph_modeling_strategy=GraphModelingStrategy.LLM_POWERED,
+                    meta_graph_policy="skip",
+                    llm_provider=args.provider,
+                    llm_model=args.model,
+                )
+                generate_mapping(agent, source_db_config, args.mapping)
+            else:
+                # Generate new mapping — needs source DB
+                db_type = source_db_config.get("database_type", "mysql")
+                db_name = source_db_config.get("database", "")
+                db_host = source_db_config.get("host", "")
+                print(f"🔌 Connecting to {db_type} database {db_name}@{db_host}...")
+                source_ok, source_err = probe_source_connection(source_db_config)
+                if not source_ok:
+                    raise DatabaseConnectionError(
+                        f"Source database connection failed: {source_err}"
+                    )
+                print(f"✅ Connected to {db_type} — ready for modeling")
+                print()
 
-        meta_graph_policy = (args.meta_graph or "auto").lower()
-        if meta_graph_policy not in META_GRAPH_POLICIES:
-            logger.warning(
-                "Unrecognised meta graph policy '%s'; defaulting to auto",
-                meta_graph_policy,
+                # Get user preferences
+                graph_mode = _resolve_mode(args.mode) or get_graph_modeling_mode()
+                graph_strategy = (
+                    _resolve_strategy(args.strategy) or get_graph_modeling_strategy()
+                )
+
+                meta_graph_policy = (args.meta_graph or "auto").lower()
+                if meta_graph_policy not in META_GRAPH_POLICIES:
+                    logger.warning(
+                        "Unrecognised meta graph policy '%s'; defaulting to auto",
+                        meta_graph_policy,
+                    )
+                    meta_graph_policy = "auto"
+
+                print("📄 Mapping mode: generating mapping file (no migration)...")
+                print()
+                agent = SQLToMemgraphAgent(
+                    modeling_mode=graph_mode,
+                    graph_modeling_strategy=graph_strategy,
+                    meta_graph_policy=meta_graph_policy,
+                    llm_provider=args.provider,
+                    llm_model=args.model,
+                )
+                generate_mapping(agent, source_db_config, args.mapping)
+        else:
+            # Full migration (original flow)
+            # Probe database connections
+            print("🔌 Testing database connections...")
+            probe_all_connections(source_db_config, memgraph_config)
+            print("✅ All connections verified")
+            print()
+
+            # Get user preferences
+            graph_mode = _resolve_mode(args.mode) or get_graph_modeling_mode()
+            graph_strategy = (
+                _resolve_strategy(args.strategy) or get_graph_modeling_strategy()
             )
-            meta_graph_policy = "auto"
 
-        # Run migration
-        result = run_migration(
-            source_db_config,
-            memgraph_config,
-            graph_mode,
-            graph_strategy,
-            meta_graph_policy,
-            llm_provider=args.provider,
-            llm_model=args.model,
-        )
+            meta_graph_policy = (args.meta_graph or "auto").lower()
+            if meta_graph_policy not in META_GRAPH_POLICIES:
+                logger.warning(
+                    "Unrecognised meta graph policy '%s'; defaulting to auto",
+                    meta_graph_policy,
+                )
+                meta_graph_policy = "auto"
 
-        # Display results
-        print_migration_results(result)
+            # Run migration
+            result, agent = run_migration(
+                source_db_config,
+                memgraph_config,
+                graph_mode,
+                graph_strategy,
+                meta_graph_policy,
+                llm_provider=args.provider,
+                llm_model=args.model,
+            )
+
+            # Display results
+            print_migration_results(result)
 
     except MigrationEnvironmentError as e:
         print("\n❌ Environment Setup Error:")

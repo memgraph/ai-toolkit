@@ -24,9 +24,28 @@ class DatabaseConnectionError(Exception):
 SUPPORTED_DATABASES = {"mysql", "postgresql"}
 
 
+def _strip_quotes_from_env() -> None:
+    """Strip surrounding quotes from env vars.
+
+    ``docker run --env-file`` does not strip quotes the way python-dotenv
+    does, so values like ``"sk-ant-..."`` arrive with literal quote chars.
+    """
+    for key in (
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GOOGLE_API_KEY",
+        "LLM_PROVIDER",
+        "LLM_MODEL",
+    ):
+        val = os.environ.get(key)
+        if val and len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+            os.environ[key] = val[1:-1]
+
+
 def load_environment() -> None:
     """Load environment variables from .env file."""
     load_dotenv()
+    _strip_quotes_from_env()
 
 
 def get_source_db_type() -> str:
@@ -253,7 +272,7 @@ def validate_llm_providers() -> Tuple[bool, List[str], List[str]]:
         try:
             from langchain_anthropic import ChatAnthropic
 
-            llm = ChatAnthropic(model="claude-3-5-sonnet-20241022", temperature=0.1)
+            llm = ChatAnthropic(model="claude-sonnet-4-20250514", temperature=0.1)
             llm.invoke("Test")
             valid_providers.append("Anthropic")
         except ImportError:
