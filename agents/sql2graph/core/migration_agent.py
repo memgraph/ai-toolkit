@@ -133,7 +133,7 @@ class SQLToMemgraphAgent:
 
             elif provider_lower == "anthropic":
                 model = llm_model or os.getenv(
-                    "LLM_MODEL", "claude-3-5-sonnet-20241022"
+                    "LLM_MODEL", "claude-sonnet-4-20250514"
                 )
                 self.llm = ChatAnthropic(model=model, temperature=0.1)
                 logger.info("Initialized Anthropic client with model: %s", model)

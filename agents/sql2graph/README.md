@@ -115,7 +115,7 @@ The agent supports multiple LLM providers for AI-powered graph modeling:
 ### Supported Providers
 
 - **OpenAI** (GPT models) - Default: `gpt-4o-mini`
-- **Anthropic** (Claude models) - Default: `claude-3-5-sonnet-20241022`
+- **Anthropic** (Claude models) - Default: `claude-sonnet-4-20250514`
 - **Google** (Gemini models) - Default: `gemini-1.5-pro`
 
 ### Usage Examples

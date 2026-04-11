@@ -725,7 +725,7 @@ def _detect_llm() -> Any:
             from langchain_anthropic import ChatAnthropic
 
             return ChatAnthropic(
-                model=os.getenv("LLM_MODEL", "claude-3-5-sonnet-20241022"),
+                model=os.getenv("LLM_MODEL", "claude-sonnet-4-20250514"),
                 temperature=0.1,
             )
         if os.getenv("GOOGLE_API_KEY"):
@@ -923,6 +923,15 @@ def main(argv: Optional[list[str]] = None) -> None:
     global _editor_override
     args = parse_cli_args(argv)
     _editor_override = args.editor
+
+    # Validate provider early (--provider is constrained by argparse, but
+    # LLM_PROVIDER env var is not).
+    if args.provider and args.provider not in PROVIDER_CHOICES:
+        print(
+            f"❌ Unknown LLM provider: '{args.provider}'. "
+            f"Supported providers: {', '.join(PROVIDER_CHOICES)}"
+        )
+        sys.exit(1)
 
     _configure_log_level(args.log_level)
 
