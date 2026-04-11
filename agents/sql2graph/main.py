@@ -11,7 +11,10 @@ import argparse
 import json
 import logging
 import os
+import shlex
+import subprocess
 import sys
+import tempfile
 from typing import Dict, Any, Optional
 from pathlib import Path
 
@@ -142,6 +145,17 @@ def parse_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help=(
             "Generate a mapping JSON file instead of running the migration. "
             "The file maps graph nodes/edges back to SQL tables and columns."
+        ),
+    )
+
+    parser.add_argument(
+        "--editor",
+        default=None,
+        metavar="CMD",
+        help=(
+            "Editor command for opening mapping files "
+            "(e.g. nano, vim, 'code --wait'). "
+            "Overrides EDITOR / VISUAL env vars."
         ),
     )
 
@@ -464,9 +478,7 @@ def graph_model_to_mapping(graph_model: Any) -> Dict[str, Any]:
     """
     nodes = []
     for node in graph_model.nodes:
-        id_column = (
-            node.source.mapping.get("id_field", "") if node.source else ""
-        )
+        id_column = node.source.mapping.get("id_field", "") if node.source else ""
         entry: Dict[str, Any] = {
             "label": node.primary_label,
             "table": node.source.name if node.source else "",
@@ -593,25 +605,140 @@ def mapping_to_graph_model(mapping: Dict[str, Any]) -> Any:
     return GraphModel(nodes=nodes, edges=edges)
 
 
-def print_mapping_summary(mapping: Dict[str, Any]) -> None:
-    """Print a concise summary of a mapping file."""
+# ---------------------------------------------------------------------------
+# Editor integration
+# ---------------------------------------------------------------------------
+
+# Module-level override, set from --editor CLI flag.
+_editor_override: Optional[str] = None
+
+
+def _resolve_editor() -> str:
+    """Return the editor command: --editor flag > $EDITOR > $VISUAL > vi."""
+    return (
+        _editor_override or os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vi"
+    )
+
+
+def _open_in_editor(file_path: str) -> bool:
+    """Open *file_path* in the user's editor. Returns True on success."""
+    editor = _resolve_editor()
+    try:
+        subprocess.run(shlex.split(editor) + [file_path], check=True)
+        return True
+    except FileNotFoundError:
+        print(f"Editor not found: {editor}")
+        print("Set EDITOR or VISUAL, or pass --editor (e.g. --editor nano)")
+        return False
+    except subprocess.CalledProcessError:
+        return False
+
+
+def _prompt_open_editor(file_path: str) -> None:
+    """Ask the user whether to open the mapping file in an editor."""
+    editor = _resolve_editor()
+    try:
+        answer = input(f"Open mapping in editor ({editor})? [y/N] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+    if answer in ("y", "yes"):
+        _open_in_editor(file_path)
+
+
+def _edit_mapping_in_editor(mapping: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Write mapping to a temp file, open in $EDITOR, return parsed result or None."""
+    editor = _resolve_editor()
+    content = json.dumps(mapping, indent=2)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".json",
+        delete=False,
+        prefix="s2g_mapping_",
+    ) as f:
+        f.write(content)
+        if not content.endswith("\n"):
+            f.write("\n")
+        tmp_path = f.name
+    try:
+        try:
+            subprocess.run(shlex.split(editor) + [tmp_path], check=True)
+        except FileNotFoundError:
+            print(f"Editor not found: {editor}")
+            print("Set EDITOR or VISUAL, or pass --editor (e.g. --editor nano)")
+            return None
+        except subprocess.CalledProcessError:
+            return None
+        with open(tmp_path, "r") as f:
+            edited = f.read().strip()
+        if not edited:
+            print("Empty file; keeping previous mapping.")
+            return None
+        try:
+            return json.loads(edited)
+        except json.JSONDecodeError as exc:
+            print(f"Invalid JSON: {exc}")
+            print("Keeping previous mapping.")
+            return None
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+def print_mapping_summary(mapping: Dict[str, Any], max_lines: int = 5) -> None:
+    """Print a concise summary of a mapping file (first *max_lines* of each section)."""
+    nodes = mapping.get("nodes", [])
+    edges = mapping.get("edges", [])
     print()
-    print("  Nodes:")
-    for n in mapping.get("nodes", []):
+    print(f"  Nodes ({len(nodes)}):")
+    for n in nodes[:max_lines]:
         props = ", ".join(n.get("properties", {}).keys())
         print(f"    :{n['label']}  (table: {n['table']}, id: {n['id_column']})")
         if props:
             print(f"      properties: {props}")
+    if len(nodes) > max_lines:
+        print(f"    ... and {len(nodes) - max_lines} more (use /edit to see all)")
 
-    print("  Edges:")
-    for e in mapping.get("edges", []):
+    print(f"  Edges ({len(edges)}):")
+    for e in edges[:max_lines]:
         src = e.get("source_label", "?")
         tgt = e.get("target_label", "?")
         print(
             f"    (:{src})-[:{e['rel_type']}]->(:{tgt})  "
             f"(table: {e['table']}, {e['source_column']} -> {e['target_column']})"
         )
+    if len(edges) > max_lines:
+        print(f"    ... and {len(edges) - max_lines} more (use /edit to see all)")
     print()
+
+
+def _detect_llm() -> Any:
+    """Try to create an LLM client from available API keys. Returns None on failure."""
+    try:
+        if os.getenv("OPENAI_API_KEY"):
+            from langchain_openai import ChatOpenAI
+
+            return ChatOpenAI(model=os.getenv("LLM_MODEL", "gpt-4o"), temperature=0.1)
+        if os.getenv("ANTHROPIC_API_KEY"):
+            from langchain_anthropic import ChatAnthropic
+
+            return ChatAnthropic(
+                model=os.getenv("LLM_MODEL", "claude-3-5-sonnet-20241022"),
+                temperature=0.1,
+            )
+        if os.getenv("GOOGLE_API_KEY"):
+            from langchain_google_genai import ChatGoogleGenerativeAI
+
+            return ChatGoogleGenerativeAI(
+                model=os.getenv("LLM_MODEL", "gemini-2.0-flash-exp"),
+                temperature=0.1,
+                google_api_key=os.getenv("GOOGLE_API_KEY"),
+            )
+    except Exception:
+        pass
+    return None
 
 
 def edit_mapping_interactive(
@@ -626,44 +753,78 @@ def edit_mapping_interactive(
     """
     from core.hygm import HyGM, GraphModelingStrategy, ModelingMode
 
+    # Auto-detect LLM if not provided (e.g. deterministic strategy)
+    if not llm:
+        llm = _detect_llm()
+
     graph_model = mapping_to_graph_model(mapping)
 
     # Create a HyGM instance just for the NL parsing / operation machinery
-    modeler = HyGM(
-        llm=llm,
-        mode=ModelingMode.AUTOMATIC,
-        strategy=GraphModelingStrategy.LLM_POWERED,
+    modeler = None
+    if llm:
+        modeler = HyGM(
+            llm=llm,
+            mode=ModelingMode.AUTOMATIC,
+            strategy=GraphModelingStrategy.LLM_POWERED,
+        )
+
+    # Snapshot the original state so the LLM can revert on request
+    original_context = (
+        modeler._get_model_context_for_llm(graph_model) if modeler else None
     )
 
-    print("=" * 60)
-    print("INTERACTIVE MAPPING EDITOR")
-    print("=" * 60)
-    print("\nDescribe changes in natural language, e.g.:")
-    print("  - Rename label Person to User")
-    print("  - Add property email to Company")
-    print("  - Remove the KNOWS relationship")
-    print("  - Change WORKS_AT source_column to employee_id")
-    print("\nType 'done' to save, 'cancel' to discard changes.\n")
+    def _print_editor_banner():
+        editor = _resolve_editor()
+        print("=" * 60)
+        print("INTERACTIVE MAPPING EDITOR")
+        print("=" * 60)
+        print("\nCommands:")
+        print("  /edit    - open mapping in " + editor)
+        print("  /save    - save and exit")
+        print("  /cancel  - discard changes and exit")
+        print("\nOr describe changes in natural language (sent to LLM), e.g.:")
+        print("  Add a Person label node mapped from the people table")
+        print("  Rename label Person to User")
+        print("  Remove the KNOWS relationship\n")
+
+    _print_editor_banner()
 
     while True:
         try:
             user_input = input("edit> ").strip()
 
-            if user_input.lower() == "done":
-                break
-            elif user_input.lower() == "cancel":
-                print("Discarded changes.")
-                return mapping
-            elif not user_input:
+            if not user_input:
                 continue
 
-            if not llm:
-                print("LLM is required for natural language editing.")
-                break
+            # Slash commands — never touch the LLM
+            if user_input.startswith("/"):
+                cmd = user_input[1:].lower()
+                if cmd == "save":
+                    break
+                elif cmd == "cancel":
+                    return mapping
+                elif cmd == "edit":
+                    edited = _edit_mapping_in_editor(mapping)
+                    if edited is not None:
+                        mapping = edited
+                        graph_model = mapping_to_graph_model(mapping)
+                        print("Mapping updated from editor.")
+                        print_mapping_summary(mapping)
+                    _print_editor_banner()
+                else:
+                    print(f"Unknown command: {user_input}")
+                continue
+
+            # Natural language — requires LLM
+            if not modeler:
+                print(
+                    "LLM is required for natural language editing. Type /edit to open in an editor."
+                )
+                continue
 
             print("Processing...")
             operations = modeler._parse_natural_language_to_operations(
-                user_input, graph_model
+                user_input, graph_model, original_context=original_context
             )
 
             if operations and operations.operations:
@@ -673,11 +834,11 @@ def edit_mapping_interactive(
                 mapping = graph_model_to_mapping(graph_model)
                 print(f"Applied: {operations.reasoning}")
                 print_mapping_summary(mapping)
+                _print_editor_banner()
             else:
                 print("Could not parse that instruction. Please try again.")
 
         except (EOFError, KeyboardInterrupt):
-            print("\nDiscarded changes.")
             return mapping
 
     # Write updated mapping
@@ -710,14 +871,7 @@ def generate_mapping(
 
         print(f"📄 Loaded existing mapping from {output}")
         print_mapping_summary(mapping)
-
-        if agent.llm:
-            edit_mapping_interactive(mapping, agent.llm, mapping_path)
-        else:
-            print(
-                "LLM provider is required for interactive editing. "
-                "Use --provider/--strategy llm or set an API key."
-            )
+        edit_mapping_interactive(mapping, agent.llm, mapping_path)
         return
 
     from database.factory import DatabaseAnalyzerFactory
@@ -727,9 +881,7 @@ def generate_mapping(
     print("🔍 Analyzing source database schema...")
     config = source_db_config.copy()
     db_type = config.pop("database_type", "mysql")
-    analyzer = DatabaseAnalyzerFactory.create_analyzer(
-        database_type=db_type, **config
-    )
+    analyzer = DatabaseAnalyzerFactory.create_analyzer(database_type=db_type, **config)
     if not analyzer.connect():
         raise DatabaseConnectionError("Failed to connect to source database")
 
@@ -760,11 +912,17 @@ def generate_mapping(
     with open(output, "w", encoding="utf-8") as f:
         json.dump(mapping, f, indent=2)
     print(f"\n📄 Mapping file written to {output}")
+    print_mapping_summary(mapping)
+
+    # 4. Enter interactive editing
+    edit_mapping_interactive(mapping, agent.llm, mapping_path)
 
 
 def main(argv: Optional[list[str]] = None) -> None:
     """Main entry point for the migration agent."""
+    global _editor_override
     args = parse_cli_args(argv)
+    _editor_override = args.editor
 
     _configure_log_level(args.log_level)
 
@@ -808,8 +966,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                 # Get user preferences
                 graph_mode = _resolve_mode(args.mode) or get_graph_modeling_mode()
                 graph_strategy = (
-                    _resolve_strategy(args.strategy)
-                    or get_graph_modeling_strategy()
+                    _resolve_strategy(args.strategy) or get_graph_modeling_strategy()
                 )
 
                 meta_graph_policy = (args.meta_graph or "auto").lower()

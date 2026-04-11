@@ -139,6 +139,43 @@ class AddRelationshipOperation(ModelOperation):
     )
 
 
+class ChangeNodeTableOperation(ModelOperation):
+    """Operation to change the source table mapped to a node."""
+
+    operation_type: Literal["change_node_table"] = "change_node_table"
+    node_label: str = Field(description="Node label whose table mapping to change")
+    new_table: str = Field(description="New source table name")
+
+
+class ChangeNodeIdColumnOperation(ModelOperation):
+    """Operation to change the id column for a node mapping."""
+
+    operation_type: Literal["change_node_id_column"] = "change_node_id_column"
+    node_label: str = Field(description="Node label whose id column to change")
+    new_id_column: str = Field(description="New id column name")
+
+
+class ChangeEdgeTableOperation(ModelOperation):
+    """Operation to change the source/join table for an edge mapping."""
+
+    operation_type: Literal["change_edge_table"] = "change_edge_table"
+    rel_type: str = Field(description="Relationship type whose table to change")
+    new_table: str = Field(description="New table name")
+
+
+class ChangeEdgeColumnsOperation(ModelOperation):
+    """Operation to change source_column and/or target_column for an edge."""
+
+    operation_type: Literal["change_edge_columns"] = "change_edge_columns"
+    rel_type: str = Field(description="Relationship type to modify")
+    new_source_column: str = Field(
+        default="", description="New source column (empty = keep current)"
+    )
+    new_target_column: str = Field(
+        default="", description="New target column (empty = keep current)"
+    )
+
+
 # Union type for all operations with discriminator
 OperationType = Union[
     ChangeNodeLabelOperation,
@@ -154,6 +191,10 @@ OperationType = Union[
     AddNodeOperation,
     DropNodeOperation,
     AddRelationshipOperation,
+    ChangeNodeTableOperation,
+    ChangeNodeIdColumnOperation,
+    ChangeEdgeTableOperation,
+    ChangeEdgeColumnsOperation,
 ]
 
 
