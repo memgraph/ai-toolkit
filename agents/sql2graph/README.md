@@ -58,6 +58,56 @@ uv run main --mode incremental --strategy llm --meta-graph reset --log-level DEB
 | `--model MODEL_NAME`                   | `LLM_MODEL`          | Specifies LLM model name (uses provider default if not set).  |
 | `--meta-graph {auto,skip,reset}`       | `SQL2MG_META_POLICY` | Controls how stored meta graph data is used (default `auto`). |
 | `--log-level LEVEL`                    | `SQL2MG_LOG_LEVEL`   | Sets logging verbosity (`DEBUG`, `INFO`, etc.).               |
+| `--mapping PATH`                       | —                    | Generate/edit a mapping JSON file instead of running migration.|
+| `--editor CMD`                         | `EDITOR`             | Editor for opening mapping files (e.g. `vim`, `code --wait`). |
+
+## Mapping Mode
+
+Use `--mapping` to generate or edit a mapping file that describes how SQL tables and columns map to graph nodes and edges — without running an actual migration.
+
+```bash
+# Generate a new mapping from the source database
+uv run main --mapping output/mapping.json
+
+# Re-open an existing mapping for editing
+uv run main --mapping output/mapping.json
+```
+
+When the mapping file does not exist, the agent connects to the source database, analyzes the schema, builds a graph model, writes the mapping JSON, and enters the interactive editor. When the file already exists, it is loaded directly into the editor.
+
+### Interactive Mapping Editor
+
+Inside the editor you can use slash commands or natural language:
+
+```
+Commands:
+  /edit    - open the mapping JSON in $EDITOR (vi by default)
+  /save    - save changes and exit
+  /cancel  - discard changes and exit
+
+Or describe changes in natural language (sent to LLM), e.g.:
+  Add a Person label node mapped from the people table
+  Rename label Person to User
+  Remove the KNOWS relationship
+```
+
+The LLM sees both the current and original model state, so requests like "go back to the original names" work correctly. An LLM provider is auto-detected from available API keys for natural language editing; `/edit` always works regardless.
+
+### Docker Usage
+
+Build and run with `Dockerfile.local` for local development:
+
+```bash
+docker build -f Dockerfile.local -t memgraph/structured2graph .
+docker run -d --rm --net memgql-net --name structured2graph-dev \
+  --env-file .env -v $(pwd)/output:/output \
+  --entrypoint sleep memgraph/structured2graph infinity
+docker exec -it structured2graph-dev uv run main.py --mapping /output/mapping.json
+```
+
+> **Note:** If your `.env` file quotes values (e.g. `ANTHROPIC_API_KEY="sk-..."`),
+> the agent strips the surrounding quotes automatically so `docker run --env-file`
+> works correctly.
 
 ## Configuration
 

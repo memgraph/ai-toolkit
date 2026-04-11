@@ -25,6 +25,7 @@ from utils import (  # noqa: E402
     MigrationEnvironmentError,
     DatabaseConnectionError,
     setup_and_validate_environment,
+    validate_llm_providers,
     probe_all_connections,
     probe_source_connection,
     print_environment_help,
@@ -941,6 +942,16 @@ def main(argv: Optional[list[str]] = None) -> None:
         # Setup and validate environment
         print("🔧 Setting up environment...")
         source_db_config, memgraph_config = setup_and_validate_environment()
+
+        # Validate LLM providers early (applies to all paths)
+        has_valid, valid_providers, llm_errors = validate_llm_providers()
+        if has_valid:
+            print(f"✅ LLM providers: {', '.join(valid_providers)}")
+        else:
+            print("⚠️  No valid LLM providers found")
+            for err in llm_errors:
+                print(f"  {err}")
+
         print("✅ Environment validation completed")
         print()
 
