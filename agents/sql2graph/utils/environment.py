@@ -42,9 +42,34 @@ def _strip_quotes_from_env() -> None:
             os.environ[key] = val[1:-1]
 
 
+def _find_dotenv() -> Optional[str]:
+    """Search well-known locations for a .env file.
+
+    Returns the first path that exists, or None.  The search order is:
+    1. Current working directory
+    2. /app (Docker WORKDIR convention)
+    3. Directory containing this source file (dev checkout)
+    """
+    candidates = [
+        os.path.join(os.getcwd(), ".env"),
+        "/app/.env",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return None
+
+
 def load_environment() -> None:
     """Load environment variables from .env file."""
-    load_dotenv()
+    dotenv_path = _find_dotenv()
+    if dotenv_path:
+        logger.info("Loading .env from %s", dotenv_path)
+        load_dotenv(dotenv_path)
+    else:
+        # Fall back to default find_dotenv() behaviour
+        load_dotenv()
     _strip_quotes_from_env()
 
 

@@ -147,17 +147,29 @@ class DeterministicStrategy(BaseModelingStrategy):
             primary_keys = from_table_info.get("primary_keys", [])
             from_pk = primary_keys[0] if primary_keys else f"{from_table}_id"
 
+            # Use the join table name for many-to-many, otherwise the from_table
+            join_table = rel_data.get("join_table", "")
+            source_table = join_table or from_table
+
+            # Build column references using the actual source table
+            from_col = rel_data.get("join_from_column") or rel_data.get("from_column", "id")
+            to_col = rel_data.get("join_to_column") or rel_data.get("to_column", "id")
+
             # Create relationship source
+            mapping = {
+                "start_node": f"{source_table}.{from_col}",
+                "end_node": f"{source_table}.{to_col}",
+                "edge_type": rel_name,
+                "from_pk": from_pk,
+            }
+            if join_table:
+                mapping["join_table"] = join_table
+
             rel_source = RelationshipSource(
                 type="table",
-                name=rel_data.get("constraint_name", rel_name),
-                location=f"database.schema.{from_table}",
-                mapping={
-                    "start_node": (f"{from_table}.{rel_data.get('from_column', 'id')}"),
-                    "end_node": (f"{to_table}.{rel_data.get('to_column', 'id')}"),
-                    "edge_type": rel_name,
-                    "from_pk": from_pk,  # Add primary key for migration agent
-                },
+                name=source_table,
+                location=f"database.schema.{source_table}",
+                mapping=mapping,
             )
 
             # Create relationship
@@ -244,19 +256,20 @@ class DeterministicStrategy(BaseModelingStrategy):
 
     def _generate_relationship_name(self, rel_data: Dict[str, Any]) -> str:
         """Generate a semantic relationship name from relationship data."""
+        # For many-to-many, use the join table name directly
+        join_table = rel_data.get("join_table", "")
+        if join_table:
+            return join_table.upper()
+
         constraint_name = rel_data.get("constraint_name", "")
         if constraint_name:
             # Extract meaningful name from constraint
             if "_fk" in constraint_name:
-                join_table = constraint_name.split("_fk")[0]
+                name = constraint_name.split("_fk")[0]
             else:
-                join_table = constraint_name
+                name = constraint_name
+            return name.upper() if name else "CONNECTS"
 
-            if join_table:
-                return join_table.upper()
-            else:
-                return "CONNECTS"
-        else:
-            from_table = rel_data.get("from_table", "")
-            to_table = rel_data.get("to_table", "")
-            return f"{from_table.upper()}_TO_{to_table.upper()}"
+        from_table = rel_data.get("from_table", "")
+        to_table = rel_data.get("to_table", "")
+        return f"{from_table.upper()}_TO_{to_table.upper()}"
