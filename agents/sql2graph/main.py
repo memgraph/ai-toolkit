@@ -59,6 +59,9 @@ LOG_LEVEL_CHOICES = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"]
 
 PROVIDER_CHOICES = ["openai", "anthropic", "gemini"]
 
+# Sentinel returned by edit_mapping_interactive to signal a reset
+_RESET = object()
+
 
 def _lower_env(name: str) -> Optional[str]:
     value = os.getenv(name)
@@ -783,6 +786,7 @@ def edit_mapping_interactive(
         print("  /edit    - open mapping in " + editor)
         print("  /save    - save and exit")
         print("  /cancel  - discard changes and exit")
+        print("  /reset   - discard mapping and regenerate from scratch")
         print("\nOr describe changes in natural language (sent to LLM), e.g.:")
         print("  Add a Person label node mapped from the people table")
         print("  Rename label Person to User")
@@ -812,6 +816,8 @@ def edit_mapping_interactive(
                         print("Mapping updated from editor.")
                         print_mapping_summary(mapping)
                     _print_editor_banner()
+                elif cmd == "reset":
+                    return _RESET
                 else:
                     print(f"Unknown command: {user_input}")
                 continue
@@ -851,34 +857,14 @@ def edit_mapping_interactive(
     return mapping
 
 
-def generate_mapping(
+def _generate_fresh_mapping(
     agent: SQLToMemgraphAgent,
     source_db_config: Dict[str, Any],
-    mapping_path: str,
-) -> None:
-    """
-    Generate or edit a mapping file.
-
-    If the file already exists it is loaded and the user enters an interactive
-    editing session. Otherwise the source database is analysed and a new
-    mapping is created from scratch.
-    """
-    output = Path(mapping_path)
-
-    # If mapping already exists, load it and enter edit mode
-    if output.exists():
-        with open(output, "r", encoding="utf-8") as f:
-            mapping = json.load(f)
-
-        print(f"📄 Loaded existing mapping from {output}")
-        print_mapping_summary(mapping)
-        edit_mapping_interactive(mapping, agent.llm, mapping_path)
-        return
-
+) -> Dict[str, Any]:
+    """Analyse the source database and return a new mapping dict."""
     from database.factory import DatabaseAnalyzerFactory
     from core.hygm import HyGM
 
-    # 1. Connect and analyse the source database
     print("🔍 Analyzing source database schema...")
     config = source_db_config.copy()
     db_type = config.pop("database_type", "mysql")
@@ -891,7 +877,6 @@ def generate_mapping(
     analyzer.disconnect()
     print(f"  Found {len(hygm_data.get('entity_tables', {}))} entity tables")
 
-    # 2. Build the graph model via HyGM
     print("🎯 Creating graph model...")
     graph_modeler = HyGM(
         llm=agent.llm,
@@ -907,16 +892,48 @@ def generate_mapping(
         f"{len(graph_model.edges)} relationship types"
     )
 
-    # 3. Write mapping file
-    mapping = graph_model_to_mapping(graph_model)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with open(output, "w", encoding="utf-8") as f:
-        json.dump(mapping, f, indent=2)
-    print(f"\n📄 Mapping file written to {output}")
+    return graph_model_to_mapping(graph_model)
+
+
+def generate_mapping(
+    agent: SQLToMemgraphAgent,
+    source_db_config: Dict[str, Any],
+    mapping_path: str,
+) -> None:
+    """
+    Generate or edit a mapping file.
+
+    If the file already exists it is loaded and the user enters an interactive
+    editing session. Otherwise the source database is analysed and a new
+    mapping is created from scratch. The user can type /reset at any point
+    to discard the mapping and regenerate from the source database.
+    """
+    output = Path(mapping_path)
+
+    if output.exists():
+        with open(output, "r", encoding="utf-8") as f:
+            mapping = json.load(f)
+        print(f"📄 Loaded existing mapping from {output}")
+    else:
+        mapping = _generate_fresh_mapping(agent, source_db_config)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with open(output, "w", encoding="utf-8") as f:
+            json.dump(mapping, f, indent=2)
+        print(f"\n📄 Mapping file written to {output}")
+
     print_mapping_summary(mapping)
 
-    # 4. Enter interactive editing
-    edit_mapping_interactive(mapping, agent.llm, mapping_path)
+    while True:
+        result = edit_mapping_interactive(mapping, agent.llm, mapping_path)
+        if result is not _RESET:
+            break
+        print("\n🔄 Resetting mapping — regenerating from source database...\n")
+        mapping = _generate_fresh_mapping(agent, source_db_config)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with open(output, "w", encoding="utf-8") as f:
+            json.dump(mapping, f, indent=2)
+        print(f"\n📄 Mapping file written to {output}")
+        print_mapping_summary(mapping)
 
 
 def main(argv: Optional[list[str]] = None) -> None:

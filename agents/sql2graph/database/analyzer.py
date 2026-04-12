@@ -212,21 +212,28 @@ class DatabaseAnalyzer(ABC):
         if len(table_info.foreign_keys) < 2:
             return False
 
-        # Count non-FK columns (excluding common metadata columns)
+        # Count non-FK columns (excluding common metadata / temporal columns
+        # that often appear on join tables as relationship properties)
         non_fk_columns = []
         fk_column_names = {fk.column_name for fk in table_info.foreign_keys}
-        metadata_columns = {
+        auxiliary_columns = {
             "id",
             "created_at",
             "updated_at",
             "created_on",
             "updated_on",
             "timestamp",
+            "from_date",
+            "to_date",
+            "start_date",
+            "end_date",
+            "valid_from",
+            "valid_to",
         }
 
         for col in table_info.columns:
             field_name = col.name.lower()
-            if col.name not in fk_column_names and field_name not in metadata_columns:
+            if col.name not in fk_column_names and field_name not in auxiliary_columns:
                 non_fk_columns.append(col.name)
 
         # If most columns are foreign keys, it's likely a join table
@@ -234,9 +241,9 @@ class DatabaseAnalyzer(ABC):
         fk_ratio = len(table_info.foreign_keys) / total_columns
 
         # Consider it a join table if:
-        # - At least 2 FKs and FK ratio > 0.5, OR
-        # - All columns are FKs or metadata columns
-        return (len(table_info.foreign_keys) >= 2 and fk_ratio > 0.5) or len(
+        # - At least 2 FKs and FK ratio >= 0.5, OR
+        # - All columns are FKs or auxiliary columns
+        return (len(table_info.foreign_keys) >= 2 and fk_ratio >= 0.5) or len(
             non_fk_columns
         ) == 0
 
