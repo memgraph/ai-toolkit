@@ -4,7 +4,6 @@ WORKDIR /app
 
 # Install editors for interactive mapping editing
 RUN apt-get update && apt-get install -y --no-install-recommends vim-tiny neovim \
-    && ln -s /usr/bin/vim.tiny /usr/bin/vi \
     && rm -rf /var/lib/apt/lists/*
 ENV EDITOR=nvim
 

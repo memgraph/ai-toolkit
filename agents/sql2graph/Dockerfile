@@ -4,7 +4,6 @@ WORKDIR /app
 
 # Install editors for interactive mapping editing
 RUN apt-get update && apt-get install -y --no-install-recommends vim-tiny neovim \
-    && ln -s /usr/bin/vim.tiny /usr/bin/vi \
     && rm -rf /var/lib/apt/lists/*
 ENV EDITOR=nvim
 
@@ -12,7 +11,7 @@ ENV EDITOR=nvim
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Install the released package from PyPI
-RUN uv pip install --system structured2graph==0.2.0
+RUN uv pip install --system structured2graph==0.2.1
 
 # Copy .env.example as reference; users supply real values at runtime
 # via: docker run -it --env-file .env memgraph/structured2graph
