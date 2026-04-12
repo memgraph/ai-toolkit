@@ -165,10 +165,17 @@ class LLMGraphModel(BaseModel):
                 )
                 node_constraints.append(graph_constraint)
 
+        # Build a lookup from node name → source table
+        node_table_map = {}
+        node_pk_map = {}
+        for node in self.nodes:
+            node_table_map[node.name] = node.source_table
+            node_pk_map[node.name] = node.primary_key
+
         # Convert relationships
         graph_relationships = []
         for llm_rel in self.relationships:
-            # Find source/target node labels
+            # Find source/target node labels and tables
             from_labels = []
             to_labels = []
             for node in self.nodes:
@@ -176,6 +183,16 @@ class LLMGraphModel(BaseModel):
                     from_labels = node.labels
                 if node.name == llm_rel.to_node:
                     to_labels = node.labels
+
+            from_table = node_table_map.get(llm_rel.from_node, "")
+            to_table = node_table_map.get(llm_rel.to_node, "")
+            from_pk = node_pk_map.get(llm_rel.from_node, "id")
+            to_pk = node_pk_map.get(llm_rel.to_node, "id")
+
+            # For one-to-many the FK lives in the "from" side's table;
+            # use the target table as the source table name.
+            # Fall back to the from_table when we can't determine better.
+            source_table = to_table or from_table
 
             # Create relationship properties
             rel_properties = []
@@ -188,14 +205,14 @@ class LLMGraphModel(BaseModel):
                 )
                 rel_properties.append(rel_prop)
 
-            # Create relationship source
+            # Create relationship source with actual SQL table/column info
             rel_source = RelationshipSource(
-                type="derived",
-                name=f"{llm_rel.from_node}_{llm_rel.name}_{llm_rel.to_node}",
-                location=f"derived.{llm_rel.name}",
+                type="table",
+                name=source_table,
+                location=f"database.schema.{source_table}",
                 mapping={
-                    "start_node": llm_rel.from_node,
-                    "end_node": llm_rel.to_node,
+                    "start_node": f"{from_table}.{from_pk}",
+                    "end_node": f"{to_table}.{to_pk}",
                     "edge_type": llm_rel.name,
                 },
             )

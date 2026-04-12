@@ -151,14 +151,24 @@ class DeterministicStrategy(BaseModelingStrategy):
             join_table = rel_data.get("join_table", "")
             source_table = join_table or from_table
 
-            # Build column references using the actual source table
-            from_col = rel_data.get("join_from_column") or rel_data.get("from_column", "id")
-            to_col = rel_data.get("join_to_column") or rel_data.get("to_column", "id")
+            # Build column references
+            if join_table:
+                # Many-to-many: both FK columns live in the join table
+                from_col = rel_data.get("join_from_column", "id")
+                to_col = rel_data.get("join_to_column", "id")
+                start_ref = f"{join_table}.{from_col}"
+                end_ref = f"{join_table}.{to_col}"
+            else:
+                # One-to-many: from_col is in from_table, to_col is in to_table
+                from_col = rel_data.get("from_column", "id")
+                to_col = rel_data.get("to_column", "id")
+                start_ref = f"{from_table}.{from_col}"
+                end_ref = f"{to_table}.{to_col}"
 
             # Create relationship source
             mapping = {
-                "start_node": f"{source_table}.{from_col}",
-                "end_node": f"{source_table}.{to_col}",
+                "start_node": start_ref,
+                "end_node": end_ref,
                 "edge_type": rel_name,
                 "from_pk": from_pk,
             }
