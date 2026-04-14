@@ -32,12 +32,12 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "langgraph>=0.2.0",
+    "langgraph>=1.0.10",
     "langchain>=1.0.0",
     "langchain-openai>=0.2.0",
     "langchain-anthropic>=0.3.0",
     "langchain-google-genai>=2.0.0",
-    "langchain-core>=1.0.0",
+    "langchain-core>=1.2.28",
     "mysql-connector-python>=9.0.0",
     "psycopg2-binary>=2.9",
     "neo4j>=5.0.0",
@@ -47,7 +47,7 @@ dependencies = [
     "pydantic>=2.0.0",
     "sqlalchemy>=2.0.0",
     "pymysql>=1.1.0",
-    "memgraph-toolbox>=0.1.4",
+    "memgraph-toolbox>=0.1.10",
 ]
 
 [project.urls]
@@ -75,5 +75,15 @@ allow-direct-references = true
 
 [dependency-groups]
 dev = [
-    "pytest>=8.3.5",
+    "pytest>=9.0.3",
+]
+
+[tool.uv]
+constraint-dependencies = [
+    "langgraph-checkpoint>=4.0.0",
+    "langsmith>=0.6.3",
+    "protobuf>=5.29.6",
+    "pyasn1>=0.6.3",
+    "requests>=2.33.0",
+    "urllib3>=2.6.3",
 ]

@@ -15,7 +15,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "langchain-core>=1.1.0",
+  "langchain-core>=1.2.28",
     "langchain-classic>=1.0.0",
     "neo4j>=5.28.1",
     "memgraph-toolbox>=0.1.10",
@@ -24,7 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
-  "pytest>=8.3.5",
+  "pytest>=9.0.3",
   "pytest-asyncio>=0.26.0",
   "langgraph>=0.2.0",
   "python-dotenv>=1.0.1",
@@ -32,7 +32,7 @@ test = [
   "pytest-watcher>=0.3.4",
   "langchain-tests>=0.3.0",
   "langchain-experimental>=0.3.0",
-  "langchain-core>=1.1.0",
+  "langchain-core>=1.2.28",
   "langchain-openai>=1.1.0",
 ]
 

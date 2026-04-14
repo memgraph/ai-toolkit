@@ -6,13 +6,37 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "memgraph-toolbox",
-    "mcp[cli]>=1.6.0",
+    "mcp[cli]>=1.23.0",
     "neo4j>=5.28.1",
 ]
 
 [tool.uv.sources]
 memgraph-toolbox = { workspace = true }
 lightrag-memgraph = { workspace = true }
+
+[tool.uv]
+constraint-dependencies = [
+    "aiohttp>=3.13.4",
+    "authlib>=1.6.9",
+    "cryptography>=46.0.7",
+    "ecdsa>=0.19.2",
+    "filelock>=3.20.3",
+    "fonttools>=4.60.2",
+    "langgraph-checkpoint>=4.0.0",
+    "langsmith>=0.6.3",
+    "marshmallow>=3.26.2",
+    "nltk>=3.9.4",
+    "pillow>=12.2.0",
+    "protobuf>=6.33.5",
+    "pyasn1>=0.6.3",
+    "pypdf>=6.10.0",
+    "python-multipart>=0.0.22",
+    "requests>=2.33.0",
+    "starlette>=0.49.1",
+    "transformers>=5.0.0rc3",
+    "urllib3>=2.6.3",
+    "wheel>=0.46.2",
+]
 
 [tool.uv.workspace] 
 members = [
