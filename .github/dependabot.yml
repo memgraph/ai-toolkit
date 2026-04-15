@@ -4,67 +4,46 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
-    groups:
-      security:
-        applies-to: security-updates
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 1
 
   - package-ecosystem: "pip"
     directory: "/memgraph-toolbox"
     schedule:
       interval: "monthly"
-    groups:
-      security:
-        applies-to: security-updates
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
 
   - package-ecosystem: "pip"
     directory: "/integrations/mcp-memgraph"
     schedule:
       interval: "monthly"
-    groups:
-      security:
-        applies-to: security-updates
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
 
   - package-ecosystem: "pip"
     directory: "/integrations/langchain-memgraph"
     schedule:
       interval: "monthly"
-    groups:
-      security:
-        applies-to: security-updates
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
 
   - package-ecosystem: "pip"
     directory: "/integrations/lightrag-memgraph"
     schedule:
       interval: "monthly"
-    groups:
-      security:
-        applies-to: security-updates
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
 
   - package-ecosystem: "pip"
     directory: "/agents/sql2graph"
     schedule:
       interval: "monthly"
-    groups:
-      security:
-        applies-to: security-updates
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
 
   - package-ecosystem: "pip"
     directory: "/unstructured2graph"
     schedule:
       interval: "monthly"
-    groups:
-      security:
-        applies-to: security-updates
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
