@@ -85,7 +85,7 @@ async def test_mcp_client():
 async def test_run_query():
     """Test the run_query tool with read operations."""
     query = "MATCH (n) RETURN n LIMIT 1;"
-    response = run_query.fn(query)
+    response = run_query(query)
     assert isinstance(response, list), "Expected response to be a list"
     assert len(response) >= 0, "Expected response to have at least 0 results"
     # Verify no error in response for read queries
@@ -112,7 +112,7 @@ async def test_write_query_blocked_in_readonly_mode():
     try:
         # Test CREATE query
         create_query = "CREATE (n:TestNode {name: 'test'}) RETURN n;"
-        response = run_query.fn(create_query)
+        response = run_query(create_query)
 
         assert isinstance(response, list), "Expected response to be a list"
         assert len(response) > 0, "Expected error response"
@@ -123,17 +123,17 @@ async def test_write_query_blocked_in_readonly_mode():
 
         # Test MERGE query
         merge_query = "MERGE (n:TestNode {id: 1}) RETURN n;"
-        response = run_query.fn(merge_query)
+        response = run_query(merge_query)
         assert "error" in response[0], "MERGE should be blocked in read-only mode"
 
         # Test DELETE query
         delete_query = "MATCH (n:TestNode) DELETE n;"
-        response = run_query.fn(delete_query)
+        response = run_query(delete_query)
         assert "error" in response[0], "DELETE should be blocked in read-only mode"
 
         # Test SET query
         set_query = "MATCH (n:TestNode) SET n.name = 'updated' RETURN n;"
-        response = run_query.fn(set_query)
+        response = run_query(set_query)
         assert "error" in response[0], "SET should be blocked in read-only mode"
 
     finally:
@@ -165,7 +165,7 @@ async def test_write_query_allowed_when_readonly_disabled():
         create_query = (
             "CREATE (n:TestNode {name: 'test', test_marker: true}) " "RETURN n;"
         )
-        response = run_query.fn(create_query)
+        response = run_query(create_query)
 
         assert isinstance(response, list), "Expected response to be a list"
         # Should not have an error about read-only mode
@@ -177,7 +177,7 @@ async def test_write_query_allowed_when_readonly_disabled():
 
         # Clean up: delete the test node
         cleanup_query = "MATCH (n:TestNode {test_marker: true}) DELETE n;"
-        run_query.fn(cleanup_query)
+        run_query(cleanup_query)
 
     finally:
         # Restore original value
@@ -190,7 +190,7 @@ async def test_write_query_allowed_when_readonly_disabled():
 @pytest.mark.asyncio
 async def test_get_schema():
     """Test the get_schema tool."""
-    response = get_schema.fn()
+    response = get_schema()
     assert isinstance(response, list), "Expected response to be a list"
     assert len(response) >= 0, "Expected response to have at least 0 results"
     # Add more assertions based on expected schema information
@@ -200,7 +200,7 @@ async def test_get_schema():
 async def test_get_node_neighborhood():
     """Test the get_node_neighborhood tool."""
     # Test with a non-existent node ID (should return empty or error)
-    response = get_node_neighborhood.fn("999999", max_distance=1, limit=10)
+    response = get_node_neighborhood("999999", max_distance=1, limit=10)
     assert isinstance(response, list), "Expected response to be a list"
     # The response should either be empty (no nodes found) or contain an error message
     assert len(response) >= 0, "Expected response to have at least 0 results"
@@ -211,7 +211,7 @@ async def test_search_node_vectors():
     """Test the search_node_vectors tool."""
     # Test with a non-existent index (should return error)
     query_vector = [0.1, 0.2, 0.3, 0.4, 0.5]
-    response = search_node_vectors.fn("non_existent_index", query_vector, limit=5)
+    response = search_node_vectors("non_existent_index", query_vector, limit=5)
     assert isinstance(response, list), "Expected response to be a list"
     # The response should contain an error message since the index doesn't exist
     assert len(response) >= 0, "Expected response to have at least 0 results"

@@ -11,6 +11,7 @@ from .core import MemgraphLightRAGWrapper
 # - require max_tokens; use top-level system= (not "system" role in messages).
 def _patch_anthropic() -> None:
     try:
+        from importlib.metadata import version as get_version
         import os
         import logging
         from typing import Any, Union
@@ -30,7 +31,11 @@ def _patch_anthropic() -> None:
             retry_if_exception_type,
         )
         from lightrag.utils import safe_unicode_decode, logger, VERBOSE_DEBUG
-        from lightrag.api import __api_version__
+
+        try:
+            lightrag_version = get_version("lightrag-hku")
+        except Exception:
+            lightrag_version = "unknown"
 
         _orig = _mod.anthropic_complete_if_cache
         if getattr(_orig, "_lightrag_memgraph_patched", False):
@@ -60,7 +65,7 @@ def _patch_anthropic() -> None:
                 api_key = os.environ.get("ANTHROPIC_API_KEY")
 
             default_headers = {
-                "User-Agent": f"Mozilla/5.0 LightRAG/{__api_version__}",
+                "User-Agent": f"Mozilla/5.0 LightRAG/{lightrag_version}",
                 "Content-Type": "application/json",
             }
             kwargs.pop("hashing_kv", None)
