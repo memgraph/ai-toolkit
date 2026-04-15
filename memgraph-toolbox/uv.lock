@@ -11,10 +11,12 @@ resolution-markers = [
 [manifest]
 constraints = [
     { name = "aiohttp", specifier = ">=3.13.4" },
+    { name = "certifi", specifier = ">=2025.1.31" },
     { name = "filelock", specifier = ">=3.20.3" },
     { name = "pillow", specifier = ">=12.2.0" },
     { name = "protobuf", specifier = ">=6.33.5" },
     { name = "pyasn1", specifier = ">=0.6.3" },
+    { name = "pyjwt", specifier = ">=2.10.1" },
     { name = "python-multipart", specifier = ">=0.0.22" },
     { name = "requests", specifier = ">=2.33.0" },
     { name = "starlette", specifier = ">=0.49.1" },

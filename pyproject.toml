@@ -18,6 +18,7 @@ lightrag-memgraph = { workspace = true }
 constraint-dependencies = [
     "aiohttp>=3.13.4",
     "authlib>=1.6.9",
+    "certifi>=2025.1.31",
     "cryptography>=46.0.7",
     "ecdsa>=0.19.2",
     "filelock>=3.20.3",
@@ -29,6 +30,7 @@ constraint-dependencies = [
     "pillow>=12.2.0",
     "protobuf>=6.33.5",
     "pyasn1>=0.6.3",
+    "pyjwt>=2.10.1",
     "pypdf>=6.10.0",
     "python-multipart>=0.0.22",
     "requests>=2.33.0",

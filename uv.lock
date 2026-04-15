@@ -65,6 +65,7 @@ members = [
 constraints = [
     { name = "aiohttp", specifier = ">=3.13.4" },
     { name = "authlib", specifier = ">=1.6.9" },
+    { name = "certifi", specifier = ">=2025.1.31" },
     { name = "cryptography", specifier = ">=46.0.7" },
     { name = "ecdsa", specifier = ">=0.19.2" },
     { name = "filelock", specifier = ">=3.20.3" },
@@ -76,6 +77,7 @@ constraints = [
     { name = "pillow", specifier = ">=12.2.0" },
     { name = "protobuf", specifier = ">=6.33.5" },
     { name = "pyasn1", specifier = ">=0.6.3" },
+    { name = "pyjwt", specifier = ">=2.10.1" },
     { name = "pypdf", specifier = ">=6.10.0" },
     { name = "python-multipart", specifier = ">=0.0.22" },
     { name = "requests", specifier = ">=2.33.0" },
@@ -3204,13 +3206,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", specifier = ">=0.18.0" },
+    { name = "anthropic", specifier = ">=0.40.0" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=26.3.1" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.0.0" },
     { name = "lightrag-hku", specifier = ">=1.4.14" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
-    { name = "numpy", specifier = ">=1.21.0" },
+    { name = "numpy", specifier = ">=1.22.0" },
     { name = "openai", specifier = ">=1.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
@@ -3788,7 +3790,6 @@ dependencies = [
     { name = "mcp", extra = ["cli"] },
     { name = "memgraph-toolbox" },
     { name = "neo4j" },
-    { name = "pytest" },
 ]
 
 [package.optional-dependencies]
@@ -3809,7 +3810,6 @@ requires-dist = [
     { name = "mcp", extras = ["cli"], marker = "extra == 'test'", specifier = ">=1.23.0" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "neo4j", specifier = ">=5.28.1" },
-    { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.20.3" },
     { name = "python-dotenv", marker = "extra == 'test'", specifier = ">=1.0.1" },
@@ -8501,9 +8501,9 @@ requires-dist = [
     { name = "langgraph", specifier = ">=1.0.10" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "mysql-connector-python", specifier = ">=9.0.0" },
-    { name = "neo4j", specifier = ">=5.0.0" },
+    { name = "neo4j", specifier = ">=5.28.1" },
     { name = "openai", specifier = ">=1.0.0" },
-    { name = "psycopg2-binary", specifier = ">=2.9" },
+    { name = "psycopg2-binary", specifier = ">=2.9.6" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pymysql", specifier = ">=1.1.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },

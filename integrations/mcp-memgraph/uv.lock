@@ -11,7 +11,9 @@ resolution-markers = [
 [manifest]
 constraints = [
     { name = "authlib", specifier = ">=1.6.9" },
+    { name = "certifi", specifier = ">=2025.1.31" },
     { name = "cryptography", specifier = ">=46.0.7" },
+    { name = "pyjwt", specifier = ">=2.10.1" },
     { name = "python-multipart", specifier = ">=0.0.22" },
     { name = "requests", specifier = ">=2.33.0" },
     { name = "urllib3", specifier = ">=2.6.3" },
@@ -871,7 +873,6 @@ dependencies = [
     { name = "mcp", extra = ["cli"] },
     { name = "memgraph-toolbox" },
     { name = "neo4j" },
-    { name = "pytest" },
 ]
 
 [package.optional-dependencies]
@@ -892,7 +893,6 @@ requires-dist = [
     { name = "mcp", extras = ["cli"], marker = "extra == 'test'", specifier = ">=1.23.0" },
     { name = "memgraph-toolbox", specifier = ">=0.1.10" },
     { name = "neo4j", specifier = ">=5.28.1" },
-    { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.20.3" },
     { name = "python-dotenv", marker = "extra == 'test'", specifier = ">=1.0.1" },

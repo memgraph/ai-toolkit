@@ -11,10 +11,12 @@ resolution-markers = [
 
 [manifest]
 constraints = [
+    { name = "certifi", specifier = ">=2025.1.31" },
     { name = "langgraph-checkpoint", specifier = ">=4.0.0" },
     { name = "langsmith", specifier = ">=0.6.3" },
-    { name = "protobuf", specifier = ">=5.29.6" },
+    { name = "protobuf", specifier = ">=6.33.5" },
     { name = "pyasn1", specifier = ">=0.6.3" },
+    { name = "pyjwt", specifier = ">=2.10.1" },
     { name = "requests", specifier = ">=2.33.0" },
     { name = "urllib3", specifier = ">=2.6.3" },
 ]
@@ -1690,9 +1692,9 @@ requires-dist = [
     { name = "langgraph", specifier = ">=1.0.10" },
     { name = "memgraph-toolbox", specifier = ">=0.1.10" },
     { name = "mysql-connector-python", specifier = ">=9.0.0" },
-    { name = "neo4j", specifier = ">=5.0.0" },
+    { name = "neo4j", specifier = ">=5.28.1" },
     { name = "openai", specifier = ">=1.0.0" },
-    { name = "psycopg2-binary", specifier = ">=2.9" },
+    { name = "psycopg2-binary", specifier = ">=2.9.6" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pymysql", specifier = ">=1.1.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
