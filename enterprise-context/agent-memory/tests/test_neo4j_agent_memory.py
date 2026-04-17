@@ -30,8 +30,8 @@ def memory_settings(memgraph_url, memgraph_password):
     )
 
 
-async def test_short_term_memory(memory_settings):
-    """Store and retrieve short-term (conversation) memory."""
+async def test_short_term_memory(memory_settings, assert_graph_not_empty, run_cypher):
+    """Store and retrieve short-term (conversation) memory, verify in Memgraph."""
     from neo4j_agent_memory import MemoryClient
 
     async with MemoryClient(memory_settings) as memory:
@@ -49,9 +49,16 @@ async def test_short_term_memory(memory_settings):
         messages = await memory.short_term.get_messages(session_id="session-1")
         assert len(messages) >= 2
 
+    # Verify messages were persisted as nodes in Memgraph
+    assert_graph_not_empty(min_nodes=2)
+    records = run_cypher("MATCH (n) RETURN count(n) AS cnt")
+    assert records[0]["cnt"] >= 2, "Expected at least 2 message nodes in Memgraph"
 
-async def test_long_term_memory_entities(memory_settings):
-    """Add entities and preferences to long-term memory."""
+
+async def test_long_term_memory_entities(
+    memory_settings, assert_graph_not_empty, run_cypher
+):
+    """Add entities and preferences to long-term memory, verify in Memgraph."""
     from neo4j_agent_memory import MemoryClient
 
     async with MemoryClient(memory_settings) as memory:
@@ -67,9 +74,14 @@ async def test_long_term_memory_entities(memory_settings):
         )
         assert context is not None
 
+    # Verify entity and preference nodes exist in Memgraph
+    assert_graph_not_empty(min_nodes=1)
+    records = run_cypher("MATCH (n) RETURN labels(n) AS labels, count(n) AS cnt")
+    assert len(records) > 0, "Expected labeled nodes for entities/preferences"
 
-async def test_get_context(memory_settings):
-    """Verify get_context returns combined short+long term results."""
+
+async def test_get_context(memory_settings, assert_graph_not_empty, run_cypher):
+    """Verify get_context returns combined short+long term results from Memgraph."""
     from neo4j_agent_memory import MemoryClient
 
     async with MemoryClient(memory_settings) as memory:
@@ -85,3 +97,10 @@ async def test_get_context(memory_settings):
             session_id="session-2",
         )
         assert context is not None
+
+    # Verify both message and entity nodes exist in Memgraph
+    assert_graph_not_empty(min_nodes=2)
+    records = run_cypher("MATCH (n) RETURN count(n) AS cnt")
+    assert (
+        records[0]["cnt"] >= 2
+    ), "Expected nodes from both short-term and long-term memory"

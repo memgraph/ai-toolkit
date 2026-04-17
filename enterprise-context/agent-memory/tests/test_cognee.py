@@ -46,8 +46,8 @@ async def _configure_cognee(
     yield
 
 
-async def test_cognee_add_and_search():
-    """Add sample data, cognify, and verify search returns results."""
+async def test_cognee_add_and_search(assert_graph_not_empty):
+    """Add sample data, cognify, and verify nodes are persisted in Memgraph."""
     sample_data = [
         "Artificial intelligence is a branch of computer science.",
         "Machine learning is a subset of AI that focuses on algorithms that learn from data.",
@@ -55,6 +55,9 @@ async def test_cognee_add_and_search():
 
     await cognee.add(sample_data, "test_knowledge")
     await cognee.cognify(["test_knowledge"])
+
+    # Verify data landed in Memgraph
+    assert_graph_not_empty(min_nodes=1, min_relationships=1)
 
     results = await cognee.search(
         query_type=cognee.SearchType.GRAPH_COMPLETION,
@@ -65,12 +68,18 @@ async def test_cognee_add_and_search():
     assert len(results) > 0
 
 
-async def test_cognee_graph_data_accessible():
-    """Verify that graph data can be retrieved after cognify."""
+async def test_cognee_graph_data_accessible(assert_graph_not_empty, run_cypher):
+    """Verify that graph data can be retrieved after cognify and nodes exist in Memgraph."""
     from cognee.infrastructure.databases.graph import get_graph_engine
 
     await cognee.add(["Graph databases store data as nodes and edges."], "graph_data")
     await cognee.cognify(["graph_data"])
+
+    # Verify via direct Cypher that Memgraph has data
+    assert_graph_not_empty(min_nodes=1)
+
+    records = run_cypher("MATCH (n) RETURN labels(n) AS labels, count(n) AS cnt")
+    assert len(records) > 0, "Expected at least one label group in Memgraph"
 
     graph_engine = await get_graph_engine()
     graph_data = await graph_engine.get_graph_data()
