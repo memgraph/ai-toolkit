@@ -37,12 +37,11 @@ async def _configure_cognee(
         }
     )
 
-    # Cognee reads the LLM API key from the LLM_API_KEY env var.
-    # Ensure it is set (fall back to OPENAI_API_KEY which CI provides).
-    if not os.environ.get("LLM_API_KEY"):
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        if api_key:
-            os.environ["LLM_API_KEY"] = api_key
+    # Cognee caches LLM config at import time so setting the env var
+    # in a fixture is too late.  Use the programmatic setter instead.
+    api_key = os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
+    if api_key:
+        cognee.config.set_llm_api_key(api_key)
 
     system_dir = tmp_path / ".cognee_system"
     data_dir = tmp_path / ".data_storage"

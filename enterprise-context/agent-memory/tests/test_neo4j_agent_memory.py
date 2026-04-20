@@ -14,7 +14,17 @@ neo4j_agent_memory = pytest.importorskip(
     "neo4j_agent_memory", reason="neo4j-agent-memory not installed"
 )
 
-pytestmark = [pytest.mark.neo4j_agent_memory, pytest.mark.asyncio]
+pytestmark = [
+    pytest.mark.neo4j_agent_memory,
+    pytest.mark.asyncio,
+    pytest.mark.xfail(
+        reason=(
+            "neo4j-agent-memory uses Neo4j-specific constraint DDL "
+            "(SHOW CONSTRAINTS YIELD) that Memgraph does not support yet"
+        ),
+        strict=False,
+    ),
+]
 
 
 @pytest.fixture()
