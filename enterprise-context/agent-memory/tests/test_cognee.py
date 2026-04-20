@@ -28,6 +28,10 @@ async def _configure_cognee(
     """Register the Memgraph adapter and configure cognee for each test."""
     register()
 
+    # The Memgraph adapter does not support cognee's multi-user access
+    # control mode.  Disable it so cognify does not raise an OSError.
+    os.environ.setdefault("ENABLE_BACKEND_ACCESS_CONTROL", "false")
+
     cognee.config.set_graph_database_provider("memgraph")
     cognee.config.set_graph_db_config(
         {
