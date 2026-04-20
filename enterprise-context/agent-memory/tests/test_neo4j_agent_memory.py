@@ -20,13 +20,15 @@ pytestmark = [pytest.mark.neo4j_agent_memory, pytest.mark.asyncio]
 @pytest.fixture()
 def memory_settings(memgraph_url, memgraph_password):
     """Create MemorySettings pointed at Memgraph."""
-    from neo4j_agent_memory import MemorySettings
+    from neo4j_agent_memory import MemorySettings, ExtractionConfig, ExtractorType
 
     return MemorySettings(
         neo4j={
             "uri": memgraph_url,
             "password": memgraph_password or "",
-        }
+            "database": "memgraph",
+        },
+        extraction=ExtractionConfig(extractor_type=ExtractorType.NONE),
     )
 
 

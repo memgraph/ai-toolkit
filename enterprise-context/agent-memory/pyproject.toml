@@ -16,14 +16,11 @@ dependencies = [
 cognee = [
     "cognee-community-graph-adapter-memgraph>=0.1.0",
 ]
-mem0 = [
-    "mem0ai[graph]>=0.1.0",
-]
 neo4j-agent-memory = [
     "neo4j-agent-memory>=0.1.0",
 ]
 all = [
-    "agent-memory-tests[cognee,mem0,neo4j-agent-memory]",
+    "agent-memory-tests[cognee,neo4j-agent-memory]",
 ]
 
 [build-system]
@@ -38,6 +35,5 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "cognee: tests for the cognee integration with Memgraph",
-    "mem0: tests for the mem0 integration with Memgraph",
     "neo4j_agent_memory: tests for the neo4j-agent-memory integration with Memgraph",
 ]

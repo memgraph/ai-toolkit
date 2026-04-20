@@ -3,10 +3,11 @@
 Requires:
     pip install "mem0ai[graph]"
     A running Memgraph instance.
-    OPENAI_API_KEY set in the environment (mem0 uses OpenAI for embeddings).
+    OPENAI_API_KEY set in the environment (mem0 uses OpenAI for embeddings and LLM extraction).
 """
 
 import os
+import uuid
 
 import pytest
 
@@ -16,11 +17,37 @@ pytestmark = pytest.mark.mem0
 
 
 @pytest.fixture()
-def memory(memgraph_url, memgraph_username, memgraph_password):
-    """Create a Mem0 Memory instance configured with Memgraph."""
+def memory(memgraph_url, memgraph_username, memgraph_password, tmp_path):
+    """Create a Mem0 Memory instance configured with Memgraph.
+
+    Uses a unique Qdrant path per test to avoid concurrent access errors,
+    and configures the full pipeline (LLM + embedder + graph_store) so
+    that entity extraction actually writes nodes to Memgraph.
+    """
     from mem0 import Memory
 
+    qdrant_path = str(tmp_path / f"qdrant_{uuid.uuid4().hex}")
+
     config = {
+        "llm": {
+            "provider": "openai",
+            "config": {
+                "model": "gpt-4o-mini",
+            },
+        },
+        "embedder": {
+            "provider": "openai",
+            "config": {
+                "model": "text-embedding-3-small",
+            },
+        },
+        "vector_store": {
+            "provider": "qdrant",
+            "config": {
+                "collection_name": "mem0_test",
+                "path": qdrant_path,
+            },
+        },
         "graph_store": {
             "provider": "memgraph",
             "config": {
