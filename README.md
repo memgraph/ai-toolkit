@@ -120,10 +120,10 @@ Expose Memgraph to LLMs via MCP. Run with Docker:
 
 ```bash
 # HTTP mode (recommended)
-docker run --rm -p 8000:8000 mcp-memgraph:latest
+docker run --rm -p 8000:8000 memgraph/mcp-memgraph:latest
 
 # Stdio mode for MCP clients
-docker run --rm -i -e MCP_TRANSPORT=stdio mcp-memgraph:latest
+docker run --rm -i -e MCP_TRANSPORT=stdio memgraph/mcp-memgraph:latest
 ```
 
 **Available Tools:**

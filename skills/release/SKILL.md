@@ -1,59 +1,42 @@
 ---
 name: release
-description: Used to release all toolbox, integrations, agents. Use when releasing a subproject to PyPI or when the user asks to release or publish.
+description: Used to release all toolbox, integrations, agents. Use when releasing a subproject to PyPI, Docker Hub, or when the user asks to release or publish.
 ---
 
-# Release a subproject to PyPI
+# Release Workflows
 
-## 1. Check latest version on PyPI
+All release workflows are triggered via **`workflow_dispatch`** (manual) from the GitHub Actions tab. Bump the version in the subproject's `pyproject.toml` before dispatching.
 
-Before bumping or publishing, confirm the current published version so the new release is higher.
+## Workflow files
 
-**Option A – pip (any subproject):**
-```bash
-pip index versions <package-name>
-```
-Example: `pip index versions lightrag-memgraph` → shows e.g. `0.1.4`.
+| Workflow file                     | Package            | What it does                         | Secrets used                                          |
+| --------------------------------- | ------------------ | ------------------------------------ | ----------------------------------------------------- |
+| `release-mcp-memgraph.yaml`       | mcp-memgraph       | Build & publish to PyPI + Docker Hub | `PYPI_TOKEN`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` |
+| `release-toolbox.yaml`            | memgraph-toolbox   | Build & publish to PyPI              | `PYPI_TOKEN`                                          |
+| `release-langchain-memgraph.yaml` | langchain-memgraph | Build & publish to PyPI              | `PYPI_TOKEN`                                          |
+| `release-lightrag-memgraph.yaml`  | lightrag-memgraph  | Build & publish to PyPI              | `PYPI_TOKEN`                                          |
+| `release-unstructured2graph.yaml` | unstructured2graph | Build & publish to PyPI              | `PYPI_TOKEN`                                          |
 
-**Option B – PyPI JSON API:**
-```bash
-curl -s https://pypi.org/pypi/<package-name>/json | python -c "import sys,json; d=json.load(sys.stdin); print(d['info']['version'])"
-```
-Use the same `package-name` as in `pyproject.toml` (e.g. `lightrag-memgraph`).
+## Subproject paths
 
-## 2. Bump version if needed
+| Package            | Path                              | pyproject.toml version field |
+| ------------------ | --------------------------------- | ---------------------------- |
+| memgraph-toolbox   | `memgraph-toolbox`                | `[project] version`          |
+| mcp-memgraph       | `integrations/mcp-memgraph`       | `[project] version`          |
+| langchain-memgraph | `integrations/langchain-memgraph` | `[project] version`          |
+| lightrag-memgraph  | `integrations/lightrag-memgraph`  | `[project] version`          |
+| unstructured2graph | `unstructured2graph`              | `[project] version`          |
 
-In the subproject’s `pyproject.toml`, set `version` to a value **greater** than the latest on PyPI (e.g. patch: 0.1.4 → 0.1.5).
+## Required GitHub secrets
 
-## 3. Build and publish
+| Secret               | Used by                | Description                     |
+| -------------------- | ---------------------- | ------------------------------- |
+| `PYPI_TOKEN`         | All release workflows  | PyPI API token for `uv publish` |
+| `DOCKERHUB_USERNAME` | `release-mcp-memgraph` | Docker Hub username             |
+| `DOCKERHUB_TOKEN`    | `release-mcp-memgraph` | Docker Hub access token         |
 
-From the **repo root** (ai-toolkit), source env then run from the **subproject directory**:
+## Notes
 
-```bash
-source .env
-cd <subproject-path>   # e.g. integrations/lightrag-memgraph
-uv build
-uv publish
-```
-
-**Build output location:** `uv build` may write artifacts to the **top-level ai-toolkit `dist/`** directory rather than the subproject’s. If `uv publish` reports "No files found to publish", run publish from the **ai-toolkit root** and pass the built files explicitly:
-
-```bash
-cd /path/to/ai-toolkit
-source .env
-uv publish dist/<package>_<normalized>-<version>-*.whl dist/<package>_<normalized>-<version>.tar.gz
-```
-
-Example for lightrag-memgraph 0.1.4: `uv publish dist/lightrag_memgraph-0.1.4-py3-none-any.whl dist/lightrag_memgraph-0.1.4.tar.gz`
-
-Requires `UV_PUBLISH_TOKEN` in `.env` (and `UV_PUBLISH_USERNAME` for CI; local token auth may not need it).
-
-## Subproject paths (from ai-toolkit root)
-
-| Package             | Path                          |
-|---------------------|-------------------------------|
-| memgraph-toolbox    | memgraph-toolbox              |
-| mcp-memgraph        | integrations/mcp-memgraph    |
-| langchain-memgraph  | integrations/langchain-memgraph |
-| lightrag-memgraph   | integrations/lightrag-memgraph  |
-| unstructured2graph  | unstructured2graph           |
+- **lightrag-memgraph** and **unstructured2graph** use `uv build --out-dir dist` to work around a uv artifact path issue.
+- The **mcp-memgraph** Docker image is built from the repo root (the Dockerfile copies both `memgraph-toolbox/` and `integrations/mcp-memgraph/`).
+- The mcp-memgraph workflow tags the Docker image with both the version and `latest`.

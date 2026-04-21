@@ -25,3 +25,25 @@ jobs:
         run: |
           uv build
           uv publish
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('integrations/mcp-memgraph/pyproject.toml','rb'))['project']['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          file: integrations/mcp-memgraph/Dockerfile
+          push: true
+          tags: |
+            memgraph/mcp-memgraph:${{ steps.version.outputs.version }}
+            memgraph/mcp-memgraph:latest
