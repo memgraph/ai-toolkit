@@ -93,10 +93,16 @@ To build the Docker image using your local `memgraph-toolbox` code, run from the
 
 ```bash
 cd /path/to/ai-toolkit
-docker build -f integrations/mcp-memgraph/Dockerfile -t mcp-memgraph:latest .
+docker build -f integrations/mcp-memgraph/Dockerfile -t memgraph/mcp-memgraph:latest .
 ```
 
 This will include your local `memgraph-toolbox` and install it inside the image.
+
+The image is also available on Docker Hub:
+
+```bash
+docker pull memgraph/mcp-memgraph:latest
+```
 
 ### Running the Docker image
 
@@ -105,7 +111,7 @@ This will include your local `memgraph-toolbox` and install it inside the image.
 To connect to local Memgraph containers, by default the MCP server will be available at `http://localhost:8000/mcp/`:
 
 ```bash
-docker run --rm mcp-memgraph:latest
+docker run --rm memgraph/mcp-memgraph:latest
 ```
 
 #### 2. Stdio mode (for integration with MCP stdio clients)
@@ -113,7 +119,7 @@ docker run --rm mcp-memgraph:latest
 Configure your MCP host to run the docker command and utilize stdio:
 
 ```bash
-docker run --rm -i -e MCP_TRANSPORT=stdio mcp-memgraph:latest
+docker run --rm -i -e MCP_TRANSPORT=stdio memgraph/mcp-memgraph:latest
 ```
 
 > 📄 Note: By default, the server will connect to a Memgraph instance running on localhost docker network `bolt://host.docker.internal:7687`. If you have a Memgraph instance running on a different host or port, you can specify it using environment variables.
@@ -128,7 +134,7 @@ docker run --rm \
   -e MEMGRAPH_URL=bolt://memgraph:7687 \
   -e MEMGRAPH_USER=myuser \
   -e MEMGRAPH_PASSWORD=password \
-  mcp-memgraph:latest
+  memgraph/mcp-memgraph:latest
 ```
 
 ## ⚙️ Configuration
@@ -173,7 +179,7 @@ To use the experimental Memgraph server:
 MCP_SERVER=memgraph-experimental uv run mcp-memgraph
 
 # With Docker
-docker run --rm -e MCP_SERVER=memgraph-experimental mcp-memgraph:latest
+docker run --rm -e MCP_SERVER=memgraph-experimental memgraph/mcp-memgraph:latest
 ```
 
 To add a new server implementation, create a new file in `src/mcp_memgraph/servers/` and register it in the `AVAILABLE_SERVERS` dictionary in `src/mcp_memgraph/servers/__init__.py`.
@@ -220,7 +226,7 @@ When the settings open, enhance the args as follows:
         "-i",
         "-e",
         "MCP_TRANSPORT=stdio",
-        "mcp-memgraph:latest"
+        "memgraph/mcp-memgraph:latest"
       ]
     }
   }
@@ -247,7 +253,7 @@ To connect to a remote Memgraph instance with authentication, add environment va
         "MEMGRAPH_USER=myuser",
         "-e",
         "MEMGRAPH_PASSWORD=mypassword",
-        "mcp-memgraph:latest"
+        "memgraph/mcp-memgraph:latest"
       ]
     }
   }
