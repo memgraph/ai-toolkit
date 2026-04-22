@@ -1,3 +1,4 @@
+import json
 import pytest
 from unittest.mock import MagicMock
 from skill_graph import SkillGraph, Skill
@@ -11,6 +12,32 @@ def mock_memgraph():
 @pytest.fixture
 def sg(mock_memgraph):
     return SkillGraph(memgraph=mock_memgraph)
+
+
+def _make_row(
+    name="s1",
+    description="d",
+    content="c",
+    license=None,
+    compatibility=None,
+    metadata="{}",
+    allowed_tools="[]",
+    created_at="2025-01-01",
+    updated_at="2025-01-01",
+    tags=None,
+):
+    return {
+        "name": name,
+        "description": description,
+        "content": content,
+        "license": license,
+        "compatibility": compatibility,
+        "metadata": metadata,
+        "allowed_tools": allowed_tools,
+        "created_at": created_at,
+        "updated_at": updated_at,
+        "tags": tags or [],
+    }
 
 
 # ------------------------------------------------------------------
@@ -58,6 +85,25 @@ def test_add_skill_with_tags(sg, mock_memgraph):
     assert tag_call.kwargs["params"]["tags"] == ["a", "b"]
 
 
+def test_add_skill_persists_spec_fields(sg, mock_memgraph):
+    skill = Skill(
+        name="pdf-processing",
+        description="Extract PDF text.",
+        content="# Instructions",
+        license="Apache-2.0",
+        compatibility="Requires Python 3.10+",
+        metadata={"author": "org"},
+        allowed_tools=["Bash(git:*)", "Read"],
+    )
+    sg.add_skill(skill)
+
+    params = mock_memgraph.query.call_args_list[0].kwargs["params"]
+    assert params["license"] == "Apache-2.0"
+    assert params["compatibility"] == "Requires Python 3.10+"
+    assert params["metadata"] == json.dumps({"author": "org"})
+    assert params["allowed_tools"] == json.dumps(["Bash(git:*)", "Read"])
+
+
 # ------------------------------------------------------------------
 # Get
 # ------------------------------------------------------------------
@@ -69,20 +115,29 @@ def test_get_skill_returns_none_when_missing(sg, mock_memgraph):
 
 
 def test_get_skill_returns_skill(sg, mock_memgraph):
-    mock_memgraph.query.return_value = [
-        {
-            "name": "s1",
-            "description": "d",
-            "content": "c",
-            "created_at": "2025-01-01",
-            "updated_at": "2025-01-01",
-            "tags": ["x"],
-        }
-    ]
+    mock_memgraph.query.return_value = [_make_row(name="s1", tags=["x"])]
     skill = sg.get_skill("s1")
     assert skill is not None
     assert skill.name == "s1"
     assert skill.tags == ["x"]
+
+
+def test_get_skill_deserializes_spec_fields(sg, mock_memgraph):
+    mock_memgraph.query.return_value = [
+        _make_row(
+            name="pdf-processing",
+            description="Extract PDF text.",
+            license="MIT",
+            compatibility="Python 3.10+",
+            metadata=json.dumps({"author": "org"}),
+            allowed_tools=json.dumps(["Read"]),
+        )
+    ]
+    skill = sg.get_skill("pdf-processing")
+    assert skill.license == "MIT"
+    assert skill.compatibility == "Python 3.10+"
+    assert skill.metadata == {"author": "org"}
+    assert skill.allowed_tools == ["Read"]
 
 
 # ------------------------------------------------------------------
@@ -92,16 +147,9 @@ def test_get_skill_returns_skill(sg, mock_memgraph):
 
 def test_update_skill_sets_fields(sg, mock_memgraph):
     mock_memgraph.query.return_value = [
-        {
-            "name": "s1",
-            "description": "new",
-            "content": "new_c",
-            "created_at": "2025-01-01",
-            "updated_at": "2025-01-02",
-            "tags": [],
-        }
+        _make_row(name="s1", description="new", content="new-c")
     ]
-    sg.update_skill("s1", description="new", content="new_c")
+    sg.update_skill("s1", description="new", content="new-c")
 
     set_call = mock_memgraph.query.call_args_list[0]
     assert "SET" in set_call.args[0]
@@ -110,20 +158,34 @@ def test_update_skill_sets_fields(sg, mock_memgraph):
 
 
 def test_update_skill_replaces_tags(sg, mock_memgraph):
-    mock_memgraph.query.return_value = [
-        {
-            "name": "s1",
-            "description": "d",
-            "content": "c",
-            "created_at": "2025-01-01",
-            "updated_at": "2025-01-02",
-            "tags": ["new_tag"],
-        }
-    ]
-    sg.update_skill("s1", tags=["new_tag"])
+    mock_memgraph.query.return_value = [_make_row(name="s1", tags=["new-tag"])]
+    sg.update_skill("s1", tags=["new-tag"])
 
     # SET call, DELETE old tags, MERGE new tags, GET
     assert mock_memgraph.query.call_count == 4
+
+
+def test_update_skill_sets_spec_fields(sg, mock_memgraph):
+    mock_memgraph.query.return_value = [_make_row(name="s1")]
+    sg.update_skill(
+        "s1",
+        license="MIT",
+        compatibility="Python 3.10+",
+        metadata={"v": "2"},
+        allowed_tools=["Bash(git:*)"],
+    )
+
+    set_call = mock_memgraph.query.call_args_list[0]
+    cypher = set_call.args[0]
+    assert "license" in cypher
+    assert "compatibility" in cypher
+    assert "metadata" in cypher
+    assert "allowed_tools" in cypher
+
+    params = set_call.kwargs["params"]
+    assert params["license"] == "MIT"
+    assert params["metadata"] == json.dumps({"v": "2"})
+    assert params["allowed_tools"] == json.dumps(["Bash(git:*)"])
 
 
 # ------------------------------------------------------------------
@@ -148,22 +210,8 @@ def test_delete_skill_returns_false_when_missing(sg, mock_memgraph):
 
 def test_list_skills(sg, mock_memgraph):
     mock_memgraph.query.return_value = [
-        {
-            "name": "a",
-            "description": "d",
-            "content": "c",
-            "created_at": "t",
-            "updated_at": "t",
-            "tags": [],
-        },
-        {
-            "name": "b",
-            "description": "d2",
-            "content": "c2",
-            "created_at": "t",
-            "updated_at": "t",
-            "tags": ["x"],
-        },
+        _make_row(name="a"),
+        _make_row(name="b", tags=["x"]),
     ]
     skills = sg.list_skills()
     assert len(skills) == 2
@@ -202,16 +250,7 @@ def test_remove_dependency(sg, mock_memgraph):
 
 
 def test_get_dependencies(sg, mock_memgraph):
-    mock_memgraph.query.return_value = [
-        {
-            "name": "dep",
-            "description": "d",
-            "content": "c",
-            "created_at": "t",
-            "updated_at": "t",
-            "tags": [],
-        }
-    ]
+    mock_memgraph.query.return_value = [_make_row(name="dep")]
     deps = sg.get_dependencies("a")
     assert len(deps) == 1
     assert deps[0].name == "dep"

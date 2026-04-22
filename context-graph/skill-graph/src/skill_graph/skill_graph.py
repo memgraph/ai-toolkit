@@ -1,4 +1,5 @@
-from typing import List, Optional
+import json
+from typing import Dict, List, Optional
 from datetime import datetime, timezone
 
 from memgraph_toolbox.api.memgraph import Memgraph
@@ -55,6 +56,10 @@ class SkillGraph:
                 name: $name,
                 description: $description,
                 content: $content,
+                license: $license,
+                compatibility: $compatibility,
+                metadata: $metadata,
+                allowed_tools: $allowed_tools,
                 created_at: $created_at,
                 updated_at: $updated_at
             })
@@ -63,6 +68,10 @@ class SkillGraph:
                 "name": skill.name,
                 "description": skill.description,
                 "content": skill.content,
+                "license": skill.license,
+                "compatibility": skill.compatibility,
+                "metadata": json.dumps(skill.metadata),
+                "allowed_tools": json.dumps(skill.allowed_tools),
                 "created_at": skill.created_at,
                 "updated_at": skill.updated_at,
             },
@@ -90,6 +99,10 @@ class SkillGraph:
             RETURN s.name AS name,
                    s.description AS description,
                    s.content AS content,
+                   s.license AS license,
+                   s.compatibility AS compatibility,
+                   s.metadata AS metadata,
+                   s.allowed_tools AS allowed_tools,
                    s.created_at AS created_at,
                    s.updated_at AS updated_at,
                    collect(t.name) AS tags
@@ -101,14 +114,7 @@ class SkillGraph:
             return None
 
         row = rows[0]
-        return Skill(
-            name=row["name"],
-            description=row["description"],
-            content=row["content"],
-            tags=[t for t in row["tags"] if t is not None],
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        )
+        return self._row_to_skill(row)
 
     def update_skill(
         self,
@@ -116,6 +122,10 @@ class SkillGraph:
         *,
         description: Optional[str] = None,
         content: Optional[str] = None,
+        license: Optional[str] = None,
+        compatibility: Optional[str] = None,
+        metadata: Optional[Dict[str, str]] = None,
+        allowed_tools: Optional[List[str]] = None,
         tags: Optional[List[str]] = None,
     ) -> Optional[Skill]:
         """Update an existing skill. Only provided fields are changed."""
@@ -131,6 +141,18 @@ class SkillGraph:
         if content is not None:
             sets.append("s.content = $content")
             params["content"] = content
+        if license is not None:
+            sets.append("s.license = $license")
+            params["license"] = license
+        if compatibility is not None:
+            sets.append("s.compatibility = $compatibility")
+            params["compatibility"] = compatibility
+        if metadata is not None:
+            sets.append("s.metadata = $metadata")
+            params["metadata"] = json.dumps(metadata)
+        if allowed_tools is not None:
+            sets.append("s.allowed_tools = $allowed_tools")
+            params["allowed_tools"] = json.dumps(allowed_tools)
 
         sets.append("s.updated_at = $updated_at")
 
@@ -183,6 +205,10 @@ class SkillGraph:
             RETURN s.name AS name,
                    s.description AS description,
                    s.content AS content,
+                   s.license AS license,
+                   s.compatibility AS compatibility,
+                   s.metadata AS metadata,
+                   s.allowed_tools AS allowed_tools,
                    s.created_at AS created_at,
                    s.updated_at AS updated_at,
                    collect(t.name) AS tags
@@ -201,6 +227,10 @@ class SkillGraph:
             RETURN s.name AS name,
                    s.description AS description,
                    s.content AS content,
+                   s.license AS license,
+                   s.compatibility AS compatibility,
+                   s.metadata AS metadata,
+                   s.allowed_tools AS allowed_tools,
                    s.created_at AS created_at,
                    s.updated_at AS updated_at,
                    collect(t.name) AS tags
@@ -220,6 +250,10 @@ class SkillGraph:
             RETURN s.name AS name,
                    s.description AS description,
                    s.content AS content,
+                   s.license AS license,
+                   s.compatibility AS compatibility,
+                   s.metadata AS metadata,
+                   s.allowed_tools AS allowed_tools,
                    s.created_at AS created_at,
                    s.updated_at AS updated_at,
                    collect(t.name) AS tags
@@ -262,6 +296,10 @@ class SkillGraph:
             RETURN s.name AS name,
                    s.description AS description,
                    s.content AS content,
+                   s.license AS license,
+                   s.compatibility AS compatibility,
+                   s.metadata AS metadata,
+                   s.allowed_tools AS allowed_tools,
                    s.created_at AS created_at,
                    s.updated_at AS updated_at,
                    collect(t.name) AS tags
@@ -280,6 +318,10 @@ class SkillGraph:
             RETURN s.name AS name,
                    s.description AS description,
                    s.content AS content,
+                   s.license AS license,
+                   s.compatibility AS compatibility,
+                   s.metadata AS metadata,
+                   s.allowed_tools AS allowed_tools,
                    s.created_at AS created_at,
                    s.updated_at AS updated_at,
                    collect(t.name) AS tags
@@ -295,10 +337,20 @@ class SkillGraph:
 
     @staticmethod
     def _row_to_skill(row: dict) -> Skill:
+        metadata_raw = row.get("metadata")
+        metadata = json.loads(metadata_raw) if metadata_raw else {}
+
+        tools_raw = row.get("allowed_tools")
+        allowed_tools = json.loads(tools_raw) if tools_raw else []
+
         return Skill(
             name=row["name"],
             description=row["description"],
             content=row["content"],
+            license=row.get("license"),
+            compatibility=row.get("compatibility"),
+            metadata=metadata,
+            allowed_tools=allowed_tools,
             tags=[t for t in row["tags"] if t is not None],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
