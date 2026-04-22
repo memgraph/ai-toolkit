@@ -49,4 +49,5 @@ members = [
     "integrations/lightrag-memgraph",
     "agents/sql2graph/",
     "unstructured2graph",
+    "context-graph/skill-graph",
 ]
