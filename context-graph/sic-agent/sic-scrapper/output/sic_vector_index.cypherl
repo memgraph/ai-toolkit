@@ -1,1 +1,0 @@
-CREATE VECTOR INDEX sic_industry_group_embedding ON :IndustryGroup(embedding) WITH CONFIG {"dimension": 384, "capacity": 1000};
