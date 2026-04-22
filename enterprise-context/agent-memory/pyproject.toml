@@ -1,0 +1,39 @@
+[project]
+name = "agent-memory-tests"
+version = "0.1.0"
+description = "Integration tests for memory frameworks with Memgraph"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+
+dependencies = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "neo4j>=5.20.0",
+]
+
+[project.optional-dependencies]
+cognee = [
+    "cognee-community-graph-adapter-memgraph>=0.1.0",
+]
+neo4j-agent-memory = [
+    "neo4j-agent-memory>=0.1.0",
+]
+all = [
+    "agent-memory-tests[cognee,neo4j-agent-memory]",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tests"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "cognee: tests for the cognee integration with Memgraph",
+    "neo4j_agent_memory: tests for the neo4j-agent-memory integration with Memgraph",
+]
