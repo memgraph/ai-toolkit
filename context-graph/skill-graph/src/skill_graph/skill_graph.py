@@ -212,7 +212,7 @@ class SkillGraph:
                    s.created_at AS created_at,
                    s.updated_at AS updated_at,
                    collect(t.name) AS tags
-            ORDER BY s.name
+            ORDER BY name
             """
         )
         return [self._row_to_skill(r) for r in rows]
@@ -221,8 +221,10 @@ class SkillGraph:
         """Find skills that have *all* of the given tags."""
         rows = self._db.query(
             """
-            MATCH (s:Skill)
-            WHERE ALL(tag IN $tags WHERE (s)-[:HAS_TAG]->(:Tag {name: tag}))
+            MATCH (s:Skill)-[:HAS_TAG]->(mt:Tag)
+            WHERE mt.name IN $tags
+            WITH s, count(DISTINCT mt) AS matched
+            WHERE matched = size($tags)
             OPTIONAL MATCH (s)-[:HAS_TAG]->(t:Tag)
             RETURN s.name AS name,
                    s.description AS description,
@@ -234,7 +236,7 @@ class SkillGraph:
                    s.created_at AS created_at,
                    s.updated_at AS updated_at,
                    collect(t.name) AS tags
-            ORDER BY s.name
+            ORDER BY name
             """,
             params={"tags": tags},
         )
@@ -257,7 +259,7 @@ class SkillGraph:
                    s.created_at AS created_at,
                    s.updated_at AS updated_at,
                    collect(t.name) AS tags
-            ORDER BY s.name
+            ORDER BY name
             """,
             params={"pattern": pattern},
         )
@@ -303,7 +305,7 @@ class SkillGraph:
                    s.created_at AS created_at,
                    s.updated_at AS updated_at,
                    collect(t.name) AS tags
-            ORDER BY s.name
+            ORDER BY name
             """,
             params={"skill_name": skill_name},
         )
@@ -325,7 +327,7 @@ class SkillGraph:
                    s.created_at AS created_at,
                    s.updated_at AS updated_at,
                    collect(t.name) AS tags
-            ORDER BY s.name
+            ORDER BY name
             """,
             params={"skill_name": skill_name},
         )

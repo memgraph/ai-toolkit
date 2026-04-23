@@ -222,7 +222,7 @@ def test_search_by_tags(sg, mock_memgraph):
     mock_memgraph.query.return_value = []
     result = sg.search_by_tags(["python"])
     assert result == []
-    assert "ALL(tag IN" in mock_memgraph.query.call_args.args[0]
+    assert "HAS_TAG" in mock_memgraph.query.call_args.args[0]
 
 
 def test_search_by_name(sg, mock_memgraph):
