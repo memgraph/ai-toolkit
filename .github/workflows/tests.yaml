@@ -10,6 +10,7 @@ on:
       - "integrations/langchain-memgraph/**"
       - "integrations/lightrag-memgraph/**"
       - "unstructured2graph/**"
+      - "context-graph/skill-graph/**"
   pull_request:
     paths:
       - "memgraph-toolbox/**"
@@ -17,6 +18,7 @@ on:
       - "integrations/langchain-memgraph/**"
       - "integrations/lightrag-memgraph/**"
       - "unstructured2graph/**"
+      - "context-graph/skill-graph/**"
 
 jobs:
   changes:
@@ -27,6 +29,7 @@ jobs:
       langchain-memgraph: ${{ steps.filter.outputs.langchain-memgraph }}
       lightrag-memgraph: ${{ steps.filter.outputs.lightrag-memgraph }}
       unstructured2graph: ${{ steps.filter.outputs.unstructured2graph }}
+      skill-graph: ${{ steps.filter.outputs.skill-graph }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -49,6 +52,9 @@ jobs:
               - 'memgraph-toolbox/**'
             unstructured2graph:
               - 'unstructured2graph/**'
+              - 'memgraph-toolbox/**'
+            skill-graph:
+              - 'context-graph/skill-graph/**'
               - 'memgraph-toolbox/**'
 
   test-memgraph-toolbox:
@@ -187,3 +193,28 @@ jobs:
           uv venv
           uv pip install -e .[test]
           .venv/bin/python -m pytest .
+
+  test-skill-graph:
+    needs: changes
+    if: ${{ needs.changes.outputs.skill-graph == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11.0
+
+      - name: Start Memgraph container
+        run: |
+          docker run -d -p 7687:7687 --name memgraph memgraph/memgraph-mage:latest --schema-info-enabled=True --telemetry-enabled=false
+          sleep 5
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Run tests
+        working-directory: context-graph/skill-graph
+        run: uv run --package skill-graph --extra test pytest tests/ -v
