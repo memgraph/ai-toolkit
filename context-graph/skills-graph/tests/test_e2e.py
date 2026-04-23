@@ -5,7 +5,7 @@ Override with MEMGRAPH_URL, MEMGRAPH_USER, MEMGRAPH_PASSWORD env vars.
 """
 
 import pytest
-from skill_graph import SkillGraph, Skill
+from skills_graph import SkillGraph, Skill
 
 
 @pytest.fixture()

@@ -59,7 +59,7 @@ members = [
     "mcp-memgraph",
     "memgraph-ai",
     "memgraph-toolbox",
-    "skill-graph",
+    "skills-graph",
     "structured2graph",
     "unstructured2graph",
 ]
@@ -8233,9 +8233,9 @@ wheels = [
 ]
 
 [[package]]
-name = "skill-graph"
+name = "skills-graph"
 version = "0.1.0"
-source = { editable = "context-graph/skill-graph" }
+source = { editable = "context-graph/skills-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
 ]

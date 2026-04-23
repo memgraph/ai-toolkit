@@ -1,5 +1,5 @@
 import pytest
-from skill_graph.models import Skill, SkillValidationError
+from skills_graph.models import Skill, SkillValidationError
 
 
 # ------------------------------------------------------------------

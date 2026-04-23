@@ -10,7 +10,7 @@ on:
       - "integrations/langchain-memgraph/**"
       - "integrations/lightrag-memgraph/**"
       - "unstructured2graph/**"
-      - "context-graph/skill-graph/**"
+      - "context-graph/skills-graph/**"
   pull_request:
     paths:
       - "memgraph-toolbox/**"
@@ -18,7 +18,7 @@ on:
       - "integrations/langchain-memgraph/**"
       - "integrations/lightrag-memgraph/**"
       - "unstructured2graph/**"
-      - "context-graph/skill-graph/**"
+      - "context-graph/skills-graph/**"
 
 jobs:
   changes:
@@ -29,7 +29,7 @@ jobs:
       langchain-memgraph: ${{ steps.filter.outputs.langchain-memgraph }}
       lightrag-memgraph: ${{ steps.filter.outputs.lightrag-memgraph }}
       unstructured2graph: ${{ steps.filter.outputs.unstructured2graph }}
-      skill-graph: ${{ steps.filter.outputs.skill-graph }}
+      skills-graph: ${{ steps.filter.outputs.skills-graph }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -53,8 +53,8 @@ jobs:
             unstructured2graph:
               - 'unstructured2graph/**'
               - 'memgraph-toolbox/**'
-            skill-graph:
-              - 'context-graph/skill-graph/**'
+            skills-graph:
+              - 'context-graph/skills-graph/**'
               - 'memgraph-toolbox/**'
 
   test-memgraph-toolbox:
@@ -194,9 +194,9 @@ jobs:
           uv pip install -e .[test]
           .venv/bin/python -m pytest .
 
-  test-skill-graph:
+  test-skills-graph:
     needs: changes
-    if: ${{ needs.changes.outputs.skill-graph == 'true' }}
+    if: ${{ needs.changes.outputs.skills-graph == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -216,5 +216,5 @@ jobs:
         run: python -m pip install uv
 
       - name: Run tests
-        working-directory: context-graph/skill-graph
-        run: uv run --package skill-graph --extra test pytest tests/ -v
+        working-directory: context-graph/skills-graph
+        run: uv run --package skills-graph --extra test pytest tests/ -v

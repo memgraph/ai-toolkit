@@ -1,4 +1,4 @@
-# skill-graph
+# skills-graph
 
 A small library to persist, retrieve and evolve AI skills in [Memgraph](https://memgraph.com).
 
