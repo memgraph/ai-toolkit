@@ -1,6 +1,6 @@
 # skill-graph
 
-A small library to persist and retrieve AI skill files from [Memgraph](https://memgraph.com).
+A small library to persist, retrieve and evolve AI skills in [Memgraph](https://memgraph.com).
 
 ## Graph Model
 

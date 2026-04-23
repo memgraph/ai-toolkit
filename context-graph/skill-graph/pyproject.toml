@@ -1,7 +1,7 @@
 [project]
 name = "skill-graph"
 version = "0.1.0"
-description = "Persist and retrieve AI skill files from Memgraph"
+description = "Persist, retrieve and evolve AI skills in Memgraph"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"

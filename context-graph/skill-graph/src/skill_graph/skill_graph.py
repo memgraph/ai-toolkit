@@ -8,7 +8,7 @@ from .models import Skill
 
 
 class SkillGraph:
-    """Persist and retrieve AI skill files from Memgraph.
+    """Persist, retrieve and evolve AI skills in Memgraph.
 
     Stores skills as (:Skill) nodes with optional (:Tag) relationships
     and (:Skill)-[:DEPENDS_ON]->(:Skill) dependency edges.
