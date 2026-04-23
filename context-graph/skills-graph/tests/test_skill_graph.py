@@ -1,7 +1,7 @@
 import json
 import pytest
 from unittest.mock import MagicMock
-from skill_graph import SkillGraph, Skill
+from skills_graph import SkillGraph, Skill
 
 
 @pytest.fixture

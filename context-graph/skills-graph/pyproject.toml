@@ -1,5 +1,5 @@
 [project]
-name = "skill-graph"
+name = "skills-graph"
 version = "0.1.0"
 description = "Persist, retrieve and evolve AI skills in Memgraph"
 readme = "README.md"
