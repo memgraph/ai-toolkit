@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any
 
 from ..api.memgraph import Memgraph
 from ..api.tool import BaseTool
@@ -40,7 +40,7 @@ class NodeNeighborhoodTool(BaseTool):
         )
         self.db = db
 
-    def call(self, arguments: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def call(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
         """Execute the neighborhood search and return the results."""
         node_id = arguments["node_id"]
         max_distance = arguments.get("max_distance", 1)
@@ -56,4 +56,4 @@ class NodeNeighborhoodTool(BaseTool):
                 processed_results.append(properties)
             return processed_results
         except Exception as e:
-            return [{"error": f"Failed to find neighborhood: {str(e)}"}]
+            return [{"error": f"Failed to find neighborhood: {e!s}"}]

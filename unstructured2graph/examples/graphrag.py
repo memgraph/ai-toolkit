@@ -3,12 +3,12 @@ import asyncio
 import logging
 import os
 
-from memgraph_toolbox.api.memgraph import Memgraph
+import prompt_templates
+from loading import from_unstructured_with_prep
 from openai import OpenAI
 
+from memgraph_toolbox.api.memgraph import Memgraph
 from unstructured2graph import compute_embeddings, create_vector_search_index
-from loading import from_unstructured_with_prep
-import prompt_templates
 
 
 async def full_graphrag(args):
@@ -44,9 +44,7 @@ async def full_graphrag(args):
         system_message = prompt_templates.system_message
         user_message = prompt_templates.user_message(context, prompt)
         if not os.environ.get("OPENAI_API_KEY"):
-            raise ValueError(
-                "OPENAI_API_KEY environment variable is not set. Please set your OpenAI API key."
-            )
+            raise ValueError("OPENAI_API_KEY environment variable is not set. Please set your OpenAI API key.")
         client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
         completion = client.chat.completions.create(
             model="gpt-4o",
@@ -63,9 +61,7 @@ async def full_graphrag(args):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    parser = argparse.ArgumentParser(
-        description="GraphRAG: Retrieve and answer questions using graph-based RAG"
-    )
+    parser = argparse.ArgumentParser(description="GraphRAG: Retrieve and answer questions using graph-based RAG")
     parser.add_argument(
         "--ingestion",
         action="store_true",

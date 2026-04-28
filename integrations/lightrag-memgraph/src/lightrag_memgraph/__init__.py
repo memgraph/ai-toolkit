@@ -11,26 +11,26 @@ from .core import MemgraphLightRAGWrapper
 # - require max_tokens; use top-level system= (not "system" role in messages).
 def _patch_anthropic() -> None:
     try:
-        from importlib.metadata import version as get_version
-        import os
         import logging
-        from typing import Any, Union
+        import os
         from collections.abc import AsyncIterator
+        from importlib.metadata import version as get_version
+        from typing import Any
 
         import lightrag.llm.anthropic as _mod
         from anthropic import (
-            AsyncAnthropic,
             APIConnectionError,
-            RateLimitError,
             APITimeoutError,
+            AsyncAnthropic,
+            RateLimitError,
         )
+        from lightrag.utils import VERBOSE_DEBUG, logger, safe_unicode_decode
         from tenacity import (
             retry,
+            retry_if_exception_type,
             stop_after_attempt,
             wait_exponential,
-            retry_if_exception_type,
         )
-        from lightrag.utils import safe_unicode_decode, logger, VERBOSE_DEBUG
 
         try:
             lightrag_version = get_version("lightrag-hku")
@@ -44,9 +44,7 @@ def _patch_anthropic() -> None:
         @retry(
             stop=stop_after_attempt(3),
             wait=wait_exponential(multiplier=1, min=4, max=10),
-            retry=retry_if_exception_type(
-                (RateLimitError, APIConnectionError, APITimeoutError)
-            ),
+            retry=retry_if_exception_type((RateLimitError, APIConnectionError, APITimeoutError)),
         )
         async def _wrapped(
             model: str,
@@ -57,7 +55,7 @@ def _patch_anthropic() -> None:
             base_url: str | None = None,
             api_key: str | None = None,
             **kwargs: Any,
-        ) -> Union[str, AsyncIterator[str]]:
+        ) -> str | AsyncIterator[str]:
             if history_messages is None:
                 history_messages = []
             kwargs.setdefault("max_tokens", 4096)
@@ -73,9 +71,7 @@ def _patch_anthropic() -> None:
             timeout = kwargs.pop("timeout", None)
 
             client = (
-                AsyncAnthropic(
-                    default_headers=default_headers, api_key=api_key, timeout=timeout
-                )
+                AsyncAnthropic(default_headers=default_headers, api_key=api_key, timeout=timeout)
                 if base_url is None
                 else AsyncAnthropic(
                     base_url=base_url,
@@ -107,11 +103,7 @@ def _patch_anthropic() -> None:
             # Only content_block_delta events have delta.text; message_delta etc. have no .text
             parts: list[str] = []
             async for event in response:
-                content = (
-                    getattr(getattr(event, "delta", None), "text", None)
-                    if hasattr(event, "delta")
-                    else None
-                )
+                content = getattr(getattr(event, "delta", None), "text", None) if hasattr(event, "delta") else None
                 if not content:
                     continue
                 if r"\u" in content:

@@ -108,19 +108,13 @@ def parse_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         choices=PROVIDER_CHOICES,
         default=env_provider,
         type=str.lower,
-        help=(
-            "LLM provider (openai|anthropic|gemini). "
-            "Overrides LLM_PROVIDER. Auto-detects if not specified."
-        ),
+        help=("LLM provider (openai|anthropic|gemini). Overrides LLM_PROVIDER. Auto-detects if not specified."),
     )
 
     parser.add_argument(
         "--model",
         default=env_model,
-        help=(
-            "LLM model name. Overrides LLM_MODEL. "
-            "Uses provider default if not specified."
-        ),
+        help=("LLM model name. Overrides LLM_MODEL. Uses provider default if not specified."),
     )
 
     parser.add_argument(
@@ -260,9 +254,7 @@ def get_graph_modeling_strategy() -> GraphModelingStrategy:
 
     while True:
         try:
-            choice = input(
-                "Select strategy (1-2) or press Enter for deterministic: "
-            ).strip()
+            choice = input("Select strategy (1-2) or press Enter for deterministic: ").strip()
             if not choice:
                 return GraphModelingStrategy.DETERMINISTIC  # Default
 
@@ -388,36 +380,22 @@ def print_migration_results(result: Dict[str, Any]) -> None:
         metrics = validation_report.get("metrics")
         if metrics:
             print(f"  📁 Tables: {metrics.tables_covered}/{metrics.tables_total}")
-            print(
-                f"  🏷️  Properties: {metrics.properties_covered}/{metrics.properties_total}"
-            )
-            print(
-                f"  🔗 Relationships: {metrics.relationships_covered}/{metrics.relationships_total}"
-            )
+            print(f"  🏷️  Properties: {metrics.properties_covered}/{metrics.properties_total}")
+            print(f"  🔗 Relationships: {metrics.relationships_covered}/{metrics.relationships_total}")
             print(f"  📇 Indexes: {metrics.indexes_covered}/{metrics.indexes_total}")
-            print(
-                f"  🔒 Constraints: {metrics.constraints_covered}/{metrics.constraints_total}"
-            )
+            print(f"  🔒 Constraints: {metrics.constraints_covered}/{metrics.constraints_total}")
 
         # Show validation issues summary
         issues = validation_report.get("issues", [])
         if issues:
-            critical_count = sum(
-                1 for issue in issues if issue.get("severity") == "CRITICAL"
-            )
-            warning_count = sum(
-                1 for issue in issues if issue.get("severity") == "WARNING"
-            )
+            critical_count = sum(1 for issue in issues if issue.get("severity") == "CRITICAL")
+            warning_count = sum(1 for issue in issues if issue.get("severity") == "WARNING")
             info_count = sum(1 for issue in issues if issue.get("severity") == "INFO")
 
-            print(
-                f"  🚨 Issues: {critical_count} critical, {warning_count} warnings, {info_count} info"
-            )
+            print(f"  🚨 Issues: {critical_count} critical, {warning_count} warnings, {info_count} info")
 
             # Show top critical issues
-            critical_issues = [
-                issue for issue in issues if issue.get("severity") == "CRITICAL"
-            ]
+            critical_issues = [issue for issue in issues if issue.get("severity") == "CRITICAL"]
             if critical_issues:
                 print("  📋 Top Critical Issues:")
                 for issue in critical_issues[:3]:
@@ -619,9 +597,7 @@ _editor_override: Optional[str] = None
 
 def _resolve_editor() -> str:
     """Return the editor command: --editor flag > $EDITOR > $VISUAL > vi."""
-    return (
-        _editor_override or os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vi"
-    )
+    return _editor_override or os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vi"
 
 
 def _open_in_editor(file_path: str) -> bool:
@@ -773,9 +749,7 @@ def edit_mapping_interactive(
         )
 
     # Snapshot the original state so the LLM can revert on request
-    original_context = (
-        modeler._get_model_context_for_llm(graph_model) if modeler else None
-    )
+    original_context = modeler._get_model_context_for_llm(graph_model) if modeler else None
 
     def _print_editor_banner():
         editor = _resolve_editor()
@@ -824,9 +798,7 @@ def edit_mapping_interactive(
 
             # Natural language — requires LLM
             if not modeler:
-                print(
-                    "LLM is required for natural language editing. Type /edit to open in an editor."
-                )
+                print("LLM is required for natural language editing. Type /edit to open in an editor.")
                 continue
 
             print("Processing...")
@@ -835,9 +807,7 @@ def edit_mapping_interactive(
             )
 
             if operations and operations.operations:
-                graph_model = modeler._apply_operations_to_model(
-                    graph_model, operations
-                )
+                graph_model = modeler._apply_operations_to_model(graph_model, operations)
                 mapping = graph_model_to_mapping(graph_model)
                 print(f"Applied: {operations.reasoning}")
                 print_mapping_summary(mapping)
@@ -887,10 +857,7 @@ def _generate_fresh_mapping(
         hygm_data,
         domain_context="Database migration to graph database",
     )
-    print(
-        f"  {len(graph_model.nodes)} node types, "
-        f"{len(graph_model.edges)} relationship types"
-    )
+    print(f"  {len(graph_model.nodes)} node types, {len(graph_model.edges)} relationship types")
 
     return graph_model_to_mapping(graph_model)
 
@@ -945,10 +912,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     # Validate provider early (--provider is constrained by argparse, but
     # LLM_PROVIDER env var is not).
     if args.provider and args.provider not in PROVIDER_CHOICES:
-        print(
-            f"❌ Unknown LLM provider: '{args.provider}'. "
-            f"Supported providers: {', '.join(PROVIDER_CHOICES)}"
-        )
+        print(f"❌ Unknown LLM provider: '{args.provider}'. Supported providers: {', '.join(PROVIDER_CHOICES)}")
         sys.exit(1)
 
     _configure_log_level(args.log_level)
@@ -994,17 +958,13 @@ def main(argv: Optional[list[str]] = None) -> None:
                 print(f"🔌 Connecting to {db_type} database {db_name}@{db_host}...")
                 source_ok, source_err = probe_source_connection(source_db_config)
                 if not source_ok:
-                    raise DatabaseConnectionError(
-                        f"Source database connection failed: {source_err}"
-                    )
+                    raise DatabaseConnectionError(f"Source database connection failed: {source_err}")
                 print(f"✅ Connected to {db_type} — ready for modeling")
                 print()
 
                 # Get user preferences
                 graph_mode = _resolve_mode(args.mode) or get_graph_modeling_mode()
-                graph_strategy = (
-                    _resolve_strategy(args.strategy) or get_graph_modeling_strategy()
-                )
+                graph_strategy = _resolve_strategy(args.strategy) or get_graph_modeling_strategy()
 
                 meta_graph_policy = (args.meta_graph or "auto").lower()
                 if meta_graph_policy not in META_GRAPH_POLICIES:
@@ -1034,9 +994,7 @@ def main(argv: Optional[list[str]] = None) -> None:
 
             # Get user preferences
             graph_mode = _resolve_mode(args.mode) or get_graph_modeling_mode()
-            graph_strategy = (
-                _resolve_strategy(args.strategy) or get_graph_modeling_strategy()
-            )
+            graph_strategy = _resolve_strategy(args.strategy) or get_graph_modeling_strategy()
 
             meta_graph_policy = (args.meta_graph or "auto").lower()
             if meta_graph_policy not in META_GRAPH_POLICIES:

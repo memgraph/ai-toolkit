@@ -1,26 +1,25 @@
+import re
+from typing import Any
+
 from fastmcp import FastMCP
 
+from mcp_memgraph.config import get_mcp_config, get_memgraph_config
 from memgraph_toolbox.api.memgraph import Memgraph
-from memgraph_toolbox.tools.cypher import CypherTool
-from memgraph_toolbox.tools.config import ShowConfigTool
-from memgraph_toolbox.tools.index import ShowIndexInfoTool
-from memgraph_toolbox.tools.constraint import ShowConstraintInfoTool
-from memgraph_toolbox.tools.schema import ShowSchemaInfoTool
-from memgraph_toolbox.tools.storage import ShowStorageInfoTool
-from memgraph_toolbox.tools.trigger import ShowTriggersTool
-from memgraph_toolbox.tools.procedures import ShowProceduresTool
 from memgraph_toolbox.tools.betweenness_centrality import (
     BetweennessCentralityTool,
 )
-from memgraph_toolbox.tools.page_rank import PageRankTool
+from memgraph_toolbox.tools.config import ShowConfigTool
+from memgraph_toolbox.tools.constraint import ShowConstraintInfoTool
+from memgraph_toolbox.tools.cypher import CypherTool
+from memgraph_toolbox.tools.index import ShowIndexInfoTool
 from memgraph_toolbox.tools.node_neighborhood import NodeNeighborhoodTool
 from memgraph_toolbox.tools.node_vector_search import NodeVectorSearchTool
+from memgraph_toolbox.tools.page_rank import PageRankTool
+from memgraph_toolbox.tools.procedures import ShowProceduresTool
+from memgraph_toolbox.tools.schema import ShowSchemaInfoTool
+from memgraph_toolbox.tools.storage import ShowStorageInfoTool
+from memgraph_toolbox.tools.trigger import ShowTriggersTool
 from memgraph_toolbox.utils.logger import logger_init
-
-from typing import Any, Dict, List
-import re
-
-from mcp_memgraph.config import get_memgraph_config, get_mcp_config
 
 # Get configuration instances
 memgraph_config = get_memgraph_config()
@@ -53,10 +52,7 @@ WRITE_PATTERNS = [
 def is_write_query(query: str) -> bool:
     """Check if a Cypher query contains write operations"""
     query_upper = query.upper()
-    for pattern in WRITE_PATTERNS:
-        if re.search(pattern, query_upper):
-            return True
-    return False
+    return any(re.search(pattern, query_upper) for pattern in WRITE_PATTERNS)
 
 
 # Initialize Memgraph client using configuration
@@ -72,7 +68,7 @@ db = Memgraph(**memgraph_config.get_client_config())
 
 
 @mcp.tool()
-def run_query(query: str) -> List[Dict[str, Any]]:
+def run_query(query: str) -> list[dict[str, Any]]:
     """Run a Cypher query on Memgraph. Write operations are blocked if
     server is in read-only mode."""
     logger.info("Running query: %s", query)
@@ -93,77 +89,77 @@ def run_query(query: str) -> List[Dict[str, Any]]:
         result = CypherTool(db=db).call({"query": query})
         return result
     except Exception as e:
-        return [{"error": f"Error running query: {str(e)}"}]
+        return [{"error": f"Error running query: {e!s}"}]
 
 
 @mcp.tool()
-def get_configuration() -> List[Dict[str, Any]]:
+def get_configuration() -> list[dict[str, Any]]:
     """Get Memgraph configuration information"""
     logger.info("Fetching Memgraph configuration...")
     try:
         config = ShowConfigTool(db=db).call({})
         return config
     except Exception as e:
-        return [{"error": f"Error fetching configuration: {str(e)}"}]
+        return [{"error": f"Error fetching configuration: {e!s}"}]
 
 
 @mcp.tool()
-def get_index() -> List[Dict[str, Any]]:
+def get_index() -> list[dict[str, Any]]:
     """Get Memgraph index information"""
     logger.info("Fetching Memgraph index...")
     try:
         index = ShowIndexInfoTool(db=db).call({})
         return index
     except Exception as e:
-        return [{"error": f"Error fetching index: {str(e)}"}]
+        return [{"error": f"Error fetching index: {e!s}"}]
 
 
 @mcp.tool()
-def get_constraint() -> List[Dict[str, Any]]:
+def get_constraint() -> list[dict[str, Any]]:
     """Get Memgraph constraint information"""
     logger.info("Fetching Memgraph constraint...")
     try:
         constraint = ShowConstraintInfoTool(db=db).call({})
         return constraint
     except Exception as e:
-        return [{"error": f"Error fetching constraint: {str(e)}"}]
+        return [{"error": f"Error fetching constraint: {e!s}"}]
 
 
 @mcp.tool()
-def get_schema() -> List[Dict[str, Any]]:
+def get_schema() -> list[dict[str, Any]]:
     """Get Memgraph schema information"""
     logger.info("Fetching Memgraph schema...")
     try:
         schema = ShowSchemaInfoTool(db=db).call({})
         return schema
     except Exception as e:
-        return [{"error": f"Error fetching schema: {str(e)}"}]
+        return [{"error": f"Error fetching schema: {e!s}"}]
 
 
 @mcp.tool()
-def get_storage() -> List[Dict[str, Any]]:
+def get_storage() -> list[dict[str, Any]]:
     """Get Memgraph storage information"""
     logger.info("Fetching Memgraph storage...")
     try:
         storage = ShowStorageInfoTool(db=db).call({})
         return storage
     except Exception as e:
-        return [{"error": f"Error fetching storage: {str(e)}"}]
+        return [{"error": f"Error fetching storage: {e!s}"}]
 
 
 @mcp.tool()
-def get_triggers() -> List[Dict[str, Any]]:
+def get_triggers() -> list[dict[str, Any]]:
     """Get Memgraph triggers information"""
     logger.info("Fetching Memgraph triggers...")
     try:
         triggers = ShowTriggersTool(db=db).call({})
         return triggers
     except Exception as e:
-        return [{"error": f"Error fetching triggers: {str(e)}"}]
+        return [{"error": f"Error fetching triggers: {e!s}"}]
 
 
 @mcp.tool()
-def get_procedures() -> List[Dict[str, Any]]:
+def get_procedures() -> list[dict[str, Any]]:
     """List all available Memgraph procedures (query modules).
 
     Returns information about all available procedures including MAGE algorithms
@@ -175,35 +171,33 @@ def get_procedures() -> List[Dict[str, Any]]:
         procedures = ShowProceduresTool(db=db).call({})
         return procedures
     except Exception as e:
-        return [{"error": f"Error fetching procedures: {str(e)}"}]
+        return [{"error": f"Error fetching procedures: {e!s}"}]
 
 
 @mcp.tool()
-def get_betweenness_centrality() -> List[Dict[str, Any]]:
+def get_betweenness_centrality() -> list[dict[str, Any]]:
     """Get betweenness centrality information"""
     logger.info("Fetching betweenness centrality...")
     try:
         betweenness = BetweennessCentralityTool(db=db).call({})
         return betweenness
     except Exception as e:
-        return [{"error": f"Error fetching betweenness centrality: {str(e)}"}]
+        return [{"error": f"Error fetching betweenness centrality: {e!s}"}]
 
 
 @mcp.tool()
-def get_page_rank() -> List[Dict[str, Any]]:
+def get_page_rank() -> list[dict[str, Any]]:
     """Get page rank information"""
     logger.info("Fetching page rank...")
     try:
         page_rank = PageRankTool(db=db).call({})
         return page_rank
     except Exception as e:
-        return [{"error": f"Error fetching page rank: {str(e)}"}]
+        return [{"error": f"Error fetching page rank: {e!s}"}]
 
 
 @mcp.tool()
-def get_node_neighborhood(
-    node_id: str, max_distance: int = 1, limit: int = 100
-) -> List[Dict[str, Any]]:
+def get_node_neighborhood(node_id: str, max_distance: int = 1, limit: int = 100) -> list[dict[str, Any]]:
     """Find nodes within a specified distance from a given node"""
     logger.info(
         "Finding neighborhood for node %s with max distance %s",
@@ -216,13 +210,11 @@ def get_node_neighborhood(
         )
         return neighborhood
     except Exception as e:
-        return [{"error": f"Error finding node neighborhood: {str(e)}"}]
+        return [{"error": f"Error finding node neighborhood: {e!s}"}]
 
 
 @mcp.tool()
-def search_node_vectors(
-    index_name: str, query_vector: List[float], limit: int = 10
-) -> List[Dict[str, Any]]:
+def search_node_vectors(index_name: str, query_vector: list[float], limit: int = 10) -> list[dict[str, Any]]:
     """Perform vector similarity search on nodes in Memgraph"""
     logger.info("Performing vector search on index %s with limit %s", index_name, limit)
     try:
@@ -235,4 +227,4 @@ def search_node_vectors(
         )
         return vector_search
     except Exception as e:
-        return [{"error": f"Error performing vector search: {str(e)}"}]
+        return [{"error": f"Error performing vector search: {e!s}"}]

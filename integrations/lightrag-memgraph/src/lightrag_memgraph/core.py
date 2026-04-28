@@ -1,13 +1,11 @@
-import os
-from typing import Optional
 import logging
+import os
 
+import numpy as np
 from lightrag import LightRAG
 from lightrag.kg.shared_storage import initialize_pipeline_status
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
 from lightrag.utils import EmbeddingFunc, setup_logger
-import numpy as np
-
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # Read from MEMGRAPH_URL (consistent with memgraph-toolbox) and set MEMGRAPH_URI for LightRAG
@@ -32,7 +30,7 @@ class MemgraphLightRAGWrapper:
     ):
         self.log_level = log_level
         self.disable_embeddings = disable_embeddings
-        self.rag: Optional[LightRAG] = None
+        self.rag: LightRAG | None = None
 
     # https://github.com/HKUDS/LightRAG/blob/main/lightrag/lightrag.py
     # https://github.com/HKUDS/LightRAG/blob/main/lightrag/llm
@@ -57,9 +55,7 @@ class MemgraphLightRAGWrapper:
         ):
             openai_api_key = os.environ.get("OPENAI_API_KEY")
             if not openai_api_key:
-                raise EnvironmentError(
-                    "OPENAI_API_KEY environment variable is not set. Please set your OpenAI API key."
-                )
+                raise OSError("OPENAI_API_KEY environment variable is not set. Please set your OpenAI API key.")
         self.rag = LightRAG(graph_storage="MemgraphStorage", **lightrag_kwargs)
         await self.rag.initialize_storages()
         await initialize_pipeline_status()

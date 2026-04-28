@@ -6,7 +6,8 @@ operations.
 """
 
 from enum import Enum
-from typing import List, Literal, TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
@@ -32,17 +33,11 @@ class LLMGraphNode(BaseModel):
     """Node definition for LLM-generated graph models."""
 
     name: str = Field(description="Unique identifier for the node")
-    labels: List[str] = Field(
-        description="Cypher labels for the node (e.g., ['User'], ['Product'])"
-    )
-    properties: List[str] = Field(
-        description="List of properties to include from source table"
-    )
+    labels: list[str] = Field(description="Cypher labels for the node (e.g., ['User'], ['Product'])")
+    properties: list[str] = Field(description="List of properties to include from source table")
     primary_key: str = Field(description="Primary key property name")
-    indexes: List[str] = Field(description="Properties that should have indexes")
-    constraints: List[str] = Field(
-        description="Properties that should have uniqueness constraints"
-    )
+    indexes: list[str] = Field(description="Properties that should have indexes")
+    constraints: list[str] = Field(description="Properties that should have uniqueness constraints")
     source_table: str = Field(description="Source SQL table name")
 
     model_config = ConfigDict(extra="forbid")
@@ -52,17 +47,11 @@ class LLMGraphRelationship(BaseModel):
     """Relationship definition for LLM-generated graph models."""
 
     name: str = Field(description="Relationship type name (e.g., 'OWNS', 'BELONGS_TO')")
-    type: Literal["one_to_many", "many_to_many", "one_to_one"] = Field(
-        description="Cardinality of the relationship"
-    )
+    type: Literal["one_to_many", "many_to_many", "one_to_one"] = Field(description="Cardinality of the relationship")
     from_node: str = Field(description="Source node name")
     to_node: str = Field(description="Target node name")
-    properties: List[str] = Field(
-        description="Properties to include on the relationship (if any)", default=[]
-    )
-    directionality: Literal["directed", "undirected"] = Field(
-        description="Whether the relationship has direction"
-    )
+    properties: list[str] = Field(description="Properties to include on the relationship (if any)", default=[])
+    directionality: Literal["directed", "undirected"] = Field(description="Whether the relationship has direction")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -70,29 +59,27 @@ class LLMGraphRelationship(BaseModel):
 class LLMGraphModel(BaseModel):
     """Complete graph model structure for LLM generation."""
 
-    nodes: List[LLMGraphNode] = Field(description="All nodes in the graph model")
-    relationships: List[LLMGraphRelationship] = Field(
-        description="All relationships in the graph model"
-    )
+    nodes: list[LLMGraphNode] = Field(description="All nodes in the graph model")
+    relationships: list[LLMGraphRelationship] = Field(description="All relationships in the graph model")
 
     model_config = ConfigDict(extra="forbid")
 
     def to_graph_model(self) -> "GraphModel":
         """Convert LLMGraphModel to GraphModel for schema export."""
         from .graph_models import (
+            GraphConstraint,
+            GraphIndex,
             GraphModel,
             GraphNode,
-            GraphRelationship,
             GraphProperty,
-            GraphIndex,
-            GraphConstraint,
+            GraphRelationship,
         )
         from .sources import (
-            NodeSource,
-            RelationshipSource,
-            PropertySource,
-            IndexSource,
             ConstraintSource,
+            IndexSource,
+            NodeSource,
+            PropertySource,
+            RelationshipSource,
         )
 
         # Convert nodes

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any
 
 from ..api.memgraph import Memgraph
 from ..api.tool import BaseTool
@@ -28,7 +28,7 @@ class PageRankTool(BaseTool):
         self.db = db
 
     # TODO:(@antejavor) This will fail if user is not running Memgraph Mage since memgraph does not have this built in.
-    def call(self, arguments: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def call(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
         """Execute the PageRank algorithm and return the results."""
         limit = arguments.get("limit", 20)
 

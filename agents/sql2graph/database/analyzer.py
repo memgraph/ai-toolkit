@@ -6,13 +6,14 @@ must implement to ensure compatibility with the migration system.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Any, Optional
+from typing import Any
+
 from .models import (
-    DatabaseStructure,
-    TableInfo,
     ColumnInfo,
+    DatabaseStructure,
     ForeignKeyInfo,
     RelationshipInfo,
+    TableInfo,
     TableType,
 )
 
@@ -25,7 +26,7 @@ class DatabaseAnalyzer(ABC):
     compatibility with HyGM and the migration system.
     """
 
-    def __init__(self, connection_config: Dict[str, Any]):
+    def __init__(self, connection_config: dict[str, Any]):
         """
         Initialize the database analyzer.
 
@@ -57,7 +58,7 @@ class DatabaseAnalyzer(ABC):
         pass
 
     @abstractmethod
-    def get_tables(self) -> List[str]:
+    def get_tables(self) -> list[str]:
         """
         Get list of all tables in the database.
 
@@ -67,7 +68,7 @@ class DatabaseAnalyzer(ABC):
         pass
 
     @abstractmethod
-    def get_table_schema(self, table_name: str) -> List[ColumnInfo]:
+    def get_table_schema(self, table_name: str) -> list[ColumnInfo]:
         """
         Get schema information for a specific table.
 
@@ -80,7 +81,7 @@ class DatabaseAnalyzer(ABC):
         pass
 
     @abstractmethod
-    def get_foreign_keys(self, table_name: str) -> List[ForeignKeyInfo]:
+    def get_foreign_keys(self, table_name: str) -> list[ForeignKeyInfo]:
         """
         Get foreign key relationships for a table.
 
@@ -93,9 +94,7 @@ class DatabaseAnalyzer(ABC):
         pass
 
     @abstractmethod
-    def get_table_data(
-        self, table_name: str, limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+    def get_table_data(self, table_name: str, limit: int | None = None) -> list[dict[str, Any]]:
         """
         Get data from a specific table.
 
@@ -135,7 +134,7 @@ class DatabaseAnalyzer(ABC):
         pass
 
     @abstractmethod
-    def get_indexes(self, table_name: str) -> List[Dict[str, Any]]:
+    def get_indexes(self, table_name: str) -> list[dict[str, Any]]:
         """
         Get indexes for a specific table.
 
@@ -156,7 +155,7 @@ class DatabaseAnalyzer(ABC):
         """
         return self.connection is not None
 
-    def get_connection_info(self) -> Dict[str, Any]:
+    def get_connection_info(self) -> dict[str, Any]:
         """
         Get connection information (excluding sensitive data like passwords).
 
@@ -172,7 +171,7 @@ class DatabaseAnalyzer(ABC):
             "connected": self.is_connected(),
         }
 
-    def get_migration_config(self) -> Dict[str, str]:
+    def get_migration_config(self) -> dict[str, str]:
         """
         Get connection config formatted for migration tools.
 
@@ -243,9 +242,7 @@ class DatabaseAnalyzer(ABC):
         # Consider it a join table if:
         # - At least 2 FKs and FK ratio >= 0.5, OR
         # - All columns are FKs or auxiliary columns
-        return (len(table_info.foreign_keys) >= 2 and fk_ratio >= 0.5) or len(
-            non_fk_columns
-        ) == 0
+        return (len(table_info.foreign_keys) >= 2 and fk_ratio >= 0.5) or len(non_fk_columns) == 0
 
     def determine_table_type(self, table_info: TableInfo) -> TableType:
         """
@@ -358,10 +355,7 @@ class DatabaseAnalyzer(ABC):
                     }
 
                     for col in table_info.columns:
-                        if (
-                            col.name not in fk_columns
-                            and col.name.lower() not in metadata_columns
-                        ):
+                        if col.name not in fk_columns and col.name.lower() not in metadata_columns:
                             additional_properties.append(col.name)
 
                     relationships.append(

@@ -1,15 +1,13 @@
+import asyncio
 import os
+import shutil
 import time
 import traceback
 
-import asyncio
-from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
 from lightrag.llm.anthropic import anthropic_complete
-import shutil
 
 from lightrag_memgraph import MemgraphLightRAGWrapper
 from memgraph_toolbox.api.memgraph import Memgraph
-
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 WORKING_DIR = "./lightrag_storage.out"
@@ -85,7 +83,7 @@ async def main():
         end_time = time.perf_counter()
         total_time += end_time - start_time
         if len(DUMMY_TEXTS) > 0:
-            print(f"Average time per text: {total_time/len(DUMMY_TEXTS):.4f} seconds.")
+            print(f"Average time per text: {total_time / len(DUMMY_TEXTS):.4f} seconds.")
 
         rag = lightrag_wrapper.get_lightrag()
         print(await rag.get_graph_labels())

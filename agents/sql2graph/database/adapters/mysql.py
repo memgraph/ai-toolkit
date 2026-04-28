@@ -4,15 +4,15 @@ MySQL-specific database analyzer implementation.
 This module provides MySQL-specific implementation of the DatabaseAnalyzer interface.
 """
 
-import mysql.connector
-from typing import Dict, List, Any, Optional
 import logging
+from typing import Any
+
+import mysql.connector
+
 from ..analyzer import (
-    DatabaseAnalyzer,
     ColumnInfo,
+    DatabaseAnalyzer,
     ForeignKeyInfo,
-    TableInfo,
-    TableType,
 )
 
 logger = logging.getLogger(__name__)
@@ -21,9 +21,7 @@ logger = logging.getLogger(__name__)
 class MySQLAnalyzer(DatabaseAnalyzer):
     """MySQL-specific implementation of DatabaseAnalyzer."""
 
-    def __init__(
-        self, host: str, user: str, password: str, database: str, port: int = 3306
-    ):
+    def __init__(self, host: str, user: str, password: str, database: str, port: int = 3306):
         """
         Initialize MySQL analyzer.
 
@@ -63,7 +61,7 @@ class MySQLAnalyzer(DatabaseAnalyzer):
             self.connection.close()
             logger.info("MySQL connection closed")
 
-    def get_tables(self) -> List[str]:
+    def get_tables(self) -> list[str]:
         """Get list of all tables in the database."""
         if not self.connection:
             raise ConnectionError("Not connected to database")
@@ -74,7 +72,7 @@ class MySQLAnalyzer(DatabaseAnalyzer):
         cursor.close()
         return tables
 
-    def get_table_schema(self, table_name: str) -> List[ColumnInfo]:
+    def get_table_schema(self, table_name: str) -> list[ColumnInfo]:
         """Get schema information for a specific table."""
         if not self.connection:
             raise ConnectionError("Not connected to database")
@@ -116,10 +114,9 @@ class MySQLAnalyzer(DatabaseAnalyzer):
                     elif type_part in ("varchar", "char", "varbinary", "binary", "bit"):
                         # Types that have numeric length parameters
                         max_length = int(params_part)
-                    elif type_part in ("decimal", "numeric", "float", "double"):
+                    elif type_part in ("decimal", "numeric", "float", "double") and params_part.isdigit():
                         # Numeric types that might have precision
-                        if params_part.isdigit():
-                            precision = int(params_part)
+                        precision = int(params_part)
                     # For enum, set, and other types, we don't parse the
                     # parameters as integers
                     # They will be handled as part of the type definition
@@ -127,9 +124,7 @@ class MySQLAnalyzer(DatabaseAnalyzer):
                     # If we can't parse the parameters as integers, it's
                     # likely an enum, set, etc.
                     # Keep the full type definition including parameters
-                    logger.debug(
-                        "Could not parse type parameters for " "%s: %s", data_type, e
-                    )
+                    logger.debug("Could not parse type parameters for %s: %s", data_type, e)
                     # Don't modify data_type in this case, keep it as is
                     continue
 
@@ -166,7 +161,7 @@ class MySQLAnalyzer(DatabaseAnalyzer):
 
         return columns
 
-    def get_foreign_keys(self, table_name: str) -> List[ForeignKeyInfo]:
+    def get_foreign_keys(self, table_name: str) -> list[ForeignKeyInfo]:
         """Get foreign key relationships for a table."""
         if not self.connection:
             raise ConnectionError("Not connected to database")
@@ -198,9 +193,7 @@ class MySQLAnalyzer(DatabaseAnalyzer):
         cursor.close()
         return foreign_keys
 
-    def get_table_data(
-        self, table_name: str, limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+    def get_table_data(self, table_name: str, limit: int | None = None) -> list[dict[str, Any]]:
         """Get data from a specific table."""
         if not self.connection:
             raise ConnectionError("Not connected to database")
@@ -233,9 +226,9 @@ class MySQLAnalyzer(DatabaseAnalyzer):
 
         cursor = self.connection.cursor()
         query = """
-        SELECT TABLE_TYPE 
-        FROM INFORMATION_SCHEMA.TABLES 
-        WHERE TABLE_SCHEMA = %s 
+        SELECT TABLE_TYPE
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = %s
         AND TABLE_NAME = %s
         """
         cursor.execute(query, (self.connection_config["database"], table_name))
@@ -246,16 +239,16 @@ class MySQLAnalyzer(DatabaseAnalyzer):
             return result[0] == "VIEW"
         return False
 
-    def get_tables_excluding_views(self) -> List[str]:
+    def get_tables_excluding_views(self) -> list[str]:
         """Get list of all tables in the database, excluding views."""
         if not self.connection:
             raise ConnectionError("Not connected to database")
 
         cursor = self.connection.cursor()
         query = """
-        SELECT TABLE_NAME 
-        FROM INFORMATION_SCHEMA.TABLES 
-        WHERE TABLE_SCHEMA = %s 
+        SELECT TABLE_NAME
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = %s
         AND TABLE_TYPE = 'BASE TABLE'
         """
         cursor.execute(query, (self.connection_config["database"],))
@@ -263,7 +256,7 @@ class MySQLAnalyzer(DatabaseAnalyzer):
         cursor.close()
         return tables
 
-    def get_indexes(self, table_name: str) -> List[Dict[str, Any]]:
+    def get_indexes(self, table_name: str) -> list[dict[str, Any]]:
         """
         Get index information for a table.
 
@@ -278,7 +271,7 @@ class MySQLAnalyzer(DatabaseAnalyzer):
 
         cursor = self.connection.cursor()
         query = """
-        SELECT 
+        SELECT
             INDEX_NAME,
             COLUMN_NAME,
             NON_UNIQUE,

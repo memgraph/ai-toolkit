@@ -6,21 +6,22 @@ This script tests the integration of HyGM with the main
 MySQLToMemgraphAgent to ensure the enhanced SQL to Graph mapping works correctly.
 """
 
+import logging
 import os
 import sys
-import logging
+
 from dotenv import load_dotenv
 
 # Add the parent directory to the path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.environment import (  # noqa: E402
-    probe_source_connection,
+from core.hygm import HyGM
+from langchain_openai import ChatOpenAI
+from utils.environment import (
     probe_memgraph_connection,
+    probe_source_connection,
     setup_and_validate_environment,
 )
-from core.hygm import HyGM  # noqa: E402
-from langchain_openai import ChatOpenAI  # noqa: E402
 
 # Load environment variables
 load_dotenv()
@@ -883,9 +884,7 @@ def test_comprehensive_sql_to_graph_conversion():
             "tags",
         ]
         entity_nodes = [
-            node
-            for node in graph_model.nodes
-            if any(label.lower() in expected_entities for label in node.labels)
+            node for node in graph_model.nodes if any(label.lower() in expected_entities for label in node.labels)
         ]
 
         logger.info("Expected entities: %s", expected_entities)
@@ -899,9 +898,7 @@ def test_comprehensive_sql_to_graph_conversion():
         many_to_many_relationships = [
             rel
             for rel in graph_model.edges
-            if any(
-                word in rel.edge_type.lower() for word in ["to", "tagged", "belongs"]
-            )
+            if any(word in rel.edge_type.lower() for word in ["to", "tagged", "belongs"])
         ]
         logger.info(
             "Many-to-many join table relationships: %s",
@@ -909,18 +906,14 @@ def test_comprehensive_sql_to_graph_conversion():
         )
 
         # Test that source tracking is properly set
-        nodes_with_source = [
-            node for node in graph_model.nodes if node.source is not None
-        ]
+        nodes_with_source = [node for node in graph_model.nodes if node.source is not None]
         logger.info(
             "Nodes with source tracking: %d/%d",
             len(nodes_with_source),
             len(graph_model.nodes),
         )
 
-        relationships_with_source = [
-            rel for rel in graph_model.edges if rel.source is not None
-        ]
+        relationships_with_source = [rel for rel in graph_model.edges if rel.source is not None]
         logger.info(
             "Relationships with source tracking: %d/%d",
             len(relationships_with_source),
@@ -928,12 +921,10 @@ def test_comprehensive_sql_to_graph_conversion():
         )
 
         # Validate core assertions (adjusted for deterministic strategy behavior)
-        assert (
-            len(graph_model.nodes) >= 7
-        ), f"Should create at least 7 node types for entities, got {len(graph_model.nodes)}"
-        assert (
-            len(graph_model.edges) >= 5
-        ), f"Should create at least 5 relationships, got {len(graph_model.edges)}"
+        assert len(graph_model.nodes) >= 7, (
+            f"Should create at least 7 node types for entities, got {len(graph_model.nodes)}"
+        )
+        assert len(graph_model.edges) >= 5, f"Should create at least 5 relationships, got {len(graph_model.edges)}"
         # Note: Indexes and constraints are created during migration, not during modeling
         logger.info("Graph model structure validated successfully")
 
@@ -948,8 +939,7 @@ def test_comprehensive_sql_to_graph_conversion():
                 node
                 for node in graph_model.nodes
                 if any(
-                    label.lower() == entity_name.rstrip("s").lower()
-                    or label.lower() == entity_name.lower()
+                    label.lower() == entity_name.rstrip("s").lower() or label.lower() == entity_name.lower()
                     for label in node.labels
                 )
             ]
@@ -964,32 +954,22 @@ def test_comprehensive_sql_to_graph_conversion():
 
                 # Check if node properties match data structure
                 data_columns = set(data_rows[0].keys()) if data_rows else set()
-                node_props = (
-                    set(prop.key for prop in node.properties)
-                    if node.properties
-                    else set()
-                )
+                node_props = set(prop.key for prop in node.properties) if node.properties else set()
 
                 if data_columns and node_props:
                     common_props = data_columns.intersection(node_props)
                     logger.info("   Common properties: %s", list(common_props))
 
                     # Should have at least some overlapping properties
-                    assert (
-                        len(common_props) > 0
-                    ), f"Node {node.labels} should have properties matching data columns"
+                    assert len(common_props) > 0, f"Node {node.labels} should have properties matching data columns"
             else:
-                logger.warning(
-                    "⚠️  No matching node found for entity '%s'", entity_name
-                )
+                logger.warning("⚠️  No matching node found for entity '%s'", entity_name)
 
         logger.info("✅ Comprehensive graph modeling test successful!")
         logger.info("   - Created %d node types", len(graph_model.nodes))
         logger.info("   - Created %d relationship types", len(graph_model.edges))
         logger.info("   - Created %d node indexes", len(graph_model.node_indexes))
-        logger.info(
-            "   - Created %d node constraints", len(graph_model.node_constraints)
-        )
+        logger.info("   - Created %d node constraints", len(graph_model.node_constraints))
         logger.info("   - Validated data structure compatibility")
         logger.info("   - Confirmed source tracking implementation")
 
@@ -1028,9 +1008,7 @@ def test_environment_setup():
             logger.warning("Source database probe failed: %s", str(exc))
 
         try:
-            memgraph_available, memgraph_error = probe_memgraph_connection(
-                memgraph_config
-            )
+            memgraph_available, memgraph_error = probe_memgraph_connection(memgraph_config)
             if memgraph_available:
                 logger.info("Memgraph connection: ✅ Available")
             else:
@@ -1382,12 +1360,12 @@ def test_full_migration_workflow_simulation():
         expected_nodes = 5  # customers, addresses, products, categories, tags
         expected_rels = 3  # customer->address, product->category, product<->tag
 
-        assert (
-            len(graph_model.nodes) >= expected_nodes
-        ), f"Should create at least {expected_nodes} nodes, got {len(graph_model.nodes)}"
-        assert (
-            len(graph_model.edges) >= expected_rels
-        ), f"Should create at least {expected_rels} relationships, got {len(graph_model.edges)}"
+        assert len(graph_model.nodes) >= expected_nodes, (
+            f"Should create at least {expected_nodes} nodes, got {len(graph_model.nodes)}"
+        )
+        assert len(graph_model.edges) >= expected_rels, (
+            f"Should create at least {expected_rels} relationships, got {len(graph_model.edges)}"
+        )
 
         logger.info("✅ Graph modeling step completed:")
         logger.info("   - Nodes: %d", len(graph_model.nodes))
@@ -1401,15 +1379,10 @@ def test_full_migration_workflow_simulation():
         # Simulate node creation queries
         node_queries = []
         for node in graph_model.nodes:
-            properties = (
-                [prop.key for prop in node.properties] if node.properties else []
-            )
+            properties = [prop.key for prop in node.properties] if node.properties else []
             primary_label = node.primary_label
 
-            query = (
-                f"// Create {primary_label} nodes with "
-                + f"properties: {', '.join(properties)}"
-            )
+            query = f"// Create {primary_label} nodes with " + f"properties: {', '.join(properties)}"
             node_queries.append(query)
 
         logger.info("Generated %d node creation queries", len(node_queries))
@@ -1421,15 +1394,10 @@ def test_full_migration_workflow_simulation():
             end_labels = relationship.end_node_labels
             rel_type = relationship.edge_type
 
-            query = (
-                f"// Create {rel_type} relationships: "
-                + f"{start_labels} -> {end_labels}"
-            )
+            query = f"// Create {rel_type} relationships: " + f"{start_labels} -> {end_labels}"
             relationship_queries.append(query)
 
-        logger.info(
-            "Generated %d relationship creation queries", len(relationship_queries)
-        )
+        logger.info("Generated %d relationship creation queries", len(relationship_queries))
 
         # Simulate constraint and index creation
         constraint_queries = []
@@ -1453,12 +1421,7 @@ def test_full_migration_workflow_simulation():
         logger.info("Generated %d index queries", len(index_queries))
 
         # Validate query generation
-        total_queries = (
-            len(node_queries)
-            + len(relationship_queries)
-            + len(constraint_queries)
-            + len(index_queries)
-        )
+        total_queries = len(node_queries) + len(relationship_queries) + len(constraint_queries) + len(index_queries)
         assert total_queries > 0, "Should generate at least some queries"
 
         logger.info("✅ Full migration workflow simulation successful!")

@@ -1,6 +1,5 @@
 """Unit tests for the CoherenceEmbeddingsBasedMetric class."""
 
-import pytest
 from deepeval.test_case import LLMTestCase
 
 from memgraph_toolbox.evals.coherence import (
@@ -97,15 +96,13 @@ class TestCoherenceEmbeddingsBasedMetric:
         metric = CoherenceEmbeddingsBasedMetric()
 
         coherent_text = """
-        Artificial intelligence is transforming the way we work and live. 
-        Machine learning algorithms can now process vast amounts of data quickly. 
-        This enables businesses to make better decisions based on data insights. 
+        Artificial intelligence is transforming the way we work and live.
+        Machine learning algorithms can now process vast amounts of data quickly.
+        This enables businesses to make better decisions based on data insights.
         As a result, companies are becoming more efficient and competitive.
         """
 
-        test_case = LLMTestCase(
-            input="dummy", actual_output=coherent_text, expected_output="dummy"
-        )
+        test_case = LLMTestCase(input="dummy", actual_output=coherent_text, expected_output="dummy")
         score = metric.measure(test_case)
 
         assert isinstance(score, float)
@@ -118,15 +115,13 @@ class TestCoherenceEmbeddingsBasedMetric:
         metric = CoherenceEmbeddingsBasedMetric()
 
         incoherent_text = """
-        The weather is nice today. 
-        Quantum physics involves complex mathematical equations. 
-        I had pizza for lunch yesterday. 
+        The weather is nice today.
+        Quantum physics involves complex mathematical equations.
+        I had pizza for lunch yesterday.
         Machine learning requires large datasets for training.
         """
 
-        test_case = LLMTestCase(
-            input="dummy", actual_output=incoherent_text, expected_output="dummy"
-        )
+        test_case = LLMTestCase(input="dummy", actual_output=incoherent_text, expected_output="dummy")
         score = metric.measure(test_case)
 
         assert isinstance(score, float)
@@ -138,9 +133,7 @@ class TestCoherenceEmbeddingsBasedMetric:
         """Test measuring coherence of empty text."""
         metric = CoherenceEmbeddingsBasedMetric()
 
-        test_case = LLMTestCase(
-            input="dummy", actual_output="", expected_output="dummy"
-        )
+        test_case = LLMTestCase(input="dummy", actual_output="", expected_output="dummy")
         score = metric.measure(test_case)
 
         assert score == 0.0
@@ -151,9 +144,7 @@ class TestCoherenceEmbeddingsBasedMetric:
         """Test measuring coherence of None text."""
         metric = CoherenceEmbeddingsBasedMetric()
 
-        test_case = LLMTestCase(
-            input="dummy", actual_output=None, expected_output="dummy"
-        )
+        test_case = LLMTestCase(input="dummy", actual_output=None, expected_output="dummy")
         score = metric.measure(test_case)
 
         assert score == 0.0
@@ -165,9 +156,7 @@ class TestCoherenceEmbeddingsBasedMetric:
         metric = CoherenceEmbeddingsBasedMetric()
 
         short_text = "Hello world."
-        test_case = LLMTestCase(
-            input="dummy", actual_output=short_text, expected_output="dummy"
-        )
+        test_case = LLMTestCase(input="dummy", actual_output=short_text, expected_output="dummy")
         score = metric.measure(test_case)
 
         assert score == 0.0
@@ -180,9 +169,7 @@ class TestCoherenceEmbeddingsBasedMetric:
 
         # Create text with more than 3 sentences
         long_text = "First sentence. Second sentence. Third sentence. Fourth sentence. Fifth sentence."
-        test_case = LLMTestCase(
-            input="dummy", actual_output=long_text, expected_output="dummy"
-        )
+        test_case = LLMTestCase(input="dummy", actual_output=long_text, expected_output="dummy")
         score = metric.measure(test_case)
 
         assert isinstance(score, float)
@@ -235,9 +222,9 @@ class TestEvaluateTextCoherence:
     def test_evaluate_coherent_text(self):
         """Test evaluating coherent text."""
         coherent_text = """
-        Artificial intelligence is transforming the way we work and live. 
-        Machine learning algorithms can now process vast amounts of data quickly. 
-        This enables businesses to make better decisions based on data insights. 
+        Artificial intelligence is transforming the way we work and live.
+        Machine learning algorithms can now process vast amounts of data quickly.
+        This enables businesses to make better decisions based on data insights.
         As a result, companies are becoming more efficient and competitive.
         """
 
@@ -259,9 +246,9 @@ class TestEvaluateTextCoherence:
     def test_evaluate_incoherent_text(self):
         """Test evaluating incoherent text."""
         incoherent_text = """
-        The weather is nice today. 
-        Quantum physics involves complex mathematical equations. 
-        I had pizza for lunch yesterday. 
+        The weather is nice today.
+        Quantum physics involves complex mathematical equations.
+        I had pizza for lunch yesterday.
         Machine learning requires large datasets for training.
         """
 
@@ -291,9 +278,7 @@ class TestEvaluateTextCoherence:
     def test_evaluate_with_custom_params(self):
         """Test evaluating with custom parameters."""
         text = "First sentence. Second sentence."
-        result = evaluate_text_coherence(
-            text, model_name="custom-model", min_sentences=2, max_sentences=50
-        )
+        result = evaluate_text_coherence(text, model_name="custom-model", min_sentences=2, max_sentences=50)
 
         assert result["model_name"] == "custom-model"
         assert result["min_sentences"] == 2

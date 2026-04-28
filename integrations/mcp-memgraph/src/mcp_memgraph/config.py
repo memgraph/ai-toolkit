@@ -4,9 +4,8 @@ This module handles all environment variable configuration with sensible default
 and type conversion.
 """
 
-from dataclasses import dataclass
 import os
-from typing import Optional
+from dataclasses import dataclass
 from enum import Enum
 
 
@@ -108,9 +107,7 @@ class MCPServerConfig:
         transport = os.getenv("MCP_TRANSPORT", TransportType.STDIO.value).lower()
         if transport not in TransportType.values():
             valid_options = ", ".join(f'"{t}"' for t in TransportType.values())
-            raise ValueError(
-                f"Invalid transport '{transport}'. Valid options: {valid_options}"
-            )
+            raise ValueError(f"Invalid transport '{transport}'. Valid options: {valid_options}")
         return transport
 
     @property
@@ -140,7 +137,7 @@ class MCPServerConfig:
         return os.getenv("MCP_READ_ONLY", "true").lower() in ("true", "1", "yes")
 
     @property
-    def log_file(self) -> Optional[str]:
+    def log_file(self) -> str | None:
         """Get the log file path.
 
         Default: None (no file logging)

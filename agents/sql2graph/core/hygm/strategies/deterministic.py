@@ -5,7 +5,7 @@ This strategy creates graph models using rule-based approaches without AI.
 """
 
 import logging
-from typing import Dict, Any, Optional, List, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from core.hygm.models.graph_models import GraphModel
@@ -27,8 +27,8 @@ class DeterministicStrategy(BaseModelingStrategy):
 
     def create_model(
         self,
-        database_structure: Dict[str, Any],
-        domain_context: Optional[str] = None,  # noqa: ARG002
+        database_structure: dict[str, Any],
+        domain_context: str | None = None,
     ) -> "GraphModel":
         """
         Create a basic graph model deterministically from database structure.
@@ -38,19 +38,19 @@ class DeterministicStrategy(BaseModelingStrategy):
 
         # Import here to avoid circular imports
         from core.hygm.models.graph_models import (
+            GraphConstraint,
+            GraphIndex,
             GraphModel,
             GraphNode,
-            GraphRelationship,
             GraphProperty,
-            GraphIndex,
-            GraphConstraint,
+            GraphRelationship,
         )
         from core.hygm.models.sources import (
+            ConstraintSource,
+            IndexSource,
             NodeSource,
             PropertySource,
             RelationshipSource,
-            IndexSource,
-            ConstraintSource,
         )
 
         nodes = []
@@ -141,9 +141,7 @@ class DeterministicStrategy(BaseModelingStrategy):
             end_labels = [to_table.title()]
 
             # Get primary key for the from_table
-            from_table_info = database_structure.get("entity_tables", {}).get(
-                from_table, {}
-            )
+            from_table_info = database_structure.get("entity_tables", {}).get(from_table, {})
             primary_keys = from_table_info.get("primary_keys", [])
             from_pk = primary_keys[0] if primary_keys else f"{from_table}_id"
 
@@ -200,9 +198,7 @@ class DeterministicStrategy(BaseModelingStrategy):
             node_constraints=node_constraints,
         )
 
-    def _extract_node_properties_from_table(
-        self, table_info: Dict[str, Any]
-    ) -> List[str]:
+    def _extract_node_properties_from_table(self, table_info: dict[str, Any]) -> list[str]:
         """Extract properties that should be included in the node."""
         properties = []
 
@@ -219,7 +215,7 @@ class DeterministicStrategy(BaseModelingStrategy):
                 properties.append(col_name)
         return properties
 
-    def _extract_indexes_from_table(self, table_info: Dict[str, Any]) -> List[str]:
+    def _extract_indexes_from_table(self, table_info: dict[str, Any]) -> list[str]:
         """Extract properties that should have indexes."""
         indexes = set()  # Use set to avoid duplicates
 
@@ -246,7 +242,7 @@ class DeterministicStrategy(BaseModelingStrategy):
 
         return list(indexes)
 
-    def _extract_constraints_from_table(self, table_info: Dict[str, Any]) -> List[str]:
+    def _extract_constraints_from_table(self, table_info: dict[str, Any]) -> list[str]:
         """Extract constraint definitions from table info."""
         constraints = []
 
@@ -264,7 +260,7 @@ class DeterministicStrategy(BaseModelingStrategy):
 
         return constraints
 
-    def _generate_relationship_name(self, rel_data: Dict[str, Any]) -> str:
+    def _generate_relationship_name(self, rel_data: dict[str, Any]) -> str:
         """Generate a semantic relationship name from relationship data."""
         # For many-to-many, use the join table name directly
         join_table = rel_data.get("join_table", "")
@@ -274,10 +270,7 @@ class DeterministicStrategy(BaseModelingStrategy):
         constraint_name = rel_data.get("constraint_name", "")
         if constraint_name:
             # Extract meaningful name from constraint
-            if "_fk" in constraint_name:
-                name = constraint_name.split("_fk")[0]
-            else:
-                name = constraint_name
+            name = constraint_name.split("_fk")[0] if "_fk" in constraint_name else constraint_name
             return name.upper() if name else "CONNECTS"
 
         from_table = rel_data.get("from_table", "")

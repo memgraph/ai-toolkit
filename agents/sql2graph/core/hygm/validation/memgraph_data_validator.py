@@ -1,21 +1,22 @@
 """
 Memgraph Data Validation Module.
 
-This module provides comprehensive validation functionality for Memgraph 
-databases after migration, including schema validation (nodes, relationships, 
-indexes, constraints) and data count validation. It compares the expected 
-GraphModel specification with the actual Memgraph database state to ensure 
+This module provides comprehensive validation functionality for Memgraph
+databases after migration, including schema validation (nodes, relationships,
+indexes, constraints) and data count validation. It compares the expected
+GraphModel specification with the actual Memgraph database state to ensure
 migration success.
 """
 
 import logging
-from typing import Dict, List, Any
+from typing import Any
+
 from ..models.graph_models import GraphModel
 from .base import (
     BaseValidator,
+    ValidationCategory,
     ValidationResult,
     ValidationSeverity,
-    ValidationCategory,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,9 +42,7 @@ class MemgraphDataValidator(BaseValidator):
         """
         super().__init__()
         self.connection = memgraph_connection
-        self._cached_data_counts = (
-            None  # Cache for data counts to avoid repeated queries
-        )
+        self._cached_data_counts = None  # Cache for data counts to avoid repeated queries
 
     def validate(self, expected_model: GraphModel, **kwargs) -> ValidationResult:
         """
@@ -54,7 +53,7 @@ class MemgraphDataValidator(BaseValidator):
         return self.validate_post_migration(expected_model)
 
     def validate_post_migration(
-        self, expected_model: GraphModel, expected_data_counts: Dict[str, int] = None
+        self, expected_model: GraphModel, expected_data_counts: dict[str, int] = None
     ) -> ValidationResult:
         """
         Validate the migrated schema and data against expected model.
@@ -84,9 +83,7 @@ class MemgraphDataValidator(BaseValidator):
             expected_schema = self._convert_model_to_schema_info(expected_model)
             exp_nodes = len(expected_schema.get("nodes", []))
             exp_rels = len(expected_schema.get("relationships", []))
-            logger.info(
-                "Expected schema: %d nodes, %d relationships", exp_nodes, exp_rels
-            )
+            logger.info("Expected schema: %d nodes, %d relationships", exp_nodes, exp_rels)
 
             # Perform schema validations
             self._validate_node_labels(expected_schema, actual_schema)
@@ -103,11 +100,7 @@ class MemgraphDataValidator(BaseValidator):
             self._update_metrics(expected_schema, actual_schema, expected_data_counts)
 
             # Generate results
-            critical_issues = [
-                issue
-                for issue in self.issues
-                if issue.severity == ValidationSeverity.CRITICAL
-            ]
+            critical_issues = [issue for issue in self.issues if issue.severity == ValidationSeverity.CRITICAL]
             success = not any(critical_issues)
             summary = self._generate_summary()
 
@@ -121,9 +114,7 @@ class MemgraphDataValidator(BaseValidator):
                     "expected_schema": expected_schema,
                     "actual_schema": actual_schema,
                     "validation_score": self._calculate_validation_score(),
-                    "data_counts": self._get_actual_data_counts()
-                    if expected_data_counts
-                    else None,
+                    "data_counts": self._get_actual_data_counts() if expected_data_counts else None,
                 },
             )
 
@@ -132,19 +123,19 @@ class MemgraphDataValidator(BaseValidator):
             self.add_issue(
                 ValidationSeverity.CRITICAL,
                 ValidationCategory.SCHEMA_MISMATCH,
-                f"Validation process failed: {str(e)}",
+                f"Validation process failed: {e!s}",
                 recommendation="Check database connection and schema access",
             )
 
             return ValidationResult(
                 validation_type="memgraph_data_validation",
                 success=False,
-                summary=f"Validation failed: {str(e)}",
+                summary=f"Validation failed: {e!s}",
                 issues=self.issues,
                 metrics=self.metrics,
             )
 
-    def _get_actual_schema(self) -> Dict[str, Any]:
+    def _get_actual_schema(self) -> dict[str, Any]:
         """
         Get actual schema from Memgraph database.
 
@@ -159,7 +150,7 @@ class MemgraphDataValidator(BaseValidator):
             # Raw connection - execute SHOW SCHEMA INFO
             return self._parse_raw_connection_schema(self.connection)
 
-    def _parse_raw_connection_schema(self, connection) -> Dict[str, Any]:
+    def _parse_raw_connection_schema(self, connection) -> dict[str, Any]:
         """
         Parse schema from raw Memgraph connection.
 
@@ -201,7 +192,7 @@ class MemgraphDataValidator(BaseValidator):
             logger.error(f"Failed to get schema from connection: {e}")
             return {"nodes": [], "relationships": [], "indexes": [], "constraints": []}
 
-    def _parse_schema_info_result(self, schema_info_rows) -> Dict[str, Any]:
+    def _parse_schema_info_result(self, schema_info_rows) -> dict[str, Any]:
         """
         Parse the result of SHOW SCHEMA INFO query.
 
@@ -225,10 +216,7 @@ class MemgraphDataValidator(BaseValidator):
                 if element_type == "node":
                     if element_name not in nodes:
                         # Handle both single labels and label combinations
-                        if isinstance(element_name, str):
-                            labels = [element_name]
-                        else:
-                            labels = element_name
+                        labels = [element_name] if isinstance(element_name, str) else element_name
                         nodes[element_name] = {"labels": labels, "properties": {}}
                     if isinstance(properties, dict):
                         nodes[element_name]["properties"].update(properties)
@@ -250,7 +238,7 @@ class MemgraphDataValidator(BaseValidator):
             "constraints": constraints,
         }
 
-    def _parse_memgraph_adapter_schema(self, adapter) -> Dict[str, Any]:
+    def _parse_memgraph_adapter_schema(self, adapter) -> dict[str, Any]:
         """
         Parse schema info from MemgraphAdapter.
 
@@ -279,9 +267,7 @@ class MemgraphDataValidator(BaseValidator):
             # Fallback to empty schema
             return {"nodes": [], "relationships": [], "indexes": [], "constraints": []}
 
-    def _parse_memgraph_json_schema(
-        self, schema_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _parse_memgraph_json_schema(self, schema_data: dict[str, Any]) -> dict[str, Any]:
         """
         Parse Memgraph JSON schema format and extract data counts.
 
@@ -314,9 +300,7 @@ class MemgraphDataValidator(BaseValidator):
                     primary_type = prop_types[0].get("type", "String")
                     # Sum counts across all types for this property (excluding Null)
                     prop_count = sum(
-                        type_def.get("count", 0)
-                        for type_def in prop_types
-                        if type_def.get("type", "") != "Null"
+                        type_def.get("count", 0) for type_def in prop_types if type_def.get("type", "") != "Null"
                     )
                     # Use the highest property count as the node count estimate
                     node_count = max(node_count, prop_count)
@@ -344,9 +328,7 @@ class MemgraphDataValidator(BaseValidator):
                         primary_type = prop_types[0].get("type", "String")
                         # Sum counts across all types for this property (excluding Null)
                         prop_count = sum(
-                            type_def.get("count", 0)
-                            for type_def in prop_types
-                            if type_def.get("type", "") != "Null"
+                            type_def.get("count", 0) for type_def in prop_types if type_def.get("type", "") != "Null"
                         )
                         # Use the highest property count as the relationship count estimate
                         rel_count = max(rel_count, prop_count)
@@ -393,7 +375,7 @@ class MemgraphDataValidator(BaseValidator):
             },
         }
 
-    def _convert_model_to_schema_info(self, model: GraphModel) -> Dict[str, Any]:
+    def _convert_model_to_schema_info(self, model: GraphModel) -> dict[str, Any]:
         """
         Convert GraphModel to schema info format for comparison.
 
@@ -482,7 +464,7 @@ class MemgraphDataValidator(BaseValidator):
             "constraints": constraints,
         }
 
-    def _get_primary_type(self, type_list: List[Dict[str, Any]]) -> str:
+    def _get_primary_type(self, type_list: list[dict[str, Any]]) -> str:
         """Get the primary type from a list of type definitions."""
         if not type_list:
             return "String"
@@ -500,7 +482,7 @@ class MemgraphDataValidator(BaseValidator):
 
         return primary_type
 
-    def _validate_node_labels(self, expected: Dict[str, Any], actual: Dict[str, Any]):
+    def _validate_node_labels(self, expected: dict[str, Any], actual: dict[str, Any]):
         """Validate that all expected node labels exist in Memgraph."""
         expected_labels = {tuple(node["labels"]) for node in expected["nodes"]}
         actual_labels = {tuple(node["labels"]) for node in actual["nodes"]}
@@ -529,9 +511,7 @@ class MemgraphDataValidator(BaseValidator):
                 recommendation="Verify if these labels were intentionally created",
             )
 
-    def _validate_node_properties(
-        self, expected: Dict[str, Any], actual: Dict[str, Any]
-    ):
+    def _validate_node_properties(self, expected: dict[str, Any], actual: dict[str, Any]):
         """Validate node properties match expected schema."""
         # Create lookup dictionaries
         expected_nodes = {tuple(node["labels"]): node for node in expected["nodes"]}
@@ -573,7 +553,7 @@ class MemgraphDataValidator(BaseValidator):
             #                 recommendation="Verify data transformation logic",
             #             )
 
-    def _validate_relationships(self, expected: Dict[str, Any], actual: Dict[str, Any]):
+    def _validate_relationships(self, expected: dict[str, Any], actual: dict[str, Any]):
         """Validate relationship types and properties."""
         expected_rels = {rel["type"]: rel for rel in expected["relationships"]}
         actual_rels = {rel["type"]: rel for rel in actual["relationships"]}
@@ -610,7 +590,7 @@ class MemgraphDataValidator(BaseValidator):
                     recommendation="Check relationship property mapping",
                 )
 
-    def _validate_indexes(self, expected: Dict[str, Any], actual: Dict[str, Any]):
+    def _validate_indexes(self, expected: dict[str, Any], actual: dict[str, Any]):
         """Validate that expected indexes exist in Memgraph."""
         expected_indexes = expected.get("indexes", [])
         actual_indexes = actual.get("indexes", [])
@@ -660,7 +640,7 @@ class MemgraphDataValidator(BaseValidator):
                 recommendation="Consider creating missing indexes for performance",
             )
 
-    def _validate_constraints(self, expected: Dict[str, Any], actual: Dict[str, Any]):
+    def _validate_constraints(self, expected: dict[str, Any], actual: dict[str, Any]):
         """Validate that expected constraints exist in Memgraph."""
         expected_constraints = expected.get("constraints", [])
         actual_constraints = actual.get("constraints", [])
@@ -714,7 +694,7 @@ class MemgraphDataValidator(BaseValidator):
                 recommendation="Ensure data integrity by creating missing constraints",
             )
 
-    def _validate_data_counts(self, expected_data_counts: Dict[str, int]):
+    def _validate_data_counts(self, expected_data_counts: dict[str, int]):
         """
         Validate actual data counts against expected counts.
 
@@ -762,20 +742,18 @@ class MemgraphDataValidator(BaseValidator):
                         recommendation="Check foreign key constraints and data completeness",
                     )
                 else:
-                    logger.info(
-                        f"✅ Relationship count acceptable: {actual_rels} relationships"
-                    )
+                    logger.info(f"✅ Relationship count acceptable: {actual_rels} relationships")
 
         except Exception as e:
             logger.error(f"Error validating data counts: {e}")
             self.add_issue(
                 ValidationSeverity.WARNING,
                 ValidationCategory.DATA_INTEGRITY,
-                f"Data count validation failed: {str(e)}",
+                f"Data count validation failed: {e!s}",
                 recommendation="Check database connection and query permissions",
             )
 
-    def _get_actual_data_counts(self) -> Dict[str, int]:
+    def _get_actual_data_counts(self) -> dict[str, int]:
         """
         Get actual node and relationship counts from Memgraph schema info.
 
@@ -801,8 +779,7 @@ class MemgraphDataValidator(BaseValidator):
                 if relationships == 0 and actual_schema.get("relationships"):
                     # Check if any relationships were marked as needing count
                     needs_counting = any(
-                        rel.get("relationship_count", 0) == -1
-                        for rel in actual_schema.get("relationships", [])
+                        rel.get("relationship_count", 0) == -1 for rel in actual_schema.get("relationships", [])
                     )
 
                     if needs_counting:
@@ -814,9 +791,7 @@ class MemgraphDataValidator(BaseValidator):
 
                 # Cache the result
                 self._cached_data_counts = result
-                logger.info(
-                    "Data counts from schema: %d nodes, %d rel", nodes, relationships
-                )
+                logger.info("Data counts from schema: %d nodes, %d rel", nodes, relationships)
                 return result
 
             # Fallback: if schema doesn't have counts, calculate from node lists
@@ -831,12 +806,8 @@ class MemgraphDataValidator(BaseValidator):
 
             # Cache the result
             self._cached_data_counts = result
-            logger.warning(
-                "Schema info didn't contain data counts, " "using type counts instead"
-            )
-            logger.info(
-                "Schema-based counts: %d node types, %d rel types", nodes, relationships
-            )
+            logger.warning("Schema info didn't contain data counts, using type counts instead")
+            logger.info("Schema-based counts: %d node types, %d rel types", nodes, relationships)
             return result
 
         except (ValueError, KeyError, AttributeError) as e:
@@ -890,9 +861,9 @@ class MemgraphDataValidator(BaseValidator):
 
     def _update_metrics(
         self,
-        expected: Dict[str, Any],
-        actual: Dict[str, Any],
-        expected_data_counts: Dict[str, int] = None,
+        expected: dict[str, Any],
+        actual: dict[str, Any],
+        expected_data_counts: dict[str, int] = None,
     ):
         """Update validation metrics using the base ValidationMetrics."""
         # Update basic counts
@@ -917,12 +888,8 @@ class MemgraphDataValidator(BaseValidator):
             # Store additional metrics (can be accessed via metrics object)
             self.metrics.data_nodes_expected = expected_data_counts.get("nodes", 0)
             self.metrics.data_nodes_actual = actual_counts.get("nodes", 0)
-            self.metrics.data_relationships_expected = expected_data_counts.get(
-                "relationships", 0
-            )
-            self.metrics.data_relationships_actual = actual_counts.get(
-                "relationships", 0
-            )
+            self.metrics.data_relationships_expected = expected_data_counts.get("relationships", 0)
+            self.metrics.data_relationships_actual = actual_counts.get("relationships", 0)
 
         # Calculate coverage percentage
         self.metrics.calculate_coverage()
@@ -955,7 +922,7 @@ class MemgraphDataValidator(BaseValidator):
 def validate_memgraph_data(
     expected_model: GraphModel,
     memgraph_connection,
-    expected_data_counts: Dict[str, int] = None,
+    expected_data_counts: dict[str, int] = None,
     detailed_report: bool = True,
 ) -> ValidationResult:
     """
@@ -979,11 +946,7 @@ def validate_memgraph_data(
         logger.info("Validation Score: %d/100", validation_score)
 
         for issue in result.issues:
-            log_level = (
-                logging.ERROR
-                if issue.severity == ValidationSeverity.CRITICAL
-                else logging.WARNING
-            )
+            log_level = logging.ERROR if issue.severity == ValidationSeverity.CRITICAL else logging.WARNING
             logger.log(log_level, "%s: %s", issue.category, issue.message)
             if issue.recommendation:
                 logger.info("  Recommendation: %s", issue.recommendation)

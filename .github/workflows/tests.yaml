@@ -61,6 +61,9 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.memgraph-toolbox == 'true' }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -68,7 +71,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.11.0
+          python-version: ${{ matrix.python-version }}
 
       - name: Start Memgraph container
         run: |
@@ -88,6 +91,9 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.mcp-memgraph == 'true' }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -95,7 +101,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.11.0
+          python-version: ${{ matrix.python-version }}
 
       - name: Start Memgraph container
         run: |
@@ -113,6 +119,9 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.langchain-memgraph == 'true' }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -120,7 +129,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.11.0
+          python-version: ${{ matrix.python-version }}
 
       - name: Start Memgraph container
         run: |
@@ -140,6 +149,9 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.lightrag-memgraph == 'true' }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
     defaults:
       run:
         working-directory: integrations/lightrag-memgraph
@@ -150,7 +162,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.11.0
+          python-version: ${{ matrix.python-version }}
 
       - name: Start Memgraph container
         run: |
@@ -172,6 +184,9 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.unstructured2graph == 'true' }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
     defaults:
       run:
         working-directory: unstructured2graph
@@ -182,7 +197,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.11.0
+          python-version: ${{ matrix.python-version }}
 
       - name: Install uv
         run: python -m pip install uv
@@ -198,6 +213,9 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.skills-graph == 'true' }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -205,7 +223,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.11.0
+          python-version: ${{ matrix.python-version }}
 
       - name: Start Memgraph container
         run: |

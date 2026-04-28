@@ -1,6 +1,5 @@
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 from datetime import datetime, timezone
 
 # Spec: lowercase alphanumeric and hyphens, no leading/trailing/consecutive hyphens, 1-64 chars
@@ -17,15 +16,12 @@ class SkillValidationError(ValueError):
 def validate_name(name: str) -> str:
     """Validate and return a spec-compliant skill name."""
     if not name or len(name) > _MAX_NAME_LEN:
-        raise SkillValidationError(
-            f"name must be 1-{_MAX_NAME_LEN} characters, got {len(name)}"
-        )
+        raise SkillValidationError(f"name must be 1-{_MAX_NAME_LEN} characters, got {len(name)}")
     if "--" in name:
         raise SkillValidationError("name must not contain consecutive hyphens")
     if not _NAME_RE.match(name):
         raise SkillValidationError(
-            "name must contain only lowercase letters, digits, and hyphens, "
-            "and must not start or end with a hyphen"
+            "name must contain only lowercase letters, digits, and hyphens, and must not start or end with a hyphen"
         )
     return name
 
@@ -33,19 +29,16 @@ def validate_name(name: str) -> str:
 def validate_description(description: str) -> str:
     """Validate and return a spec-compliant description."""
     if not description or len(description) > _MAX_DESCRIPTION_LEN:
-        raise SkillValidationError(
-            f"description must be 1-{_MAX_DESCRIPTION_LEN} characters, got {len(description)}"
-        )
+        raise SkillValidationError(f"description must be 1-{_MAX_DESCRIPTION_LEN} characters, got {len(description)}")
     return description
 
 
-def validate_compatibility(compatibility: Optional[str]) -> Optional[str]:
+def validate_compatibility(compatibility: str | None) -> str | None:
     """Validate the optional compatibility field."""
-    if compatibility is not None:
-        if not compatibility or len(compatibility) > _MAX_COMPATIBILITY_LEN:
-            raise SkillValidationError(
-                f"compatibility must be 1-{_MAX_COMPATIBILITY_LEN} characters, got {len(compatibility)}"
-            )
+    if compatibility is not None and (not compatibility or len(compatibility) > _MAX_COMPATIBILITY_LEN):
+        raise SkillValidationError(
+            f"compatibility must be 1-{_MAX_COMPATIBILITY_LEN} characters, got {len(compatibility)}"
+        )
     return compatibility
 
 
@@ -62,15 +55,15 @@ class Skill:
     content: str
 
     # --- Optional (spec) ---
-    license: Optional[str] = None
-    compatibility: Optional[str] = None
-    metadata: Dict[str, str] = field(default_factory=dict)
-    allowed_tools: List[str] = field(default_factory=list)
+    license: str | None = None
+    compatibility: str | None = None
+    metadata: dict[str, str] = field(default_factory=dict)
+    allowed_tools: list[str] = field(default_factory=list)
 
     # --- Graph extensions ---
-    tags: List[str] = field(default_factory=list)
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    created_at: str | None = None
+    updated_at: str | None = None
 
     def __post_init__(self):
         validate_name(self.name)

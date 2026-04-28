@@ -3,7 +3,8 @@
 import os
 
 import pytest
-from unstructured2graph import parse_source, make_chunks, Chunk, ChunkedDocument
+
+from unstructured2graph import Chunk, ChunkedDocument, make_chunks, parse_source
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -60,9 +61,7 @@ def test_make_chunks_with_text_files(tmp_path):
 
     assert len(chunked_documents) == 2
     assert all(isinstance(doc, ChunkedDocument) for doc in chunked_documents)
-    assert all(
-        isinstance(chunk, Chunk) for doc in chunked_documents for chunk in doc.chunks
-    )
+    assert all(isinstance(chunk, Chunk) for doc in chunked_documents for chunk in doc.chunks)
 
 
 def test_partition_kwargs_passed_through(tmp_path):
@@ -75,19 +74,13 @@ def test_partition_kwargs_passed_through(tmp_path):
     assert isinstance(chunks, list)
 
 
-@pytest.mark.skip(
-    reason="Requires sample-data files and network access - run locally with full deps"
-)
+@pytest.mark.skip(reason="Requires sample-data files and network access - run locally with full deps")
 def test_chunking_of_different_sources():
-    pypdf_samples_dir = os.path.join(
-        SCRIPT_DIR, "..", "sample-data", "pdf", "sample-files"
-    )
+    pypdf_samples_dir = os.path.join(SCRIPT_DIR, "..", "sample-data", "pdf", "sample-files")
     docx_samples_dir = os.path.join(SCRIPT_DIR, "..", "sample-data", "doc")
     xls_samples_dir = os.path.join(SCRIPT_DIR, "..", "sample-data", "xls")
     sources = [
-        os.path.join(
-            pypdf_samples_dir, "011-google-doc-document", "google-doc-document.pdf"
-        ),
+        os.path.join(pypdf_samples_dir, "011-google-doc-document", "google-doc-document.pdf"),
         os.path.join(docx_samples_dir, "sample3.docx"),
         os.path.join(xls_samples_dir, "financial-sample.xlsx"),
         "https://memgraph.com/docs/ai-ecosystem/graph-rag",
@@ -97,18 +90,6 @@ def test_chunking_of_different_sources():
     assert len(chunked_documents) == len(sources)
     assert all(isinstance(document, ChunkedDocument) for document in chunked_documents)
     assert all(len(document.chunks) > 0 for document in chunked_documents)
-    assert all(
-        isinstance(chunk, Chunk)
-        for document in chunked_documents
-        for chunk in document.chunks
-    )
-    assert all(
-        isinstance(chunk.text, str)
-        for document in chunked_documents
-        for chunk in document.chunks
-    )
-    assert all(
-        isinstance(chunk.hash, str)
-        for document in chunked_documents
-        for chunk in document.chunks
-    )
+    assert all(isinstance(chunk, Chunk) for document in chunked_documents for chunk in document.chunks)
+    assert all(isinstance(chunk.text, str) for document in chunked_documents for chunk in document.chunks)
+    assert all(isinstance(chunk.hash, str) for document in chunked_documents for chunk in document.chunks)

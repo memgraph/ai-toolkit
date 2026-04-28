@@ -1,7 +1,7 @@
 """PostgreSQL-specific database analyzer implementation."""
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 try:
     import psycopg2  # type: ignore[import-not-found]
@@ -48,16 +48,10 @@ class PostgreSQLAnalyzer(DatabaseAnalyzer):
 
     def connect(self) -> bool:
         if psycopg2 is None:
-            raise ImportError(
-                "psycopg2 is required for PostgreSQL support"
-            ) from _PSYCOPG2_IMPORT_ERROR
+            raise ImportError("psycopg2 is required for PostgreSQL support") from _PSYCOPG2_IMPORT_ERROR
 
         try:
-            connect_config = {
-                key: value
-                for key, value in self.connection_config.items()
-                if key != "schema"
-            }
+            connect_config = {key: value for key, value in self.connection_config.items() if key != "schema"}
             self.connection = psycopg2.connect(**connect_config)
             logger.info("Successfully connected to PostgreSQL database")
             return True
@@ -72,7 +66,7 @@ class PostgreSQLAnalyzer(DatabaseAnalyzer):
             self.connection = None
             logger.info("PostgreSQL connection closed")
 
-    def get_tables(self) -> List[str]:
+    def get_tables(self) -> list[str]:
         connection = self._require_connection()
         schema = self._schema_name()
         query = """
@@ -89,7 +83,7 @@ class PostgreSQLAnalyzer(DatabaseAnalyzer):
         cursor.close()
         return tables
 
-    def get_table_schema(self, table_name: str) -> List[ColumnInfo]:
+    def get_table_schema(self, table_name: str) -> list[ColumnInfo]:
         connection = self._require_connection()
         schema = self._schema_name()
 
@@ -117,7 +111,7 @@ class PostgreSQLAnalyzer(DatabaseAnalyzer):
         foreign_keys = self.get_foreign_keys(table_name)
         fk_column_names = {fk.column_name for fk in foreign_keys}
 
-        columns: List[ColumnInfo] = []
+        columns: list[ColumnInfo] = []
         for (
             column_name,
             data_type,
@@ -132,9 +126,7 @@ class PostgreSQLAnalyzer(DatabaseAnalyzer):
                 auto_increment = column_default.lower().startswith("nextval(")
 
             max_length = int(char_max_length) if char_max_length is not None else None
-            precision = (
-                int(numeric_precision) if numeric_precision is not None else None
-            )
+            precision = int(numeric_precision) if numeric_precision is not None else None
             scale = int(numeric_scale) if numeric_scale is not None else None
 
             columns.append(
@@ -154,7 +146,7 @@ class PostgreSQLAnalyzer(DatabaseAnalyzer):
 
         return columns
 
-    def get_foreign_keys(self, table_name: str) -> List[ForeignKeyInfo]:
+    def get_foreign_keys(self, table_name: str) -> list[ForeignKeyInfo]:
         connection = self._require_connection()
         schema = self._schema_name()
         query = """
@@ -190,19 +182,15 @@ class PostgreSQLAnalyzer(DatabaseAnalyzer):
         cursor.close()
         return foreign_keys
 
-    def get_table_data(
-        self, table_name: str, limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+    def get_table_data(self, table_name: str, limit: int | None = None) -> list[dict[str, Any]]:
         connection = self._require_connection()
         schema = self._schema_name()
         if sql is None or psycopg2 is None:  # pragma: no cover - import guard
             raise ImportError("psycopg2 is required for PostgreSQL support")
 
-        query = sql.SQL("SELECT * FROM {}.{}").format(
-            sql.Identifier(schema), sql.Identifier(table_name)
-        )
+        query = sql.SQL("SELECT * FROM {}.{}").format(sql.Identifier(schema), sql.Identifier(table_name))
 
-        params: Optional[Tuple[int, ...]] = None
+        params: tuple[int, ...] | None = None
         if limit is not None:
             query = query + sql.SQL(" LIMIT %s")
             params = (limit,)
@@ -219,9 +207,7 @@ class PostgreSQLAnalyzer(DatabaseAnalyzer):
         if sql is None:  # pragma: no cover - import guard
             raise ImportError("psycopg2 is required for PostgreSQL support")
 
-        query = sql.SQL("SELECT COUNT(*) FROM {}.{}").format(
-            sql.Identifier(schema), sql.Identifier(table_name)
-        )
+        query = sql.SQL("SELECT COUNT(*) FROM {}.{}").format(sql.Identifier(schema), sql.Identifier(table_name))
 
         cursor = connection.cursor()
         cursor.execute(query)
@@ -247,7 +233,7 @@ class PostgreSQLAnalyzer(DatabaseAnalyzer):
             return result[0] == "VIEW"
         return False
 
-    def get_indexes(self, table_name: str) -> List[Dict[str, Any]]:
+    def get_indexes(self, table_name: str) -> list[dict[str, Any]]:
         connection = self._require_connection()
         schema = self._schema_name()
         query = """
@@ -261,9 +247,9 @@ class PostgreSQLAnalyzer(DatabaseAnalyzer):
         cursor = connection.cursor()
         cursor.execute(query, (schema, table_name))
 
-        indexes: List[Dict[str, Any]] = []
+        indexes: list[dict[str, Any]] = []
         for index_name, index_def in cursor.fetchall():
-            index_info: Dict[str, Any] = {
+            index_info: dict[str, Any] = {
                 "name": index_name,
                 "columns": self._parse_index_columns(index_def),
                 "is_unique": index_def.upper().startswith("CREATE UNIQUE"),
@@ -283,7 +269,7 @@ class PostgreSQLAnalyzer(DatabaseAnalyzer):
             raise ConnectionError("Not connected to database")
         return self.connection
 
-    def _get_primary_key_columns(self, table_name: str) -> List[str]:
+    def _get_primary_key_columns(self, table_name: str) -> list[str]:
         connection = self._require_connection()
         schema = self._schema_name()
         query = """
@@ -304,7 +290,7 @@ class PostgreSQLAnalyzer(DatabaseAnalyzer):
         cursor.close()
         return primary_keys
 
-    def _parse_index_columns(self, index_def: str) -> List[str]:
+    def _parse_index_columns(self, index_def: str) -> list[str]:
         if "(" not in index_def or ")" not in index_def:
             return []
 
@@ -320,7 +306,7 @@ class PostgreSQLAnalyzer(DatabaseAnalyzer):
                 columns.append(column)
         return columns
 
-    def _parse_index_type(self, index_def: str) -> Optional[str]:
+    def _parse_index_type(self, index_def: str) -> str | None:
         marker = " USING "
         upper_def = index_def.upper()
         if marker not in upper_def:

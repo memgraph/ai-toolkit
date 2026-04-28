@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 
 def node_key(node: Any) -> str:
@@ -27,13 +27,11 @@ def relationship_key(rel: Any) -> str:
     return f"edge::{edge_type}:{start}->{end}"
 
 
-def summarize_node(node: Any) -> Dict[str, Any]:
+def summarize_node(node: Any) -> dict[str, Any]:
     """Create a JSON-serializable summary for a node definition."""
-    properties = sorted(
-        {prop.key for prop in getattr(node, "properties", []) if hasattr(prop, "key")}
-    )
+    properties = sorted({prop.key for prop in getattr(node, "properties", []) if hasattr(prop, "key")})
     node_source = getattr(node, "source", None)
-    mapping: Dict[str, Any] = {}
+    mapping: dict[str, Any] = {}
     source_name = None
     id_field = None
     if node_source:
@@ -49,10 +47,10 @@ def summarize_node(node: Any) -> Dict[str, Any]:
     }
 
 
-def summarize_relationship(rel: Any) -> Dict[str, Any]:
+def summarize_relationship(rel: Any) -> dict[str, Any]:
     """Create a JSON-serializable summary for a relationship."""
     rel_source = getattr(rel, "source", None)
-    mapping: Dict[str, Any] = {}
+    mapping: dict[str, Any] = {}
     source_name = None
     source_type = None
     if rel_source:
@@ -80,19 +78,19 @@ def summarize_relationship(rel: Any) -> Dict[str, Any]:
     }
 
 
-def summarize_nodes(nodes: List[Any]) -> Dict[str, Dict[str, Any]]:
+def summarize_nodes(nodes: list[Any]) -> dict[str, dict[str, Any]]:
     """Build summaries for all provided nodes."""
-    summaries: Dict[str, Dict[str, Any]] = {}
+    summaries: dict[str, dict[str, Any]] = {}
     for node in nodes:
         summaries[node_key(node)] = summarize_node(node)
     return summaries
 
 
 def summarize_relationships(
-    relationships: List[Any],
-) -> Dict[str, Dict[str, Any]]:
+    relationships: list[Any],
+) -> dict[str, dict[str, Any]]:
     """Build summaries for all provided relationships."""
-    summaries: Dict[str, Dict[str, Any]] = {}
+    summaries: dict[str, dict[str, Any]] = {}
     for relationship in relationships:
         summaries[relationship_key(relationship)] = summarize_relationship(relationship)
     return summaries
@@ -102,7 +100,7 @@ __all__ = [
     "node_key",
     "relationship_key",
     "summarize_node",
-    "summarize_relationship",
     "summarize_nodes",
+    "summarize_relationship",
     "summarize_relationships",
 ]

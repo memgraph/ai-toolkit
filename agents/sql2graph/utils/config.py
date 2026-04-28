@@ -6,8 +6,8 @@ for different environments and use cases.
 """
 
 import os
-from typing import Dict, Any, Optional
 from dataclasses import dataclass
+from typing import Any
 
 from .environment import get_source_db_type
 
@@ -23,7 +23,7 @@ class MigrationConfig:
     source_db_password: str
     source_db_database: str
     source_db_port: int
-    source_db_schema: Optional[str]
+    source_db_schema: str | None
 
     # Memgraph settings
     memgraph_url: str
@@ -70,18 +70,13 @@ class MigrationConfig:
             memgraph_password=os.getenv("MEMGRAPH_PASSWORD", ""),
             memgraph_database=os.getenv("MEMGRAPH_DATABASE", "memgraph"),
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
-            relationship_naming_strategy=os.getenv(
-                "RELATIONSHIP_NAMING_STRATEGY", "table_based"
-            ),
-            interactive_table_selection=os.getenv(
-                "INTERACTIVE_TABLE_SELECTION", "true"
-            ).lower()
-            == "true",
+            relationship_naming_strategy=os.getenv("RELATIONSHIP_NAMING_STRATEGY", "table_based"),
+            interactive_table_selection=os.getenv("INTERACTIVE_TABLE_SELECTION", "true").lower() == "true",
         )
 
-    def to_source_db_config(self) -> Dict[str, Any]:
+    def to_source_db_config(self) -> dict[str, Any]:
         """Convert to a dictionary suitable for analyzer creation."""
-        config: Dict[str, Any] = {
+        config: dict[str, Any] = {
             "database_type": self.source_db_type,
             "host": self.source_db_host,
             "user": self.source_db_user,
@@ -93,7 +88,7 @@ class MigrationConfig:
             config["schema"] = self.source_db_schema
         return config
 
-    def to_memgraph_config(self) -> Dict[str, str]:
+    def to_memgraph_config(self) -> dict[str, str]:
         """Convert to Memgraph configuration dictionary."""
         return {
             "url": self.memgraph_url,
@@ -132,7 +127,7 @@ class MigrationConfig:
         return len(errors) == 0, errors
 
 
-def get_preset_config(preset_name: str) -> Optional[Dict[str, Any]]:
+def get_preset_config(preset_name: str) -> dict[str, Any] | None:
     """
     Get a preset configuration for common scenarios.
 
@@ -177,9 +172,7 @@ def get_preset_config(preset_name: str) -> Optional[Dict[str, Any]]:
     return presets.get(preset_name)
 
 
-def merge_config_with_preset(
-    config: MigrationConfig, preset_name: str
-) -> MigrationConfig:
+def merge_config_with_preset(config: MigrationConfig, preset_name: str) -> MigrationConfig:
     """
     Merge configuration with a preset, keeping existing values.
 
@@ -215,9 +208,7 @@ def print_config_summary(config: MigrationConfig) -> None:
     print("🔧 Configuration Summary:")
     print("-" * 30)
     source_details = (
-        f"Source DB: {config.source_db_type}://"
-        f"{config.source_db_user}@{config.source_db_host}:"
-        f"{config.source_db_port}"
+        f"Source DB: {config.source_db_type}://{config.source_db_user}@{config.source_db_host}:{config.source_db_port}"
     )
     print(source_details)
     print(f"Database: {config.source_db_database}")

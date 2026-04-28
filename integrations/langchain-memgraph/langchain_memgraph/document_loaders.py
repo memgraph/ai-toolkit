@@ -1,6 +1,6 @@
 """Memgraph document loader."""
 
-from typing import Iterator
+from collections.abc import Iterator
 
 from langchain_core.document_loaders.base import BaseLoader
 from langchain_core.documents import Document
@@ -45,7 +45,7 @@ class MemgraphLoader(BaseLoader):
             print(docs[0].metadata)
         .. code-block:: python
             TODO: Example output
-    """  # noqa: E501
+    """
 
     # TODO: This method must be implemented to load documents.
     # Do not implement load(), a default implementation is already available.

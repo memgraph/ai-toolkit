@@ -6,10 +6,10 @@ tools, but all share the same configuration system.
 """
 
 import importlib
-from typing import Dict, Any
+from typing import Any
 
 # Server registry - maps server names to their module paths and metadata
-AVAILABLE_SERVERS: Dict[str, Dict[str, Any]] = {
+AVAILABLE_SERVERS: dict[str, dict[str, Any]] = {
     "server": {
         "module": "mcp_memgraph.servers.server",
         "emoji": "🚀",
@@ -19,8 +19,7 @@ AVAILABLE_SERVERS: Dict[str, Dict[str, Any]] = {
         "module": "mcp_memgraph.servers.memgraph_experimental",
         "emoji": "🔬",
         "description": (
-            "Memgraph experimental server with sampling and elicitation "
-            "support for autonomous index management"
+            "Memgraph experimental server with sampling and elicitation support for autonomous index management"
         ),
     },
     # Future servers can be added here:
@@ -48,7 +47,7 @@ def get_server(name: str):
         AttributeError: If the module doesn't have required attributes
     """
     if name not in AVAILABLE_SERVERS:
-        available = ", ".join(f"'{s}'" for s in AVAILABLE_SERVERS.keys())
+        available = ", ".join(f"'{s}'" for s in AVAILABLE_SERVERS)
         raise ValueError(f"Unknown server '{name}'. Available servers: {available}")
 
     server_info = AVAILABLE_SERVERS[name]
@@ -57,24 +56,18 @@ def get_server(name: str):
     try:
         module = importlib.import_module(module_path)
     except ImportError as e:
-        raise ImportError(
-            f"Failed to import server '{name}' from '{module_path}': {e}"
-        ) from e
+        raise ImportError(f"Failed to import server '{name}' from '{module_path}': {e}") from e
 
     # Verify the module has required attributes
     if not hasattr(module, "mcp"):
-        raise AttributeError(
-            f"Server module '{module_path}' missing required 'mcp' attribute"
-        )
+        raise AttributeError(f"Server module '{module_path}' missing required 'mcp' attribute")
     if not hasattr(module, "logger"):
-        raise AttributeError(
-            f"Server module '{module_path}' missing required 'logger' " "attribute"
-        )
+        raise AttributeError(f"Server module '{module_path}' missing required 'logger' attribute")
 
     return module
 
 
-def get_server_info(name: str) -> Dict[str, Any]:
+def get_server_info(name: str) -> dict[str, Any]:
     """Get metadata about a server without loading it.
 
     Args:
@@ -87,13 +80,13 @@ def get_server_info(name: str) -> Dict[str, Any]:
         ValueError: If the server name is not in the registry
     """
     if name not in AVAILABLE_SERVERS:
-        available = ", ".join(f"'{s}'" for s in AVAILABLE_SERVERS.keys())
+        available = ", ".join(f"'{s}'" for s in AVAILABLE_SERVERS)
         raise ValueError(f"Unknown server '{name}'. Available servers: {available}")
 
     return AVAILABLE_SERVERS[name].copy()
 
 
-def list_servers() -> Dict[str, Dict[str, Any]]:
+def list_servers() -> dict[str, dict[str, Any]]:
     """Get a dictionary of all available servers with their metadata.
 
     Returns:

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import List, Optional, Union
+from typing import TYPE_CHECKING
 
-from langchain_core.documents import Document
 from langchain_core.load.serializable import Serializable
 from pydantic import Field
+
+if TYPE_CHECKING:
+    from langchain_core.documents import Document
 
 
 class Node(Serializable):
@@ -16,7 +18,7 @@ class Node(Serializable):
         properties (dict): Additional properties and metadata associated with the node.
     """
 
-    id: Union[str, int]
+    id: str | int
     type: str = "Node"
     properties: dict = Field(default_factory=dict)
 
@@ -47,6 +49,6 @@ class GraphDocument(Serializable):
             derived.
     """
 
-    nodes: List[Node]
-    relationships: List[Relationship]
-    source: Optional[Document] = None
+    nodes: list[Node]
+    relationships: list[Relationship]
+    source: Document | None = None

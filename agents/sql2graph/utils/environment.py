@@ -5,9 +5,10 @@ This module handles environment variable validation, database connection
 probing, and configuration setup for the SQL to graph migration agent.
 """
 
-import os
 import logging
-from typing import Any, Dict, List, Tuple, Optional
+import os
+from typing import Any
+
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,7 @@ def _strip_quotes_from_env() -> None:
             os.environ[key] = val[1:-1]
 
 
-def _find_dotenv() -> Optional[str]:
+def _find_dotenv() -> str | None:
     """Search well-known locations for a .env file.
 
     Returns the first path that exists, or None.  The search order is:
@@ -85,11 +86,11 @@ def get_source_db_type() -> str:
     return db_type
 
 
-def get_required_environment_variables() -> Dict[str, str]:
+def get_required_environment_variables() -> dict[str, str]:
     """Get the required environment variables and their descriptions."""
     db_type = get_source_db_type()
 
-    base_vars: Dict[str, str] = {
+    base_vars: dict[str, str] = {
         "SOURCE_DB_TYPE": "Source database type (mysql|postgresql)",
         "MEMGRAPH_URL": ("Memgraph connection URL (default: bolt://localhost:7687)"),
     }
@@ -124,7 +125,7 @@ def get_required_environment_variables() -> Dict[str, str]:
     return base_vars
 
 
-def get_optional_environment_variables() -> Dict[str, str]:
+def get_optional_environment_variables() -> dict[str, str]:
     """Get optional environment variables and their descriptions."""
     optional_vars = {
         "MEMGRAPH_USERNAME": "Memgraph username (default: empty)",
@@ -133,22 +134,20 @@ def get_optional_environment_variables() -> Dict[str, str]:
     }
 
     if get_source_db_type() == "postgresql":
-        optional_vars.setdefault(
-            "POSTGRES_SCHEMA", "PostgreSQL schema (default: public)"
-        )
+        optional_vars.setdefault("POSTGRES_SCHEMA", "PostgreSQL schema (default: public)")
 
     return optional_vars
 
 
-def validate_environment_variables() -> Tuple[bool, List[str]]:
+def validate_environment_variables() -> tuple[bool, list[str]]:
     """
     Validate required environment variables.
 
     Returns:
         Tuple of (is_valid, missing_variables)
     """
-    missing_vars: List[str] = []
-    required_vars = get_required_environment_variables()
+    missing_vars: list[str] = []
+    get_required_environment_variables()
 
     db_type = get_source_db_type()
 
@@ -156,9 +155,7 @@ def validate_environment_variables() -> Tuple[bool, List[str]]:
 
     if db_type == "postgresql":
         if not os.getenv("POSTGRES_PASSWORD"):
-            logger.warning(
-                "POSTGRES_PASSWORD missing; attempting passwordless connection"
-            )
+            logger.warning("POSTGRES_PASSWORD missing; attempting passwordless connection")
     else:
         if not os.getenv("MYSQL_PASSWORD"):
             logger.warning("MYSQL_PASSWORD missing; attempting passwordless connection")
@@ -166,7 +163,7 @@ def validate_environment_variables() -> Tuple[bool, List[str]]:
     return len(missing_vars) == 0, missing_vars
 
 
-def get_source_db_config() -> Dict[str, Any]:
+def get_source_db_config() -> dict[str, Any]:
     """Get source database configuration from environment variables."""
     db_type = get_source_db_type()
 
@@ -191,7 +188,7 @@ def get_source_db_config() -> Dict[str, Any]:
     }
 
 
-def get_memgraph_config() -> Dict[str, str]:
+def get_memgraph_config() -> dict[str, str]:
     """
     Get Memgraph configuration from environment variables.
 
@@ -206,9 +203,7 @@ def get_memgraph_config() -> Dict[str, str]:
     }
 
 
-def probe_source_connection(
-    source_db_config: Dict[str, Any]
-) -> Tuple[bool, Optional[str]]:
+def probe_source_connection(source_db_config: dict[str, Any]) -> tuple[bool, str | None]:
     """Test source database connection using the configured analyzer."""
     try:
         import sys
@@ -235,9 +230,7 @@ def probe_source_connection(
         return False, f"Connection error: {e}"
 
 
-def probe_memgraph_connection(
-    memgraph_config: Dict[str, str]
-) -> Tuple[bool, Optional[str]]:
+def probe_memgraph_connection(memgraph_config: dict[str, str]) -> tuple[bool, str | None]:
     """
     Test Memgraph database connection.
 
@@ -267,7 +260,7 @@ def probe_memgraph_connection(
         return False, f"Connection error: {e}"
 
 
-def validate_llm_providers() -> Tuple[bool, List[str], List[str]]:
+def validate_llm_providers() -> tuple[bool, list[str], list[str]]:
     """
     Validate LLM provider API keys by making test requests.
 
@@ -327,7 +320,7 @@ def validate_llm_providers() -> Tuple[bool, List[str], List[str]]:
     return has_valid, valid_providers, errors
 
 
-def setup_and_validate_environment() -> Tuple[Dict[str, Any], Dict[str, str]]:
+def setup_and_validate_environment() -> tuple[dict[str, Any], dict[str, str]]:
     """
     Complete environment setup and validation.
 
@@ -345,9 +338,7 @@ def setup_and_validate_environment() -> Tuple[Dict[str, Any], Dict[str, str]]:
         error_msg = "Missing required environment variables:\n"
         for var in missing_vars:
             error_msg += f"  - {var}\n"
-        error_msg += (
-            "\nPlease check your .env file and ensure all required variables " "are set"
-        )
+        error_msg += "\nPlease check your .env file and ensure all required variables are set"
         raise MigrationEnvironmentError(error_msg)
 
     source_db_config = get_source_db_config()
@@ -357,9 +348,7 @@ def setup_and_validate_environment() -> Tuple[Dict[str, Any], Dict[str, str]]:
     return source_db_config, memgraph_config
 
 
-def probe_all_connections(
-    source_db_config: Dict[str, Any], memgraph_config: Dict[str, str]
-) -> None:
+def probe_all_connections(source_db_config: dict[str, Any], memgraph_config: dict[str, str]) -> None:
     """
     Probe all database connections and validate API keys.
 
@@ -370,7 +359,7 @@ def probe_all_connections(
     Raises:
         DatabaseConnectionError: If any connection fails
     """
-    errors: List[str] = []
+    errors: list[str] = []
 
     logger.info("Validating LLM provider API keys...")
     has_valid, valid_providers, llm_errors = validate_llm_providers()

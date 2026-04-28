@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any
 
 from ..api.memgraph import Memgraph
 from ..api.tool import BaseTool
@@ -37,7 +37,7 @@ class BetweennessCentralityTool(BaseTool):
         )
         self.db = db
 
-    def call(self, arguments: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def call(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
         """Execute the betweenness centrality algorithm and return the results."""
         is_direction_ignored = arguments.get("isDirectionIgnored", True)
         limit = arguments.get("limit", 10)

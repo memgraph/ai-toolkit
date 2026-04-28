@@ -1,21 +1,18 @@
-import asyncio
 import os
-from typing import Optional
 from contextlib import AsyncExitStack
 
-from mcp import ClientSession, StdioServerParameters, Implementation
-from mcp.client.stdio import stdio_client
-
+import pytest
 from anthropic import Anthropic
 from dotenv import load_dotenv
+from mcp import ClientSession, Implementation, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 from mcp_memgraph import (
-    run_query,
-    get_schema,
     get_node_neighborhood,
+    get_schema,
+    run_query,
     search_node_vectors,
 )
-import pytest
 
 pytestmark = pytest.mark.asyncio  # Mark all tests in this file as asyncio-compatible
 
@@ -27,7 +24,7 @@ class MCPClient:
 
     def __init__(self):
         # Initialize session and client objects
-        self.session: Optional[ClientSession] = None
+        self.session: ClientSession | None = None
         self.exit_stack = AsyncExitStack()
         self.anthropic = Anthropic()
 
@@ -43,13 +40,9 @@ class MCPClient:
             raise ValueError("Server script must be a .py or .js file")
 
         command = "python" if is_python else "node"
-        server_params = StdioServerParameters(
-            command=command, args=[server_script_path], env=os.environ.copy()
-        )
+        server_params = StdioServerParameters(command=command, args=[server_script_path], env=os.environ.copy())
 
-        stdio_transport = await self.exit_stack.enter_async_context(
-            stdio_client(server_params)
-        )
+        stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
         self.stdio, self.write = stdio_transport
         self.session = await self.exit_stack.enter_async_context(
             ClientSession(
@@ -102,6 +95,7 @@ async def test_write_query_blocked_in_readonly_mode():
 
     # Reimport to reload config and server
     import importlib
+
     import mcp_memgraph.config
     import mcp_memgraph.servers.server
 
@@ -117,9 +111,7 @@ async def test_write_query_blocked_in_readonly_mode():
         assert isinstance(response, list), "Expected response to be a list"
         assert len(response) > 0, "Expected error response"
         assert "error" in response[0], "Expected error for write operation"
-        assert (
-            "read-only" in response[0]["error"].lower()
-        ), "Error should mention read-only mode"
+        assert "read-only" in response[0]["error"].lower(), "Error should mention read-only mode"
 
         # Test MERGE query
         merge_query = "MERGE (n:TestNode {id: 1}) RETURN n;"
@@ -153,6 +145,7 @@ async def test_write_query_allowed_when_readonly_disabled():
 
     # Reimport to reload config and server
     import importlib
+
     import mcp_memgraph.config
     import mcp_memgraph.servers.server
 
@@ -162,18 +155,14 @@ async def test_write_query_allowed_when_readonly_disabled():
 
     try:
         # Test CREATE query (should work now)
-        create_query = (
-            "CREATE (n:TestNode {name: 'test', test_marker: true}) " "RETURN n;"
-        )
+        create_query = "CREATE (n:TestNode {name: 'test', test_marker: true}) RETURN n;"
         response = run_query(create_query)
 
         assert isinstance(response, list), "Expected response to be a list"
         # Should not have an error about read-only mode
         if len(response) > 0 and "error" in response[0]:
             # Could have other errors, but not read-only error
-            assert (
-                "read-only" not in response[0]["error"].lower()
-            ), "Should not block write when read-only is disabled"
+            assert "read-only" not in response[0]["error"].lower(), "Should not block write when read-only is disabled"
 
         # Clean up: delete the test node
         cleanup_query = "MATCH (n:TestNode {test_marker: true}) DELETE n;"
@@ -248,19 +237,13 @@ async def test_tools_and_resources():
         response = await client.session.list_resources()
         available_resources = [str(resource.uri) for resource in response.resources]
 
-        assert len(available_tools) == len(
-            expected_tools
-        ), "Mismatch in number of tools"
+        assert len(available_tools) == len(expected_tools), "Mismatch in number of tools"
         for tool in expected_tools:
             assert tool in available_tools, f"Tool '{tool}' is missing from the server"
 
-        assert len(available_resources) == len(
-            expected_resources
-        ), "Mismatch in number of resources"
+        assert len(available_resources) == len(expected_resources), "Mismatch in number of resources"
         for resource in expected_resources:
-            assert (
-                resource in available_resources
-            ), f"Resource '{resource}' is missing from the server"
+            assert resource in available_resources, f"Resource '{resource}' is missing from the server"
 
     finally:
         await client.exit_stack.aclose()

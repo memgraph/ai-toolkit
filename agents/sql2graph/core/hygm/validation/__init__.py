@@ -7,12 +7,12 @@ This module provides comprehensive validation capabilities including:
 """
 
 from .base import (
-    ValidationSeverity,
+    BaseValidator,
     ValidationCategory,
     ValidationIssue,
     ValidationMetrics,
     ValidationResult,
-    BaseValidator,
+    ValidationSeverity,
     create_validation_issue,
 )
 from .graph_schema_validator import GraphSchemaValidator
@@ -22,17 +22,17 @@ from .memgraph_data_validator import (
 )
 
 __all__ = [
-    # Base classes and types
-    "ValidationSeverity",
-    "ValidationCategory",
-    "ValidationIssue",
-    "ValidationMetrics",
-    "ValidationResult",
     "BaseValidator",
-    "create_validation_issue",
     # Pre-migration validation
     "GraphSchemaValidator",
     # Post-migration validation
     "MemgraphDataValidator",
+    "ValidationCategory",
+    "ValidationIssue",
+    "ValidationMetrics",
+    "ValidationResult",
+    # Base classes and types
+    "ValidationSeverity",
+    "create_validation_issue",
     "validate_memgraph_data",
 ]

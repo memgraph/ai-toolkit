@@ -1,6 +1,6 @@
 import pytest
-from skills_graph.models import Skill, SkillValidationError
 
+from skills_graph.models import Skill, SkillValidationError
 
 # ------------------------------------------------------------------
 # Name validation
@@ -93,9 +93,7 @@ class TestDescriptionValidation:
 
 class TestCompatibilityValidation:
     def test_none_is_valid(self):
-        s = Skill(
-            name="s1", description="does stuff", content="body", compatibility=None
-        )
+        s = Skill(name="s1", description="does stuff", content="body", compatibility=None)
         assert s.compatibility is None
 
     def test_valid_compatibility(self):
@@ -122,9 +120,7 @@ class TestCompatibilityValidation:
 
     def test_max_length_compatibility(self):
         compat = "x" * 500
-        s = Skill(
-            name="s1", description="does stuff", content="body", compatibility=compat
-        )
+        s = Skill(name="s1", description="does stuff", content="body", compatibility=compat)
         assert s.compatibility == compat
 
 
