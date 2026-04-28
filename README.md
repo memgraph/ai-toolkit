@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/memgraph-ai-toolkit-badge.png)](https://mseep.ai/app/memgraph-ai-toolkit)
+
 # Memgraph AI Toolkit
 
 [![PyPI - memgraph-toolbox](https://img.shields.io/pypi/v/memgraph-toolbox?label=memgraph-toolbox)](https://pypi.org/project/memgraph-toolbox/)
