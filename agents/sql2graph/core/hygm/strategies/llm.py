@@ -6,7 +6,8 @@ Supports multiple providers: OpenAI, Anthropic, Gemini via LangChain.
 """
 
 import logging
-from typing import Dict, Any, Optional, List, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
 from langchain_core.language_models import BaseChatModel
 
 if TYPE_CHECKING:
@@ -29,7 +30,7 @@ class LLMStrategy(BaseModelingStrategy):
 
     def __init__(
         self,
-        llm_client: Optional[BaseChatModel] = None,
+        llm_client: BaseChatModel | None = None,
         model_name: str = "gpt-4o-mini",
         temperature: float = 0.1,
     ):
@@ -53,9 +54,9 @@ class LLMStrategy(BaseModelingStrategy):
 
     def create_model(
         self,
-        database_structure: Dict[str, Any],
-        domain_context: Optional[str] = None,
-        user_operation_context: Optional[str] = None,
+        database_structure: dict[str, Any],
+        domain_context: str | None = None,
+        user_operation_context: str | None = None,
     ) -> "GraphModel":
         """
         Create a sophisticated graph model using LLM analysis.
@@ -83,15 +84,13 @@ class LLMStrategy(BaseModelingStrategy):
                 "Please configure OpenAI API key or use deterministic strategy."
             )
 
-        return self._create_llm_model(
-            database_structure, domain_context, user_operation_context
-        )
+        return self._create_llm_model(database_structure, domain_context, user_operation_context)
 
     def _create_llm_model(
         self,
-        database_structure: Dict[str, Any],
-        domain_context: Optional[str] = None,
-        user_operation_context: Optional[str] = None,
+        database_structure: dict[str, Any],
+        domain_context: str | None = None,
+        user_operation_context: str | None = None,
     ) -> "GraphModel":
         """Create model using LLM structured output."""
         logger.info("Using LLM to generate graph model...")
@@ -101,9 +100,7 @@ class LLMStrategy(BaseModelingStrategy):
             from core.hygm.models.llm_models import LLMGraphModel
 
             # Prepare the prompt
-            prompt = self._build_modeling_prompt(
-                database_structure, domain_context, user_operation_context
-            )
+            prompt = self._build_modeling_prompt(database_structure, domain_context, user_operation_context)
 
             # Call LLM with unified client interface
             if not self.llm_client:
@@ -147,9 +144,9 @@ class LLMStrategy(BaseModelingStrategy):
 
     def _build_modeling_prompt(
         self,
-        database_structure: Dict[str, Any],
-        domain_context: Optional[str] = None,
-        user_operation_context: Optional[str] = None,
+        database_structure: dict[str, Any],
+        domain_context: str | None = None,
+        user_operation_context: str | None = None,
     ) -> str:
         """Build the prompt for LLM graph modeling."""
 
@@ -202,8 +199,7 @@ class LLMStrategy(BaseModelingStrategy):
                 [
                     "",
                     f"Domain Context: {domain_context}",
-                    "Use this context to create more semantically meaningful "
-                    "models.",
+                    "Use this context to create more semantically meaningful models.",
                 ]
             )
 
@@ -215,19 +211,19 @@ class LLMStrategy(BaseModelingStrategy):
         self._current_llm_model = llm_model
 
         from core.hygm.models.graph_models import (
+            GraphConstraint,
+            GraphIndex,
             GraphModel,
             GraphNode,
-            GraphRelationship,
             GraphProperty,
-            GraphIndex,
-            GraphConstraint,
+            GraphRelationship,
         )
         from core.hygm.models.sources import (
+            ConstraintSource,
+            IndexSource,
             NodeSource,
             PropertySource,
             RelationshipSource,
-            IndexSource,
-            ConstraintSource,
         )
 
         # Convert nodes - preserve original table mapping
@@ -248,9 +244,7 @@ class LLMStrategy(BaseModelingStrategy):
                 graph_prop = GraphProperty(key=prop_name, source=prop_source)
                 properties.append(graph_prop)
 
-            node = GraphNode(
-                labels=llm_node.labels, properties=properties, source=source
-            )
+            node = GraphNode(labels=llm_node.labels, properties=properties, source=source)
             nodes.append(node)
 
         # Convert relationships - preserve database structure mapping
@@ -334,8 +328,7 @@ class LLMStrategy(BaseModelingStrategy):
             for index_prop in llm_node.indexes:
                 index_source = IndexSource(
                     origin="llm_recommendation",
-                    reason=f"Index recommended by LLM for {llm_node.name}."
-                    f"{index_prop}",
+                    reason=f"Index recommended by LLM for {llm_node.name}.{index_prop}",
                     created_by="ai_analysis",
                     index_name=None,
                     migrated_from=None,
@@ -355,8 +348,7 @@ class LLMStrategy(BaseModelingStrategy):
             for constraint_prop in llm_node.constraints:
                 constraint_source = ConstraintSource(
                     origin="llm_recommendation",
-                    constraint_name=f"ai_unique_constraint_{llm_node.name}_"
-                    f"{constraint_prop}",
+                    constraint_name=f"ai_unique_constraint_{llm_node.name}_{constraint_prop}",
                     migrated_from="ai_analysis",
                 )
 
@@ -375,7 +367,7 @@ class LLMStrategy(BaseModelingStrategy):
             node_constraints=constraints,
         )
 
-    def _find_database_relationship(self, llm_rel) -> Dict[str, Any]:
+    def _find_database_relationship(self, llm_rel) -> dict[str, Any]:
         """
         Find the original database relationship information for an LLM
         relationship.
@@ -399,62 +391,44 @@ class LLMStrategy(BaseModelingStrategy):
                 if isinstance(db_rel, dict):
                     from_table = db_rel.get("from_table", "").lower()
                     to_table = db_rel.get("to_table", "").lower()
-                    rel_type = db_rel.get(
-                        "type", db_rel.get("relationship_type", "one_to_many")
-                    )
+                    rel_type = db_rel.get("type", db_rel.get("relationship_type", "one_to_many"))
                 else:
                     # Handle object format
                     from_table = db_rel.from_table.lower()
                     to_table = db_rel.to_table.lower()
-                    rel_type = getattr(
-                        db_rel, "relationship_type", getattr(db_rel, "type", "one_to_many")
-                    )
+                    rel_type = getattr(db_rel, "relationship_type", getattr(db_rel, "type", "one_to_many"))
 
                 # Check if this database relationship matches the source tables
-                if (
-                    from_table == from_table_name.lower()
-                    and to_table == to_table_name.lower()
-                ):
+                if from_table == from_table_name.lower() and to_table == to_table_name.lower():
                     return self._build_relationship_mapping(db_rel, llm_rel, rel_type)
 
                 # Also try reverse direction
-                if (
-                    to_table == from_table_name.lower()
-                    and from_table == to_table_name.lower()
-                ):
-                    return self._build_relationship_mapping(
-                        db_rel, llm_rel, rel_type, reverse=True
-                    )
+                if to_table == from_table_name.lower() and from_table == to_table_name.lower():
+                    return self._build_relationship_mapping(db_rel, llm_rel, rel_type, reverse=True)
 
         # Fallback: Try to match by node names and relationship semantics
         for db_rel in relationships:
             if isinstance(db_rel, dict):
                 from_table = db_rel.get("from_table", "").lower()
                 to_table = db_rel.get("to_table", "").lower()
-                rel_type = db_rel.get(
-                    "type", db_rel.get("relationship_type", "one_to_many")
-                )
+                rel_type = db_rel.get("type", db_rel.get("relationship_type", "one_to_many"))
             else:
                 # Handle object format
                 from_table = db_rel.from_table.lower()
                 to_table = db_rel.to_table.lower()
-                rel_type = getattr(
-                    db_rel, "relationship_type", getattr(db_rel, "type", "one_to_many")
-                )
+                rel_type = getattr(db_rel, "relationship_type", getattr(db_rel, "type", "one_to_many"))
 
             # Check if this database relationship matches the LLM relationship
-            if self._tables_match_nodes(
-                from_table, llm_rel.from_node
-            ) and self._tables_match_nodes(to_table, llm_rel.to_node):
+            if self._tables_match_nodes(from_table, llm_rel.from_node) and self._tables_match_nodes(
+                to_table, llm_rel.to_node
+            ):
                 return self._build_relationship_mapping(db_rel, llm_rel, rel_type)
 
             # Also try reverse direction for bidirectional relationships
-            if self._tables_match_nodes(
-                to_table, llm_rel.from_node
-            ) and self._tables_match_nodes(from_table, llm_rel.to_node):
-                return self._build_relationship_mapping(
-                    db_rel, llm_rel, rel_type, reverse=True
-                )
+            if self._tables_match_nodes(to_table, llm_rel.from_node) and self._tables_match_nodes(
+                from_table, llm_rel.to_node
+            ):
+                return self._build_relationship_mapping(db_rel, llm_rel, rel_type, reverse=True)
 
         # If no direct match found, try to infer from foreign keys
         return self._infer_relationship_from_foreign_keys(llm_rel, entity_tables)
@@ -485,24 +459,16 @@ class LLMStrategy(BaseModelingStrategy):
             from_col = db_rel.get("to_column" if reverse else "from_column", "id")
             to_col = db_rel.get("from_column" if reverse else "to_column", "id")
             join_table = db_rel.get("join_table")
-            join_from_col = db_rel.get(
-                "join_to_column" if reverse else "join_from_column"
-            )
-            join_to_col = db_rel.get(
-                "join_from_column" if reverse else "join_to_column"
-            )
+            join_from_col = db_rel.get("join_to_column" if reverse else "join_from_column")
+            join_to_col = db_rel.get("join_from_column" if reverse else "join_to_column")
         else:
             from_table = db_rel.to_table if reverse else db_rel.from_table
             to_table = db_rel.from_table if reverse else db_rel.to_table
             from_col = db_rel.to_column if reverse else db_rel.from_column
             to_col = db_rel.from_column if reverse else db_rel.to_column
             join_table = getattr(db_rel, "join_table", None)
-            join_from_col = getattr(
-                db_rel, "join_to_column" if reverse else "join_from_column", None
-            )
-            join_to_col = getattr(
-                db_rel, "join_from_column" if reverse else "join_to_column", None
-            )
+            join_from_col = getattr(db_rel, "join_to_column" if reverse else "join_from_column", None)
+            join_to_col = getattr(db_rel, "join_from_column" if reverse else "join_to_column", None)
 
         # Get primary keys for the tables from database structure
         from_table_pk = self._get_table_primary_key(from_table)
@@ -561,7 +527,7 @@ class LLMStrategy(BaseModelingStrategy):
         from_table_name = None
         to_table_name = None
 
-        for table_name in entity_tables.keys():
+        for table_name in entity_tables:
             if self._tables_match_nodes(table_name, llm_rel.from_node):
                 from_table_name = table_name
             if self._tables_match_nodes(table_name, llm_rel.to_node):
@@ -569,8 +535,7 @@ class LLMStrategy(BaseModelingStrategy):
 
         if not from_table_name or not to_table_name:
             logger.warning(
-                "Could not find matching tables for relationship %s: "
-                "from_node=%s->%s, to_node=%s->%s",
+                "Could not find matching tables for relationship %s: from_node=%s->%s, to_node=%s->%s",
                 llm_rel.name,
                 llm_rel.from_node,
                 from_table_name,
@@ -590,9 +555,7 @@ class LLMStrategy(BaseModelingStrategy):
                     )
 
             # Try additional inference for known problematic patterns
-            inferred_mapping = self._infer_problematic_relationships(
-                llm_rel, entity_tables
-            )
+            inferred_mapping = self._infer_problematic_relationships(llm_rel, entity_tables)
             if inferred_mapping:
                 return inferred_mapping
 
@@ -673,7 +636,7 @@ class LLMStrategy(BaseModelingStrategy):
         to_candidates = []
 
         # Look for tables that could match the relationship nodes
-        for table_name in entity_tables.keys():
+        for table_name in entity_tables:
             if self._tables_match_nodes(table_name, llm_rel.from_node):
                 from_candidates.append(table_name)
             if self._tables_match_nodes(table_name, llm_rel.to_node):
@@ -772,7 +735,7 @@ class LLMStrategy(BaseModelingStrategy):
                 if col in common_columns:
                     return col
             # Return the first common column
-            return list(common_columns)[0]
+            return next(iter(common_columns))
 
         # Try to infer based on table names
         # For title-related relationships, use title_id
@@ -865,25 +828,23 @@ class LLMStrategy(BaseModelingStrategy):
 
         # Check reverse mapping (node to table)
         for table_pattern, node_patterns in specific_mappings.items():
-            if node_lower in node_patterns:
-                # Check if table ends with this pattern
-                if table_lower.endswith(table_pattern) or table_lower.endswith(
-                    table_pattern + "s"
-                ):
-                    return True
+            if node_lower in node_patterns and (
+                table_lower.endswith(table_pattern) or table_lower.endswith(table_pattern + "s")
+            ):
+                return True
 
         # Handle prefix patterns like "title_" + concept
         if "_" in table_lower:
             table_parts = table_lower.split("_")
             if len(table_parts) == 2:
-                prefix, suffix = table_parts
+                _prefix, suffix = table_parts
                 # Pattern: prefix_suffix -> Suffix (e.g., title_genres -> Genre)
                 if suffix.rstrip("s") == node_lower:
                     return True
 
         return False
 
-    def _map_node_name_to_labels(self, node_name: str, llm_model) -> List[str]:
+    def _map_node_name_to_labels(self, node_name: str, llm_model) -> list[str]:
         """Map LLM node name to the actual labels defined in the model."""
         for llm_node in llm_model.nodes:
             if llm_node.name.lower() == node_name.lower() or any(

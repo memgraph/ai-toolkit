@@ -5,17 +5,18 @@ This module provides a factory pattern for creating appropriate database
 analyzers based on the database type or connection parameters.
 """
 
-from typing import Dict, Type
-from .analyzer import DatabaseAnalyzer
+from typing import ClassVar
+
 from .adapters.mysql import MySQLAnalyzer
 from .adapters.postgresql import PostgreSQLAnalyzer
+from .analyzer import DatabaseAnalyzer
 
 
 class DatabaseAnalyzerFactory:
     """Factory for creating database-specific analyzers."""
 
     # Registry of available analyzers
-    _analyzers: Dict[str, Type[DatabaseAnalyzer]] = {
+    _analyzers: ClassVar[dict[str, type[DatabaseAnalyzer]]] = {
         "mysql": MySQLAnalyzer,
         "postgresql": PostgreSQLAnalyzer,
         # Future database types can be added here:
@@ -25,9 +26,7 @@ class DatabaseAnalyzerFactory:
     }
 
     @classmethod
-    def create_analyzer(
-        cls, database_type: str, **connection_params
-    ) -> DatabaseAnalyzer:
+    def create_analyzer(cls, database_type: str, **connection_params) -> DatabaseAnalyzer:
         """
         Create a database analyzer for the specified database type.
 
@@ -45,10 +44,7 @@ class DatabaseAnalyzerFactory:
 
         if database_type not in cls._analyzers:
             supported_types = ", ".join(cls._analyzers.keys())
-            raise ValueError(
-                f"Unsupported database type: {database_type}. "
-                f"Supported types: {supported_types}"
-            )
+            raise ValueError(f"Unsupported database type: {database_type}. Supported types: {supported_types}")
 
         # Create analyzer with appropriate parameters based on database type
         if database_type == "mysql":
@@ -203,9 +199,7 @@ class DatabaseAnalyzerFactory:
         return list(cls._analyzers.keys())
 
     @classmethod
-    def register_analyzer(
-        cls, database_type: str, analyzer_class: Type[DatabaseAnalyzer]
-    ) -> None:
+    def register_analyzer(cls, database_type: str, analyzer_class: type[DatabaseAnalyzer]) -> None:
         """
         Register a new database analyzer.
 

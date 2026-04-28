@@ -5,7 +5,8 @@ Override with MEMGRAPH_URL, MEMGRAPH_USER, MEMGRAPH_PASSWORD env vars.
 """
 
 import pytest
-from skills_graph import SkillGraph, Skill
+
+from skills_graph import Skill, SkillGraph
 
 
 @pytest.fixture()
@@ -77,9 +78,7 @@ def test_list_skills(sg):
 
 
 def test_search_by_tags(sg):
-    sg.add_skill(
-        Skill(name="s1", description="d", content="c", tags=["python", "graph"])
-    )
+    sg.add_skill(Skill(name="s1", description="d", content="c", tags=["python", "graph"]))
     sg.add_skill(Skill(name="s2", description="d", content="c", tags=["python"]))
     sg.add_skill(Skill(name="s3", description="d", content="c", tags=["rust"]))
 
@@ -108,9 +107,7 @@ def test_search_by_name(sg):
 
 def test_dependencies(sg):
     sg.add_skill(Skill(name="base-skill", description="foundation", content="c"))
-    sg.add_skill(
-        Skill(name="advanced-skill", description="builds on base", content="c")
-    )
+    sg.add_skill(Skill(name="advanced-skill", description="builds on base", content="c"))
 
     sg.add_dependency("advanced-skill", "base-skill")
 

@@ -6,8 +6,8 @@ to support post-migration validation.
 """
 
 import logging
-from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
+from typing import Any
 
 try:
     import neo4j
@@ -83,9 +83,7 @@ class MemgraphAdapter:
                 port=self.config.port,
                 username=self.config.username,
                 password=self.config.password,
-                sslmode=mgclient.SSLMode.REQUIRE
-                if self.config.use_ssl
-                else mgclient.SSLMode.DISABLE,
+                sslmode=mgclient.SSLMode.REQUIRE if self.config.use_ssl else mgclient.SSLMode.DISABLE,
             )
             # Test the connection
             cursor = self.connection.cursor()
@@ -102,9 +100,7 @@ class MemgraphAdapter:
             uri = f"{'bolt+s' if self.config.use_ssl else 'bolt'}://{self.config.host}:{self.config.port}"
             self.driver = neo4j.GraphDatabase.driver(
                 uri,
-                auth=(self.config.username, self.config.password)
-                if self.config.username
-                else None,
+                auth=(self.config.username, self.config.password) if self.config.username else None,
             )
             # Test the connection
             with self.driver.session() as session:
@@ -114,7 +110,7 @@ class MemgraphAdapter:
             logger.debug(f"neo4j driver connection failed: {e}")
             return False
 
-    def execute_query(self, query: str) -> List[Tuple]:
+    def execute_query(self, query: str) -> list[tuple]:
         """
         Execute a query and return results.
 
@@ -134,19 +130,19 @@ class MemgraphAdapter:
         else:
             raise RuntimeError("Unknown connection type")
 
-    def _execute_mgclient_query(self, query: str) -> List[Tuple]:
+    def _execute_mgclient_query(self, query: str) -> list[tuple]:
         """Execute query using mgclient."""
         cursor = self.connection.cursor()
         cursor.execute(query)
         return cursor.fetchall()
 
-    def _execute_neo4j_query(self, query: str) -> List[Tuple]:
+    def _execute_neo4j_query(self, query: str) -> list[tuple]:
         """Execute query using neo4j driver."""
         with self.driver.session() as session:
             result = session.run(query)
             return [tuple(record.values()) for record in result]
 
-    def get_schema_info(self) -> List[Tuple]:
+    def get_schema_info(self) -> list[tuple]:
         """
         Get schema information from Memgraph.
 
@@ -158,12 +154,10 @@ class MemgraphAdapter:
             return self.execute_query("SHOW SCHEMA INFO")
         except Exception:
             # Fallback to alternative schema queries
-            logger.warning(
-                "SHOW SCHEMA INFO not available, using alternative schema detection"
-            )
+            logger.warning("SHOW SCHEMA INFO not available, using alternative schema detection")
             return self._get_schema_info_alternative()
 
-    def _get_schema_info_alternative(self) -> List[Tuple]:
+    def _get_schema_info_alternative(self) -> list[tuple]:
         """
         Alternative method to get schema info for older Memgraph versions.
 
@@ -181,14 +175,10 @@ class MemgraphAdapter:
                 # Get properties for this label
                 props_query = f"MATCH (n:{label}) RETURN DISTINCT keys(n) LIMIT 1"
                 props_result = self.execute_query(props_query)
-                properties = (
-                    props_result[0][0] if props_result and props_result[0] else []
-                )
+                properties = props_result[0][0] if props_result and props_result[0] else []
 
                 # Format as schema info tuple
-                schema_info.append(
-                    ("node", label, {prop: "Unknown" for prop in properties})
-                )
+                schema_info.append(("node", label, {prop: "Unknown" for prop in properties}))
         except Exception as e:
             logger.warning(f"Failed to get node labels: {e}")
 
@@ -199,24 +189,18 @@ class MemgraphAdapter:
                 rel_type = rel_row[0]
 
                 # Get properties for this relationship type
-                props_query = (
-                    f"MATCH ()-[r:{rel_type}]-() RETURN DISTINCT keys(r) LIMIT 1"
-                )
+                props_query = f"MATCH ()-[r:{rel_type}]-() RETURN DISTINCT keys(r) LIMIT 1"
                 props_result = self.execute_query(props_query)
-                properties = (
-                    props_result[0][0] if props_result and props_result[0] else []
-                )
+                properties = props_result[0][0] if props_result and props_result[0] else []
 
                 # Format as schema info tuple
-                schema_info.append(
-                    ("relationship", rel_type, {prop: "Unknown" for prop in properties})
-                )
+                schema_info.append(("relationship", rel_type, {prop: "Unknown" for prop in properties}))
         except Exception as e:
             logger.warning(f"Failed to get relationship types: {e}")
 
         return schema_info
 
-    def get_indexes(self) -> List[Dict[str, Any]]:
+    def get_indexes(self) -> list[dict[str, Any]]:
         """
         Get index information from Memgraph.
 
@@ -242,7 +226,7 @@ class MemgraphAdapter:
             logger.warning(f"Failed to get index information: {e}")
             return []
 
-    def get_constraints(self) -> List[Dict[str, Any]]:
+    def get_constraints(self) -> list[dict[str, Any]]:
         """
         Get constraint information from Memgraph.
 
@@ -259,9 +243,7 @@ class MemgraphAdapter:
                     constraint_info = {
                         "name": constraint_row[0],
                         "type": constraint_row[1],
-                        "properties": constraint_row[2]
-                        if len(constraint_row) > 2
-                        else [],
+                        "properties": constraint_row[2] if len(constraint_row) > 2 else [],
                     }
                     constraints.append(constraint_info)
 
@@ -311,8 +293,6 @@ def create_memgraph_connection(
     Returns:
         MemgraphAdapter instance
     """
-    config = MemgraphConnectionConfig(
-        host=host, port=port, username=username, password=password, use_ssl=use_ssl
-    )
+    config = MemgraphConnectionConfig(host=host, port=port, username=username, password=password, use_ssl=use_ssl)
 
     return MemgraphAdapter(config)

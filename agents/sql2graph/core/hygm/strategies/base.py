@@ -5,7 +5,7 @@ This module defines the base interface that all modeling strategies must impleme
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..models.graph_models import GraphModel
@@ -15,9 +15,7 @@ class BaseModelingStrategy(ABC):
     """Base class for all graph modeling strategies."""
 
     @abstractmethod
-    def create_model(
-        self, database_structure: Dict[str, Any], domain_context: Optional[str] = None
-    ) -> "GraphModel":
+    def create_model(self, database_structure: dict[str, Any], domain_context: str | None = None) -> "GraphModel":
         """
         Create a graph model from database structure.
 

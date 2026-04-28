@@ -1,12 +1,12 @@
-from typing import Any, Dict, List
+from typing import Any
 
 import pytest
 
+from ..api.memgraph import Memgraph
+from ..api.tool import BaseTool
 from ..api.toolbox import BaseToolbox
 from ..memgraph_toolbox import MemgraphToolbox
-from ..api.tool import BaseTool
 from ..utils.logger import logger_init
-from ..api.memgraph import Memgraph
 
 logger = logger_init("test-toolbox")  # Set up logger for the test
 
@@ -24,7 +24,7 @@ def test_base_toolbox():
                 input_schema={},
             )
 
-        def call(self, arguments: Dict[str, Any]) -> List[Any]:
+        def call(self, arguments: dict[str, Any]) -> list[Any]:
             return ["dummy_result"]
 
     dummy_tool = DummyTool()

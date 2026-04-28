@@ -6,22 +6,18 @@ from memgraph_toolbox.api.memgraph import Memgraph
 logger = logging.getLogger(__name__)
 
 
-def create_nodes_from_list(
-    memgraph: Memgraph, nodes: list[dict], node_label: str, batch_size: int
-) -> None:
+def create_nodes_from_list(memgraph: Memgraph, nodes: list[dict], node_label: str, batch_size: int) -> None:
     """
     Import data from the given list of dictionaries to Memgraph by batching.
     """
     if not nodes:
-        logger.warning(
-            f"No nodes provided to create_nodes_from_list for label {node_label}"
-        )
+        logger.warning(f"No nodes provided to create_nodes_from_list for label {node_label}")
         return
 
     num_nodes = len(nodes)
     max_retries = 3
     retry_delay = 3
-    properties_string = ", ".join([f"{key}: data.{key}" for key in nodes[0].keys()])
+    properties_string = ", ".join([f"{key}: data.{key}" for key in nodes[0]])
     insert_query = f"""
     UNWIND $batch AS data
     CREATE (n:{node_label} {{{properties_string}}})
@@ -31,9 +27,7 @@ def create_nodes_from_list(
         for attempt in range(max_retries):
             try:
                 memgraph.query(insert_query, params={"batch": batch_nodes})
-                logger.info(
-                    f"Created {len(batch_nodes)} nodes with label :{node_label}"
-                )
+                logger.info(f"Created {len(batch_nodes)} nodes with label :{node_label}")
                 break
             except Exception as e:
                 if attempt < max_retries:

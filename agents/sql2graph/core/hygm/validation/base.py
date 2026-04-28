@@ -9,7 +9,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Any, Optional, Union
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +42,8 @@ class ValidationIssue:
     message: str
     expected: Any = None
     actual: Any = None
-    recommendation: Optional[str] = None
-    details: Dict[str, Any] = field(default_factory=dict)
+    recommendation: str | None = None
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -77,34 +77,24 @@ class ValidationResult:
     validation_type: str
     success: bool
     summary: str
-    issues: List[ValidationIssue] = field(default_factory=list)
+    issues: list[ValidationIssue] = field(default_factory=list)
     metrics: ValidationMetrics = field(default_factory=ValidationMetrics)
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
     @property
-    def critical_issues(self) -> List[ValidationIssue]:
+    def critical_issues(self) -> list[ValidationIssue]:
         """Get only critical issues."""
-        return [
-            issue
-            for issue in self.issues
-            if issue.severity == ValidationSeverity.CRITICAL
-        ]
+        return [issue for issue in self.issues if issue.severity == ValidationSeverity.CRITICAL]
 
     @property
-    def warnings(self) -> List[ValidationIssue]:
+    def warnings(self) -> list[ValidationIssue]:
         """Get only warning issues."""
-        return [
-            issue
-            for issue in self.issues
-            if issue.severity == ValidationSeverity.WARNING
-        ]
+        return [issue for issue in self.issues if issue.severity == ValidationSeverity.WARNING]
 
     @property
-    def info_issues(self) -> List[ValidationIssue]:
+    def info_issues(self) -> list[ValidationIssue]:
         """Get only info issues."""
-        return [
-            issue for issue in self.issues if issue.severity == ValidationSeverity.INFO
-        ]
+        return [issue for issue in self.issues if issue.severity == ValidationSeverity.INFO]
 
     def add_issue(self, issue: ValidationIssue):
         """Add a validation issue."""
@@ -119,7 +109,7 @@ class BaseValidator(ABC):
     """Abstract base class for all validators."""
 
     def __init__(self):
-        self.issues: List[ValidationIssue] = []
+        self.issues: list[ValidationIssue] = []
         self.metrics = ValidationMetrics()
 
     @abstractmethod
@@ -134,8 +124,8 @@ class BaseValidator(ABC):
         message: str,
         expected: Any = None,
         actual: Any = None,
-        recommendation: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
+        recommendation: str | None = None,
+        details: dict[str, Any] | None = None,
     ):
         """Helper method to add validation issues."""
         issue = ValidationIssue(
@@ -157,18 +147,11 @@ class BaseValidator(ABC):
 
     def _generate_summary(self) -> str:
         """Generate a summary of validation results."""
-        critical_count = len(
-            [i for i in self.issues if i.severity == ValidationSeverity.CRITICAL]
-        )
-        warning_count = len(
-            [i for i in self.issues if i.severity == ValidationSeverity.WARNING]
-        )
+        critical_count = len([i for i in self.issues if i.severity == ValidationSeverity.CRITICAL])
+        warning_count = len([i for i in self.issues if i.severity == ValidationSeverity.WARNING])
 
         if critical_count > 0:
-            return (
-                f"Validation FAILED: {critical_count} critical issues, "
-                f"{warning_count} warnings"
-            )
+            return f"Validation FAILED: {critical_count} critical issues, {warning_count} warnings"
         elif warning_count > 0:
             return f"Validation PASSED with {warning_count} warnings"
         else:
@@ -176,8 +159,8 @@ class BaseValidator(ABC):
 
 
 def create_validation_issue(
-    severity: Union[str, ValidationSeverity],
-    category: Union[str, ValidationCategory],
+    severity: str | ValidationSeverity,
+    category: str | ValidationCategory,
     message: str,
     **kwargs,
 ) -> ValidationIssue:
@@ -189,6 +172,4 @@ def create_validation_issue(
     if isinstance(category, str):
         category = ValidationCategory(category.lower())
 
-    return ValidationIssue(
-        severity=severity, category=category, message=message, **kwargs
-    )
+    return ValidationIssue(severity=severity, category=category, message=message, **kwargs)

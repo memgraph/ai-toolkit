@@ -7,27 +7,27 @@ These models represent the graph structure and provide schema format conversion.
 import datetime
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Any, Optional
+from typing import Any
 
 # Import from within the same package
 try:
     from .sources import (
-        PropertySource,
-        NodeSource,
-        RelationshipSource,
-        IndexSource,
         ConstraintSource,
         EnumSource,
+        IndexSource,
+        NodeSource,
+        PropertySource,
+        RelationshipSource,
     )
 except ImportError:
     # Fallback for when imported from different contexts
     from sources import (
-        PropertySource,
-        NodeSource,
-        RelationshipSource,
-        IndexSource,
         ConstraintSource,
         EnumSource,
+        IndexSource,
+        NodeSource,
+        PropertySource,
+        RelationshipSource,
     )
 
 
@@ -38,8 +38,8 @@ class GraphProperty:
     key: str
     count: int = 1
     filling_factor: float = 100.0
-    types: List[Dict[str, Any]] = None
-    source: Optional[PropertySource] = None
+    types: list[dict[str, Any]] = None
+    source: PropertySource | None = None
 
     def __post_init__(self):
         if self.types is None:
@@ -50,11 +50,11 @@ class GraphProperty:
 class GraphNode:
     """Represents a node in the graph model aligned with schema format."""
 
-    labels: List[str]  # Node labels
+    labels: list[str]  # Node labels
     count: int = 1
-    properties: List[GraphProperty] = None
-    examples: List[Dict[str, Any]] = None
-    source: Optional[NodeSource] = None
+    properties: list[GraphProperty] = None
+    examples: list[dict[str, Any]] = None
+    source: NodeSource | None = None
 
     def __post_init__(self):
         if self.properties is None:
@@ -73,12 +73,12 @@ class GraphRelationship:
     """Represents a relationship in the graph model aligned with schema format."""
 
     edge_type: str
-    start_node_labels: List[str]
-    end_node_labels: List[str]
+    start_node_labels: list[str]
+    end_node_labels: list[str]
     count: int = 1
-    properties: List[GraphProperty] = None
-    examples: List[Dict[str, Any]] = None
-    source: Optional[RelationshipSource] = None
+    properties: list[GraphProperty] = None
+    examples: list[dict[str, Any]] = None
+    source: RelationshipSource | None = None
     directionality: str = "directed"
 
     def __post_init__(self):
@@ -92,13 +92,13 @@ class GraphRelationship:
 class GraphIndex:
     """Represents an index aligned with schema format."""
 
-    labels: Optional[List[str]] = None  # For node indexes
-    edge_type: Optional[str] = None  # For edge indexes
-    properties: List[str] = None
+    labels: list[str] | None = None  # For node indexes
+    edge_type: str | None = None  # For edge indexes
+    properties: list[str] = None
     count: int = 0
-    examples: List[Dict[str, Any]] = None
+    examples: list[dict[str, Any]] = None
     type: str = "label+property"  # Index type
-    source: Optional[IndexSource] = None
+    source: IndexSource | None = None
 
     def __post_init__(self):
         if self.properties is None:
@@ -112,11 +112,11 @@ class GraphConstraint:
     """Represents a constraint aligned with schema format."""
 
     type: str  # "unique", "existence", "data_type"
-    labels: Optional[List[str]] = None  # For node constraints
-    edge_type: Optional[str] = None  # For edge constraints
-    properties: List[str] = None
-    data_type: Optional[str] = None
-    source: Optional[ConstraintSource] = None
+    labels: list[str] | None = None  # For node constraints
+    edge_type: str | None = None  # For edge constraints
+    properties: list[str] = None
+    data_type: str | None = None
+    source: ConstraintSource | None = None
 
     def __post_init__(self):
         if self.properties is None:
@@ -128,21 +128,21 @@ class GraphEnum:
     """Represents an enum aligned with schema format."""
 
     name: str
-    values: List[str]
-    source: Optional[EnumSource] = None
+    values: list[str]
+    source: EnumSource | None = None
 
 
 @dataclass
 class GraphModel:
     """Complete graph model aligned with schema format."""
 
-    nodes: List[GraphNode]
-    edges: List[GraphRelationship]
-    node_indexes: List[GraphIndex] = None
-    edge_indexes: List[GraphIndex] = None
-    node_constraints: List[GraphConstraint] = None
-    edge_constraints: List[GraphConstraint] = None
-    enums: List[GraphEnum] = None
+    nodes: list[GraphNode]
+    edges: list[GraphRelationship]
+    node_indexes: list[GraphIndex] = None
+    edge_indexes: list[GraphIndex] = None
+    node_constraints: list[GraphConstraint] = None
+    edge_constraints: list[GraphConstraint] = None
+    enums: list[GraphEnum] = None
 
     def __post_init__(self):
         if self.node_indexes is None:
@@ -157,7 +157,7 @@ class GraphModel:
             self.enums = []
 
     @classmethod
-    def from_schema_format(cls, schema_dict: Dict[str, Any]) -> "GraphModel":
+    def from_schema_format(cls, schema_dict: dict[str, Any]) -> "GraphModel":
         """Create a GraphModel from schema format dictionary."""
         # Convert nodes
         nodes = []
@@ -343,9 +343,7 @@ class GraphModel:
                     created_by=enum_dict["source"].get("created_by"),
                 )
 
-            enum = GraphEnum(
-                name=enum_dict["name"], values=enum_dict["values"], source=enum_source
-            )
+            enum = GraphEnum(name=enum_dict["name"], values=enum_dict["values"], source=enum_source)
             enums.append(enum)
 
         return cls(
@@ -358,9 +356,7 @@ class GraphModel:
             enums=enums,
         )
 
-    def to_schema_format(
-        self, sample_data: Optional[Dict[str, List[Dict[str, Any]]]] = None
-    ) -> Dict[str, Any]:
+    def to_schema_format(self, sample_data: dict[str, list[dict[str, Any]]] | None = None) -> dict[str, Any]:
         """Convert to comprehensive schema format dictionary."""
         schema_nodes = []
         for node in self.nodes:
@@ -408,8 +404,8 @@ class GraphModel:
         }
 
     def _node_to_schema_dict(
-        self, node: GraphNode, sample_data: Optional[Dict[str, List[Dict[str, Any]]]]
-    ) -> Dict[str, Any]:
+        self, node: GraphNode, sample_data: dict[str, list[dict[str, Any]]] | None
+    ) -> dict[str, Any]:
         """Convert GraphNode to schema dictionary format."""
         # Convert properties to schema format
         schema_properties = []
@@ -452,8 +448,8 @@ class GraphModel:
     def _edge_to_schema_dict(
         self,
         edge: GraphRelationship,
-        sample_data: Optional[Dict[str, List[Dict[str, Any]]]],
-    ) -> Dict[str, Any]:
+        sample_data: dict[str, list[dict[str, Any]]] | None,
+    ) -> dict[str, Any]:
         """Convert GraphRelationship to schema dictionary format."""
         # Convert properties to schema format
         schema_properties = []
@@ -495,7 +491,7 @@ class GraphModel:
 
         return schema_edge
 
-    def _index_to_schema_dict(self, index: GraphIndex) -> Dict[str, Any]:
+    def _index_to_schema_dict(self, index: GraphIndex) -> dict[str, Any]:
         """Convert GraphIndex to schema dictionary format."""
         schema_index = {
             "properties": index.properties,
@@ -522,7 +518,7 @@ class GraphModel:
 
         return schema_index
 
-    def _constraint_to_schema_dict(self, constraint: GraphConstraint) -> Dict[str, Any]:
+    def _constraint_to_schema_dict(self, constraint: GraphConstraint) -> dict[str, Any]:
         """Convert GraphConstraint to schema dictionary format."""
         schema_constraint = {
             "type": constraint.type,
@@ -552,7 +548,7 @@ class GraphModel:
 
         return schema_constraint
 
-    def _enum_to_schema_dict(self, enum: GraphEnum) -> Dict[str, Any]:
+    def _enum_to_schema_dict(self, enum: GraphEnum) -> dict[str, Any]:
         """Convert GraphEnum to schema dictionary format."""
         schema_enum = {
             "name": enum.name,
@@ -573,9 +569,7 @@ class GraphModel:
 
         return schema_enum
 
-    def _convert_property_to_schema(
-        self, prop_name: str, sample_rows: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    def _convert_property_to_schema(self, prop_name: str, sample_rows: list[dict[str, Any]]) -> dict[str, Any]:
         """Convert a property to schema format with type detection."""
         prop_schema = {
             "key": prop_name,

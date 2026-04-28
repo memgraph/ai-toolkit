@@ -1,13 +1,12 @@
 import logging
 from hashlib import md5
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from memgraph_toolbox.api.memgraph import Memgraph
 from langchain_core.utils import get_from_dict_or_env
 
 from langchain_memgraph.graphs.graph_document import GraphDocument, Node, Relationship
 from langchain_memgraph.graphs.graph_store import GraphStore
-
+from memgraph_toolbox.api.memgraph import Memgraph
 
 logger = logging.getLogger(__name__)
 
@@ -43,16 +42,16 @@ RETURN
     start_node_labels,
     rel_type,
     end_node_labels,
-    COLLECT(DISTINCT CASE 
-    WHEN property_info <> [] 
-    THEN property_info 
+    COLLECT(DISTINCT CASE
+    WHEN property_info <> []
+    THEN property_info
     ELSE null END) AS properties_info
 """
 
 NODE_IMPORT_QUERY = """
 UNWIND $data AS row
-CALL merge.node(row.label, row.properties, {}, {}) 
-YIELD node 
+CALL merge.node(row.label, row.properties, {}, {})
+YIELD node
 RETURN distinct 'done' AS result
 """
 
@@ -100,7 +99,7 @@ Nodes are connected with the following relationships:
 """
 
 
-def get_schema_subset(data: Dict[str, Any]) -> Dict[str, Any]:
+def get_schema_subset(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "edges": [
             {
@@ -108,10 +107,7 @@ def get_schema_subset(data: Dict[str, Any]) -> Dict[str, Any]:
                 "properties": [
                     {
                         "key": prop["key"],
-                        "types": [
-                            {"type": type_item["type"].lower()}
-                            for type_item in prop["types"]
-                        ],
+                        "types": [{"type": type_item["type"].lower()} for type_item in prop["types"]],
                     }
                     for prop in edge["properties"]
                 ],
@@ -126,10 +122,7 @@ def get_schema_subset(data: Dict[str, Any]) -> Dict[str, Any]:
                 "properties": [
                     {
                         "key": prop["key"],
-                        "types": [
-                            {"type": type_item["type"].lower()}
-                            for type_item in prop["types"]
-                        ],
+                        "types": [{"type": type_item["type"].lower()} for type_item in prop["types"]],
                     }
                     for prop in node["properties"]
                 ],
@@ -139,16 +132,13 @@ def get_schema_subset(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def get_reformated_schema(
-    nodes: List[Dict[str, Any]], rels: List[Dict[str, Any]]
-) -> Dict[str, Any]:
+def get_reformated_schema(nodes: list[dict[str, Any]], rels: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "edges": [
             {
                 "end_node_labels": rel["end_node_labels"],
                 "properties": [
-                    {"key": prop[0], "types": [{"type": prop[1].lower()}]}
-                    for prop in rel["properties_info"]
+                    {"key": prop[0], "types": [{"type": prop[1].lower()}]} for prop in rel["properties_info"]
                 ],
                 "start_node_labels": rel["start_node_labels"],
                 "type": rel["rel_type"],
@@ -161,9 +151,7 @@ def get_reformated_schema(
                 "properties": [
                     {
                         "key": prop["key"],
-                        "types": [
-                            {"type": type_item.lower()} for type_item in prop["types"]
-                        ],
+                        "types": [{"type": type_item.lower()} for type_item in prop["types"]],
                     }
                     for prop in node["properties"]
                     if node["properties"][0]["key"] != ""
@@ -174,7 +162,7 @@ def get_reformated_schema(
     }
 
 
-def transform_schema_to_text(schema: Dict[str, Any]) -> str:
+def transform_schema_to_text(schema: dict[str, Any]) -> str:
     node_props_data = ""
     rel_props_data = ""
     rel_data = ""
@@ -185,9 +173,7 @@ def transform_schema_to_text(schema: Dict[str, Any]) -> str:
             continue
         node_props_data += "  properties:\n"
         for prop in node["properties"]:
-            prop_types_str = " or ".join(
-                {prop_types["type"] for prop_types in prop["types"]}
-            )
+            prop_types_str = " or ".join({prop_types["type"] for prop_types in prop["types"]})
             node_props_data += f"    - {prop['key']}: {prop_types_str}\n"
 
     for rel in schema["edges"]:
@@ -201,9 +187,7 @@ def transform_schema_to_text(schema: Dict[str, Any]) -> str:
 
         rel_props_data += f"- labels: {rel_type}\n  properties:\n"
         for prop in rel["properties"]:
-            prop_types_str = " or ".join(
-                {prop_types["type"].lower() for prop_types in prop["types"]}
-            )
+            prop_types_str = " or ".join({prop_types["type"].lower() for prop_types in prop["types"]})
             rel_props_data += f"    - {prop['key']}: {prop_types_str}\n"
 
     return "".join(
@@ -219,38 +203,24 @@ def _remove_backticks(text: str) -> str:
     return text.replace("`", "")
 
 
-def _transform_nodes(nodes: list[Node], baseEntityLabel: bool) -> List[dict]:
+def _transform_nodes(nodes: list[Node], baseEntityLabel: bool) -> list[dict]:
     transformed_nodes = []
     for node in nodes:
         properties_dict = node.properties | {"id": node.id}
-        label = (
-            [_remove_backticks(node.type), BASE_ENTITY_LABEL]
-            if baseEntityLabel
-            else [_remove_backticks(node.type)]
-        )
+        label = [_remove_backticks(node.type), BASE_ENTITY_LABEL] if baseEntityLabel else [_remove_backticks(node.type)]
         node_dict = {"label": label, "properties": properties_dict}
         transformed_nodes.append(node_dict)
     return transformed_nodes
 
 
-def _transform_relationships(
-    relationships: list[Relationship], baseEntityLabel: bool
-) -> List[dict]:
+def _transform_relationships(relationships: list[Relationship], baseEntityLabel: bool) -> list[dict]:
     transformed_relationships = []
     for rel in relationships:
         rel_dict = {
             "type": _remove_backticks(rel.type),
-            "source_label": (
-                [BASE_ENTITY_LABEL]
-                if baseEntityLabel
-                else [_remove_backticks(rel.source.type)]
-            ),
+            "source_label": ([BASE_ENTITY_LABEL] if baseEntityLabel else [_remove_backticks(rel.source.type)]),
             "source_id": rel.source.id,
-            "target_label": (
-                [BASE_ENTITY_LABEL]
-                if baseEntityLabel
-                else [_remove_backticks(rel.target.type)]
-            ),
+            "target_label": ([BASE_ENTITY_LABEL] if baseEntityLabel else [_remove_backticks(rel.target.type)]),
             "target_id": rel.target.id,
         }
         transformed_relationships.append(rel_dict)
@@ -283,13 +253,13 @@ class MemgraphLangChain(GraphStore, Memgraph):
 
     def __init__(
         self,
-        url: Optional[str] = None,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-        database: Optional[str] = None,
+        url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        database: str | None = None,
         refresh_schema: bool = False,
         *,
-        driver_config: Optional[Dict] = None,
+        driver_config: dict | None = None,
     ) -> None:
         """Create a new Memgraph graph wrapper instance."""
 
@@ -297,7 +267,7 @@ class MemgraphLangChain(GraphStore, Memgraph):
 
         # if username and password are "", assume auth is disabled
         if username == "" and password == "":
-            auth = None
+            pass
         else:
             username = get_from_dict_or_env(
                 {"username": username},
@@ -319,13 +289,11 @@ class MemgraphLangChain(GraphStore, Memgraph):
             user_agent="langchain-memgraph",
         )
 
-        database = get_from_dict_or_env(
-            {"database": database}, "database", "MEMGRAPH_DATABASE", "memgraph"
-        )
+        database = get_from_dict_or_env({"database": database}, "database", "MEMGRAPH_DATABASE", "memgraph")
 
         self._database = database
         self.schema: str = ""
-        self.structured_schema: Dict[str, Any] = {}
+        self.structured_schema: dict[str, Any] = {}
 
         # Set schema
         if refresh_schema:
@@ -340,13 +308,11 @@ class MemgraphLangChain(GraphStore, Memgraph):
         return self.schema
 
     @property
-    def get_structured_schema(self) -> Dict[str, Any]:
+    def get_structured_schema(self) -> dict[str, Any]:
         """Returns the structured schema of the Graph database"""
         return self.structured_schema
 
-    def query(
-        self, query: str, params: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
+    def query(self, query: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """
         Execute a Cypher query and return results as a list of dictionaries.
 
@@ -385,13 +351,8 @@ class MemgraphLangChain(GraphStore, Memgraph):
             return
 
         except (Neo4jError, ValueError) as e:
-            logger.info(
-                "SHOW SCHEMA INFO query failed or returned no data; falling back: %s", e
-            )
-            if (
-                e.code == "Memgraph.ClientError.MemgraphError.MemgraphError"
-                and "SchemaInfo disabled" in e.message
-            ):
+            logger.info("SHOW SCHEMA INFO query failed or returned no data; falling back: %s", e)
+            if e.code == "Memgraph.ClientError.MemgraphError.MemgraphError" and "SchemaInfo disabled" in e.message:
                 logger.info(
                     "Schema generation with SHOW SCHEMA INFO query failed. "
                     "Set --schema-info-enabled=true to use SHOW SCHEMA INFO query. "
@@ -408,7 +369,7 @@ class MemgraphLangChain(GraphStore, Memgraph):
 
     def add_graph_documents(
         self,
-        graph_documents: List[GraphDocument],
+        graph_documents: list[GraphDocument],
         include_source: bool = False,
         baseEntityLabel: bool = False,
     ) -> None:
@@ -432,18 +393,14 @@ class MemgraphLangChain(GraphStore, Memgraph):
         """
 
         if baseEntityLabel:
-            self.query(
-                f"CREATE CONSTRAINT ON (b:{BASE_ENTITY_LABEL}) ASSERT b.id IS UNIQUE;"
-            )
+            self.query(f"CREATE CONSTRAINT ON (b:{BASE_ENTITY_LABEL}) ASSERT b.id IS UNIQUE;")
             self.query(f"CREATE INDEX ON :{BASE_ENTITY_LABEL}(id);")
             self.query(f"CREATE INDEX ON :{BASE_ENTITY_LABEL};")
 
         for document in graph_documents:
             if include_source:
                 if not document.source.metadata.get("id"):
-                    document.source.metadata["id"] = md5(
-                        document.source.page_content.encode("utf-8")
-                    ).hexdigest()
+                    document.source.metadata["id"] = md5(document.source.page_content.encode("utf-8")).hexdigest()
 
                 self.query(INCLUDE_DOCS_QUERY, {"document": document.source.__dict__})
 

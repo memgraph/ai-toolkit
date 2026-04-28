@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any
 
 
 class BaseTool(ABC):
@@ -9,15 +9,15 @@ class BaseTool(ABC):
 
     name: str
     description: str
-    input_schema: Dict[str, Any]
+    input_schema: dict[str, Any]
 
-    def __init__(self, name: str, description: str, input_schema: Dict[str, Any]):
+    def __init__(self, name: str, description: str, input_schema: dict[str, Any]):
         self.name = name
         self.description = description
         self.input_schema = input_schema
 
     @abstractmethod
-    def call(self, arguments: Dict[str, Any]) -> List[Any]:
+    def call(self, arguments: dict[str, Any]) -> list[Any]:
         """
         Execute the tool with the provided arguments.
 

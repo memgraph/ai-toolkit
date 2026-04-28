@@ -45,6 +45,4 @@ class MemgraphToolbox(BaseToolbox):
             self.add_tool(ShowStorageInfoTool(db))
             self.add_tool(ShowTriggersTool(db))
         else:
-            raise ValueError(
-                "Memgraph database connection is required to initialize tools."
-            )
+            raise ValueError("Memgraph database connection is required to initialize tools.")

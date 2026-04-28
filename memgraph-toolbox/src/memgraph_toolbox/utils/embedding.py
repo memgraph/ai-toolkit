@@ -1,21 +1,18 @@
-from typing import List, Optional
-
 try:
     import torch
     from sentence_transformers import SentenceTransformer
 except ImportError as e:
     raise ImportError(
-        "Embedding utilities require optional dependencies. "
-        "Install with: pip install 'memgraph-toolbox[evaluations]'"
+        "Embedding utilities require optional dependencies. Install with: pip install 'memgraph-toolbox[evaluations]'"
     ) from e
 
 
 # NOTE: HF_TOKEN has to be set in the environment variables.
 def get_sentence_transformer_model(
     name: str = "all-MiniLM-L6-v2",
-    device: Optional[str] = None,
+    device: str | None = None,
     use_data_parallel: bool = False,
-    gpu_ids: Optional[List[int]] = None,
+    gpu_ids: list[int] | None = None,
 ) -> SentenceTransformer:
     """
     Get a sentence transformer model with optional DataParallel support.
@@ -57,10 +54,8 @@ def get_model_device(model: SentenceTransformer) -> str:
 if __name__ == "__main__":
     print("Available PyTorch backends:")
     print(f"  CUDA: {torch.cuda.is_available()}")
-    print(
-        f"  MPS: {hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()}"
-    )
-    print(f"  CPU: True (always available)")
+    print(f"  MPS: {hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()}")
+    print("  CPU: True (always available)")
 
     # Example usage
     print("\nExample usage:")
@@ -84,6 +79,4 @@ if __name__ == "__main__":
         parallel_model = get_sentence_transformer_model(use_data_parallel=True)
         print(f"Parallel model device: {get_model_device(parallel_model)}")
         print(f"Model type: {type(parallel_model).__name__}")
-        print(
-            "Note: DataParallel is used internally but returns clean SentenceTransformer"
-        )
+        print("Note: DataParallel is used internally but returns clean SentenceTransformer")

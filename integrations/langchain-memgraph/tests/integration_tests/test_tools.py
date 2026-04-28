@@ -1,25 +1,24 @@
-from typing import Type
-
 from langchain_tests.integration_tests import ToolsIntegrationTests
+
 from langchain_memgraph.tools import (
-    RunQueryTool,
-    RunShowSchemaInfoTool,
-    RunPageRankMemgraphTool,
-    RunShowStorageInfoTool,
-    RunShowConstraintInfoTool,
-    RunShowIndexInfoTool,
-    RunShowConfigTool,
-    RunShowTriggersTool,
     RunBetweennessCentralityTool,
     RunNodeNeighborhoodTool,
     RunNodeVectorSearchTool,
+    RunPageRankMemgraphTool,
+    RunQueryTool,
+    RunShowConfigTool,
+    RunShowConstraintInfoTool,
+    RunShowIndexInfoTool,
+    RunShowSchemaInfoTool,
+    RunShowStorageInfoTool,
+    RunShowTriggersTool,
 )
 from memgraph_toolbox.api.memgraph import Memgraph
 
 
 class TestSchemaInfoIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> Type[RunShowSchemaInfoTool]:
+    def tool_constructor(self) -> type[RunShowSchemaInfoTool]:
         return RunShowSchemaInfoTool
 
     @property
@@ -36,7 +35,7 @@ class TestSchemaInfoIntegration(ToolsIntegrationTests):
 
 class TestCypherIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> Type[RunQueryTool]:
+    def tool_constructor(self) -> type[RunQueryTool]:
         return RunQueryTool
 
     @property
@@ -50,7 +49,7 @@ class TestCypherIntegration(ToolsIntegrationTests):
 
 class TestPageRankIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> Type[RunPageRankMemgraphTool]:
+    def tool_constructor(self) -> type[RunPageRankMemgraphTool]:
         return RunPageRankMemgraphTool
 
     @property
@@ -64,7 +63,7 @@ class TestPageRankIntegration(ToolsIntegrationTests):
 
 class TestStorageInfoIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> Type[RunShowStorageInfoTool]:
+    def tool_constructor(self) -> type[RunShowStorageInfoTool]:
         return RunShowStorageInfoTool
 
     @property
@@ -81,7 +80,7 @@ class TestStorageInfoIntegration(ToolsIntegrationTests):
 
 class TestConstraintInfoIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> Type[RunShowConstraintInfoTool]:
+    def tool_constructor(self) -> type[RunShowConstraintInfoTool]:
         return RunShowConstraintInfoTool
 
     @property
@@ -98,7 +97,7 @@ class TestConstraintInfoIntegration(ToolsIntegrationTests):
 
 class TestIndexInfoIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> Type[RunShowIndexInfoTool]:
+    def tool_constructor(self) -> type[RunShowIndexInfoTool]:
         return RunShowIndexInfoTool
 
     @property
@@ -115,7 +114,7 @@ class TestIndexInfoIntegration(ToolsIntegrationTests):
 
 class TestConfigInfoIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> Type[RunShowConfigTool]:
+    def tool_constructor(self) -> type[RunShowConfigTool]:
         return RunShowConfigTool
 
     @property
@@ -132,7 +131,7 @@ class TestConfigInfoIntegration(ToolsIntegrationTests):
 
 class TestTriggersIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> Type[RunShowTriggersTool]:
+    def tool_constructor(self) -> type[RunShowTriggersTool]:
         return RunShowTriggersTool
 
     @property
@@ -149,7 +148,7 @@ class TestTriggersIntegration(ToolsIntegrationTests):
 
 class TestBetweennessCentralityIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> Type[RunBetweennessCentralityTool]:
+    def tool_constructor(self) -> type[RunBetweennessCentralityTool]:
         return RunBetweennessCentralityTool
 
     @property
@@ -163,7 +162,7 @@ class TestBetweennessCentralityIntegration(ToolsIntegrationTests):
 
 class TestNodeNeighborhoodIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> Type[RunNodeNeighborhoodTool]:
+    def tool_constructor(self) -> type[RunNodeNeighborhoodTool]:
         return RunNodeNeighborhoodTool
 
     @property
@@ -177,7 +176,7 @@ class TestNodeNeighborhoodIntegration(ToolsIntegrationTests):
 
 class TestNodeVectorSearchIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> Type[RunNodeVectorSearchTool]:
+    def tool_constructor(self) -> type[RunNodeVectorSearchTool]:
         return RunNodeVectorSearchTool
 
     @property

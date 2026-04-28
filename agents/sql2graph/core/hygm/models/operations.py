@@ -5,7 +5,8 @@ These models define the structure for operations that can be applied to
 graph models during interactive sessions.
 """
 
-from typing import List, Union, Literal
+from typing import Annotated, Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -91,9 +92,7 @@ class AddConstraintOperation(ModelOperation):
     constraint_type: Literal["unique", "existence", "data_type"] = Field(
         description="Type of constraint (unique, existence, or data_type)"
     )
-    data_type: str = Field(
-        default="", description="Data type for data_type constraints"
-    )
+    data_type: str = Field(default="", description="Data type for data_type constraints")
 
 
 class DropConstraintOperation(ModelOperation):
@@ -102,9 +101,7 @@ class DropConstraintOperation(ModelOperation):
     operation_type: Literal["drop_constraint"] = "drop_constraint"
     node_label: str = Field(description="Node label for the constraint")
     property_name: str = Field(description="Property name for the constraint")
-    constraint_type: Literal["unique", "existence", "data_type"] = Field(
-        description="Type of constraint to drop"
-    )
+    constraint_type: Literal["unique", "existence", "data_type"] = Field(description="Type of constraint to drop")
 
 
 class AddNodeOperation(ModelOperation):
@@ -112,12 +109,8 @@ class AddNodeOperation(ModelOperation):
 
     operation_type: Literal["add_node"] = "add_node"
     node_label: str = Field(description="Label for the new node")
-    properties: List[str] = Field(
-        default_factory=list, description="List of property names for the new node"
-    )
-    source_table: str = Field(
-        default="", description="Source table name if mapping from database"
-    )
+    properties: list[str] = Field(default_factory=list, description="List of property names for the new node")
+    source_table: str = Field(default="", description="Source table name if mapping from database")
 
 
 class DropNodeOperation(ModelOperation):
@@ -134,9 +127,7 @@ class AddRelationshipOperation(ModelOperation):
     relationship_name: str = Field(description="Name of the new relationship")
     start_node_label: str = Field(description="Label of the start node")
     end_node_label: str = Field(description="Label of the end node")
-    properties: List[str] = Field(
-        default_factory=list, description="List of property names for the relationship"
-    )
+    properties: list[str] = Field(default_factory=list, description="List of property names for the relationship")
 
 
 class ChangeNodeTableOperation(ModelOperation):
@@ -168,44 +159,37 @@ class ChangeEdgeColumnsOperation(ModelOperation):
 
     operation_type: Literal["change_edge_columns"] = "change_edge_columns"
     rel_type: str = Field(description="Relationship type to modify")
-    new_source_column: str = Field(
-        default="", description="New source column (empty = keep current)"
-    )
-    new_target_column: str = Field(
-        default="", description="New target column (empty = keep current)"
-    )
+    new_source_column: str = Field(default="", description="New source column (empty = keep current)")
+    new_target_column: str = Field(default="", description="New target column (empty = keep current)")
 
 
 # Union type for all operations with discriminator
-OperationType = Union[
-    ChangeNodeLabelOperation,
-    RenamePropertyOperation,
-    DropPropertyOperation,
-    AddPropertyOperation,
-    ChangeRelationshipNameOperation,
-    DropRelationshipOperation,
-    AddIndexOperation,
-    DropIndexOperation,
-    AddConstraintOperation,
-    DropConstraintOperation,
-    AddNodeOperation,
-    DropNodeOperation,
-    AddRelationshipOperation,
-    ChangeNodeTableOperation,
-    ChangeNodeIdColumnOperation,
-    ChangeEdgeTableOperation,
-    ChangeEdgeColumnsOperation,
+OperationType = Annotated[
+    ChangeNodeLabelOperation
+    | RenamePropertyOperation
+    | DropPropertyOperation
+    | AddPropertyOperation
+    | ChangeRelationshipNameOperation
+    | DropRelationshipOperation
+    | AddIndexOperation
+    | DropIndexOperation
+    | AddConstraintOperation
+    | DropConstraintOperation
+    | AddNodeOperation
+    | DropNodeOperation
+    | AddRelationshipOperation
+    | ChangeNodeTableOperation
+    | ChangeNodeIdColumnOperation
+    | ChangeEdgeTableOperation
+    | ChangeEdgeColumnsOperation,
+    Field(discriminator="operation_type"),
 ]
 
 
 class ModelModifications(BaseModel):
     """Container for multiple model operations."""
 
-    operations: List[OperationType] = Field(
-        description="List of operations to apply to the graph model"
-    )
-    reasoning: str = Field(
-        description="Explanation of why these changes improve the model"
-    )
+    operations: list[OperationType] = Field(description="List of operations to apply to the graph model")
+    reasoning: str = Field(description="Explanation of why these changes improve the model")
 
     model_config = ConfigDict(extra="forbid")

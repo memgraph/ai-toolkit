@@ -1,7 +1,6 @@
 """Coherence evaluation metric based on embedding similarity between consecutive sentences."""
 
 import re
-from typing import List
 
 import numpy as np
 
@@ -9,8 +8,7 @@ try:
     from sentence_transformers import SentenceTransformer
 except ImportError as e:
     raise ImportError(
-        "Coherence evaluation requires optional dependencies. "
-        "Install with: pip install 'memgraph-toolbox[evaluations]'"
+        "Coherence evaluation requires optional dependencies. Install with: pip install 'memgraph-toolbox[evaluations]'"
     ) from e
 
 try:
@@ -18,8 +16,7 @@ try:
     from deepeval.test_case import LLMTestCase
 except ImportError as e:
     raise ImportError(
-        "Coherence evaluation requires deepeval. "
-        "Install with: pip install 'memgraph-toolbox[evaluations]'"
+        "Coherence evaluation requires deepeval. Install with: pip install 'memgraph-toolbox[evaluations]'"
     ) from e
 
 
@@ -79,7 +76,7 @@ class CoherenceEmbeddingsBasedMetric(BaseMetric):
         """Set async mode."""
         self._async_mode = value
 
-    def _split_into_sentences(self, text: str) -> List[str]:
+    def _split_into_sentences(self, text: str) -> list[str]:
         """Split text into sentences using regex patterns.
 
         Args:
@@ -104,7 +101,7 @@ class CoherenceEmbeddingsBasedMetric(BaseMetric):
 
         return sentences
 
-    def _compute_embeddings(self, sentences: List[str]) -> np.ndarray:
+    def _compute_embeddings(self, sentences: list[str]) -> np.ndarray:
         """Compute embeddings for a list of sentences.
 
         Args:
@@ -116,7 +113,7 @@ class CoherenceEmbeddingsBasedMetric(BaseMetric):
         # TODO(gitbuda): This should use the utils.embeddings because GPU could be used.
         return self.model.encode(sentences)
 
-    def _compute_cosine_similarity(self, embeddings: np.ndarray) -> List[float]:
+    def _compute_cosine_similarity(self, embeddings: np.ndarray) -> list[float]:
         """Compute cosine similarity between consecutive embeddings.
 
         Args:

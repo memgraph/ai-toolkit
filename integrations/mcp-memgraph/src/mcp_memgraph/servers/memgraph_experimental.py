@@ -7,18 +7,18 @@ This server provides autonomous adapting GraphRAG capabilities that:
 - Adapts query execution based on available indexes
 """
 
-from fastmcp import FastMCP, Context
+import json
+from dataclasses import dataclass
+from typing import Any
+
+from fastmcp import Context, FastMCP
+
+from mcp_memgraph.config import get_mcp_config, get_memgraph_config
 from memgraph_toolbox.api.memgraph import Memgraph
 from memgraph_toolbox.tools.cypher import CypherTool
 from memgraph_toolbox.tools.index import ShowIndexInfoTool
 from memgraph_toolbox.tools.schema import ShowSchemaInfoTool
 from memgraph_toolbox.utils.logger import logger_init
-
-from typing import Any, Dict, List
-from dataclasses import dataclass
-import json
-
-from mcp_memgraph.config import get_memgraph_config, get_mcp_config
 
 # Get configuration instances
 memgraph_config = get_memgraph_config()
@@ -39,8 +39,7 @@ logger.info(
 )
 logger.info("Memgraph Experimental server initialized")
 logger.warning(
-    "Note: Read-only mode is not supported on this server. "
-    "This server requires write access to create indexes."
+    "Note: Read-only mode is not supported on this server. This server requires write access to create indexes."
 )
 
 # TODO (@antejavor): Implement some tests for this
@@ -56,8 +55,8 @@ db = Memgraph(**memgraph_config.get_client_config())
 class QueryAnalysis:
     """Structured output for query analysis via sampling."""
 
-    labels: List[str]
-    properties: List[str]
+    labels: list[str]
+    properties: list[str]
     uses_vector_search: bool
     uses_text_search: bool
 
@@ -71,10 +70,10 @@ class IndexInfo:
     """Information about indexes in Memgraph."""
 
     def __init__(self):
-        self.label_indexes: List[Dict[str, Any]] = []
-        self.label_property_indexes: List[Dict[str, Any]] = []
-        self.vector_indexes: List[Dict[str, Any]] = []
-        self.text_indexes: List[Dict[str, Any]] = []
+        self.label_indexes: list[dict[str, Any]] = []
+        self.label_property_indexes: list[dict[str, Any]] = []
+        self.vector_indexes: list[dict[str, Any]] = []
+        self.text_indexes: list[dict[str, Any]] = []
 
     def has_label_index(self, label: str) -> bool:
         """Check if a label-only index exists."""
@@ -83,23 +82,16 @@ class IndexInfo:
     def has_label_property_index(self, label: str, property: str) -> bool:
         """Check if a label+property index exists."""
         return any(
-            idx.get("label") == label and property in idx.get("properties", [])
-            for idx in self.label_property_indexes
+            idx.get("label") == label and property in idx.get("properties", []) for idx in self.label_property_indexes
         )
 
     def has_vector_index(self, label: str, property: str) -> bool:
         """Check if a vector index exists for a label and property."""
-        return any(
-            idx.get("label") == label and idx.get("property") == property
-            for idx in self.vector_indexes
-        )
+        return any(idx.get("label") == label and idx.get("property") == property for idx in self.vector_indexes)
 
     def has_text_index(self, label: str, property: str) -> bool:
         """Check if a text index exists for a label and property."""
-        return any(
-            idx.get("label") == label and idx.get("property") == property
-            for idx in self.text_indexes
-        )
+        return any(idx.get("label") == label and idx.get("property") == property for idx in self.text_indexes)
 
 
 def get_current_indexes() -> IndexInfo:
@@ -142,9 +134,7 @@ def get_current_indexes() -> IndexInfo:
                         )
                 elif "label" in index_type and not properties:
                     # Label-only index (no properties)
-                    index_info.label_indexes.append(
-                        {"label": label, "type": index_type}
-                    )
+                    index_info.label_indexes.append({"label": label, "type": index_type})
                 elif "label+property" in index_type or "label-property" in index_type:
                     for prop in properties:
                         index_info.label_property_indexes.append(
@@ -178,7 +168,7 @@ def get_current_indexes() -> IndexInfo:
 # ============================================================================
 
 
-async def analyze_query_with_sampling(query: str, ctx: Context) -> Dict[str, Any]:
+async def analyze_query_with_sampling(query: str, ctx: Context) -> dict[str, Any]:
     """
     Analyze a Cypher query using LLM sampling.
 
@@ -258,9 +248,7 @@ Reason: Vector search operation
         # Remove markdown code blocks if present
         if response_text.startswith("```"):
             lines = response_text.split("\n")
-            response_text = "\n".join(
-                line for line in lines if not line.strip().startswith("```")
-            )
+            response_text = "\n".join(line for line in lines if not line.strip().startswith("```"))
 
         analysis_data = json.loads(response_text)
 
@@ -278,36 +266,19 @@ Reason: Vector search operation
 
             # Label-only index (no property specified)
             if not prop or prop == "":
-                recommended_indexes.append(
-                    {"label": label, "property": "", "type": "label"}
-                )
+                recommended_indexes.append({"label": label, "property": "", "type": "label"})
             elif uses_vector:
-                recommended_indexes.append(
-                    {"label": label, "property": prop, "type": "vector"}
-                )
+                recommended_indexes.append({"label": label, "property": prop, "type": "vector"})
             elif uses_text:
-                recommended_indexes.append(
-                    {"label": label, "property": prop, "type": "text"}
-                )
+                recommended_indexes.append({"label": label, "property": prop, "type": "text"})
             else:
-                recommended_indexes.append(
-                    {"label": label, "property": prop, "type": "label+property"}
-                )
+                recommended_indexes.append({"label": label, "property": prop, "type": "label+property"})
 
         # Extract unique labels and properties for compatibility
-        labels = list(
-            set(f.get("label", "") for f in analysis_data.get("indexed_filters", []))
-        )
-        properties = list(
-            set(f.get("property", "") for f in analysis_data.get("indexed_filters", []))
-        )
-        uses_vector_search = any(
-            f.get("uses_vector", False)
-            for f in analysis_data.get("indexed_filters", [])
-        )
-        uses_text_search = any(
-            f.get("uses_text", False) for f in analysis_data.get("indexed_filters", [])
-        )
+        labels = list(set(f.get("label", "") for f in analysis_data.get("indexed_filters", [])))
+        properties = list(set(f.get("property", "") for f in analysis_data.get("indexed_filters", [])))
+        uses_vector_search = any(f.get("uses_vector", False) for f in analysis_data.get("indexed_filters", []))
+        uses_text_search = any(f.get("uses_text", False) for f in analysis_data.get("indexed_filters", []))
 
         return {
             "labels": labels,
@@ -327,7 +298,7 @@ Reason: Vector search operation
             "uses_vector_search": False,
             "uses_text_search": False,
             "recommended_indexes": [],
-            "error": f"Failed to parse LLM response: {str(e)}",
+            "error": f"Failed to parse LLM response: {e!s}",
         }
     except Exception as e:
         logger.error("Sampling failed: %s", str(e))
@@ -337,13 +308,11 @@ Reason: Vector search operation
             "uses_vector_search": False,
             "uses_text_search": False,
             "recommended_indexes": [],
-            "error": f"Sampling failed: {str(e)}",
+            "error": f"Sampling failed: {e!s}",
         }
 
 
-async def generate_index_creation_query(
-    label: str, property: str, index_type: str, ctx: Context
-) -> str:
+async def generate_index_creation_query(label: str, property: str, index_type: str, ctx: Context) -> str:
     """
     Use sampling to generate the Cypher query for creating an index.
 
@@ -409,10 +378,7 @@ Respond with ONLY the Cypher query, no explanation or markdown.
         if query_text.startswith("```"):
             lines = query_text.split("\n")
             query_text = "\n".join(
-                line
-                for line in lines
-                if not line.strip().startswith("```")
-                and line.strip().lower() != "cypher"
+                line for line in lines if not line.strip().startswith("```") and line.strip().lower() != "cypher"
             ).strip()
 
         return query_text
@@ -420,22 +386,15 @@ Respond with ONLY the Cypher query, no explanation or markdown.
     except Exception as e:
         logger.error("Failed to generate index query via sampling: %s", e)
         # Fallback to manual generation
-        if index_type == "label":
-            return f"CREATE INDEX ON :{label}"
-        elif index_type == "vector":
-            return (
-                f"CREATE VECTOR INDEX ON :{label}({property}) "
-                "WITH CONFIG {'dimension': 384, 'capacity': 10000}"
-            )
-        elif index_type == "text":
-            return f"CREATE TEXT INDEX ON :{label}({property})"
-        else:
-            return f"CREATE INDEX ON :{label}({property})"
+        fallback_queries = {
+            "label": f"CREATE INDEX ON :{label}",
+            "vector": f"CREATE VECTOR INDEX ON :{label}({property}) WITH CONFIG {{'dimension': 384, 'capacity': 10000}}",
+            "text": f"CREATE TEXT INDEX ON :{label}({property})",
+        }
+        return fallback_queries.get(index_type, f"CREATE INDEX ON :{label}({property})")
 
 
-def execute_index_creation(
-    label: str, property: str, index_type: str, query: str
-) -> Dict[str, Any]:
+def execute_index_creation(label: str, property: str, index_type: str, query: str) -> dict[str, Any]:
     """
     Execute the index creation query.
 
@@ -478,7 +437,7 @@ def execute_index_creation(
 
 
 @mcp.tool()
-async def query_tool(query: str, ctx: Context) -> List[Dict[str, Any]]:
+async def query_tool(query: str, ctx: Context) -> list[dict[str, Any]]:
     """
     Execute a Cypher query with intelligent index checking and
     recommendations.
@@ -523,9 +482,8 @@ async def query_tool(query: str, ctx: Context) -> List[Dict[str, Any]]:
         elif idx_type == "text":
             if not current_indexes.has_text_index(label, prop):
                 missing_indexes.append(rec_idx)
-        elif idx_type == "label+property":
-            if not current_indexes.has_label_property_index(label, prop):
-                missing_indexes.append(rec_idx)
+        elif idx_type == "label+property" and not current_indexes.has_label_property_index(label, prop):
+            missing_indexes.append(rec_idx)
 
     # Step 4: If indexes are missing, use ELICITATION
     if missing_indexes:
@@ -534,9 +492,7 @@ async def query_tool(query: str, ctx: Context) -> List[Dict[str, Any]]:
         # Use sampling to generate Cypher queries for creating indexes
         index_queries = []
         for idx in missing_indexes:
-            cypher_query = await generate_index_creation_query(
-                idx["label"], idx["property"], idx["type"], ctx
-            )
+            cypher_query = await generate_index_creation_query(idx["label"], idx["property"], idx["type"], ctx)
             index_queries.append(
                 {
                     "label": idx["label"],
@@ -552,16 +508,11 @@ async def query_tool(query: str, ctx: Context) -> List[Dict[str, Any]]:
             if idx_query["type"] == "label":
                 desc = f"Label index on {idx_query['label']}"
             elif idx_query["type"] == "vector":
-                desc = (
-                    f"Vector index on {idx_query['label']}." f"{idx_query['property']}"
-                )
+                desc = f"Vector index on {idx_query['label']}.{idx_query['property']}"
             elif idx_query["type"] == "text":
-                desc = f"Text index on {idx_query['label']}." f"{idx_query['property']}"
+                desc = f"Text index on {idx_query['label']}.{idx_query['property']}"
             else:
-                desc = (
-                    f"Label+property index on {idx_query['label']}."
-                    f"{idx_query['property']}"
-                )
+                desc = f"Label+property index on {idx_query['label']}.{idx_query['property']}"
             desc += f"\n  Query: {idx_query['query']}"
             index_descriptions.append(desc)
 
@@ -604,18 +555,13 @@ async def query_tool(query: str, ctx: Context) -> List[Dict[str, Any]]:
                             {
                                 "query_result": result,
                                 "indexes_created": created_indexes,
-                                "message": (
-                                    "Indexes created and query executed " "successfully"
-                                ),
+                                "message": ("Indexes created and query executed successfully"),
                             }
                         ]
                     except Exception as e:
                         return [
                             {
-                                "error": (
-                                    f"Error executing query after creating "
-                                    f"indexes: {str(e)}"
-                                ),
+                                "error": (f"Error executing query after creating indexes: {e!s}"),
                                 "indexes_created": created_indexes,
                             }
                         ]
@@ -628,17 +574,14 @@ async def query_tool(query: str, ctx: Context) -> List[Dict[str, Any]]:
                             {
                                 "query_result": result,
                                 "status": "success",
-                                "message": (
-                                    "Query executed without index "
-                                    "optimization (user declined)"
-                                ),
+                                "message": ("Query executed without index optimization (user declined)"),
                                 "missing_indexes": index_queries,
                             }
                         ]
                     except Exception as e:
                         return [
                             {
-                                "error": f"Error executing query: {str(e)}",
+                                "error": f"Error executing query: {e!s}",
                                 "status": "error",
                             }
                         ]
@@ -659,7 +602,7 @@ async def query_tool(query: str, ctx: Context) -> List[Dict[str, Any]]:
                 except Exception as e:
                     return [
                         {
-                            "error": f"Error executing query: {str(e)}",
+                            "error": f"Error executing query: {e!s}",
                             "status": "error",
                         }
                     ]
@@ -680,9 +623,7 @@ async def query_tool(query: str, ctx: Context) -> List[Dict[str, Any]]:
             return [
                 {
                     "query_result": result,
-                    "warning": (
-                        "Elicitation not supported, executed without " "optimization"
-                    ),
+                    "warning": ("Elicitation not supported, executed without optimization"),
                     "missing_indexes": index_queries,
                 }
             ]
@@ -702,13 +643,13 @@ async def query_tool(query: str, ctx: Context) -> List[Dict[str, Any]]:
     except Exception as e:
         return [
             {
-                "error": f"Error executing query: {str(e)}",
+                "error": f"Error executing query: {e!s}",
                 "status": "error",
             }
         ]
 
 
-def create_index_helper(label: str, property: str, index_type: str) -> Dict[str, Any]:
+def create_index_helper(label: str, property: str, index_type: str) -> dict[str, Any]:
     """Helper function to create an index."""
     try:
         if index_type == "label":
@@ -716,10 +657,7 @@ def create_index_helper(label: str, property: str, index_type: str) -> Dict[str,
             query = f"CREATE INDEX ON :{label}"
         elif index_type == "vector":
             # Vector index creation - use default dimension and capacity
-            query = (
-                f"CREATE VECTOR INDEX ON :{label}({property}) "
-                "WITH CONFIG {'dimension': 384, 'capacity': 10000}"
-            )
+            query = f"CREATE VECTOR INDEX ON :{label}({property}) WITH CONFIG {{'dimension': 384, 'capacity': 10000}}"
         elif index_type == "text":
             # Text index creation
             query = f"CREATE TEXT INDEX ON :{label}({property})"
@@ -750,9 +688,7 @@ def create_index_helper(label: str, property: str, index_type: str) -> Dict[str,
 
 
 @mcp.tool()
-def create_index(
-    label: str, property: str, index_type: str = "label+property"
-) -> Dict[str, Any]:
+def create_index(label: str, property: str, index_type: str = "label+property") -> dict[str, Any]:
     """
     Create an index in Memgraph.
 
@@ -770,7 +706,7 @@ def create_index(
 
 
 @mcp.tool()
-def get_index_info() -> List[Dict[str, Any]]:
+def get_index_info() -> list[dict[str, Any]]:
     """
     Get information about all indexes in Memgraph.
 
@@ -782,11 +718,11 @@ def get_index_info() -> List[Dict[str, Any]]:
         indexes = ShowIndexInfoTool(db=db).call({})
         return indexes
     except Exception as e:
-        return [{"error": f"Error getting index info: {str(e)}"}]
+        return [{"error": f"Error getting index info: {e!s}"}]
 
 
 @mcp.tool()
-def get_schema_info() -> List[Dict[str, Any]]:
+def get_schema_info() -> list[dict[str, Any]]:
     """
     Get schema information from Memgraph including labels and
     relationship types.
@@ -799,11 +735,11 @@ def get_schema_info() -> List[Dict[str, Any]]:
         schema = ShowSchemaInfoTool(db=db).call({})
         return schema
     except Exception as e:
-        return [{"error": f"Error getting schema info: {str(e)}"}]
+        return [{"error": f"Error getting schema info: {e!s}"}]
 
 
 @mcp.tool()
-async def analyze_query(query: str, ctx: Context) -> Dict[str, Any]:
+async def analyze_query(query: str, ctx: Context) -> dict[str, Any]:
     """
     Analyze a Cypher query to understand index requirements without
     executing it.
@@ -863,11 +799,8 @@ async def analyze_query(query: str, ctx: Context) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        return {"error": f"Error analyzing query: {str(e)}"}
+        return {"error": f"Error analyzing query: {e!s}"}
 
 
 logger.info("🔬 Memgraph Experimental MCP server initialized")
-logger.info(
-    "Available tools: query_tool, create_index, get_index_info, "
-    "get_schema_info, analyze_query"
-)
+logger.info("Available tools: query_tool, create_index, get_index_info, get_schema_info, analyze_query")

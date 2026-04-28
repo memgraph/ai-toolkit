@@ -1,5 +1,3 @@
-import pytest
-
 from ..api.memgraph import Memgraph
 from ..tools.betweenness_centrality import BetweennessCentralityTool
 from ..tools.config import ShowConfigTool
@@ -9,10 +7,10 @@ from ..tools.index import ShowIndexInfoTool
 from ..tools.node_neighborhood import NodeNeighborhoodTool
 from ..tools.node_vector_search import NodeVectorSearchTool
 from ..tools.page_rank import PageRankTool
+from ..tools.procedures import ShowProceduresTool
 from ..tools.schema import ShowSchemaInfoTool
 from ..tools.storage import ShowStorageInfoTool
 from ..tools.trigger import ShowTriggersTool
-from ..tools.procedures import ShowProceduresTool
 from ..utils.logger import logger_init
 
 logger = logger_init("test-tools")
@@ -147,7 +145,7 @@ def test_page_rank():
     # Create a sample graph for testing
     memgraph_client.query(
         """UNWIND range(1, 10) AS i
-           CREATE (:Test {id: i})-[:LINK]->(:Test {id: i + 1}); 
+           CREATE (:Test {id: i})-[:LINK]->(:Test {id: i + 1});
         """
     )
 
@@ -255,17 +253,11 @@ def test_node_vector_search_tool():
     password = ""
     memgraph_client = Memgraph(url=url, username=user, password=password)
 
-    memgraph_client.query(
-        'MATCH (n:Person) WHERE "embedding" IN keys(n) DETACH DELETE n'
-    )
+    memgraph_client.query('MATCH (n:Person) WHERE "embedding" IN keys(n) DETACH DELETE n')
     memgraph_client.query("DROP VECTOR INDEX my_index")
-    memgraph_client.query(
-        "CREATE (:Person {name: 'Alice', embedding: [1.0, 2.0, 3.0]})"
-    )
+    memgraph_client.query("CREATE (:Person {name: 'Alice', embedding: [1.0, 2.0, 3.0]})")
     memgraph_client.query("CREATE (:Person {name: 'Bob', embedding: [1.0, 2.0, 4.0]})")
-    memgraph_client.query(
-        "CREATE (:Person {name: 'Charlie', embedding: [1.0, 2.0, 5.0]})"
-    )
+    memgraph_client.query("CREATE (:Person {name: 'Charlie', embedding: [1.0, 2.0, 5.0]})")
     memgraph_client.query(
         "CREATE VECTOR INDEX my_index ON :Person(embedding) WITH CONFIG {'dimension': 3, 'capacity': 1000}"
     )
@@ -280,9 +272,7 @@ def test_node_vector_search_tool():
     )
     assert isinstance(result, list)
     assert len(result) == 3
-    memgraph_client.query(
-        'MATCH (n:Person) WHERE "embedding" IN keys(n) DETACH DELETE n'
-    )
+    memgraph_client.query('MATCH (n:Person) WHERE "embedding" IN keys(n) DETACH DELETE n')
     memgraph_client.query("DROP VECTOR INDEX my_index")
 
 
@@ -298,12 +288,8 @@ def test_node_neighborhood_tool():
     memgraph_client.query(
         f"CREATE (p1:{label} {{id: 1}})-[:KNOWS]->(p2:{label} {{id: 2}}), (p2)-[:KNOWS]->(p3:{label} {{id: 3}});"
     )
-    memgraph_client.query(
-        f"CREATE (p4:{label} {{id: 4}})-[:KNOWS]->(p5:{label} {{id: 5}});"
-    )
-    ids = memgraph_client.query(
-        f"MATCH (p1:{label} {{id:1}}) RETURN id(p1) AS node_id;"
-    )
+    memgraph_client.query(f"CREATE (p4:{label} {{id: 4}})-[:KNOWS]->(p5:{label} {{id: 5}});")
+    ids = memgraph_client.query(f"MATCH (p1:{label} {{id:1}}) RETURN id(p1) AS node_id;")
     assert len(ids) == 1
     node_id = ids[0]["node_id"]
 

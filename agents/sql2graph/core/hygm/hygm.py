@@ -128,9 +128,7 @@ class HyGM:
 
         # Check if incremental mode is enabled
         if self.mode == ModelingMode.INCREMENTAL:
-            return self._incremental_modeling(
-                database_structure, domain_context, used_strategy
-            )
+            return self._incremental_modeling(database_structure, domain_context, used_strategy)
 
         # For automatic mode, use the specified strategy
         strategy_instance = self._get_strategy_instance(used_strategy)
@@ -148,15 +146,11 @@ class HyGM:
 
         return graph_model
 
-    def _get_strategy_instance(
-        self, strategy: GraphModelingStrategy
-    ) -> BaseModelingStrategy:
+    def _get_strategy_instance(self, strategy: GraphModelingStrategy) -> BaseModelingStrategy:
         """Get or create a strategy instance."""
         if strategy not in self._strategy_cache:
             if strategy == GraphModelingStrategy.LLM_POWERED:
-                self._strategy_cache[strategy] = LLMStrategy(
-                    llm_client=self.llm, model_name="gpt-4", temperature=0.1
-                )
+                self._strategy_cache[strategy] = LLMStrategy(llm_client=self.llm, model_name="gpt-4", temperature=0.1)
             elif strategy == GraphModelingStrategy.DETERMINISTIC:
                 self._strategy_cache[strategy] = DeterministicStrategy()
             else:
@@ -250,11 +244,7 @@ class HyGM:
             if summary.get("mapping") != stored.get("mapping", {}):
                 change_reasons.append(f"Mapping changed for {display_name}")
 
-        stored_node_keys = {
-            key
-            for key, summary in node_summaries.items()
-            if summary.get("source") == table_name
-        }
+        stored_node_keys = {key for key, summary in node_summaries.items() if summary.get("source") == table_name}
         missing_nodes = stored_node_keys - produced_node_keys
         if missing_nodes:
             change_reasons.append("Existing node definition removed from model")
@@ -280,9 +270,7 @@ class HyGM:
             if summary.get("mapping") != stored.get("mapping", {}):
                 change_reasons.append(f"Relationship mapping changed for {rel_name}")
             if summary.get("start") != stored.get("start", []):
-                change_reasons.append(
-                    f"Relationship start labels changed for {rel_name}"
-                )
+                change_reasons.append(f"Relationship start labels changed for {rel_name}")
             if summary.get("end") != stored.get("end", []):
                 change_reasons.append(f"Relationship end labels changed for {rel_name}")
 
@@ -339,9 +327,7 @@ class HyGM:
         # Initialize an empty graph model to build incrementally
         from .models.graph_models import GraphModel
 
-        incremental_model = GraphModel(
-            nodes=[], edges=[], node_indexes=[], node_constraints=[]
-        )
+        incremental_model = GraphModel(nodes=[], edges=[], node_indexes=[], node_constraints=[])
 
         # Extract tables from database structure
         tables = database_structure.get("tables", {})
@@ -351,10 +337,7 @@ class HyGM:
 
         self._print_banner("INCREMENTAL MODELING SESSION")
         print("\n🧠 Generated a draft graph model for the entire database.")
-        print(
-            "We will now review tables with detected changes so you can "
-            "approve or adjust them one by one.\n"
-        )
+        print("We will now review tables with detected changes so you can approve or adjust them one by one.\n")
 
         table_models = self._build_table_model_map(full_model, tables)
 
@@ -384,9 +367,7 @@ class HyGM:
                 ) = self._table_review_decision(table_name, table_model)
 
                 if not needs_review:
-                    self._merge_table_model_into_incremental(
-                        incremental_model, table_model
-                    )
+                    self._merge_table_model_into_incremental(incremental_model, table_model)
                     processed_tables.append(table_name)
                     message = skip_message or "No changes detected"
                     print(f"🤖 Auto-accepted {table_name}: {message}")
@@ -409,9 +390,7 @@ class HyGM:
 
                 if user_choice == "accept":
                     # Add this table's nodes to the incremental model
-                    self._merge_table_model_into_incremental(
-                        incremental_model, table_model
-                    )
+                    self._merge_table_model_into_incremental(incremental_model, table_model)
                     processed_tables.append(table_name)
                     print(f"✅ Added {table_name} to the graph model")
                     # Refinement is now offered after the full session summary.
@@ -420,12 +399,8 @@ class HyGM:
                     print(f"⏭️  Skipped {table_name}")
                 elif user_choice == "modify":
                     # Allow user to modify the proposed node
-                    modified_model = self._modify_table_node_interactively(
-                        table_model, table_name
-                    )
-                    self._merge_table_model_into_incremental(
-                        incremental_model, modified_model
-                    )
+                    modified_model = self._modify_table_node_interactively(table_model, table_name)
+                    self._merge_table_model_into_incremental(incremental_model, modified_model)
                     processed_tables.append(table_name)
                     print(f"✅ Added modified {table_name} to the graph model")
                     # Refinement is now offered after the full session summary.
@@ -447,10 +422,7 @@ class HyGM:
 
         if auto_accepted_tables:
             print(f"🤖 Auto-accepted tables: {len(auto_accepted_tables)}")
-            auto_details = [
-                f"{name}{f' ({msg})' if msg else ''}"
-                for name, msg in auto_accepted_tables
-            ]
+            auto_details = [f"{name}{f' ({msg})' if msg else ''}" for name, msg in auto_accepted_tables]
             print(f"   {', '.join(auto_details)}")
 
         if skipped_tables:
@@ -545,9 +517,7 @@ class HyGM:
                 start_labels = " | ".join(relationship.start_node_labels)
                 end_labels = " | ".join(relationship.end_node_labels)
                 props = [p.key for p in relationship.properties]
-                print(
-                    f"   {i}. ({start_labels})-[:{relationship.edge_type}]->({end_labels})"
-                )
+                print(f"   {i}. ({start_labels})-[:{relationship.edge_type}]->({end_labels})")
                 if props:
                     print(f"      Properties: {props}")
         else:
@@ -567,18 +537,12 @@ class HyGM:
             "3": "modify",
             "4": "finish",
         }
-        return self._get_user_input_choice(
-            f"\nEnter your choice for {table_name} (1-4): ", choices, "accept"
-        )
+        return self._get_user_input_choice(f"\nEnter your choice for {table_name} (1-4): ", choices, "accept")
 
-    def _merge_table_model_into_incremental(
-        self, incremental_model: "GraphModel", table_model: "GraphModel"
-    ) -> None:
+    def _merge_table_model_into_incremental(self, incremental_model: "GraphModel", table_model: "GraphModel") -> None:
         """Merge a single table's model into the incremental model."""
         # Add nodes (avoid duplicates based on labels)
-        existing_node_labels = {
-            tuple(sorted(node.labels)) for node in incremental_model.nodes
-        }
+        existing_node_labels = {tuple(sorted(node.labels)) for node in incremental_model.nodes}
 
         for node in table_model.nodes:
             node_labels_tuple = tuple(sorted(node.labels))
@@ -623,15 +587,11 @@ class HyGM:
         table_models: Dict[str, GraphModel] = {}
         for table_name in tables.keys():
             table_nodes = [
-                copy.deepcopy(node)
-                for node in full_model.nodes
-                if self._node_matches_table(node, table_name)
+                copy.deepcopy(node) for node in full_model.nodes if self._node_matches_table(node, table_name)
             ]
 
             table_edges = [
-                copy.deepcopy(edge)
-                for edge in full_model.edges
-                if self._relationship_matches_table(edge, table_name)
+                copy.deepcopy(edge) for edge in full_model.edges if self._relationship_matches_table(edge, table_name)
             ]
 
             node_label_keys = {tuple(sorted(node.labels)) for node in table_nodes}
@@ -645,8 +605,7 @@ class HyGM:
             table_constraints = [
                 copy.deepcopy(constraint)
                 for constraint in full_model.node_constraints
-                if constraint.labels
-                and tuple(sorted(constraint.labels)) in node_label_keys
+                if constraint.labels and tuple(sorted(constraint.labels)) in node_label_keys
             ]
 
             table_models[table_name] = GraphModel(
@@ -685,19 +644,14 @@ class HyGM:
 
         return False
 
-    def _relationship_matches_table(
-        self, relationship: "GraphRelationship", table_name: str
-    ) -> bool:
+    def _relationship_matches_table(self, relationship: "GraphRelationship", table_name: str) -> bool:
         """Return True if a relationship is associated with the table."""
         source = getattr(relationship, "source", None)
         mapping = getattr(source, "mapping", {}) or {}
 
         if source:
             source_name = getattr(source, "name", None)
-            if (
-                isinstance(source_name, str)
-                and source_name.lower() == table_name.lower()
-            ):
+            if isinstance(source_name, str) and source_name.lower() == table_name.lower():
                 return True
 
         for key in (
@@ -716,9 +670,7 @@ class HyGM:
                 return True
 
         # Fallback to matching on label names when mapping metadata is unavailable
-        combined_labels = list(relationship.start_node_labels) + list(
-            relationship.end_node_labels
-        )
+        combined_labels = list(relationship.start_node_labels) + list(relationship.end_node_labels)
         for label in combined_labels:
             if isinstance(label, str) and table_name.lower() in label.lower():
                 return True
@@ -736,16 +688,8 @@ class HyGM:
 
         from .models.graph_models import GraphModel
 
-        anonymous_nodes = [
-            copy.deepcopy(node)
-            for node in full_model.nodes
-            if getattr(node, "source", None) is None
-        ]
-        anonymous_edges = [
-            copy.deepcopy(edge)
-            for edge in full_model.edges
-            if getattr(edge, "source", None) is None
-        ]
+        anonymous_nodes = [copy.deepcopy(node) for node in full_model.nodes if getattr(node, "source", None) is None]
+        anonymous_edges = [copy.deepcopy(edge) for edge in full_model.edges if getattr(edge, "source", None) is None]
 
         if not anonymous_nodes and not anonymous_edges:
             return
@@ -759,9 +703,7 @@ class HyGM:
 
         self._merge_table_model_into_incremental(incremental_model, placeholder_model)
 
-    def _modify_table_node_interactively(
-        self, table_model: "GraphModel", table_name: str
-    ) -> "GraphModel":
+    def _modify_table_node_interactively(self, table_model: "GraphModel", table_name: str) -> "GraphModel":
         """Allow user to modify the proposed node for a table."""
         print(f"\n🔧 MODIFYING NODE FOR TABLE: {table_name}")
         print("You can use natural language to modify the proposed node.")
@@ -777,9 +719,7 @@ class HyGM:
 
         while True:
             try:
-                user_input = input(
-                    f"\nDescribe changes for {table_name} " f"(or 'done' to finish): "
-                ).strip()
+                user_input = input(f"\nDescribe changes for {table_name} (or 'done' to finish): ").strip()
 
                 if user_input.lower() == "done":
                     break
@@ -788,15 +728,11 @@ class HyGM:
                     continue
 
                 # Use existing natural language parsing
-                operations = self._parse_natural_language_to_operations(
-                    user_input, table_model
-                )
+                operations = self._parse_natural_language_to_operations(user_input, table_model)
 
                 if operations:
                     print(f"✅ Understood: {operations.reasoning}")
-                    table_model = self._apply_operations_to_model(
-                        table_model, operations
-                    )
+                    table_model = self._apply_operations_to_model(table_model, operations)
 
                     # Show updated model
                     print(f"\n📋 UPDATED NODE FOR {table_name}:")
@@ -806,7 +742,7 @@ class HyGM:
                         print(f"   Labels: {labels}")
                         print(f"   Properties: {properties}")
                 else:
-                    print("❌ I didn't understand that command. " "Please try again.")
+                    print("❌ I didn't understand that command. Please try again.")
 
             except (EOFError, KeyboardInterrupt):
                 print(f"\nFinished modifying {table_name}")
@@ -890,9 +826,7 @@ class HyGM:
             "3": "regenerate",
             "4": "switch_strategy",
         }
-        return self._get_user_input_choice(
-            "\nEnter your choice (1-4): ", choices, "accept"
-        )
+        return self._get_user_input_choice("\nEnter your choice (1-4): ", choices, "accept")
 
     def _get_refinement_choice(self) -> str:
         """Get user choice while refining the combined graph model."""
@@ -906,13 +840,9 @@ class HyGM:
             "2": "modify",
             "3": "validate",
         }
-        return self._get_user_input_choice(
-            "\nEnter your choice (1-3): ", choices, "accept"
-        )
+        return self._get_user_input_choice("\nEnter your choice (1-3): ", choices, "accept")
 
-    def _switch_strategy(
-        self, current_strategy: GraphModelingStrategy
-    ) -> GraphModelingStrategy:
+    def _switch_strategy(self, current_strategy: GraphModelingStrategy) -> GraphModelingStrategy:
         """Allow user to switch between modeling strategies."""
         print("\nAvailable strategies:")
         print("1. Deterministic (rule-based)")
@@ -940,9 +870,7 @@ class HyGM:
                 print(f"\nKeeping current strategy: {current_name}")
                 return current_strategy
 
-    def _modify_model_interactively(
-        self, model: "GraphModel", strategy: GraphModelingStrategy
-    ) -> "GraphModel":
+    def _modify_model_interactively(self, model: "GraphModel", strategy: GraphModelingStrategy) -> "GraphModel":
         """Allow user to modify the model using natural language commands."""
         while True:
             try:
@@ -971,18 +899,14 @@ class HyGM:
 
                 # Use LLM to parse natural language into operations
                 if self.llm:
-                    print("🤖 Processing your request... " "(this may take a moment)")
-                    operations = self._parse_natural_language_to_operations(
-                        user_input, model
-                    )
+                    print("🤖 Processing your request... (this may take a moment)")
+                    operations = self._parse_natural_language_to_operations(user_input, model)
                     if operations:
                         print(f"✅ Understood: {operations.reasoning}")
 
                         # Initialize user operation history if not exists
                         if not self.user_operation_history:
-                            self.user_operation_history = UserOperationHistory(
-                                self.session_id
-                            )
+                            self.user_operation_history = UserOperationHistory(self.session_id)
 
                         # Track user operations before applying them
                         for operation in operations.operations:
@@ -998,13 +922,9 @@ class HyGM:
                         self._display_current_model(model)
 
                         # Perform validation after applying changes
-                        model = self._perform_post_operation_validation(
-                            model, strategy, operations
-                        )
+                        model = self._perform_post_operation_validation(model, strategy, operations)
                     else:
-                        print(
-                            "❌ I didn't understand that command. " "Please try again."
-                        )
+                        print("❌ I didn't understand that command. Please try again.")
                 else:
                     print("❌ LLM not available for natural language processing.")
                     print("Please use the basic modification menu instead.")
@@ -1031,9 +951,7 @@ class HyGM:
 
         original_block = ""
         if original_context:
-            original_block = (
-                f"Original graph model (before any edits):\n" f"{original_context}\n\n"
-            )
+            original_block = f"Original graph model (before any edits):\n{original_context}\n\n"
 
         system_prompt = (
             "You are an expert at translating natural language instructions "
@@ -1085,7 +1003,7 @@ class HyGM:
 
             prompt = f"""
             User request: {user_input}
-            
+
             {parser.get_format_instructions()}
             """
 
@@ -1117,10 +1035,7 @@ class HyGM:
             props = [p.key for p in node.properties]
             table = node.source.name if node.source else "?"
             id_field = node.source.mapping.get("id_field", "?") if node.source else "?"
-            context_parts.append(
-                f"  - {node.primary_label}  table={table}, "
-                f"id_column={id_field}, properties={props}"
-            )
+            context_parts.append(f"  - {node.primary_label}  table={table}, id_column={id_field}, properties={props}")
 
         # Relationships (with mapping info)
         context_parts.append("\nRELATIONSHIPS:")
@@ -1128,9 +1043,7 @@ class HyGM:
             start = " | ".join(edge.start_node_labels)
             end = " | ".join(edge.end_node_labels)
             mapping = edge.source.mapping if edge.source else {}
-            table = mapping.get("join_table", "") or (
-                edge.source.name if edge.source else "?"
-            )
+            table = mapping.get("join_table", "") or (edge.source.name if edge.source else "?")
             src_col = mapping.get("start_node", "?").split(".", 1)[-1]
             tgt_col = mapping.get("end_node", "?").split(".", 1)[-1]
             context_parts.append(
@@ -1165,9 +1078,7 @@ class HyGM:
             if isinstance(val, str) and val.startswith(":"):
                 setattr(op, field_name, val.lstrip(":"))
 
-    def _apply_operations_to_model(
-        self, model: "GraphModel", operations: "ModelModifications"
-    ) -> "GraphModel":
+    def _apply_operations_to_model(self, model: "GraphModel", operations: "ModelModifications") -> "GraphModel":
         """Apply structured operations to the graph model."""
         # Create a deep copy of the model to modify
         modified_model = copy.deepcopy(model)
@@ -1179,14 +1090,9 @@ class HyGM:
             if isinstance(op, type(op)) and hasattr(op, "operation_type"):
                 if op.operation_type == "change_node_label":
                     print(f"  - Change node label: {op.old_label} → {op.new_label}")
-                    modified_model = self._apply_change_node_label(
-                        modified_model, op.old_label, op.new_label
-                    )
+                    modified_model = self._apply_change_node_label(modified_model, op.old_label, op.new_label)
                 elif op.operation_type == "rename_property":
-                    print(
-                        f"  - Rename property on {op.node_label}: "
-                        f"{op.old_property} → {op.new_property}"
-                    )
+                    print(f"  - Rename property on {op.node_label}: {op.old_property} → {op.new_property}")
                     modified_model = self._apply_rename_property(
                         modified_model,
                         op.node_label,
@@ -1195,42 +1101,27 @@ class HyGM:
                     )
                 elif op.operation_type == "drop_property":
                     print(f"  - Drop property: {op.node_label}.{op.property_name}")
-                    modified_model = self._apply_drop_property(
-                        modified_model, op.node_label, op.property_name
-                    )
+                    modified_model = self._apply_drop_property(modified_model, op.node_label, op.property_name)
                 elif op.operation_type == "add_property":
                     print(f"  - Add property: {op.node_label}.{op.property_name}")
-                    modified_model = self._apply_add_property(
-                        modified_model, op.node_label, op.property_name
-                    )
+                    modified_model = self._apply_add_property(modified_model, op.node_label, op.property_name)
                 elif op.operation_type == "change_relationship_name":
                     print(f"  - Change relationship: {op.old_name} → {op.new_name}")
-                    modified_model = self._apply_change_relationship_name(
-                        modified_model, op.old_name, op.new_name
-                    )
+                    modified_model = self._apply_change_relationship_name(modified_model, op.old_name, op.new_name)
                 elif op.operation_type == "drop_relationship":
                     print(f"  - Drop relationship: {op.relationship_name}")
-                    modified_model = self._apply_drop_relationship(
-                        modified_model, op.relationship_name
-                    )
+                    modified_model = self._apply_drop_relationship(modified_model, op.relationship_name)
                 elif op.operation_type == "add_index":
                     print(f"  - Add index: {op.node_label}.{op.property_name}")
-                    modified_model = self._apply_add_index(
-                        modified_model, op.node_label, op.property_name
-                    )
+                    modified_model = self._apply_add_index(modified_model, op.node_label, op.property_name)
                 elif op.operation_type == "drop_index":
                     print(f"  - Drop index: {op.node_label}.{op.property_name}")
-                    modified_model = self._apply_drop_index(
-                        modified_model, op.node_label, op.property_name
-                    )
+                    modified_model = self._apply_drop_index(modified_model, op.node_label, op.property_name)
                 elif op.operation_type == "add_constraint":
                     constraint_desc = f"{op.constraint_type.upper()}"
                     if op.constraint_type == "data_type" and op.data_type:
                         constraint_desc += f" ({op.data_type})"
-                    print(
-                        f"  - Add constraint: {constraint_desc} on "
-                        f"{op.node_label}.{op.property_name}"
-                    )
+                    print(f"  - Add constraint: {constraint_desc} on {op.node_label}.{op.property_name}")
                     modified_model = self._apply_add_constraint(
                         modified_model,
                         op.node_label,
@@ -1240,10 +1131,7 @@ class HyGM:
                     )
                 elif op.operation_type == "drop_constraint":
                     constraint_desc = f"{op.constraint_type.upper()}"
-                    print(
-                        f"  - Drop constraint: {constraint_desc} on "
-                        f"{op.node_label}.{op.property_name}"
-                    )
+                    print(f"  - Drop constraint: {constraint_desc} on {op.node_label}.{op.property_name}")
                     modified_model = self._apply_drop_constraint(
                         modified_model,
                         op.node_label,
@@ -1260,9 +1148,7 @@ class HyGM:
                     )
                 elif op.operation_type == "drop_node":
                     print(f"  - Drop node: {op.node_label}")
-                    modified_model = self._apply_drop_node(
-                        modified_model, op.node_label
-                    )
+                    modified_model = self._apply_drop_node(modified_model, op.node_label)
                 elif op.operation_type == "add_relationship":
                     print(
                         f"  - Add relationship: ({op.start_node_label})"
@@ -1277,30 +1163,20 @@ class HyGM:
                     )
                 elif op.operation_type == "change_node_table":
                     print(f"  - Change table for :{op.node_label}: → {op.new_table}")
-                    modified_model = self._apply_change_node_table(
-                        modified_model, op.node_label, op.new_table
-                    )
+                    modified_model = self._apply_change_node_table(modified_model, op.node_label, op.new_table)
                 elif op.operation_type == "change_node_id_column":
-                    print(
-                        f"  - Change id column for :{op.node_label}: → {op.new_id_column}"
-                    )
-                    modified_model = self._apply_change_node_id_column(
-                        modified_model, op.node_label, op.new_id_column
-                    )
+                    print(f"  - Change id column for :{op.node_label}: → {op.new_id_column}")
+                    modified_model = self._apply_change_node_id_column(modified_model, op.node_label, op.new_id_column)
                 elif op.operation_type == "change_edge_table":
                     print(f"  - Change table for [:{op.rel_type}]: → {op.new_table}")
-                    modified_model = self._apply_change_edge_table(
-                        modified_model, op.rel_type, op.new_table
-                    )
+                    modified_model = self._apply_change_edge_table(modified_model, op.rel_type, op.new_table)
                 elif op.operation_type == "change_edge_columns":
                     parts = []
                     if op.new_source_column:
                         parts.append(f"source_column={op.new_source_column}")
                     if op.new_target_column:
                         parts.append(f"target_column={op.new_target_column}")
-                    print(
-                        f"  - Change columns for [:{op.rel_type}]: {', '.join(parts)}"
-                    )
+                    print(f"  - Change columns for [:{op.rel_type}]: {', '.join(parts)}")
                     modified_model = self._apply_change_edge_columns(
                         modified_model,
                         op.rel_type,
@@ -1334,48 +1210,32 @@ class HyGM:
             mode="interactive",
         )
 
-    def _apply_change_node_label(
-        self, model: "GraphModel", old_label: str, new_label: str
-    ) -> "GraphModel":
+    def _apply_change_node_label(self, model: "GraphModel", old_label: str, new_label: str) -> "GraphModel":
         """Apply change node label operation."""
         for node in model.nodes:
             if old_label in node.labels:
                 # Update labels
-                node.labels = [
-                    new_label if label == old_label else label for label in node.labels
-                ]
+                node.labels = [new_label if label == old_label else label for label in node.labels]
                 # Update source mapping if it exists
                 if node.source and "labels" in node.source.mapping:
                     node.source.mapping["labels"] = [
-                        new_label if label == old_label else label
-                        for label in node.source.mapping["labels"]
+                        new_label if label == old_label else label for label in node.source.mapping["labels"]
                     ]
 
         # Update relationships that reference this label
         for edge in model.edges:
-            edge.start_node_labels = [
-                new_label if label == old_label else label
-                for label in edge.start_node_labels
-            ]
-            edge.end_node_labels = [
-                new_label if label == old_label else label
-                for label in edge.end_node_labels
-            ]
+            edge.start_node_labels = [new_label if label == old_label else label for label in edge.start_node_labels]
+            edge.end_node_labels = [new_label if label == old_label else label for label in edge.end_node_labels]
 
         # Update indexes
         for index in model.node_indexes:
             if index.labels:
-                index.labels = [
-                    new_label if label == old_label else label for label in index.labels
-                ]
+                index.labels = [new_label if label == old_label else label for label in index.labels]
 
         # Update constraints
         for constraint in model.node_constraints:
             if constraint.labels:
-                constraint.labels = [
-                    new_label if label == old_label else label
-                    for label in constraint.labels
-                ]
+                constraint.labels = [new_label if label == old_label else label for label in constraint.labels]
 
         return model
 
@@ -1399,20 +1259,14 @@ class HyGM:
                             prop.source.field = f"{table_name}.{new_property}"
         return model
 
-    def _apply_drop_property(
-        self, model: "GraphModel", node_label: str, property_name: str
-    ) -> "GraphModel":
+    def _apply_drop_property(self, model: "GraphModel", node_label: str, property_name: str) -> "GraphModel":
         """Apply drop property operation."""
         for node in model.nodes:
             if node_label in node.labels:
-                node.properties = [
-                    prop for prop in node.properties if prop.key != property_name
-                ]
+                node.properties = [prop for prop in node.properties if prop.key != property_name]
         return model
 
-    def _apply_add_property(
-        self, model: "GraphModel", node_label: str, property_name: str
-    ) -> "GraphModel":
+    def _apply_add_property(self, model: "GraphModel", node_label: str, property_name: str) -> "GraphModel":
         """Apply add property operation."""
         from .models.graph_models import GraphProperty
         from .models.sources import PropertySource
@@ -1429,9 +1283,7 @@ class HyGM:
                     node.properties.append(new_prop)
         return model
 
-    def _apply_change_relationship_name(
-        self, model: "GraphModel", old_name: str, new_name: str
-    ) -> "GraphModel":
+    def _apply_change_relationship_name(self, model: "GraphModel", old_name: str, new_name: str) -> "GraphModel":
         """Apply change relationship name operation."""
         for edge in model.edges:
             if edge.edge_type == old_name:
@@ -1455,29 +1307,19 @@ class HyGM:
                             mapping[key] = f"{new_name}.{col}"
         return model
 
-    def _apply_drop_relationship(
-        self, model: "GraphModel", relationship_name: str
-    ) -> "GraphModel":
+    def _apply_drop_relationship(self, model: "GraphModel", relationship_name: str) -> "GraphModel":
         """Apply drop relationship operation."""
-        model.edges = [
-            edge for edge in model.edges if edge.edge_type != relationship_name
-        ]
+        model.edges = [edge for edge in model.edges if edge.edge_type != relationship_name]
         return model
 
-    def _apply_add_index(
-        self, model: "GraphModel", node_label: str, property_name: str
-    ) -> "GraphModel":
+    def _apply_add_index(self, model: "GraphModel", node_label: str, property_name: str) -> "GraphModel":
         """Apply add index operation."""
         from .models.graph_models import GraphIndex
         from .models.sources import IndexSource
 
         # Check if index already exists
         for index in model.node_indexes:
-            if (
-                index.labels
-                and node_label in index.labels
-                and property_name in index.properties
-            ):
+            if index.labels and node_label in index.labels and property_name in index.properties:
                 return model  # Index already exists
 
         # Create new index
@@ -1495,18 +1337,12 @@ class HyGM:
         model.node_indexes.append(new_index)
         return model
 
-    def _apply_drop_index(
-        self, model: "GraphModel", node_label: str, property_name: str
-    ) -> "GraphModel":
+    def _apply_drop_index(self, model: "GraphModel", node_label: str, property_name: str) -> "GraphModel":
         """Apply drop index operation."""
         model.node_indexes = [
             index
             for index in model.node_indexes
-            if not (
-                index.labels
-                and node_label in index.labels
-                and property_name in index.properties
-            )
+            if not (index.labels and node_label in index.labels and property_name in index.properties)
         ]
         return model
 
@@ -1601,9 +1437,7 @@ class HyGM:
         # Create properties
         node_properties = []
         for prop_name in properties:
-            prop_source = PropertySource(
-                field=f"{source_table or node_label.lower()}.{prop_name}"
-            )
+            prop_source = PropertySource(field=f"{source_table or node_label.lower()}.{prop_name}")
             node_properties.append(GraphProperty(key=prop_name, source=prop_source))
 
         # Create new node
@@ -1624,17 +1458,12 @@ class HyGM:
         model.edges = [
             edge
             for edge in model.edges
-            if (
-                node_label not in edge.start_node_labels
-                and node_label not in edge.end_node_labels
-            )
+            if (node_label not in edge.start_node_labels and node_label not in edge.end_node_labels)
         ]
 
         # Remove indexes for this node
         model.node_indexes = [
-            index
-            for index in model.node_indexes
-            if not (index.labels and node_label in index.labels)
+            index for index in model.node_indexes if not (index.labels and node_label in index.labels)
         ]
 
         # Remove constraints for this node
@@ -1688,9 +1517,7 @@ class HyGM:
         # Create properties
         edge_properties = []
         for prop_name in properties:
-            prop_source = PropertySource(
-                field=f"{relationship_name.lower()}.{prop_name}"
-            )
+            prop_source = PropertySource(field=f"{relationship_name.lower()}.{prop_name}")
             edge_properties.append(GraphProperty(key=prop_name, source=prop_source))
 
         # Create new relationship
@@ -1708,9 +1535,7 @@ class HyGM:
     # Mapping-level operations
     # ------------------------------------------------------------------
 
-    def _apply_change_node_table(
-        self, model: "GraphModel", node_label: str, new_table: str
-    ) -> "GraphModel":
+    def _apply_change_node_table(self, model: "GraphModel", node_label: str, new_table: str) -> "GraphModel":
         """Change the source table name mapped to a node."""
         for node in model.nodes:
             if node_label in node.labels and node.source:
@@ -1731,9 +1556,7 @@ class HyGM:
                 break
         return model
 
-    def _apply_change_node_id_column(
-        self, model: "GraphModel", node_label: str, new_id_column: str
-    ) -> "GraphModel":
+    def _apply_change_node_id_column(self, model: "GraphModel", node_label: str, new_id_column: str) -> "GraphModel":
         """Change the id column for a node mapping."""
         for node in model.nodes:
             if node_label in node.labels and node.source:
@@ -1745,9 +1568,7 @@ class HyGM:
                 break
         return model
 
-    def _apply_change_edge_table(
-        self, model: "GraphModel", rel_type: str, new_table: str
-    ) -> "GraphModel":
+    def _apply_change_edge_table(self, model: "GraphModel", rel_type: str, new_table: str) -> "GraphModel":
         """Change the source/join table for an edge."""
         for edge in model.edges:
             if edge.edge_type == rel_type and edge.source:
@@ -1820,9 +1641,7 @@ class HyGM:
             mode="automatic",
         )
 
-    def validate_graph_model(
-        self, graph_model: "GraphModel", database_structure: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def validate_graph_model(self, graph_model: "GraphModel", database_structure: Dict[str, Any]) -> Dict[str, Any]:
         """
         Comprehensive validation of graph model against database structure.
 
@@ -1928,11 +1747,7 @@ class HyGM:
                     "Validation iteration %d: %s (Coverage: %.1f%%)",
                     improvement_count + 1,
                     "PASSED" if validation_result.success else "FAILED",
-                    (
-                        validation_result.metrics.coverage_percentage
-                        if validation_result.metrics
-                        else 0
-                    ),
+                    (validation_result.metrics.coverage_percentage if validation_result.metrics else 0),
                 )
             else:
                 # Detailed display for interactive mode
@@ -1957,10 +1772,7 @@ class HyGM:
                     if mode == "automatic":
                         critical_count = len(validation_result.critical_issues)
                         warning_count = len(validation_result.warnings)
-                        print(
-                            f"🔧 Found {critical_count} critical issues and "
-                            f"{warning_count} warnings"
-                        )
+                        print(f"🔧 Found {critical_count} critical issues and {warning_count} warnings")
 
                         logger.info(
                             "🤖 Attempting automatic LLM improvement (iteration %d/%d)",
@@ -1973,9 +1785,7 @@ class HyGM:
                         )
 
                     # Try LLM improvement
-                    improved_model = self._handle_llm_validation(
-                        validation_result, current_model, operations, mode
-                    )
+                    improved_model = self._handle_llm_validation(validation_result, current_model, operations, mode)
 
                     if improved_model != current_model:
                         # Model was improved, continue with the improved version
@@ -1991,9 +1801,7 @@ class HyGM:
                         else:
                             # Interactive mode - show detailed iteration info
                             self.iteration_count += 1
-                            print(
-                                f"\n🔄 ITERATION {self.iteration_count} - IMPROVED MODEL"
-                            )
+                            print(f"\n🔄 ITERATION {self.iteration_count} - IMPROVED MODEL")
                             self._display_current_model(current_model)
 
                             if improvement_count < max_improvement_iterations:
@@ -2002,10 +1810,7 @@ class HyGM:
                                     f"(iteration {improvement_count + 1}/{max_improvement_iterations})..."
                                 )
                             else:
-                                print(
-                                    f"\n⚠️ Reached maximum improvement iterations "
-                                    f"({max_improvement_iterations})"
-                                )
+                                print(f"\n⚠️ Reached maximum improvement iterations ({max_improvement_iterations})")
                                 break
                         continue
                     else:
@@ -2032,10 +1837,7 @@ class HyGM:
                     "✨ Automatic LLM improvement completed after %d iterations",
                     improvement_count,
                 )
-                print(
-                    f"✨ Automatic LLM improvement completed after "
-                    f"{improvement_count} iterations"
-                )
+                print(f"✨ Automatic LLM improvement completed after {improvement_count} iterations")
             else:
                 logger.info("📊 Using original LLM model (no improvements needed)")
                 print("📊 Using original LLM model")
@@ -2072,9 +1874,7 @@ class HyGM:
             mode="interactive",
         )
 
-    def _display_validation_results(
-        self, validation_result, strategy: GraphModelingStrategy
-    ) -> None:
+    def _display_validation_results(self, validation_result, strategy: GraphModelingStrategy) -> None:
         """Display validation results in a user-friendly format."""
         status = "✅ PASSED" if validation_result.success else "❌ FAILED"
         print(f"\nValidation Status: {status}")
@@ -2085,13 +1885,8 @@ class HyGM:
         metrics = validation_result.metrics
         print("\nCoverage Metrics:")
         print(f"  Tables: {metrics.tables_covered}/{metrics.tables_total}")
-        print(
-            f"  Properties: {metrics.properties_covered}/" f"{metrics.properties_total}"
-        )
-        print(
-            f"  Relationships: {metrics.relationships_covered}/"
-            f"{metrics.relationships_total}"
-        )
+        print(f"  Properties: {metrics.properties_covered}/{metrics.properties_total}")
+        print(f"  Relationships: {metrics.relationships_covered}/{metrics.relationships_total}")
         print(f"  Overall Coverage: {metrics.coverage_percentage:.1f}%")
 
         # Display critical issues
@@ -2153,9 +1948,7 @@ class HyGM:
         """Handle validation results for LLM strategy with regeneration."""
         if not validation_result.success and self.llm:
             print("\n🤖 LLM STRATEGY: AUTOMATIC MODEL IMPROVEMENT")
-            print(
-                "The LLM will analyze validation issues and regenerate " "the model..."
-            )
+            print("The LLM will analyze validation issues and regenerate the model...")
 
             # Preserve user operation history before LLM improvement
             saved_user_operations = None
@@ -2164,23 +1957,17 @@ class HyGM:
                 print("📋 Preserving your operation history...")
 
             # Prepare context for LLM
-            validation_context = self._prepare_validation_context_for_llm(
-                validation_result, model, operations
-            )
+            validation_context = self._prepare_validation_context_for_llm(validation_result, model, operations)
 
             try:
                 # Use LLM to regenerate the improved model
-                improved_model = self._regenerate_model_with_llm_fixes(
-                    model, validation_context, validation_result
-                )
+                improved_model = self._regenerate_model_with_llm_fixes(model, validation_context, validation_result)
 
                 if improved_model:
                     print("\n✅ LLM has generated an improved model!")
 
                     # Offer the user to review the improved model
-                    should_apply = self._should_apply_llm_improvements(
-                        improved_model, model, mode
-                    )
+                    should_apply = self._should_apply_llm_improvements(improved_model, model, mode)
                     if should_apply:
                         print("✅ Applying LLM improvements...")
 
@@ -2271,14 +2058,10 @@ class HyGM:
             return None
 
         # Get the modeling strategy instance for regeneration
-        strategy_instance = self._get_strategy_instance(
-            GraphModelingStrategy.LLM_POWERED
-        )
+        strategy_instance = self._get_strategy_instance(GraphModelingStrategy.LLM_POWERED)
 
         # Prepare enhanced context for the LLM
-        improvement_context = self._prepare_improvement_context(
-            current_model, validation_result, validation_context
-        )
+        improvement_context = self._prepare_improvement_context(current_model, validation_result, validation_context)
 
         # Extract user operation context separately to preserve user changes
         user_context = None
@@ -2403,10 +2186,7 @@ class HyGM:
                     return False
                 elif choice == "3":
                     self._display_current_model(improved_model)
-                    print(
-                        "\nAfter reviewing, would you like to apply these "
-                        "improvements?"
-                    )
+                    print("\nAfter reviewing, would you like to apply these improvements?")
                     print("1. Yes - Apply improvements")
                     print("2. No - Keep current model")
                     continue
@@ -2416,9 +2196,7 @@ class HyGM:
                 print("\nKeeping current model...")
                 return False
 
-    def _show_model_differences(
-        self, current_model: "GraphModel", improved_model: "GraphModel"
-    ) -> None:
+    def _show_model_differences(self, current_model: "GraphModel", improved_model: "GraphModel") -> None:
         """Show differences between current and improved models."""
         # Compare nodes
         current_node_labels = {node.primary_label for node in current_model.nodes}
@@ -2459,12 +2237,8 @@ class HyGM:
         if common_nodes:
             property_changes = []
             for label in common_nodes:
-                current_node = next(
-                    n for n in current_model.nodes if n.primary_label == label
-                )
-                improved_node = next(
-                    n for n in improved_model.nodes if n.primary_label == label
-                )
+                current_node = next(n for n in current_model.nodes if n.primary_label == label)
+                improved_node = next(n for n in improved_model.nodes if n.primary_label == label)
 
                 current_props = {p.key for p in current_node.properties}
                 improved_props = {p.key for p in improved_node.properties}

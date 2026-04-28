@@ -1,15 +1,15 @@
 from .servers.server import (
-    run_query,
+    get_betweenness_centrality,
     get_configuration,
-    get_index,
     get_constraint,
+    get_index,
+    get_node_neighborhood,
+    get_page_rank,
+    get_procedures,
     get_schema,
     get_storage,
     get_triggers,
-    get_procedures,
-    get_betweenness_centrality,
-    get_page_rank,
-    get_node_neighborhood,
+    run_query,
     search_node_vectors,
 )
 
@@ -17,16 +17,16 @@ from .servers.server import (
 # in main.py. They are not exported from the package level.
 
 __all__ = [
-    "run_query",
+    "get_betweenness_centrality",
     "get_configuration",
-    "get_index",
     "get_constraint",
+    "get_index",
+    "get_node_neighborhood",
+    "get_page_rank",
+    "get_procedures",
     "get_schema",
     "get_storage",
     "get_triggers",
-    "get_procedures",
-    "get_betweenness_centrality",
-    "get_page_rank",
-    "get_node_neighborhood",
+    "run_query",
     "search_node_vectors",
 ]

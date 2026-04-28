@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any
 
 from ..api.memgraph import Memgraph
 from ..api.tool import BaseTool
@@ -25,11 +25,9 @@ class ShowProceduresTool(BaseTool):
         )
         self.db = db
 
-    def call(self, arguments: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def call(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
         """Execute the mg.procedures() query and return the available procedures."""
         procedures = self.db.query(
-            "CALL mg.procedures() YIELD name, signature, is_write "
-            "RETURN name, signature, is_write "
-            "ORDER BY name"
+            "CALL mg.procedures() YIELD name, signature, is_write RETURN name, signature, is_write ORDER BY name"
         )
         return procedures

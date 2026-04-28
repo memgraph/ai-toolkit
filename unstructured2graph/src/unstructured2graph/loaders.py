@@ -1,20 +1,21 @@
-from pathlib import Path
-from typing import Any, List, Union
-import logging
-from dataclasses import dataclass
 import hashlib
-import statistics
+import logging
 import os
+import statistics
 import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
-from unstructured.partition.auto import partition
 from unstructured.chunking.title import chunk_by_title
-from memgraph_toolbox.api.memgraph import Memgraph
+from unstructured.partition.auto import partition
+
 from lightrag_memgraph import MemgraphLightRAGWrapper
+from memgraph_toolbox.api.memgraph import Memgraph
 
 from .memgraph import (
-    create_nodes_from_list,
     connect_chunks_to_entities,
+    create_nodes_from_list,
     link_nodes_in_order,
 )
 
@@ -30,14 +31,14 @@ class Chunk:
 
 @dataclass
 class ChunkedDocument:
-    chunks: List[Chunk]
-    source: Union[str, Path]
+    chunks: list[Chunk]
+    source: str | Path
 
 
 def parse_source(
-    source: Union[str, Path],
+    source: str | Path,
     partition_kwargs: dict[str, Any] | None = None,
-) -> List[str]:
+) -> list[str]:
     """
     Parse a source file or URL using the unstructured library. The unstructured
     library supports many types of data sources and various parsing options.
@@ -64,13 +65,13 @@ def parse_source(
         ]
         return text_chunks
     except Exception as e:
-        raise ValueError(f"Error parsing source {source_str}: {str(e)}")
+        raise ValueError(f"Error parsing source {source_str}: {e!s}") from e
 
 
 def make_chunks(
-    sources: List[Union[str, Path]],
+    sources: list[str | Path],
     partition_kwargs: dict[str, Any] | None = None,
-) -> List[ChunkedDocument]:
+) -> list[ChunkedDocument]:
     """
     Chunk a list of sources into a list of ChunkedDocuments.
     Args:
@@ -86,12 +87,10 @@ def make_chunks(
     for source in sources:
         try:
             chunks = parse_source(source, partition_kwargs=partition_kwargs)
-            logger.debug(
-                f"Source: {source}; No Chunks: {len(chunks)}; Chunks: {chunks};"
-            )
+            logger.debug(f"Source: {source}; No Chunks: {len(chunks)}; Chunks: {chunks};")
             documents.append(ChunkedDocument(chunks=chunks, source=source))
         except Exception as e:
-            raise ValueError(f"Failed to parse {source}: {e}")
+            raise ValueError(f"Failed to parse {source}: {e}") from e
 
     # Get statistics about chunks, e.g., important because of the token limits
     # (LLM/embedding).
@@ -110,7 +109,7 @@ def make_chunks(
 
 
 async def from_unstructured(
-    sources: List[Union[str, Path]],
+    sources: list[str | Path],
     memgraph: Memgraph,
     lightrag_wrapper: MemgraphLightRAGWrapper,
     only_chunks: bool = False,
@@ -143,9 +142,7 @@ async def from_unstructured(
             logger.warning(f"No chunks found in document: {document.source}")
             continue
 
-        logger.info(
-            f"Processing {len(document.chunks)} chunks from {document.source}..."
-        )
+        logger.info(f"Processing {len(document.chunks)} chunks from {document.source}...")
         memgraph_node_props = []
         for chunk in document.chunks:
             logger.debug(f"Chunk: {chunk.hash} - {chunk.text}")
@@ -154,29 +151,21 @@ async def from_unstructured(
 
         if link_chunks:
             hash_pairs = [
-                (document.chunks[i].hash, document.chunks[i + 1].hash)
-                for i in range(len(document.chunks) - 1)
+                (document.chunks[i].hash, document.chunks[i + 1].hash) for i in range(len(document.chunks) - 1)
             ]
             if hash_pairs:
-                relationships = [
-                    {"from": from_hash, "to": to_hash}
-                    for from_hash, to_hash in hash_pairs
-                ]
+                relationships = [{"from": from_hash, "to": to_hash} for from_hash, to_hash in hash_pairs]
                 link_nodes_in_order(memgraph, "Chunk", "hash", relationships, "NEXT")
 
         for chunk in document.chunks:
             if not only_chunks:
-                await lightrag_wrapper.ainsert(
-                    input=chunk.text, file_paths=[chunk.hash]
-                )
+                await lightrag_wrapper.ainsert(input=chunk.text, file_paths=[chunk.hash])
             if not only_chunks:
                 connect_chunks_to_entities(memgraph, "Chunk", "base")
 
         processed_chunks += len(document.chunks)
         elapsed_time = time.time() - start_time
-        estimated_time_remaining = (
-            elapsed_time / processed_chunks * (total_chunks - processed_chunks)
-        )
+        estimated_time_remaining = elapsed_time / processed_chunks * (total_chunks - processed_chunks)
         if estimated_time_remaining >= 3600:
             time_str = f"{estimated_time_remaining / 3600:.2f} hours"
         elif estimated_time_remaining >= 60:
@@ -184,9 +173,7 @@ async def from_unstructured(
         else:
             time_str = f"{estimated_time_remaining:.2f} seconds"
         if total_chunks == processed_chunks:
-            logger.info(
-                f"All {total_chunks} chunks processed in {elapsed_time:.2f} seconds"
-            )
+            logger.info(f"All {total_chunks} chunks processed in {elapsed_time:.2f} seconds")
         else:
             logger.info(
                 f"Processed {processed_chunks} chunks out of {total_chunks}. Estimated time remaining: {time_str}"

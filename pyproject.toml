@@ -70,8 +70,18 @@ select = [
     "RUF",    # ruff-specific rules
 ]
 ignore = [
-    "E501",   # line too long (handled by formatter)
+    "E501",    # line too long — handled by the formatter
+    "N803",    # argument name should be lowercase — domain uses uppercase (e.g. G for graph, SQL identifiers)
+    "N806",    # variable in function should be lowercase — same domain reason as N803
+    "N812",    # lowercase imported as non-lowercase — allows aliasing conventions like `import x as X`
+    "N815",    # mixed-case variable in class scope — graph/DB field names follow external conventions
+    "RUF001",  # ambiguous unicode character in string — false positives on intentional unicode content
+    "RUF013",  # implicit Optional — affects public API signatures, defer to a dedicated typing cleanup
 ]
 
 [tool.ruff.lint.isort]
 known-first-party = ["memgraph_toolbox", "mcp_memgraph", "langchain_memgraph", "lightrag_memgraph", "unstructured2graph", "skills_graph"]
+
+[tool.ruff.lint.per-file-ignores]
+# Notebook cells reference variables from earlier cells — not actual undefined names
+"*.ipynb" = ["F821"]

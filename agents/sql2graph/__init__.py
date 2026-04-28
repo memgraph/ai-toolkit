@@ -32,16 +32,16 @@ result = agent.migrate(source_db_config, memgraph_config)
 """
 
 # Main exports
-from .core import SQLToMemgraphAgent, HyGM
+from .core import HyGM, SQLToMemgraphAgent
 from .database import DatabaseAnalyzerFactory
 from .query_generation import CypherGenerator, SchemaUtilities
 
 __version__ = "0.1.0"
 
 __all__ = [
-    "SQLToMemgraphAgent",
-    "HyGM",
-    "DatabaseAnalyzerFactory",
     "CypherGenerator",
+    "DatabaseAnalyzerFactory",
+    "HyGM",
+    "SQLToMemgraphAgent",
     "SchemaUtilities",
 ]

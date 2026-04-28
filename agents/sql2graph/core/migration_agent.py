@@ -70,9 +70,7 @@ class SQLToMemgraphAgent:
     def __init__(
         self,
         modeling_mode: ModelingMode = ModelingMode.AUTOMATIC,
-        graph_modeling_strategy: GraphModelingStrategy = (
-            GraphModelingStrategy.DETERMINISTIC
-        ),
+        graph_modeling_strategy: GraphModelingStrategy = (GraphModelingStrategy.DETERMINISTIC),
         meta_graph_policy: str = "auto",
         llm_provider: Optional[str] = None,
         llm_model: Optional[str] = None,
@@ -94,8 +92,7 @@ class SQLToMemgraphAgent:
         # (incremental mode needs LLM for natural language modifications)
         self.llm = None
         needs_llm = (
-            graph_modeling_strategy == GraphModelingStrategy.LLM_POWERED
-            or modeling_mode == ModelingMode.INCREMENTAL
+            graph_modeling_strategy == GraphModelingStrategy.LLM_POWERED or modeling_mode == ModelingMode.INCREMENTAL
         )
 
         if needs_llm:
@@ -132,9 +129,7 @@ class SQLToMemgraphAgent:
                 logger.info("Initialized OpenAI client with model: %s", model)
 
             elif provider_lower == "anthropic":
-                model = llm_model or os.getenv(
-                    "LLM_MODEL", "claude-sonnet-4-20250514"
-                )
+                model = llm_model or os.getenv("LLM_MODEL", "claude-sonnet-4-20250514")
                 self.llm = ChatAnthropic(model=model, temperature=0.1)
                 logger.info("Initialized Anthropic client with model: %s", model)
 
@@ -149,8 +144,7 @@ class SQLToMemgraphAgent:
 
             else:
                 raise ValueError(
-                    f"Unsupported LLM provider: {llm_provider}. "
-                    "Supported providers: openai, anthropic, gemini"
+                    f"Unsupported LLM provider: {llm_provider}. Supported providers: openai, anthropic, gemini"
                 )
 
         self.database_analyzer = None
@@ -224,9 +218,7 @@ class SQLToMemgraphAgent:
         structure = state.get("database_structure", {})
         host = config.get("host", "")
         database = config.get("database", "")
-        db_type = (
-            structure.get("database_type") or config.get("database_type") or "mysql"
-        )
+        db_type = structure.get("database_type") or config.get("database_type") or "mysql"
         signature = {
             "host": host,
             "database": database,
@@ -573,8 +565,7 @@ class SQLToMemgraphAgent:
             # Log the modeling mode being used
             if self.modeling_mode == ModelingMode.INCREMENTAL:
                 logger.info(
-                    "Using incremental graph modeling mode with an "
-                    "end-of-session interactive refinement option"
+                    "Using incremental graph modeling mode with an end-of-session interactive refinement option"
                 )
             else:
                 logger.info("Using automatic graph modeling mode")
@@ -698,9 +689,7 @@ class SQLToMemgraphAgent:
             for i, query in enumerate(queries):
                 # Skip empty queries but keep comment-only blocks for context
                 query_lines = [line.strip() for line in query.strip().split("\n")]
-                non_comment_lines = [
-                    line for line in query_lines if line and not line.startswith("//")
-                ]
+                non_comment_lines = [line for line in query_lines if line and not line.startswith("//")]
 
                 if non_comment_lines:  # Has actual Cypher code
                     try:
@@ -718,34 +707,21 @@ class SQLToMemgraphAgent:
                             # Comment format: "// Merge {label} nodes from {table} table (HyGM optimized)"
                             table_name = None
                             for line in query_lines:
-                                if (
-                                    line.startswith("//")
-                                    and " from " in line
-                                    and " table" in line
-                                ):
+                                if line.startswith("//") and " from " in line and " table" in line:
                                     try:
                                         # Extract table name from comment
-                                        parts = (
-                                            line.split(" from ")[1]
-                                            .split(" table")[0]
-                                            .strip()
-                                        )
+                                        parts = line.split(" from ")[1].split(" table")[0].strip()
                                         table_name = parts
                                         break
                                     except (IndexError, AttributeError):
                                         pass
 
                             if table_name:
-                                logger.info(
-                                    f"Successfully migrated data from table: "
-                                    f"{table_name}"
-                                )
+                                logger.info(f"Successfully migrated data from table: {table_name}")
                                 # Update completed tables list
                                 if table_name not in state["completed_tables"]:
                                     state["completed_tables"].append(table_name)
-                        elif (
-                            "MERGE (" in query or "CREATE (" in query
-                        ) and "-[:" in query:
+                        elif ("MERGE (" in query or "CREATE (" in query) and "-[:" in query:
                             logger.info("Successfully created relationships")
 
                     except Exception as e:
@@ -753,10 +729,7 @@ class SQLToMemgraphAgent:
                         logger.error(f"Query: {query[:100]}...")
                         state["errors"].append(f"Query execution failed: {e}")
 
-            logger.info(
-                f"Migration completed: {successful_queries}/{len(queries)} "
-                f"queries executed successfully"
-            )
+            logger.info(f"Migration completed: {successful_queries}/{len(queries)} queries executed successfully")
             state["current_step"] = "Data migration completed"
 
         except Exception as e:
@@ -823,15 +796,11 @@ class SQLToMemgraphAgent:
             logger.info("Using HyGM-provided indexes and constraints")
 
             # Generate index queries from HyGM graph model
-            index_queries = self.cypher_generator.generate_index_queries_from_hygm(
-                graph_model.node_indexes
-            )
+            index_queries = self.cypher_generator.generate_index_queries_from_hygm(graph_model.node_indexes)
 
             # Generate constraint queries from HyGM graph model
-            constraint_queries = (
-                self.cypher_generator.generate_constraint_queries_from_hygm(
-                    graph_model.node_constraints
-                )
+            constraint_queries = self.cypher_generator.generate_constraint_queries_from_hygm(
+                graph_model.node_constraints
             )
 
             logger.info(
@@ -849,9 +818,7 @@ class SQLToMemgraphAgent:
             )
 
             # Execute index queries
-            self._execute_queries_with_logging(
-                index_queries, "index", self.memgraph_client, created_indexes
-            )
+            self._execute_queries_with_logging(index_queries, "index", self.memgraph_client, created_indexes)
 
             # Store results in state
             state["created_indexes"] = created_indexes
@@ -890,10 +857,7 @@ class SQLToMemgraphAgent:
             relationships_to_migrate = plan["relationships"]
 
             if not nodes_to_migrate and not relationships_to_migrate:
-                logger.info(
-                    "Schema and table counts already match stored metadata; "
-                    "no migration queries generated"
-                )
+                logger.info("Schema and table counts already match stored metadata; no migration queries generated")
                 state["migration_queries"] = []
                 state["current_step"] = "No new data to migrate"
                 return state
@@ -921,14 +885,11 @@ class SQLToMemgraphAgent:
 
                 source = getattr(node_def, "source", None)
                 source_table = getattr(source, "name", None) or "unknown"
-                qualified_table = self._qualify_table_name(
-                    source_table, source_db_config
-                )
+                qualified_table = self._qualify_table_name(source_table, source_db_config)
                 node_label = node_def.primary_label
 
                 properties = [
-                    prop.key if hasattr(prop, "key") else str(prop)
-                    for prop in getattr(node_def, "properties", [])
+                    prop.key if hasattr(prop, "key") else str(prop) for prop in getattr(node_def, "properties", [])
                 ]
 
                 node_mapping = getattr(source, "mapping", {}) if source else {}
@@ -1016,9 +977,7 @@ SET n += row;"""
 
         try:
             if not rel_def.source or not rel_def.source.mapping:
-                logger.warning(
-                    f"No source mapping for relationship {rel_def.edge_type}"
-                )
+                logger.warning(f"No source mapping for relationship {rel_def.edge_type}")
                 return ""
 
             rel_name = rel_def.edge_type
@@ -1075,9 +1034,7 @@ SET n += row;"""
 
         if not start_node or not end_node:
             logger.error("Missing relationship information for %s", rel_name)
-            raise Exception(
-                "HyGM must provide complete relationship mapping for " f"{rel_name}"
-            )
+            raise Exception(f"HyGM must provide complete relationship mapping for {rel_name}")
 
         try:
             from_table, fk_column = start_node.split(".", 1)
@@ -1088,25 +1045,17 @@ SET n += row;"""
                 rel_name,
                 source_info,
             )
-            raise Exception(
-                f"HyGM must provide valid relationship mapping for {rel_name}"
-            )
+            raise Exception(f"HyGM must provide valid relationship mapping for {rel_name}")
 
         if not from_pk:
             raise Exception(f"HyGM must provide primary key information for {rel_name}")
 
-        from_label = (
-            rel_def.start_node_labels[0] if rel_def.start_node_labels else from_table
-        )
+        from_label = rel_def.start_node_labels[0] if rel_def.start_node_labels else from_table
         to_label = rel_def.end_node_labels[0] if rel_def.end_node_labels else to_table
 
         qualified_from_table = self._qualify_table_name(from_table, source_db_config)
 
-        select_sql = (
-            f"SELECT {from_pk}, {fk_column} "
-            f"FROM {qualified_from_table} "
-            f"WHERE {fk_column} IS NOT NULL"
-        )
+        select_sql = f"SELECT {from_pk}, {fk_column} FROM {qualified_from_table} WHERE {fk_column} IS NOT NULL"
 
         query = f"""
 // Merge {rel_name} relationships (HyGM: {from_label} -> {to_label})
@@ -1145,19 +1094,13 @@ MERGE (from_node)-[:{rel_name}]->(to_node);"""
                 "Missing many-to-many relationship information for %s",
                 rel_name,
             )
-            raise Exception(
-                "HyGM must provide complete many-to-many mapping for " f"{rel_name}"
-            )
+            raise Exception(f"HyGM must provide complete many-to-many mapping for {rel_name}")
 
-        from_label = (
-            rel_def.start_node_labels[0] if rel_def.start_node_labels else from_table
-        )
+        from_label = rel_def.start_node_labels[0] if rel_def.start_node_labels else from_table
         to_label = rel_def.end_node_labels[0] if rel_def.end_node_labels else to_table
 
         join_table_name = cast(str, join_table)
-        qualified_join_table = self._qualify_table_name(
-            join_table_name, source_db_config
-        )
+        qualified_join_table = self._qualify_table_name(join_table_name, source_db_config)
 
         select_sql = f"SELECT {from_fk}, {to_fk} FROM {qualified_join_table}"
 
@@ -1240,9 +1183,7 @@ MERGE (from)-[:{rel_name}]->(to);"""
             state["validation_report"] = {
                 "success": validation_result.success,
                 "summary": validation_result.summary,
-                "validation_score": validation_result.details.get(
-                    "validation_score", 0
-                ),
+                "validation_score": validation_result.details.get("validation_score", 0),
                 "issues": [
                     {
                         "severity": issue.severity.value,
@@ -1268,11 +1209,7 @@ MERGE (from)-[:{rel_name}]->(to);"""
                 logger.warning(f"Validation score: {score}/100")
 
                 # Log critical issues
-                critical_issues = [
-                    issue
-                    for issue in validation_result.issues
-                    if issue.severity.value == "CRITICAL"
-                ]
+                critical_issues = [issue for issue in validation_result.issues if issue.severity.value == "CRITICAL"]
                 if critical_issues:
                     count = len(critical_issues)
                     logger.error(f"Found {count} critical validation issues:")
@@ -1334,9 +1271,7 @@ MERGE (from)-[:{rel_name}]->(to);"""
                 compiled_workflow = self.workflow.compile(checkpointer=memory)
 
                 # Provide required configuration for checkpointer
-                config: RunnableConfig = {
-                    "configurable": {"thread_id": "migration_thread_1"}
-                }
+                config: RunnableConfig = {"configurable": {"thread_id": "migration_thread_1"}}
                 final_state = compiled_workflow.invoke(
                     initial_state,
                     config=config,

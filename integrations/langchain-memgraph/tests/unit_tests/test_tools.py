@@ -1,15 +1,12 @@
-from typing import Type
-
 from langchain_tests.unit_tests import ToolsUnitTests
 
-from memgraph_toolbox.api.memgraph import Memgraph
 from langchain_memgraph.tools import RunQueryTool
-from langchain_memgraph.tools import RunShowStorageInfoTool
+from memgraph_toolbox.api.memgraph import Memgraph
 
 
 class TestMemgraphIntegration(ToolsUnitTests):
     @property
-    def tool_constructor(self) -> Type[RunQueryTool]:
+    def tool_constructor(self) -> type[RunQueryTool]:
         return RunQueryTool
 
     @property

@@ -1,7 +1,8 @@
 import os
+from typing import Literal, cast
+
 from mcp_memgraph.config import get_mcp_config
 from mcp_memgraph.servers import get_server, get_server_info
-from typing import Literal, cast
 
 
 def main():
@@ -39,7 +40,7 @@ def main():
 
     # Run server with configuration
     # Note: host parameter is only used for HTTP/SSE transports, not stdio
-    transport = cast(Literal["stdio", "streamable-http"], config.transport)
+    transport = cast("Literal['stdio', 'streamable-http']", config.transport)
 
     if config.transport == "stdio":
         mcp.run(transport=transport)

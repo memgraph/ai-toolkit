@@ -3,11 +3,11 @@ Cypher query generation utilities for SQL to graph migration.
 Provides label naming, relationship naming, and index generation.
 """
 
-from typing import Dict, List, Any, TYPE_CHECKING
 import logging
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from core.hygm.models.graph_models import GraphIndex, GraphConstraint
+    from core.hygm.models.graph_models import GraphConstraint, GraphIndex
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +18,7 @@ class CypherGenerator:
     def __init__(self):
         """Initialize the Cypher query generator."""
 
-    def generate_index_queries_from_hygm(
-        self, hygm_indexes: List["GraphIndex"]
-    ) -> List[str]:
+    def generate_index_queries_from_hygm(self, hygm_indexes: list["GraphIndex"]) -> list[str]:
         """Generate index creation queries from HyGM graph model indexes."""
         queries = []
 
@@ -40,9 +38,7 @@ class CypherGenerator:
 
         return queries
 
-    def generate_constraint_queries_from_hygm(
-        self, hygm_constraints: List["GraphConstraint"]
-    ) -> List[str]:
+    def generate_constraint_queries_from_hygm(self, hygm_constraints: list["GraphConstraint"]) -> list[str]:
         """Generate constraint creation queries from HyGM graph model."""
         queries = []
 
@@ -53,26 +49,18 @@ class CypherGenerator:
 
                 if graph_constraint.type == "unique":
                     for prop in graph_constraint.properties:
-                        query = (
-                            f"CREATE CONSTRAINT ON (n:{label}) "
-                            f"ASSERT n.{prop} IS UNIQUE"
-                        )
+                        query = f"CREATE CONSTRAINT ON (n:{label}) ASSERT n.{prop} IS UNIQUE"
                         queries.append(query)
 
                 # Add support for other constraint types if needed
                 elif graph_constraint.type == "existence":
                     for prop in graph_constraint.properties:
-                        query = (
-                            f"CREATE CONSTRAINT ON (n:{label}) "
-                            f"ASSERT exists(n.{prop})"
-                        )
+                        query = f"CREATE CONSTRAINT ON (n:{label}) ASSERT exists(n.{prop})"
                         queries.append(query)
 
         return queries
 
-    def generate_index_queries(
-        self, table_name: str, schema: List[Dict[str, Any]]
-    ) -> List[str]:
+    def generate_index_queries(self, table_name: str, schema: list[dict[str, Any]]) -> list[str]:
         """Generate index creation queries."""
         queries = []
         label = self._table_name_to_label(table_name)
@@ -84,9 +72,7 @@ class CypherGenerator:
 
         return queries
 
-    def generate_constraint_queries(
-        self, table_name: str, schema: List[Dict[str, Any]]
-    ) -> List[str]:
+    def generate_constraint_queries(self, table_name: str, schema: list[dict[str, Any]]) -> list[str]:
         """Generate constraint creation queries."""
         queries = []
         label = self._table_name_to_label(table_name)
@@ -110,9 +96,7 @@ class CypherGenerator:
         # Convert to PascalCase
         return "".join(word.capitalize() for word in table_name.split("_"))
 
-    def generate_relationship_type(
-        self, to_table: str, join_table: str | None = None
-    ) -> str:
+    def generate_relationship_type(self, to_table: str, join_table: str | None = None) -> str:
         """Generate relationship type based on table names.
 
         Args:

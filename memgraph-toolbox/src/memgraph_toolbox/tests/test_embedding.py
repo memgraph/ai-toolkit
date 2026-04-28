@@ -1,7 +1,7 @@
-from sentence_transformers import SentenceTransformer
 import numpy as np
+from sentence_transformers import SentenceTransformer
 
-from ..utils.embedding import get_sentence_transformer_model, get_model_device
+from ..utils.embedding import get_model_device, get_sentence_transformer_model
 
 
 def test_get_sentence_transformer_model_default():

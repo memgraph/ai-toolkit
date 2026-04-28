@@ -1,5 +1,7 @@
 """Pytest configuration for MCP Memgraph tests."""
+
 import os
+
 import pytest
 
 

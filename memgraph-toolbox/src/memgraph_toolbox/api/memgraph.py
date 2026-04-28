@@ -1,6 +1,8 @@
-from typing import Any, Dict, List, Optional
 import os
+from typing import Any
+
 from neo4j import GraphDatabase
+
 from ..utils.serialization import serialize_record_data
 
 
@@ -17,8 +19,8 @@ class Memgraph:
         username: str = None,
         password: str = None,
         database: str = None,
-        driver_config: Optional[Dict] = None,
-        user_agent: Optional[str] = None,
+        driver_config: dict | None = None,
+        user_agent: str | None = None,
     ):
         """
         Initialize Memgraph client with connection parameters.
@@ -52,25 +54,20 @@ class Memgraph:
 
         try:
             import neo4j
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
-                "Could not import neo4j python package. "
-                "Please install it with `pip install neo4j`."
-            )
+                "Could not import neo4j python package. Please install it with `pip install neo4j`."
+            ) from e
         try:
             self.driver.verify_connectivity()
-        except neo4j.exceptions.ServiceUnavailable:
+        except neo4j.exceptions.ServiceUnavailable as e:
+            raise ValueError(f"Could not connect to Memgraph database. Please ensure the URL '{url}' is correct") from e
+        except neo4j.exceptions.AuthError as e:
             raise ValueError(
-                "Could not connect to Memgraph database. "
-                f"Please ensure the URL '{url}' is correct"
-            )
-        except neo4j.exceptions.AuthError:
-            raise ValueError(
-                "Could not connect to Memgraph database. "
-                f"Authentication failed for user '{username}'"
-            )
+                f"Could not connect to Memgraph database. Authentication failed for user '{username}'"
+            ) from e
 
-    def query(self, query: str, params: dict = {}) -> List[Dict[str, Any]]:
+    def query(self, query: str, params: dict = None) -> list[dict[str, Any]]:
         """
         Execute a Cypher query and return results as a list of dictionaries.
 
@@ -82,6 +79,8 @@ class Memgraph:
         """
         from neo4j.exceptions import Neo4jError
 
+        if params is None:
+            params = {}
         try:
             data, _, _ = self.driver.execute_query(
                 query,
@@ -95,8 +94,7 @@ class Memgraph:
                 (
                     (  # isCallInTransactionError
                         e.code == "Neo.DatabaseError.Statement.ExecutionFailed"
-                        or e.code
-                        == "Neo.DatabaseError.Transaction.TransactionStartFailed"
+                        or e.code == "Neo.DatabaseError.Transaction.TransactionStartFailed"
                     )
                     and "in an implicit transaction" in e.message
                 )
@@ -111,10 +109,7 @@ class Memgraph:
                     e.code == "Memgraph.ClientError.MemgraphError.MemgraphError"
                     and ("in multicommand transactions" in e.message)
                 )
-                or (
-                    e.code == "Memgraph.ClientError.MemgraphError.MemgraphError"
-                    and "SchemaInfo disabled" in e.message
-                )
+                or (e.code == "Memgraph.ClientError.MemgraphError.MemgraphError" and "SchemaInfo disabled" in e.message)
             ):
                 raise
 

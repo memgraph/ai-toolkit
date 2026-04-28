@@ -1,13 +1,13 @@
-import os
-import logging
-
 import asyncio
+import logging
+import os
 import shutil
-from lightrag_memgraph import MemgraphLightRAGWrapper
 
-from memgraph_toolbox.api.memgraph import Memgraph
-from unstructured2graph import from_unstructured, create_index
 import sources as SOURCES
+
+from lightrag_memgraph import MemgraphLightRAGWrapper
+from memgraph_toolbox.api.memgraph import Memgraph
+from unstructured2graph import create_index, from_unstructured
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 LIGHTRAG_DIR = os.path.join(SCRIPT_DIR, "..", "lightrag_storage.out")
@@ -28,9 +28,7 @@ async def from_unstructured_with_prep():
     memgraph.query("MATCH (n) DETACH DELETE n;")
     create_index(memgraph, "Chunk", "hash")
 
-    lightrag_wrapper = MemgraphLightRAGWrapper(
-        log_level="WARNING", disable_embeddings=True
-    )
+    lightrag_wrapper = MemgraphLightRAGWrapper(log_level="WARNING", disable_embeddings=True)
     await lightrag_wrapper.initialize(working_dir=LIGHTRAG_DIR)
 
     await from_unstructured(

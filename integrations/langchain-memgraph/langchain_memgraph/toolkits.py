@@ -1,26 +1,23 @@
 """Memgraph toolkits."""
 
-from typing import List
-
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.tools import BaseTool, BaseToolkit
 from pydantic import ConfigDict, Field
 
-from memgraph_toolbox.api.memgraph import Memgraph
-
 from langchain_memgraph.tools import (
-    RunQueryTool,
-    RunPageRankMemgraphTool,
     RunBetweennessCentralityTool,
-    RunShowIndexInfoTool,
+    RunNodeNeighborhoodTool,
+    RunNodeVectorSearchTool,
+    RunPageRankMemgraphTool,
+    RunQueryTool,
     RunShowConfigTool,
+    RunShowConstraintInfoTool,
+    RunShowIndexInfoTool,
     RunShowSchemaInfoTool,
     RunShowStorageInfoTool,
     RunShowTriggersTool,
-    RunShowConstraintInfoTool,
-    RunNodeNeighborhoodTool,
-    RunNodeVectorSearchTool,
 )
+from memgraph_toolbox.api.memgraph import Memgraph
 
 
 class MemgraphToolkit(BaseToolkit):
@@ -60,7 +57,7 @@ class MemgraphToolkit(BaseToolkit):
             QueryMemgraphTool
 
 
-    """  # noqa: E501
+    """
 
     db: Memgraph = Field(exclude=True)
     llm: BaseLanguageModel = Field(exclude=True)
@@ -69,7 +66,7 @@ class MemgraphToolkit(BaseToolkit):
         arbitrary_types_allowed=True,
     )
 
-    def get_tools(self) -> List[BaseTool]:
+    def get_tools(self) -> list[BaseTool]:
         """Return the list of tools in the toolkit."""
         return [
             RunQueryTool(db=self.db),

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..api.memgraph import Memgraph
 from ..api.tool import BaseTool
@@ -36,7 +36,7 @@ class NodeVectorSearchTool(BaseTool):
         )
         self.db = db
 
-    def call(self, arguments: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def call(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
         """Execute vector similarity search and return the results."""
         index_name = arguments["index_name"]
         query_vector = arguments["query_vector"]

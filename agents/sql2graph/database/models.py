@@ -7,7 +7,7 @@ database schema information in a standardized way.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Any, Optional
+from typing import Any
 
 
 class TableType(Enum):
@@ -28,13 +28,13 @@ class ColumnInfo:
     is_nullable: bool
     is_primary_key: bool
     is_foreign_key: bool
-    default_value: Optional[Any] = None
+    default_value: Any | None = None
     auto_increment: bool = False
-    max_length: Optional[int] = None
-    precision: Optional[int] = None
-    scale: Optional[int] = None
+    max_length: int | None = None
+    precision: int | None = None
+    scale: int | None = None
 
-    def to_hygm_format(self) -> Dict[str, Any]:
+    def to_hygm_format(self) -> dict[str, Any]:
         """Convert to HyGM-compatible format."""
         # Determine key type
         key_type = ""
@@ -77,9 +77,9 @@ class ForeignKeyInfo:
     column_name: str
     referenced_table: str
     referenced_column: str
-    constraint_name: Optional[str] = None
+    constraint_name: str | None = None
 
-    def to_hygm_format(self) -> Dict[str, Any]:
+    def to_hygm_format(self) -> dict[str, Any]:
         """Convert to HyGM-compatible format."""
         hygm_fk = {
             "column": self.column_name,
@@ -97,13 +97,13 @@ class TableInfo:
 
     name: str
     table_type: TableType
-    columns: List[ColumnInfo]
-    foreign_keys: List[ForeignKeyInfo]
+    columns: list[ColumnInfo]
+    foreign_keys: list[ForeignKeyInfo]
     row_count: int
-    primary_keys: List[str]
-    indexes: List[Dict[str, Any]]
+    primary_keys: list[str]
+    indexes: list[dict[str, Any]]
 
-    def to_hygm_format(self) -> Dict[str, Any]:
+    def to_hygm_format(self) -> dict[str, Any]:
         """Convert to HyGM-compatible format."""
         # Format columns for HyGM
         schema = [col.to_hygm_format() for col in self.columns]
@@ -130,12 +130,12 @@ class RelationshipInfo:
     from_column: str
     to_table: str
     to_column: str
-    join_table: Optional[str] = None
-    join_from_column: Optional[str] = None
-    join_to_column: Optional[str] = None
-    additional_properties: Optional[List[str]] = None
+    join_table: str | None = None
+    join_from_column: str | None = None
+    join_to_column: str | None = None
+    additional_properties: list[str] | None = None
 
-    def to_hygm_format(self) -> Dict[str, Any]:
+    def to_hygm_format(self) -> dict[str, Any]:
         """Convert to HyGM-compatible format."""
         hygm_rel = {
             "type": self.relationship_type,
@@ -159,17 +159,17 @@ class RelationshipInfo:
 class DatabaseStructure:
     """Standardized database structure representation."""
 
-    tables: Dict[str, TableInfo]
-    entity_tables: Dict[str, TableInfo]
-    join_tables: Dict[str, TableInfo]
-    view_tables: Dict[str, TableInfo]
-    relationships: List[RelationshipInfo]
-    sample_data: Dict[str, List[Dict[str, Any]]]
-    table_counts: Dict[str, int]
+    tables: dict[str, TableInfo]
+    entity_tables: dict[str, TableInfo]
+    join_tables: dict[str, TableInfo]
+    view_tables: dict[str, TableInfo]
+    relationships: list[RelationshipInfo]
+    sample_data: dict[str, list[dict[str, Any]]]
+    table_counts: dict[str, int]
     database_name: str
     database_type: str
 
-    def to_hygm_format(self) -> Dict[str, Any]:
+    def to_hygm_format(self) -> dict[str, Any]:
         """
         Convert to HyGM-compatible format.
 

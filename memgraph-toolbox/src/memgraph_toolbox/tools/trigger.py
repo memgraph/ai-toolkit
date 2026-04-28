@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any
 
 from ..api.memgraph import Memgraph
 from ..api.tool import BaseTool
@@ -17,7 +17,7 @@ class ShowTriggersTool(BaseTool):
         )
         self.db = db
 
-    def call(self, arguments: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def call(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
         """Execute the SHOW TRIGGERS query and return the results."""
         trigger_info = self.db.query("SHOW TRIGGERS")
         return trigger_info

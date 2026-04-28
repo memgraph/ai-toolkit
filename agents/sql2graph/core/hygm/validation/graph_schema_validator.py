@@ -7,12 +7,13 @@ before migration begins. This is Type 1 validation in the two-tier system.
 """
 
 import logging
-from typing import Dict, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
 from .base import (
     BaseValidator,
+    ValidationCategory,
     ValidationResult,
     ValidationSeverity,
-    ValidationCategory,
 )
 
 if TYPE_CHECKING:
@@ -30,9 +31,7 @@ class GraphSchemaValidator(BaseValidator):
     from the source database before migration begins.
     """
 
-    def validate(
-        self, graph_model: "GraphModel", database_structure: Dict[str, Any]
-    ) -> ValidationResult:
+    def validate(self, graph_model: "GraphModel", database_structure: dict[str, Any]) -> ValidationResult:
         """
         Perform comprehensive graph schema validation.
 
@@ -66,11 +65,7 @@ class GraphSchemaValidator(BaseValidator):
                 )
 
             # If basic checks fail, return early
-            critical_issues = [
-                issue
-                for issue in self.issues
-                if issue.severity == ValidationSeverity.CRITICAL
-            ]
+            critical_issues = [issue for issue in self.issues if issue.severity == ValidationSeverity.CRITICAL]
             if critical_issues:
                 return ValidationResult(
                     validation_type="graph_schema",
@@ -97,9 +92,7 @@ class GraphSchemaValidator(BaseValidator):
 
             # Generate summary
             summary = self._generate_summary()
-            success = not any(
-                issue.severity == ValidationSeverity.CRITICAL for issue in self.issues
-            )
+            success = not any(issue.severity == ValidationSeverity.CRITICAL for issue in self.issues)
 
             result = ValidationResult(
                 validation_type="graph_schema",
@@ -108,9 +101,7 @@ class GraphSchemaValidator(BaseValidator):
                 issues=self.issues,
                 metrics=self.metrics,
                 details={
-                    "database_structure_summary": self._get_db_summary(
-                        database_structure
-                    ),
+                    "database_structure_summary": self._get_db_summary(database_structure),
                     "graph_model_summary": self._get_model_summary(graph_model),
                 },
             )
@@ -123,14 +114,14 @@ class GraphSchemaValidator(BaseValidator):
             self.add_issue(
                 ValidationSeverity.CRITICAL,
                 ValidationCategory.STRUCTURE,
-                f"Validation process failed: {str(e)}",
+                f"Validation process failed: {e!s}",
                 recommendation=("Check graph model and database structure format"),
             )
 
             return ValidationResult(
                 validation_type="graph_schema",
                 success=False,
-                summary=f"Validation failed: {str(e)}",
+                summary=f"Validation failed: {e!s}",
                 issues=self.issues,
                 metrics=self.metrics,
             )
@@ -183,10 +174,7 @@ class GraphSchemaValidator(BaseValidator):
                     pk_count = len(table_info.get("primary_keys", []))
                     fk_count = len(table_info.get("foreign_keys", []))
 
-                missing_table_details.append(
-                    f"'{table_name}' ({column_count} cols, {pk_count} PKs, "
-                    f"{fk_count} FKs)"
-                )
+                missing_table_details.append(f"'{table_name}' ({column_count} cols, {pk_count} PKs, {fk_count} FKs)")
 
             details_str = "; ".join(missing_table_details)
 
@@ -202,12 +190,7 @@ class GraphSchemaValidator(BaseValidator):
                 actual=list(covered_tables),
                 recommendation=(
                     "Create nodes for each missing table. For example:\n"
-                    + "\n".join(
-                        [
-                            f"  - Add '{table}' node with appropriate labels"
-                            for table in sorted(missing_tables)
-                        ]
-                    )
+                    + "\n".join([f"  - Add '{table}' node with appropriate labels" for table in sorted(missing_tables)])
                 ),
                 details={"missing_tables": list(missing_tables)},
             )
@@ -340,10 +323,7 @@ class GraphSchemaValidator(BaseValidator):
                 recommendation=(
                     "Add missing properties to corresponding nodes:\n"
                     + "\n".join(
-                        [
-                            f"  - Add to '{table}' node: {', '.join(props)}"
-                            for table, props in missing_by_table.items()
-                        ]
+                        [f"  - Add to '{table}' node: {', '.join(props)}" for table, props in missing_by_table.items()]
                     )
                     + "\nNote: Foreign key columns are correctly modeled "
                     "as relationships, not properties."
@@ -385,9 +365,7 @@ class GraphSchemaValidator(BaseValidator):
                     from_table = rel.get("from_table", "unknown")
                     to_table = rel.get("to_table", "unknown")
                     column = rel.get("column", "unknown")
-                    db_relationship_details.append(
-                        f"{from_table}.{column} -> {to_table}"
-                    )
+                    db_relationship_details.append(f"{from_table}.{column} -> {to_table}")
                 else:
                     # Handle object format if needed
                     db_relationship_details.append(str(rel))
@@ -411,10 +389,7 @@ class GraphSchemaValidator(BaseValidator):
                 ),
                 expected=f"{len(relationships)} relationships",
                 actual=f"{modeled_count} relationships",
-                recommendation=(
-                    "Review database foreign keys and consider adding "
-                    "missing relationships."
-                ),
+                recommendation=("Review database foreign keys and consider adding missing relationships."),
             )
 
         logger.debug(
@@ -434,10 +409,7 @@ class GraphSchemaValidator(BaseValidator):
         # Handle both new structured format and legacy format
         if hasattr(database_structure, "entity_tables"):
             # New structured format - work directly with objects
-            db_indexes_count = sum(
-                len(table_info.indexes)
-                for table_info in database_structure.entity_tables.values()
-            )
+            db_indexes_count = sum(len(table_info.indexes) for table_info in database_structure.entity_tables.values())
         else:
             # Legacy format fallback
             entity_tables = database_structure.get("entity_tables", {})
@@ -468,9 +440,7 @@ class GraphSchemaValidator(BaseValidator):
         logger.debug("Validating constraint coverage...")
 
         # Get planned constraints from model
-        planned_constraints = len(graph_model.node_constraints) + len(
-            graph_model.edge_constraints
-        )
+        planned_constraints = len(graph_model.node_constraints) + len(graph_model.edge_constraints)
         self.metrics.constraints_covered = planned_constraints
 
         # Handle both new structured format and legacy format
@@ -494,11 +464,10 @@ class GraphSchemaValidator(BaseValidator):
             self.add_issue(
                 ValidationSeverity.WARNING,
                 ValidationCategory.CONSISTENCY,
-                f"No constraints planned, but {db_constraints_count} "
-                "exist in source",
+                f"No constraints planned, but {db_constraints_count} exist in source",
                 expected="Constraints planned for data integrity",
                 actual="No constraints planned",
-                recommendation="Consider adding constraints for data " "integrity",
+                recommendation="Consider adding constraints for data integrity",
             )
 
         logger.debug(
@@ -536,10 +505,8 @@ class GraphSchemaValidator(BaseValidator):
                 self.add_issue(
                     ValidationSeverity.CRITICAL,
                     ValidationCategory.CONSISTENCY,
-                    f"Relationship '{edge.edge_type}' references missing "
-                    f"start node labels: {missing_start}",
-                    recommendation="Ensure all relationship endpoints "
-                    "reference existing node labels",
+                    f"Relationship '{edge.edge_type}' references missing start node labels: {missing_start}",
+                    recommendation="Ensure all relationship endpoints reference existing node labels",
                 )
 
             # Check end node labels
@@ -548,10 +515,8 @@ class GraphSchemaValidator(BaseValidator):
                 self.add_issue(
                     ValidationSeverity.CRITICAL,
                     ValidationCategory.CONSISTENCY,
-                    f"Relationship '{edge.edge_type}' references missing "
-                    f"end node labels: {missing_end}",
-                    recommendation="Ensure all relationship endpoints "
-                    "reference existing node labels",
+                    f"Relationship '{edge.edge_type}' references missing end node labels: {missing_end}",
+                    recommendation="Ensure all relationship endpoints reference existing node labels",
                 )
 
     def _validate_naming_conventions(self, graph_model):
@@ -575,7 +540,7 @@ class GraphSchemaValidator(BaseValidator):
                 self.add_issue(
                     ValidationSeverity.INFO,
                     ValidationCategory.CONSISTENCY,
-                    f"Relationship type '{edge.edge_type}' should be " "uppercase",
+                    f"Relationship type '{edge.edge_type}' should be uppercase",
                     recommendation="Use UPPER_CASE for relationship types",
                 )
 
@@ -586,9 +551,7 @@ class GraphSchemaValidator(BaseValidator):
         # Check for nodes without indexes on key properties
         for node in graph_model.nodes:
             key_properties = [
-                prop.key
-                for prop in node.properties
-                if "id" in prop.key.lower() or "key" in prop.key.lower()
+                prop.key for prop in node.properties if "id" in prop.key.lower() or "key" in prop.key.lower()
             ]
 
             if key_properties:
@@ -596,8 +559,7 @@ class GraphSchemaValidator(BaseValidator):
                 has_index = any(
                     set(key_properties) & set(index.properties)
                     for index in graph_model.node_indexes
-                    if index.labels
-                    and any(label in node.labels for label in index.labels)
+                    if index.labels and any(label in node.labels for label in index.labels)
                 )
 
                 if not has_index:
@@ -606,8 +568,8 @@ class GraphSchemaValidator(BaseValidator):
                     self.add_issue(
                         ValidationSeverity.INFO,
                         ValidationCategory.PERFORMANCE,
-                        f"Node {node_label} has key properties without " "indexes",
-                        recommendation=f"Consider adding indexes for: " f"{key_props}",
+                        f"Node {node_label} has key properties without indexes",
+                        recommendation=f"Consider adding indexes for: {key_props}",
                     )
 
     # Helper methods
@@ -654,12 +616,11 @@ class GraphSchemaValidator(BaseValidator):
     def _find_node_for_table(self, graph_model, table_name: str):
         """Find the node that represents a given table."""
         for node in graph_model.nodes:
-            if node.source and hasattr(node.source, "name"):
-                if node.source.name == table_name:
-                    return node
+            if node.source and hasattr(node.source, "name") and node.source.name == table_name:
+                return node
         return None
 
-    def _get_model_summary(self, graph_model) -> Dict[str, Any]:
+    def _get_model_summary(self, graph_model) -> dict[str, Any]:
         """Get a summary of the graph model."""
         return {
             "nodes": len(graph_model.nodes),
@@ -668,13 +629,11 @@ class GraphSchemaValidator(BaseValidator):
             "edge_indexes": len(graph_model.edge_indexes),
             "node_constraints": len(graph_model.node_constraints),
             "edge_constraints": len(graph_model.edge_constraints),
-            "node_labels": [
-                label for node in graph_model.nodes for label in node.labels
-            ],
+            "node_labels": [label for node in graph_model.nodes for label in node.labels],
             "relationship_types": [edge.edge_type for edge in graph_model.edges],
         }
 
-    def _get_db_summary(self, database_structure) -> Dict[str, Any]:
+    def _get_db_summary(self, database_structure) -> dict[str, Any]:
         """Get a summary of the database structure."""
         entity_tables = database_structure.get("entity_tables", {})
         relationships = database_structure.get("relationships", [])

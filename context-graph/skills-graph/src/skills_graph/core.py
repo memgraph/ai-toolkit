@@ -1,5 +1,4 @@
 import json
-from typing import Dict, List, Optional
 from datetime import datetime, timezone
 
 from memgraph_toolbox.api.memgraph import Memgraph
@@ -14,7 +13,7 @@ class SkillGraph:
     and (:Skill)-[:DEPENDS_ON]->(:Skill) dependency edges.
     """
 
-    def __init__(self, memgraph: Optional[Memgraph] = None, **kwargs):
+    def __init__(self, memgraph: Memgraph | None = None, **kwargs):
         """Initialize SkillGraph.
 
         Args:
@@ -90,7 +89,7 @@ class SkillGraph:
 
         return skill
 
-    def get_skill(self, name: str) -> Optional[Skill]:
+    def get_skill(self, name: str) -> Skill | None:
         """Retrieve a single skill by name, including its tags."""
         rows = self._db.query(
             """
@@ -120,14 +119,14 @@ class SkillGraph:
         self,
         name: str,
         *,
-        description: Optional[str] = None,
-        content: Optional[str] = None,
-        license: Optional[str] = None,
-        compatibility: Optional[str] = None,
-        metadata: Optional[Dict[str, str]] = None,
-        allowed_tools: Optional[List[str]] = None,
-        tags: Optional[List[str]] = None,
-    ) -> Optional[Skill]:
+        description: str | None = None,
+        content: str | None = None,
+        license: str | None = None,
+        compatibility: str | None = None,
+        metadata: dict[str, str] | None = None,
+        allowed_tools: list[str] | None = None,
+        tags: list[str] | None = None,
+    ) -> Skill | None:
         """Update an existing skill. Only provided fields are changed."""
         sets: list[str] = []
         params: dict = {
@@ -196,7 +195,7 @@ class SkillGraph:
     # Query / Search
     # ------------------------------------------------------------------
 
-    def list_skills(self) -> List[Skill]:
+    def list_skills(self) -> list[Skill]:
         """Return all stored skills."""
         rows = self._db.query(
             """
@@ -217,7 +216,7 @@ class SkillGraph:
         )
         return [self._row_to_skill(r) for r in rows]
 
-    def search_by_tags(self, tags: List[str]) -> List[Skill]:
+    def search_by_tags(self, tags: list[str]) -> list[Skill]:
         """Find skills that have *all* of the given tags."""
         rows = self._db.query(
             """
@@ -242,7 +241,7 @@ class SkillGraph:
         )
         return [self._row_to_skill(r) for r in rows]
 
-    def search_by_name(self, pattern: str) -> List[Skill]:
+    def search_by_name(self, pattern: str) -> list[Skill]:
         """Find skills whose name contains the given substring (case-insensitive)."""
         rows = self._db.query(
             """
@@ -289,7 +288,7 @@ class SkillGraph:
             params={"skill_name": skill_name, "depends_on": depends_on},
         )
 
-    def get_dependencies(self, skill_name: str) -> List[Skill]:
+    def get_dependencies(self, skill_name: str) -> list[Skill]:
         """Return skills that *skill_name* depends on."""
         rows = self._db.query(
             """
@@ -311,7 +310,7 @@ class SkillGraph:
         )
         return [self._row_to_skill(r) for r in rows]
 
-    def get_dependents(self, skill_name: str) -> List[Skill]:
+    def get_dependents(self, skill_name: str) -> list[Skill]:
         """Return skills that depend on *skill_name*."""
         rows = self._db.query(
             """

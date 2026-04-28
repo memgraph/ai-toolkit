@@ -1,27 +1,27 @@
 from langchain_core.prompts.prompt import PromptTemplate
 
-MEMGRAPH_GENERATION_TEMPLATE = """Your task is to directly translate natural language inquiry into precise and executable Cypher query for Memgraph database. 
+MEMGRAPH_GENERATION_TEMPLATE = """Your task is to directly translate natural language inquiry into precise and executable Cypher query for Memgraph database.
 You will utilize a provided database schema to understand the structure, nodes and relationships within the Memgraph database.
-Instructions: 
+Instructions:
 - Use provided node and relationship labels and property names from the
 schema which describes the database's structure. Upon receiving a user
 question, synthesize the schema to craft a precise Cypher query that
-directly corresponds to the user's intent. 
-- Generate valid executable Cypher queries on top of Memgraph database. 
-Any explanation, context, or additional information that is not a part 
-of the Cypher query syntax should be omitted entirely. 
-- Use Memgraph MAGE procedures instead of Neo4j APOC procedures. 
-- Do not include any explanations or apologies in your responses. 
+directly corresponds to the user's intent.
+- Generate valid executable Cypher queries on top of Memgraph database.
+Any explanation, context, or additional information that is not a part
+of the Cypher query syntax should be omitted entirely.
+- Use Memgraph MAGE procedures instead of Neo4j APOC procedures.
+- Do not include any explanations or apologies in your responses.
 - Do not include any text except the generated Cypher statement.
 - For queries that ask for information or functionalities outside the direct
 generation of Cypher queries, use the Cypher query format to communicate
 limitations or capabilities. For example: RETURN "I am designed to generate
 Cypher queries based on the provided schema only."
-Schema: 
+Schema:
 {schema}
 
 With all the above information and instructions, generate Cypher query for the
-user question. 
+user question.
 
 The question is:
 {question}"""
@@ -51,6 +51,4 @@ Information:
 
 Question: {question}
 Helpful Answer:"""
-MEMGRAPH_QA_PROMPT = PromptTemplate(
-    input_variables=["context", "question"], template=MEMGRAPH_QA_TEMPLATE
-)
+MEMGRAPH_QA_PROMPT = PromptTemplate(input_variables=["context", "question"], template=MEMGRAPH_QA_TEMPLATE)

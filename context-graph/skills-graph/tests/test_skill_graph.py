@@ -1,7 +1,9 @@
 import json
-import pytest
 from unittest.mock import MagicMock
-from skills_graph import SkillGraph, Skill
+
+import pytest
+
+from skills_graph import Skill, SkillGraph
 
 
 @pytest.fixture
@@ -146,9 +148,7 @@ def test_get_skill_deserializes_spec_fields(sg, mock_memgraph):
 
 
 def test_update_skill_sets_fields(sg, mock_memgraph):
-    mock_memgraph.query.return_value = [
-        _make_row(name="s1", description="new", content="new-c")
-    ]
+    mock_memgraph.query.return_value = [_make_row(name="s1", description="new", content="new-c")]
     sg.update_skill("s1", description="new", content="new-c")
 
     set_call = mock_memgraph.query.call_args_list[0]

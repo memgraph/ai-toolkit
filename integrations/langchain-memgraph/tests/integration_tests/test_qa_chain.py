@@ -7,7 +7,6 @@ from langchain_openai import ChatOpenAI
 from langchain_memgraph.chains.graph_qa import MemgraphQAChain
 from langchain_memgraph.graphs.memgraph import MemgraphLangChain
 
-
 # Load environment variables from .env
 load_dotenv()
 
@@ -61,9 +60,7 @@ def test_seed_graph(memgraph_connection):
     memgraph_connection.refresh_schema()
 
     # Verify nodes exist
-    game_exists = memgraph_connection.query(
-        """MATCH (g:Game {name: "Baldur's Gate 3"}) RETURN g"""
-    )
+    game_exists = memgraph_connection.query("""MATCH (g:Game {name: "Baldur's Gate 3"}) RETURN g""")
     assert len(game_exists) > 0, "Game node not created!"
 
     print("✅ Graph seeded successfully")
