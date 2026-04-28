@@ -26,12 +26,12 @@ from langchain_memgraph.chains.prompts import (
     MEMGRAPH_GENERATION_PROMPT,
     MEMGRAPH_QA_PROMPT,
 )
+from memgraph_toolbox.api.memgraph import Memgraph  # noqa: TC001 - Pydantic needs this at runtime
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseLanguageModel
-    from langchain_core.runnables import Runnable
 
-    from memgraph_toolbox.api.memgraph import Memgraph
+from langchain_core.runnables import Runnable  # noqa: TC002 - Pydantic needs this at runtime
 
 INTERMEDIATE_STEPS_KEY = "intermediate_steps"
 
