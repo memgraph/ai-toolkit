@@ -1,13 +1,17 @@
 """End-to-end test: AgentLink → SkillGraphConnector → SkillGraph → Memgraph.
 
-Requires Memgraph at bolt://localhost:7687 (override with env vars).
-OpenAI tests additionally require OPENAI_API_KEY.
+Requires:
+- Memgraph at bolt://localhost:7687 (override with env vars)
+- agent-graph package installed (optional dependency of skills-graph)
+- OpenAI tests additionally require OPENAI_API_KEY
 """
 
 import asyncio
 import os
 
 import pytest
+
+pytest.importorskip("agent_graph", reason="agent-graph not installed")
 
 from agent_graph import AgentLink
 from agent_graph.adapters.claude import ClaudeAdapter

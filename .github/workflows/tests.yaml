@@ -11,6 +11,7 @@ on:
       - "integrations/lightrag-memgraph/**"
       - "unstructured2graph/**"
       - "context-graph/skills-graph/**"
+      - "context-graph/agent-graph/**"
   pull_request:
     paths:
       - "memgraph-toolbox/**"
@@ -19,6 +20,7 @@ on:
       - "integrations/lightrag-memgraph/**"
       - "unstructured2graph/**"
       - "context-graph/skills-graph/**"
+      - "context-graph/agent-graph/**"
 
 jobs:
   changes:
@@ -55,6 +57,7 @@ jobs:
               - 'memgraph-toolbox/**'
             skills-graph:
               - 'context-graph/skills-graph/**'
+              - 'context-graph/agent-graph/**'
               - 'memgraph-toolbox/**'
 
   test-memgraph-toolbox:
@@ -235,4 +238,6 @@ jobs:
 
       - name: Run tests
         working-directory: context-graph/skills-graph
-        run: uv run --package skills-graph --extra test pytest tests/ -v
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: uv run --package skills-graph --extra test --extra agent-graph pytest tests/ -v
