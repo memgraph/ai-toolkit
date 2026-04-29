@@ -50,6 +50,7 @@ members = [
     "agents/sql2graph/",
     "unstructured2graph",
     "context-graph/skills-graph",
+    "context-graph/actions-graph",
 ]
 
 [tool.ruff]
