@@ -1,9 +1,11 @@
 """End-to-end test: AgentLink → SkillGraphConnector → SkillGraph → Memgraph.
 
 Requires Memgraph at bolt://localhost:7687 (override with env vars).
+OpenAI tests additionally require OPENAI_API_KEY.
 """
 
 import asyncio
+import os
 
 import pytest
 
@@ -224,3 +226,79 @@ def test_full_session_lifecycle(wired):
     assert len(rows) == 2
     assert rows[0]["name"] == "docker-skill"
     assert rows[1]["name"] == "git-skill"
+
+
+# ------------------------------------------------------------------
+# OpenAI Agents SDK e2e tests
+# ------------------------------------------------------------------
+
+requires_openai_key = pytest.mark.skipif(
+    not os.environ.get("OPENAI_API_KEY"),
+    reason="OPENAI_API_KEY not set",
+)
+
+
+@requires_openai_key
+@pytest.mark.asyncio
+async def test_openai_agent_get_skill(sg):
+    """Real OpenAI agent calls get_skill tool → USED_SKILL edge in Memgraph."""
+    from agents.run import RunConfig
+
+    from agent_graph import AgentLink
+    from agent_graph.adapters.openai import OpenAIAdapter
+    from agents import Agent, Runner, function_tool
+    from skills_graph.connector import SkillGraphConnector
+
+    # Seed a skill
+    sg.add_skill(Skill(name="cypher-basics", description="Intro to Cypher queries", content="MATCH (n) RETURN n"))
+
+    # Define a function tool that mirrors the SkillGraph API
+    @function_tool
+    def get_skill(name: str) -> str:
+        """Get a skill by name from the skill graph.
+
+        Args:
+            name: The name of the skill to retrieve.
+        """
+        skill = sg.get_skill(name)
+        if skill:
+            return f"Skill '{skill.name}': {skill.description}\n{skill.content}"
+        return f"Skill '{name}' not found."
+
+    # Wire the full stack
+    link = AgentLink()
+    connector = SkillGraphConnector(sg)
+    link.add_connector(connector)
+    adapter = OpenAIAdapter(link, session_id="openai-e2e-get", auto_session=False)
+
+    agent = Agent(
+        name="Skill Assistant",
+        instructions=(
+            "You help users retrieve skills. "
+            "When asked about a skill, use the get_skill tool with the exact skill name. "
+            "Return the skill content."
+        ),
+        tools=[get_skill],
+        model="gpt-4o-mini",
+    )
+
+    result = await Runner.run(
+        agent,
+        "Get the skill called 'cypher-basics'",
+        run_config=RunConfig(hooks=adapter.get_sdk_hooks()),
+    )
+    adapter.end_session()
+
+    assert result.final_output is not None
+
+    # Verify the USED_SKILL relationship was created
+    rows = sg._db.query(
+        """
+        MATCH (:Session {session_id: $sid})-[r:USED_SKILL]->(sk:Skill {name: $name})
+        RETURN r.access_count AS cnt, r.actions AS actions
+        """,
+        params={"sid": "openai-e2e-get", "name": "cypher-basics"},
+    )
+    assert len(rows) == 1
+    assert rows[0]["cnt"] >= 1
+    assert "get_skill" in rows[0]["actions"]

@@ -21,6 +21,8 @@ agent-graph = [
 ]
 test = [
     "pytest>=9.0.3",
+    "pytest-asyncio>=0.24.0",
+    "openai-agents>=0.1.0",
 ]
 
 [tool.uv.sources]
@@ -30,3 +32,6 @@ agent-graph = { workspace = true }
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

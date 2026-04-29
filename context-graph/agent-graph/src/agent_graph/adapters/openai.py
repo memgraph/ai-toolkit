@@ -18,6 +18,8 @@ Usage::
 
 from __future__ import annotations
 
+import contextlib
+import json
 from typing import TYPE_CHECKING, Any
 
 from agent_graph.events import (
@@ -121,16 +123,22 @@ class OpenAIAdapter(SDKAdapter):
                 tool: Any,
             ) -> None:
                 tool_name = getattr(tool, "name", str(tool))
-                # ToolContext exposes tool_call_id and tool_arguments
+                # ToolContext exposes tool_call_id and tool_arguments (JSON string)
                 tool_call_id = getattr(context, "tool_call_id", None)
                 tool_arguments = getattr(context, "tool_arguments", None)
+
+                # Parse JSON string to dict for downstream connectors
+                tool_input: Any = tool_arguments
+                if isinstance(tool_arguments, str):
+                    with contextlib.suppress(json.JSONDecodeError):
+                        tool_input = json.loads(tool_arguments)
 
                 adapter._link.emit(
                     ToolStartEvent(
                         session_id=adapter._session_id,
                         source_sdk=_SOURCE,
                         tool_name=tool_name,
-                        tool_input=tool_arguments,
+                        tool_input=tool_input,
                         tool_use_id=tool_call_id,
                         agent_name=getattr(agent, "name", None),
                     )

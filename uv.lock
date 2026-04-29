@@ -8331,14 +8331,18 @@ agent-graph = [
     { name = "agent-graph" },
 ]
 test = [
+    { name = "openai-agents" },
     { name = "pytest" },
+    { name = "pytest-asyncio" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "agent-graph", marker = "extra == 'agent-graph'", editable = "context-graph/agent-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
+    { name = "openai-agents", marker = "extra == 'test'", specifier = ">=0.1.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
+    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
 ]
 provides-extras = ["agent-graph", "test"]
 
