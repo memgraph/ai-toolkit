@@ -1,0 +1,32 @@
+[project]
+name = "actions-graph"
+version = "0.1.0"
+description = "Store and track LLM actions, tool calls, and sessions in Memgraph"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "memgraph-toolbox",
+]
+
+[project.optional-dependencies]
+claude-agent = [
+    "claude-agent-sdk>=0.1.0",
+]
+test = [
+    "pytest>=9.0.3",
+    "pytest-asyncio>=0.24.0",
+]
+
+[tool.uv.sources]
+memgraph-toolbox = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
