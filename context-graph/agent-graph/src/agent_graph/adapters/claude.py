@@ -1,12 +1,12 @@
-"""Claude Agent SDK adapter for agent-link.
+"""Claude Agent SDK adapter for agent-graph.
 
 Translates Claude Agent SDK hook callbacks into the common Event protocol
 and forwards them to the AgentLink hub.
 
 Usage::
 
-    from agent_link import AgentLink
-    from agent_link.adapters.claude import ClaudeAdapter
+    from agent_graph import AgentLink
+    from agent_graph.adapters.claude import ClaudeAdapter
 
     link = AgentLink()
     adapter = ClaudeAdapter(link, session_id="s-1")
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from agent_link.events import (
+from agent_graph.events import (
     AgentEndEvent,
     AgentStartEvent,
     ErrorOccurredEvent,
@@ -30,16 +30,16 @@ from agent_link.events import (
     ToolEndEvent,
     ToolStartEvent,
 )
-from agent_link.protocols import SDKAdapter
+from agent_graph.protocols import SDKAdapter
 
 if TYPE_CHECKING:
-    from agent_link.link import AgentLink
+    from agent_graph.link import AgentLink
 
 _SOURCE = "claude"
 
 
 class ClaudeAdapter(SDKAdapter):
-    """Adapter that converts Claude Agent SDK hooks into agent-link events.
+    """Adapter that converts Claude Agent SDK hooks into agent-graph events.
 
     Args:
         link: The AgentLink hub to emit events to.

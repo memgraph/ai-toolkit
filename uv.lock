@@ -54,7 +54,7 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "agent-link",
+    "agent-graph",
     "langchain-memgraph",
     "lightrag-memgraph",
     "mcp-memgraph",
@@ -178,9 +178,9 @@ wheels = [
 ]
 
 [[package]]
-name = "agent-link"
+name = "agent-graph"
 version = "0.1.0"
-source = { editable = "context-graph/agent-link" }
+source = { editable = "context-graph/agent-graph" }
 
 [package.optional-dependencies]
 claude = [
@@ -188,9 +188,6 @@ claude = [
 ]
 openai = [
     { name = "openai-agents" },
-]
-skills = [
-    { name = "skills-graph" },
 ]
 test = [
     { name = "pytest" },
@@ -203,9 +200,8 @@ requires-dist = [
     { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.1.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
-    { name = "skills-graph", marker = "extra == 'skills'", editable = "context-graph/skills-graph" },
 ]
-provides-extras = ["claude", "openai", "skills", "test"]
+provides-extras = ["claude", "openai", "test"]
 
 [[package]]
 name = "aiofile"
@@ -8331,16 +8327,20 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+agent-graph = [
+    { name = "agent-graph" },
+]
 test = [
     { name = "pytest" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "agent-graph", marker = "extra == 'agent-graph'", editable = "context-graph/agent-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
 ]
-provides-extras = ["test"]
+provides-extras = ["agent-graph", "test"]
 
 [[package]]
 name = "smart-open"

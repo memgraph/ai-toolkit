@@ -1,6 +1,6 @@
 """Unit tests for the event models."""
 
-from agent_link.events import (
+from agent_graph.events import (
     AgentEndEvent,
     AgentStartEvent,
     ErrorOccurredEvent,

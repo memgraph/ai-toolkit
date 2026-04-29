@@ -1,23 +1,24 @@
-"""Agent Link: Connect agent SDKs to context-graph components.
+"""Agent Graph: Connect agent SDKs to context-graph components.
 
-Agent Link provides a generic adapter layer that bridges any agent SDK
+Agent Graph provides a generic adapter layer that bridges any agent SDK
 (Claude Agent SDK, OpenAI Agents SDK, etc.) to any context-graph
 component (actions-graph, skills-graph, etc.).
 
 Architecture:
     SDK Adapter (Claude, OpenAI, ...) → Event Protocol → Graph Connector(s)
 
-Quick Start:
-    from agent_link import AgentLink
-    from agent_link.adapters.claude import ClaudeAdapter
-    from agent_link.connectors.actions import ActionsConnector
+    Adapters live here.  Connectors live in each graph library.
+
+Quick Start::
+
+    from agent_graph import AgentLink
+    from agent_graph.adapters.claude import ClaudeAdapter
+    from skills_graph.connector import SkillGraphConnector
 
     link = AgentLink()
-    link.add_connector(ActionsConnector(actions_graph))
-    adapter = ClaudeAdapter(link)
-
-    # Use adapter.hooks() with Claude Agent SDK
-    options = ClaudeAgentOptions(hooks=adapter.hooks())
+    link.add_connector(SkillGraphConnector(skill_graph))
+    adapter = ClaudeAdapter(link, session_id="s-1")
+    hooks = adapter.get_sdk_hooks()
 """
 
 from .events import (

@@ -16,12 +16,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+agent-graph = [
+    "agent-graph",
+]
 test = [
     "pytest>=9.0.3",
 ]
 
 [tool.uv.sources]
 memgraph-toolbox = { workspace = true }
+agent-graph = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

@@ -1,12 +1,12 @@
-"""OpenAI Agents SDK adapter for agent-link.
+"""OpenAI Agents SDK adapter for agent-graph.
 
 Translates OpenAI Agents SDK lifecycle hooks (``RunHooksBase``) into the
 common Event protocol and forwards them to the AgentLink hub.
 
 Usage::
 
-    from agent_link import AgentLink
-    from agent_link.adapters.openai import OpenAIAdapter
+    from agent_graph import AgentLink
+    from agent_graph.adapters.openai import OpenAIAdapter
 
     link = AgentLink()
     adapter = OpenAIAdapter(link, session_id="s-1")
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from agent_link.events import (
+from agent_graph.events import (
     AgentEndEvent,
     AgentStartEvent,
     HandoffEvent,
@@ -31,16 +31,16 @@ from agent_link.events import (
     ToolEndEvent,
     ToolStartEvent,
 )
-from agent_link.protocols import SDKAdapter
+from agent_graph.protocols import SDKAdapter
 
 if TYPE_CHECKING:
-    from agent_link.link import AgentLink
+    from agent_graph.link import AgentLink
 
 _SOURCE = "openai"
 
 
 class OpenAIAdapter(SDKAdapter):
-    """Adapter that converts OpenAI Agents SDK lifecycle hooks into agent-link events.
+    """Adapter that converts OpenAI Agents SDK lifecycle hooks into agent-graph events.
 
     Args:
         link: The AgentLink hub to emit events to.
@@ -78,7 +78,7 @@ class OpenAIAdapter(SDKAdapter):
         try:
             from agents.lifecycle import RunHooksBase
         except ImportError:
-            msg = "openai-agents is required for OpenAIAdapter. Install it with: pip install agent-link[openai]"
+            msg = "openai-agents is required for OpenAIAdapter. Install it with: pip install agent-graph[openai]"
             raise ImportError(msg)  # noqa: B904
 
         adapter = self

@@ -1,8 +1,8 @@
-# Agent Link
+# Agent Graph
 
 Connect any agent SDK to any context-graph component.
 
-Agent Link is a lightweight adapter layer that decouples **SDK-specific hooks** from **graph storage**. It routes a common event protocol from SDK adapters to graph connectors, so you can mix and match freely.
+Agent Graph is a lightweight adapter layer that decouples **SDK-specific hooks** from **graph storage**. It routes a common event protocol from SDK adapters to graph connectors, so you can mix and match freely.
 
 ```
 SDK Adapter  ──▶  Event Protocol  ──▶  Graph Connector(s)
@@ -13,14 +13,14 @@ SDK Adapter  ──▶  Event Protocol  ──▶  Graph Connector(s)
 ## Installation
 
 ```bash
-pip install agent-link
+pip install agent-graph
 ```
 
 With SDK and graph extras:
 ```bash
-pip install agent-link[claude,actions]     # Claude + actions-graph
-pip install agent-link[openai,actions]     # OpenAI Agents + actions-graph
-pip install agent-link[claude,openai,actions,skills]  # Everything
+pip install agent-graph[claude,actions]     # Claude + actions-graph
+pip install agent-graph[openai,actions]     # OpenAI Agents + actions-graph
+pip install agent-graph[claude,openai,actions,skills]  # Everything
 ```
 
 ## Quick Start
@@ -29,9 +29,9 @@ pip install agent-link[claude,openai,actions,skills]  # Everything
 
 ```python
 from actions_graph import ActionsGraph
-from agent_link import AgentLink
-from agent_link.adapters.claude import ClaudeAdapter
-from agent_link.connectors.actions import ActionsConnector
+from agent_graph import AgentLink
+from agent_graph.adapters.claude import ClaudeAdapter
+from agent_graph.connectors.actions import ActionsConnector
 
 # 1. Set up graph storage
 graph = ActionsGraph()
@@ -65,9 +65,9 @@ async for message in query(
 
 ```python
 from actions_graph import ActionsGraph
-from agent_link import AgentLink
-from agent_link.adapters.openai import OpenAIAdapter
-from agent_link.connectors.actions import ActionsConnector
+from agent_graph import AgentLink
+from agent_graph.adapters.openai import OpenAIAdapter
+from agent_graph.connectors.actions import ActionsConnector
 from agents import Agent, Runner
 from agents.run import RunConfig
 
@@ -103,10 +103,10 @@ adapter.end_session()
 ```python
 from actions_graph import ActionsGraph
 from skills_graph import SkillGraph
-from agent_link import AgentLink
-from agent_link.adapters.claude import ClaudeAdapter
-from agent_link.connectors.actions import ActionsConnector
-from agent_link.connectors.skills import SkillsConnector
+from agent_graph import AgentLink
+from agent_graph.adapters.claude import ClaudeAdapter
+from agent_graph.connectors.actions import ActionsConnector
+from agent_graph.connectors.skills import SkillsConnector
 
 # Set up graphs
 actions = ActionsGraph()
@@ -163,7 +163,7 @@ All SDK adapters emit SDK-agnostic `Event` dataclasses:
 Implement `SDKAdapter`:
 
 ```python
-from agent_link.protocols import SDKAdapter
+from agent_graph.protocols import SDKAdapter
 
 class MySDKAdapter(SDKAdapter):
     def __init__(self, link: AgentLink, session_id: str):
@@ -187,7 +187,7 @@ class MySDKAdapter(SDKAdapter):
 Implement `GraphConnector`:
 
 ```python
-from agent_link.protocols import GraphConnector
+from agent_graph.protocols import GraphConnector
 
 class MyGraphConnector(GraphConnector):
     def supports(self, event):

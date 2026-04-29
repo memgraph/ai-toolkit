@@ -1,5 +1,5 @@
 [project]
-name = "agent-link"
+name = "agent-graph"
 version = "0.1.0"
 description = "Connect agent SDKs to context-graph components (actions-graph, skills-graph, etc.)"
 readme = "README.md"
@@ -20,16 +20,10 @@ claude = [
 openai = [
     "openai-agents>=0.1.0",
 ]
-skills = [
-    "skills-graph",
-]
 test = [
     "pytest>=9.0.3",
     "pytest-asyncio>=0.24.0",
 ]
-
-[tool.uv.sources]
-skills-graph = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

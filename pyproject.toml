@@ -50,7 +50,7 @@ members = [
     "agents/sql2graph/",
     "unstructured2graph",
     "context-graph/skills-graph",
-    "context-graph/agent-link",
+    "context-graph/agent-graph",
 ]
 
 [tool.ruff]
@@ -81,7 +81,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["memgraph_toolbox", "mcp_memgraph", "langchain_memgraph", "lightrag_memgraph", "unstructured2graph", "skills_graph", "actions_graph", "agent_link"]
+known-first-party = ["memgraph_toolbox", "mcp_memgraph", "langchain_memgraph", "lightrag_memgraph", "unstructured2graph", "skills_graph", "actions_graph", "agent_graph"]
 
 [tool.ruff.lint.per-file-ignores]
 # Notebook cells reference variables from earlier cells — not actual undefined names
