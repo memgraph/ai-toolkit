@@ -165,6 +165,52 @@ def test_non_skill_tool_ignored(wired):
     assert rows[0]["cnt"] == 0
 
 
+def test_add_skill_tool_ignored_by_default(wired):
+    """add_skill runs before a Skill exists, so it is not tracked by default."""
+    sg = wired["sg"]
+    adapter = wired["adapter"]
+
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(
+        adapter._pre_tool_use(
+            {
+                "tool_name": "add_skill",
+                "tool_input": {"name": "new-skill"},
+                "tool_use_id": "tu-add",
+            },
+            "tu-add",
+            {},
+        )
+    )
+
+    rows = sg._db.query("MATCH ()-[r:USED_SKILL]->() RETURN count(r) AS cnt")
+    assert rows[0]["cnt"] == 0
+
+
+def test_delete_skill_tool_ignored_by_default(wired):
+    """delete_skill removes the Skill node that USED_SKILL depends on, so it is not tracked by default."""
+    sg = wired["sg"]
+    adapter = wired["adapter"]
+
+    sg.add_skill(Skill(name="old-skill", description="Old helper", content="..."))
+
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(
+        adapter._pre_tool_use(
+            {
+                "tool_name": "delete_skill",
+                "tool_input": {"name": "old-skill"},
+                "tool_use_id": "tu-delete",
+            },
+            "tu-delete",
+            {},
+        )
+    )
+
+    rows = sg._db.query("MATCH ()-[r:USED_SKILL]->() RETURN count(r) AS cnt")
+    assert rows[0]["cnt"] == 0
+
+
 def test_full_session_lifecycle(wired):
     """Simulate a complete session: start → tool calls → stop."""
     sg = wired["sg"]

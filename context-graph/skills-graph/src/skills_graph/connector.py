@@ -38,22 +38,20 @@ _SUPPORTED_EVENTS = {
 class SkillGraphConnector(GraphConnector):
     """Receives agent-graph events and records skill usage in a SkillGraph.
 
-    Watches for tool calls whose name matches a skill operation
-    (``get_skill``, ``add_skill``, etc.) and creates
+    Watches for tool calls whose name matches a skill access operation
+    (``get_skill``, ``update_skill``, search/list tools, etc.) and creates
     ``(:Session)-[:USED_SKILL]->(:Skill)`` relationships.
 
     Args:
         graph: An initialised SkillGraph instance.
         skill_tool_names: Override the set of tool names that indicate
-            skill access.  Defaults to the built-in CRUD + search names.
+            skill access. Defaults to built-in read/update/search names.
     """
 
     DEFAULT_SKILL_TOOLS: frozenset[str] = frozenset(
         {
             "get_skill",
-            "add_skill",
             "update_skill",
-            "delete_skill",
             "list_skills",
             "search_skills",
             "search_by_tags",

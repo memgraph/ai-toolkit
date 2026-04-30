@@ -2,12 +2,12 @@
 
 Connect any agent SDK to any context-graph component.
 
-Agent Graph is a lightweight adapter layer that decouples **SDK-specific hooks** from **graph storage**. It routes a common event protocol from SDK adapters to graph connectors, so you can mix and match freely.
+Agent Graph is a lightweight adapter layer that decouples SDK-specific hooks from graph storage. It routes a common event protocol from SDK adapters to graph connectors, so you can mix and match SDKs and graph components.
 
 ```
-SDK Adapter  ──▶  Event Protocol  ──▶  Graph Connector(s)
-(Claude, OpenAI)     (ToolStart,       (ActionsConnector,
-                      ToolEnd, …)       SkillsConnector, …)
+SDK Adapter  ->  Event Protocol  ->  Graph Connector(s)
+(Claude,         (ToolStart,         (SkillGraphConnector,
+ OpenAI)          ToolEnd, ...)       custom connectors, ...)
 ```
 
 ## Installation
@@ -16,11 +16,17 @@ SDK Adapter  ──▶  Event Protocol  ──▶  Graph Connector(s)
 pip install agent-graph
 ```
 
-With SDK and graph extras:
+With SDK adapters:
+
 ```bash
-pip install agent-graph[claude,actions]     # Claude + actions-graph
-pip install agent-graph[openai,actions]     # OpenAI Agents + actions-graph
-pip install agent-graph[claude,openai,actions,skills]  # Everything
+pip install agent-graph[claude]
+pip install agent-graph[openai]
+```
+
+Graph connectors live in the graph packages that persist the data. For the skills graph connector:
+
+```bash
+pip install skills-graph[agent-graph]
 ```
 
 ## Quick Start
@@ -28,18 +34,19 @@ pip install agent-graph[claude,openai,actions,skills]  # Everything
 ### Claude Agent SDK
 
 ```python
-from actions_graph import ActionsGraph
 from agent_graph import AgentLink
 from agent_graph.adapters.claude import ClaudeAdapter
-from agent_graph.connectors.actions import ActionsConnector
+from claude_agent_sdk import ClaudeAgentOptions, query
+from skills_graph import SkillGraph
+from skills_graph.connector import SkillGraphConnector
 
 # 1. Set up graph storage
-graph = ActionsGraph()
-graph.setup()
+skills = SkillGraph()
+skills.setup()
 
 # 2. Wire up the link
 link = AgentLink()
-link.add_connector(ActionsConnector(graph))
+link.add_connector(SkillGraphConnector(skills))
 
 # 3. Create adapter
 adapter = ClaudeAdapter(
@@ -49,14 +56,9 @@ adapter = ClaudeAdapter(
 )
 
 # 4. Use with Claude Agent SDK
-from claude_agent_sdk import query, ClaudeAgentOptions
-
 async for message in query(
-    prompt="Review main.py",
-    options=ClaudeAgentOptions(
-        hooks=adapter.get_sdk_hooks(),
-        allowed_tools=["Read", "Glob", "Grep"],
-    ),
+    prompt="Review the available skills",
+    options=ClaudeAgentOptions(hooks=adapter.get_sdk_hooks()),
 ):
     print(message)
 ```
@@ -64,64 +66,71 @@ async for message in query(
 ### OpenAI Agents SDK
 
 ```python
-from actions_graph import ActionsGraph
 from agent_graph import AgentLink
 from agent_graph.adapters.openai import OpenAIAdapter
-from agent_graph.connectors.actions import ActionsConnector
-from agents import Agent, Runner
+from agents import Agent, Runner, function_tool
+from skills_graph import SkillGraph
+from skills_graph.connector import SkillGraphConnector
 
 # 1. Set up graph storage
-graph = ActionsGraph()
-graph.setup()
+skills = SkillGraph()
+skills.setup()
 
-# 2. Wire up the link
+# 2. Define a tool whose name matches the SkillGraphConnector defaults
+@function_tool
+def get_skill(name: str) -> str:
+    skill = skills.get_skill(name)
+    if skill is None:
+        return f"Skill '{name}' not found."
+    return f"{skill.name}: {skill.description}\n{skill.content}"
+
+# 3. Wire up the link
 link = AgentLink()
-link.add_connector(ActionsConnector(graph))
+link.add_connector(SkillGraphConnector(skills))
 
-# 3. Create adapter
+# 4. Create adapter
 adapter = OpenAIAdapter(
     link,
     session_id="my-session",
-    session_kwargs={"model": "gpt-4o"},
+    session_kwargs={"model": "gpt-4o-mini"},
 )
 
-# 4. Run with hooks
-agent = Agent(name="Reviewer", instructions="Review code for bugs.")
+# 5. Run with hooks
+agent = Agent(
+    name="Skill Assistant",
+    instructions="Use get_skill when the user asks for a named skill.",
+    tools=[get_skill],
+    model="gpt-4o-mini",
+)
 result = await Runner.run(
     agent,
-    "Check this code for issues",
+    "Get the skill called 'cypher-basics'",
     hooks=adapter.get_sdk_hooks(),
 )
 
-# 5. Signal end (OpenAI SDK doesn't have a stop hook)
+# 6. Signal end (OpenAI SDK doesn't have a stop hook)
 adapter.end_session()
 ```
 
 ### Multiple Graph Components
 
 ```python
-from actions_graph import ActionsGraph
-from skills_graph import SkillGraph
 from agent_graph import AgentLink
 from agent_graph.adapters.claude import ClaudeAdapter
-from agent_graph.connectors.actions import ActionsConnector
-from agent_graph.connectors.skills import SkillsConnector
+from skills_graph import SkillGraph
+from skills_graph.connector import SkillGraphConnector
 
-# Set up graphs
-actions = ActionsGraph()
 skills = SkillGraph()
 
-# Wire everything through one link
 link = AgentLink()
-link.add_connector(ActionsConnector(actions))
-link.add_connector(SkillsConnector(skills))
+link.add_connector(SkillGraphConnector(skills))
+link.add_connector(MyGraphConnector(...))
 
-# One adapter feeds both connectors
 adapter = ClaudeAdapter(link, session_id="s-1")
 hooks = adapter.get_sdk_hooks()
-# → Tool calls go to ActionsConnector
-# → Skill-related calls also go to SkillsConnector
 ```
+
+Connectors are owned by the graph packages because each graph package knows its own schema and persistence rules.
 
 ## Architecture
 
@@ -154,14 +163,16 @@ All SDK adapters emit SDK-agnostic `Event` dataclasses:
 
 | Connector | Graph Component | Events Handled |
 |-----------|----------------|----------------|
-| `ActionsConnector` | actions-graph | Session, Tool, Agent, Message, Error, LLM |
-| `SkillsConnector` | skills-graph | Tool events matching skill operations |
+| `SkillGraphConnector` | skills-graph | Tool events matching skill access/search operations |
+
+Additional graph connectors should live in the packages that own those graph schemas.
 
 ### Adding a New SDK
 
 Implement `SDKAdapter`:
 
 ```python
+from agent_graph import AgentLink, ToolStartEvent
 from agent_graph.protocols import SDKAdapter
 
 class MySDKAdapter(SDKAdapter):
@@ -170,22 +181,25 @@ class MySDKAdapter(SDKAdapter):
         self._session_id = session_id
 
     def get_sdk_hooks(self):
-        # Return whatever your SDK expects
+        # Return whatever your SDK expects.
         ...
 
     def _on_tool_call(self, name, args):
-        self._link.emit(ToolStartEvent(
-            session_id=self._session_id,
-            tool_name=name,
-            tool_input=args,
-        ))
+        self._link.emit(
+            ToolStartEvent(
+                session_id=self._session_id,
+                tool_name=name,
+                tool_input=args,
+            )
+        )
 ```
 
 ### Adding a New Graph Component
 
-Implement `GraphConnector`:
+Implement `GraphConnector` in the graph package:
 
 ```python
+from agent_graph import EventType
 from agent_graph.protocols import GraphConnector
 
 class MyGraphConnector(GraphConnector):
@@ -193,7 +207,7 @@ class MyGraphConnector(GraphConnector):
         return event.event_type in {EventType.TOOL_START, EventType.TOOL_END}
 
     def on_event(self, event):
-        # Write to your graph component
+        # Write to your graph component.
         ...
 ```
 

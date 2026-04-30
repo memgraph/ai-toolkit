@@ -20,8 +20,8 @@ class AgentLink:
     Usage::
 
         link = AgentLink()
-        link.add_connector(ActionsConnector(graph))
-        link.add_connector(SkillsConnector(skill_graph))
+        link.add_connector(SkillGraphConnector(skill_graph))
+        link.add_connector(MyGraphConnector(graph))
 
         adapter = ClaudeAdapter(link, session_id="s-1")
         hooks = adapter.get_sdk_hooks()
