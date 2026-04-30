@@ -69,7 +69,6 @@ from agent_graph import AgentLink
 from agent_graph.adapters.openai import OpenAIAdapter
 from agent_graph.connectors.actions import ActionsConnector
 from agents import Agent, Runner
-from agents.run import RunConfig
 
 # 1. Set up graph storage
 graph = ActionsGraph()
@@ -91,7 +90,7 @@ agent = Agent(name="Reviewer", instructions="Review code for bugs.")
 result = await Runner.run(
     agent,
     "Check this code for issues",
-    run_config=RunConfig(hooks=adapter.get_sdk_hooks()),
+    hooks=adapter.get_sdk_hooks(),
 )
 
 # 5. Signal end (OpenAI SDK doesn't have a stop hook)

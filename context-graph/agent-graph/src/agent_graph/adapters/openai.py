@@ -13,7 +13,7 @@ Usage::
     hooks = adapter.get_sdk_hooks()
 
     # Pass hooks to Runner
-    result = await Runner.run(agent, "Hello", run_config=RunConfig(hooks=hooks))
+    result = await Runner.run(agent, "Hello", hooks=hooks)
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ class OpenAIAdapter(SDKAdapter):
             )
 
     def get_sdk_hooks(self) -> Any:
-        """Return a ``RunHooksBase`` subclass for ``RunConfig(hooks=...)``."""
+        """Return a ``RunHooksBase`` subclass for ``Runner.run(..., hooks=...)``."""
         try:
             from agents.lifecycle import RunHooksBase
         except ImportError:

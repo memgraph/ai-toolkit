@@ -246,8 +246,6 @@ requires_openai_key = pytest.mark.skipif(
 @pytest.mark.asyncio
 async def test_openai_agent_get_skill(sg):
     """Real OpenAI agent calls get_skill tool → USED_SKILL edge in Memgraph."""
-    from agents.run import RunConfig
-
     from agent_graph import AgentLink
     from agent_graph.adapters.openai import OpenAIAdapter
     from agents import Agent, Runner, function_tool
@@ -289,7 +287,7 @@ async def test_openai_agent_get_skill(sg):
     result = await Runner.run(
         agent,
         "Get the skill called 'cypher-basics'",
-        run_config=RunConfig(hooks=adapter.get_sdk_hooks()),
+        hooks=adapter.get_sdk_hooks(),
     )
     adapter.end_session()
 
