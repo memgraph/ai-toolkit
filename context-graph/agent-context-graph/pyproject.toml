@@ -1,7 +1,7 @@
 [project]
-name = "skills-graph"
+name = "agent-context-graph"
 version = "0.1.0"
-description = "Persist, retrieve and evolve AI skills in Memgraph"
+description = "Connect agent SDKs to context-graph components (actions-graph, skills-graph, etc.)"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
@@ -11,27 +11,20 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
 ]
-dependencies = [
-    "memgraph-toolbox",
-]
+dependencies = []
 
 [project.optional-dependencies]
-agent-context-graph = [
-    "agent-context-graph",
+claude = [
+    "claude-agent-sdk>=0.1.0",
+]
+openai = [
+    "openai-agents>=0.1.0",
 ]
 test = [
     "pytest>=9.0.3",
     "pytest-asyncio>=0.24.0",
-    "openai-agents>=0.1.0",
 ]
-
-[tool.uv.sources]
-memgraph-toolbox = { workspace = true }
-agent-context-graph = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
