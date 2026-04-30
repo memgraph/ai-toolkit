@@ -14,7 +14,7 @@ A small library to persist, retrieve and evolve AI skills in [Memgraph](https://
 ## Quick Start
 
 ```python
-from skill_graph import SkillGraph, Skill
+from skills_graph import SkillGraph, Skill
 
 # Connect (uses MEMGRAPH_URL, MEMGRAPH_USER, MEMGRAPH_PASSWORD env vars by default)
 sg = SkillGraph()
@@ -50,6 +50,10 @@ sg.update_skill("memgraph-cypher", content="updated content", tags=["cypher"])
 # Delete
 sg.delete_skill("memgraph-cypher")
 ```
+
+## Codex Hook Integration
+
+When used through `agent-context-graph`'s Codex hook adapter, `SkillGraphConnector` records direct tool names like `get_skill` and Codex MCP-style names like `mcp__skills__get_skill`. Search/list tool results can be Python lists or JSON tool content containing skill objects with `name` fields.
 
 ## Installation
 

@@ -20,6 +20,7 @@ Usage::
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 from agent_context_graph.events import Event, EventType, ToolEndEvent, ToolStartEvent
@@ -76,7 +77,7 @@ class SkillGraphConnector(GraphConnector):
         if event.event_type not in _SUPPORTED_EVENTS:
             return False
         if isinstance(event, ToolStartEvent | ToolEndEvent):
-            return event.tool_name in self._skill_tool_names
+            return self._operation_name(event.tool_name) in self._skill_tool_names
         return False
 
     def on_event(self, event: Event) -> None:
@@ -96,36 +97,89 @@ class SkillGraphConnector(GraphConnector):
             self._record_skill_access(
                 session_id=event.session_id,
                 skill_name=skill_name,
-                action=event.tool_name,
+                action=self._operation_name(event.tool_name),
                 timestamp=event.timestamp,
             )
 
     def _on_tool_end(self, event: ToolEndEvent) -> None:
         """A search/list tool returned — record which skills appeared."""
-        if event.tool_name not in {"list_skills", "search_skills", "search_by_tags", "search_by_name"}:
+        operation_name = self._operation_name(event.tool_name)
+        if operation_name not in {"list_skills", "search_skills", "search_by_tags", "search_by_name"}:
             return
-        if not isinstance(event.result, list):
-            return
-        for item in event.result:
-            name = item.get("name") if isinstance(item, dict) else None
-            if name:
-                self._record_skill_access(
-                    session_id=event.session_id,
-                    skill_name=name,
-                    action=f"{event.tool_name}_result",
-                    timestamp=event.timestamp,
-                )
+        for name in self._extract_result_skill_names(event.result):
+            self._record_skill_access(
+                session_id=event.session_id,
+                skill_name=name,
+                action=f"{operation_name}_result",
+                timestamp=event.timestamp,
+            )
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _extract_skill_name(tool_input: Any) -> str | None:
+    def _operation_name(tool_name: str) -> str:
+        """Return the local tool name from direct or Codex MCP-style names."""
+        if tool_name.startswith("mcp__"):
+            return tool_name.rsplit("__", maxsplit=1)[-1]
+        return tool_name
+
+    @classmethod
+    def _extract_skill_name(cls, tool_input: Any) -> str | None:
         """Pull the skill name out of the tool's input dict."""
         if not isinstance(tool_input, dict):
             return None
-        return tool_input.get("name") or tool_input.get("skill_name") or tool_input.get("pattern")
+        for key in ("name", "skill_name", "skill", "pattern"):
+            value = tool_input.get(key)
+            if isinstance(value, str) and value:
+                return value
+        for nested_key in ("arguments", "params", "input"):
+            nested = tool_input.get(nested_key)
+            nested_name = cls._extract_skill_name(nested)
+            if nested_name:
+                return nested_name
+        return None
+
+    @classmethod
+    def _extract_result_skill_names(cls, result: Any) -> list[str]:
+        """Pull skill names out of direct Python results or JSON tool content."""
+        if isinstance(result, str):
+            parsed = cls._parse_json_result(result)
+            if parsed is not None:
+                return cls._extract_result_skill_names(parsed)
+            return []
+
+        if isinstance(result, list):
+            names: list[str] = []
+            for item in result:
+                names.extend(cls._extract_result_skill_names(item))
+            return names
+
+        if isinstance(result, dict):
+            name = result.get("name")
+            if isinstance(name, str) and name:
+                return [name]
+            names: list[str] = []
+            for key in ("skills", "results", "items", "content"):
+                if key in result:
+                    names.extend(cls._extract_result_skill_names(result[key]))
+            text = result.get("text")
+            if isinstance(text, str):
+                names.extend(cls._extract_result_skill_names(text))
+            return names
+
+        name = getattr(result, "name", None)
+        if isinstance(name, str) and name:
+            return [name]
+        return []
+
+    @staticmethod
+    def _parse_json_result(value: str) -> Any:
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
 
     def _record_skill_access(
         self,

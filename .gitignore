@@ -178,5 +178,9 @@ cython_debug/
 .vscode/
 
 
-# Project specfic files
+# Local agent hook configuration
+/.codex/
+/.claude/settings.local.json
+
+# Project specific files
 /enterprise-context/sic-agent/sic-scrapper/output/*
