@@ -1,17 +1,17 @@
 """Agent-link connector for SkillGraph.
 
-This module implements the :class:`agent_graph.GraphConnector` interface
+This module implements the :class:`agent_context_graph.GraphConnector` interface
 so that a ``SkillGraph`` can receive events directly from an ``AgentLink``
 hub.  The connector lives *inside* skills-graph because **the library
 itself** knows which events are relevant and how to persist them — the
-agent-graph package only provides the plumbing.
+agent-context-graph package only provides the plumbing.
 
 Usage::
 
     from skills_graph import SkillGraph
     from skills_graph.connector import SkillGraphConnector
-    from agent_graph import AgentLink
-    from agent_graph.adapters.claude import ClaudeAdapter
+    from agent_context_graph import AgentLink
+    from agent_context_graph.adapters.claude import ClaudeAdapter
 
     link = AgentLink()
     link.add_connector(SkillGraphConnector(SkillGraph()))
@@ -22,8 +22,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from agent_graph.events import Event, EventType, ToolEndEvent, ToolStartEvent
-from agent_graph.protocols import GraphConnector
+from agent_context_graph.events import Event, EventType, ToolEndEvent, ToolStartEvent
+from agent_context_graph.protocols import GraphConnector
 
 if TYPE_CHECKING:
     from .core import SkillGraph
@@ -36,7 +36,7 @@ _SUPPORTED_EVENTS = {
 
 
 class SkillGraphConnector(GraphConnector):
-    """Receives agent-graph events and records skill usage in a SkillGraph.
+    """Receives agent-context-graph events and records skill usage in a SkillGraph.
 
     Watches for tool calls whose name matches a skill access operation
     (``get_skill``, ``update_skill``, search/list tools, etc.) and creates

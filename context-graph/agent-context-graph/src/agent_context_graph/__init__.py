@@ -1,6 +1,6 @@
-"""Agent Graph: Connect agent SDKs to context-graph components.
+"""Agent Context Graph: Connect agent SDKs to context-graph components.
 
-Agent Graph provides a generic adapter layer that bridges any agent SDK
+Agent Context Graph provides a generic adapter layer that bridges any agent SDK
 (Claude Agent SDK, OpenAI Agents SDK, etc.) to any context-graph
 component (actions-graph, skills-graph, etc.).
 
@@ -11,8 +11,8 @@ Architecture:
 
 Quick Start::
 
-    from agent_graph import AgentLink
-    from agent_graph.adapters.claude import ClaudeAdapter
+    from agent_context_graph import AgentLink
+    from agent_context_graph.adapters.claude import ClaudeAdapter
     from skills_graph.connector import SkillGraphConnector
 
     link = AgentLink()

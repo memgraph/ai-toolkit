@@ -1,5 +1,5 @@
 [project]
-name = "agent-graph"
+name = "agent-context-graph"
 version = "0.1.0"
 description = "Connect agent SDKs to context-graph components (actions-graph, skills-graph, etc.)"
 readme = "README.md"

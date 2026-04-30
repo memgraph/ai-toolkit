@@ -2,7 +2,7 @@
 
 Requires:
 - Memgraph at bolt://localhost:7687 (override with env vars)
-- agent-graph package installed (optional dependency of skills-graph)
+- agent-context-graph package installed (optional dependency of skills-graph)
 - OpenAI tests additionally require OPENAI_API_KEY
 """
 
@@ -11,11 +11,11 @@ import os
 
 import pytest
 
-pytest.importorskip("agent_graph", reason="agent-graph not installed")
+pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
 
-from agent_graph import AgentLink
-from agent_graph.adapters.claude import ClaudeAdapter
-from agent_graph.events import ToolEndEvent
+from agent_context_graph import AgentLink
+from agent_context_graph.adapters.claude import ClaudeAdapter
+from agent_context_graph.events import ToolEndEvent
 from skills_graph import Skill, SkillGraph
 from skills_graph.connector import SkillGraphConnector
 
@@ -292,8 +292,8 @@ requires_openai_key = pytest.mark.skipif(
 @pytest.mark.asyncio
 async def test_openai_agent_get_skill(sg):
     """Real OpenAI agent calls get_skill tool → USED_SKILL edge in Memgraph."""
-    from agent_graph import AgentLink
-    from agent_graph.adapters.openai import OpenAIAdapter
+    from agent_context_graph import AgentLink
+    from agent_context_graph.adapters.openai import OpenAIAdapter
     from agents import Agent, Runner, function_tool
     from skills_graph.connector import SkillGraphConnector
 

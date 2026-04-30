@@ -1,12 +1,12 @@
-"""OpenAI Agents SDK adapter for agent-graph.
+"""OpenAI Agents SDK adapter for agent-context-graph.
 
 Translates OpenAI Agents SDK lifecycle hooks (``RunHooksBase``) into the
 common Event protocol and forwards them to the AgentLink hub.
 
 Usage::
 
-    from agent_graph import AgentLink
-    from agent_graph.adapters.openai import OpenAIAdapter
+    from agent_context_graph import AgentLink
+    from agent_context_graph.adapters.openai import OpenAIAdapter
 
     link = AgentLink()
     adapter = OpenAIAdapter(link, session_id="s-1")
@@ -22,7 +22,7 @@ import contextlib
 import json
 from typing import TYPE_CHECKING, Any
 
-from agent_graph.events import (
+from agent_context_graph.events import (
     AgentEndEvent,
     AgentStartEvent,
     HandoffEvent,
@@ -33,16 +33,16 @@ from agent_graph.events import (
     ToolEndEvent,
     ToolStartEvent,
 )
-from agent_graph.protocols import SDKAdapter
+from agent_context_graph.protocols import SDKAdapter
 
 if TYPE_CHECKING:
-    from agent_graph.link import AgentLink
+    from agent_context_graph.link import AgentLink
 
 _SOURCE = "openai"
 
 
 class OpenAIAdapter(SDKAdapter):
-    """Adapter that converts OpenAI Agents SDK lifecycle hooks into agent-graph events.
+    """Adapter that converts OpenAI Agents SDK lifecycle hooks into agent-context-graph events.
 
     Args:
         link: The AgentLink hub to emit events to.
@@ -80,7 +80,9 @@ class OpenAIAdapter(SDKAdapter):
         try:
             from agents.lifecycle import RunHooksBase
         except ImportError:
-            msg = "openai-agents is required for OpenAIAdapter. Install it with: pip install agent-graph[openai]"
+            msg = (
+                "openai-agents is required for OpenAIAdapter. Install it with: pip install agent-context-graph[openai]"
+            )
             raise ImportError(msg)  # noqa: B904
 
         adapter = self

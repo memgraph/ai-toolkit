@@ -2,8 +2,8 @@
 
 import asyncio
 
-from agent_graph import AgentLink
-from agent_graph.events import (
+from agent_context_graph import AgentLink
+from agent_context_graph.events import (
     Event,
     EventType,
     MessageEvent,
@@ -12,7 +12,7 @@ from agent_graph.events import (
     ToolEndEvent,
     ToolStartEvent,
 )
-from agent_graph.protocols import GraphConnector
+from agent_context_graph.protocols import GraphConnector
 
 
 class _RecordingConnector(GraphConnector):
@@ -91,7 +91,7 @@ class TestClaudeAdapter:
         rec = _RecordingConnector()
         link.add_connector(rec)
 
-        from agent_graph.adapters.claude import ClaudeAdapter
+        from agent_context_graph.adapters.claude import ClaudeAdapter
 
         ClaudeAdapter(
             link,
@@ -109,14 +109,14 @@ class TestClaudeAdapter:
         rec = _RecordingConnector()
         link.add_connector(rec)
 
-        from agent_graph.adapters.claude import ClaudeAdapter
+        from agent_context_graph.adapters.claude import ClaudeAdapter
 
         ClaudeAdapter(link, "s-test", auto_session=False)
         assert len(rec.events) == 0
 
     def test_hooks_dict_keys(self):
         link = AgentLink()
-        from agent_graph.adapters.claude import ClaudeAdapter
+        from agent_context_graph.adapters.claude import ClaudeAdapter
 
         adapter = ClaudeAdapter(link, "s-test")
         hooks = adapter.get_sdk_hooks()
@@ -138,7 +138,7 @@ class TestClaudeAdapter:
         rec = _RecordingConnector()
         link.add_connector(rec)
 
-        from agent_graph.adapters.claude import ClaudeAdapter
+        from agent_context_graph.adapters.claude import ClaudeAdapter
 
         adapter = ClaudeAdapter(link, "s-test", auto_session=False)
 
@@ -161,7 +161,7 @@ class TestClaudeAdapter:
         rec = _RecordingConnector()
         link.add_connector(rec)
 
-        from agent_graph.adapters.claude import ClaudeAdapter
+        from agent_context_graph.adapters.claude import ClaudeAdapter
 
         adapter = ClaudeAdapter(link, "s-test", auto_session=False)
 
@@ -183,7 +183,7 @@ class TestClaudeAdapter:
         rec = _RecordingConnector()
         link.add_connector(rec)
 
-        from agent_graph.adapters.claude import ClaudeAdapter
+        from agent_context_graph.adapters.claude import ClaudeAdapter
 
         adapter = ClaudeAdapter(link, "s-test", auto_session=False)
 
@@ -200,7 +200,7 @@ class TestClaudeAdapter:
         rec = _RecordingConnector()
         link.add_connector(rec)
 
-        from agent_graph.adapters.claude import ClaudeAdapter
+        from agent_context_graph.adapters.claude import ClaudeAdapter
 
         adapter = ClaudeAdapter(link, "s-test", auto_session=False)
 
@@ -215,7 +215,7 @@ class TestClaudeAdapter:
         rec = _RecordingConnector()
         link.add_connector(rec)
 
-        from agent_graph.adapters.claude import ClaudeAdapter
+        from agent_context_graph.adapters.claude import ClaudeAdapter
 
         adapter = ClaudeAdapter(
             link,

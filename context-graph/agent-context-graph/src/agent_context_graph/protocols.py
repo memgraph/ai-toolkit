@@ -1,6 +1,6 @@
 """Protocols (interfaces) for SDK adapters and graph connectors.
 
-These are the two extension points of agent-graph:
+These are the two extension points of agent-context-graph:
 1. **SDKAdapter** — translates SDK-specific callbacks into ``Event`` objects.
 2. **GraphConnector** — receives ``Event`` objects and writes to a graph component.
 """

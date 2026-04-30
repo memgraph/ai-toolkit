@@ -54,7 +54,7 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "agent-graph",
+    "agent-context-graph",
     "langchain-memgraph",
     "lightrag-memgraph",
     "mcp-memgraph",
@@ -178,9 +178,9 @@ wheels = [
 ]
 
 [[package]]
-name = "agent-graph"
+name = "agent-context-graph"
 version = "0.1.0"
-source = { editable = "context-graph/agent-graph" }
+source = { editable = "context-graph/agent-context-graph" }
 
 [package.optional-dependencies]
 claude = [
@@ -8327,8 +8327,8 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-agent-graph = [
-    { name = "agent-graph" },
+agent-context-graph = [
+    { name = "agent-context-graph" },
 ]
 test = [
     { name = "openai-agents" },
@@ -8338,13 +8338,13 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-graph", marker = "extra == 'agent-graph'", editable = "context-graph/agent-graph" },
+    { name = "agent-context-graph", marker = "extra == 'agent-context-graph'", editable = "context-graph/agent-context-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "openai-agents", marker = "extra == 'test'", specifier = ">=0.1.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
 ]
-provides-extras = ["agent-graph", "test"]
+provides-extras = ["agent-context-graph", "test"]
 
 [[package]]
 name = "smart-open"

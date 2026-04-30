@@ -1,8 +1,8 @@
-# Agent Graph
+# Agent Context Graph
 
 Connect any agent SDK to any context-graph component.
 
-Agent Graph is a lightweight adapter layer that decouples SDK-specific hooks from graph storage. It routes a common event protocol from SDK adapters to graph connectors, so you can mix and match SDKs and graph components.
+Agent Context Graph is a lightweight adapter layer that decouples SDK-specific hooks from graph storage. It routes a common event protocol from SDK adapters to graph connectors, so you can mix and match SDKs and graph components.
 
 ```
 SDK Adapter  ->  Event Protocol  ->  Graph Connector(s)
@@ -13,20 +13,20 @@ SDK Adapter  ->  Event Protocol  ->  Graph Connector(s)
 ## Installation
 
 ```bash
-pip install agent-graph
+pip install agent-context-graph
 ```
 
 With SDK adapters:
 
 ```bash
-pip install agent-graph[claude]
-pip install agent-graph[openai]
+pip install agent-context-graph[claude]
+pip install agent-context-graph[openai]
 ```
 
 Graph connectors live in the graph packages that persist the data. For the skills graph connector:
 
 ```bash
-pip install skills-graph[agent-graph]
+pip install skills-graph[agent-context-graph]
 ```
 
 ## Quick Start
@@ -34,8 +34,8 @@ pip install skills-graph[agent-graph]
 ### Claude Agent SDK
 
 ```python
-from agent_graph import AgentLink
-from agent_graph.adapters.claude import ClaudeAdapter
+from agent_context_graph import AgentLink
+from agent_context_graph.adapters.claude import ClaudeAdapter
 from claude_agent_sdk import ClaudeAgentOptions, query
 from skills_graph import SkillGraph
 from skills_graph.connector import SkillGraphConnector
@@ -66,8 +66,8 @@ async for message in query(
 ### OpenAI Agents SDK
 
 ```python
-from agent_graph import AgentLink
-from agent_graph.adapters.openai import OpenAIAdapter
+from agent_context_graph import AgentLink
+from agent_context_graph.adapters.openai import OpenAIAdapter
 from agents import Agent, Runner, function_tool
 from skills_graph import SkillGraph
 from skills_graph.connector import SkillGraphConnector
@@ -115,8 +115,8 @@ adapter.end_session()
 ### Multiple Graph Components
 
 ```python
-from agent_graph import AgentLink
-from agent_graph.adapters.claude import ClaudeAdapter
+from agent_context_graph import AgentLink
+from agent_context_graph.adapters.claude import ClaudeAdapter
 from skills_graph import SkillGraph
 from skills_graph.connector import SkillGraphConnector
 
@@ -172,8 +172,8 @@ Additional graph connectors should live in the packages that own those graph sch
 Implement `SDKAdapter`:
 
 ```python
-from agent_graph import AgentLink, ToolStartEvent
-from agent_graph.protocols import SDKAdapter
+from agent_context_graph import AgentLink, ToolStartEvent
+from agent_context_graph.protocols import SDKAdapter
 
 class MySDKAdapter(SDKAdapter):
     def __init__(self, link: AgentLink, session_id: str):
@@ -199,8 +199,8 @@ class MySDKAdapter(SDKAdapter):
 Implement `GraphConnector` in the graph package:
 
 ```python
-from agent_graph import EventType
-from agent_graph.protocols import GraphConnector
+from agent_context_graph import EventType
+from agent_context_graph.protocols import GraphConnector
 
 class MyGraphConnector(GraphConnector):
     def supports(self, event):
