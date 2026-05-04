@@ -1,0 +1,26 @@
+name: Release agent-context-graph
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: 3.11.0
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Build and release agent-context-graph
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          uv build --package agent-context-graph
+          uv publish dist/*
