@@ -112,6 +112,148 @@ result = await Runner.run(
 adapter.end_session()
 ```
 
+### Command Hook Runtimes
+
+Some agent applications run hooks as external commands instead of in-process SDK callbacks. Runtime adapters should keep the product-specific JSON mapping at the edge, emit the shared `Event` protocol, and leave graph persistence in connectors such as `SkillGraphConnector`.
+
+The installed command is runtime-dispatched:
+
+```bash
+agent-context-graph hook <command> [options]
+```
+
+Implemented:
+
+| Runtime | Adapter | Hook Shape |
+|---------|---------|------------|
+| OpenAI Codex | `CodexHooksAdapter` | Command receives one JSON object on `stdin` |
+
+Planned:
+
+| Runtime | Adapter | Notes |
+|---------|---------|-------|
+| Claude Code | `ClaudeCodeHooksAdapter` | TODO: command-hook adapter for Claude Code JSON input/output and `.claude/settings.local.json` setup |
+
+### OpenAI Codex Hooks
+
+Codex hook configuration is local environment wiring, so this repository ignores `.codex/`. Each developer should create their own local `.codex` files or use a user-level Codex config.
+
+1. Make `skills-graph` able to reach Memgraph, then initialize and seed your skill graph once:
+
+```bash
+export MEMGRAPH_URL="bolt://localhost:7687"
+export MEMGRAPH_USER=""
+export MEMGRAPH_PASSWORD=""
+```
+
+```python
+from skills_graph import SkillGraph
+
+skills = SkillGraph()
+skills.setup()
+```
+
+2. Install the hook command and the graph connector in the same Python environment:
+
+```bash
+python -m venv ~/.venvs/agent-context-graph-hooks
+~/.venvs/agent-context-graph-hooks/bin/python -m pip install \
+  "agent-context-graph" \
+  "skills-graph[agent-context-graph]"
+```
+
+For source development in this workspace, use this command instead of the venv binary:
+
+```bash
+cd /path/to/ai-toolkit
+uv run --package skills-graph --extra agent-context-graph \
+  python -m agent_context_graph.cli hook run codex --connector skills-graph
+```
+
+3. Generate private Codex hook config in the workspace:
+
+```bash
+agent-context-graph hook init codex --connector skills-graph
+```
+
+For source development in this workspace:
+
+```bash
+uv run --package skills-graph --extra agent-context-graph \
+  python -m agent_context_graph.cli hook init codex --connector skills-graph
+```
+
+The wizard writes local, ignored files:
+
+```text
+.codex/config.toml
+.codex/hooks.json
+```
+
+It refuses to overwrite existing generated files unless you pass `--force`.
+
+The generated config enables Codex hooks and points all supported Codex hook events at a command like:
+
+```bash
+agent-context-graph hook run codex --connector skills-graph
+```
+
+The resulting `.codex/hooks.json` has this shape:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [{ "type": "command", "command": "COMMAND", "timeout": 30 }]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "COMMAND", "timeout": 30 }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "COMMAND", "timeout": 30 }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "COMMAND", "timeout": 30 }]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [{ "type": "command", "command": "COMMAND", "timeout": 30 }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "COMMAND", "timeout": 30 }]
+      }
+    ]
+  }
+}
+```
+
+The adapter records Codex `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PermissionRequest`, and `Stop` payloads. MCP tool names such as `mcp__skills__get_skill` are normalized by `skills-graph` to the underlying `get_skill` operation.
+
+Smoke test the command:
+
+```bash
+printf '{"hook_event_name":"Stop","session_id":"test"}' | COMMAND
+```
+
+The expected output is:
+
+```json
+{"continue": true}
+```
+
 ### Multiple Graph Components
 
 ```python
@@ -158,6 +300,7 @@ All SDK adapters emit SDK-agnostic `Event` dataclasses:
 |---------|-----|----------------|
 | `ClaudeAdapter` | Claude Agent SDK | Dict of `HookMatcher` callbacks |
 | `OpenAIAdapter` | OpenAI Agents SDK | `RunHooksBase` subclass |
+| `CodexHooksAdapter` | OpenAI Codex | Command hooks reading JSON from stdin |
 
 ### Graph Connectors
 

@@ -165,8 +165,8 @@ def test_non_skill_tool_ignored(wired):
     assert rows[0]["cnt"] == 0
 
 
-def test_add_skill_tool_ignored_by_default(wired):
-    """add_skill runs before a Skill exists, so it is not tracked by default."""
+def test_add_skill_tool_supported_but_missing_skill_is_not_recorded(wired):
+    """add_skill is recognized, but pre-tool tracking cannot match a Skill that does not exist yet."""
     sg = wired["sg"]
     adapter = wired["adapter"]
 
@@ -187,8 +187,8 @@ def test_add_skill_tool_ignored_by_default(wired):
     assert rows[0]["cnt"] == 0
 
 
-def test_delete_skill_tool_ignored_by_default(wired):
-    """delete_skill removes the Skill node that USED_SKILL depends on, so it is not tracked by default."""
+def test_delete_skill_tool_records_existing_skill(wired):
+    """delete_skill is recognized while the Skill still exists at pre-tool time."""
     sg = wired["sg"]
     adapter = wired["adapter"]
 
@@ -207,8 +207,15 @@ def test_delete_skill_tool_ignored_by_default(wired):
         )
     )
 
-    rows = sg._db.query("MATCH ()-[r:USED_SKILL]->() RETURN count(r) AS cnt")
-    assert rows[0]["cnt"] == 0
+    rows = sg._db.query(
+        """
+        MATCH (:Session {session_id: $sid})-[r:USED_SKILL]->(:Skill {name: $name})
+        RETURN r.access_count AS cnt, r.actions AS actions
+        """,
+        params={"sid": "test-session", "name": "old-skill"},
+    )
+    assert rows[0]["cnt"] == 1
+    assert rows[0]["actions"] == ["delete_skill"]
 
 
 def test_full_session_lifecycle(wired):
