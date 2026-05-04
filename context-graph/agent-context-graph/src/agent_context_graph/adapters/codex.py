@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from agent_context_graph.events import Event
 
 _SOURCE = "codex"
-_DEFAULT_COMMAND = "agent-context-graph-hook codex"
+_DEFAULT_COMMAND = "agent-context-graph hook run codex"
 _SUPPORTED_HOOKS = (
     "SessionStart",
     "UserPromptSubmit",

@@ -14,7 +14,7 @@ classifiers = [
 dependencies = []
 
 [project.scripts]
-agent-context-graph-hook = "agent_context_graph.hooks.cli:main"
+agent-context-graph = "agent_context_graph.cli:main"
 
 [project.optional-dependencies]
 claude = [

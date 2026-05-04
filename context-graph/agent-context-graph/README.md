@@ -119,7 +119,7 @@ Some agent applications run hooks as external commands instead of in-process SDK
 The installed command is runtime-dispatched:
 
 ```bash
-agent-context-graph-hook <runtime> [runtime options]
+agent-context-graph hook <command> [options]
 ```
 
 Implemented:
@@ -167,18 +167,38 @@ For source development in this workspace, use this command instead of the venv b
 ```bash
 cd /path/to/ai-toolkit
 uv run --package skills-graph --extra agent-context-graph \
-  python -m agent_context_graph.hooks.cli codex --connector skills-graph
+  python -m agent_context_graph.cli hook run codex --connector skills-graph
 ```
 
-3. Enable Codex hooks in your local workspace:
+3. Generate private Codex hook config in the workspace:
 
-```toml
-# .codex/config.toml
-[features]
-codex_hooks = true
+```bash
+agent-context-graph hook init codex --connector skills-graph
 ```
 
-4. Point Codex at the hook command. Replace `COMMAND` with the absolute command from step 2, for example `/Users/me/.venvs/agent-context-graph-hooks/bin/agent-context-graph-hook codex --connector skills-graph`.
+For source development in this workspace:
+
+```bash
+uv run --package skills-graph --extra agent-context-graph \
+  python -m agent_context_graph.cli hook init codex --connector skills-graph
+```
+
+The wizard writes local, ignored files:
+
+```text
+.codex/config.toml
+.codex/hooks.json
+```
+
+It refuses to overwrite existing generated files unless you pass `--force`.
+
+The generated config enables Codex hooks and points all supported Codex hook events at a command like:
+
+```bash
+agent-context-graph hook run codex --connector skills-graph
+```
+
+The resulting `.codex/hooks.json` has this shape:
 
 ```json
 {
