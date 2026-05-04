@@ -60,3 +60,28 @@ def test_non_skill_mcp_tool_is_ignored():
     )
 
     assert not connector.supports(event)
+
+
+def test_add_and_delete_skill_tools_are_supported_by_default():
+    connector, _graph = _connector()
+
+    assert connector.supports(ToolStartEvent(session_id="s1", tool_name="add_skill", tool_input={"name": "s1"}))
+    assert connector.supports(ToolStartEvent(session_id="s1", tool_name="delete_skill", tool_input={"name": "s1"}))
+
+
+def test_deeply_nested_results_stop_at_depth_limit():
+    result = {"content": []}
+    current = result["content"]
+    for _ in range(20):
+        nested = {"content": []}
+        current.append(nested)
+        current = nested["content"]
+    current.append({"name": "too-deep"})
+
+    assert SkillGraphConnector._extract_result_skill_names(result) == []
+
+
+def test_result_extraction_still_reads_reasonable_nested_json():
+    result = {"content": [{"text": '{"results": [{"name": "s1"}]}'}]}
+
+    assert SkillGraphConnector._extract_result_skill_names(result) == ["s1"]

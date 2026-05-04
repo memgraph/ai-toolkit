@@ -259,6 +259,8 @@ def _add_skills_graph_connector(link: AgentLink) -> None:
         msg = "skills-graph is required for the skills-graph Codex connector"
         raise ImportError(msg) from exc
 
+    # Codex command hooks run in a fresh process for each hook invocation, so
+    # each call builds its own short-lived SkillGraph/Memgraph connection.
     graph = SkillGraph()
     link.add_connector(SkillGraphConnector(graph))
 

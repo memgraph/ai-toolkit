@@ -34,6 +34,7 @@ _SUPPORTED_EVENTS = {
     EventType.TOOL_START,
     EventType.TOOL_END,
 }
+_MAX_RESULT_DEPTH = 10
 
 
 class SkillGraphConnector(GraphConnector):
@@ -52,7 +53,9 @@ class SkillGraphConnector(GraphConnector):
     DEFAULT_SKILL_TOOLS: frozenset[str] = frozenset(
         {
             "get_skill",
+            "add_skill",
             "update_skill",
+            "delete_skill",
             "list_skills",
             "search_skills",
             "search_by_tags",
@@ -120,7 +123,7 @@ class SkillGraphConnector(GraphConnector):
 
     @staticmethod
     def _operation_name(tool_name: str) -> str:
-        """Return the local tool name from direct or Codex MCP-style names."""
+        """Return the operation from direct or MCP ``mcp__<server>__<operation>`` names."""
         if tool_name.startswith("mcp__"):
             return tool_name.rsplit("__", maxsplit=1)[-1]
         return tool_name
@@ -142,32 +145,34 @@ class SkillGraphConnector(GraphConnector):
         return None
 
     @classmethod
-    def _extract_result_skill_names(cls, result: Any) -> list[str]:
+    def _extract_result_skill_names(cls, result: Any, *, _depth: int = 0) -> list[str]:
         """Pull skill names out of direct Python results or JSON tool content."""
+        if _depth > _MAX_RESULT_DEPTH:
+            return []
+
         if isinstance(result, str):
             parsed = cls._parse_json_result(result)
             if parsed is not None:
-                return cls._extract_result_skill_names(parsed)
+                return cls._extract_result_skill_names(parsed, _depth=_depth + 1)
             return []
 
+        extracted_names: list[str] = []
         if isinstance(result, list):
-            names: list[str] = []
             for item in result:
-                names.extend(cls._extract_result_skill_names(item))
-            return names
+                extracted_names.extend(cls._extract_result_skill_names(item, _depth=_depth + 1))
+            return extracted_names
 
         if isinstance(result, dict):
             name = result.get("name")
             if isinstance(name, str) and name:
                 return [name]
-            names: list[str] = []
             for key in ("skills", "results", "items", "content"):
                 if key in result:
-                    names.extend(cls._extract_result_skill_names(result[key]))
+                    extracted_names.extend(cls._extract_result_skill_names(result[key], _depth=_depth + 1))
             text = result.get("text")
             if isinstance(text, str):
-                names.extend(cls._extract_result_skill_names(text))
-            return names
+                extracted_names.extend(cls._extract_result_skill_names(text, _depth=_depth + 1))
+            return extracted_names
 
         name = getattr(result, "name", None)
         if isinstance(name, str) and name:
