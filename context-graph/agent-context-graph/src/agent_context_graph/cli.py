@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 _HELP = """usage: agent-context-graph <command> [options]
 
 Commands:
+  setup <runtime>  Configure an agent runtime.
   hook <command>  Configure or run command hooks.
 """
 
@@ -30,6 +31,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         from agent_context_graph.hooks.cli import main as hook_main
 
         return hook_main(args[1:])
+
+    if command == "setup":
+        from agent_context_graph.hooks.cli import main as hook_main
+
+        return hook_main(["init", *args[1:]])
 
     print(f"Unknown command: {command}", file=sys.stderr)
     print(_HELP)

@@ -138,6 +138,78 @@ Planned:
 
 Codex hook configuration is local environment wiring, so this repository ignores `.codex/`. Each developer should create their own local `.codex` files or use a user-level Codex config.
 
+Prerequisites:
+
+- Memgraph running and reachable over Bolt. Defaults are `bolt://localhost:7687`, empty user/password, and database `memgraph`.
+- A Python environment that contains `agent-context-graph` and `skills-graph[agent-context-graph]`.
+- Codex CLI or IDE extension running in a project that trusts the project-local `.codex/` layer.
+
+The streamlined setup only needs two pieces of local information:
+
+- where to write the Codex project config, usually your repo root
+- where Memgraph is, plus optional auth/database values
+
+If Memgraph is running locally with defaults:
+
+```bash
+agent-context-graph setup codex --project-dir "$PWD" --setup-schema
+```
+
+`--setup-schema` connects to Memgraph immediately and runs `SkillGraph().setup()`.
+
+If you need non-default Memgraph connection values:
+
+```bash
+agent-context-graph setup codex \
+  --project-dir /path/to/your/repo \
+  --memgraph-url bolt://localhost:7687 \
+  --memgraph-user "" \
+  --memgraph-password "" \
+  --memgraph-database memgraph \
+  --setup-schema
+```
+
+The `--memgraph-*` options are used for `--setup-schema`, but they are not written into `.codex/hooks.json`.
+
+For source development in this workspace:
+
+```bash
+uv run --package skills-graph --extra agent-context-graph \
+  python -m agent_context_graph.cli setup codex \
+  --project-dir /path/to/your/repo \
+  --memgraph-url bolt://localhost:7687 \
+  --setup-schema
+```
+
+The command writes local, ignored files:
+
+```text
+.codex/config.toml
+.codex/hooks.json
+```
+
+It refuses to overwrite existing generated files unless you pass `--force`.
+
+The generated hook command does not embed any Memgraph connection values. At runtime, Codex must run with the needed `MEMGRAPH_*` variables in its process environment, or the hooks will use `memgraph-toolbox` defaults.
+
+If Memgraph requires a password, provide `MEMGRAPH_PASSWORD` to the Codex process environment. `.codex/hooks.json` should not contain Memgraph credentials.
+
+Keep the Python environment used by the generated hook command around. Codex will run that absolute command path for every hook event.
+
+To smoke test the generated command, copy the `"command"` value from `.codex/hooks.json` and run:
+
+```bash
+printf '{"hook_event_name":"Stop","session_id":"test"}' | COMMAND
+```
+
+The expected output is:
+
+```json
+{"continue": true}
+```
+
+If you prefer manual setup:
+
 1. Make `skills-graph` able to reach Memgraph, then initialize and seed your skill graph once:
 
 ```bash
@@ -241,18 +313,6 @@ The resulting `.codex/hooks.json` has this shape:
 ```
 
 The adapter records Codex `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PermissionRequest`, and `Stop` payloads. MCP tool names such as `mcp__skills__get_skill` are normalized by `skills-graph` to the underlying `get_skill` operation.
-
-Smoke test the command:
-
-```bash
-printf '{"hook_event_name":"Stop","session_id":"test"}' | COMMAND
-```
-
-The expected output is:
-
-```json
-{"continue": true}
-```
 
 ### Multiple Graph Components
 

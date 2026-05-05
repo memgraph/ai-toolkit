@@ -181,6 +181,9 @@ wheels = [
 name = "agent-context-graph"
 version = "0.1.0"
 source = { editable = "context-graph/agent-context-graph" }
+dependencies = [
+    { name = "memgraph-toolbox" },
+]
 
 [package.optional-dependencies]
 claude = [
@@ -197,6 +200,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "claude-agent-sdk", marker = "extra == 'claude'", specifier = ">=0.1.0" },
+    { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.1.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },

@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shlex
 import shutil
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from memgraph_toolbox.api.memgraph import MEMGRAPH_ENV_KEYS, memgraph_env
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -106,6 +109,31 @@ def _init_codex(argv: list[str]) -> int:
         help="Full command to place in hooks.json. Defaults to this installed CLI.",
     )
     parser.add_argument(
+        "--memgraph-url",
+        default=None,
+        help="Memgraph Bolt URL for the hook command. Defaults to MEMGRAPH_URL or bolt://localhost:7687.",
+    )
+    parser.add_argument(
+        "--memgraph-user",
+        default=None,
+        help="Memgraph username for the hook command. Defaults to MEMGRAPH_USER or empty.",
+    )
+    parser.add_argument(
+        "--memgraph-password",
+        default=None,
+        help="Memgraph password for --setup-schema. Never written to hooks.json.",
+    )
+    parser.add_argument(
+        "--memgraph-database",
+        default=None,
+        help="Memgraph database for the hook command. Defaults to MEMGRAPH_DATABASE or memgraph.",
+    )
+    parser.add_argument(
+        "--setup-schema",
+        action="store_true",
+        help="Connect to Memgraph now and initialize the skills-graph schema.",
+    )
+    parser.add_argument(
         "--timeout",
         type=int,
         default=30,
@@ -133,6 +161,7 @@ def _init_codex(argv: list[str]) -> int:
 
     from agent_context_graph.adapters.codex import build_hooks_config
 
+    memgraph_values = _memgraph_env_from_args(args)
     hook_command = args.hook_command or _default_hook_command("codex", connectors)
     codex_dir.mkdir(parents=True, exist_ok=True)
     config_path.write_text("[features]\ncodex_hooks = true\n", encoding="utf-8")
@@ -140,10 +169,14 @@ def _init_codex(argv: list[str]) -> int:
         json.dumps({"hooks": build_hooks_config(hook_command, timeout=args.timeout)}, indent=2) + "\n",
         encoding="utf-8",
     )
+    if args.setup_schema:
+        _setup_skills_graph_schema(memgraph_values)
 
     print(f"Wrote {config_path}")
     print(f"Wrote {hooks_path}")
-    print(f"Hook command: {hook_command}")
+    print(f"Memgraph URL: {memgraph_values['MEMGRAPH_URL']}")
+    print(f"Memgraph database: {memgraph_values['MEMGRAPH_DATABASE']}")
+    print(f"Hook command: {_mask_secret(hook_command, memgraph_values['MEMGRAPH_PASSWORD'])}")
     return 0
 
 
@@ -154,6 +187,40 @@ def _default_hook_command(runtime: str, connectors: list[str]) -> str:
     for connector in connectors:
         args.extend(["--connector", connector])
     return shlex.join(args)
+
+
+def _memgraph_env_from_args(args: argparse.Namespace) -> dict[str, str]:
+    return memgraph_env(
+        url=args.memgraph_url,
+        username=args.memgraph_user,
+        password=args.memgraph_password,
+        database=args.memgraph_database,
+    )
+
+
+def _setup_skills_graph_schema(memgraph_env: dict[str, str]) -> None:
+    try:
+        from skills_graph import SkillGraph
+    except ImportError as exc:
+        msg = "skills-graph is required to initialize the skills-graph schema"
+        raise ImportError(msg) from exc
+
+    previous = {key: os.environ.get(key) for key in MEMGRAPH_ENV_KEYS}
+    os.environ.update(memgraph_env)
+    try:
+        SkillGraph().setup()
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def _mask_secret(value: str, secret: str) -> str:
+    if not secret:
+        return value
+    return value.replace(shlex.quote(secret), "'****'").replace(secret, "****")
 
 
 if __name__ == "__main__":

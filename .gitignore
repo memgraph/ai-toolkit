@@ -181,6 +181,7 @@ cython_debug/
 # Local agent hook configuration
 /.codex/
 /.claude/settings.local.json
+/.private-specs/
 
 # Project specific files
 /enterprise-context/sic-agent/sic-scrapper/output/*
