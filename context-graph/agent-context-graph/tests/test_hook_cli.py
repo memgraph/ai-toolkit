@@ -3,6 +3,8 @@
 import io
 import json
 import os
+import sys
+from types import ModuleType
 
 from agent_context_graph.cli import main as top_level_main
 from agent_context_graph.hooks.cli import main
@@ -107,7 +109,9 @@ def test_init_codex_uses_memgraph_env_only_for_setup_schema(tmp_path, monkeypatc
             captured["password"] = os.environ.get("MEMGRAPH_PASSWORD")
             captured["database"] = os.environ.get("MEMGRAPH_DATABASE")
 
-    monkeypatch.setattr("skills_graph.SkillGraph", _SkillGraph)
+    fake_skills_graph = ModuleType("skills_graph")
+    fake_skills_graph.SkillGraph = _SkillGraph
+    monkeypatch.setitem(sys.modules, "skills_graph", fake_skills_graph)
 
     assert (
         main(
