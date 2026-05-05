@@ -46,22 +46,20 @@ class SkillGraph:
     def add_skill(self, skill: Skill) -> Skill:
         """Persist a skill to Memgraph.
 
-        Creates the :Skill node, links it to :Tag nodes (MERGE-ed),
-        and returns the stored skill.
+        Creates or replaces the :Skill node fields, links it to :Tag nodes
+        (MERGE-ed), and returns the stored skill.
         """
         self._db.query(
             """
-            CREATE (s:Skill {
-                name: $name,
-                description: $description,
-                content: $content,
-                license: $license,
-                compatibility: $compatibility,
-                metadata: $metadata,
-                allowed_tools: $allowed_tools,
-                created_at: $created_at,
-                updated_at: $updated_at
-            })
+            MERGE (s:Skill {name: $name})
+            ON CREATE SET s.created_at = $created_at
+            SET s.description = $description,
+                s.content = $content,
+                s.license = $license,
+                s.compatibility = $compatibility,
+                s.metadata = $metadata,
+                s.allowed_tools = $allowed_tools,
+                s.updated_at = $updated_at
             """,
             params={
                 "name": skill.name,
@@ -190,6 +188,87 @@ class SkillGraph:
             params={"name": name},
         )
         return bool(rows and rows[0].get("deleted", 0) > 0)
+
+    def record_skill_usage(
+        self,
+        *,
+        session_id: str,
+        skill_name: str,
+        action: str,
+        timestamp: str,
+        create_missing: bool = False,
+        description: str = "",
+        content: str = "",
+        source_path: str | None = None,
+        metadata: dict[str, str] | None = None,
+        tags: list[str] | None = None,
+    ) -> None:
+        """Record that a session used a skill.
+
+        By default this preserves the historical behavior and only records
+        usage for skills that already exist. Inferred local SKILL.md reads can
+        opt into creating a minimal Skill node so filesystem-based skill use is
+        not dropped.
+        """
+        params = {
+            "session_id": session_id,
+            "skill_name": skill_name,
+            "timestamp": timestamp,
+            "action": action,
+            "description": description,
+            "content": content,
+            "metadata": json.dumps(metadata or {}),
+            "tags": tags or [],
+            "source_path": source_path,
+        }
+
+        if create_missing:
+            self._db.query(
+                """
+                MERGE (sess:Session {session_id: $session_id})
+                WITH sess
+                MERGE (sk:Skill {name: $skill_name})
+                ON CREATE SET sk.description = $description,
+                              sk.content = $content,
+                              sk.license = null,
+                              sk.compatibility = null,
+                              sk.metadata = $metadata,
+                              sk.allowed_tools = "[]",
+                              sk.created_at = $timestamp,
+                              sk.updated_at = $timestamp,
+                              sk.source_path = $source_path
+                ON MATCH SET sk.source_path = coalesce(sk.source_path, $source_path)
+                MERGE (sess)-[r:USED_SKILL]->(sk)
+                ON CREATE SET r.first_access = $timestamp,
+                              r.access_count = 1,
+                              r.actions = [$action]
+                ON MATCH SET r.last_access = $timestamp,
+                             r.access_count = r.access_count + 1,
+                             r.actions = r.actions + $action
+                WITH sk
+                UNWIND $tags AS tag_name
+                MERGE (t:Tag {name: tag_name})
+                MERGE (sk)-[:HAS_TAG]->(t)
+                """,
+                params=params,
+            )
+            return
+
+        self._db.query(
+            """
+            MERGE (sess:Session {session_id: $session_id})
+            WITH sess
+            MATCH (sk:Skill {name: $skill_name})
+            MERGE (sess)-[r:USED_SKILL]->(sk)
+            ON CREATE SET r.first_access = $timestamp,
+                          r.access_count = 1,
+                          r.actions = [$action]
+            ON MATCH SET r.last_access = $timestamp,
+                         r.access_count = r.access_count + 1,
+                         r.actions = r.actions + $action
+            """,
+            params=params,
+        )
 
     # ------------------------------------------------------------------
     # Query / Search

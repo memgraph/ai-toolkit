@@ -73,8 +73,9 @@ def test_add_skill_without_tags(sg, mock_memgraph):
     result = sg.add_skill(skill)
 
     assert result.name == "s1"
-    # Only the CREATE call, no UNWIND for tags
+    # Only the node upsert call, no UNWIND for tags
     assert mock_memgraph.query.call_count == 1
+    assert "MERGE (s:Skill {name: $name})" in mock_memgraph.query.call_args.args[0]
 
 
 def test_add_skill_with_tags(sg, mock_memgraph):
@@ -201,6 +202,51 @@ def test_delete_skill_returns_true(sg, mock_memgraph):
 def test_delete_skill_returns_false_when_missing(sg, mock_memgraph):
     mock_memgraph.query.return_value = [{"deleted": 0}]
     assert sg.delete_skill("s1") is False
+
+
+# ------------------------------------------------------------------
+# Usage
+# ------------------------------------------------------------------
+
+
+def test_record_skill_usage_matches_existing_skill_by_default(sg, mock_memgraph):
+    sg.record_skill_usage(
+        session_id="s1",
+        skill_name="cypher-basics",
+        action="get_skill",
+        timestamp="2026-04-30T00:00:00+00:00",
+    )
+
+    call = mock_memgraph.query.call_args
+    assert "MATCH (sk:Skill {name: $skill_name})" in call.args[0]
+    assert "MERGE (sess)-[r:USED_SKILL]->(sk)" in call.args[0]
+    assert call.kwargs["params"]["skill_name"] == "cypher-basics"
+    assert call.kwargs["params"]["action"] == "get_skill"
+
+
+def test_record_skill_usage_can_create_missing_skill(sg, mock_memgraph):
+    sg.record_skill_usage(
+        session_id="s1",
+        skill_name="memgraph-console",
+        action="read_skill_file",
+        timestamp="2026-04-30T00:00:00+00:00",
+        create_missing=True,
+        description="Use mgconsole",
+        content="# Skill",
+        source_path="/tmp/skills/memgraph-console/SKILL.md",
+        metadata={"source": "local_skill_file"},
+        tags=["memgraph"],
+    )
+
+    call = mock_memgraph.query.call_args
+    assert "MERGE (sk:Skill {name: $skill_name})" in call.args[0]
+    assert "ON CREATE SET sk.description = $description" in call.args[0]
+    assert "UNWIND $tags AS tag_name" in call.args[0]
+    params = call.kwargs["params"]
+    assert params["skill_name"] == "memgraph-console"
+    assert params["description"] == "Use mgconsole"
+    assert params["metadata"] == json.dumps({"source": "local_skill_file"})
+    assert params["tags"] == ["memgraph"]
 
 
 # ------------------------------------------------------------------
