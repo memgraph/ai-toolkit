@@ -1,9 +1,51 @@
 import os
+from collections.abc import Mapping
 from typing import Any
 
 from neo4j import GraphDatabase
 
 from ..utils.serialization import serialize_record_data
+
+MEMGRAPH_ENV_DEFAULTS = {
+    "MEMGRAPH_URL": "bolt://localhost:7687",
+    "MEMGRAPH_USER": "",
+    "MEMGRAPH_PASSWORD": "",
+    "MEMGRAPH_DATABASE": "memgraph",
+}
+MEMGRAPH_ENV_KEYS = tuple(MEMGRAPH_ENV_DEFAULTS)
+
+
+def memgraph_env(
+    *,
+    url: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    database: str | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Return canonical Memgraph connection environment values.
+
+    Explicit values win, then environment variables, then Memgraph defaults.
+    The returned keys are suitable for passing through command hooks or other
+    subprocess boundaries.
+    """
+    env = os.environ if environ is None else environ
+    return {
+        "MEMGRAPH_URL": url if url is not None else env.get("MEMGRAPH_URL", MEMGRAPH_ENV_DEFAULTS["MEMGRAPH_URL"]),
+        "MEMGRAPH_USER": (
+            username if username is not None else env.get("MEMGRAPH_USER", MEMGRAPH_ENV_DEFAULTS["MEMGRAPH_USER"])
+        ),
+        "MEMGRAPH_PASSWORD": (
+            password
+            if password is not None
+            else env.get("MEMGRAPH_PASSWORD", MEMGRAPH_ENV_DEFAULTS["MEMGRAPH_PASSWORD"])
+        ),
+        "MEMGRAPH_DATABASE": (
+            database
+            if database is not None
+            else env.get("MEMGRAPH_DATABASE", MEMGRAPH_ENV_DEFAULTS["MEMGRAPH_DATABASE"])
+        ),
+    }
 
 
 class Memgraph:
@@ -40,17 +82,18 @@ class Memgraph:
             user_agent: Client name sent to the server (e.g. "mcp-memgraph", "langchain-memgraph", "sql2graph", etc.)
         """
 
-        # Load from environment variables with fallbacks
-        url = url or os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687")
-        username = username or os.environ.get("MEMGRAPH_USER", "")
-        password = password or os.environ.get("MEMGRAPH_PASSWORD", "")
+        # Load from the shared Memgraph environment contract with fallbacks.
+        env = memgraph_env(url=url, username=username, password=password, database=database)
+        url = env["MEMGRAPH_URL"]
+        username = env["MEMGRAPH_USER"]
+        password = env["MEMGRAPH_PASSWORD"]
 
         config = dict(driver_config or {})
         config.setdefault("user_agent", user_agent or self.DEFAULT_USER_AGENT)
 
         self.driver = GraphDatabase.driver(url, auth=(username, password), **config)
 
-        self.database = database or os.environ.get("MEMGRAPH_DATABASE", "memgraph")
+        self.database = env["MEMGRAPH_DATABASE"]
 
         try:
             import neo4j
