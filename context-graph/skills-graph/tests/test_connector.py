@@ -96,9 +96,6 @@ def test_exec_command_reading_skill_file_is_recorded(tmp_path):
         """---
 name: memgraph-console
 description: Use mgconsole with Memgraph
-tags:
-  - memgraph
-  - cypher
 ---
 
 # Memgraph Console
@@ -124,7 +121,6 @@ tags:
     assert params["create_missing"] is True
     assert params["description"] == "Use mgconsole with Memgraph"
     assert params["source_path"] == str(skill_file)
-    assert params["tags"] == ["memgraph", "cypher"]
 
 
 def test_non_skill_file_read_is_ignored():

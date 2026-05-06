@@ -61,7 +61,6 @@ class SkillGraphConnector(GraphConnector):
             "delete_skill",
             "list_skills",
             "search_skills",
-            "search_by_tags",
             "search_by_name",
         }
     )
@@ -115,7 +114,6 @@ class SkillGraphConnector(GraphConnector):
                 description=metadata.get("description", ""),
                 content=metadata.get("content", ""),
                 source_path=str(skill_file),
-                tags=metadata.get("tags", []),
                 metadata=metadata.get("metadata", {}),
             )
             return
@@ -132,7 +130,7 @@ class SkillGraphConnector(GraphConnector):
     def _on_tool_end(self, event: ToolEndEvent) -> None:
         """A search/list tool returned — record which skills appeared."""
         operation_name = self._operation_name(event.tool_name)
-        if operation_name not in {"list_skills", "search_skills", "search_by_tags", "search_by_name"}:
+        if operation_name not in {"list_skills", "search_skills", "search_by_name"}:
             return
         for name in self._extract_result_skill_names(event.result):
             self._record_skill_access(
@@ -263,7 +261,6 @@ class SkillGraphConnector(GraphConnector):
         metadata: dict[str, Any] = {
             "content": "",
             "metadata": {"source": "local_skill_file", "source_path": str(path)},
-            "tags": [],
         }
         try:
             content = path.read_text(encoding="utf-8")
@@ -275,18 +272,14 @@ class SkillGraphConnector(GraphConnector):
         frontmatter = _parse_frontmatter(content)
         name = frontmatter.get("name")
         description = frontmatter.get("description")
-        tags = frontmatter.get("tags")
         if isinstance(name, str) and name:
             metadata["name"] = name
         else:
             metadata["name"] = path.parent.name
         if isinstance(description, str):
             metadata["description"] = description
-        if isinstance(tags, list):
-            metadata["tags"] = [tag for tag in tags if isinstance(tag, str) and tag]
-        metadata["metadata"].update(
-            {key: str(value) for key, value in frontmatter.items() if key not in {"name", "description", "tags"}}
-        )
+        metadata_keys = {"version", "category", "author", "last_updated", "license", "compatibility"}
+        metadata["metadata"].update({key: str(value) for key, value in frontmatter.items() if key in metadata_keys})
         return metadata
 
     def _record_skill_access(
@@ -301,7 +294,6 @@ class SkillGraphConnector(GraphConnector):
         content: str = "",
         source_path: str | None = None,
         metadata: dict[str, str] | None = None,
-        tags: list[str] | None = None,
     ) -> None:
         """Persist a ``(:Session)-[:USED_SKILL]->(:Skill)`` edge."""
         self._graph.record_skill_usage(
@@ -314,7 +306,6 @@ class SkillGraphConnector(GraphConnector):
             content=content,
             source_path=source_path,
             metadata=metadata,
-            tags=tags,
         )
 
 

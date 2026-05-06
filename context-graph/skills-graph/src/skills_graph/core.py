@@ -9,8 +9,8 @@ from .models import Skill
 class SkillGraph:
     """Persist, retrieve and evolve AI skills in Memgraph.
 
-    Stores skills as (:Skill) nodes with optional (:Tag) relationships
-    and (:Skill)-[:DEPENDS_ON]->(:Skill) dependency edges.
+    Stores skills as (:Skill) nodes with optional
+    (:Skill)-[:DEPENDS_ON]->(:Skill) dependency edges.
     """
 
     def __init__(self, memgraph: Memgraph | None = None, **kwargs):
@@ -31,13 +31,11 @@ class SkillGraph:
         """Create constraints and indexes required for skill storage."""
         self._db.query("CREATE CONSTRAINT ON (s:Skill) ASSERT s.name IS UNIQUE;")
         self._db.query("CREATE INDEX ON :Skill(name);")
-        self._db.query("CREATE INDEX ON :Tag(name);")
 
     def drop(self) -> None:
         """Remove all skill-related constraints and indexes."""
         self._db.query("DROP CONSTRAINT ON (s:Skill) ASSERT s.name IS UNIQUE;")
         self._db.query("DROP INDEX ON :Skill(name);")
-        self._db.query("DROP INDEX ON :Tag(name);")
 
     # ------------------------------------------------------------------
     # CRUD
@@ -46,8 +44,7 @@ class SkillGraph:
     def add_skill(self, skill: Skill) -> Skill:
         """Persist a skill to Memgraph.
 
-        Creates or replaces the :Skill node fields, links it to :Tag nodes
-        (MERGE-ed), and returns the stored skill.
+        Creates or replaces the :Skill node fields and returns the stored skill.
         """
         self._db.query(
             """
@@ -74,25 +71,13 @@ class SkillGraph:
             },
         )
 
-        if skill.tags:
-            self._db.query(
-                """
-                MATCH (s:Skill {name: $name})
-                UNWIND $tags AS tag_name
-                MERGE (t:Tag {name: tag_name})
-                MERGE (s)-[:HAS_TAG]->(t)
-                """,
-                params={"name": skill.name, "tags": skill.tags},
-            )
-
         return skill
 
     def get_skill(self, name: str) -> Skill | None:
-        """Retrieve a single skill by name, including its tags."""
+        """Retrieve a single skill by name."""
         rows = self._db.query(
             """
             MATCH (s:Skill {name: $name})
-            OPTIONAL MATCH (s)-[:HAS_TAG]->(t:Tag)
             RETURN s.name AS name,
                    s.description AS description,
                    s.content AS content,
@@ -101,8 +86,7 @@ class SkillGraph:
                    s.metadata AS metadata,
                    s.allowed_tools AS allowed_tools,
                    s.created_at AS created_at,
-                   s.updated_at AS updated_at,
-                   collect(t.name) AS tags
+                   s.updated_at AS updated_at
             """,
             params={"name": name},
         )
@@ -123,7 +107,6 @@ class SkillGraph:
         compatibility: str | None = None,
         metadata: dict[str, str] | None = None,
         allowed_tools: list[str] | None = None,
-        tags: list[str] | None = None,
     ) -> Skill | None:
         """Update an existing skill. Only provided fields are changed."""
         sets: list[str] = []
@@ -158,27 +141,10 @@ class SkillGraph:
             params=params,
         )
 
-        if tags is not None:
-            # Remove old tag relationships and set new ones
-            self._db.query(
-                "MATCH (s:Skill {name: $name})-[r:HAS_TAG]->() DELETE r",
-                params={"name": name},
-            )
-            if tags:
-                self._db.query(
-                    """
-                    MATCH (s:Skill {name: $name})
-                    UNWIND $tags AS tag_name
-                    MERGE (t:Tag {name: tag_name})
-                    MERGE (s)-[:HAS_TAG]->(t)
-                    """,
-                    params={"name": name, "tags": tags},
-                )
-
         return self.get_skill(name)
 
     def delete_skill(self, name: str) -> bool:
-        """Delete a skill and its tag relationships. Returns True if deleted."""
+        """Delete a skill and its relationships. Returns True if deleted."""
         rows = self._db.query(
             """
             MATCH (s:Skill {name: $name})
@@ -201,7 +167,6 @@ class SkillGraph:
         content: str = "",
         source_path: str | None = None,
         metadata: dict[str, str] | None = None,
-        tags: list[str] | None = None,
     ) -> None:
         """Record that a session used a skill.
 
@@ -218,7 +183,6 @@ class SkillGraph:
             "description": description,
             "content": content,
             "metadata": json.dumps(metadata or {}),
-            "tags": tags or [],
             "source_path": source_path,
         }
 
@@ -245,10 +209,6 @@ class SkillGraph:
                 ON MATCH SET r.last_access = $timestamp,
                              r.access_count = r.access_count + 1,
                              r.actions = r.actions + $action
-                WITH sk
-                UNWIND $tags AS tag_name
-                MERGE (t:Tag {name: tag_name})
-                MERGE (sk)-[:HAS_TAG]->(t)
                 """,
                 params=params,
             )
@@ -279,7 +239,6 @@ class SkillGraph:
         rows = self._db.query(
             """
             MATCH (s:Skill)
-            OPTIONAL MATCH (s)-[:HAS_TAG]->(t:Tag)
             RETURN s.name AS name,
                    s.description AS description,
                    s.content AS content,
@@ -288,35 +247,9 @@ class SkillGraph:
                    s.metadata AS metadata,
                    s.allowed_tools AS allowed_tools,
                    s.created_at AS created_at,
-                   s.updated_at AS updated_at,
-                   collect(t.name) AS tags
+                   s.updated_at AS updated_at
             ORDER BY name
             """
-        )
-        return [self._row_to_skill(r) for r in rows]
-
-    def search_by_tags(self, tags: list[str]) -> list[Skill]:
-        """Find skills that have *all* of the given tags."""
-        rows = self._db.query(
-            """
-            MATCH (s:Skill)-[:HAS_TAG]->(mt:Tag)
-            WHERE mt.name IN $tags
-            WITH s, count(DISTINCT mt) AS matched
-            WHERE matched = size($tags)
-            OPTIONAL MATCH (s)-[:HAS_TAG]->(t:Tag)
-            RETURN s.name AS name,
-                   s.description AS description,
-                   s.content AS content,
-                   s.license AS license,
-                   s.compatibility AS compatibility,
-                   s.metadata AS metadata,
-                   s.allowed_tools AS allowed_tools,
-                   s.created_at AS created_at,
-                   s.updated_at AS updated_at,
-                   collect(t.name) AS tags
-            ORDER BY name
-            """,
-            params={"tags": tags},
         )
         return [self._row_to_skill(r) for r in rows]
 
@@ -326,7 +259,6 @@ class SkillGraph:
             """
             MATCH (s:Skill)
             WHERE toLower(s.name) CONTAINS toLower($pattern)
-            OPTIONAL MATCH (s)-[:HAS_TAG]->(t:Tag)
             RETURN s.name AS name,
                    s.description AS description,
                    s.content AS content,
@@ -335,8 +267,7 @@ class SkillGraph:
                    s.metadata AS metadata,
                    s.allowed_tools AS allowed_tools,
                    s.created_at AS created_at,
-                   s.updated_at AS updated_at,
-                   collect(t.name) AS tags
+                   s.updated_at AS updated_at
             ORDER BY name
             """,
             params={"pattern": pattern},
@@ -372,7 +303,6 @@ class SkillGraph:
         rows = self._db.query(
             """
             MATCH (a:Skill {name: $skill_name})-[:DEPENDS_ON]->(s:Skill)
-            OPTIONAL MATCH (s)-[:HAS_TAG]->(t:Tag)
             RETURN s.name AS name,
                    s.description AS description,
                    s.content AS content,
@@ -381,8 +311,7 @@ class SkillGraph:
                    s.metadata AS metadata,
                    s.allowed_tools AS allowed_tools,
                    s.created_at AS created_at,
-                   s.updated_at AS updated_at,
-                   collect(t.name) AS tags
+                   s.updated_at AS updated_at
             ORDER BY name
             """,
             params={"skill_name": skill_name},
@@ -394,7 +323,6 @@ class SkillGraph:
         rows = self._db.query(
             """
             MATCH (s:Skill)-[:DEPENDS_ON]->(b:Skill {name: $skill_name})
-            OPTIONAL MATCH (s)-[:HAS_TAG]->(t:Tag)
             RETURN s.name AS name,
                    s.description AS description,
                    s.content AS content,
@@ -403,8 +331,7 @@ class SkillGraph:
                    s.metadata AS metadata,
                    s.allowed_tools AS allowed_tools,
                    s.created_at AS created_at,
-                   s.updated_at AS updated_at,
-                   collect(t.name) AS tags
+                   s.updated_at AS updated_at
             ORDER BY name
             """,
             params={"skill_name": skill_name},
@@ -431,7 +358,6 @@ class SkillGraph:
             compatibility=row.get("compatibility"),
             metadata=metadata,
             allowed_tools=allowed_tools,
-            tags=[t for t in row["tags"] if t is not None],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
