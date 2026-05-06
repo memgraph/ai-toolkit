@@ -357,7 +357,7 @@ All runtime adapters emit runtime-agnostic `Event` dataclasses:
 ### Runtime Adapters
 
 | Adapter | Runtime Source | Hook Mechanism |
-|---------|-----|----------------|
+|---------|----------------|----------------|
 | `ClaudeAdapter` | Claude Agent SDK | Dict of `HookMatcher` callbacks |
 | `OpenAIAdapter` | OpenAI Agents SDK | `RunHooksBase` subclass |
 | `CodexHooksAdapter` | OpenAI Codex | Command hooks reading JSON from stdin |
