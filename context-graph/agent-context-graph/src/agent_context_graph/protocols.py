@@ -1,7 +1,7 @@
-"""Protocols (interfaces) for SDK adapters and graph connectors.
+"""Protocols (interfaces) for runtime adapters and graph connectors.
 
 These are the two extension points of agent-context-graph:
-1. **SDKAdapter** — translates SDK-specific callbacks into ``Event`` objects.
+1. **RuntimeAdapter** — translates runtime hooks/callbacks into ``Event`` objects.
 2. **GraphConnector** — receives ``Event`` objects and writes to a graph component.
 """
 
@@ -39,17 +39,20 @@ class GraphConnector(ABC):
         return True
 
 
-class SDKAdapter(ABC):
-    """Translates SDK-specific callbacks into :class:`Event` objects.
+class RuntimeAdapter(ABC):
+    """Translates runtime-specific hooks or callbacks into :class:`Event` objects.
 
-    Subclass this for each agent SDK (Claude, OpenAI, …).
+    Subclass this for each agent runtime integration, including agent
+    development SDKs (Claude, OpenAI Agents SDK, ...) and command-hook
+    runtimes (Codex, Claude Code, ...).
     """
 
     @abstractmethod
-    def get_sdk_hooks(self) -> Any:
-        """Return the SDK-specific hook object(s).
+    def get_runtime_hooks(self) -> Any:
+        """Return the runtime-specific hook object(s).
 
         For Claude Agent SDK this is a ``dict[str, list[HookMatcher]]``.
         For OpenAI Agents SDK this is a ``RunHooksBase`` subclass.
+        For command-hook runtimes this may be a generated hook config shape.
         The caller passes the returned value to the SDK's run API.
         """

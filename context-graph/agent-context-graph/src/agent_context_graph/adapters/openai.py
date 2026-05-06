@@ -10,7 +10,7 @@ Usage::
 
     link = AgentLink()
     adapter = OpenAIAdapter(link, session_id="s-1")
-    hooks = adapter.get_sdk_hooks()
+    hooks = adapter.get_runtime_hooks()
 
     # Pass hooks to Runner
     result = await Runner.run(agent, "Hello", hooks=hooks)
@@ -33,7 +33,7 @@ from agent_context_graph.events import (
     ToolEndEvent,
     ToolStartEvent,
 )
-from agent_context_graph.protocols import SDKAdapter
+from agent_context_graph.protocols import RuntimeAdapter
 
 if TYPE_CHECKING:
     from agent_context_graph.link import AgentLink
@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 _SOURCE = "openai"
 
 
-class OpenAIAdapter(SDKAdapter):
+class OpenAIAdapter(RuntimeAdapter):
     """Adapter that converts OpenAI Agents SDK lifecycle hooks into agent-context-graph events.
 
     Args:
@@ -75,7 +75,7 @@ class OpenAIAdapter(SDKAdapter):
                 )
             )
 
-    def get_sdk_hooks(self) -> Any:
+    def get_runtime_hooks(self) -> Any:
         """Return a ``RunHooksBase`` subclass for ``Runner.run(..., hooks=...)``."""
         try:
             from agents.lifecycle import RunHooksBase

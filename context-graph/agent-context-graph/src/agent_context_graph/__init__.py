@@ -1,11 +1,11 @@
-"""Agent Context Graph: Connect agent SDKs to context-graph components.
+"""Agent Context Graph: Connect agent runtimes to context-graph components.
 
-Agent Context Graph provides a generic adapter layer that bridges any agent SDK
-(Claude Agent SDK, OpenAI Agents SDK, etc.) to any context-graph
-component (actions-graph, skills-graph, etc.).
+Agent Context Graph provides a generic adapter layer that bridges any agent
+development SDK or runtime hook source to any context-graph component
+(actions-graph, skills-graph, etc.).
 
 Architecture:
-    SDK Adapter (Claude, OpenAI, ...) → Event Protocol → Graph Connector(s)
+    Runtime Adapter (Claude, OpenAI, Codex, ...) → Event Protocol → Graph Connector(s)
 
     Adapters live here.  Connectors live in each graph library.
 
@@ -18,7 +18,7 @@ Quick Start::
     link = AgentLink()
     link.add_connector(SkillGraphConnector(skill_graph))
     adapter = ClaudeAdapter(link, session_id="s-1")
-    hooks = adapter.get_sdk_hooks()
+    hooks = adapter.get_runtime_hooks()
 """
 
 from .events import (
@@ -37,7 +37,7 @@ from .events import (
     ToolStartEvent,
 )
 from .link import AgentLink
-from .protocols import GraphConnector, SDKAdapter
+from .protocols import GraphConnector, RuntimeAdapter
 
 __all__ = [
     "AgentEndEvent",
@@ -51,7 +51,7 @@ __all__ = [
     "LLMEndEvent",
     "LLMStartEvent",
     "MessageEvent",
-    "SDKAdapter",
+    "RuntimeAdapter",
     "SessionEndEvent",
     "SessionStartEvent",
     "ToolEndEvent",
