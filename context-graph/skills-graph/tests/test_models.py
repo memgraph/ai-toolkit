@@ -142,10 +142,6 @@ class TestOptionalFieldDefaults:
         s = Skill(name="s1", description="does stuff", content="body")
         assert s.allowed_tools == []
 
-    def test_tags_default_empty(self):
-        s = Skill(name="s1", description="does stuff", content="body")
-        assert s.tags == []
-
 
 # ------------------------------------------------------------------
 # Full construction with all fields
@@ -162,14 +158,12 @@ class TestFullConstruction:
             compatibility="Requires Python 3.10+",
             metadata={"author": "example-org", "version": "1.0"},
             allowed_tools=["Bash(git:*)", "Read"],
-            tags=["pdf", "extraction"],
         )
         assert s.name == "pdf-processing"
         assert s.license == "Apache-2.0"
         assert s.compatibility == "Requires Python 3.10+"
         assert s.metadata == {"author": "example-org", "version": "1.0"}
         assert s.allowed_tools == ["Bash(git:*)", "Read"]
-        assert s.tags == ["pdf", "extraction"]
         assert s.created_at is not None
         assert s.updated_at is not None
 

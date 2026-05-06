@@ -21,6 +21,8 @@ Usage::
 from __future__ import annotations
 
 import json
+import shlex
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from agent_context_graph.events import Event, EventType, ToolEndEvent, ToolStartEvent
@@ -35,6 +37,7 @@ _SUPPORTED_EVENTS = {
     EventType.TOOL_END,
 }
 _MAX_RESULT_DEPTH = 10
+_SKILL_FILE_NAME = "SKILL.md"
 
 
 class SkillGraphConnector(GraphConnector):
@@ -58,7 +61,6 @@ class SkillGraphConnector(GraphConnector):
             "delete_skill",
             "list_skills",
             "search_skills",
-            "search_by_tags",
             "search_by_name",
         }
     )
@@ -79,7 +81,11 @@ class SkillGraphConnector(GraphConnector):
     def supports(self, event: Event) -> bool:
         if event.event_type not in _SUPPORTED_EVENTS:
             return False
-        if isinstance(event, ToolStartEvent | ToolEndEvent):
+        if isinstance(event, ToolStartEvent):
+            if self._operation_name(event.tool_name) in self._skill_tool_names:
+                return True
+            return self._extract_skill_file_read(event.tool_input) is not None
+        if isinstance(event, ToolEndEvent):
             return self._operation_name(event.tool_name) in self._skill_tool_names
         return False
 
@@ -95,6 +101,23 @@ class SkillGraphConnector(GraphConnector):
 
     def _on_tool_start(self, event: ToolStartEvent) -> None:
         """A skill-related tool was invoked — record the access."""
+        skill_file = self._extract_skill_file_read(event.tool_input)
+        if skill_file is not None:
+            metadata = self._metadata_from_skill_file(skill_file)
+            skill_name = metadata.get("name") or skill_file.parent.name
+            self._record_skill_access(
+                session_id=event.session_id,
+                skill_name=skill_name,
+                action="read_skill_file",
+                timestamp=event.timestamp,
+                create_missing=True,
+                description=metadata.get("description", ""),
+                content=metadata.get("content", ""),
+                source_path=str(skill_file),
+                metadata=metadata.get("metadata", {}),
+            )
+            return
+
         skill_name = self._extract_skill_name(event.tool_input)
         if skill_name:
             self._record_skill_access(
@@ -107,7 +130,7 @@ class SkillGraphConnector(GraphConnector):
     def _on_tool_end(self, event: ToolEndEvent) -> None:
         """A search/list tool returned — record which skills appeared."""
         operation_name = self._operation_name(event.tool_name)
-        if operation_name not in {"list_skills", "search_skills", "search_by_tags", "search_by_name"}:
+        if operation_name not in {"list_skills", "search_skills", "search_by_name"}:
             return
         for name in self._extract_result_skill_names(event.result):
             self._record_skill_access(
@@ -186,6 +209,79 @@ class SkillGraphConnector(GraphConnector):
         except json.JSONDecodeError:
             return None
 
+    @classmethod
+    def _extract_skill_file_read(cls, tool_input: Any) -> Path | None:
+        for value in cls._iter_string_values(tool_input):
+            for candidate in cls._candidate_paths(value):
+                skill_file = cls._skill_file_from_candidate(candidate)
+                if skill_file is not None:
+                    return skill_file
+        return None
+
+    @classmethod
+    def _iter_string_values(cls, value: Any, *, _depth: int = 0) -> list[str]:
+        if _depth > _MAX_RESULT_DEPTH:
+            return []
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, list):
+            values: list[str] = []
+            for item in value:
+                values.extend(cls._iter_string_values(item, _depth=_depth + 1))
+            return values
+        if isinstance(value, dict):
+            values = []
+            for item in value.values():
+                values.extend(cls._iter_string_values(item, _depth=_depth + 1))
+            return values
+        return []
+
+    @staticmethod
+    def _candidate_paths(value: str) -> list[str]:
+        try:
+            candidates = shlex.split(value)
+        except ValueError:
+            candidates = value.split()
+        return candidates or [value]
+
+    @staticmethod
+    def _skill_file_from_candidate(candidate: str) -> Path | None:
+        if _SKILL_FILE_NAME not in candidate:
+            return None
+
+        path = Path(candidate.strip())
+        if path.name != _SKILL_FILE_NAME:
+            return None
+        if path.parent.name == "":
+            return None
+        return path
+
+    @staticmethod
+    def _metadata_from_skill_file(path: Path) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "content": "",
+            "metadata": {"source": "local_skill_file", "source_path": str(path)},
+        }
+        try:
+            content = path.read_text(encoding="utf-8")
+        except OSError:
+            metadata["name"] = path.parent.name
+            return metadata
+
+        metadata["content"] = content
+        frontmatter = _parse_frontmatter(content)
+        name = frontmatter.get("name")
+        description = frontmatter.get("description")
+        if isinstance(name, str) and name:
+            metadata["name"] = name
+        else:
+            metadata["name"] = path.parent.name
+        if isinstance(description, str):
+            metadata["description"] = description
+        metadata_keys = {"version", "category", "author", "last_updated", "license", "compatibility"}
+        metadata["metadata"].update({key: str(value) for key, value in frontmatter.items() if key in metadata_keys})
+        return metadata
+
     def _record_skill_access(
         self,
         *,
@@ -193,25 +289,52 @@ class SkillGraphConnector(GraphConnector):
         skill_name: str,
         action: str,
         timestamp: str,
+        create_missing: bool = False,
+        description: str = "",
+        content: str = "",
+        source_path: str | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> None:
         """Persist a ``(:Session)-[:USED_SKILL]->(:Skill)`` edge."""
-        self._graph._db.query(
-            """
-            MERGE (sess:Session {session_id: $session_id})
-            WITH sess
-            MATCH (sk:Skill {name: $skill_name})
-            MERGE (sess)-[r:USED_SKILL]->(sk)
-            ON CREATE SET r.first_access = $timestamp,
-                          r.access_count = 1,
-                          r.actions = [$action]
-            ON MATCH SET r.last_access = $timestamp,
-                         r.access_count = r.access_count + 1,
-                         r.actions = r.actions + $action
-            """,
-            params={
-                "session_id": session_id,
-                "skill_name": skill_name,
-                "timestamp": timestamp,
-                "action": action,
-            },
+        self._graph.record_skill_usage(
+            session_id=session_id,
+            skill_name=skill_name,
+            action=action,
+            timestamp=timestamp,
+            create_missing=create_missing,
+            description=description,
+            content=content,
+            source_path=source_path,
+            metadata=metadata,
         )
+
+
+def _parse_frontmatter(content: str) -> dict[str, Any]:
+    lines = content.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+
+    data: dict[str, Any] = {}
+    key_for_list: str | None = None
+    for line in lines[1:]:
+        stripped = line.strip()
+        if stripped == "---":
+            return data
+        if not stripped:
+            continue
+        if stripped.startswith("- ") and key_for_list:
+            data.setdefault(key_for_list, []).append(stripped[2:].strip().strip("\"'"))
+            continue
+        if ":" not in line:
+            key_for_list = None
+            continue
+        key, value = line.split(":", maxsplit=1)
+        key = key.strip()
+        value = value.strip()
+        if value:
+            data[key] = value.strip("\"'")
+            key_for_list = None
+        else:
+            data[key] = []
+            key_for_list = key
+    return {}

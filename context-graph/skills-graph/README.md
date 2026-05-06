@@ -6,8 +6,6 @@ A small library to persist, retrieve and evolve AI skills in [Memgraph](https://
 
 ```
 (:Skill {name, description, content, created_at, updated_at})
-(:Tag {name})
-(:Skill)-[:HAS_TAG]->(:Tag)
 (:Skill)-[:DEPENDS_ON]->(:Skill)
 ```
 
@@ -27,14 +25,12 @@ sg.add_skill(Skill(
     name="memgraph-cypher",
     description="Writing Cypher queries for Memgraph",
     content="# Cypher for Memgraph\n\nUse MATCH, CREATE, MERGE ...",
-    tags=["cypher", "memgraph"],
 ))
 
 # Retrieve by name
 skill = sg.get_skill("memgraph-cypher")
 
 # Search
-sg.search_by_tags(["cypher"])
 sg.search_by_name("memgraph")
 
 # Dependencies
@@ -45,7 +41,7 @@ deps = sg.get_dependencies("advanced-cypher")
 all_skills = sg.list_skills()
 
 # Update
-sg.update_skill("memgraph-cypher", content="updated content", tags=["cypher"])
+sg.update_skill("memgraph-cypher", content="updated content")
 
 # Delete
 sg.delete_skill("memgraph-cypher")
