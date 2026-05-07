@@ -48,12 +48,6 @@ This repo exposes a public Git-backed marketplace at:
 Register the marketplace from GitHub:
 
 ```bash
-codex plugin marketplace add memgraph/ai-toolkit --ref potential-plugin-integration --sparse .agents/plugins
-```
-
-After this branch is merged, use:
-
-```bash
 codex plugin marketplace add memgraph/ai-toolkit --ref main --sparse .agents/plugins
 ```
 

@@ -11,7 +11,7 @@
         "source": "git-subdir",
         "url": "https://github.com/memgraph/ai-toolkit.git",
         "path": "context-graph/plugins/agent-context-graph-claude",
-        "ref": "potential-plugin-integration"
+        "ref": "main"
       },
       "description": "Capture Claude Code runtime activity through Agent Context Graph hooks.",
       "version": "0.1.1",

@@ -10,7 +10,7 @@
         "source": "git-subdir",
         "url": "https://github.com/memgraph/ai-toolkit.git",
         "path": "./context-graph/plugins/agent-context-graph-codex",
-        "ref": "potential-plugin-integration"
+        "ref": "main"
       },
       "policy": {
         "installation": "AVAILABLE",

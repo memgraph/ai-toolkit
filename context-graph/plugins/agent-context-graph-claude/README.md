@@ -42,13 +42,13 @@ From the plugin directory:
 Register this repo as a Claude Code marketplace:
 
 ```text
-/plugin marketplace add memgraph/ai-toolkit --ref potential-plugin-integration
+/plugin marketplace add memgraph/ai-toolkit --ref main
 ```
 
 CLI equivalent:
 
 ```bash
-claude plugin marketplace add memgraph/ai-toolkit@potential-plugin-integration --sparse .claude-plugin
+claude plugin marketplace add memgraph/ai-toolkit@main --sparse .claude-plugin
 ```
 
 Install:
@@ -56,7 +56,5 @@ Install:
 ```text
 /plugin install agent-context-graph-claude@context-graph-plugins
 ```
-
-After this branch is merged, use the default branch instead of `--ref potential-plugin-integration`.
 
 This is a Claude Code marketplace only. Codex uses the separate marketplace at `.agents/plugins/marketplace.json`.

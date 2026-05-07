@@ -164,13 +164,11 @@ pipx inject agent-context-graph "skills-graph[agent-context-graph]"
 
 Then install the Codex plugin through a user plugin marketplace. Keep graph credentials in the process environment, not in the plugin hook file.
 
-For a public Git-backed marketplace install from this branch:
+For a public Git-backed marketplace install:
 
 ```bash
-codex plugin marketplace add memgraph/ai-toolkit --ref potential-plugin-integration --sparse .agents/plugins
+codex plugin marketplace add memgraph/ai-toolkit --ref main --sparse .agents/plugins
 ```
-
-After the branch is merged, use `--ref main`.
 
 Local `.codex/` files remain useful for source development and per-project experiments. This repository ignores `.codex/`.
 
@@ -184,10 +182,10 @@ The runtime-plugin flow is:
 Claude Code Plugin -> Claude Code Runtime Adapter -> Event Protocol -> Graph Connector -> Memgraph
 ```
 
-For a public Git-backed marketplace install from this branch, add the marketplace inside Claude Code:
+For a public Git-backed marketplace install, add the marketplace inside Claude Code:
 
 ```text
-/plugin marketplace add memgraph/ai-toolkit --ref potential-plugin-integration
+/plugin marketplace add memgraph/ai-toolkit --ref main
 ```
 
 Then install:
@@ -195,8 +193,6 @@ Then install:
 ```text
 /plugin install agent-context-graph-claude@context-graph-plugins
 ```
-
-After the branch is merged, use the default branch instead of `--ref potential-plugin-integration`.
 
 The streamlined setup only needs two pieces of local information:
 
