@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import subprocess
 import sys
 from types import ModuleType
 
@@ -81,6 +82,148 @@ def test_top_level_cli_doctor_fails_when_check_fails(monkeypatch, capsys):
     assert top_level_main(["doctor", "--runtime", "codex", "--connector", "skills-graph"]) == 1
 
     assert "FAIL connector:skills-graph" in capsys.readouterr().out
+
+
+def test_top_level_cli_bootstrap_installs_and_runs_doctor(monkeypatch, capsys):
+    commands = []
+    doctor_args = []
+
+    monkeypatch.setattr("agent_context_graph.cli.shutil.which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr("agent_context_graph.cli._memgraph_reachable", lambda host, port: True)
+
+    def fake_run(command, *, check):
+        commands.append(command)
+        assert check is True
+        return subprocess.CompletedProcess(command, 0)
+
+    def fake_doctor(args):
+        doctor_args.extend(args)
+        return 0
+
+    monkeypatch.setattr("agent_context_graph.cli.subprocess.run", fake_run)
+    monkeypatch.setattr("agent_context_graph.cli._doctor", fake_doctor)
+
+    assert top_level_main(["bootstrap", "--runtime", "codex", "--connector", "skills-graph"]) == 0
+
+    assert commands == [
+        [
+            "/bin/uv",
+            "tool",
+            "install",
+            "agent-context-graph",
+            "--with",
+            "skills-graph[agent-context-graph]",
+            "--reinstall",
+        ]
+    ]
+    assert doctor_args == ["--runtime", "codex", "--connector", "skills-graph"]
+    output = capsys.readouterr().out
+    assert "OK uv: /bin/uv" in output
+    assert "OK memgraph: bolt://localhost:7687 reachable" in output
+
+
+def test_top_level_cli_bootstrap_no_reinstall_omits_reinstall(monkeypatch):
+    commands = []
+
+    monkeypatch.setattr("agent_context_graph.cli.shutil.which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr("agent_context_graph.cli._memgraph_reachable", lambda host, port: True)
+    monkeypatch.setattr("agent_context_graph.cli._doctor", lambda args: 0)
+
+    def fake_run(command, *, check):
+        commands.append(command)
+        assert check is True
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr("agent_context_graph.cli.subprocess.run", fake_run)
+
+    assert top_level_main(["bootstrap", "--runtime", "codex", "--connector", "skills-graph", "--no-reinstall"]) == 0
+
+    assert "--reinstall" not in commands[0]
+
+
+def test_top_level_cli_bootstrap_reports_memgraph_start_command(monkeypatch, capsys):
+    monkeypatch.setattr("agent_context_graph.cli.shutil.which", lambda name: f"/bin/{name}" if name == "uv" else None)
+    monkeypatch.setattr("agent_context_graph.cli._memgraph_reachable", lambda host, port: False)
+
+    assert top_level_main(["bootstrap", "--runtime", "claude-code", "--connector", "skills-graph"]) == 1
+
+    error = capsys.readouterr().err
+    assert "FAIL memgraph: bolt://localhost:7687 is not reachable" in error
+    assert "docker run --rm -p 7687:7687 memgraph/memgraph" in error
+
+
+def test_top_level_cli_bootstrap_reports_missing_uv(monkeypatch, capsys):
+    monkeypatch.setattr("agent_context_graph.cli.shutil.which", lambda name: None)
+
+    assert top_level_main(["bootstrap", "--runtime", "codex", "--connector", "skills-graph"]) == 1
+
+    error = capsys.readouterr().err
+    assert "FAIL uv: not found on PATH" in error
+    assert "curl -LsSf https://astral.sh/uv/install.sh | sh" in error
+
+
+def test_top_level_cli_bootstrap_reports_unknown_connector(monkeypatch, capsys):
+    monkeypatch.setattr("agent_context_graph.cli.shutil.which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr("agent_context_graph.cli._memgraph_reachable", lambda host, port: True)
+
+    assert top_level_main(["bootstrap", "--runtime", "codex", "--connector", "typo-graph"]) == 1
+
+    assert "FAIL connector:typo-graph: unsupported connector" in capsys.readouterr().err
+
+
+def test_top_level_cli_bootstrap_reports_install_failure(monkeypatch, capsys):
+    monkeypatch.setattr("agent_context_graph.cli.shutil.which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr("agent_context_graph.cli._memgraph_reachable", lambda host, port: True)
+
+    def fail_run(command, *, check):
+        raise subprocess.CalledProcessError(42, command)
+
+    monkeypatch.setattr("agent_context_graph.cli.subprocess.run", fail_run)
+
+    assert top_level_main(["bootstrap", "--runtime", "codex", "--connector", "skills-graph"]) == 42
+
+    assert "FAIL install: uv tool install exited with status 42" in capsys.readouterr().err
+
+
+def test_top_level_cli_bootstrap_reports_executable_missing_after_install(monkeypatch, capsys):
+    def fake_which(name):
+        if name == "uv":
+            return "/bin/uv"
+        return None
+
+    monkeypatch.setattr("agent_context_graph.cli.shutil.which", fake_which)
+    monkeypatch.setattr("agent_context_graph.cli._memgraph_reachable", lambda host, port: True)
+    monkeypatch.setattr(
+        "agent_context_graph.cli.subprocess.run", lambda command, *, check: subprocess.CompletedProcess(command, 0)
+    )
+
+    assert top_level_main(["bootstrap", "--runtime", "codex", "--connector", "skills-graph"]) == 1
+
+    assert "FAIL agent-context-graph: installed but not on PATH" in capsys.readouterr().err
+
+
+def test_top_level_cli_bootstrap_accepts_zero_port(monkeypatch, capsys):
+    captured = {}
+
+    monkeypatch.setattr("agent_context_graph.cli.shutil.which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(
+        "agent_context_graph.cli.subprocess.run", lambda command, *, check: subprocess.CompletedProcess(command, 0)
+    )
+    monkeypatch.setattr("agent_context_graph.cli._doctor", lambda args: 0)
+
+    def fake_reachable(host, port):
+        captured["host"] = host
+        captured["port"] = port
+        return True
+
+    monkeypatch.setattr("agent_context_graph.cli._memgraph_reachable", fake_reachable)
+
+    assert (
+        top_level_main(["bootstrap", "--runtime", "codex", "--connector", "skills-graph", "--memgraph-port", "0"]) == 0
+    )
+
+    assert captured == {"host": "localhost", "port": 0}
+    assert "bolt://localhost:0 reachable" in capsys.readouterr().out
 
 
 def test_top_level_cli_setup_aliases_codex_init(tmp_path, monkeypatch):
