@@ -16,7 +16,6 @@ This directory contains plugin packages for multiple runtimes:
 Codex and Claude Code use different marketplace schemas, so they are intentionally separate.
 
 - Codex public marketplace: `.agents/plugins/marketplace.json`
-- Codex local development marketplace: `context-graph/plugins/marketplace.json`
 - Claude Code public marketplace: `.claude-plugin/marketplace.json`
 
 Do not add the Claude Code plugin to the Codex marketplace or the Codex plugin to the Claude Code marketplace. Each runtime validates a different plugin manifest directory.

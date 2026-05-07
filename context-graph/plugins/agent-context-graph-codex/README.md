@@ -60,31 +60,3 @@ codex plugin marketplace add memgraph/ai-toolkit --ref main --sparse .agents/plu
 Then install or enable `agent-context-graph-codex` from the Codex plugin UI.
 
 This is a Codex marketplace only. Claude Code uses the separate marketplace at `.claude-plugin/marketplace.json`.
-
-## Personal Marketplace
-
-For local-only testing, copy or symlink this plugin under a user marketplace plugin root.
-
-Example layout:
-
-```text
-~/.agents/plugins/marketplace.json
-~/plugins/agent-context-graph-codex/
-```
-
-The marketplace entry should point at:
-
-```json
-{
-  "name": "agent-context-graph-codex",
-  "source": {
-    "source": "local",
-    "path": "./plugins/agent-context-graph-codex"
-  },
-  "policy": {
-    "installation": "AVAILABLE",
-    "authentication": "ON_INSTALL"
-  },
-  "category": "Productivity"
-}
-```
