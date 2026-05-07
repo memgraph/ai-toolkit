@@ -45,6 +45,12 @@ Register this repo as a Claude Code marketplace:
 /plugin marketplace add memgraph/ai-toolkit --ref potential-plugin-integration
 ```
 
+CLI equivalent:
+
+```bash
+claude plugin marketplace add memgraph/ai-toolkit@potential-plugin-integration --sparse .claude-plugin
+```
+
 Install:
 
 ```text
