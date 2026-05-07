@@ -10,7 +10,7 @@ Usage::
 
     link = AgentLink()
     adapter = ClaudeAdapter(link, session_id="s-1")
-    hooks = adapter.get_sdk_hooks()
+    hooks = adapter.get_runtime_hooks()
 
     # Pass hooks to ClaudeAgentOptions
     options = ClaudeAgentOptions(hooks=hooks)
@@ -30,7 +30,7 @@ from agent_context_graph.events import (
     ToolEndEvent,
     ToolStartEvent,
 )
-from agent_context_graph.protocols import SDKAdapter
+from agent_context_graph.protocols import RuntimeAdapter
 
 if TYPE_CHECKING:
     from agent_context_graph.link import AgentLink
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 _SOURCE = "claude"
 
 
-class ClaudeAdapter(SDKAdapter):
+class ClaudeAdapter(RuntimeAdapter):
     """Adapter that converts Claude Agent SDK hooks into agent-context-graph events.
 
     Args:
@@ -74,10 +74,10 @@ class ClaudeAdapter(SDKAdapter):
             )
 
     # ------------------------------------------------------------------
-    # SDK interface
+    # Runtime adapter interface
     # ------------------------------------------------------------------
 
-    def get_sdk_hooks(self) -> dict[str, list[Any]]:
+    def get_runtime_hooks(self) -> dict[str, list[Any]]:
         """Return a hooks dict suitable for ``ClaudeAgentOptions(hooks=...)``."""
         try:
             from claude_agent_sdk import HookMatcher

@@ -340,7 +340,7 @@ async def test_openai_agent_get_skill(sg):
     result = await Runner.run(
         agent,
         "Get the skill called 'cypher-basics'",
-        hooks=adapter.get_sdk_hooks(),
+        hooks=adapter.get_runtime_hooks(),
     )
     adapter.end_session()
 

@@ -1,11 +1,11 @@
 # Agent Context Graph
 
-Connect any agent SDK to any context-graph component.
+Connect any agent runtime to any context-graph component.
 
-Agent Context Graph is a lightweight adapter layer that decouples SDK-specific hooks from graph storage. It routes a common event protocol from SDK adapters to graph connectors, so you can mix and match SDKs and graph components.
+Agent Context Graph is a lightweight adapter layer that decouples runtime-specific hooks from graph storage. It routes a common event protocol from runtime adapters to graph connectors, so you can mix and match SDKs and graph components.
 
 ```
-SDK Adapter  ->  Event Protocol  ->  Graph Connector(s)
+Runtime Adapter  ->  Event Protocol  ->  Graph Connector(s)
 (Claude,         (ToolStart,         (SkillGraphConnector,
  OpenAI)          ToolEnd, ...)       custom connectors, ...)
 ```
@@ -16,7 +16,7 @@ SDK Adapter  ->  Event Protocol  ->  Graph Connector(s)
 pip install agent-context-graph
 ```
 
-With SDK adapters:
+With runtime adapters:
 
 ```bash
 pip install agent-context-graph[claude]
@@ -58,7 +58,7 @@ adapter = ClaudeAdapter(
 # 4. Use with Claude Agent SDK
 async for message in query(
     prompt="Review the available skills",
-    options=ClaudeAgentOptions(hooks=adapter.get_sdk_hooks()),
+    options=ClaudeAgentOptions(hooks=adapter.get_runtime_hooks()),
 ):
     print(message)
 ```
@@ -105,7 +105,7 @@ agent = Agent(
 result = await Runner.run(
     agent,
     "Get the skill called 'cypher-basics'",
-    hooks=adapter.get_sdk_hooks(),
+    hooks=adapter.get_runtime_hooks(),
 )
 
 # 6. Signal end (OpenAI SDK doesn't have a stop hook)
@@ -329,7 +329,7 @@ link.add_connector(SkillGraphConnector(skills))
 link.add_connector(MyGraphConnector(...))
 
 adapter = ClaudeAdapter(link, session_id="s-1")
-hooks = adapter.get_sdk_hooks()
+hooks = adapter.get_runtime_hooks()
 ```
 
 Connectors are owned by the graph packages because each graph package knows its own schema and persistence rules.
@@ -338,7 +338,7 @@ Connectors are owned by the graph packages because each graph package knows its 
 
 ### Event Protocol
 
-All SDK adapters emit SDK-agnostic `Event` dataclasses:
+All runtime adapters emit runtime-agnostic `Event` dataclasses:
 
 | Event | When |
 |-------|------|
@@ -354,10 +354,10 @@ All SDK adapters emit SDK-agnostic `Event` dataclasses:
 | `MessageEvent` | User/assistant/system message |
 | `ErrorOccurredEvent` | Error during execution |
 
-### SDK Adapters
+### Runtime Adapters
 
-| Adapter | SDK | Hook Mechanism |
-|---------|-----|----------------|
+| Adapter | Runtime Source | Hook Mechanism |
+|---------|----------------|----------------|
 | `ClaudeAdapter` | Claude Agent SDK | Dict of `HookMatcher` callbacks |
 | `OpenAIAdapter` | OpenAI Agents SDK | `RunHooksBase` subclass |
 | `CodexHooksAdapter` | OpenAI Codex | Command hooks reading JSON from stdin |
@@ -370,21 +370,21 @@ All SDK adapters emit SDK-agnostic `Event` dataclasses:
 
 Additional graph connectors should live in the packages that own those graph schemas.
 
-### Adding a New SDK
+### Adding a New Runtime Adapter
 
-Implement `SDKAdapter`:
+Implement `RuntimeAdapter`:
 
 ```python
 from agent_context_graph import AgentLink, ToolStartEvent
-from agent_context_graph.protocols import SDKAdapter
+from agent_context_graph.protocols import RuntimeAdapter
 
-class MySDKAdapter(SDKAdapter):
+class MyRuntimeAdapter(RuntimeAdapter):
     def __init__(self, link: AgentLink, session_id: str):
         self._link = link
         self._session_id = session_id
 
-    def get_sdk_hooks(self):
-        # Return whatever your SDK expects.
+    def get_runtime_hooks(self):
+        # Return whatever your runtime expects.
         ...
 
     def _on_tool_call(self, name, args):

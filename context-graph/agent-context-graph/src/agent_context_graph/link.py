@@ -1,7 +1,7 @@
 """AgentLink — the central hub that routes events to graph connectors.
 
 An ``AgentLink`` instance holds a list of :class:`GraphConnector` instances.
-SDK adapters call :meth:`emit` to broadcast events to every registered
+Runtime adapters call :meth:`emit` to broadcast events to every registered
 connector.
 """
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 class AgentLink:
-    """Routes :class:`Event` objects from SDK adapters to graph connectors.
+    """Routes :class:`Event` objects from runtime adapters to graph connectors.
 
     Usage::
 
@@ -24,7 +24,7 @@ class AgentLink:
         link.add_connector(MyGraphConnector(graph))
 
         adapter = ClaudeAdapter(link, session_id="s-1")
-        hooks = adapter.get_sdk_hooks()
+        hooks = adapter.get_runtime_hooks()
     """
 
     def __init__(self) -> None:

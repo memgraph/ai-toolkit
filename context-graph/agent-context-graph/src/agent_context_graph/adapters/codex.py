@@ -21,7 +21,7 @@ from agent_context_graph.events import (
     ToolStartEvent,
 )
 from agent_context_graph.link import AgentLink
-from agent_context_graph.protocols import SDKAdapter
+from agent_context_graph.protocols import RuntimeAdapter
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -45,7 +45,7 @@ _SUPPORTED_HOOKS = (
 # in each runtime adapter.
 
 
-class CodexHooksAdapter(SDKAdapter):
+class CodexHooksAdapter(RuntimeAdapter):
     """Adapter that converts OpenAI Codex hook payloads into graph events.
 
     Args:
@@ -57,7 +57,7 @@ class CodexHooksAdapter(SDKAdapter):
         self._link = link
         self._session_id = session_id
 
-    def get_sdk_hooks(self) -> dict[str, list[dict[str, Any]]]:
+    def get_runtime_hooks(self) -> dict[str, list[dict[str, Any]]]:
         """Return a hooks.json-compatible config skeleton.
 
         Command paths are deployment-specific, so callers that need a custom

@@ -1,8 +1,8 @@
-"""Common event protocol for agent SDK actions.
+"""Common event protocol for agent runtime actions.
 
-This module defines SDK-agnostic event types that any adapter can emit
+This module defines runtime-agnostic event types that any adapter can emit
 and any graph connector can consume. Events capture the essential
-information about agent lifecycle moments without coupling to a specific SDK.
+information about agent lifecycle moments without coupling to a specific runtime.
 """
 
 from __future__ import annotations
@@ -31,11 +31,11 @@ class EventType(str, Enum):
 
 @dataclass
 class Event:
-    """Base event emitted by SDK adapters.
+    """Base event emitted by runtime adapters.
 
     Every concrete event subclass carries a fixed ``event_type`` and
-    SDK-agnostic payload fields.  Adapters populate these from their
-    respective SDK callbacks, and connectors decide which fields are
+    runtime-agnostic payload fields. Adapters populate these from their
+    respective runtime callbacks or hook payloads, and connectors decide which fields are
     relevant to them.
     """
 

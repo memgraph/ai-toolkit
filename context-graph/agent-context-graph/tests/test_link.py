@@ -119,7 +119,7 @@ class TestClaudeAdapter:
         from agent_context_graph.adapters.claude import ClaudeAdapter
 
         adapter = ClaudeAdapter(link, "s-test")
-        hooks = adapter.get_sdk_hooks()
+        hooks = adapter.get_runtime_hooks()
 
         expected_keys = {
             "PreToolUse",
