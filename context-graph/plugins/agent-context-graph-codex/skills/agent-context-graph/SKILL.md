@@ -1,9 +1,9 @@
 ---
-name: context-graph
+name: agent-context-graph
 description: Check, explain, and troubleshoot Agent Context Graph capture from Codex hooks into Memgraph-backed graph connectors.
 ---
 
-# Context Graph
+# Agent Context Graph
 
 Use this skill when the user asks whether Codex activity is being captured, how Agent Context Graph hooks work, or why graph facts are missing.
 

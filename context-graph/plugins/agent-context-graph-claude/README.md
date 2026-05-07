@@ -58,3 +58,5 @@ Install:
 ```
 
 After this branch is merged, use the default branch instead of `--ref potential-plugin-integration`.
+
+This is a Claude Code marketplace only. Codex uses the separate marketplace at `.agents/plugins/marketplace.json`.
