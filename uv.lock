@@ -3026,7 +3026,7 @@ wheels = [
 
 [[package]]
 name = "langchain-memgraph"
-version = "0.1.13"
+version = "0.1.14"
 source = { editable = "integrations/langchain-memgraph" }
 dependencies = [
     { name = "langchain" },
@@ -3238,7 +3238,7 @@ wheels = [
 
 [[package]]
 name = "lightrag-memgraph"
-version = "0.1.5"
+version = "0.1.6"
 source = { editable = "integrations/lightrag-memgraph" }
 dependencies = [
     { name = "anthropic" },
@@ -3837,7 +3837,7 @@ cli = [
 
 [[package]]
 name = "mcp-memgraph"
-version = "0.1.11"
+version = "0.1.12"
 source = { editable = "integrations/mcp-memgraph" }
 dependencies = [
     { name = "fastmcp" },
@@ -8587,7 +8587,7 @@ wheels = [
 
 [[package]]
 name = "structured2graph"
-version = "0.2.1"
+version = "0.2.2"
 source = { editable = "agents/sql2graph" }
 dependencies = [
     { name = "anthropic" },
@@ -9751,7 +9751,7 @@ wheels = [
 
 [[package]]
 name = "unstructured2graph"
-version = "0.1.4"
+version = "0.1.5"
 source = { editable = "unstructured2graph" }
 dependencies = [
     { name = "lightrag-memgraph" },
