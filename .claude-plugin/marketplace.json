@@ -14,7 +14,7 @@
         "ref": "potential-plugin-integration"
       },
       "description": "Capture Claude Code runtime activity through Agent Context Graph hooks.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "Memgraph"
       },
