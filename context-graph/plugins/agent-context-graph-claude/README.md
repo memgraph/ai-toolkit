@@ -25,8 +25,7 @@ The plugin is only deployment wiring. Agent Context Graph normalizes runtime eve
 For a global user install:
 
 ```bash
-pipx install agent-context-graph
-pipx inject agent-context-graph "skills-graph[agent-context-graph]"
+uv tool install agent-context-graph --with "skills-graph[agent-context-graph]"
 ```
 
 ## Local Test

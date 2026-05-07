@@ -155,14 +155,19 @@ For a global plugin proof of concept, see:
 context-graph/plugins/agent-context-graph-codex
 ```
 
-That plugin expects `agent-context-graph` to be available on `PATH` and Memgraph to be reachable from the Codex process. A global install can use `pipx`:
+That plugin expects `agent-context-graph` to be available on `PATH` and Memgraph to be reachable from the Codex process. A global install can use `uv tool`:
 
 ```bash
-pipx install agent-context-graph
-pipx inject agent-context-graph "skills-graph[agent-context-graph]"
+uv tool install agent-context-graph --with "skills-graph[agent-context-graph]"
 ```
 
 Then install the Codex plugin through a user plugin marketplace. Keep graph credentials in the process environment, not in the plugin hook file.
+
+Check the installed hook environment with:
+
+```bash
+agent-context-graph doctor --runtime codex --connector skills-graph
+```
 
 For a public Git-backed marketplace install:
 

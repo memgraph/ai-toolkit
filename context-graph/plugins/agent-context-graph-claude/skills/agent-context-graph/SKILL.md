@@ -14,20 +14,19 @@ The plugin only installs runtime hook wiring. It must not assign graph meaning. 
 
 ## Checks
 
-1. Verify `agent-context-graph` is on `PATH`.
-2. Verify `skills-graph` is installed in the same Python environment.
-3. Verify Memgraph is reachable, usually at `bolt://localhost:7687`.
-4. Verify the hook command accepts a minimal payload:
+Run the single CLI doctor first. It checks the same Python environment that the hook command uses:
+
+```bash
+agent-context-graph doctor --runtime claude-code --connector skills-graph
+```
+
+If `doctor` is not available, use the strict hook smoke:
 
 ```bash
 printf '{"hook_event_name":"Stop","session_id":"doctor"}' \
-  | agent-context-graph hook run claude-code --connector skills-graph
+  | agent-context-graph hook run claude-code --connector skills-graph --strict
 ```
 
-Expected output:
+Do not check `skills_graph` with system `python3`; `agent-context-graph` may be installed in an isolated `uv tool` or `pipx` environment.
 
-```json
-{"continue": true}
-```
-
-5. If skill usage is missing, inspect whether the session actually read or invoked a skill. Search/list results can be surfacing, not proven usage.
+If skill usage is missing, inspect whether the session actually read or invoked a skill. Search/list results can be surfacing, not proven usage.

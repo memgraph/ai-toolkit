@@ -26,6 +26,63 @@ def test_top_level_cli_dispatches_hook_run(monkeypatch, capsys):
     assert capsys.readouterr().out.strip() == '{"continue": true}'
 
 
+def test_top_level_cli_prints_version(monkeypatch, capsys):
+    monkeypatch.setattr("agent_context_graph.cli._package_version", lambda package_name: "1.2.3")
+
+    assert top_level_main(["--version"]) == 0
+
+    assert capsys.readouterr().out.strip() == "1.2.3"
+
+
+def test_top_level_cli_doctor_reports_checks(monkeypatch, capsys):
+    monkeypatch.setattr(
+        "agent_context_graph.cli._check_cli",
+        lambda: {"name": "agent-context-graph executable", "ok": True, "detail": "/bin/agent-context-graph"},
+    )
+    monkeypatch.setattr(
+        "agent_context_graph.cli._check_package",
+        lambda package_name: {"name": package_name, "ok": True, "detail": "1.2.3"},
+    )
+    monkeypatch.setattr(
+        "agent_context_graph.cli._check_connector",
+        lambda connector: {"name": f"connector:{connector}", "ok": True, "detail": "installed; memgraph=reachable"},
+    )
+    monkeypatch.setattr(
+        "agent_context_graph.cli._check_runtime",
+        lambda runtime, connectors: {"name": f"runtime:{runtime}", "ok": True, "detail": "strict hook smoke passed"},
+    )
+
+    assert top_level_main(["doctor", "--runtime", "claude-code", "--connector", "skills-graph"]) == 0
+
+    output = capsys.readouterr().out
+    assert "OK agent-context-graph executable" in output
+    assert "OK connector:skills-graph" in output
+    assert "OK runtime:claude-code" in output
+
+
+def test_top_level_cli_doctor_fails_when_check_fails(monkeypatch, capsys):
+    monkeypatch.setattr(
+        "agent_context_graph.cli._check_cli",
+        lambda: {"name": "agent-context-graph executable", "ok": True, "detail": "/bin/agent-context-graph"},
+    )
+    monkeypatch.setattr(
+        "agent_context_graph.cli._check_package",
+        lambda package_name: {"name": package_name, "ok": True, "detail": "1.2.3"},
+    )
+    monkeypatch.setattr(
+        "agent_context_graph.cli._check_connector",
+        lambda connector: {"name": f"connector:{connector}", "ok": False, "detail": "missing"},
+    )
+    monkeypatch.setattr(
+        "agent_context_graph.cli._check_runtime",
+        lambda runtime, connectors: {"name": f"runtime:{runtime}", "ok": True, "detail": "strict hook smoke passed"},
+    )
+
+    assert top_level_main(["doctor", "--runtime", "codex", "--connector", "skills-graph"]) == 1
+
+    assert "FAIL connector:skills-graph" in capsys.readouterr().out
+
+
 def test_top_level_cli_setup_aliases_codex_init(tmp_path, monkeypatch):
     monkeypatch.setattr("agent_context_graph.hooks.cli.shutil.which", lambda _: "/bin/agent-context-graph")
 
