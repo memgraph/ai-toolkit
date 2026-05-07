@@ -10,6 +10,8 @@ Runtime Adapter  ->  Event Protocol  ->  Graph Connector(s)
  OpenAI)          ToolEnd, ...)       custom connectors, ...)
 ```
 
+Runtime plugins are the distribution layer for host-specific hook wiring. They install hooks, skills, and setup helpers for a runtime, then call Agent Context Graph. They are not graph components and should not encode graph-specific meaning.
+
 ## Installation
 
 ```bash
@@ -127,22 +129,70 @@ Implemented:
 | Runtime | Adapter | Hook Shape |
 |---------|---------|------------|
 | OpenAI Codex | `CodexHooksAdapter` | Command receives one JSON object on `stdin` |
-
-Planned:
-
-| Runtime | Adapter | Notes |
-|---------|---------|-------|
-| Claude Code | `ClaudeCodeHooksAdapter` | TODO: command-hook adapter for Claude Code JSON input/output and `.claude/settings.local.json` setup |
+| Claude Code | `ClaudeCodeHooksAdapter` | Command receives one JSON object on `stdin` |
 
 ### OpenAI Codex Hooks
 
-Codex hook configuration is local environment wiring, so this repository ignores `.codex/`. Each developer should create their own local `.codex` files or use a user-level Codex config.
+Codex hook configuration can be installed either as local environment wiring or as a user-level Codex plugin.
+
+The runtime-plugin flow is:
+
+```text
+Codex Plugin -> Codex Runtime Adapter -> Event Protocol -> Graph Connector -> Memgraph
+```
+
+The plugin installs Codex hook wiring. The Codex runtime adapter normalizes the hook payload. Graph connectors such as `SkillGraphConnector` decide what those events mean in their graph.
 
 Prerequisites:
 
 - Memgraph running and reachable over Bolt. Defaults are `bolt://localhost:7687`, empty user/password, and database `memgraph`.
 - A Python environment that contains `agent-context-graph` and `skills-graph[agent-context-graph]`.
 - Codex CLI or IDE extension running in a project that trusts the project-local `.codex/` layer.
+
+For a global plugin proof of concept, see:
+
+```text
+context-graph/plugins/agent-context-graph-codex
+```
+
+That plugin expects `agent-context-graph` to be available on `PATH` and Memgraph to be reachable from the Codex process. A global install can use `pipx`:
+
+```bash
+pipx install agent-context-graph
+pipx inject agent-context-graph "skills-graph[agent-context-graph]"
+```
+
+Then install the Codex plugin through a user plugin marketplace. Keep graph credentials in the process environment, not in the plugin hook file.
+
+For a public Git-backed marketplace install:
+
+```bash
+codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins
+```
+
+Local `.codex/` files remain useful for source development and per-project experiments. This repository ignores `.codex/`.
+
+### Claude Code Hooks
+
+Claude Code hook configuration can be installed as a Claude Code plugin.
+
+The runtime-plugin flow is:
+
+```text
+Claude Code Plugin -> Claude Code Runtime Adapter -> Event Protocol -> Graph Connector -> Memgraph
+```
+
+For a public Git-backed marketplace install, add the marketplace inside Claude Code:
+
+```text
+/plugin marketplace add memgraph/ai-toolkit
+```
+
+Then install:
+
+```text
+/plugin install agent-context-graph-claude@context-graph-plugins
+```
 
 The streamlined setup only needs two pieces of local information:
 
