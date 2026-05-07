@@ -1,0 +1,22 @@
+{
+  "name": "context-graph-plugins",
+  "interface": {
+    "displayName": "Context Graph Plugins"
+  },
+  "plugins": [
+    {
+      "name": "agent-context-graph-codex",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/memgraph/ai-toolkit.git",
+        "path": "./context-graph/plugins/agent-context-graph-codex",
+        "ref": "potential-plugin-integration"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
