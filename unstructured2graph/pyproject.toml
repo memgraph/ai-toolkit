@@ -24,7 +24,7 @@ classifiers = [
 dependencies = [
     "unstructured>=0.18.18",
     "lightrag-memgraph>=0.1.5",
-    "memgraph-toolbox>=0.1.10",
+    "memgraph-toolbox>=0.1.11",
 ]
 [project.optional-dependencies]
 all-docs = [

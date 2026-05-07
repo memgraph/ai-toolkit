@@ -179,7 +179,7 @@ wheels = [
 
 [[package]]
 name = "agent-context-graph"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "context-graph/agent-context-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -3060,7 +3060,7 @@ requires-dist = [
     { name = "langchain-openai", marker = "extra == 'test'", specifier = ">=1.1.0" },
     { name = "langchain-tests", marker = "extra == 'test'", specifier = ">=0.3.0" },
     { name = "langgraph", marker = "extra == 'test'", specifier = ">=1.1.0" },
-    { name = "memgraph-toolbox", specifier = ">=0.1.10" },
+    { name = "memgraph-toolbox", specifier = ">=0.1.11" },
     { name = "neo4j", specifier = ">=5.28.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.26.0" },
@@ -3863,7 +3863,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.23.0" },
     { name = "mcp", extras = ["cli"], marker = "extra == 'test'", specifier = ">=1.23.0" },
-    { name = "memgraph-toolbox", specifier = ">=0.1.10" },
+    { name = "memgraph-toolbox", specifier = ">=0.1.11" },
     { name = "neo4j", specifier = ">=5.28.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.20.3" },
@@ -3899,7 +3899,7 @@ requires-dist = [
 
 [[package]]
 name = "memgraph-toolbox"
-version = "0.1.10"
+version = "0.1.11"
 source = { editable = "memgraph-toolbox" }
 dependencies = [
     { name = "neo4j" },
@@ -8324,7 +8324,7 @@ wheels = [
 
 [[package]]
 name = "skills-graph"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "context-graph/skills-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -8622,7 +8622,7 @@ requires-dist = [
     { name = "langchain-google-genai", specifier = ">=2.0.0" },
     { name = "langchain-openai", specifier = ">=0.2.0" },
     { name = "langgraph", specifier = ">=1.0.10" },
-    { name = "memgraph-toolbox", specifier = ">=0.1.10" },
+    { name = "memgraph-toolbox", specifier = ">=0.1.11" },
     { name = "mysql-connector-python", specifier = ">=9.0.0" },
     { name = "neo4j", specifier = ">=5.28.1" },
     { name = "openai", specifier = ">=1.0.0" },
