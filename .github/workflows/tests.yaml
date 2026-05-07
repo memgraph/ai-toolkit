@@ -245,10 +245,7 @@ jobs:
         working-directory: .
 
       - name: Install dependencies and run tests
-        run: |
-          uv venv
-          uv pip install -e . --group dev
-          .venv/bin/python -m pytest .
+        run: uv run --group dev pytest .
 
   test-agent-context-graph:
     needs: changes
