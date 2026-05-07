@@ -7,7 +7,7 @@ if ! command -v agent-context-graph >/dev/null 2>&1; then
 fi
 
 printf '{"hook_event_name":"Stop","session_id":"doctor"}' \
-  | agent-context-graph hook run claude-code --connector skills-graph
+  | agent-context-graph hook run claude-code --connector skills-graph --strict
 
 echo
 echo "agent-context-graph Claude Code hook command is reachable"
