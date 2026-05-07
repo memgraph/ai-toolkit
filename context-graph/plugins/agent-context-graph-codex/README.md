@@ -48,7 +48,7 @@ This repo exposes a public Git-backed marketplace at:
 Register the marketplace from GitHub:
 
 ```bash
-codex plugin marketplace add memgraph/ai-toolkit --ref main --sparse .agents/plugins
+codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins
 ```
 
 Then install or enable `agent-context-graph-codex` from the Codex plugin UI.

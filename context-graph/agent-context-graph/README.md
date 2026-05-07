@@ -167,7 +167,7 @@ Then install the Codex plugin through a user plugin marketplace. Keep graph cred
 For a public Git-backed marketplace install:
 
 ```bash
-codex plugin marketplace add memgraph/ai-toolkit --ref main --sparse .agents/plugins
+codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins
 ```
 
 Local `.codex/` files remain useful for source development and per-project experiments. This repository ignores `.codex/`.
@@ -185,7 +185,7 @@ Claude Code Plugin -> Claude Code Runtime Adapter -> Event Protocol -> Graph Con
 For a public Git-backed marketplace install, add the marketplace inside Claude Code:
 
 ```text
-/plugin marketplace add memgraph/ai-toolkit --ref main
+/plugin marketplace add memgraph/ai-toolkit
 ```
 
 Then install:

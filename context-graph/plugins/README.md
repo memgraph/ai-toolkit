@@ -20,10 +20,4 @@ Codex and Claude Code use different marketplace schemas, so they are intentional
 
 Do not add the Claude Code plugin to the Codex marketplace or the Codex plugin to the Claude Code marketplace. Each runtime validates a different plugin manifest directory.
 
-## Marketplace Refs
-
-Marketplace entries pin the default branch:
-
-```json
-"ref": "main"
-```
+Marketplace entries do not pin a ref. They use the repository default branch.

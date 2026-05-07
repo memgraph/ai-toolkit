@@ -42,13 +42,13 @@ From the plugin directory:
 Register this repo as a Claude Code marketplace:
 
 ```text
-/plugin marketplace add memgraph/ai-toolkit --ref main
+/plugin marketplace add memgraph/ai-toolkit
 ```
 
 CLI equivalent:
 
 ```bash
-claude plugin marketplace add memgraph/ai-toolkit@main --sparse .claude-plugin
+claude plugin marketplace add memgraph/ai-toolkit --sparse .claude-plugin
 ```
 
 Install:
