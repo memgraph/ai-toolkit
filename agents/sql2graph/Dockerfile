@@ -11,7 +11,7 @@ ENV EDITOR=vi
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Install the released package from PyPI
-RUN uv pip install --system structured2graph==0.2.1
+RUN uv pip install --system structured2graph==0.2.2
 
 # Copy .env.example as reference; users supply real values at runtime
 # via: docker run -it --env-file .env memgraph/structured2graph

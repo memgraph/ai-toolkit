@@ -1,6 +1,6 @@
 [project]
 name = "agent-context-graph"
-version = "0.1.0"
+version = "0.1.1"
 description = "Connect agent SDKs to context-graph components (actions-graph, skills-graph, etc.)"
 readme = "README.md"
 license = { text = "MIT" }
@@ -12,7 +12,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "memgraph-toolbox",
+    "memgraph-toolbox>=0.1.11",
 ]
 
 [project.scripts]
