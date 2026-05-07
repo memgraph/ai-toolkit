@@ -1,0 +1,14 @@
+{
+  "name": "agent-context-graph-claude",
+  "description": "Capture Claude Code runtime activity through Agent Context Graph hooks.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Memgraph"
+  },
+  "homepage": "https://github.com/memgraph/ai-toolkit",
+  "repository": "https://github.com/memgraph/ai-toolkit",
+  "license": "MIT",
+  "keywords": ["claude-code", "context-graph", "agent-context-graph", "memgraph"],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json"
+}

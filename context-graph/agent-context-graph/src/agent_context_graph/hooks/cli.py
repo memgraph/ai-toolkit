@@ -23,9 +23,11 @@ Bridge agent command hooks to agent-context-graph.
 Commands:
   init codex   Generate private Codex hook config.
   run codex    Run the OpenAI Codex command-hook adapter.
+  run claude-code
+               Run the Claude Code command-hook adapter.
 
 Runtimes:
-  claude-code  Reserved for a future Claude Code hook adapter.
+  claude-code  Claude Code command hooks.
 """
 
 
@@ -65,8 +67,9 @@ def _run_runtime(runtime: str, runtime_args: list[str]) -> int:
         return codex_main(runtime_args)
 
     if runtime in {"claude-code", "claude_code"}:
-        print("Claude Code hooks are not implemented yet.", file=sys.stderr)
-        return 2
+        from agent_context_graph.adapters.claude_code import main as claude_code_main
+
+        return claude_code_main(runtime_args)
 
     print(f"Unknown hook runtime: {runtime}", file=sys.stderr)
     print(_HELP)

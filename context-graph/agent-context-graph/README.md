@@ -129,12 +129,7 @@ Implemented:
 | Runtime | Adapter | Hook Shape |
 |---------|---------|------------|
 | OpenAI Codex | `CodexHooksAdapter` | Command receives one JSON object on `stdin` |
-
-Planned:
-
-| Runtime | Adapter | Notes |
-|---------|---------|-------|
-| Claude Code | `ClaudeCodeHooksAdapter` | TODO: command-hook adapter for Claude Code JSON input/output and `.claude/settings.local.json` setup |
+| Claude Code | `ClaudeCodeHooksAdapter` | Command receives one JSON object on `stdin` |
 
 ### OpenAI Codex Hooks
 
@@ -178,6 +173,30 @@ codex plugin marketplace add memgraph/ai-toolkit --ref potential-plugin-integrat
 After the branch is merged, use `--ref main`.
 
 Local `.codex/` files remain useful for source development and per-project experiments. This repository ignores `.codex/`.
+
+### Claude Code Hooks
+
+Claude Code hook configuration can be installed as a Claude Code plugin.
+
+The runtime-plugin flow is:
+
+```text
+Claude Code Plugin -> Claude Code Runtime Adapter -> Event Protocol -> Graph Connector -> Memgraph
+```
+
+For a public Git-backed marketplace install from this branch, add the marketplace inside Claude Code:
+
+```text
+/plugin marketplace add memgraph/ai-toolkit --ref potential-plugin-integration
+```
+
+Then install:
+
+```text
+/plugin install agent-context-graph-claude@context-graph-plugins
+```
+
+After the branch is merged, use the default branch instead of `--ref potential-plugin-integration`.
 
 The streamlined setup only needs two pieces of local information:
 

@@ -17,6 +17,20 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Productivity"
+    },
+    {
+      "name": "agent-context-graph-claude",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/memgraph/ai-toolkit.git",
+        "path": "./context-graph/plugins/agent-context-graph-claude",
+        "ref": "potential-plugin-integration"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
     }
   ]
 }
