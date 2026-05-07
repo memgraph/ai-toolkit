@@ -918,7 +918,7 @@ requires-dist = [
     { name = "langchain-openai", marker = "extra == 'test'", specifier = ">=1.1.0" },
     { name = "langchain-tests", marker = "extra == 'test'", specifier = ">=0.3.0" },
     { name = "langgraph", marker = "extra == 'test'", specifier = ">=1.1.0" },
-    { name = "memgraph-toolbox", specifier = ">=0.1.10" },
+    { name = "memgraph-toolbox", specifier = ">=0.1.11" },
     { name = "neo4j", specifier = ">=5.28.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.26.0" },
@@ -1088,16 +1088,16 @@ wheels = [
 
 [[package]]
 name = "memgraph-toolbox"
-version = "0.1.10"
+version = "0.1.11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "neo4j" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fc/26/220e0e29a2b54b1a1293265f34122f26cfd72e742049416ec0f1f1b8e56b/memgraph_toolbox-0.1.10.tar.gz", hash = "sha256:02a92d41e5b3c46ad86dbfef21acfcf7a5ae385e6a99718a1eb5803414cef177", size = 190161 }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/6d/9b144a2dcf594903fc041cab66b9782a67d7377940af8d6dcebb6aa5295e/memgraph_toolbox-0.1.11.tar.gz", hash = "sha256:ffe974f52235b93c65bb0459deaf718d4d6f53dd3f1eb119b00b6619d6e94933", size = 203781 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6c/e4/0f0b9aec35948afba78672bb6064f5e0d52b17c6ba09b98b1e2be7895a0a/memgraph_toolbox-0.1.10-py3-none-any.whl", hash = "sha256:76c1c902853a1dcc7c64bfbc58c2eae55898bbc0ef168508348e1d1b500e7b25", size = 32026 },
+    { url = "https://files.pythonhosted.org/packages/ef/d4/ff3a7e8353478b00741e7f22b8e12b24d373a7d77a20f8b001b81b575a58/memgraph_toolbox-0.1.11-py3-none-any.whl", hash = "sha256:34e7b81e297aa7985e00f76c1a24fbbb0134d4dd4a309a56fe31ea538bbaf508", size = 32753 },
 ]
 
 [[package]]
