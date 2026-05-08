@@ -1220,7 +1220,7 @@ wheels = [
 
 [[package]]
 name = "memgraph-toolbox"
-version = "0.1.10"
+version = "0.1.11"
 source = { editable = "." }
 dependencies = [
     { name = "neo4j" },
