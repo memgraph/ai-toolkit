@@ -8,8 +8,10 @@ Runtime Plugin -> Runtime Adapter -> Event Protocol -> Graph Connector -> Memgra
 
 This directory contains plugin packages for multiple runtimes:
 
-- `agent-context-graph-codex`: OpenAI Codex plugin.
-- `agent-context-graph-claude`: Claude Code plugin.
+- `agent-context-graph-codex`: OpenAI Codex plugin, published as `context-graph`.
+- `agent-context-graph-claude`: Claude Code plugin, published as `context-graph`.
+
+The platform-specific directory names stay explicit, while the marketplace-facing plugin name is short so skills appear as `context-graph:agent-context-graph`.
 
 ## Marketplace Files
 

@@ -69,7 +69,13 @@ claude plugin marketplace add memgraph/ai-toolkit --sparse .claude-plugin
 Install:
 
 ```text
-/plugin install agent-context-graph-claude@context-graph-plugins
+/plugin install context-graph@context-graph-plugins
+```
+
+The Agent Context Graph skill is exposed as:
+
+```text
+/context-graph:agent-context-graph
 ```
 
 This is a Claude Code marketplace only. Codex uses the separate marketplace at `.agents/plugins/marketplace.json`.
