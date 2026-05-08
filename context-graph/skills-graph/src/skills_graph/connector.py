@@ -373,12 +373,13 @@ class SkillGraphConnector(GraphConnector):
 
 def _parse_frontmatter(content: str) -> dict[str, Any]:
     lines = content.splitlines()
-    if not lines or lines[0].strip() != "---":
+    start_index = _frontmatter_start_index(lines)
+    if start_index is None:
         return {}
 
     data: dict[str, Any] = {}
     key_for_list: str | None = None
-    for line in lines[1:]:
+    for line in lines[start_index + 1 :]:
         stripped = line.strip()
         if stripped == "---":
             return data
@@ -400,6 +401,16 @@ def _parse_frontmatter(content: str) -> dict[str, Any]:
             data[key] = []
             key_for_list = key
     return {}
+
+
+def _frontmatter_start_index(lines: list[str]) -> int | None:
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == "---":
+            return index
+        if stripped and not stripped.startswith("Base directory for this skill:"):
+            return None
+    return None
 
 
 def _is_skill_content(content: str, *, skill_file: Path | None = None) -> bool:
