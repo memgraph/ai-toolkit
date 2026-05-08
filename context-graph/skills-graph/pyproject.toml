@@ -1,6 +1,6 @@
 [project]
 name = "skills-graph"
-version = "0.1.2"
+version = "0.1.3"
 description = "Persist, retrieve and evolve AI skills in Memgraph"
 readme = "README.md"
 license = { text = "MIT" }

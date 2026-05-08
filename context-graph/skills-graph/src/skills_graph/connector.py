@@ -25,7 +25,7 @@ import shlex
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from agent_context_graph.events import Event, EventType, ToolEndEvent, ToolStartEvent
+from agent_context_graph.events import Event, EventType, MessageEvent, ToolEndEvent, ToolStartEvent
 from agent_context_graph.protocols import GraphConnector
 
 if TYPE_CHECKING:
@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 _SUPPORTED_EVENTS = {
     EventType.TOOL_START,
     EventType.TOOL_END,
+    EventType.MESSAGE,
 }
 _MAX_RESULT_DEPTH = 10
 _SKILL_FILE_NAME = "SKILL.md"
@@ -90,6 +91,8 @@ class SkillGraphConnector(GraphConnector):
             if self._extract_skill_content(event.result, skill_file=skill_file) is not None:
                 return True
             return self._operation_name(event.tool_name) in self._skill_tool_names
+        if isinstance(event, MessageEvent):
+            return self._extract_skill_content(event.content) is not None
         return False
 
     def on_event(self, event: Event) -> None:
@@ -97,6 +100,8 @@ class SkillGraphConnector(GraphConnector):
             self._on_tool_start(event)
         elif isinstance(event, ToolEndEvent):
             self._on_tool_end(event)
+        elif isinstance(event, MessageEvent):
+            self._on_message(event)
 
     # ------------------------------------------------------------------
     # Internal handlers
@@ -163,6 +168,26 @@ class SkillGraphConnector(GraphConnector):
                 skill_name=name,
                 action=f"{operation_name}_result",
                 timestamp=event.timestamp,
+            )
+
+    def _on_message(self, event: MessageEvent) -> None:
+        """Skill content injected via prompt expansion — record the skill."""
+        skill_content = self._extract_skill_content(event.content)
+        if skill_content is None:
+            return
+        metadata = self._metadata_from_skill_content(skill_content)
+        skill_name = metadata.get("name")
+        if isinstance(skill_name, str) and skill_name:
+            self._record_skill_access(
+                session_id=event.session_id,
+                skill_name=skill_name,
+                action="prompt_expansion",
+                timestamp=event.timestamp,
+                create_missing=True,
+                description=metadata.get("description", ""),
+                content=metadata.get("content", ""),
+                source_path=metadata.get("metadata", {}).get("source_path"),
+                metadata=metadata.get("metadata", {}),
             )
 
     # ------------------------------------------------------------------
@@ -373,12 +398,13 @@ class SkillGraphConnector(GraphConnector):
 
 def _parse_frontmatter(content: str) -> dict[str, Any]:
     lines = content.splitlines()
-    if not lines or lines[0].strip() != "---":
+    start_index = _frontmatter_start_index(lines)
+    if start_index is None:
         return {}
 
     data: dict[str, Any] = {}
     key_for_list: str | None = None
-    for line in lines[1:]:
+    for line in lines[start_index + 1 :]:
         stripped = line.strip()
         if stripped == "---":
             return data
@@ -400,6 +426,16 @@ def _parse_frontmatter(content: str) -> dict[str, Any]:
             data[key] = []
             key_for_list = key
     return {}
+
+
+def _frontmatter_start_index(lines: list[str]) -> int | None:
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == "---":
+            return index
+        if stripped and not stripped.startswith("Base directory for this skill:"):
+            return None
+    return None
 
 
 def _is_skill_content(content: str, *, skill_file: Path | None = None) -> bool:

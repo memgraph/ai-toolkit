@@ -152,6 +152,38 @@ description: Ultra-compressed communication mode.
     assert "# Caveman" in params["content"]
 
 
+def test_read_tool_result_with_skill_preamble_is_recorded():
+    connector, graph = _connector()
+    event = ToolEndEvent(
+        session_id="s1",
+        tool_name="Read",
+        result="""Base directory for this skill: /Users/antejavor/.agents/skills/caveman
+
+---
+name: caveman
+description: Ultra-compressed communication mode.
+---
+
+# Caveman
+""",
+        metadata={"tool_input": {"path": "/Users/antejavor/.agents/skills/caveman/SKILL.md"}},
+        timestamp="2026-04-30T00:00:00+00:00",
+    )
+
+    assert connector.supports(event)
+
+    connector.on_event(event)
+
+    params = graph.record_skill_usage.call_args.kwargs
+    assert params["session_id"] == "s1"
+    assert params["skill_name"] == "caveman"
+    assert params["action"] == "read_skill_file"
+    assert params["create_missing"] is True
+    assert params["description"] == "Ultra-compressed communication mode."
+    assert params["source_path"] == "/Users/antejavor/.agents/skills/caveman/SKILL.md"
+    assert "# Caveman" in params["content"]
+
+
 def test_read_tool_result_without_skill_frontmatter_is_ignored():
     connector, _graph = _connector()
     event = ToolEndEvent(
