@@ -86,9 +86,8 @@ class SkillGraphConnector(GraphConnector):
                 return True
             return self._extract_skill_file_read(event.tool_input, event.metadata) is not None
         if isinstance(event, ToolEndEvent):
-            if self._extract_skill_file_read(event.metadata) is not None:
-                return True
-            if self._extract_skill_content(event.result) is not None:
+            skill_file = self._extract_skill_file_read(tool_input=None, metadata=event.metadata)
+            if self._extract_skill_content(event.result, skill_file=skill_file) is not None:
                 return True
             return self._operation_name(event.tool_name) in self._skill_tool_names
         return False
@@ -133,15 +132,13 @@ class SkillGraphConnector(GraphConnector):
 
     def _on_tool_end(self, event: ToolEndEvent) -> None:
         """A search/list tool returned — record which skills appeared."""
-        skill_file = self._extract_skill_file_read(event.metadata)
-        skill_content = self._extract_skill_content(event.result)
-        if skill_file is not None or skill_content is not None:
+        skill_file = self._extract_skill_file_read(tool_input=None, metadata=event.metadata)
+        skill_content = self._extract_skill_content(event.result, skill_file=skill_file)
+        if skill_content is not None:
             metadata = self._metadata_from_skill_content(
-                skill_content or "",
+                skill_content,
                 source_path=str(skill_file) if skill_file is not None else None,
             )
-            if not metadata.get("name") and skill_file is not None:
-                metadata["name"] = skill_file.parent.name
             skill_name = metadata.get("name")
             if isinstance(skill_name, str) and skill_name:
                 self._record_skill_access(
@@ -326,23 +323,23 @@ class SkillGraphConnector(GraphConnector):
         return metadata
 
     @classmethod
-    def _extract_skill_content(cls, result: Any, *, _depth: int = 0) -> str | None:
+    def _extract_skill_content(cls, result: Any, *, skill_file: Path | None = None, _depth: int = 0) -> str | None:
         if _depth > _MAX_RESULT_DEPTH:
             return None
         if isinstance(result, str):
-            if _parse_frontmatter(result):
+            if _is_skill_content(result, skill_file=skill_file):
                 return result
             return None
         if isinstance(result, list):
             for item in result:
-                content = cls._extract_skill_content(item, _depth=_depth + 1)
+                content = cls._extract_skill_content(item, skill_file=skill_file, _depth=_depth + 1)
                 if content is not None:
                     return content
             return None
         if isinstance(result, dict):
             for key in ("content", "text", "result", "tool_response"):
                 if key in result:
-                    content = cls._extract_skill_content(result[key], _depth=_depth + 1)
+                    content = cls._extract_skill_content(result[key], skill_file=skill_file, _depth=_depth + 1)
                     if content is not None:
                         return content
         return None
@@ -403,3 +400,14 @@ def _parse_frontmatter(content: str) -> dict[str, Any]:
             data[key] = []
             key_for_list = key
     return {}
+
+
+def _is_skill_content(content: str, *, skill_file: Path | None = None) -> bool:
+    frontmatter = _parse_frontmatter(content)
+    if not frontmatter:
+        return False
+    description = frontmatter.get("description")
+    if not isinstance(description, str) or not description:
+        return False
+    name = frontmatter.get("name")
+    return bool(isinstance(name, str) and name) or skill_file is not None

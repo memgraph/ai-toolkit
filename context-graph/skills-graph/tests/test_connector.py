@@ -164,6 +164,35 @@ def test_read_tool_result_without_skill_frontmatter_is_ignored():
     assert not connector.supports(event)
 
 
+def test_read_tool_result_with_non_skill_frontmatter_is_ignored():
+    connector, _graph = _connector()
+    event = ToolEndEvent(
+        session_id="s1",
+        tool_name="Read",
+        result="""---
+title: Project Notes
+---
+
+# Notes
+""",
+        metadata={"tool_input": {"path": "README.md"}},
+    )
+
+    assert not connector.supports(event)
+
+
+def test_skill_path_without_skill_frontmatter_result_is_ignored():
+    connector, _graph = _connector()
+    event = ToolEndEvent(
+        session_id="s1",
+        tool_name="Read",
+        result="# Caveman\n\nNo frontmatter in this result.",
+        metadata={"tool_input": {"path": "/Users/antejavor/.agents/skills/caveman/SKILL.md"}},
+    )
+
+    assert not connector.supports(event)
+
+
 def test_non_skill_file_read_is_ignored():
     connector, _graph = _connector()
     event = ToolStartEvent(

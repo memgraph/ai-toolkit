@@ -19,7 +19,6 @@ uv tool install "agent-context-graph>=0.1.2" \
   --with "skills-graph[agent-context-graph]" \
   --upgrade \
   --refresh-package agent-context-graph \
-  --refresh-package skills-graph \
-  --reinstall
+  --refresh-package skills-graph
 
 exec agent-context-graph bootstrap --runtime claude-code --connector skills-graph --no-reinstall "$@"
