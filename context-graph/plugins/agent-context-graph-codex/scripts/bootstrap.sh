@@ -8,6 +8,8 @@ ERROR uv is not installed or not on PATH.
 Install uv first:
   curl -LsSf https://astral.sh/uv/install.sh | sh
 
+uv manages Python for the tool. If uv-managed Python downloads are blocked, install Python 3.10+.
+
 Then restart your shell and rerun this script.
 EOF
   exit 1

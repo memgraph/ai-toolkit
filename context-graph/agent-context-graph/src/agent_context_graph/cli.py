@@ -101,6 +101,10 @@ def _bootstrap(argv: list[str]) -> int:
         print("FAIL uv: not found on PATH", file=sys.stderr)
         print("Install uv first:", file=sys.stderr)
         print("  curl -LsSf https://astral.sh/uv/install.sh | sh", file=sys.stderr)
+        print(
+            "uv manages Python for the tool. If uv-managed Python downloads are blocked, install Python 3.10+.",
+            file=sys.stderr,
+        )
         return 1
 
     if not _memgraph_reachable(host, port):

@@ -14,6 +14,16 @@ Runtime plugins are the distribution layer for host-specific hook wiring. They i
 
 ## Installation
 
+For command-hook runtimes such as Codex and Claude Code, prefer a user-level tool install:
+
+```bash
+uv tool install agent-context-graph --with "skills-graph[agent-context-graph]"
+```
+
+Or use the plugin bootstrap scripts; they fall back to `uvx` if the tool is not installed yet.
+
+For SDK usage inside an application:
+
 ```bash
 pip install agent-context-graph
 ```
@@ -131,9 +141,59 @@ Implemented:
 | OpenAI Codex | `CodexHooksAdapter` | Command receives one JSON object on `stdin` |
 | Claude Code | `ClaudeCodeHooksAdapter` | Command receives one JSON object on `stdin` |
 
-### OpenAI Codex Hooks
+### First-Time Plugin Setup
 
-Codex hook configuration can be installed either as local environment wiring or as a user-level Codex plugin.
+For Codex and Claude Code plugins, the recommended first-run path is the bootstrap command. It installs the runtime package, checks Memgraph, installs the graph connector extra, and runs `doctor`.
+
+Prerequisites:
+
+- `uv` on `PATH`.
+- Memgraph running and reachable over Bolt. Defaults are `bolt://localhost:7687`, empty user/password, and database `memgraph`.
+
+If Memgraph is not running locally, start it first:
+
+```bash
+docker run --rm -p 7687:7687 memgraph/memgraph
+```
+
+`uv` manages Python for the tool. If uv-managed Python downloads are blocked in your environment, install Python 3.10+ and rerun bootstrap.
+
+For Codex:
+
+```bash
+agent-context-graph bootstrap --runtime codex --connector skills-graph
+```
+
+For Claude Code:
+
+```bash
+agent-context-graph bootstrap --runtime claude-code --connector skills-graph
+```
+
+Expected successful doctor output looks like:
+
+```text
+OK agent-context-graph executable: ...
+OK agent-context-graph: ...
+OK connector:skills-graph: installed=...; memgraph=reachable
+OK runtime:codex: strict hook smoke passed
+```
+
+Use the matching runtime value when checking Claude Code:
+
+```text
+OK runtime:claude-code: strict hook smoke passed
+```
+
+The plugin wrapper scripts call the same bootstrap command. If `agent-context-graph` is not installed yet, they fall back to `uvx`:
+
+```bash
+./scripts/bootstrap.sh
+```
+
+### OpenAI Codex Plugin
+
+Codex hook configuration can be installed as a user-level Codex plugin.
 
 The runtime-plugin flow is:
 
@@ -143,25 +203,19 @@ Codex Plugin -> Codex Runtime Adapter -> Event Protocol -> Graph Connector -> Me
 
 The plugin installs Codex hook wiring. The Codex runtime adapter normalizes the hook payload. Graph connectors such as `SkillGraphConnector` decide what those events mean in their graph.
 
-Prerequisites:
-
-- Memgraph running and reachable over Bolt. Defaults are `bolt://localhost:7687`, empty user/password, and database `memgraph`.
-- A Python environment that contains `agent-context-graph` and `skills-graph[agent-context-graph]`.
-- Codex CLI or IDE extension running in a project that trusts the project-local `.codex/` layer.
-
-For a global plugin proof of concept, see:
+Plugin source:
 
 ```text
 context-graph/plugins/agent-context-graph-codex
 ```
 
-That plugin expects `agent-context-graph` to be available on `PATH` and Memgraph to be reachable from the Codex process. A global install can use `uv tool`:
+Register the public Git-backed marketplace:
 
 ```bash
-uv tool install agent-context-graph --with "skills-graph[agent-context-graph]"
+codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins
 ```
 
-Then install the Codex plugin through a user plugin marketplace. Keep graph credentials in the process environment, not in the plugin hook file.
+Then install or enable `agent-context-graph-codex` from the Codex plugin UI.
 
 Check the installed hook environment with:
 
@@ -169,15 +223,9 @@ Check the installed hook environment with:
 agent-context-graph doctor --runtime codex --connector skills-graph
 ```
 
-For a public Git-backed marketplace install:
+Keep graph credentials in the process environment, not in plugin hook files. Runtime hooks use `memgraph-toolbox` defaults unless the Codex process has `MEMGRAPH_*` variables set.
 
-```bash
-codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins
-```
-
-Local `.codex/` files remain useful for source development and per-project experiments. This repository ignores `.codex/`.
-
-### Claude Code Hooks
+### Claude Code Plugin
 
 Claude Code hook configuration can be installed as a Claude Code plugin.
 
@@ -199,175 +247,28 @@ Then install:
 /plugin install agent-context-graph-claude@context-graph-plugins
 ```
 
-The streamlined setup only needs two pieces of local information:
+Check the installed hook environment with:
 
-- where to write the Codex project config, usually your repo root
-- where Memgraph is, plus optional auth/database values
+```bash
+agent-context-graph doctor --runtime claude-code --connector skills-graph
+```
 
-If Memgraph is running locally with defaults:
+### Source Development
+
+For source development and per-project experiments, you can generate local Codex hook files:
 
 ```bash
 agent-context-graph setup codex --project-dir "$PWD" --setup-schema
 ```
 
-`--setup-schema` connects to Memgraph immediately and runs `SkillGraph().setup()`.
-
-If you need non-default Memgraph connection values:
-
-```bash
-agent-context-graph setup codex \
-  --project-dir /path/to/your/repo \
-  --memgraph-url bolt://localhost:7687 \
-  --memgraph-user "" \
-  --memgraph-password "" \
-  --memgraph-database memgraph \
-  --setup-schema
-```
-
-The `--memgraph-*` options are used for `--setup-schema`, but they are not written into `.codex/hooks.json`.
-
-For source development in this workspace:
-
-```bash
-uv run --package skills-graph --extra agent-context-graph \
-  python -m agent_context_graph.cli setup codex \
-  --project-dir /path/to/your/repo \
-  --memgraph-url bolt://localhost:7687 \
-  --setup-schema
-```
-
-The command writes local, ignored files:
+This writes local, ignored files:
 
 ```text
 .codex/config.toml
 .codex/hooks.json
 ```
 
-It refuses to overwrite existing generated files unless you pass `--force`.
-
-The generated hook command does not embed any Memgraph connection values. At runtime, Codex must run with the needed `MEMGRAPH_*` variables in its process environment, or the hooks will use `memgraph-toolbox` defaults.
-
-If Memgraph requires a password, provide `MEMGRAPH_PASSWORD` to the Codex process environment. `.codex/hooks.json` should not contain Memgraph credentials.
-
-Keep the Python environment used by the generated hook command around. Codex will run that absolute command path for every hook event.
-
-To smoke test the generated command, copy the `"command"` value from `.codex/hooks.json` and run:
-
-```bash
-printf '{"hook_event_name":"Stop","session_id":"test"}' | COMMAND
-```
-
-The expected output is:
-
-```json
-{"continue": true}
-```
-
-If you prefer manual setup:
-
-1. Make `skills-graph` able to reach Memgraph, then initialize and seed your skill graph once:
-
-```bash
-export MEMGRAPH_URL="bolt://localhost:7687"
-export MEMGRAPH_USER=""
-export MEMGRAPH_PASSWORD=""
-```
-
-```python
-from skills_graph import SkillGraph
-
-skills = SkillGraph()
-skills.setup()
-```
-
-2. Install the hook command and the graph connector in the same Python environment:
-
-```bash
-python -m venv ~/.venvs/agent-context-graph-hooks
-~/.venvs/agent-context-graph-hooks/bin/python -m pip install \
-  "agent-context-graph" \
-  "skills-graph[agent-context-graph]"
-```
-
-For source development in this workspace, use this command instead of the venv binary:
-
-```bash
-cd /path/to/ai-toolkit
-uv run --package skills-graph --extra agent-context-graph \
-  python -m agent_context_graph.cli hook run codex --connector skills-graph
-```
-
-3. Generate private Codex hook config in the workspace:
-
-```bash
-agent-context-graph hook init codex --connector skills-graph
-```
-
-For source development in this workspace:
-
-```bash
-uv run --package skills-graph --extra agent-context-graph \
-  python -m agent_context_graph.cli hook init codex --connector skills-graph
-```
-
-The wizard writes local, ignored files:
-
-```text
-.codex/config.toml
-.codex/hooks.json
-```
-
-It refuses to overwrite existing generated files unless you pass `--force`.
-
-The generated config enables Codex hooks and points all supported Codex hook events at a command like:
-
-```bash
-agent-context-graph hook run codex --connector skills-graph
-```
-
-The resulting `.codex/hooks.json` has this shape:
-
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "startup|resume|clear",
-        "hooks": [{ "type": "command", "command": "COMMAND", "timeout": 30 }]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [{ "type": "command", "command": "COMMAND", "timeout": 30 }]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [{ "type": "command", "command": "COMMAND", "timeout": 30 }]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [{ "type": "command", "command": "COMMAND", "timeout": 30 }]
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "hooks": [{ "type": "command", "command": "COMMAND", "timeout": 30 }]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [{ "type": "command", "command": "COMMAND", "timeout": 30 }]
-      }
-    ]
-  }
-}
-```
-
-The adapter records Codex `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PermissionRequest`, and `Stop` payloads. MCP tool names such as `mcp__skills__get_skill` are normalized by `skills-graph` to the underlying `get_skill` operation.
+See [Command Hook Reference](docs/command-hooks.md) for manual setup, non-default Memgraph values, smoke tests, and generated hook JSON details.
 
 ### Multiple Graph Components
 

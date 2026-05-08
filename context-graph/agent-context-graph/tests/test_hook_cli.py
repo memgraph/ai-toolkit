@@ -160,6 +160,7 @@ def test_top_level_cli_bootstrap_reports_missing_uv(monkeypatch, capsys):
     error = capsys.readouterr().err
     assert "FAIL uv: not found on PATH" in error
     assert "curl -LsSf https://astral.sh/uv/install.sh | sh" in error
+    assert "install Python 3.10+" in error
 
 
 def test_top_level_cli_bootstrap_reports_unknown_connector(monkeypatch, capsys):

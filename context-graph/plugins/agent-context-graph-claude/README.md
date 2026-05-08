@@ -30,6 +30,8 @@ Bootstrap expects `uv` and a reachable Memgraph instance. If Memgraph is not run
 docker run --rm -p 7687:7687 memgraph/memgraph
 ```
 
+`uv` manages Python for the tool. If uv-managed Python downloads are blocked in your environment, install Python 3.10+ and rerun bootstrap.
+
 Bootstrap installs and verifies:
 
 ```bash
