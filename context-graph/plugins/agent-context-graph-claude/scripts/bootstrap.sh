@@ -16,7 +16,7 @@ EOF
 fi
 
 uv tool install "agent-context-graph>=0.1.2" \
-  --with "skills-graph[agent-context-graph]" \
+  --with "skills-graph[agent-context-graph]>=0.1.3" \
   --upgrade \
   --refresh-package agent-context-graph \
   --refresh-package skills-graph
