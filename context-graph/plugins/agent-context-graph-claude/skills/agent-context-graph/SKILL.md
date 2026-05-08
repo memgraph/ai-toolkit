@@ -14,6 +14,18 @@ The plugin only installs runtime hook wiring. It must not assign graph meaning. 
 
 ## Checks
 
+For first-time setup, run the plugin bootstrap once. It delegates to the CLI bootstrap and falls back to `uvx` if `agent-context-graph` is not installed yet:
+
+```bash
+./scripts/bootstrap.sh
+```
+
+If bootstrap says Memgraph is not reachable, tell the user to start Memgraph:
+
+```bash
+docker run --rm -p 7687:7687 memgraph/memgraph
+```
+
 Run the single CLI doctor first. It checks the same Python environment that the hook command uses:
 
 ```bash

@@ -16,17 +16,33 @@ Claude Code Plugin -> Claude Code Runtime Adapter -> Event Protocol -> Graph Con
 
 The plugin is only deployment wiring. Agent Context Graph normalizes runtime events. Graph connectors decide what to persist.
 
+## First Run
+
+The plugin installs hook wiring, while the runtime package is installed by the CLI bootstrap:
+
+```bash
+./scripts/bootstrap.sh
+```
+
+Bootstrap expects `uv` and a reachable Memgraph instance. If Memgraph is not running, start it and rerun bootstrap:
+
+```bash
+docker run --rm -p 7687:7687 memgraph/memgraph
+```
+
+`uv` manages Python for the tool. If uv-managed Python downloads are blocked in your environment, install Python 3.10+ and rerun bootstrap.
+
+Bootstrap installs and verifies:
+
+```bash
+agent-context-graph bootstrap --runtime claude-code --connector skills-graph
+```
+
 ## Prerequisites
 
 - Memgraph running and reachable over Bolt.
-- `agent-context-graph` available on `PATH`.
-- `skills-graph[agent-context-graph]` installed in the same Python environment.
-
-For a global user install:
-
-```bash
-uv tool install agent-context-graph --with "skills-graph[agent-context-graph]"
-```
+- `uv` available on `PATH`.
+- `agent-context-graph` available on `PATH` after bootstrap.
 
 ## Local Test
 
