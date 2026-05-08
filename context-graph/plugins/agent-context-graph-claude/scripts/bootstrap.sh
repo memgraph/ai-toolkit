@@ -15,12 +15,11 @@ EOF
   exit 1
 fi
 
-if command -v agent-context-graph >/dev/null 2>&1 \
-  && agent-context-graph bootstrap --help >/dev/null 2>&1; then
-  exec agent-context-graph bootstrap --runtime claude-code --connector skills-graph "$@"
-fi
-
-exec uvx \
-  --from agent-context-graph \
+uv tool install "agent-context-graph>=0.1.2" \
   --with "skills-graph[agent-context-graph]" \
-  agent-context-graph bootstrap --runtime claude-code --connector skills-graph "$@"
+  --upgrade \
+  --refresh-package agent-context-graph \
+  --refresh-package skills-graph \
+  --reinstall
+
+exec agent-context-graph bootstrap --runtime claude-code --connector skills-graph --no-reinstall "$@"

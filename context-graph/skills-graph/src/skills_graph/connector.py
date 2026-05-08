@@ -84,8 +84,12 @@ class SkillGraphConnector(GraphConnector):
         if isinstance(event, ToolStartEvent):
             if self._operation_name(event.tool_name) in self._skill_tool_names:
                 return True
-            return self._extract_skill_file_read(event.tool_input) is not None
+            return self._extract_skill_file_read(event.tool_input, event.metadata) is not None
         if isinstance(event, ToolEndEvent):
+            if self._extract_skill_file_read(event.metadata) is not None:
+                return True
+            if self._extract_skill_content(event.result) is not None:
+                return True
             return self._operation_name(event.tool_name) in self._skill_tool_names
         return False
 
@@ -101,7 +105,7 @@ class SkillGraphConnector(GraphConnector):
 
     def _on_tool_start(self, event: ToolStartEvent) -> None:
         """A skill-related tool was invoked — record the access."""
-        skill_file = self._extract_skill_file_read(event.tool_input)
+        skill_file = self._extract_skill_file_read(event.tool_input, event.metadata)
         if skill_file is not None:
             metadata = self._metadata_from_skill_file(skill_file)
             skill_name = metadata.get("name") or skill_file.parent.name
@@ -129,6 +133,30 @@ class SkillGraphConnector(GraphConnector):
 
     def _on_tool_end(self, event: ToolEndEvent) -> None:
         """A search/list tool returned — record which skills appeared."""
+        skill_file = self._extract_skill_file_read(event.metadata)
+        skill_content = self._extract_skill_content(event.result)
+        if skill_file is not None or skill_content is not None:
+            metadata = self._metadata_from_skill_content(
+                skill_content or "",
+                source_path=str(skill_file) if skill_file is not None else None,
+            )
+            if not metadata.get("name") and skill_file is not None:
+                metadata["name"] = skill_file.parent.name
+            skill_name = metadata.get("name")
+            if isinstance(skill_name, str) and skill_name:
+                self._record_skill_access(
+                    session_id=event.session_id,
+                    skill_name=skill_name,
+                    action="read_skill_file",
+                    timestamp=event.timestamp,
+                    create_missing=True,
+                    description=metadata.get("description", ""),
+                    content=metadata.get("content", ""),
+                    source_path=metadata.get("metadata", {}).get("source_path"),
+                    metadata=metadata.get("metadata", {}),
+                )
+                return
+
         operation_name = self._operation_name(event.tool_name)
         if operation_name not in {"list_skills", "search_skills", "search_by_name"}:
             return
@@ -210,8 +238,8 @@ class SkillGraphConnector(GraphConnector):
             return None
 
     @classmethod
-    def _extract_skill_file_read(cls, tool_input: Any) -> Path | None:
-        for value in cls._iter_string_values(tool_input):
+    def _extract_skill_file_read(cls, tool_input: Any, metadata: Any | None = None) -> Path | None:
+        for value in cls._iter_string_values({"tool_input": tool_input, "metadata": metadata}):
             for candidate in cls._candidate_paths(value):
                 skill_file = cls._skill_file_from_candidate(candidate)
                 if skill_file is not None:
@@ -258,29 +286,66 @@ class SkillGraphConnector(GraphConnector):
 
     @staticmethod
     def _metadata_from_skill_file(path: Path) -> dict[str, Any]:
-        metadata: dict[str, Any] = {
-            "content": "",
-            "metadata": {"source": "local_skill_file", "source_path": str(path)},
-        }
         try:
             content = path.read_text(encoding="utf-8")
         except OSError:
-            metadata["name"] = path.parent.name
-            return metadata
+            return {
+                "name": path.parent.name,
+                "content": "",
+                "metadata": {"source": "local_skill_file", "source_path": str(path)},
+            }
+        return SkillGraphConnector._metadata_from_skill_content(
+            content, source_path=str(path), fallback_name=path.parent.name
+        )
 
-        metadata["content"] = content
+    @staticmethod
+    def _metadata_from_skill_content(
+        content: str,
+        *,
+        source_path: str | None = None,
+        fallback_name: str | None = None,
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "content": content,
+            "metadata": {"source": "local_skill_file"},
+        }
+        if source_path is not None:
+            metadata["metadata"]["source_path"] = source_path
+
         frontmatter = _parse_frontmatter(content)
         name = frontmatter.get("name")
         description = frontmatter.get("description")
         if isinstance(name, str) and name:
             metadata["name"] = name
-        else:
-            metadata["name"] = path.parent.name
+        elif fallback_name:
+            metadata["name"] = fallback_name
         if isinstance(description, str):
             metadata["description"] = description
         metadata_keys = {"version", "category", "author", "last_updated", "license", "compatibility"}
         metadata["metadata"].update({key: str(value) for key, value in frontmatter.items() if key in metadata_keys})
         return metadata
+
+    @classmethod
+    def _extract_skill_content(cls, result: Any, *, _depth: int = 0) -> str | None:
+        if _depth > _MAX_RESULT_DEPTH:
+            return None
+        if isinstance(result, str):
+            if _parse_frontmatter(result):
+                return result
+            return None
+        if isinstance(result, list):
+            for item in result:
+                content = cls._extract_skill_content(item, _depth=_depth + 1)
+                if content is not None:
+                    return content
+            return None
+        if isinstance(result, dict):
+            for key in ("content", "text", "result", "tool_response"):
+                if key in result:
+                    content = cls._extract_skill_content(result[key], _depth=_depth + 1)
+                    if content is not None:
+                        return content
+        return None
 
     def _record_skill_access(
         self,
