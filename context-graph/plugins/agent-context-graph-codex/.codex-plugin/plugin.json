@@ -1,6 +1,6 @@
 {
-  "name": "agent-context-graph-codex",
-  "version": "0.1.0",
+  "name": "context-graph",
+  "version": "0.1.1",
   "description": "Capture Codex runtime activity through Agent Context Graph hooks.",
   "author": {
     "name": "Memgraph"
@@ -11,7 +11,7 @@
   "skills": "./skills/",
   "hooks": "./hooks/hooks.json",
   "interface": {
-    "displayName": "Agent Context Graph for Codex",
+    "displayName": "Context Graph",
     "shortDescription": "Send Codex lifecycle events to Agent Context Graph.",
     "longDescription": "Installs Codex lifecycle hooks that call the Agent Context Graph hook CLI, allowing graph connectors such as Skills Graph to persist useful runtime context in Memgraph.",
     "developerName": "Memgraph",

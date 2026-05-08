@@ -1,6 +1,6 @@
 ---
 name: agent-context-graph
-description: Check, explain, and troubleshoot Agent Context Graph capture from Codex hooks into Memgraph-backed graph connectors.
+description: Set up and check Codex context capture into Memgraph.
 ---
 
 # Agent Context Graph

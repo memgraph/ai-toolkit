@@ -5,7 +5,7 @@
   },
   "plugins": [
     {
-      "name": "agent-context-graph-codex",
+      "name": "context-graph",
       "source": {
         "source": "git-subdir",
         "url": "https://github.com/memgraph/ai-toolkit.git",

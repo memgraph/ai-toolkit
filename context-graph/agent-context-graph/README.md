@@ -215,7 +215,7 @@ Register the public Git-backed marketplace:
 codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins
 ```
 
-Then install or enable `agent-context-graph-codex` from the Codex plugin UI.
+Then install or enable `context-graph` from the Codex plugin UI.
 
 Check the installed hook environment with:
 
@@ -244,7 +244,7 @@ For a public Git-backed marketplace install, add the marketplace inside Claude C
 Then install:
 
 ```text
-/plugin install agent-context-graph-claude@context-graph-plugins
+/plugin install context-graph@context-graph-plugins
 ```
 
 Check the installed hook environment with:

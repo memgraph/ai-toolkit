@@ -1,5 +1,5 @@
 ---
-description: Check, explain, and troubleshoot Agent Context Graph capture from Claude Code hooks into Memgraph-backed graph connectors.
+description: Set up and check Claude Code context capture into Memgraph.
 ---
 
 # Agent Context Graph
