@@ -2,6 +2,7 @@ import re
 from typing import Any
 
 from fastmcp import FastMCP
+from starlette.responses import JSONResponse
 
 from mcp_memgraph.config import get_mcp_config, get_memgraph_config
 from memgraph_toolbox.api.memgraph import Memgraph
@@ -65,6 +66,11 @@ logger.info(
 logger.info("Read-only mode: %s", READ_ONLY_MODE)
 
 db = Memgraph(**memgraph_config.get_client_config())
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request):
+    return JSONResponse({"status": "healthy", "service": "mcp-server"})
 
 
 @mcp.tool()
