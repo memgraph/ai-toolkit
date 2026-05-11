@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastmcp import Context, FastMCP
+from starlette.responses import JSONResponse
 
 from mcp_memgraph.config import get_mcp_config, get_memgraph_config
 from memgraph_toolbox.api.memgraph import Memgraph
@@ -44,6 +45,11 @@ logger.warning(
 
 # TODO (@antejavor): Implement some tests for this
 db = Memgraph(**memgraph_config.get_client_config())
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request):
+    return JSONResponse({"status": "healthy", "service": "mcp-server"})
 
 
 # ============================================================================
