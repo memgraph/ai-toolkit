@@ -134,7 +134,7 @@ def _init_codex(argv: list[str]) -> int:
     parser.add_argument(
         "--setup-schema",
         action="store_true",
-        help="Connect to Memgraph now and initialize the skills-graph schema.",
+        help="Connect to Memgraph now and initialize enabled graph connector schemas.",
     )
     parser.add_argument(
         "--timeout",
@@ -173,7 +173,7 @@ def _init_codex(argv: list[str]) -> int:
         encoding="utf-8",
     )
     if args.setup_schema:
-        _setup_skills_graph_schema(memgraph_values)
+        _setup_connector_schemas(connectors, memgraph_values)
 
     print(f"Wrote {config_path}")
     print(f"Wrote {hooks_path}")
@@ -201,23 +201,42 @@ def _memgraph_env_from_args(args: argparse.Namespace) -> dict[str, str]:
     )
 
 
-def _setup_skills_graph_schema(memgraph_env: dict[str, str]) -> None:
-    try:
-        from skills_graph import SkillGraph
-    except ImportError as exc:
-        msg = "skills-graph is required to initialize the skills-graph schema"
-        raise ImportError(msg) from exc
-
+def _setup_connector_schemas(connectors: list[str], memgraph_env: dict[str, str]) -> None:
     previous = {key: os.environ.get(key) for key in MEMGRAPH_ENV_KEYS}
     os.environ.update(memgraph_env)
     try:
-        SkillGraph().setup()
+        for connector in connectors:
+            normalized = connector.strip().replace("-", "_")
+            if normalized == "skills_graph":
+                _setup_skills_graph_schema()
+            elif normalized == "actions_graph":
+                _setup_actions_graph_schema()
     finally:
         for key, value in previous.items():
             if value is None:
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+def _setup_skills_graph_schema() -> None:
+    try:
+        from skills_graph import SkillGraph
+    except ImportError as exc:
+        msg = "skills-graph is required to initialize the skills-graph schema"
+        raise ImportError(msg) from exc
+
+    SkillGraph().setup()
+
+
+def _setup_actions_graph_schema() -> None:
+    try:
+        from actions_graph import ActionsGraph
+    except ImportError as exc:
+        msg = "actions-graph is required to initialize the actions-graph schema"
+        raise ImportError(msg) from exc
+
+    ActionsGraph().setup()
 
 
 def _mask_secret(value: str, secret: str) -> str:

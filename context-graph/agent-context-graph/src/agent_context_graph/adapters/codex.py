@@ -195,6 +195,8 @@ def create_link(connector_names: Iterable[str] = ()) -> AgentLink:
             continue
         if normalized == "skills_graph":
             _add_skills_graph_connector(link)
+        elif normalized == "actions_graph":
+            _add_actions_graph_connector(link)
         else:
             msg = f"Unsupported connector: {connector_name}"
             raise ValueError(msg)
@@ -214,7 +216,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--connector",
         action="append",
         default=None,
-        help="Graph connector to enable. Currently supported: skills-graph.",
+        help="Graph connector to enable. Currently supported: skills-graph, actions-graph.",
     )
     parser.add_argument(
         "--session-id",
@@ -263,6 +265,18 @@ def _add_skills_graph_connector(link: AgentLink) -> None:
     # each call builds its own short-lived SkillGraph/Memgraph connection.
     graph = SkillGraph()
     link.add_connector(SkillGraphConnector(graph))
+
+
+def _add_actions_graph_connector(link: AgentLink) -> None:
+    try:
+        from actions_graph import ActionsGraph
+        from actions_graph.connector import ActionsGraphConnector
+    except ImportError as exc:
+        msg = "actions-graph is required for the actions-graph Codex connector"
+        raise ImportError(msg) from exc
+
+    graph = ActionsGraph()
+    link.add_connector(ActionsGraphConnector(graph))
 
 
 def _connectors_from_env() -> list[str]:

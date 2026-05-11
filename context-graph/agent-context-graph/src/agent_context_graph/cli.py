@@ -204,21 +204,36 @@ def _check_package(package_name: str) -> dict[str, object]:
 
 def _check_connector(connector_name: str) -> dict[str, object]:
     normalized = connector_name.strip().replace("-", "_")
-    if normalized != "skills_graph":
+    if normalized == "skills_graph":
+        try:
+            from skills_graph import SkillGraph
+
+            graph = SkillGraph()
+            version = _package_version("skills-graph")
+            return {"name": "connector:skills-graph", "ok": True, "detail": f"installed={version}; memgraph=reachable"}
+        except Exception as exc:
+            return {"name": "connector:skills-graph", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        finally:
+            driver = getattr(getattr(locals().get("graph", None), "_db", None), "driver", None)
+            if driver is not None:
+                driver.close()
+
+    if normalized == "actions_graph":
+        try:
+            from actions_graph import ActionsGraph
+
+            graph = ActionsGraph()
+            version = _package_version("actions-graph")
+            return {"name": "connector:actions-graph", "ok": True, "detail": f"installed={version}; memgraph=reachable"}
+        except Exception as exc:
+            return {"name": "connector:actions-graph", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        finally:
+            driver = getattr(getattr(locals().get("graph", None), "_db", None), "driver", None)
+            if driver is not None:
+                driver.close()
+
+    else:
         return {"name": f"connector:{connector_name}", "ok": False, "detail": "unsupported connector"}
-
-    try:
-        from skills_graph import SkillGraph
-
-        graph = SkillGraph()
-        version = _package_version("skills-graph")
-        return {"name": "connector:skills-graph", "ok": True, "detail": f"installed={version}; memgraph=reachable"}
-    except Exception as exc:
-        return {"name": "connector:skills-graph", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
-    finally:
-        driver = getattr(getattr(locals().get("graph", None), "_db", None), "driver", None)
-        if driver is not None:
-            driver.close()
 
 
 def _check_runtime(runtime: str, connectors: list[str]) -> dict[str, object]:
@@ -270,6 +285,8 @@ def _connector_requirement(connector: str) -> str | None:
     normalized = connector.strip().replace("_", "-")
     if normalized == "skills-graph":
         return "skills-graph[agent-context-graph]"
+    if normalized == "actions-graph":
+        return "actions-graph"
     return None
 
 
