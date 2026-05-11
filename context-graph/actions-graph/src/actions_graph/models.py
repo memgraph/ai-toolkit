@@ -283,16 +283,20 @@ class SubagentEvent(Action):
         result: Result from subagent (if completed)
         usage: Token usage for the subagent
 
-    Note:
-        The action_type should be set by the caller to either
-        SUBAGENT_START or SUBAGENT_STOP after construction.
+        action_type: Subagent lifecycle direction. Defaults to SUBAGENT_START.
     """
 
+    action_type: ActionType = ActionType.SUBAGENT_START
     agent_id: str = ""
     agent_type: str = ""
     description: str = ""
     result: str | None = None
     usage: dict[str, Any] | None = None
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.action_type not in (ActionType.SUBAGENT_START, ActionType.SUBAGENT_STOP):
+            raise ActionValidationError("SubagentEvent action_type must be subagent_start or subagent_stop")
 
 
 @dataclass

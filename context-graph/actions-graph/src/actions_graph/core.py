@@ -102,7 +102,7 @@ class ActionsGraph:
 
     def clear(self) -> None:
         """Remove all session and action data from the graph."""
-        self._db.query("MATCH (n) WHERE n:Session OR n:Action OR n:Tool DETACH DELETE n;")
+        self._db.query("MATCH (n) WHERE n:Session OR n:Action OR n:Tool OR n:Tag DETACH DELETE n;")
         self._last_action_id.clear()
 
     # ------------------------------------------------------------------
@@ -177,6 +177,45 @@ class ActionsGraph:
                 params={"session_id": session.session_id, "tags": session.tags},
             )
 
+        return session
+
+    def ensure_session(self, session: Session) -> Session:
+        """Create a session if missing, preserving an existing session.
+
+        This is used by event connectors where concurrent first events for a
+        session can arrive before an explicit session-start event.
+        """
+        self._db.query(
+            """
+            MERGE (s:Session {session_id: $session_id})
+            ON CREATE SET
+                s.started_at = $started_at,
+                s.ended_at = $ended_at,
+                s.status = $status,
+                s.model = $model,
+                s.total_cost_usd = $total_cost_usd,
+                s.total_input_tokens = $total_input_tokens,
+                s.total_output_tokens = $total_output_tokens,
+                s.working_directory = $working_directory,
+                s.git_branch = $git_branch,
+                s.metadata = $metadata,
+                s.parent_session_id = $parent_session_id
+            """,
+            params={
+                "session_id": session.session_id,
+                "started_at": session.started_at,
+                "ended_at": session.ended_at,
+                "status": session.status.value,
+                "model": session.model,
+                "total_cost_usd": session.total_cost_usd,
+                "total_input_tokens": session.total_input_tokens,
+                "total_output_tokens": session.total_output_tokens,
+                "working_directory": session.working_directory,
+                "git_branch": session.git_branch,
+                "metadata": json.dumps(session.metadata),
+                "parent_session_id": session.parent_session_id,
+            },
+        )
         return session
 
     def get_session(self, session_id: str) -> Session | None:
@@ -340,6 +379,8 @@ class ActionsGraph:
         Returns:
             The recorded action
         """
+        last_action_id = self._last_action_id.get(action.session_id) or self._find_last_action_id(action.session_id)
+
         # Determine additional labels based on action type
         type_labels = self._get_type_labels(action)
         labels_str = ":Action" + "".join(f":{lbl}" for lbl in type_labels)
@@ -386,7 +427,6 @@ class ActionsGraph:
         )
 
         # Create temporal sequence
-        last_action_id = self._last_action_id.get(action.session_id)
         if last_action_id:
             self._db.query(
                 """
@@ -428,6 +468,20 @@ class ActionsGraph:
             )
 
         return action
+
+    def _find_last_action_id(self, session_id: str) -> str | None:
+        rows = self._db.query(
+            """
+            MATCH (s:Session {session_id: $session_id})-[:HAS_ACTION]->(a:Action)
+            RETURN a.action_id AS action_id
+            ORDER BY a.timestamp DESC
+            LIMIT 1
+            """,
+            params={"session_id": session_id},
+        )
+        if not rows:
+            return None
+        return rows[0]["action_id"]
 
     def record_tool_call(
         self,
@@ -894,13 +948,13 @@ class ActionsGraph:
         elif action_type in (ActionType.SUBAGENT_START, ActionType.SUBAGENT_STOP):
             event = SubagentEvent(
                 **base_kwargs,
+                action_type=action_type,
                 agent_id=props.get("agent_id", ""),
                 agent_type=props.get("agent_type", ""),
                 description=props.get("description", ""),
                 result=props.get("result"),
                 usage=props.get("usage"),
             )
-            event.action_type = action_type
             return event
         elif action_type == ActionType.PERMISSION_REQUEST:
             return PermissionRequest(

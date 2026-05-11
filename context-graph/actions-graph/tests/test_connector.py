@@ -3,6 +3,7 @@
 from actions_graph.connector import ActionsGraphConnector
 from actions_graph.models import ActionStatus, ErrorEvent, Message, Session, ToolCall, ToolResult
 from agent_context_graph.events import (
+    AgentStartEvent,
     ErrorOccurredEvent,
     MessageEvent,
     SessionEndEvent,
@@ -165,6 +166,26 @@ def test_records_message_and_error_events():
     assert isinstance(graph.actions[1], ErrorEvent)
     assert graph.actions[1].error_details == {"code": "E"}
     assert graph.actions[1].recoverable is False
+
+
+def test_records_agent_parent_name_as_metadata_not_description():
+    graph = FakeActionsGraph()
+    connector = ActionsGraphConnector(graph)
+
+    connector.on_event(
+        AgentStartEvent(
+            session_id="session-1",
+            timestamp="2026-01-01T00:00:00+00:00",
+            agent_name="reviewer-1",
+            agent_type="reviewer",
+            parent_agent_name="main",
+            metadata={"description": "Review patch"},
+        )
+    )
+
+    action = graph.actions[0]
+    assert action.description == "Review patch"
+    assert action.metadata["parent_agent_name"] == "main"
 
 
 def test_records_session_end():

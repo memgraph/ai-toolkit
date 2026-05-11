@@ -141,13 +141,13 @@ class ActionsGraphConnector(GraphConnector):
         action = SubagentEvent(
             action_id=self._action_id(event),
             session_id=event.session_id,
+            action_type=ActionType.SUBAGENT_START,
             timestamp=event.timestamp,
             agent_id=event.agent_name,
             agent_type=event.agent_type,
-            description=event.parent_agent_name or "",
-            metadata=self._metadata(event),
+            description=self._metadata_value(event, "description", ""),
+            metadata=self._metadata(event, parent_agent_name=event.parent_agent_name),
         )
-        action.action_type = ActionType.SUBAGENT_START
         self._graph.record_action(action)
 
     def _on_agent_end(self, event: AgentEndEvent) -> None:
@@ -155,13 +155,13 @@ class ActionsGraphConnector(GraphConnector):
         action = SubagentEvent(
             action_id=self._action_id(event),
             session_id=event.session_id,
+            action_type=ActionType.SUBAGENT_STOP,
             timestamp=event.timestamp,
             agent_id=event.agent_name,
             agent_type=event.agent_type,
             result=self._content(event.output),
             metadata=self._metadata(event),
         )
-        action.action_type = ActionType.SUBAGENT_STOP
         self._graph.record_action(action)
 
     def _on_message(self, event: MessageEvent) -> None:
@@ -196,6 +196,16 @@ class ActionsGraphConnector(GraphConnector):
     def _ensure_session(self, event: Event) -> None:
         if self._graph.get_session(event.session_id) is not None:
             return
+        ensure_session = getattr(self._graph, "ensure_session", None)
+        if ensure_session is not None:
+            ensure_session(
+                Session(
+                    session_id=event.session_id,
+                    started_at=event.timestamp,
+                    metadata=self._metadata(event),
+                )
+            )
+            return
         self._graph.create_session(
             Session(
                 session_id=event.session_id,
@@ -213,6 +223,11 @@ class ActionsGraphConnector(GraphConnector):
             if value is not None:
                 metadata[key] = value
         return metadata
+
+    @staticmethod
+    def _metadata_value(event: Event, key: str, default: str) -> str:
+        value = event.metadata.get(key)
+        return value if isinstance(value, str) else default
 
     @staticmethod
     def _status(value: str) -> ActionStatus:

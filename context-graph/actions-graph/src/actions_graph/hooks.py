@@ -271,11 +271,11 @@ class ActionTracker:
 
         action = SubagentEvent(
             session_id=self.session_id,
+            action_type=ActionType.SUBAGENT_START,
             agent_id=agent_id,
             agent_type=agent_type,
             status=ActionStatus.IN_PROGRESS,
         )
-        action.action_type = ActionType.SUBAGENT_START
 
         self.graph.record_action(action)
 
@@ -306,6 +306,7 @@ class ActionTracker:
 
         action = SubagentEvent(
             session_id=self.session_id,
+            action_type=ActionType.SUBAGENT_STOP,
             agent_id=agent_id,
             agent_type=agent_type,
             status=ActionStatus.COMPLETED,
@@ -315,7 +316,6 @@ class ActionTracker:
                 "agent_transcript_path": input_data.get("agent_transcript_path"),
             },
         )
-        action.action_type = ActionType.SUBAGENT_STOP
 
         self.graph.record_action(action)
         return {}

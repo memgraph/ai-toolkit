@@ -193,7 +193,6 @@ class TestSubagentEvent:
             agent_type="code-reviewer",
             description="Review the code changes",
         )
-        event.action_type = ActionType.SUBAGENT_START
         assert event.agent_id == "subagent-001"
         assert event.action_type == ActionType.SUBAGENT_START
 
@@ -201,12 +200,13 @@ class TestSubagentEvent:
         """Test creating a subagent stop event."""
         event = SubagentEvent(
             session_id="session-123",
+            action_type=ActionType.SUBAGENT_STOP,
             agent_id="subagent-001",
             agent_type="code-reviewer",
             result="Review completed successfully",
         )
-        event.action_type = ActionType.SUBAGENT_STOP
         assert event.result == "Review completed successfully"
+        assert event.action_type == ActionType.SUBAGENT_STOP
 
 
 class TestErrorEvent:
