@@ -1,6 +1,6 @@
 [project]
 name = "skills-graph"
-version = "0.1.0"
+version = "0.1.3"
 description = "Persist, retrieve and evolve AI skills in Memgraph"
 readme = "README.md"
 license = { text = "MIT" }
@@ -12,17 +12,26 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "memgraph-toolbox",
+    "memgraph-toolbox>=0.1.11",
 ]
 
 [project.optional-dependencies]
+agent-context-graph = [
+    "agent-context-graph>=0.1.2",
+]
 test = [
     "pytest>=9.0.3",
+    "pytest-asyncio>=0.24.0",
+    "openai-agents>=0.1.0",
 ]
 
 [tool.uv.sources]
 memgraph-toolbox = { workspace = true }
+agent-context-graph = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

@@ -1,12 +1,12 @@
 [project]
 name = "memgraph-ai"
-version = "0.1.8"
+version = "0.1.9"
 description = "Memgraph AI Toolkit"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = [
-    "memgraph-toolbox",
+    "memgraph-toolbox>=0.1.11",
     "mcp[cli]>=1.23.0",
     "neo4j>=5.28.1",
 ]
@@ -51,6 +51,7 @@ members = [
     "unstructured2graph",
     "context-graph/skills-graph",
     "context-graph/actions-graph",
+    "context-graph/agent-context-graph",
 ]
 
 [tool.ruff]
@@ -81,7 +82,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["memgraph_toolbox", "mcp_memgraph", "langchain_memgraph", "lightrag_memgraph", "unstructured2graph", "skills_graph"]
+known-first-party = ["memgraph_toolbox", "mcp_memgraph", "langchain_memgraph", "lightrag_memgraph", "unstructured2graph", "skills_graph", "actions_graph", "agent_context_graph"]
 
 [tool.ruff.lint.per-file-ignores]
 # Notebook cells reference variables from earlier cells — not actual undefined names

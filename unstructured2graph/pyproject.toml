@@ -1,6 +1,6 @@
 [project]
 name = "unstructured2graph"
-version = "0.1.4"
+version = "0.1.5"
 description = "Convert unstructured documents into knowledge graphs"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,8 +23,8 @@ classifiers = [
 
 dependencies = [
     "unstructured>=0.18.18",
-    "lightrag-memgraph>=0.1.5",
-    "memgraph-toolbox>=0.1.10",
+    "lightrag-memgraph>=0.1.6",
+    "memgraph-toolbox>=0.1.11",
 ]
 [project.optional-dependencies]
 all-docs = [

@@ -178,5 +178,15 @@ cython_debug/
 .vscode/
 
 
-# Project specfic files
+# Local agent hook configuration
+/.codex/
+/.claude/settings.local.json
+/AGENTS.md
+/docs/agents/
+/context-graph/CONTEXT-MAP.md
+/context-graph/*/CONTEXT.md
+/context-graph/docs/adr/
+/context-graph/*/docs/adr/
+
+# Project specific files
 /enterprise-context/sic-agent/sic-scrapper/output/*

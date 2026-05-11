@@ -6,15 +6,14 @@ A small library to persist, retrieve and evolve AI skills in [Memgraph](https://
 
 ```
 (:Skill {name, description, content, created_at, updated_at})
-(:Tag {name})
-(:Skill)-[:HAS_TAG]->(:Tag)
 (:Skill)-[:DEPENDS_ON]->(:Skill)
+(:Session)-[:USED_SKILL]->(:Skill)
 ```
 
 ## Quick Start
 
 ```python
-from skill_graph import SkillGraph, Skill
+from skills_graph import SkillGraph, Skill
 
 # Connect (uses MEMGRAPH_URL, MEMGRAPH_USER, MEMGRAPH_PASSWORD env vars by default)
 sg = SkillGraph()
@@ -27,14 +26,12 @@ sg.add_skill(Skill(
     name="memgraph-cypher",
     description="Writing Cypher queries for Memgraph",
     content="# Cypher for Memgraph\n\nUse MATCH, CREATE, MERGE ...",
-    tags=["cypher", "memgraph"],
 ))
 
 # Retrieve by name
 skill = sg.get_skill("memgraph-cypher")
 
 # Search
-sg.search_by_tags(["cypher"])
 sg.search_by_name("memgraph")
 
 # Dependencies
@@ -45,11 +42,19 @@ deps = sg.get_dependencies("advanced-cypher")
 all_skills = sg.list_skills()
 
 # Update
-sg.update_skill("memgraph-cypher", content="updated content", tags=["cypher"])
+sg.update_skill("memgraph-cypher", content="updated content")
 
 # Delete
 sg.delete_skill("memgraph-cypher")
 ```
+
+## Codex Hook Integration
+
+When used through `agent-context-graph`'s Codex hook adapter, `SkillGraphConnector` records direct tool names like `get_skill` and Codex MCP-style names like `mcp__skills__get_skill`.
+
+It also records local reads of valid Agent Skills definitions, such as `/skills/<name>/SKILL.md`, as skill usage. This supports runtimes where using a skill appears as a filesystem or shell tool reading the skill's `SKILL.md` file rather than as a dedicated `get_skill` tool call.
+
+Search/list tool results can be Python lists or JSON tool content containing skill objects with `name` fields. Today those results are recorded through `USED_SKILL` with result actions; future work will split weaker surfacing signals into a separate relationship.
 
 ## Installation
 

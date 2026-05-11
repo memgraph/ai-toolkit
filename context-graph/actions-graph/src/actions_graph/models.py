@@ -273,7 +273,6 @@ class StructuredOutput(Action):
 
 
 @dataclass
-@dataclass
 class SubagentEvent(Action):
     """Represents a subagent lifecycle event.
 

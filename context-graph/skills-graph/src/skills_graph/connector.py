@@ -1,0 +1,449 @@
+"""Agent-link connector for SkillGraph.
+
+This module implements the :class:`agent_context_graph.GraphConnector` interface
+so that a ``SkillGraph`` can receive events directly from an ``AgentLink``
+hub.  The connector lives *inside* skills-graph because **the library
+itself** knows which events are relevant and how to persist them — the
+agent-context-graph package only provides the plumbing.
+
+Usage::
+
+    from skills_graph import SkillGraph
+    from skills_graph.connector import SkillGraphConnector
+    from agent_context_graph import AgentLink
+    from agent_context_graph.adapters.claude import ClaudeAdapter
+
+    link = AgentLink()
+    link.add_connector(SkillGraphConnector(SkillGraph()))
+    adapter = ClaudeAdapter(link, session_id="s-1")
+"""
+
+from __future__ import annotations
+
+import json
+import shlex
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from agent_context_graph.events import Event, EventType, MessageEvent, ToolEndEvent, ToolStartEvent
+from agent_context_graph.protocols import GraphConnector
+
+if TYPE_CHECKING:
+    from .core import SkillGraph
+
+
+_SUPPORTED_EVENTS = {
+    EventType.TOOL_START,
+    EventType.TOOL_END,
+    EventType.MESSAGE,
+}
+_MAX_RESULT_DEPTH = 10
+_SKILL_FILE_NAME = "SKILL.md"
+
+
+class SkillGraphConnector(GraphConnector):
+    """Receives agent-context-graph events and records skill usage in a SkillGraph.
+
+    Watches for tool calls whose name matches a skill access operation
+    (``get_skill``, ``update_skill``, search/list tools, etc.) and creates
+    ``(:Session)-[:USED_SKILL]->(:Skill)`` relationships.
+
+    Args:
+        graph: An initialised SkillGraph instance.
+        skill_tool_names: Override the set of tool names that indicate
+            skill access. Defaults to built-in read/update/search names.
+    """
+
+    DEFAULT_SKILL_TOOLS: frozenset[str] = frozenset(
+        {
+            "get_skill",
+            "add_skill",
+            "update_skill",
+            "delete_skill",
+            "list_skills",
+            "search_skills",
+            "search_by_name",
+        }
+    )
+
+    def __init__(
+        self,
+        graph: SkillGraph,
+        *,
+        skill_tool_names: set[str] | None = None,
+    ) -> None:
+        self._graph = graph
+        self._skill_tool_names = skill_tool_names or set(self.DEFAULT_SKILL_TOOLS)
+
+    # ------------------------------------------------------------------
+    # GraphConnector interface
+    # ------------------------------------------------------------------
+
+    def supports(self, event: Event) -> bool:
+        if event.event_type not in _SUPPORTED_EVENTS:
+            return False
+        if isinstance(event, ToolStartEvent):
+            if self._operation_name(event.tool_name) in self._skill_tool_names:
+                return True
+            return self._extract_skill_file_read(event.tool_input, event.metadata) is not None
+        if isinstance(event, ToolEndEvent):
+            skill_file = self._extract_skill_file_read(tool_input=None, metadata=event.metadata)
+            if self._extract_skill_content(event.result, skill_file=skill_file) is not None:
+                return True
+            return self._operation_name(event.tool_name) in self._skill_tool_names
+        if isinstance(event, MessageEvent):
+            return self._extract_skill_content(event.content) is not None
+        return False
+
+    def on_event(self, event: Event) -> None:
+        if isinstance(event, ToolStartEvent):
+            self._on_tool_start(event)
+        elif isinstance(event, ToolEndEvent):
+            self._on_tool_end(event)
+        elif isinstance(event, MessageEvent):
+            self._on_message(event)
+
+    # ------------------------------------------------------------------
+    # Internal handlers
+    # ------------------------------------------------------------------
+
+    def _on_tool_start(self, event: ToolStartEvent) -> None:
+        """A skill-related tool was invoked — record the access."""
+        skill_file = self._extract_skill_file_read(event.tool_input, event.metadata)
+        if skill_file is not None:
+            metadata = self._metadata_from_skill_file(skill_file)
+            skill_name = metadata.get("name") or skill_file.parent.name
+            self._record_skill_access(
+                session_id=event.session_id,
+                skill_name=skill_name,
+                action="read_skill_file",
+                timestamp=event.timestamp,
+                create_missing=True,
+                description=metadata.get("description", ""),
+                content=metadata.get("content", ""),
+                source_path=str(skill_file),
+                metadata=metadata.get("metadata", {}),
+            )
+            return
+
+        skill_name = self._extract_skill_name(event.tool_input)
+        if skill_name:
+            self._record_skill_access(
+                session_id=event.session_id,
+                skill_name=skill_name,
+                action=self._operation_name(event.tool_name),
+                timestamp=event.timestamp,
+            )
+
+    def _on_tool_end(self, event: ToolEndEvent) -> None:
+        """A search/list tool returned — record which skills appeared."""
+        skill_file = self._extract_skill_file_read(tool_input=None, metadata=event.metadata)
+        skill_content = self._extract_skill_content(event.result, skill_file=skill_file)
+        if skill_content is not None:
+            metadata = self._metadata_from_skill_content(
+                skill_content,
+                source_path=str(skill_file) if skill_file is not None else None,
+            )
+            skill_name = metadata.get("name")
+            if isinstance(skill_name, str) and skill_name:
+                self._record_skill_access(
+                    session_id=event.session_id,
+                    skill_name=skill_name,
+                    action="read_skill_file",
+                    timestamp=event.timestamp,
+                    create_missing=True,
+                    description=metadata.get("description", ""),
+                    content=metadata.get("content", ""),
+                    source_path=metadata.get("metadata", {}).get("source_path"),
+                    metadata=metadata.get("metadata", {}),
+                )
+                return
+
+        operation_name = self._operation_name(event.tool_name)
+        if operation_name not in {"list_skills", "search_skills", "search_by_name"}:
+            return
+        for name in self._extract_result_skill_names(event.result):
+            self._record_skill_access(
+                session_id=event.session_id,
+                skill_name=name,
+                action=f"{operation_name}_result",
+                timestamp=event.timestamp,
+            )
+
+    def _on_message(self, event: MessageEvent) -> None:
+        """Skill content injected via prompt expansion — record the skill."""
+        skill_content = self._extract_skill_content(event.content)
+        if skill_content is None:
+            return
+        metadata = self._metadata_from_skill_content(skill_content)
+        skill_name = metadata.get("name")
+        if isinstance(skill_name, str) and skill_name:
+            self._record_skill_access(
+                session_id=event.session_id,
+                skill_name=skill_name,
+                action="prompt_expansion",
+                timestamp=event.timestamp,
+                create_missing=True,
+                description=metadata.get("description", ""),
+                content=metadata.get("content", ""),
+                source_path=metadata.get("metadata", {}).get("source_path"),
+                metadata=metadata.get("metadata", {}),
+            )
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _operation_name(tool_name: str) -> str:
+        """Return the operation from direct or MCP ``mcp__<server>__<operation>`` names."""
+        if tool_name.startswith("mcp__"):
+            return tool_name.rsplit("__", maxsplit=1)[-1]
+        return tool_name
+
+    @classmethod
+    def _extract_skill_name(cls, tool_input: Any) -> str | None:
+        """Pull the skill name out of the tool's input dict."""
+        if not isinstance(tool_input, dict):
+            return None
+        for key in ("name", "skill_name", "skill", "pattern"):
+            value = tool_input.get(key)
+            if isinstance(value, str) and value:
+                return value
+        for nested_key in ("arguments", "params", "input"):
+            nested = tool_input.get(nested_key)
+            nested_name = cls._extract_skill_name(nested)
+            if nested_name:
+                return nested_name
+        return None
+
+    @classmethod
+    def _extract_result_skill_names(cls, result: Any, *, _depth: int = 0) -> list[str]:
+        """Pull skill names out of direct Python results or JSON tool content."""
+        if _depth > _MAX_RESULT_DEPTH:
+            return []
+
+        if isinstance(result, str):
+            parsed = cls._parse_json_result(result)
+            if parsed is not None:
+                return cls._extract_result_skill_names(parsed, _depth=_depth + 1)
+            return []
+
+        extracted_names: list[str] = []
+        if isinstance(result, list):
+            for item in result:
+                extracted_names.extend(cls._extract_result_skill_names(item, _depth=_depth + 1))
+            return extracted_names
+
+        if isinstance(result, dict):
+            name = result.get("name")
+            if isinstance(name, str) and name:
+                return [name]
+            for key in ("skills", "results", "items", "content"):
+                if key in result:
+                    extracted_names.extend(cls._extract_result_skill_names(result[key], _depth=_depth + 1))
+            text = result.get("text")
+            if isinstance(text, str):
+                extracted_names.extend(cls._extract_result_skill_names(text, _depth=_depth + 1))
+            return extracted_names
+
+        name = getattr(result, "name", None)
+        if isinstance(name, str) and name:
+            return [name]
+        return []
+
+    @staticmethod
+    def _parse_json_result(value: str) -> Any:
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+
+    @classmethod
+    def _extract_skill_file_read(cls, tool_input: Any, metadata: Any | None = None) -> Path | None:
+        for value in cls._iter_string_values({"tool_input": tool_input, "metadata": metadata}):
+            for candidate in cls._candidate_paths(value):
+                skill_file = cls._skill_file_from_candidate(candidate)
+                if skill_file is not None:
+                    return skill_file
+        return None
+
+    @classmethod
+    def _iter_string_values(cls, value: Any, *, _depth: int = 0) -> list[str]:
+        if _depth > _MAX_RESULT_DEPTH:
+            return []
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, list):
+            values: list[str] = []
+            for item in value:
+                values.extend(cls._iter_string_values(item, _depth=_depth + 1))
+            return values
+        if isinstance(value, dict):
+            values = []
+            for item in value.values():
+                values.extend(cls._iter_string_values(item, _depth=_depth + 1))
+            return values
+        return []
+
+    @staticmethod
+    def _candidate_paths(value: str) -> list[str]:
+        try:
+            candidates = shlex.split(value)
+        except ValueError:
+            candidates = value.split()
+        return candidates or [value]
+
+    @staticmethod
+    def _skill_file_from_candidate(candidate: str) -> Path | None:
+        if _SKILL_FILE_NAME not in candidate:
+            return None
+
+        path = Path(candidate.strip())
+        if path.name != _SKILL_FILE_NAME:
+            return None
+        if path.parent.name == "":
+            return None
+        return path
+
+    @staticmethod
+    def _metadata_from_skill_file(path: Path) -> dict[str, Any]:
+        try:
+            content = path.read_text(encoding="utf-8")
+        except OSError:
+            return {
+                "name": path.parent.name,
+                "content": "",
+                "metadata": {"source": "local_skill_file", "source_path": str(path)},
+            }
+        return SkillGraphConnector._metadata_from_skill_content(
+            content, source_path=str(path), fallback_name=path.parent.name
+        )
+
+    @staticmethod
+    def _metadata_from_skill_content(
+        content: str,
+        *,
+        source_path: str | None = None,
+        fallback_name: str | None = None,
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "content": content,
+            "metadata": {"source": "local_skill_file"},
+        }
+        if source_path is not None:
+            metadata["metadata"]["source_path"] = source_path
+
+        frontmatter = _parse_frontmatter(content)
+        name = frontmatter.get("name")
+        description = frontmatter.get("description")
+        if isinstance(name, str) and name:
+            metadata["name"] = name
+        elif fallback_name:
+            metadata["name"] = fallback_name
+        if isinstance(description, str):
+            metadata["description"] = description
+        metadata_keys = {"version", "category", "author", "last_updated", "license", "compatibility"}
+        metadata["metadata"].update({key: str(value) for key, value in frontmatter.items() if key in metadata_keys})
+        return metadata
+
+    @classmethod
+    def _extract_skill_content(cls, result: Any, *, skill_file: Path | None = None, _depth: int = 0) -> str | None:
+        if _depth > _MAX_RESULT_DEPTH:
+            return None
+        if isinstance(result, str):
+            if _is_skill_content(result, skill_file=skill_file):
+                return result
+            return None
+        if isinstance(result, list):
+            for item in result:
+                content = cls._extract_skill_content(item, skill_file=skill_file, _depth=_depth + 1)
+                if content is not None:
+                    return content
+            return None
+        if isinstance(result, dict):
+            for key in ("content", "text", "result", "tool_response"):
+                if key in result:
+                    content = cls._extract_skill_content(result[key], skill_file=skill_file, _depth=_depth + 1)
+                    if content is not None:
+                        return content
+        return None
+
+    def _record_skill_access(
+        self,
+        *,
+        session_id: str,
+        skill_name: str,
+        action: str,
+        timestamp: str,
+        create_missing: bool = False,
+        description: str = "",
+        content: str = "",
+        source_path: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> None:
+        """Persist a ``(:Session)-[:USED_SKILL]->(:Skill)`` edge."""
+        self._graph.record_skill_usage(
+            session_id=session_id,
+            skill_name=skill_name,
+            action=action,
+            timestamp=timestamp,
+            create_missing=create_missing,
+            description=description,
+            content=content,
+            source_path=source_path,
+            metadata=metadata,
+        )
+
+
+def _parse_frontmatter(content: str) -> dict[str, Any]:
+    lines = content.splitlines()
+    start_index = _frontmatter_start_index(lines)
+    if start_index is None:
+        return {}
+
+    data: dict[str, Any] = {}
+    key_for_list: str | None = None
+    for line in lines[start_index + 1 :]:
+        stripped = line.strip()
+        if stripped == "---":
+            return data
+        if not stripped:
+            continue
+        if stripped.startswith("- ") and key_for_list:
+            data.setdefault(key_for_list, []).append(stripped[2:].strip().strip("\"'"))
+            continue
+        if ":" not in line:
+            key_for_list = None
+            continue
+        key, value = line.split(":", maxsplit=1)
+        key = key.strip()
+        value = value.strip()
+        if value:
+            data[key] = value.strip("\"'")
+            key_for_list = None
+        else:
+            data[key] = []
+            key_for_list = key
+    return {}
+
+
+def _frontmatter_start_index(lines: list[str]) -> int | None:
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == "---":
+            return index
+        if stripped and not stripped.startswith("Base directory for this skill:"):
+            return None
+    return None
+
+
+def _is_skill_content(content: str, *, skill_file: Path | None = None) -> bool:
+    frontmatter = _parse_frontmatter(content)
+    if not frontmatter:
+        return False
+    description = frontmatter.get("description")
+    if not isinstance(description, str) or not description:
+        return False
+    name = frontmatter.get("name")
+    return bool(isinstance(name, str) and name) or skill_file is not None

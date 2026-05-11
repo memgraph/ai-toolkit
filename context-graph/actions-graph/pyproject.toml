@@ -12,6 +12,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
+    "agent-context-graph",
     "memgraph-toolbox",
 ]
 
@@ -25,6 +26,7 @@ test = [
 ]
 
 [tool.uv.sources]
+agent-context-graph = { workspace = true }
 memgraph-toolbox = { workspace = true }
 
 [build-system]

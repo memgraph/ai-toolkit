@@ -21,26 +21,19 @@ Quick Start:
         tool_input={"file_path": "/path/to/file"},
     )
 
-Integration with Claude Agent SDK:
+Integration with Agent Context Graph:
     from actions_graph import ActionsGraph
-    from actions_graph.hooks import create_tracking_hooks
-    from claude_agent_sdk import query, ClaudeAgentOptions
+    from actions_graph.connector import ActionsGraphConnector
+    from agent_context_graph import AgentLink
 
     graph = ActionsGraph()
     graph.setup()
 
-    hooks = create_tracking_hooks(graph, session_id="my-session-123")
-
-    async for message in query(
-        prompt="Analyze this codebase",
-        options=ClaudeAgentOptions(
-            hooks=hooks,
-            allowed_tools=["Read", "Glob", "Grep"],
-        ),
-    ):
-        print(message)
+    link = AgentLink()
+    link.add_connector(ActionsGraphConnector(graph))
 """
 
+from .connector import ActionsGraphConnector
 from .core import ActionsGraph
 from .models import (
     Action,
@@ -65,6 +58,7 @@ __all__ = [
     "ActionType",
     "ActionValidationError",
     "ActionsGraph",
+    "ActionsGraphConnector",
     "ErrorEvent",
     "Message",
     "MessageRole",

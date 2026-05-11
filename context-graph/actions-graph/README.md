@@ -17,7 +17,7 @@ Actions Graph provides a graph-based storage system for tracking all LLM interac
 - 🌳 **Nested Actions**: Support for parent-child action relationships (e.g., subagents)
 - 🏷️ **Session Management**: Create, track, and query sessions with tags
 - 📈 **Analytics**: Built-in queries for tool usage stats and session summaries
-- 🤖 **Claude Agent SDK Integration**: Ready-to-use hooks for automatic tracking
+- 🔌 **Agent Context Graph Integration**: Consume normalized runtime events through `ActionsGraphConnector`
 
 ## Installation
 
@@ -25,9 +25,9 @@ Actions Graph provides a graph-based storage system for tracking all LLM interac
 pip install actions-graph
 ```
 
-For Claude Agent SDK integration:
+For Agent Context Graph integration:
 ```bash
-pip install actions-graph[claude-agent]
+pip install actions-graph agent-context-graph
 ```
 
 ## Quick Start
@@ -70,53 +70,25 @@ summary = graph.get_session_summary("session-123")
 print(f"Actions: {summary['action_count']}, Tools: {summary['tool_call_count']}")
 ```
 
-### Claude Agent SDK Integration
+### Agent Context Graph Integration
 
 ```python
-import asyncio
 from actions_graph import ActionsGraph
-from actions_graph.hooks import create_tracking_hooks
-from claude_agent_sdk import query, ClaudeAgentOptions
+from actions_graph.connector import ActionsGraphConnector
+from agent_context_graph import AgentLink
+from agent_context_graph.adapters.claude import ClaudeAdapter
 
-async def main():
-    # Initialize graph
-    graph = ActionsGraph()
-    graph.setup()
+graph = ActionsGraph()
+graph.setup()
 
-    # Create tracking hooks
-    hooks = create_tracking_hooks(
-        graph,
-        session_id="my-session-123",
-        session_kwargs={
-            "model": "claude-sonnet-4-20250514",
-            "working_directory": "/path/to/project",
-            "tags": ["code-review", "python"],
-        },
-    )
+link = AgentLink()
+link.add_connector(ActionsGraphConnector(graph))
 
-    # Run with automatic tracking
-    async for message in query(
-        prompt="Review the code in src/main.py for potential bugs",
-        options=ClaudeAgentOptions(
-            hooks=hooks,
-            allowed_tools=["Read", "Glob", "Grep"],
-            permission_mode="acceptEdits",
-        ),
-    ):
-        if hasattr(message, "result"):
-            print(message.result)
-
-    # Query the recorded actions
-    actions = graph.get_session_actions("my-session-123")
-    print(f"Recorded {len(actions)} actions")
-
-    # Get tool usage stats
-    stats = graph.get_tool_usage_stats("my-session-123")
-    for stat in stats:
-        print(f"{stat['tool_name']}: {stat['call_count']} calls")
-
-asyncio.run(main())
+adapter = ClaudeAdapter(link, session_id="my-session-123")
+hooks = adapter.get_runtime_hooks()
 ```
+
+Actions Graph should consume runtime activity through Agent Context Graph when possible. Runtime adapters normalize SDK callbacks and command hooks into the shared Event Protocol; `ActionsGraphConnector` decides which events become session and action nodes.
 
 ## Graph Schema
 
@@ -196,7 +168,25 @@ graph.get_session_summary(session_id)
 | `permission_request` | `PermissionRequest` | Permission requested |
 | `rate_limit` | `RateLimitEvent` | Rate limit event |
 
-### Hooks
+### Agent Context Graph Connector
+
+```python
+from actions_graph.connector import ActionsGraphConnector
+
+connector = ActionsGraphConnector(graph)
+link.add_connector(connector)
+```
+
+The connector records:
+
+- `SessionStartEvent` and `SessionEndEvent` as session lifecycle data
+- `ToolStartEvent` as `ToolCall` action nodes
+- `ToolEndEvent` as `ToolResult` action nodes
+- `MessageEvent`, `AgentStartEvent`, `AgentEndEvent`, and `ErrorOccurredEvent` as action nodes
+
+### Claude Agent SDK Hooks
+
+Direct Claude Agent SDK hooks remain available for standalone use, but Agent Context Graph is the preferred integration path when multiple graph components need the same runtime event stream.
 
 For Claude Agent SDK integration:
 

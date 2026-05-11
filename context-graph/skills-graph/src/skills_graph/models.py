@@ -60,8 +60,6 @@ class Skill:
     metadata: dict[str, str] = field(default_factory=dict)
     allowed_tools: list[str] = field(default_factory=list)
 
-    # --- Graph extensions ---
-    tags: list[str] = field(default_factory=list)
     created_at: str | None = None
     updated_at: str | None = None
 

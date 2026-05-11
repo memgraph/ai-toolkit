@@ -1,0 +1,35 @@
+[project]
+name = "agent-context-graph"
+version = "0.1.2"
+description = "Connect agent SDKs to context-graph components (actions-graph, skills-graph, etc.)"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "memgraph-toolbox>=0.1.11",
+]
+
+[project.scripts]
+agent-context-graph = "agent_context_graph.cli:main"
+
+[project.optional-dependencies]
+claude = [
+    "claude-agent-sdk>=0.1.0",
+]
+openai = [
+    "openai-agents>=0.1.0",
+]
+test = [
+    "pytest>=9.0.3",
+    "pytest-asyncio>=0.24.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

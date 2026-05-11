@@ -13,7 +13,7 @@ from skills_graph import Skill, SkillGraph
 def sg():
     """SkillGraph connected to a live Memgraph, cleaned before each test."""
     sg = SkillGraph()
-    # Clean up any leftover skill/tag nodes from prior runs
+    # Clean up any leftover graph nodes from prior runs
     sg._db.query("MATCH (n) DETACH DELETE n")
     sg.setup()
     yield sg
@@ -34,7 +34,6 @@ def test_add_and_get_skill(sg):
         compatibility="Requires Python 3.10+",
         metadata={"author": "example-org", "version": "1.0"},
         allowed_tools=["Bash(git:*)", "Read"],
-        tags=["pdf", "extraction"],
     )
     sg.add_skill(skill)
 
@@ -47,17 +46,15 @@ def test_add_and_get_skill(sg):
     assert retrieved.compatibility == "Requires Python 3.10+"
     assert retrieved.metadata == {"author": "example-org", "version": "1.0"}
     assert retrieved.allowed_tools == ["Bash(git:*)", "Read"]
-    assert set(retrieved.tags) == {"pdf", "extraction"}
 
 
 def test_update_skill(sg):
     sg.add_skill(Skill(name="s1", description="original", content="v1"))
 
-    updated = sg.update_skill("s1", description="changed", content="v2", tags=["new"])
+    updated = sg.update_skill("s1", description="changed", content="v2")
     assert updated is not None
     assert updated.description == "changed"
     assert updated.content == "v2"
-    assert updated.tags == ["new"]
 
 
 def test_delete_skill(sg):
@@ -75,22 +72,6 @@ def test_list_skills(sg):
     names = [s.name for s in skills]
     assert "a1" in names
     assert "b2" in names
-
-
-def test_search_by_tags(sg):
-    sg.add_skill(Skill(name="s1", description="d", content="c", tags=["python", "graph"]))
-    sg.add_skill(Skill(name="s2", description="d", content="c", tags=["python"]))
-    sg.add_skill(Skill(name="s3", description="d", content="c", tags=["rust"]))
-
-    results = sg.search_by_tags(["python"])
-    names = [s.name for s in results]
-    assert "s1" in names
-    assert "s2" in names
-    assert "s3" not in names
-
-    results = sg.search_by_tags(["python", "graph"])
-    assert len(results) == 1
-    assert results[0].name == "s1"
 
 
 def test_search_by_name(sg):

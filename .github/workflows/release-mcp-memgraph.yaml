@@ -2,6 +2,12 @@ name: Release mcp-memgraph
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_pypi:
+        description: "Publish mcp-memgraph to PyPI before building the Docker image"
+        required: true
+        default: true
+        type: boolean
 
 jobs:
   release:
@@ -11,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: 3.11.0
 
@@ -19,12 +25,13 @@ jobs:
         run: python -m pip install uv
 
       - name: Build and release mcp-memgraph
+        if: ${{ inputs.publish_pypi }}
         working-directory: integrations/mcp-memgraph
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
         run: |
-          uv build
-          uv publish
+          uv build --out-dir dist
+          uv publish dist/*
 
       - name: Extract version
         id: version
@@ -38,11 +45,18 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
       - name: Build and push Docker image
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
           file: integrations/mcp-memgraph/Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             memgraph/mcp-memgraph:${{ steps.version.outputs.version }}
