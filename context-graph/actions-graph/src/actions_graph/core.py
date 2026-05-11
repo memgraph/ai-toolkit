@@ -332,7 +332,20 @@ class ActionsGraph:
             params["status"] = status.value
 
         if tag:
-            where_clauses.append("EXISTS((s)-[:HAS_TAG]->(:Tag {name: $tag}))")
+            tagged_rows = self._db.query(
+                """
+                MATCH (s:Session)
+                MATCH (t:Tag {name: $tag})
+                MATCH (s)-[:HAS_TAG]->(t)
+                RETURN s.session_id AS session_id
+                """,
+                params={"tag": tag},
+            )
+            session_ids = [row["session_id"] for row in tagged_rows]
+            if not session_ids:
+                return []
+            where_clauses.append("s.session_id IN $session_ids")
+            params["session_ids"] = session_ids
             params["tag"] = tag
 
         where_str = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
@@ -341,7 +354,6 @@ class ActionsGraph:
             f"""
             MATCH (s:Session)
             {where_str}
-            OPTIONAL MATCH (s)-[:HAS_TAG]->(t:Tag)
             RETURN s.session_id AS session_id,
                    s.started_at AS started_at,
                    s.ended_at AS ended_at,
@@ -353,13 +365,21 @@ class ActionsGraph:
                    s.working_directory AS working_directory,
                    s.git_branch AS git_branch,
                    s.metadata AS metadata,
-                   s.parent_session_id AS parent_session_id,
-                   collect(t.name) AS tags
+                   s.parent_session_id AS parent_session_id
             ORDER BY s.started_at DESC
             LIMIT $limit
             """,
             params=params,
         )
+        for row in rows:
+            tag_rows = self._db.query(
+                """
+                MATCH (s:Session {session_id: $session_id})-[:HAS_TAG]->(t:Tag)
+                RETURN t.name AS name
+                """,
+                params={"session_id": row["session_id"]},
+            )
+            row["tags"] = [tag_row["name"] for tag_row in tag_rows]
 
         return [self._row_to_session(row) for row in rows]
 
@@ -710,19 +730,34 @@ class ActionsGraph:
         rows = self._db.query(
             """
             MATCH (s:Session {session_id: $session_id})-[:HAS_ACTION]->(a:Action)
-            OPTIONAL MATCH (a)-[:FOLLOWED_BY]->(next:Action)
-            OPTIONAL MATCH (a)-[:PARENT_OF]->(child:Action)
             RETURN a.action_id AS action_id,
                    a.action_type AS action_type,
                    a.timestamp AS timestamp,
                    a.status AS status,
-                   a.properties AS properties,
-                   next.action_id AS next_action_id,
-                   collect(DISTINCT child.action_id) AS child_action_ids
+                   a.properties AS properties
             ORDER BY a.timestamp
             """,
             params={"session_id": session_id},
         )
+        followed_by = {
+            row["action_id"]: row["next_action_id"]
+            for row in self._db.query(
+                """
+                MATCH (a:Action {session_id: $session_id})-[:FOLLOWED_BY]->(next:Action)
+                RETURN a.action_id AS action_id, next.action_id AS next_action_id
+                """,
+                params={"session_id": session_id},
+            )
+        }
+        child_ids: dict[str, list[str]] = {}
+        for row in self._db.query(
+            """
+            MATCH (a:Action {session_id: $session_id})-[:PARENT_OF]->(child:Action)
+            RETURN a.action_id AS action_id, child.action_id AS child_action_id
+            """,
+            params={"session_id": session_id},
+        ):
+            child_ids.setdefault(row["action_id"], []).append(row["child_action_id"])
 
         result = []
         for row in rows:
@@ -731,8 +766,8 @@ class ActionsGraph:
                 "action_type": row["action_type"],
                 "timestamp": row["timestamp"],
                 "status": row["status"],
-                "next_action_id": row["next_action_id"],
-                "child_action_ids": row["child_action_ids"],
+                "next_action_id": followed_by.get(row["action_id"]),
+                "child_action_ids": child_ids.get(row["action_id"], []),
             }
             if include_content:
                 item["properties"] = json.loads(row["properties"]) if row["properties"] else {}
