@@ -1,6 +1,7 @@
 """Tests for actions_graph.models module."""
 
 import pytest
+
 from actions_graph.models import (
     ActionStatus,
     ActionType,

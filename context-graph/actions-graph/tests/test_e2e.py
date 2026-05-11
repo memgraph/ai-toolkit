@@ -4,6 +4,7 @@ These tests require a running Memgraph instance.
 """
 
 import pytest
+
 from actions_graph import (
     ActionsGraph,
     ActionStatus,
