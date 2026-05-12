@@ -286,7 +286,7 @@ def _connector_requirement(connector: str) -> str | None:
     if normalized == "skills-graph":
         return "skills-graph[agent-context-graph]"
     if normalized == "actions-graph":
-        return "actions-graph"
+        return "actions-graph[agent-context-graph]"
     return None
 
 

@@ -139,7 +139,7 @@ def test_top_level_cli_bootstrap_installs_actions_graph_connector(monkeypatch):
     assert top_level_main(["bootstrap", "--runtime", "codex", "--connector", "actions-graph"]) == 0
 
     assert "--with" in commands[0]
-    assert "actions-graph" in commands[0]
+    assert "actions-graph[agent-context-graph]" in commands[0]
 
 
 def test_top_level_cli_bootstrap_no_reinstall_omits_reinstall(monkeypatch):
