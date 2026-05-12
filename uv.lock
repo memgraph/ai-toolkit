@@ -54,6 +54,7 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "actions-graph",
     "agent-context-graph",
     "langchain-memgraph",
     "lightrag-memgraph",
@@ -176,6 +177,34 @@ sdist = { url = "https://files.pythonhosted.org/packages/ca/14/787e5498cd062640f
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7e/46/02ac5e262d4af18054b3e922b2baedbb2a03289ee792162de60a865defc5/accelerate-1.13.0-py3-none-any.whl", hash = "sha256:cf1a3efb96c18f7b152eb0fa7490f3710b19c3f395699358f08decca2b8b62e0", size = 383744 },
 ]
+
+[[package]]
+name = "actions-graph"
+version = "0.1.0"
+source = { editable = "context-graph/actions-graph" }
+dependencies = [
+    { name = "agent-context-graph" },
+    { name = "memgraph-toolbox" },
+]
+
+[package.optional-dependencies]
+claude-agent = [
+    { name = "claude-agent-sdk" },
+]
+test = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "agent-context-graph", editable = "context-graph/agent-context-graph" },
+    { name = "claude-agent-sdk", marker = "extra == 'claude-agent'", specifier = ">=0.1.0" },
+    { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
+    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
+]
+provides-extras = ["claude-agent", "test"]
 
 [[package]]
 name = "agent-context-graph"

@@ -122,6 +122,26 @@ def test_top_level_cli_bootstrap_installs_and_runs_doctor(monkeypatch, capsys):
     assert "OK memgraph: bolt://localhost:7687 reachable" in output
 
 
+def test_top_level_cli_bootstrap_installs_actions_graph_connector(monkeypatch):
+    commands = []
+
+    monkeypatch.setattr("agent_context_graph.cli.shutil.which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr("agent_context_graph.cli._memgraph_reachable", lambda host, port: True)
+    monkeypatch.setattr("agent_context_graph.cli._doctor", lambda args: 0)
+
+    def fake_run(command, *, check):
+        commands.append(command)
+        assert check is True
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr("agent_context_graph.cli.subprocess.run", fake_run)
+
+    assert top_level_main(["bootstrap", "--runtime", "codex", "--connector", "actions-graph"]) == 0
+
+    assert "--with" in commands[0]
+    assert "actions-graph" in commands[0]
+
+
 def test_top_level_cli_bootstrap_no_reinstall_omits_reinstall(monkeypatch):
     commands = []
 
@@ -344,6 +364,41 @@ def test_init_codex_uses_memgraph_env_only_for_setup_schema(tmp_path, monkeypatc
         "password": "secret",
         "database": "skills",
     }
+
+
+def test_init_codex_sets_up_actions_graph_schema(tmp_path, monkeypatch):
+    monkeypatch.setattr("agent_context_graph.hooks.cli.shutil.which", lambda _: "/bin/agent-context-graph")
+    captured = {}
+
+    class _ActionsGraph:
+        def setup(self):
+            captured["url"] = os.environ.get("MEMGRAPH_URL")
+            captured["database"] = os.environ.get("MEMGRAPH_DATABASE")
+
+    fake_actions_graph = ModuleType("actions_graph")
+    fake_actions_graph.ActionsGraph = _ActionsGraph
+    monkeypatch.setitem(sys.modules, "actions_graph", fake_actions_graph)
+
+    assert (
+        main(
+            [
+                "init",
+                "codex",
+                "--project-dir",
+                str(tmp_path),
+                "--connector",
+                "actions-graph",
+                "--memgraph-url",
+                "bolt://memgraph.example:7687",
+                "--memgraph-database",
+                "actions",
+                "--setup-schema",
+            ]
+        )
+        == 0
+    )
+
+    assert captured == {"url": "bolt://memgraph.example:7687", "database": "actions"}
 
 
 def test_init_codex_uses_memgraph_toolbox_env_helper(tmp_path, monkeypatch):
