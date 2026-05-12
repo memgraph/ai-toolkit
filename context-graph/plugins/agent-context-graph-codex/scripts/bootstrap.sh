@@ -17,8 +17,10 @@ fi
 
 uv tool install "agent-context-graph>=0.1.2" \
   --with "skills-graph[agent-context-graph]>=0.1.3" \
+  --with "actions-graph[agent-context-graph]>=0.1.1" \
   --upgrade \
   --refresh-package agent-context-graph \
-  --refresh-package skills-graph
+  --refresh-package skills-graph \
+  --refresh-package actions-graph
 
-exec agent-context-graph bootstrap --runtime codex --connector skills-graph --no-reinstall "$@"
+exec agent-context-graph bootstrap --runtime codex --connector skills-graph --connector actions-graph --no-reinstall "$@"

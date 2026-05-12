@@ -30,14 +30,14 @@ docker run --rm -p 7687:7687 memgraph/memgraph
 Run the single CLI doctor first. It checks the same Python environment that the hook command uses:
 
 ```bash
-agent-context-graph doctor --runtime codex --connector skills-graph
+agent-context-graph doctor --runtime codex --connector skills-graph --connector actions-graph
 ```
 
 If `doctor` is not available, use the strict hook smoke:
 
 ```bash
 printf '{"hook_event_name":"Stop","session_id":"doctor"}' \
-  | agent-context-graph hook run codex --connector skills-graph --strict
+  | agent-context-graph hook run codex --connector skills-graph --connector actions-graph --strict
 ```
 
 Do not check `skills_graph` with system `python3`; `agent-context-graph` may be installed in an isolated `uv tool` or `pipx` environment.

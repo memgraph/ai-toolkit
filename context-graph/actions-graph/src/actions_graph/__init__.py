@@ -33,7 +33,6 @@ Integration with Agent Context Graph:
     link.add_connector(ActionsGraphConnector(graph))
 """
 
-from .connector import ActionsGraphConnector
 from .core import ActionsGraph
 from .models import (
     Action,
@@ -58,7 +57,6 @@ __all__ = [
     "ActionType",
     "ActionValidationError",
     "ActionsGraph",
-    "ActionsGraphConnector",
     "ErrorEvent",
     "Message",
     "MessageRole",
@@ -71,4 +69,4 @@ __all__ = [
     "ToolResult",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

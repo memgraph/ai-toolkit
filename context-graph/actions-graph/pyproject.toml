@@ -1,6 +1,6 @@
 [project]
 name = "actions-graph"
-version = "0.1.0"
+version = "0.1.1"
 description = "Store and track LLM actions, tool calls, and sessions in Memgraph"
 readme = "README.md"
 license = { text = "MIT" }
@@ -12,11 +12,13 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "agent-context-graph",
     "memgraph-toolbox",
 ]
 
 [project.optional-dependencies]
+agent-context-graph = [
+    "agent-context-graph>=0.1.2",
+]
 claude-agent = [
     "claude-agent-sdk>=0.1.0",
 ]
