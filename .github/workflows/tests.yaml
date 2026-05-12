@@ -301,4 +301,4 @@ jobs:
 
       - name: Run tests
         working-directory: context-graph/actions-graph
-        run: uv run --package actions-graph --extra test pytest tests/ -v
+        run: uv run --package actions-graph --extra test --extra agent-context-graph pytest tests/ -v
