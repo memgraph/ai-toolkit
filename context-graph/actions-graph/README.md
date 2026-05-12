@@ -27,7 +27,7 @@ pip install actions-graph
 
 For Agent Context Graph integration:
 ```bash
-pip install actions-graph agent-context-graph
+pip install "actions-graph[agent-context-graph]"
 ```
 
 ## Quick Start
