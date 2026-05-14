@@ -87,6 +87,10 @@ class ActionsGraph:
         # Tool indexes
         self._db.query("CREATE INDEX ON :Tool(name);")
 
+        # Promoted action field indexes
+        self._db.query("CREATE INDEX ON :Action(tool_name);")
+        self._db.query("CREATE INDEX ON :Action(is_error);")
+
         # Tag indexes
         self._db.query("CREATE INDEX ON :Tag(name);")
 
@@ -408,6 +412,11 @@ class ActionsGraph:
         # Build properties based on action type
         props = self._action_to_props(action)
 
+        # Promoted fields: first-class node properties for graph traversal
+        _tool_name: str | None = props.get("tool_name") or (action.tool_name if hasattr(action, "tool_name") else None)
+        _is_error: bool = bool(props.get("is_error", False))
+        _is_mcp: bool = bool(props.get("is_mcp", False))
+
         # Create the action node
         self._db.query(
             f"""
@@ -420,6 +429,9 @@ class ActionsGraph:
                 duration_ms: $duration_ms,
                 parent_action_id: $parent_action_id,
                 metadata: $metadata,
+                tool_name: $tool_name,
+                is_error: $is_error,
+                is_mcp: $is_mcp,
                 properties: $properties
             }})
             """,
@@ -432,6 +444,9 @@ class ActionsGraph:
                 "duration_ms": action.duration_ms,
                 "parent_action_id": action.parent_action_id,
                 "metadata": json.dumps(action.metadata),
+                "tool_name": _tool_name,
+                "is_error": _is_error,
+                "is_mcp": _is_mcp,
                 "properties": json.dumps(props),
             },
         )
@@ -613,6 +628,9 @@ class ActionsGraph:
                    a.duration_ms AS duration_ms,
                    a.parent_action_id AS parent_action_id,
                    a.metadata AS metadata,
+                   a.tool_name AS tool_name,
+                   a.is_error AS is_error,
+                   a.is_mcp AS is_mcp,
                    a.properties AS properties,
                    labels(a) AS labels
             """,
@@ -662,6 +680,9 @@ class ActionsGraph:
                    a.duration_ms AS duration_ms,
                    a.parent_action_id AS parent_action_id,
                    a.metadata AS metadata,
+                   a.tool_name AS tool_name,
+                   a.is_error AS is_error,
+                   a.is_mcp AS is_mcp,
                    a.properties AS properties,
                    labels(a) AS labels
             ORDER BY a.timestamp
@@ -856,16 +877,12 @@ class ActionsGraph:
         props: dict[str, Any] = {}
 
         if isinstance(action, ToolCall):
-            props["tool_name"] = action.tool_name
             props["tool_input"] = action.tool_input
             props["tool_use_id"] = action.tool_use_id
-            props["is_mcp"] = action.is_mcp
             props["mcp_server"] = action.mcp_server
         elif isinstance(action, ToolResult):
             props["tool_use_id"] = action.tool_use_id
-            props["tool_name"] = action.tool_name
             props["content"] = action.content
-            props["is_error"] = action.is_error
             props["error_message"] = action.error_message
         elif isinstance(action, Message):
             props["role"] = action.role.value
@@ -885,7 +902,6 @@ class ActionsGraph:
             props["result"] = action.result
             props["usage"] = action.usage
         elif isinstance(action, PermissionRequest):
-            props["tool_name"] = action.tool_name
             props["tool_input"] = action.tool_input
             props["decision"] = action.decision
             props["reason"] = action.reason
@@ -943,19 +959,19 @@ class ActionsGraph:
         if action_type == ActionType.TOOL_CALL:
             return ToolCall(
                 **base_kwargs,
-                tool_name=props.get("tool_name", ""),
+                tool_name=row.get("tool_name") or props.get("tool_name", ""),
                 tool_input=props.get("tool_input", {}),
                 tool_use_id=props.get("tool_use_id"),
-                is_mcp=props.get("is_mcp", False),
+                is_mcp=(row["is_mcp"] if row.get("is_mcp") is not None else props.get("is_mcp", False)),
                 mcp_server=props.get("mcp_server"),
             )
         elif action_type == ActionType.TOOL_RESULT:
             return ToolResult(
                 **base_kwargs,
                 tool_use_id=props.get("tool_use_id", ""),
-                tool_name=props.get("tool_name", ""),
+                tool_name=row.get("tool_name") or props.get("tool_name", ""),
                 content=props.get("content"),
-                is_error=props.get("is_error", False),
+                is_error=(row["is_error"] if row.get("is_error") is not None else props.get("is_error", False)),
                 error_message=props.get("error_message"),
             )
         elif action_type in (
@@ -994,7 +1010,7 @@ class ActionsGraph:
         elif action_type == ActionType.PERMISSION_REQUEST:
             return PermissionRequest(
                 **base_kwargs,
-                tool_name=props.get("tool_name", ""),
+                tool_name=row.get("tool_name") or props.get("tool_name", ""),
                 tool_input=props.get("tool_input", {}),
                 decision=props.get("decision"),
                 reason=props.get("reason"),

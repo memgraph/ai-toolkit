@@ -180,14 +180,16 @@ wheels = [
 
 [[package]]
 name = "actions-graph"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "context-graph/actions-graph" }
 dependencies = [
-    { name = "agent-context-graph" },
     { name = "memgraph-toolbox" },
 ]
 
 [package.optional-dependencies]
+agent-context-graph = [
+    { name = "agent-context-graph" },
+]
 claude-agent = [
     { name = "claude-agent-sdk" },
 ]
@@ -198,17 +200,17 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-context-graph", editable = "context-graph/agent-context-graph" },
+    { name = "agent-context-graph", marker = "extra == 'agent-context-graph'", editable = "context-graph/agent-context-graph" },
     { name = "claude-agent-sdk", marker = "extra == 'claude-agent'", specifier = ">=0.1.0" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
 ]
-provides-extras = ["claude-agent", "test"]
+provides-extras = ["agent-context-graph", "claude-agent", "test"]
 
 [[package]]
 name = "agent-context-graph"
-version = "0.1.2"
+version = "0.1.3"
 source = { editable = "context-graph/agent-context-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -3866,7 +3868,7 @@ cli = [
 
 [[package]]
 name = "mcp-memgraph"
-version = "0.1.12"
+version = "0.1.13"
 source = { editable = "integrations/mcp-memgraph" }
 dependencies = [
     { name = "fastmcp" },
