@@ -8,7 +8,6 @@ Graph Schema:
         - (:Session) - LLM conversation sessions
         - (:Action) - Individual actions with labels for type (ToolCall, Message, etc.)
         - (:Tool) - Tool definitions
-        - (:Tag) - Session/action tags
 
     Relationships:
         - (:Session)-[:HAS_ACTION]->(:Action)
@@ -16,7 +15,6 @@ Graph Schema:
         - (:Action)-[:PARENT_OF]->(:Action) - Nested actions (e.g., subagent)
         - (:Session)-[:FORKED_FROM]->(:Session)
         - (:Action)-[:USED_TOOL]->(:Tool)
-        - (:Session)-[:HAS_TAG]->(:Tag)
 """
 
 from __future__ import annotations
@@ -90,9 +88,6 @@ class ActionsGraph:
         self._db.query("CREATE INDEX ON :Action(tool_name);")
         self._db.query("CREATE INDEX ON :Action(is_error);")
 
-        # Tag indexes
-        self._db.query("CREATE INDEX ON :Tag(name);")
-
     def drop(self) -> None:
         """Remove all action-related constraints and indexes."""
         import contextlib
@@ -105,7 +100,7 @@ class ActionsGraph:
 
     def clear(self) -> None:
         """Remove all session and action data from the graph."""
-        self._db.query("MATCH (n) WHERE n:Session OR n:Action OR n:Tool OR n:Tag DETACH DELETE n;")
+        self._db.query("MATCH (n) WHERE n:Session OR n:Action OR n:Tool DETACH DELETE n;")
         self._last_action_id.clear()
 
     # ------------------------------------------------------------------
@@ -166,18 +161,6 @@ class ActionsGraph:
                 },
             )
 
-        # Handle tags
-        if session.tags:
-            self._db.query(
-                """
-                MATCH (s:Session {session_id: $session_id})
-                UNWIND $tags AS tag_name
-                MERGE (t:Tag {name: tag_name})
-                MERGE (s)-[:HAS_TAG]->(t)
-                """,
-                params={"session_id": session.session_id, "tags": session.tags},
-            )
-
         return session
 
     def ensure_session(self, session: Session) -> Session:
@@ -229,7 +212,6 @@ class ActionsGraph:
         rows = self._db.query(
             """
             MATCH (s:Session {session_id: $session_id})
-            OPTIONAL MATCH (s)-[:HAS_TAG]->(t:Tag)
             OPTIONAL MATCH (s)-[:FORKED_FROM]->(p:Session)
             RETURN s.session_id AS session_id,
                    s.started_at AS started_at,
@@ -242,8 +224,7 @@ class ActionsGraph:
                    s.working_directory AS working_directory,
                    s.git_branch AS git_branch,
                    s.metadata AS metadata,
-                   p.session_id AS parent_session_id,
-                   collect(t.name) AS tags
+                   p.session_id AS parent_session_id
             """,
             params={"session_id": session_id},
         )
@@ -312,14 +293,12 @@ class ActionsGraph:
         *,
         limit: int = 100,
         status: ActionStatus | None = None,
-        tag: str | None = None,
     ) -> list[Session]:
         """List sessions with optional filtering.
 
         Args:
             limit: Maximum number of sessions to return
             status: Filter by status
-            tag: Filter by tag
 
         Returns:
             List of sessions ordered by start time (newest first)
@@ -330,23 +309,6 @@ class ActionsGraph:
         if status:
             where_clauses.append("s.status = $status")
             params["status"] = status.value
-
-        if tag:
-            tagged_rows = self._db.query(
-                """
-                MATCH (s:Session)
-                MATCH (t:Tag {name: $tag})
-                MATCH (s)-[:HAS_TAG]->(t)
-                RETURN s.session_id AS session_id
-                """,
-                params={"tag": tag},
-            )
-            session_ids = [row["session_id"] for row in tagged_rows]
-            if not session_ids:
-                return []
-            where_clauses.append("s.session_id IN $session_ids")
-            params["session_ids"] = session_ids
-            params["tag"] = tag
 
         where_str = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -372,15 +334,6 @@ class ActionsGraph:
             """,
             params=params,
         )
-        for row in rows:
-            tag_rows = self._db.query(
-                """
-                MATCH (s:Session {session_id: $session_id})-[:HAS_TAG]->(t:Tag)
-                RETURN t.name AS name
-                """,
-                params={"session_id": row["session_id"]},
-            )
-            row["tags"] = [tag_row["name"] for tag_row in tag_rows]
 
         return [self._row_to_session(row) for row in rows]
 
@@ -932,7 +885,6 @@ class ActionsGraph:
             total_output_tokens=row.get("total_output_tokens", 0),
             working_directory=row.get("working_directory"),
             git_branch=row.get("git_branch"),
-            tags=row.get("tags", []),
             metadata=metadata or {},
             parent_session_id=row.get("parent_session_id"),
         )

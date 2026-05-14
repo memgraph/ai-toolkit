@@ -88,7 +88,6 @@ class ActionsGraphConnector(GraphConnector):
                 started_at=event.timestamp,
                 model=event.model,
                 working_directory=event.working_directory,
-                tags=event.tags,
                 metadata=self._metadata(event),
             )
         )

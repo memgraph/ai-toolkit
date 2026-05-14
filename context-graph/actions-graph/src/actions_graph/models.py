@@ -110,7 +110,6 @@ class Session:
         total_output_tokens: Total output tokens generated
         working_directory: Working directory for the session
         git_branch: Git branch at start of session
-        tags: Optional tags for categorization
         metadata: Additional session metadata
         parent_session_id: ID of parent session if forked
     """
@@ -125,7 +124,6 @@ class Session:
     total_output_tokens: int = 0
     working_directory: str | None = None
     git_branch: str | None = None
-    tags: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     parent_session_id: str | None = None
 

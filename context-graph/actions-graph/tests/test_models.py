@@ -37,13 +37,11 @@ class TestSession:
             model="claude-sonnet-4-20250514",
             working_directory="/path/to/project",
             git_branch="main",
-            tags=["test", "demo"],
             metadata={"key": "value"},
         )
         assert session.model == "claude-sonnet-4-20250514"
         assert session.working_directory == "/path/to/project"
         assert session.git_branch == "main"
-        assert session.tags == ["test", "demo"]
         assert session.metadata == {"key": "value"}
 
     def test_invalid_session_id(self):

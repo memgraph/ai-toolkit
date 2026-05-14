@@ -96,7 +96,7 @@ class TestClaudeAdapter:
         ClaudeAdapter(
             link,
             "s-test",
-            session_kwargs={"model": "claude-sonnet-4-20250514", "tags": ["test"]},
+            session_kwargs={"model": "claude-sonnet-4-20250514"},
         )
 
         assert len(rec.events) == 1

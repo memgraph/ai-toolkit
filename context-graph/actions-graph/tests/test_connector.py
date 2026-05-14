@@ -48,7 +48,6 @@ def test_records_session_start():
             timestamp="2026-01-01T00:00:00+00:00",
             model="gpt-5",
             working_directory="/repo",
-            tags=["local"],
             source_sdk="codex",
         )
     )
@@ -56,7 +55,6 @@ def test_records_session_start():
     session = graph.sessions["session-1"]
     assert session.model == "gpt-5"
     assert session.working_directory == "/repo"
-    assert session.tags == ["local"]
     assert session.metadata["source_sdk"] == "codex"
 
 
