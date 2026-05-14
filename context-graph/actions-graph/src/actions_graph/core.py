@@ -8,7 +8,6 @@ Graph Schema:
         - (:Session) - LLM conversation sessions
         - (:Action) - Individual actions with labels for type (ToolCall, Message, etc.)
         - (:Tool) - Tool definitions
-        - (:Tag) - Session/action tags
 
     Relationships:
         - (:Session)-[:HAS_ACTION]->(:Action)
@@ -16,7 +15,6 @@ Graph Schema:
         - (:Action)-[:PARENT_OF]->(:Action) - Nested actions (e.g., subagent)
         - (:Session)-[:FORKED_FROM]->(:Session)
         - (:Action)-[:USED_TOOL]->(:Tool)
-        - (:Session)-[:HAS_TAG]->(:Tag)
 """
 
 from __future__ import annotations
@@ -80,15 +78,15 @@ class ActionsGraph:
         # Action constraints and indexes
         self._db.query("CREATE CONSTRAINT ON (a:Action) ASSERT a.action_id IS UNIQUE;")
         self._db.query("CREATE INDEX ON :Action(action_id);")
-        self._db.query("CREATE INDEX ON :Action(session_id);")
         self._db.query("CREATE INDEX ON :Action(timestamp);")
         self._db.query("CREATE INDEX ON :Action(action_type);")
 
         # Tool indexes
         self._db.query("CREATE INDEX ON :Tool(name);")
 
-        # Tag indexes
-        self._db.query("CREATE INDEX ON :Tag(name);")
+        # Promoted action field indexes
+        self._db.query("CREATE INDEX ON :Action(tool_name);")
+        self._db.query("CREATE INDEX ON :Action(is_error);")
 
     def drop(self) -> None:
         """Remove all action-related constraints and indexes."""
@@ -102,7 +100,7 @@ class ActionsGraph:
 
     def clear(self) -> None:
         """Remove all session and action data from the graph."""
-        self._db.query("MATCH (n) WHERE n:Session OR n:Action OR n:Tool OR n:Tag DETACH DELETE n;")
+        self._db.query("MATCH (n) WHERE n:Session OR n:Action OR n:Tool DETACH DELETE n;")
         self._last_action_id.clear()
 
     # ------------------------------------------------------------------
@@ -131,8 +129,7 @@ class ActionsGraph:
                 total_output_tokens: $total_output_tokens,
                 working_directory: $working_directory,
                 git_branch: $git_branch,
-                metadata: $metadata,
-                parent_session_id: $parent_session_id
+                metadata: $metadata
             })
             """,
             params={
@@ -147,7 +144,6 @@ class ActionsGraph:
                 "working_directory": session.working_directory,
                 "git_branch": session.git_branch,
                 "metadata": json.dumps(session.metadata),
-                "parent_session_id": session.parent_session_id,
             },
         )
 
@@ -163,18 +159,6 @@ class ActionsGraph:
                     "session_id": session.session_id,
                     "parent_session_id": session.parent_session_id,
                 },
-            )
-
-        # Handle tags
-        if session.tags:
-            self._db.query(
-                """
-                MATCH (s:Session {session_id: $session_id})
-                UNWIND $tags AS tag_name
-                MERGE (t:Tag {name: tag_name})
-                MERGE (s)-[:HAS_TAG]->(t)
-                """,
-                params={"session_id": session.session_id, "tags": session.tags},
             )
 
         return session
@@ -198,8 +182,7 @@ class ActionsGraph:
                 s.total_output_tokens = $total_output_tokens,
                 s.working_directory = $working_directory,
                 s.git_branch = $git_branch,
-                s.metadata = $metadata,
-                s.parent_session_id = $parent_session_id
+                s.metadata = $metadata
             """,
             params={
                 "session_id": session.session_id,
@@ -213,7 +196,6 @@ class ActionsGraph:
                 "working_directory": session.working_directory,
                 "git_branch": session.git_branch,
                 "metadata": json.dumps(session.metadata),
-                "parent_session_id": session.parent_session_id,
             },
         )
         return session
@@ -230,7 +212,7 @@ class ActionsGraph:
         rows = self._db.query(
             """
             MATCH (s:Session {session_id: $session_id})
-            OPTIONAL MATCH (s)-[:HAS_TAG]->(t:Tag)
+            OPTIONAL MATCH (s)-[:FORKED_FROM]->(p:Session)
             RETURN s.session_id AS session_id,
                    s.started_at AS started_at,
                    s.ended_at AS ended_at,
@@ -242,8 +224,7 @@ class ActionsGraph:
                    s.working_directory AS working_directory,
                    s.git_branch AS git_branch,
                    s.metadata AS metadata,
-                   s.parent_session_id AS parent_session_id,
-                   collect(t.name) AS tags
+                   p.session_id AS parent_session_id
             """,
             params={"session_id": session_id},
         )
@@ -312,14 +293,12 @@ class ActionsGraph:
         *,
         limit: int = 100,
         status: ActionStatus | None = None,
-        tag: str | None = None,
     ) -> list[Session]:
         """List sessions with optional filtering.
 
         Args:
             limit: Maximum number of sessions to return
             status: Filter by status
-            tag: Filter by tag
 
         Returns:
             List of sessions ordered by start time (newest first)
@@ -331,29 +310,13 @@ class ActionsGraph:
             where_clauses.append("s.status = $status")
             params["status"] = status.value
 
-        if tag:
-            tagged_rows = self._db.query(
-                """
-                MATCH (s:Session)
-                MATCH (t:Tag {name: $tag})
-                MATCH (s)-[:HAS_TAG]->(t)
-                RETURN s.session_id AS session_id
-                """,
-                params={"tag": tag},
-            )
-            session_ids = [row["session_id"] for row in tagged_rows]
-            if not session_ids:
-                return []
-            where_clauses.append("s.session_id IN $session_ids")
-            params["session_ids"] = session_ids
-            params["tag"] = tag
-
         where_str = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
         rows = self._db.query(
             f"""
             MATCH (s:Session)
             {where_str}
+            OPTIONAL MATCH (s)-[:FORKED_FROM]->(p:Session)
             RETURN s.session_id AS session_id,
                    s.started_at AS started_at,
                    s.ended_at AS ended_at,
@@ -365,21 +328,12 @@ class ActionsGraph:
                    s.working_directory AS working_directory,
                    s.git_branch AS git_branch,
                    s.metadata AS metadata,
-                   s.parent_session_id AS parent_session_id
+                   p.session_id AS parent_session_id
             ORDER BY s.started_at DESC
             LIMIT $limit
             """,
             params=params,
         )
-        for row in rows:
-            tag_rows = self._db.query(
-                """
-                MATCH (s:Session {session_id: $session_id})-[:HAS_TAG]->(t:Tag)
-                RETURN t.name AS name
-                """,
-                params={"session_id": row["session_id"]},
-            )
-            row["tags"] = [tag_row["name"] for tag_row in tag_rows]
 
         return [self._row_to_session(row) for row in rows]
 
@@ -408,30 +362,39 @@ class ActionsGraph:
         # Build properties based on action type
         props = self._action_to_props(action)
 
+        # Promoted fields: first-class node properties for graph traversal
+        _tool_name: str | None = props.get("tool_name") or (action.tool_name if hasattr(action, "tool_name") else None)
+        _is_error: bool = bool(props.get("is_error", False))
+        _is_mcp: bool = bool(props.get("is_mcp", False))
+
         # Create the action node
         self._db.query(
             f"""
             CREATE (a{labels_str} {{
                 action_id: $action_id,
-                session_id: $session_id,
                 action_type: $action_type,
                 timestamp: $timestamp,
                 status: $status,
                 duration_ms: $duration_ms,
                 parent_action_id: $parent_action_id,
                 metadata: $metadata,
+                tool_name: $tool_name,
+                is_error: $is_error,
+                is_mcp: $is_mcp,
                 properties: $properties
             }})
             """,
             params={
                 "action_id": action.action_id,
-                "session_id": action.session_id,
                 "action_type": action.action_type.value,
                 "timestamp": action.timestamp,
                 "status": action.status.value,
                 "duration_ms": action.duration_ms,
                 "parent_action_id": action.parent_action_id,
                 "metadata": json.dumps(action.metadata),
+                "tool_name": _tool_name,
+                "is_error": _is_error,
+                "is_mcp": _is_mcp,
                 "properties": json.dumps(props),
             },
         )
@@ -605,14 +568,18 @@ class ActionsGraph:
         rows = self._db.query(
             """
             MATCH (a:Action {action_id: $action_id})
+            OPTIONAL MATCH (s:Session)-[:HAS_ACTION]->(a)
             RETURN a.action_id AS action_id,
-                   a.session_id AS session_id,
+                   s.session_id AS session_id,
                    a.action_type AS action_type,
                    a.timestamp AS timestamp,
                    a.status AS status,
                    a.duration_ms AS duration_ms,
                    a.parent_action_id AS parent_action_id,
                    a.metadata AS metadata,
+                   a.tool_name AS tool_name,
+                   a.is_error AS is_error,
+                   a.is_mcp AS is_mcp,
                    a.properties AS properties,
                    labels(a) AS labels
             """,
@@ -641,27 +608,28 @@ class ActionsGraph:
         Returns:
             List of actions ordered by timestamp
         """
-        where_clauses = ["a.session_id = $session_id"]
         params: dict[str, Any] = {"session_id": session_id, "limit": limit}
+        where_str = ""
 
         if action_type:
-            where_clauses.append("a.action_type = $action_type")
+            where_str = "WHERE a.action_type = $action_type"
             params["action_type"] = action_type.value
-
-        where_str = f"WHERE {' AND '.join(where_clauses)}"
 
         rows = self._db.query(
             f"""
-            MATCH (a:Action)
+            MATCH (s:Session {{session_id: $session_id}})-[:HAS_ACTION]->(a:Action)
             {where_str}
-            RETURN a.action_id AS action_id,
-                   a.session_id AS session_id,
+            RETURN s.session_id AS session_id,
+                   a.action_id AS action_id,
                    a.action_type AS action_type,
                    a.timestamp AS timestamp,
                    a.status AS status,
                    a.duration_ms AS duration_ms,
                    a.parent_action_id AS parent_action_id,
                    a.metadata AS metadata,
+                   a.tool_name AS tool_name,
+                   a.is_error AS is_error,
+                   a.is_mcp AS is_mcp,
                    a.properties AS properties,
                    labels(a) AS labels
             ORDER BY a.timestamp
@@ -688,17 +656,18 @@ class ActionsGraph:
         Returns:
             List of tool usage statistics
         """
-        where_clause = ""
         params: dict[str, Any] = {}
-
         if session_id:
-            where_clause = "WHERE a.session_id = $session_id"
+            match_clause = (
+                "MATCH (s:Session {session_id: $session_id})-[:HAS_ACTION]->(a:Action:ToolCall)-[:USED_TOOL]->(t:Tool)"
+            )
             params["session_id"] = session_id
+        else:
+            match_clause = "MATCH (a:Action:ToolCall)-[:USED_TOOL]->(t:Tool)"
 
         rows = self._db.query(
             f"""
-            MATCH (a:Action:ToolCall)-[:USED_TOOL]->(t:Tool)
-            {where_clause}
+            {match_clause}
             RETURN t.name AS tool_name,
                    t.is_mcp AS is_mcp,
                    t.mcp_server AS mcp_server,
@@ -743,7 +712,8 @@ class ActionsGraph:
             row["action_id"]: row["next_action_id"]
             for row in self._db.query(
                 """
-                MATCH (a:Action {session_id: $session_id})-[:FOLLOWED_BY]->(next:Action)
+                MATCH (s:Session {session_id: $session_id})-[:HAS_ACTION]->(a:Action)
+                MATCH (a)-[:FOLLOWED_BY]->(next:Action)
                 RETURN a.action_id AS action_id, next.action_id AS next_action_id
                 """,
                 params={"session_id": session_id},
@@ -752,7 +722,8 @@ class ActionsGraph:
         child_ids: dict[str, list[str]] = {}
         for row in self._db.query(
             """
-            MATCH (a:Action {session_id: $session_id})-[:PARENT_OF]->(child:Action)
+            MATCH (s:Session {session_id: $session_id})-[:HAS_ACTION]->(a:Action)
+            MATCH (a)-[:PARENT_OF]->(child:Action)
             RETURN a.action_id AS action_id, child.action_id AS child_action_id
             """,
             params={"session_id": session_id},
@@ -856,16 +827,12 @@ class ActionsGraph:
         props: dict[str, Any] = {}
 
         if isinstance(action, ToolCall):
-            props["tool_name"] = action.tool_name
             props["tool_input"] = action.tool_input
             props["tool_use_id"] = action.tool_use_id
-            props["is_mcp"] = action.is_mcp
             props["mcp_server"] = action.mcp_server
         elif isinstance(action, ToolResult):
             props["tool_use_id"] = action.tool_use_id
-            props["tool_name"] = action.tool_name
             props["content"] = action.content
-            props["is_error"] = action.is_error
             props["error_message"] = action.error_message
         elif isinstance(action, Message):
             props["role"] = action.role.value
@@ -885,7 +852,6 @@ class ActionsGraph:
             props["result"] = action.result
             props["usage"] = action.usage
         elif isinstance(action, PermissionRequest):
-            props["tool_name"] = action.tool_name
             props["tool_input"] = action.tool_input
             props["decision"] = action.decision
             props["reason"] = action.reason
@@ -919,7 +885,6 @@ class ActionsGraph:
             total_output_tokens=row.get("total_output_tokens", 0),
             working_directory=row.get("working_directory"),
             git_branch=row.get("git_branch"),
-            tags=row.get("tags", []),
             metadata=metadata or {},
             parent_session_id=row.get("parent_session_id"),
         )
@@ -932,7 +897,7 @@ class ActionsGraph:
 
         base_kwargs = {
             "action_id": row["action_id"],
-            "session_id": row["session_id"],
+            "session_id": row.get("session_id") or "",
             "timestamp": row["timestamp"],
             "status": ActionStatus(row["status"]) if row.get("status") else ActionStatus.COMPLETED,
             "duration_ms": row.get("duration_ms"),
@@ -943,19 +908,19 @@ class ActionsGraph:
         if action_type == ActionType.TOOL_CALL:
             return ToolCall(
                 **base_kwargs,
-                tool_name=props.get("tool_name", ""),
+                tool_name=row.get("tool_name") or props.get("tool_name", ""),
                 tool_input=props.get("tool_input", {}),
                 tool_use_id=props.get("tool_use_id"),
-                is_mcp=props.get("is_mcp", False),
+                is_mcp=(row["is_mcp"] if row.get("is_mcp") is not None else props.get("is_mcp", False)),
                 mcp_server=props.get("mcp_server"),
             )
         elif action_type == ActionType.TOOL_RESULT:
             return ToolResult(
                 **base_kwargs,
                 tool_use_id=props.get("tool_use_id", ""),
-                tool_name=props.get("tool_name", ""),
+                tool_name=row.get("tool_name") or props.get("tool_name", ""),
                 content=props.get("content"),
-                is_error=props.get("is_error", False),
+                is_error=(row["is_error"] if row.get("is_error") is not None else props.get("is_error", False)),
                 error_message=props.get("error_message"),
             )
         elif action_type in (
@@ -994,7 +959,7 @@ class ActionsGraph:
         elif action_type == ActionType.PERMISSION_REQUEST:
             return PermissionRequest(
                 **base_kwargs,
-                tool_name=props.get("tool_name", ""),
+                tool_name=row.get("tool_name") or props.get("tool_name", ""),
                 tool_input=props.get("tool_input", {}),
                 decision=props.get("decision"),
                 reason=props.get("reason"),

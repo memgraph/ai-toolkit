@@ -60,7 +60,6 @@ class SessionStartEvent(Event):
     event_type: EventType = field(default=EventType.SESSION_START, init=False)
     model: str | None = None
     working_directory: str | None = None
-    tags: list[str] = field(default_factory=list)
 
 
 @dataclass

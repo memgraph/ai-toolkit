@@ -98,10 +98,9 @@ async def test_message_subagent_permission_notification_and_stop_hooks():
 def test_create_tracking_hooks_creates_session_and_hook_map():
     graph = FakeActionsGraph()
 
-    hooks = create_tracking_hooks(graph, "session-1", session_kwargs={"tags": ["test"]})
+    hooks = create_tracking_hooks(graph, "session-1", session_kwargs={})
 
     assert graph.sessions[0].session_id == "session-1"
-    assert graph.sessions[0].tags == ["test"]
     assert set(hooks) == {
         "PreToolUse",
         "PostToolUse",

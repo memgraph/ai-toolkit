@@ -70,7 +70,6 @@ class OpenAIAdapter(RuntimeAdapter):
                     source_sdk=_SOURCE,
                     model=kw.get("model"),
                     working_directory=kw.get("working_directory"),
-                    tags=kw.get("tags", []),
                     metadata=kw.get("metadata", {}),
                 )
             )

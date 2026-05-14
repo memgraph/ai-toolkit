@@ -50,7 +50,6 @@ class TestSessionOperations:
             session_id="test-session-001",
             model="claude-sonnet-4-20250514",
             working_directory="/test/project",
-            tags=["test", "e2e"],
         )
         graph.create_session(session)
 
@@ -58,7 +57,6 @@ class TestSessionOperations:
         assert retrieved is not None
         assert retrieved.session_id == "test-session-001"
         assert retrieved.model == "claude-sonnet-4-20250514"
-        assert "test" in retrieved.tags
 
     def test_end_session(self, graph: ActionsGraph):
         """Test ending a session."""
@@ -83,11 +81,10 @@ class TestSessionOperations:
         for i in range(3):
             session = Session(
                 session_id=f"list-test-{i}",
-                tags=["list-test"],
             )
             graph.create_session(session)
 
-        sessions = graph.list_sessions(tag="list-test")
+        sessions = graph.list_sessions()
         assert len(sessions) == 3
 
     def test_forked_session(self, graph: ActionsGraph):
