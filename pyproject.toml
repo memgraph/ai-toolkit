@@ -52,6 +52,7 @@ members = [
     "context-graph/skills-graph",
     "context-graph/actions-graph",
     "context-graph/agent-context-graph",
+    "context-graph/memory-graph",
 ]
 
 [tool.ruff]

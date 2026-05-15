@@ -68,6 +68,7 @@ class ClaudeAdapter(RuntimeAdapter):
                     source_sdk=_SOURCE,
                     model=kw.get("model"),
                     working_directory=kw.get("working_directory"),
+                    user_id=kw.get("user_id"),
                     metadata=kw.get("metadata", {}),
                 )
             )
