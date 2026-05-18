@@ -1,10 +1,10 @@
-"""Memory Graph: Cross-session memory store for agents, backed by Memgraph.
+"""Sessions Graph: Cross-session memory store for agents, backed by Memgraph.
 
 Quick start::
 
-    from memory_graph import MemoryGraph, Memory
+    from sessions_graph import SessionsGraph, Memory
 
-    graph = MemoryGraph()
+    graph = SessionsGraph()
     graph.setup()
 
     mem = graph.save_memory(user_id="alice", content="Prefers Python over TypeScript")
@@ -12,15 +12,15 @@ Quick start::
 
 Integration with Agent Context Graph::
 
-    from memory_graph import MemoryGraph
-    from memory_graph.connector import MemoryGraphConnector
+    from sessions_graph import SessionsGraph
+    from sessions_graph.connector import SessionsGraphConnector
     from agent_context_graph import AgentLink
     from agent_context_graph.adapters.claude import ClaudeAdapter
 
-    graph = MemoryGraph()
+    graph = SessionsGraph()
     graph.setup()
 
-    connector = MemoryGraphConnector(graph)
+    connector = SessionsGraphConnector(graph)
     link = AgentLink()
     link.add_connector(connector)
     adapter = ClaudeAdapter(link, session_id="s-1", session_kwargs={"user_id": "alice"})
@@ -33,7 +33,7 @@ Integration with Agent Context Graph::
     )
 """
 
-from .core import MemoryGraph
+from .core import SessionsGraph
 from .models import Memory, MemoryValidationError
 
-__all__ = ["Memory", "MemoryGraph", "MemoryValidationError"]
+__all__ = ["Memory", "MemoryValidationError", "SessionsGraph"]

@@ -1,11 +1,11 @@
-"""Core MemoryGraph class for storing and recalling agent memories in Memgraph.
+"""Core SessionsGraph class for storing and recalling agent memories in Memgraph.
 
 Graph schema
 ------------
 Nodes:
     (:User  {user_id})
     (:Memory {memory_id, user_id, content, created_at, session_id?})
-    (:Session {session_id})   — created on demand for provenance only
+    (:Session {session_id})
 
 Relationships:
     (:User)-[:HAS_MEMORY]->(:Memory)
@@ -24,7 +24,7 @@ from .models import Memory, validate_content, validate_memory_id, validate_user_
 _FULLTEXT_INDEX = "memory_content_index"
 
 
-class MemoryGraph:
+class SessionsGraph:
     """Store and recall agent memories in Memgraph.
 
     Provides:
@@ -36,7 +36,7 @@ class MemoryGraph:
     """
 
     def __init__(self, memgraph: Memgraph | None = None, **kwargs: Any) -> None:
-        """Initialise MemoryGraph.
+        """Initialise SessionsGraph.
 
         Args:
             memgraph: An existing Memgraph client instance.  When *None* a new
