@@ -88,6 +88,7 @@ class CodexHooksAdapter(RuntimeAdapter):
                 source_sdk=_SOURCE,
                 model=_string_or_none(payload.get("model")),
                 working_directory=_string_or_none(payload.get("cwd")),
+                user_id=_string_or_none(payload.get("user_id")),
                 metadata=metadata,
             )
 

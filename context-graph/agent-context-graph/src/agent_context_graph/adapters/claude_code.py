@@ -78,6 +78,7 @@ class ClaudeCodeHooksAdapter(RuntimeAdapter):
                     session_id=session_id,
                     source_sdk=_SOURCE,
                     working_directory=_string_or_none(payload.get("cwd")),
+                    user_id=_string_or_none(payload.get("user_id")),
                     metadata=metadata,
                 )
             ]

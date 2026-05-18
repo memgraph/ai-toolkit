@@ -61,6 +61,7 @@ members = [
     "mcp-memgraph",
     "memgraph-ai",
     "memgraph-toolbox",
+    "memory-graph",
     "skills-graph",
     "structured2graph",
     "unstructured2graph",
@@ -3967,6 +3968,30 @@ requires-dist = [
     { name = "torch", marker = "extra == 'evaluations'", specifier = ">=2.8.0" },
 ]
 provides-extras = ["evaluations", "client", "test"]
+
+[[package]]
+name = "memory-graph"
+version = "0.1.0"
+source = { editable = "context-graph/memory-graph" }
+dependencies = [
+    { name = "memgraph-toolbox" },
+]
+
+[package.optional-dependencies]
+agent-context-graph = [
+    { name = "agent-context-graph" },
+]
+test = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "agent-context-graph", marker = "extra == 'agent-context-graph'", editable = "context-graph/agent-context-graph" },
+    { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
+]
+provides-extras = ["agent-context-graph", "test"]
 
 [[package]]
 name = "ml-dtypes"
