@@ -1,27 +1,27 @@
-# Memory Graph
+# Sessions Graph
 
-Memory Graph is the [Context Graph](../CONTEXT-MAP.md) component for cross-session recall. It stores free-form text assertions — called **Memories** — written explicitly by agents, and makes them searchable in future sessions.
+Sessions Graph is the [Context Graph](../CONTEXT-MAP.md) component for session context and cross-session recall. It is the **authority on `(:Session)` nodes** in the Context Graph family. It stores free-form text assertions — called **Memories** — written explicitly by agents, and makes them searchable in future sessions.
 
 Requires **Memgraph ≥ 3.6** (text search is stable from that release).
 
 ## Installation
 
 ```bash
-pip install memory-graph
+pip install sessions-graph
 ```
 
 To use with Agent Context Graph:
 
 ```bash
-pip install memory-graph[agent-context-graph]
+pip install sessions-graph[agent-context-graph]
 ```
 
 ## Quick start
 
 ```python
-from memory_graph import MemoryGraph
+from sessions_graph import SessionsGraph
 
-graph = MemoryGraph()   # connects via MEMGRAPH_HOST / MEMGRAPH_PORT env vars
+graph = SessionsGraph()   # connects via MEMGRAPH_HOST / MEMGRAPH_PORT env vars
 graph.setup()           # creates constraints and the text index (run once)
 
 # Write a memory
@@ -44,18 +44,18 @@ graph.delete_memory(mem.memory_id)
 
 ## Integration with Agent Context Graph
 
-Wire the `MemoryGraphConnector` into an `AgentLink` to get automatic session provenance — the connector tracks the active `session_id` and `user_id` from `SessionStartEvent` so you can reference them when saving memories.
+Wire the `SessionsGraphConnector` into an `AgentLink` to get automatic session provenance — the connector tracks the active `session_id` and `user_id` from `SessionStartEvent` so you can reference them when saving memories.
 
 ```python
-from memory_graph import MemoryGraph
-from memory_graph.connector import MemoryGraphConnector
+from sessions_graph import SessionsGraph
+from sessions_graph.connector import SessionsGraphConnector
 from agent_context_graph import AgentLink
 from agent_context_graph.adapters.claude import ClaudeAdapter
 
-graph = MemoryGraph()
+graph = SessionsGraph()
 graph.setup()
 
-connector = MemoryGraphConnector(graph)
+connector = SessionsGraphConnector(graph)
 link = AgentLink()
 link.add_connector(connector)
 
@@ -81,12 +81,12 @@ graph.save_memory(
                               ▲
               [:PRODUCED_MEMORY]
                               │
-                      (:Session {session_id})   ← provenance, created on demand
+                      (:Session {session_id})   ← shared idempotent coordination point
 ```
 
 ## Text search
 
-Memory Graph uses [Memgraph text search](https://memgraph.com/docs/querying/text-search) (powered by Tantivy) for `search_memories`. The text index is created on `setup()`:
+Sessions Graph uses [Memgraph text search](https://memgraph.com/docs/querying/text-search) (powered by Tantivy) for `search_memories`. The text index is created on `setup()`:
 
 ```cypher
 CREATE TEXT INDEX memory_content_index ON :Memory(content);

@@ -1,26 +1,22 @@
-"""Agent Context Graph connector for MemoryGraph.
-
-The connector lives inside memory-graph because MemoryGraph owns the
-interpretation of session events for provenance — Agent Context Graph
-only routes normalized runtime events.
+"""Agent Context Graph connector for SessionsGraph.
 
 The connector is intentionally thin: it watches ``SessionStartEvent`` and
-``SessionEndEvent`` to ensure that ``(:User)`` and ``(:Session)`` nodes
-exist in the graph before any :meth:`MemoryGraph.save_memory` call tries to
-wire provenance relationships.  Memory writes themselves happen through the
-:class:`MemoryGraph` Python API directly, not through the event stream.
+``SessionEndEvent`` to MERGE ``(:User)`` and ``(:Session)`` nodes so that
+provenance relationships can be wired when memories are saved.  Memory writes
+themselves happen through the :class:`SessionsGraph` Python API directly,
+not through the event stream.
 
 Usage::
 
-    from memory_graph import MemoryGraph
-    from memory_graph.connector import MemoryGraphConnector
+    from sessions_graph import SessionsGraph
+    from sessions_graph.connector import SessionsGraphConnector
     from agent_context_graph import AgentLink
     from agent_context_graph.adapters.claude import ClaudeAdapter
 
-    graph = MemoryGraph()
+    graph = SessionsGraph()
     graph.setup()
 
-    connector = MemoryGraphConnector(graph)
+    connector = SessionsGraphConnector(graph)
 
     link = AgentLink()
     link.add_connector(connector)
@@ -42,28 +38,27 @@ from agent_context_graph.events import Event, EventType, SessionEndEvent, Sessio
 from agent_context_graph.protocols import GraphConnector
 
 if TYPE_CHECKING:
-    from .core import MemoryGraph
+    from .core import SessionsGraph
 
 
 _SUPPORTED_EVENTS = {EventType.SESSION_START, EventType.SESSION_END}
 
 
-class MemoryGraphConnector(GraphConnector):
-    """Receives Agent Context Graph session events and prepares Memory Graph provenance.
+class SessionsGraphConnector(GraphConnector):
+    """Receives Agent Context Graph session events for memory provenance.
 
     On ``SESSION_START``:
-      - MERGEs a ``(:User {user_id})`` node so ownership relationships can be created.
-      - MERGEs a ``(:Session {session_id})`` node so provenance relationships can be created.
-      - Tracks ``active_user_id`` and ``active_session_id`` for convenient API access.
+      - MERGEs ``(:User {user_id})`` and ``(:Session {session_id})`` nodes.
+      - Tracks ``active_user_id`` and ``active_session_id`` for use in API calls.
 
     On ``SESSION_END``:
       - Clears the tracked active session context.
 
     Args:
-        graph: An initialised :class:`MemoryGraph` instance.
+        graph: An initialised :class:`SessionsGraph` instance.
     """
 
-    def __init__(self, graph: MemoryGraph) -> None:
+    def __init__(self, graph: SessionsGraph) -> None:
         self._graph = graph
         self._active_user_id: str | None = None
         self._active_session_id: str | None = None

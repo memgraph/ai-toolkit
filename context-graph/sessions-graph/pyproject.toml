@@ -1,5 +1,5 @@
 [project]
-name = "memory-graph"
+name = "sessions-graph"
 version = "0.1.0"
 description = "Cross-session memory store for agents, backed by Memgraph"
 readme = "README.md"

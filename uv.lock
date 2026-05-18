@@ -61,7 +61,7 @@ members = [
     "mcp-memgraph",
     "memgraph-ai",
     "memgraph-toolbox",
-    "memory-graph",
+    "sessions-graph",
     "skills-graph",
     "structured2graph",
     "unstructured2graph",
@@ -3968,30 +3968,6 @@ requires-dist = [
     { name = "torch", marker = "extra == 'evaluations'", specifier = ">=2.8.0" },
 ]
 provides-extras = ["evaluations", "client", "test"]
-
-[[package]]
-name = "memory-graph"
-version = "0.1.0"
-source = { editable = "context-graph/memory-graph" }
-dependencies = [
-    { name = "memgraph-toolbox" },
-]
-
-[package.optional-dependencies]
-agent-context-graph = [
-    { name = "agent-context-graph" },
-]
-test = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "agent-context-graph", marker = "extra == 'agent-context-graph'", editable = "context-graph/agent-context-graph" },
-    { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
-]
-provides-extras = ["agent-context-graph", "test"]
 
 [[package]]
 name = "ml-dtypes"
@@ -8350,6 +8326,30 @@ sdist = { url = "https://files.pythonhosted.org/packages/4c/72/43294fa4bdd75c516
 wheels = [
     { url = "https://files.pythonhosted.org/packages/dd/44/4356cc64246ba7b2b920f7c97a85c3c52748e213e250b512ee8152eb559d/sentry_sdk-2.39.0-py2.py3-none-any.whl", hash = "sha256:ba655ca5e57b41569b18e2a5552cb3375209760a5d332cdd87c6c3f28f729602", size = 370851 },
 ]
+
+[[package]]
+name = "sessions-graph"
+version = "0.1.0"
+source = { editable = "context-graph/sessions-graph" }
+dependencies = [
+    { name = "memgraph-toolbox" },
+]
+
+[package.optional-dependencies]
+agent-context-graph = [
+    { name = "agent-context-graph" },
+]
+test = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "agent-context-graph", marker = "extra == 'agent-context-graph'", editable = "context-graph/agent-context-graph" },
+    { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
+]
+provides-extras = ["agent-context-graph", "test"]
 
 [[package]]
 name = "setuptools"

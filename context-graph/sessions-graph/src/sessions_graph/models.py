@@ -1,4 +1,4 @@
-"""Data models for Memory Graph.
+"""Data models for Sessions Graph.
 
 Defines the core data structure for a Memory — a cross-session-durable
 free-form text assertion written explicitly by an agent.

@@ -1,4 +1,4 @@
-"""Unit tests for Memory Graph models, core, and connector.
+"""Unit tests for Sessions Graph models, core, and connector.
 
 These tests use an in-memory stub for the Memgraph client so they run
 without a live database.
@@ -9,7 +9,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from memory_graph.models import Memory, MemoryValidationError
+from sessions_graph.models import Memory, MemoryValidationError
 
 # ---------------------------------------------------------------------------
 # models
@@ -54,14 +54,14 @@ def _stub_db(rows: list | None = None):
 
 
 def _graph(rows=None):
-    from memory_graph.core import MemoryGraph
+    from sessions_graph.core import SessionsGraph
 
-    g = MemoryGraph.__new__(MemoryGraph)
+    g = SessionsGraph.__new__(SessionsGraph)
     g._db = _stub_db(rows)
     return g
 
 
-class TestMemoryGraphCore:
+class TestSessionsGraphCore:
     def test_save_memory_runs_two_queries(self):
         g = _graph()
         mem = g.save_memory("alice", "Prefers dark mode")
@@ -123,22 +123,22 @@ class TestMemoryGraphCore:
 # ---------------------------------------------------------------------------
 
 
-class TestMemoryGraphConnector:
+class TestSessionsGraphConnector:
     def _make(self):
         pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
-        from memory_graph.connector import MemoryGraphConnector
+        from sessions_graph.connector import SessionsGraphConnector
 
         from agent_context_graph.events import SessionEndEvent, SessionStartEvent
 
         db = MagicMock()
         db.query.return_value = []
 
-        from memory_graph.core import MemoryGraph
+        from sessions_graph.core import SessionsGraph
 
-        graph = MemoryGraph.__new__(MemoryGraph)
+        graph = SessionsGraph.__new__(SessionsGraph)
         graph._db = db
 
-        connector = MemoryGraphConnector(graph)
+        connector = SessionsGraphConnector(graph)
         return connector, graph, db, SessionStartEvent, SessionEndEvent
 
     def test_session_start_merges_user_and_session_nodes(self):
