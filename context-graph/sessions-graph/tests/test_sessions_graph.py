@@ -149,7 +149,9 @@ class TestSessionsGraphConnector:
 
         assert connector.active_user_id == "alice"
         assert connector.active_session_id == "s-1"
-        assert db.query.call_count == 2  # User MERGE + Session MERGE
+        assert db.query.call_count == 1  # single combined MERGE wiring User-[:HAD_SESSION]->Session
+        query_text = db.query.call_args.args[0]
+        assert "HAD_SESSION" in query_text
 
     def test_session_start_without_user_id_only_merges_session(self):
         connector, _graph, db, SessionStartEvent, _ = self._make()

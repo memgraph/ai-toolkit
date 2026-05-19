@@ -45,6 +45,10 @@ def test_top_level_cli_doctor_reports_checks(monkeypatch, capsys):
         lambda package_name: {"name": package_name, "ok": True, "detail": "1.2.3"},
     )
     monkeypatch.setattr(
+        "agent_context_graph.cli._check_memgraph",
+        lambda: {"name": "memgraph", "ok": True, "detail": "bolt://localhost:7687 reachable"},
+    )
+    monkeypatch.setattr(
         "agent_context_graph.cli._check_connector",
         lambda connector: {"name": f"connector:{connector}", "ok": True, "detail": "installed; memgraph=reachable"},
     )

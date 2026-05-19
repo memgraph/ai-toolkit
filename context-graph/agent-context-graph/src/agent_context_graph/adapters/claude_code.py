@@ -78,7 +78,7 @@ class ClaudeCodeHooksAdapter(RuntimeAdapter):
                     session_id=session_id,
                     source_sdk=_SOURCE,
                     working_directory=_string_or_none(payload.get("cwd")),
-                    user_id=_string_or_none(payload.get("user_id")),
+                    user_id=_resolve_user_id(payload),
                     metadata=metadata,
                 )
             ]
@@ -400,6 +400,18 @@ def _string_or_none(value: Any) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _resolve_user_id(payload: dict[str, Any]) -> str | None:
+    """Resolve a stable user identity for SessionStartEvent.
+
+    Resolution order:
+    1. ``user_id`` field in the hook payload (forward-compat).
+    2. ``AGENT_CONTEXT_GRAPH_USER_ID`` environment variable.
+    """
+    if uid := _string_or_none(payload.get("user_id")):
+        return uid
+    return os.environ.get("AGENT_CONTEXT_GRAPH_USER_ID") or None
 
 
 def _debug_log(message: str) -> None:

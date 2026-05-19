@@ -177,6 +177,7 @@ def _doctor(argv: list[str]) -> int:
     checks = [
         _check_cli(),
         _check_package("agent-context-graph"),
+        _check_memgraph(),
     ]
     for connector in connectors:
         checks.append(_check_connector(connector))
@@ -189,6 +190,22 @@ def _doctor(argv: list[str]) -> int:
     else:
         _print_doctor(payload)
     return 0 if ok else 1
+
+
+def _check_memgraph() -> dict[str, object]:
+    url = os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687")
+    try:
+        from memgraph_toolbox.api.memgraph import Memgraph
+
+        db = Memgraph()
+        db.query("RETURN 1")
+        return {"name": "memgraph", "ok": True, "detail": f"{url} reachable"}
+    except Exception as exc:
+        return {"name": "memgraph", "ok": False, "detail": f"{url} — {type(exc).__name__}: {exc}"}
+    finally:
+        driver = getattr(getattr(locals().get("db", None), "driver", None), "driver", None)
+        if driver is not None:
+            driver.close()
 
 
 def _check_cli() -> dict[str, object]:
@@ -227,6 +244,31 @@ def _check_connector(connector_name: str) -> dict[str, object]:
             return {"name": "connector:actions-graph", "ok": True, "detail": f"installed={version}; memgraph=reachable"}
         except Exception as exc:
             return {"name": "connector:actions-graph", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        finally:
+            driver = getattr(getattr(locals().get("graph", None), "_db", None), "driver", None)
+            if driver is not None:
+                driver.close()
+
+    if normalized == "sessions_graph":
+        try:
+            from sessions_graph import SessionsGraph
+
+            graph = SessionsGraph()
+            version = _package_version("sessions-graph")
+            user_id = os.environ.get("AGENT_CONTEXT_GRAPH_USER_ID")
+            if not user_id:
+                return {
+                    "name": "connector:sessions-graph",
+                    "ok": False,
+                    "detail": "AGENT_CONTEXT_GRAPH_USER_ID is not set — set it to a non-empty string identifying the human user",
+                }
+            return {
+                "name": "connector:sessions-graph",
+                "ok": True,
+                "detail": f"installed={version}; memgraph=reachable; user_id={user_id!r}",
+            }
+        except Exception as exc:
+            return {"name": "connector:sessions-graph", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
         finally:
             driver = getattr(getattr(locals().get("graph", None), "_db", None), "driver", None)
             if driver is not None:
@@ -287,6 +329,8 @@ def _connector_requirement(connector: str) -> str | None:
         return "skills-graph[agent-context-graph]"
     if normalized == "actions-graph":
         return "actions-graph[agent-context-graph]"
+    if normalized == "sessions-graph":
+        return "sessions-graph[agent-context-graph]"
     return None
 
 

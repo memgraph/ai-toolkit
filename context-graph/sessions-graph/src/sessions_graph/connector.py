@@ -99,18 +99,23 @@ class SessionsGraphConnector(GraphConnector):
 
         if user_id:
             self._active_user_id = user_id
-            # Ensure the User node exists before any save_memory call
+            self._active_session_id = event.session_id
+            # MERGE User and Session together so the relationship is always wired
             self._graph._db.query(
-                "MERGE (:User {user_id: $user_id});",
-                params={"user_id": user_id},
+                """
+                MERGE (u:User {user_id: $user_id})
+                MERGE (s:Session {session_id: $session_id})
+                MERGE (u)-[:HAD_SESSION]->(s)
+                """,
+                params={"user_id": user_id, "session_id": event.session_id},
             )
-
-        self._active_session_id = event.session_id
-        # Ensure the Session node exists for provenance wiring
-        self._graph._db.query(
-            "MERGE (:Session {session_id: $session_id});",
-            params={"session_id": event.session_id},
-        )
+        else:
+            self._active_session_id = event.session_id
+            # No user — still ensure the Session node exists for provenance wiring
+            self._graph._db.query(
+                "MERGE (:Session {session_id: $session_id});",
+                params={"session_id": event.session_id},
+            )
 
     def _on_session_end(self, event: SessionEndEvent) -> None:
         self._active_user_id = None
