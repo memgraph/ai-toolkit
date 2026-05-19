@@ -1,6 +1,6 @@
 [project]
 name = "sessions-graph"
-version = "0.1.1"
+version = "0.1.2"
 description = "Cross-session memory store for agents, backed by Memgraph"
 readme = "README.md"
 license = { text = "MIT" }

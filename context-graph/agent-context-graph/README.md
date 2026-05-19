@@ -150,6 +150,16 @@ Prerequisites:
 - `uv` on `PATH`.
 - Memgraph running and reachable over Bolt. Defaults are `bolt://localhost:7687`, empty user/password, and database `memgraph`.
 
+**Environment variables:**
+
+| Variable | Default | Description |
+|---|---|---|
+| `MEMGRAPH_URL` | `bolt://localhost:7687` | Bolt URL — set to a remote host for non-local Memgraph |
+| `MEMGRAPH_USER` | `""` | Bolt username (service account) |
+| `MEMGRAPH_PASSWORD` | `""` | Bolt password or OAuth token |
+| `MEMGRAPH_DATABASE` | `memgraph` | Target database name |
+| `AGENT_CONTEXT_GRAPH_USER_ID` | _(none)_ | Human identity stored on Memory nodes — required for sessions-graph to associate memories with a user |
+
 If Memgraph is not running locally, start it first:
 
 ```bash
