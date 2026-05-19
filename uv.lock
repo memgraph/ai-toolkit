@@ -211,7 +211,7 @@ provides-extras = ["agent-context-graph", "claude-agent", "test"]
 
 [[package]]
 name = "agent-context-graph"
-version = "0.1.3"
+version = "0.1.4"
 source = { editable = "context-graph/agent-context-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },

@@ -266,6 +266,8 @@ def create_link(connector_names: Iterable[str] = ()) -> AgentLink:
             _add_skills_graph_connector(link)
         elif normalized == "actions_graph":
             _add_actions_graph_connector(link)
+        elif normalized == "sessions_graph":
+            _add_sessions_graph_connector(link)
         else:
             msg = f"Unsupported connector: {connector_name}"
             raise ValueError(msg)
@@ -286,7 +288,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--connector",
         action="append",
         default=None,
-        help="Graph connector to enable. Currently supported: skills-graph, actions-graph.",
+        help="Graph connector to enable. Currently supported: skills-graph, actions-graph, sessions-graph.",
     )
     parser.add_argument(
         "--session-id",
@@ -333,6 +335,18 @@ def _add_skills_graph_connector(link: AgentLink) -> None:
 
     graph = SkillGraph()
     link.add_connector(SkillGraphConnector(graph))
+
+
+def _add_sessions_graph_connector(link: AgentLink) -> None:
+    try:
+        from sessions_graph import SessionsGraph
+        from sessions_graph.connector import SessionsGraphConnector
+    except ImportError as exc:
+        msg = "sessions-graph is required for the sessions-graph Claude Code connector"
+        raise ImportError(msg) from exc
+
+    graph = SessionsGraph()
+    link.add_connector(SessionsGraphConnector(graph))
 
 
 def _add_actions_graph_connector(link: AgentLink) -> None:
