@@ -255,10 +255,17 @@ def _check_connector(connector_name: str) -> dict[str, object]:
 
             graph = SessionsGraph()
             version = _package_version("sessions-graph")
+            user_id = os.environ.get("AGENT_CONTEXT_GRAPH_USER_ID")
+            if not user_id:
+                return {
+                    "name": "connector:sessions-graph",
+                    "ok": False,
+                    "detail": "AGENT_CONTEXT_GRAPH_USER_ID is not set — set it to a non-empty string identifying the human user",
+                }
             return {
                 "name": "connector:sessions-graph",
                 "ok": True,
-                "detail": f"installed={version}; memgraph=reachable",
+                "detail": f"installed={version}; memgraph=reachable; user_id={user_id!r}",
             }
         except Exception as exc:
             return {"name": "connector:sessions-graph", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}

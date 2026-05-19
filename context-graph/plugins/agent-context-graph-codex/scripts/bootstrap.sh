@@ -15,10 +15,10 @@ EOF
   exit 1
 fi
 
-uv tool install "agent-context-graph>=0.1.4" \
+uv tool install "agent-context-graph>=0.1.5" \
   --with "skills-graph[agent-context-graph]>=0.1.3" \
   --with "actions-graph[agent-context-graph]>=0.1.1" \
-  --with "sessions-graph[agent-context-graph]>=0.1.1" \
+  --with "sessions-graph[agent-context-graph]>=0.1.2" \
   --upgrade \
   --refresh-package agent-context-graph \
   --refresh-package skills-graph \
