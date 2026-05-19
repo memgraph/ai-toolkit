@@ -17,7 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 agent-context-graph = [
-    "agent-context-graph>=0.1.2",
+    "agent-context-graph>=0.1.4",
 ]
 test = [
     "pytest>=9.0.3",
