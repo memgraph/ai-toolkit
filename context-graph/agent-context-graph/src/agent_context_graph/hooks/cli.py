@@ -149,7 +149,7 @@ def _init_codex(argv: list[str]) -> int:
     )
     args = parser.parse_args(argv)
 
-    connectors = args.connector or ["skills-graph"]
+    connectors = args.connector or ["skills-graph", "actions-graph", "sessions-graph"]
     project_dir = Path(args.project_dir).expanduser().resolve()
     codex_dir = project_dir / ".codex"
     config_path = codex_dir / "config.toml"

@@ -15,7 +15,7 @@ EOF
   exit 1
 fi
 
-uv tool install "agent-context-graph>=0.1.5" \
+uv tool install "agent-context-graph>=0.1.6" \
   --with "skills-graph[agent-context-graph]>=0.1.3" \
   --with "actions-graph[agent-context-graph]>=0.1.1" \
   --with "sessions-graph[agent-context-graph]>=0.1.2" \
