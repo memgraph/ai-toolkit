@@ -315,7 +315,10 @@ def test_init_codex_does_not_bake_memgraph_connection_into_hook_command(tmp_path
 
     hooks = json.loads((tmp_path / ".codex" / "hooks.json").read_text())
     command = hooks["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-    assert command == "/bin/agent-context-graph hook run codex --connector skills-graph"
+    assert (
+        command
+        == "/bin/agent-context-graph hook run codex --connector skills-graph --connector actions-graph --connector sessions-graph"
+    )
     assert "MEMGRAPH_URL" not in command
     assert "MEMGRAPH_USER" not in command
     assert "MEMGRAPH_PASSWORD" not in command
@@ -345,6 +348,8 @@ def test_init_codex_uses_memgraph_env_only_for_setup_schema(tmp_path, monkeypatc
                 "codex",
                 "--project-dir",
                 str(tmp_path),
+                "--connector",
+                "skills-graph",
                 "--memgraph-url",
                 "bolt://memgraph.example:7687",
                 "--memgraph-user",
