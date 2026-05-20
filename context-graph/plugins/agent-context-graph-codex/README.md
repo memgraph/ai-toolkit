@@ -5,7 +5,7 @@ Codex runtime plugin for Agent Context Graph.
 The plugin installs Codex lifecycle hooks that call:
 
 ```bash
-agent-context-graph hook run codex --connector skills-graph --connector actions-graph
+agent-context-graph hook run codex --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
 Flow:
@@ -35,7 +35,7 @@ docker run --rm -p 7687:7687 memgraph/memgraph
 Bootstrap installs and verifies:
 
 ```bash
-agent-context-graph bootstrap --runtime codex --connector skills-graph --connector actions-graph
+agent-context-graph bootstrap --runtime codex --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
 ## Prerequisites

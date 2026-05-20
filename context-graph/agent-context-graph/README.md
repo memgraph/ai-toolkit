@@ -230,7 +230,7 @@ Then install or enable `context-graph` from the Codex plugin UI.
 Check the installed hook environment with:
 
 ```bash
-agent-context-graph doctor --runtime codex --connector skills-graph
+agent-context-graph doctor --runtime codex --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
 Keep graph credentials in the process environment, not in plugin hook files. Runtime hooks use `memgraph-toolbox` defaults unless the Codex process has `MEMGRAPH_*` variables set.
@@ -260,7 +260,7 @@ Then install:
 Check the installed hook environment with:
 
 ```bash
-agent-context-graph doctor --runtime claude-code --connector skills-graph
+agent-context-graph doctor --runtime claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
 ### Source Development
