@@ -5,7 +5,7 @@ Claude Code runtime plugin for Agent Context Graph.
 The plugin installs Claude Code lifecycle hooks that call:
 
 ```bash
-agent-context-graph hook run claude-code --connector skills-graph --connector actions-graph
+agent-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
 Flow:
@@ -35,7 +35,7 @@ docker run --rm -p 7687:7687 memgraph/memgraph
 Bootstrap installs and verifies:
 
 ```bash
-agent-context-graph bootstrap --runtime claude-code --connector skills-graph --connector actions-graph
+agent-context-graph bootstrap --runtime claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
 ## Prerequisites
