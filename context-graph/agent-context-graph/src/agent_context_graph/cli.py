@@ -19,6 +19,7 @@ _HELP = """usage: agent-context-graph <command> [options]
 
 Commands:
   bootstrap        Install runtime dependencies and verify hook capture.
+  config           Get or set persistent configuration values.
   doctor           Check runtime hook dependencies and Memgraph connectivity.
   setup <runtime>  Configure an agent runtime.
   hook <command>  Configure or run command hooks.
@@ -42,6 +43,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if command == "bootstrap":
         return _bootstrap(args[1:])
 
+    if command == "config":
+        return _config(args[1:])
+
     if command == "doctor":
         return _doctor(args[1:])
 
@@ -57,6 +61,100 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print(f"Unknown command: {command}", file=sys.stderr)
     print(_HELP)
+    return 2
+
+
+def _config(argv: list[str]) -> int:
+    """Get or set persistent config values in ~/.config/context-graph/config.toml."""
+    from agent_context_graph.adapters._identity import (
+        config_file_path,
+        load_config,
+        write_config,
+    )
+
+    config_path = config_file_path()
+
+    _CONFIG_KEYS = {
+        "identity.user_id": "user_id",
+        "memgraph.url": "memgraph_url",
+        "memgraph.user": "memgraph_user",
+        "memgraph.password": "memgraph_password",
+        "memgraph.database": "memgraph_database",
+    }
+
+    if not argv or argv[0] in {"-h", "--help"}:
+        print("usage: agent-context-graph config set <key> <value>")
+        print("       agent-context-graph config get <key>")
+        print("       agent-context-graph config show")
+        print("")
+        print("Supported keys:")
+        for key in _CONFIG_KEYS:
+            print(f"  {key}")
+        print(f"\nConfig file: {config_path}")
+        return 0
+
+    action = argv[0]
+
+    if action == "show":
+        config = load_config()
+        print(f"# {config_path}")
+        print(f"identity.user_id = {config.user_id!r}")
+        print(f"memgraph.url = {config.memgraph_url!r}")
+        print(f"memgraph.user = {config.memgraph_user!r}")
+        print(f"memgraph.password = {'***' if config.memgraph_password else repr('')}")
+        print(f"memgraph.database = {config.memgraph_database!r}")
+        return 0
+
+    if action == "set":
+        if len(argv) < 2:
+            print("usage: agent-context-graph config set <key> <value>", file=sys.stderr)
+            return 2
+        key = argv[1]
+        if key not in _CONFIG_KEYS:
+            print(f"Unknown config key: {key}", file=sys.stderr)
+            print(f"Supported keys: {', '.join(_CONFIG_KEYS)}", file=sys.stderr)
+            return 2
+
+        # Password: read from stdin if value not provided.
+        if len(argv) < 3:
+            if key == "memgraph.password":
+                import getpass
+
+                value = getpass.getpass("Enter memgraph password: ")
+            else:
+                print(f"usage: agent-context-graph config set {key} <value>", file=sys.stderr)
+                return 2
+        else:
+            value = argv[2]
+
+        write_config(**{_CONFIG_KEYS[key]: value})
+        display_value = "***" if key == "memgraph.password" else repr(value)
+        print(f"Wrote {key} = {display_value} to {config_path}")
+        return 0
+
+    if action == "get":
+        if len(argv) < 2:
+            print("usage: agent-context-graph config get <key>", file=sys.stderr)
+            return 2
+        key = argv[1]
+        if key not in _CONFIG_KEYS:
+            print(f"Unknown config key: {key}", file=sys.stderr)
+            return 2
+
+        config = load_config()
+        attr = _CONFIG_KEYS[key]
+        value = getattr(config, attr)
+        if value is None:
+            print(f"{key} is not set in {config_path}", file=sys.stderr)
+            return 1
+        # Don't print password to stdout unless explicitly requested.
+        if key == "memgraph.password":
+            print("***")
+        else:
+            print(value)
+        return 0
+
+    print(f"Unknown config action: {action}", file=sys.stderr)
     return 2
 
 
@@ -146,6 +244,30 @@ def _bootstrap(argv: list[str]) -> int:
         return 1
 
     print(f"OK agent-context-graph executable: {executable}")
+
+    # Write hook configuration file (auto-write + inform).
+    from agent_context_graph.adapters._identity import write_full_config
+
+    memgraph_url = f"bolt://{host}:{port}"
+    user_id = os.environ.get("AGENT_CONTEXT_GRAPH_USER_ID", "")
+    memgraph_user = os.environ.get("MEMGRAPH_USER", "")
+    memgraph_password = os.environ.get("MEMGRAPH_PASSWORD", "")
+    memgraph_database = os.environ.get("MEMGRAPH_DATABASE", "memgraph")
+
+    config_path = write_full_config(
+        user_id=user_id,
+        memgraph_url=memgraph_url,
+        memgraph_user=memgraph_user,
+        memgraph_password=memgraph_password,
+        memgraph_database=memgraph_database,
+    )
+    print(f"OK config: wrote {config_path}")
+    if user_id:
+        print(f"   identity.user_id = {user_id!r}")
+    else:
+        print("   identity.user_id is empty — set it with: agent-context-graph config set identity.user_id <your-name>")
+    print(f"   memgraph.url = {memgraph_url!r}")
+
     doctor_args = ["--runtime", args.runtime]
     for connector in connectors:
         doctor_args.extend(["--connector", connector])
@@ -177,6 +299,7 @@ def _doctor(argv: list[str]) -> int:
     checks = [
         _check_cli(),
         _check_package("agent-context-graph"),
+        _check_config(),
         _check_memgraph(),
     ]
     for connector in connectors:
@@ -192,12 +315,40 @@ def _doctor(argv: list[str]) -> int:
     return 0 if ok else 1
 
 
+def _check_config() -> dict[str, object]:
+    from agent_context_graph.adapters._identity import config_file_path, load_config
+
+    path = config_file_path()
+    if not path.is_file():
+        return {
+            "name": "config",
+            "ok": False,
+            "detail": f"{path} not found — run: agent-context-graph bootstrap or agent-context-graph config set identity.user_id <name>",
+        }
+    config = load_config()
+    parts = []
+    if config.user_id:
+        parts.append(f"user_id={config.user_id!r}")
+    else:
+        parts.append("user_id=NOT SET")
+    parts.append(f"memgraph.url={config.memgraph_url!r}")
+    return {"name": "config", "ok": bool(config.user_id), "detail": f"{path} — {'; '.join(parts)}"}
+
+
 def _check_memgraph() -> dict[str, object]:
-    url = os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687")
+    from agent_context_graph.adapters._identity import resolve_memgraph_env
+
+    env = resolve_memgraph_env()
+    url = env["MEMGRAPH_URL"]
     try:
         from memgraph_toolbox.api.memgraph import Memgraph
 
-        db = Memgraph()
+        db = Memgraph(
+            url=env["MEMGRAPH_URL"],
+            username=env["MEMGRAPH_USER"],
+            password=env["MEMGRAPH_PASSWORD"],
+            database=env["MEMGRAPH_DATABASE"],
+        )
         db.query("RETURN 1")
         return {"name": "memgraph", "ok": True, "detail": f"{url} reachable"}
     except Exception as exc:
@@ -253,14 +404,22 @@ def _check_connector(connector_name: str) -> dict[str, object]:
         try:
             from sessions_graph import SessionsGraph
 
-            graph = SessionsGraph()
+            from agent_context_graph.adapters._identity import resolve_memgraph_env, resolve_user_id
+
+            env = resolve_memgraph_env()
+            graph = SessionsGraph(
+                url=env["MEMGRAPH_URL"],
+                username=env["MEMGRAPH_USER"],
+                password=env["MEMGRAPH_PASSWORD"],
+                database=env["MEMGRAPH_DATABASE"],
+            )
             version = _package_version("sessions-graph")
-            user_id = os.environ.get("AGENT_CONTEXT_GRAPH_USER_ID")
+            user_id = resolve_user_id({})
             if not user_id:
                 return {
                     "name": "connector:sessions-graph",
                     "ok": False,
-                    "detail": "AGENT_CONTEXT_GRAPH_USER_ID is not set — set it to a non-empty string identifying the human user",
+                    "detail": "user_id not resolved — run: agent-context-graph config set identity.user_id <your-name>",
                 }
             return {
                 "name": "connector:sessions-graph",

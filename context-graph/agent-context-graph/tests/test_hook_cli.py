@@ -45,6 +45,10 @@ def test_top_level_cli_doctor_reports_checks(monkeypatch, capsys):
         lambda package_name: {"name": package_name, "ok": True, "detail": "1.2.3"},
     )
     monkeypatch.setattr(
+        "agent_context_graph.cli._check_config",
+        lambda: {"name": "config", "ok": True, "detail": "ok"},
+    )
+    monkeypatch.setattr(
         "agent_context_graph.cli._check_memgraph",
         lambda: {"name": "memgraph", "ok": True, "detail": "bolt://localhost:7687 reachable"},
     )
@@ -73,6 +77,10 @@ def test_top_level_cli_doctor_fails_when_check_fails(monkeypatch, capsys):
     monkeypatch.setattr(
         "agent_context_graph.cli._check_package",
         lambda package_name: {"name": package_name, "ok": True, "detail": "1.2.3"},
+    )
+    monkeypatch.setattr(
+        "agent_context_graph.cli._check_config",
+        lambda: {"name": "config", "ok": True, "detail": "ok"},
     )
     monkeypatch.setattr(
         "agent_context_graph.cli._check_connector",
@@ -107,6 +115,13 @@ def test_top_level_cli_bootstrap_installs_and_runs_doctor(monkeypatch, capsys):
     monkeypatch.setattr("agent_context_graph.cli.subprocess.run", fake_run)
     monkeypatch.setattr("agent_context_graph.cli._doctor", fake_doctor)
 
+    from pathlib import Path
+
+    monkeypatch.setattr(
+        "agent_context_graph.adapters._identity.write_full_config",
+        lambda **kwargs: Path("/tmp/fake-config.toml"),
+    )
+
     assert top_level_main(["bootstrap", "--runtime", "codex", "--connector", "skills-graph"]) == 0
 
     assert commands == [
@@ -133,6 +148,13 @@ def test_top_level_cli_bootstrap_installs_actions_graph_connector(monkeypatch):
     monkeypatch.setattr("agent_context_graph.cli._memgraph_reachable", lambda host, port: True)
     monkeypatch.setattr("agent_context_graph.cli._doctor", lambda args: 0)
 
+    from pathlib import Path
+
+    monkeypatch.setattr(
+        "agent_context_graph.adapters._identity.write_full_config",
+        lambda **kwargs: Path("/tmp/fake-config.toml"),
+    )
+
     def fake_run(command, *, check):
         commands.append(command)
         assert check is True
@@ -152,6 +174,13 @@ def test_top_level_cli_bootstrap_no_reinstall_omits_reinstall(monkeypatch):
     monkeypatch.setattr("agent_context_graph.cli.shutil.which", lambda name: f"/bin/{name}")
     monkeypatch.setattr("agent_context_graph.cli._memgraph_reachable", lambda host, port: True)
     monkeypatch.setattr("agent_context_graph.cli._doctor", lambda args: 0)
+
+    from pathlib import Path
+
+    monkeypatch.setattr(
+        "agent_context_graph.adapters._identity.write_full_config",
+        lambda **kwargs: Path("/tmp/fake-config.toml"),
+    )
 
     def fake_run(command, *, check):
         commands.append(command)
