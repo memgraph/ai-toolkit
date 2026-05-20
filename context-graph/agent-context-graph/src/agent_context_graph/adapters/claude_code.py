@@ -255,19 +255,26 @@ def load_payload(stream: Any | None = None) -> dict[str, Any]:
     return payload
 
 
-def create_link(connector_names: Iterable[str] = ()) -> AgentLink:
-    """Create an AgentLink with optional connectors named by CLI/config."""
+def create_link(connector_names: Iterable[str] = (), *, memgraph_env: dict[str, str] | None = None) -> AgentLink:
+    """Create an AgentLink with optional connectors named by CLI/config.
+
+    Args:
+        connector_names: Which graph connectors to attach.
+        memgraph_env: Resolved Memgraph connection dict (keys: MEMGRAPH_URL,
+            MEMGRAPH_USER, MEMGRAPH_PASSWORD, MEMGRAPH_DATABASE).  When None,
+            connectors fall back to their own default resolution.
+    """
     link = AgentLink()
     for connector_name in connector_names:
         normalized = connector_name.strip().replace("-", "_")
         if not normalized:
             continue
         if normalized == "skills_graph":
-            _add_skills_graph_connector(link)
+            _add_skills_graph_connector(link, memgraph_env)
         elif normalized == "actions_graph":
-            _add_actions_graph_connector(link)
+            _add_actions_graph_connector(link, memgraph_env)
         elif normalized == "sessions_graph":
-            _add_sessions_graph_connector(link)
+            _add_sessions_graph_connector(link, memgraph_env)
         else:
             msg = f"Unsupported connector: {connector_name}"
             raise ValueError(msg)
@@ -296,6 +303,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Override the session id from the Claude Code hook payload.",
     )
     parser.add_argument(
+        "--memgraph-url",
+        default=None,
+        help="Memgraph Bolt URL. Overrides config file value.",
+    )
+    parser.add_argument(
+        "--memgraph-user",
+        default=None,
+        help="Memgraph username. Overrides config file value.",
+    )
+    parser.add_argument(
+        "--memgraph-password",
+        default=None,
+        help="Memgraph password. Overrides config file value.",
+    )
+    parser.add_argument(
+        "--memgraph-database",
+        default=None,
+        help="Memgraph database. Overrides config file value.",
+    )
+    parser.add_argument(
         "--strict",
         action="store_true",
         help="Return a non-zero status if the hook payload cannot be recorded.",
@@ -306,10 +333,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     if connector_names is None:
         connector_names = _connectors_from_env()
 
+    # Resolve Memgraph connection: CLI flag > config file > default.
+    from agent_context_graph.adapters._identity import resolve_memgraph_env
+
+    memgraph_env = resolve_memgraph_env(
+        url=args.memgraph_url,
+        user=args.memgraph_user,
+        password=args.memgraph_password,
+        database=args.memgraph_database,
+    )
+
     payload: dict[str, Any] = {}
     try:
         payload = load_payload()
-        link = create_link(connector_names)
+        link = create_link(connector_names, memgraph_env=memgraph_env)
         adapter = ClaudeCodeHooksAdapter(link, session_id=args.session_id)
         adapter.handle_payload(payload)
         response = response_for_payload(payload)
@@ -325,7 +362,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _add_skills_graph_connector(link: AgentLink) -> None:
+def _add_skills_graph_connector(link: AgentLink, memgraph_env: dict[str, str] | None = None) -> None:
     try:
         from skills_graph import SkillGraph
         from skills_graph.connector import SkillGraphConnector
@@ -333,11 +370,12 @@ def _add_skills_graph_connector(link: AgentLink) -> None:
         msg = "skills-graph is required for the skills-graph Claude Code connector"
         raise ImportError(msg) from exc
 
-    graph = SkillGraph()
+    kwargs = _memgraph_kwargs(memgraph_env)
+    graph = SkillGraph(**kwargs)
     link.add_connector(SkillGraphConnector(graph))
 
 
-def _add_sessions_graph_connector(link: AgentLink) -> None:
+def _add_sessions_graph_connector(link: AgentLink, memgraph_env: dict[str, str] | None = None) -> None:
     try:
         from sessions_graph import SessionsGraph
         from sessions_graph.connector import SessionsGraphConnector
@@ -345,11 +383,12 @@ def _add_sessions_graph_connector(link: AgentLink) -> None:
         msg = "sessions-graph is required for the sessions-graph Claude Code connector"
         raise ImportError(msg) from exc
 
-    graph = SessionsGraph()
+    kwargs = _memgraph_kwargs(memgraph_env)
+    graph = SessionsGraph(**kwargs)
     link.add_connector(SessionsGraphConnector(graph))
 
 
-def _add_actions_graph_connector(link: AgentLink) -> None:
+def _add_actions_graph_connector(link: AgentLink, memgraph_env: dict[str, str] | None = None) -> None:
     try:
         from actions_graph import ActionsGraph
         from actions_graph.connector import ActionsGraphConnector
@@ -357,8 +396,21 @@ def _add_actions_graph_connector(link: AgentLink) -> None:
         msg = "actions-graph is required for the actions-graph Claude Code connector"
         raise ImportError(msg) from exc
 
-    graph = ActionsGraph()
+    kwargs = _memgraph_kwargs(memgraph_env)
+    graph = ActionsGraph(**kwargs)
     link.add_connector(ActionsGraphConnector(graph))
+
+
+def _memgraph_kwargs(memgraph_env: dict[str, str] | None) -> dict[str, str]:
+    """Convert resolved memgraph env dict to kwargs for graph component constructors."""
+    if memgraph_env is None:
+        return {}
+    return {
+        "url": memgraph_env["MEMGRAPH_URL"],
+        "username": memgraph_env["MEMGRAPH_USER"],
+        "password": memgraph_env["MEMGRAPH_PASSWORD"],
+        "database": memgraph_env["MEMGRAPH_DATABASE"],
+    }
 
 
 def _connectors_from_env() -> list[str]:
@@ -408,10 +460,11 @@ def _resolve_user_id(payload: dict[str, Any]) -> str | None:
     Resolution order:
     1. ``user_id`` field in the hook payload (forward-compat).
     2. ``AGENT_CONTEXT_GRAPH_USER_ID`` environment variable.
+    3. Config file at ``~/.config/agent-context-graph/config.toml``.
     """
-    if uid := _string_or_none(payload.get("user_id")):
-        return uid
-    return os.environ.get("AGENT_CONTEXT_GRAPH_USER_ID") or None
+    from agent_context_graph.adapters._identity import resolve_user_id
+
+    return resolve_user_id(payload)
 
 
 def _debug_log(message: str) -> None:
