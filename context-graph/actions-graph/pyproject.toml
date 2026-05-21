@@ -1,6 +1,6 @@
 [project]
 name = "actions-graph"
-version = "0.1.1"
+version = "0.1.2"
 description = "Store and track LLM actions, tool calls, and sessions in Memgraph"
 readme = "README.md"
 license = { text = "MIT" }

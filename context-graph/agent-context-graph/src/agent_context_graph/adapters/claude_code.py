@@ -227,9 +227,7 @@ def build_hooks_config(command: str, *, timeout: int = 30) -> dict[str, list[dic
                 }
             ]
         }
-        if hook_name == "SessionStart":
-            entry["matcher"] = "startup|resume|clear"
-        elif hook_name in {
+        if hook_name in {
             "PreToolUse",
             "PostToolUse",
             "PostToolUseFailure",
@@ -459,8 +457,7 @@ def _resolve_user_id(payload: dict[str, Any]) -> str | None:
 
     Resolution order:
     1. ``user_id`` field in the hook payload (forward-compat).
-    2. ``AGENT_CONTEXT_GRAPH_USER_ID`` environment variable.
-    3. Config file at ``~/.config/agent-context-graph/config.toml``.
+    2. Config file ``[identity] user_id`` at ``~/.config/context-graph/config.toml``.
     """
     from agent_context_graph.adapters._identity import resolve_user_id
 

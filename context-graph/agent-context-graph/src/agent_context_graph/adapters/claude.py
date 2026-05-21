@@ -45,7 +45,7 @@ class ClaudeAdapter(RuntimeAdapter):
         link: The AgentLink hub to emit events to.
         session_id: Session identifier for all events.
         auto_session: If ``True``, emit SessionStartEvent on creation.
-        session_kwargs: Extra fields for SessionStartEvent (model, tags, …).
+        session_kwargs: Extra fields for SessionStartEvent (model, …).
     """
 
     def __init__(

@@ -167,7 +167,7 @@ def test_build_hooks_config_uses_command_for_supported_hooks():
     assert "SessionStart" in config
     assert "PreToolUse" in config
     assert "PostToolUseFailure" in config
-    assert config["SessionStart"][0]["matcher"] == "startup|resume|clear"
+    assert "matcher" not in config["SessionStart"][0]
     assert config["PreToolUse"][0]["matcher"] == "*"
     assert "matcher" not in config["Stop"][0]
     assert config["PreToolUse"][0]["hooks"][0]["command"] == "python hook.py"
