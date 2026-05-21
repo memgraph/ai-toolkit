@@ -227,9 +227,7 @@ def build_hooks_config(command: str, *, timeout: int = 30) -> dict[str, list[dic
                 }
             ]
         }
-        if hook_name == "SessionStart":
-            entry["matcher"] = "startup|resume|clear"
-        elif hook_name in {
+        if hook_name in {
             "PreToolUse",
             "PostToolUse",
             "PostToolUseFailure",

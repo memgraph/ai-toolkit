@@ -64,7 +64,7 @@ link.add_connector(SkillGraphConnector(skills))
 adapter = ClaudeAdapter(
     link,
     session_id="my-session",
-    session_kwargs={"model": "claude-sonnet-4-20250514", "tags": ["review"]},
+    session_kwargs={"model": "claude-sonnet-4-20250514"},
 )
 
 # 4. Use with Claude Agent SDK

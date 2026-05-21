@@ -15,7 +15,7 @@ Actions Graph provides a graph-based storage system for tracking all LLM interac
 - 📊 **Graph-based Storage**: Store actions as nodes with relationships in Memgraph
 - 🔗 **Temporal Sequences**: Track action order with `FOLLOWED_BY` relationships
 - 🌳 **Nested Actions**: Support for parent-child action relationships (e.g., subagents)
-- 🏷️ **Session Management**: Create, track, and query sessions with tags
+- 🏷️ **Session Management**: Create, track, and query sessions
 - 📈 **Analytics**: Built-in queries for tool usage stats and session summaries
 - 🔌 **Agent Context Graph Integration**: Consume normalized runtime events through `ActionsGraphConnector`
 
@@ -103,9 +103,6 @@ Actions Graph should consume runtime activity through Agent Context Graph when p
 
 - **Tool**: Tool definitions
   - Properties: `name`, `is_mcp`, `mcp_server`
-
-- **Tag**: Session/action tags
-  - Properties: `name`
 
 ### Relationships
 
