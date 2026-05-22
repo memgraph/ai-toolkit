@@ -41,4 +41,34 @@ printf '{"hook_event_name":"Stop","session_id":"doctor"}' \
 
 Do not check `skills_graph` with system `python3`; `agent-context-graph` may be installed in an isolated `uv tool` or `pipx` environment.
 
+## Configuration
+
+Connection settings live in `~/.config/context-graph/config.toml`. Hook subprocesses read from this file (not environment variables).
+
+If `MEMGRAPH_URL`, `MEMGRAPH_USER`, `MEMGRAPH_PASSWORD`, or `MEMGRAPH_DATABASE` environment variables are set when bootstrap runs, they are automatically written to the config file. No manual `config set` needed in that case.
+
+View current config:
+
+```bash
+agent-context-graph config show
+```
+
+Set values:
+
+```bash
+agent-context-graph config set identity.user_id "username"
+agent-context-graph config set memgraph.url "neo4j://coordinator:7687"
+agent-context-graph config set memgraph.user "username"
+agent-context-graph config set memgraph.password
+agent-context-graph config set memgraph.database "dbname"
+```
+
+For HA clusters, use the `neo4j://` scheme pointing to any coordinator. The driver handles routing and failover automatically:
+
+```bash
+agent-context-graph config set memgraph.url "neo4j://memgraph-coordinator-1:7687"
+```
+
+Supported keys: `identity.user_id`, `memgraph.url`, `memgraph.user`, `memgraph.password`, `memgraph.database`.
+
 If skill usage is missing, inspect whether the session actually read or invoked a skill. Search/list results can be surfacing, not proven usage.
