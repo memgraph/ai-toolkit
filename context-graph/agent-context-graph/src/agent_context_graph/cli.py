@@ -191,8 +191,21 @@ def _bootstrap(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     connectors = args.connector or ["skills-graph"]
-    host = args.memgraph_host if args.memgraph_host is not None else os.environ.get("MEMGRAPH_HOST", "localhost")
-    port = args.memgraph_port if args.memgraph_port is not None else int(os.environ.get("MEMGRAPH_PORT", "7687"))
+    # Resolve Memgraph URL: MEMGRAPH_URL env takes priority (supports neo4j:// for HA).
+    # Falls back to host:port construction for backward compatibility.
+    memgraph_url_env = os.environ.get("MEMGRAPH_URL")
+    if memgraph_url_env:
+        memgraph_url = memgraph_url_env
+        # For connectivity check, we still need host:port — skip if using neo4j:// routing.
+        from urllib.parse import urlparse
+
+        parsed = urlparse(memgraph_url)
+        host = parsed.hostname or "localhost"
+        port = parsed.port or 7687
+    else:
+        host = args.memgraph_host if args.memgraph_host is not None else os.environ.get("MEMGRAPH_HOST", "localhost")
+        port = args.memgraph_port if args.memgraph_port is not None else int(os.environ.get("MEMGRAPH_PORT", "7687"))
+        memgraph_url = f"bolt://{host}:{port}"
 
     uv = shutil.which("uv")
     if not uv:
@@ -248,7 +261,6 @@ def _bootstrap(argv: list[str]) -> int:
     # Write hook configuration file (auto-write + inform).
     from agent_context_graph.adapters._identity import write_full_config
 
-    memgraph_url = f"bolt://{host}:{port}"
     user_id = os.environ.get("AGENT_CONTEXT_GRAPH_USER_ID", "")
     memgraph_user = os.environ.get("MEMGRAPH_USER", "")
     memgraph_password = os.environ.get("MEMGRAPH_PASSWORD", "")
