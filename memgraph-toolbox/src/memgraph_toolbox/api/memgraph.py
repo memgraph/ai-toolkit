@@ -1,7 +1,6 @@
 import os
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import urlparse
 
 from neo4j import GraphDatabase
 
@@ -14,70 +13,6 @@ MEMGRAPH_ENV_DEFAULTS = {
     "MEMGRAPH_DATABASE": "memgraph",
 }
 MEMGRAPH_ENV_KEYS = tuple(MEMGRAPH_ENV_DEFAULTS)
-
-
-def _discover_main(coordinator_urls: list[str]) -> str:
-    """Query coordinators to find the current MAIN data instance.
-
-    Tries each coordinator in order. Returns a bolt:// URL to the MAIN instance.
-    Raises ValueError if no coordinator is reachable or no MAIN is found.
-    """
-    last_error = None
-    for coord_url in coordinator_urls:
-        # Ensure plain bolt for coordinator queries (coordinators ignore auth).
-        parsed = urlparse(coord_url)
-        bolt_url = f"bolt://{parsed.hostname}:{parsed.port or 7687}"
-        try:
-            driver = GraphDatabase.driver(bolt_url)
-            try:
-                with driver.session() as session:
-                    records = list(session.run("SHOW INSTANCES"))
-                for record in records:
-                    if record.get("role") == "main" and record.get("health") == "up":
-                        bolt_server = record["bolt_server"]
-                        host, _, port = bolt_server.rpartition(":")
-                        # Resolve: try the reported hostname first; if it
-                        # contains dots (K8s FQDN), also try the short name.
-                        resolved_host = _resolve_host(host, coordinator_urls)
-                        return f"bolt://{resolved_host}:{port}"
-            finally:
-                driver.close()
-        except Exception as e:
-            last_error = e
-            continue
-    raise ValueError(
-        f"Could not discover MAIN instance from coordinators: {coordinator_urls}. Last error: {last_error}"
-    )
-
-
-def _resolve_host(host: str, coordinator_urls: list[str]) -> str:
-    """Resolve a host reported by SHOW INSTANCES to one reachable from here.
-
-    Memgraph reports FQDN names (e.g. memgraph-data-0.default.svc.cluster.local).
-    When connecting from outside K8s, the short name (memgraph-data-0) may be
-    resolvable instead. We try: FQDN → short name → match pattern from coordinators.
-    """
-    import socket
-
-    # Try the full hostname first.
-    try:
-        socket.getaddrinfo(host, None)
-        return host
-    except socket.gaierror:
-        pass
-
-    # Try short hostname (first segment before first dot).
-    short = host.split(".")[0]
-    try:
-        socket.getaddrinfo(short, None)
-        return short
-    except socket.gaierror:
-        pass
-
-    # Last resort: infer from the coordinator URLs' hostname pattern.
-    # e.g. coordinators are "memgraph-coordinator-1" and data is
-    # "memgraph-data-0.default.svc.cluster.local" → just use "memgraph-data-0".
-    return short
 
 
 def memgraph_env(
@@ -156,28 +91,7 @@ class Memgraph:
         config = dict(driver_config or {})
         config.setdefault("user_agent", user_agent or self.DEFAULT_USER_AGENT)
 
-        # HA support:
-        # - Single neo4j:// URL: use native bolt+routing (driver handles failover).
-        # - Multiple bolt:// URLs: coordinator discovery via SHOW INSTANCES.
-        # - Single bolt:// URL: direct connection (standalone mode).
-        urls = [u.strip() for u in url.split(",") if u.strip()]
-        primary_scheme = urlparse(urls[0]).scheme
-
-        if primary_scheme.startswith("neo4j"):
-            # Native routing mode — pass through directly.
-            target_url = urls[0]
-            self._ha_coordinators = None
-        elif len(urls) > 1:
-            # Coordinator discovery mode.
-            target_url = _discover_main(urls)
-            self._ha_coordinators = urls
-        else:
-            target_url = urls[0]
-            self._ha_coordinators = None
-
-        self.driver = GraphDatabase.driver(target_url, auth=(username, password), **config)
-        self._auth = (username, password)
-        self._driver_config = config
+        self.driver = GraphDatabase.driver(url, auth=(username, password), **config)
 
         self.database = env["MEMGRAPH_DATABASE"]
 
@@ -206,23 +120,10 @@ class Memgraph:
         Returns:
             List of dictionaries containing query results
         """
-        from neo4j.exceptions import ServiceUnavailable
+        from neo4j.exceptions import Neo4jError
 
         if params is None:
             params = {}
-        try:
-            return self._execute(query, params)
-        except (ServiceUnavailable, OSError):
-            if not self._ha_coordinators:
-                raise
-            # HA failover: MAIN likely changed, re-discover and retry.
-            self._reconnect_to_main()
-            return self._execute(query, params)
-
-    def _execute(self, query: str, params: dict) -> list[dict[str, Any]]:
-        """Run a query, falling back to implicit transactions when needed."""
-        from neo4j.exceptions import Neo4jError
-
         try:
             data, _, _ = self.driver.execute_query(
                 query,
@@ -260,12 +161,6 @@ class Memgraph:
             data = session.run(query, params)
             json_data = [serialize_record_data(r.data()) for r in data]
             return json_data
-
-    def _reconnect_to_main(self) -> None:
-        """Re-discover MAIN from coordinators and reconnect."""
-        self.driver.close()
-        target_url = _discover_main(self._ha_coordinators)
-        self.driver = GraphDatabase.driver(target_url, auth=self._auth, **self._driver_config)
 
     def close(self) -> None:
         """
