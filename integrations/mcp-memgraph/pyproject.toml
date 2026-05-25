@@ -26,6 +26,8 @@ dependencies = [
   "neo4j>=5.28.1",
   "memgraph-toolbox>=0.1.11",
   "fastmcp>=3.2.0",
+  "pyjwt[crypto]>=2.10.1",
+  "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]
@@ -34,7 +36,8 @@ test = [
   "python-dotenv>=1.0.1",
   "anthropic",
   "mcp[cli]>=1.23.0",
-  "pytest-asyncio>=0.20.3"
+  "pytest-asyncio>=0.20.3",
+  "cryptography>=46.0.7",
 ]
 
 [project.scripts]

@@ -228,6 +228,10 @@ async def test_tools_and_resources():
             "get_node_neighborhood",
             "search_node_vectors",
             "get_procedures",
+            # Multi-tenant tools — always registered (no-op behavior when
+            # MCP_AUTH_ENABLED is false; see CHANGELOG 0.1.13).
+            "list_databases",
+            "use_database",
         ]
         expected_resources = []
 

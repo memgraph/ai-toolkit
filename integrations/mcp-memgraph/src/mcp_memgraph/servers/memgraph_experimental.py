@@ -14,7 +14,9 @@ from typing import Any
 from fastmcp import Context, FastMCP
 from starlette.responses import JSONResponse
 
-from mcp_memgraph.config import get_mcp_config, get_memgraph_config
+from mcp_memgraph.auth import current_session_auth
+from mcp_memgraph.config import get_auth_config, get_mcp_config, get_memgraph_config
+from mcp_memgraph.tenant_routing import get_registry
 from memgraph_toolbox.api.memgraph import Memgraph
 from memgraph_toolbox.tools.cypher import CypherTool
 from memgraph_toolbox.tools.index import ShowIndexInfoTool
@@ -24,6 +26,7 @@ from memgraph_toolbox.utils.logger import logger_init
 # Get configuration instances
 memgraph_config = get_memgraph_config()
 mcp_config = get_mcp_config()
+auth_config = get_auth_config()
 
 # Configure logging
 logger = logger_init("mcp-memgraph-experimental")
@@ -31,20 +34,21 @@ logger = logger_init("mcp-memgraph-experimental")
 # Initialize FastMCP server
 mcp = FastMCP("mcp-memgraph-experimental")
 
-# Initialize Memgraph client
-logger.info(
-    "Connecting to Memgraph db '%s' at %s with user '%s'",
-    memgraph_config.database,
-    memgraph_config.url,
-    memgraph_config.username,
-)
 logger.info("Memgraph Experimental server initialized")
 logger.warning(
     "Note: Read-only mode is not supported on this server. This server requires write access to create indexes."
 )
 
-# TODO (@antejavor): Implement some tests for this
-db = Memgraph(**memgraph_config.get_client_config())
+_registry = get_registry(memgraph_config, auth_config)
+
+
+def _get_db() -> Memgraph:
+    """Per-request Memgraph client — same routing semantics as servers.server."""
+    if auth_config.enabled:
+        sa = current_session_auth()
+        if sa is not None:
+            return _registry.get_for(sa.current_tenant)
+    return _registry.get_default()
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -106,7 +110,7 @@ def get_current_indexes() -> IndexInfo:
     index_info = IndexInfo()
 
     try:
-        indexes_raw = ShowIndexInfoTool(db=db).call({})
+        indexes_raw = ShowIndexInfoTool(db=_get_db()).call({})
 
         for idx in indexes_raw:
             # Parse index information based on Memgraph's
@@ -415,7 +419,7 @@ def execute_index_creation(label: str, property: str, index_type: str, query: st
     """
     try:
         logger.info("Creating index with query: %s", query)
-        db.query(query)
+        _get_db().query(query)
 
         return {
             "label": label,
@@ -556,7 +560,7 @@ async def query_tool(query: str, ctx: Context) -> list[dict[str, Any]]:
 
                     # Now execute the query with new indexes
                     try:
-                        result = CypherTool(db=db).call({"query": query})
+                        result = CypherTool(db=_get_db()).call({"query": query})
                         return [
                             {
                                 "query_result": result,
@@ -575,7 +579,7 @@ async def query_tool(query: str, ctx: Context) -> list[dict[str, Any]]:
                     logger.info("User declined index creation")
                     # Execute without creating indexes
                     try:
-                        result = CypherTool(db=db).call({"query": query})
+                        result = CypherTool(db=_get_db()).call({"query": query})
                         return [
                             {
                                 "query_result": result,
@@ -596,7 +600,7 @@ async def query_tool(query: str, ctx: Context) -> list[dict[str, Any]]:
                 logger.info("User declined the elicitation")
                 # Execute without creating indexes
                 try:
-                    result = CypherTool(db=db).call({"query": query})
+                    result = CypherTool(db=_get_db()).call({"query": query})
                     return [
                         {
                             "query_result": result,
@@ -625,7 +629,7 @@ async def query_tool(query: str, ctx: Context) -> list[dict[str, Any]]:
         except Exception as e:
             logger.error("Elicitation failed: %s", str(e))
             # Fall back to executing without indexes
-            result = CypherTool(db=db).call({"query": query})
+            result = CypherTool(db=_get_db()).call({"query": query})
             return [
                 {
                     "query_result": result,
@@ -638,7 +642,7 @@ async def query_tool(query: str, ctx: Context) -> list[dict[str, Any]]:
     logger.info("All recommended indexes exist or none needed, executing query")
 
     try:
-        result = CypherTool(db=db).call({"query": query})
+        result = CypherTool(db=_get_db()).call({"query": query})
         return [
             {
                 "query_result": result,
@@ -672,7 +676,7 @@ def create_index_helper(label: str, property: str, index_type: str) -> dict[str,
             query = f"CREATE INDEX ON :{label}({property})"
 
         logger.info("Creating index with query: %s", query)
-        db.query(query)
+        _get_db().query(query)
 
         return {
             "label": label,
@@ -721,7 +725,7 @@ def get_index_info() -> list[dict[str, Any]]:
     """
     logger.info("Getting index information")
     try:
-        indexes = ShowIndexInfoTool(db=db).call({})
+        indexes = ShowIndexInfoTool(db=_get_db()).call({})
         return indexes
     except Exception as e:
         return [{"error": f"Error getting index info: {e!s}"}]
@@ -738,7 +742,7 @@ def get_schema_info() -> list[dict[str, Any]]:
     """
     logger.info("Getting schema information")
     try:
-        schema = ShowSchemaInfoTool(db=db).call({})
+        schema = ShowSchemaInfoTool(db=_get_db()).call({})
         return schema
     except Exception as e:
         return [{"error": f"Error getting schema info: {e!s}"}]
