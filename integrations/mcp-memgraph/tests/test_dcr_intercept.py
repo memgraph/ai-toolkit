@@ -206,6 +206,29 @@ async def test_dcr_intercept_disabled_falls_through(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_401_www_authenticate_includes_scope_and_prm(monkeypatch):
+    """RFC 6750 §3: WWW-Authenticate on 401 must guide the client. We include
+    realm, resource_metadata (RFC 9728 PRM URL), and scope so the client can
+    request the right scope without a separate PRM fetch."""
+    cfg = _enable_auth(monkeypatch, static_client_id=None)
+    monkeypatch.setenv("MCP_AUTH_REQUIRED_SCOPE", "mcp:tools")
+    cfg = MCPAuthConfig()
+    mw = AuthMiddleware(_inner_app_not_called, cfg)
+
+    rec = _Recorder()
+    await mw(_build_scope(method="POST", path="/mcp"), _no_receive, rec)
+
+    assert rec.status == 401
+    challenges = [v.decode() for k, v in rec.headers if k == b"www-authenticate"]
+    assert len(challenges) == 1
+    chal = challenges[0]
+    assert chal.startswith("Bearer ")
+    assert 'realm="mcp"' in chal
+    assert 'resource_metadata="http://localhost:8000/.well-known/oauth-protected-resource"' in chal
+    assert 'scope="mcp:tools"' in chal
+
+
+@pytest.mark.asyncio
 async def test_prm_points_to_self_when_intercept_enabled(monkeypatch):
     """With intercept on, PRM must advertise the MCP server itself as the AS
     so clients come back to us for AS metadata + /register."""
