@@ -310,7 +310,7 @@ class AuthMiddleware:
         # RFC 6750 §3: include scope so the client knows what to request
         # rather than having to fetch PRM just to learn it (avoids a
         # round-trip on every fresh auth attempt).
-        parts = [f'realm="mcp"', f'resource_metadata="{prm_url}"']
+        parts = ['realm="mcp"', f'resource_metadata="{prm_url}"']
         if self.cfg.required_scope:
             parts.append(f'scope="{self.cfg.required_scope}"')
         challenge = "Bearer " + ", ".join(parts)
