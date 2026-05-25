@@ -18,7 +18,6 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from mcp_memgraph import auth as auth_mod
 from mcp_memgraph.config import MCPAuthConfig
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

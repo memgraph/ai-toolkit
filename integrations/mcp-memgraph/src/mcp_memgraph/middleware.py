@@ -32,6 +32,7 @@ import json
 import logging
 import threading
 import time
+from typing import TYPE_CHECKING
 
 import httpx
 
@@ -43,7 +44,9 @@ from mcp_memgraph.auth import (
     set_current_session_auth,
     verify_bearer,
 )
-from mcp_memgraph.config import MCPAuthConfig
+
+if TYPE_CHECKING:
+    from mcp_memgraph.config import MCPAuthConfig
 
 logger = logging.getLogger("mcp-memgraph.auth")
 
@@ -134,7 +137,7 @@ class AuthMiddleware:
         self._oidc_doc: dict | None = None
         self._oidc_lock = asyncio.Lock()
 
-    async def __call__(self, scope, receive, send):  # noqa: D401 (ASGI entrypoint)
+    async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return

@@ -9,7 +9,6 @@ import pytest
 from mcp_memgraph.config import MCPAuthConfig
 from mcp_memgraph.middleware import AuthMiddleware
 
-
 # ---------------------------------------------------------------------------
 # Minimal ASGI test harness
 # ---------------------------------------------------------------------------

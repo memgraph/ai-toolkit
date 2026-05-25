@@ -13,9 +13,12 @@ so existing tests and stdio usage are unaffected.
 from __future__ import annotations
 
 import threading
+from typing import TYPE_CHECKING
 
-from mcp_memgraph.config import MCPAuthConfig, MemgraphConfig
 from memgraph_toolbox.api.memgraph import Memgraph
+
+if TYPE_CHECKING:
+    from mcp_memgraph.config import MCPAuthConfig, MemgraphConfig
 
 
 class UnknownTenantError(Exception):

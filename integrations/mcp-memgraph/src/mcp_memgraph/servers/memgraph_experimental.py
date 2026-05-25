@@ -16,7 +16,7 @@ from starlette.responses import JSONResponse
 
 from mcp_memgraph.auth import current_session_auth
 from mcp_memgraph.config import get_auth_config, get_mcp_config, get_memgraph_config
-from mcp_memgraph.tenant_routing import UnknownTenantError, get_registry
+from mcp_memgraph.tenant_routing import get_registry
 from memgraph_toolbox.api.memgraph import Memgraph
 from memgraph_toolbox.tools.cypher import CypherTool
 from memgraph_toolbox.tools.index import ShowIndexInfoTool

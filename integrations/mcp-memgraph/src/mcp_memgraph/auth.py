@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import contextvars
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import jwt
 from jwt import PyJWKClient
 
-from mcp_memgraph.config import MCPAuthConfig
+if TYPE_CHECKING:
+    from mcp_memgraph.config import MCPAuthConfig
 
 
 class AuthError(Exception):
@@ -108,10 +110,7 @@ def extract_session_auth(claims: dict, cfg: MCPAuthConfig) -> SessionAuth:
         raise AuthError("user has no overlap with MCP_TENANT_CATALOG")
 
     requested_default = claims.get(cfg.default_tenant_claim)
-    if requested_default in allowed:
-        current = str(requested_default)
-    else:
-        current = sorted(allowed)[0]
+    current = str(requested_default) if requested_default in allowed else sorted(allowed)[0]
 
     return SessionAuth(
         allowed_tenants=allowed,

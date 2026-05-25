@@ -85,6 +85,18 @@ Parameters:
 
 Uses `NodeVectorSearchTool` under the hood.
 
+### list_databases() — *auth-only*
+
+Available only when `MCP_AUTH_ENABLED=true`. Returns the databases the calling
+user is authorized to access (the intersection of their JWT `tenants` claim and
+the server's `MCP_TENANT_CATALOG`). The currently-active database is flagged.
+
+### use_database(name: str) — *auth-only*
+
+Available only when `MCP_AUTH_ENABLED=true`. Switches the active database for
+the current MCP session. The new name must be in the caller's allowed set —
+the tool cannot expand authorization beyond what the JWT grants.
+
 ## 🐳 Run Memgraph MCP server with Docker
 
 ### Building Memgraph MCP image
@@ -164,6 +176,103 @@ The following environment variables can be used to configure the Memgraph MCP Se
   - **Only applies to the default `server`** - the `memgraph-experimental` server ignores this setting
 
 You can set these environment variables in your shell, in your Docker run command, or in your deployment environment.
+
+### 🔐 Multi-tenant Authentication (optional)
+
+The server can optionally enforce **OIDC / JWT authentication** on the
+streamable-HTTP transport and route each authenticated session to a different
+Memgraph logical database based on JWT claims. Disabled by default — when off,
+the server runs exactly as it did in 0.1.12.
+
+#### When to enable it
+
+- You want different users to see different Memgraph databases on the same MCP
+  Deployment.
+- You're putting MCP behind an OIDC provider (Keycloak, Auth0, Okta, Entra ID,
+  …).
+- You want per-user audit trails on tool calls.
+
+#### Environment variables
+
+All no-ops when `MCP_AUTH_ENABLED=false` (default). When enabled, the server
+**fails fast at startup** if any of the three required vars are missing.
+
+| Var | Default | Required when auth on | Purpose |
+|---|---|---|---|
+| `MCP_AUTH_ENABLED` | `false` | — | Master switch |
+| `MCP_AUTH_ISSUER` | — | ✓ | OIDC issuer URL, e.g. `https://auth.example.com/realms/memgraph` |
+| `MCP_AUTH_AUDIENCE` | — | ✓ | Expected `aud` claim on JWTs the server will accept |
+| `MCP_TENANT_CATALOG` | — | ✓ | Comma-separated tenants this MCP deployment serves; names must match the JWT `tenants` claim values *and* the corresponding Memgraph database names |
+| `MCP_AUTH_JWKS_URL` | derived: `<issuer>/protocol/openid-connect/certs` | — | Override JWKS endpoint (rarely needed) |
+| `MCP_AUTH_TENANTS_CLAIM` | `tenants` | — | Claim holding the user's allowed tenant list (must be an array of strings) |
+| `MCP_AUTH_DEFAULT_TENANT_CLAIM` | `default_tenant` | — | Optional claim selecting the user's preferred initial tenant; if absent the server picks the alphabetically-first allowed one |
+| `MCP_AUTH_REQUIRED_SCOPE` | `mcp:tools` | — | Scope the JWT must carry |
+| `MCP_AUTH_STATIC_CLIENT_ID` | — | — | Opt-in DCR intercept (see below) |
+
+#### How it works
+
+1. Every request to `/mcp` must carry `Authorization: Bearer <JWT>`.
+2. The middleware validates the JWT signature against Keycloak's JWKS (cached
+   in-process; auto-refreshed when an unknown `kid` arrives).
+3. It verifies `iss`, `aud`, `exp`, and the required scope.
+4. It reads the `tenants` array claim, intersects it with `MCP_TENANT_CATALOG`,
+   and builds a per-session `SessionAuth` keyed by `Mcp-Session-Id`.
+5. The session's `current_tenant` defaults to the JWT's `default_tenant` (if
+   provided and allowed) or the first allowed tenant otherwise.
+6. Each tool call routes to the Memgraph database with the same name as
+   `current_tenant`.
+
+Inside a session, a user can switch among their allowed databases with the
+`use_database` tool; `list_databases` shows them what's available.
+
+#### Discovery endpoints exposed when auth is enabled
+
+| Path | Purpose |
+|---|---|
+| `GET /.well-known/oauth-protected-resource` | RFC 9728 PRM telling MCP clients which authorization server to use |
+| `GET /.well-known/oauth-authorization-server` | RFC 8414 AS metadata (proxied from the upstream IdP) |
+| `GET /.well-known/openid-configuration` | OIDC discovery (proxied from the upstream IdP) |
+| `POST /register` | DCR intercept — only present when `MCP_AUTH_STATIC_CLIENT_ID` is set |
+
+The discovery document fetched from the upstream IdP is cached in-process; it's
+re-fetched on next request if the cache is empty (e.g., the IdP was down on
+the first attempt).
+
+#### DCR intercept (workaround for Claude Code today)
+
+Some MCP clients — notably current Claude Code (see
+[anthropics/claude-code#26675](https://github.com/anthropics/claude-code/issues/26675))
+— force Dynamic Client Registration even when a pre-registered `clientId` is
+configured. Setting `MCP_AUTH_STATIC_CLIENT_ID=<your-public-client-id>` makes
+the MCP server lie to those clients: it returns the same pre-registered
+client_id for every DCR request, sidestepping the bug.
+
+When that's set, PRM also advertises the MCP server itself as the
+`authorization_server` so DCR comes back to us instead of going directly to
+the IdP. All other OAuth flows still happen against the real IdP (authorize,
+token, JWKS).
+
+Leave `MCP_AUTH_STATIC_CLIENT_ID` unset for production deployments where your
+IDE clients respect pre-configured `clientId` values.
+
+#### What you need on the IdP side
+
+Roughly, in any OIDC provider:
+
+1. A public client with PKCE enabled, redirect URI patterns matching whatever
+   IDEs you'll use (e.g., `http://localhost:*`, `vscode://*`, `cursor://*`,
+   `claude://*`).
+2. A `tenants` claim mapper that emits a JSON-array claim of the user's
+   tenant memberships (in Keycloak: a Group Membership mapper; in Auth0/Okta:
+   a custom rule reading group/role attributes).
+3. An audience claim mapper baking your `MCP_AUTH_AUDIENCE` value into issued
+   tokens.
+4. A scope (default: `mcp:tools`) attached to the client.
+5. For each tenant in `MCP_TENANT_CATALOG`, a corresponding Memgraph logical
+   database created via `CREATE DATABASE <name>`.
+
+A complete Keycloak example (single-pod, dev-mode) is available in the
+[`keycloak-k8s/`](https://github.com/memgraph/keycloak-k8s) reference setup.
 
 ### Multi-Server Architecture
 
