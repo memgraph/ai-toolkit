@@ -1,10 +1,12 @@
 import re
 from typing import Any
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from starlette.responses import JSONResponse
 
-from mcp_memgraph.config import get_mcp_config, get_memgraph_config
+from mcp_memgraph.auth import current_session_auth
+from mcp_memgraph.config import get_auth_config, get_mcp_config, get_memgraph_config
+from mcp_memgraph.tenant_routing import UnknownTenantError, get_registry
 from memgraph_toolbox.api.memgraph import Memgraph
 from memgraph_toolbox.tools.betweenness_centrality import (
     BetweennessCentralityTool,
@@ -25,6 +27,7 @@ from memgraph_toolbox.utils.logger import logger_init
 # Get configuration instances
 memgraph_config = get_memgraph_config()
 mcp_config = get_mcp_config()
+auth_config = get_auth_config()
 
 # Configure logging
 logger = logger_init("mcp-memgraph")
@@ -56,16 +59,51 @@ def is_write_query(query: str) -> bool:
     return any(re.search(pattern, query_upper) for pattern in WRITE_PATTERNS)
 
 
-# Initialize Memgraph client using configuration
-logger.info(
-    "Connecting to Memgraph db '%s' at %s with user '%s'",
-    memgraph_config.database,
-    memgraph_config.url,
-    memgraph_config.username,
-)
+# Per-tenant client registry. Falls back to a single default client when auth
+# is disabled or when an unauthenticated caller (stdio / test import) reaches a
+# tool function directly.
+_registry = get_registry(memgraph_config, auth_config)
+
+if auth_config.enabled:
+    logger.info(
+        "Multi-tenant mode: catalog=%s, single Memgraph backend at %s",
+        sorted(_registry.catalog),
+        memgraph_config.url,
+    )
+else:
+    logger.info(
+        "Single-DB mode: connecting to Memgraph db '%s' at %s with user '%s'",
+        memgraph_config.database,
+        memgraph_config.url,
+        memgraph_config.username,
+    )
 logger.info("Read-only mode: %s", READ_ONLY_MODE)
 
-db = Memgraph(**memgraph_config.get_client_config())
+
+def _get_db() -> Memgraph:
+    """Resolve the Memgraph client for the current request.
+
+    When auth is enabled and an authenticated SessionAuth is present on the
+    request (set by AuthMiddleware via a contextvar), route to that caller's
+    currently-active tenant. Otherwise — auth disabled, or stdio / direct
+    test invocation — return the legacy single-DB client.
+    """
+    if auth_config.enabled:
+        sa = current_session_auth()
+        if sa is not None:
+            return _registry.get_for(sa.current_tenant)
+    return _registry.get_default()
+
+
+def _tenant_unavailable_error(name: str) -> dict[str, Any]:
+    """Uniform error for 'name not in your token' AND 'name not in catalog'.
+
+    Returning the same shape for both prevents enumeration of the server-side
+    catalog from a caller's perspective.
+    """
+    sa = current_session_auth()
+    allowed = sorted(sa.allowed_tenants) if sa is not None else []
+    return {"error": "database not available", "requested": name, "allowed": allowed}
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -73,8 +111,61 @@ async def health_check(request):
     return JSONResponse({"status": "healthy", "service": "mcp-server"})
 
 
+# ---------------------------------------------------------------------------
+# Tenant-management tools (only meaningful when MCP_AUTH_ENABLED=true)
+# ---------------------------------------------------------------------------
+
+
 @mcp.tool()
-def run_query(query: str) -> list[dict[str, Any]]:
+def list_databases(ctx: Context | None = None) -> list[dict[str, Any]]:
+    """List databases this session can access. The active one is flagged."""
+    sa = current_session_auth()
+    if sa is None:
+        # Auth disabled or stdio: there's exactly one database.
+        return [{"name": memgraph_config.database, "current": True}]
+    return [
+        {"name": name, "current": (name == sa.current_tenant)}
+        for name in sorted(sa.allowed_tenants)
+    ]
+
+
+@mcp.tool()
+def use_database(name: str, ctx: Context | None = None) -> dict[str, Any]:
+    """Switch the active database for this MCP session.
+
+    The new name must be one of the databases your token authorizes. Switching
+    persists for the duration of the MCP session and does not require a new
+    login.
+    """
+    sa = current_session_auth()
+    if sa is None:
+        return {
+            "error": "auth disabled — there is only one database",
+            "current": memgraph_config.database,
+        }
+    if name not in sa.allowed_tenants:
+        return _tenant_unavailable_error(name)
+    sa.current_tenant = name
+    return {"status": "ok", "current": name}
+
+
+# ---------------------------------------------------------------------------
+# Existing data tools (now routed per-tenant when auth is enabled)
+# ---------------------------------------------------------------------------
+
+
+def _safe_call(fn, *, on_error: str):
+    """Run *fn*, translating UnknownTenantError into the uniform shape."""
+    try:
+        return fn()
+    except UnknownTenantError as e:
+        return [_tenant_unavailable_error(str(e))]
+    except Exception as e:
+        return [{"error": f"{on_error}: {e!s}"}]
+
+
+@mcp.tool()
+def run_query(query: str, ctx: Context | None = None) -> list[dict[str, Any]]:
     """Run a Cypher query on Memgraph. Write operations are blocked if
     server is in read-only mode."""
     logger.info("Running query: %s", query)
@@ -91,81 +182,53 @@ def run_query(query: str) -> list[dict[str, Any]]:
             }
         ]
 
-    try:
-        result = CypherTool(db=db).call({"query": query})
-        return result
-    except Exception as e:
-        return [{"error": f"Error running query: {e!s}"}]
+    return _safe_call(lambda: CypherTool(db=_get_db()).call({"query": query}), on_error="Error running query")
 
 
 @mcp.tool()
-def get_configuration() -> list[dict[str, Any]]:
+def get_configuration(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get Memgraph configuration information"""
     logger.info("Fetching Memgraph configuration...")
-    try:
-        config = ShowConfigTool(db=db).call({})
-        return config
-    except Exception as e:
-        return [{"error": f"Error fetching configuration: {e!s}"}]
+    return _safe_call(lambda: ShowConfigTool(db=_get_db()).call({}), on_error="Error fetching configuration")
 
 
 @mcp.tool()
-def get_index() -> list[dict[str, Any]]:
+def get_index(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get Memgraph index information"""
     logger.info("Fetching Memgraph index...")
-    try:
-        index = ShowIndexInfoTool(db=db).call({})
-        return index
-    except Exception as e:
-        return [{"error": f"Error fetching index: {e!s}"}]
+    return _safe_call(lambda: ShowIndexInfoTool(db=_get_db()).call({}), on_error="Error fetching index")
 
 
 @mcp.tool()
-def get_constraint() -> list[dict[str, Any]]:
+def get_constraint(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get Memgraph constraint information"""
     logger.info("Fetching Memgraph constraint...")
-    try:
-        constraint = ShowConstraintInfoTool(db=db).call({})
-        return constraint
-    except Exception as e:
-        return [{"error": f"Error fetching constraint: {e!s}"}]
+    return _safe_call(lambda: ShowConstraintInfoTool(db=_get_db()).call({}), on_error="Error fetching constraint")
 
 
 @mcp.tool()
-def get_schema() -> list[dict[str, Any]]:
+def get_schema(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get Memgraph schema information"""
     logger.info("Fetching Memgraph schema...")
-    try:
-        schema = ShowSchemaInfoTool(db=db).call({})
-        return schema
-    except Exception as e:
-        return [{"error": f"Error fetching schema: {e!s}"}]
+    return _safe_call(lambda: ShowSchemaInfoTool(db=_get_db()).call({}), on_error="Error fetching schema")
 
 
 @mcp.tool()
-def get_storage() -> list[dict[str, Any]]:
+def get_storage(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get Memgraph storage information"""
     logger.info("Fetching Memgraph storage...")
-    try:
-        storage = ShowStorageInfoTool(db=db).call({})
-        return storage
-    except Exception as e:
-        return [{"error": f"Error fetching storage: {e!s}"}]
+    return _safe_call(lambda: ShowStorageInfoTool(db=_get_db()).call({}), on_error="Error fetching storage")
 
 
 @mcp.tool()
-def get_triggers() -> list[dict[str, Any]]:
+def get_triggers(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get Memgraph triggers information"""
     logger.info("Fetching Memgraph triggers...")
-    try:
-        triggers = ShowTriggersTool(db=db).call({})
-        return triggers
-    except Exception as e:
-        return [{"error": f"Error fetching triggers: {e!s}"}]
+    return _safe_call(lambda: ShowTriggersTool(db=_get_db()).call({}), on_error="Error fetching triggers")
 
 
 @mcp.tool()
-def get_procedures() -> list[dict[str, Any]]:
+def get_procedures(ctx: Context | None = None) -> list[dict[str, Any]]:
     """List all available Memgraph procedures (query modules).
 
     Returns information about all available procedures including MAGE algorithms
@@ -173,64 +236,63 @@ def get_procedures() -> list[dict[str, Any]]:
     whether it performs write operations. Use this to discover available graph
     algorithms and utility functions before executing them."""
     logger.info("Fetching Memgraph procedures...")
-    try:
-        procedures = ShowProceduresTool(db=db).call({})
-        return procedures
-    except Exception as e:
-        return [{"error": f"Error fetching procedures: {e!s}"}]
+    return _safe_call(lambda: ShowProceduresTool(db=_get_db()).call({}), on_error="Error fetching procedures")
 
 
 @mcp.tool()
-def get_betweenness_centrality() -> list[dict[str, Any]]:
+def get_betweenness_centrality(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get betweenness centrality information"""
     logger.info("Fetching betweenness centrality...")
-    try:
-        betweenness = BetweennessCentralityTool(db=db).call({})
-        return betweenness
-    except Exception as e:
-        return [{"error": f"Error fetching betweenness centrality: {e!s}"}]
+    return _safe_call(
+        lambda: BetweennessCentralityTool(db=_get_db()).call({}),
+        on_error="Error fetching betweenness centrality",
+    )
 
 
 @mcp.tool()
-def get_page_rank() -> list[dict[str, Any]]:
+def get_page_rank(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get page rank information"""
     logger.info("Fetching page rank...")
-    try:
-        page_rank = PageRankTool(db=db).call({})
-        return page_rank
-    except Exception as e:
-        return [{"error": f"Error fetching page rank: {e!s}"}]
+    return _safe_call(lambda: PageRankTool(db=_get_db()).call({}), on_error="Error fetching page rank")
 
 
 @mcp.tool()
-def get_node_neighborhood(node_id: str, max_distance: int = 1, limit: int = 100) -> list[dict[str, Any]]:
+def get_node_neighborhood(
+    node_id: str,
+    max_distance: int = 1,
+    limit: int = 100,
+    ctx: Context | None = None,
+) -> list[dict[str, Any]]:
     """Find nodes within a specified distance from a given node"""
     logger.info(
         "Finding neighborhood for node %s with max distance %s",
         node_id,
         max_distance,
     )
-    try:
-        neighborhood = NodeNeighborhoodTool(db=db).call(
+    return _safe_call(
+        lambda: NodeNeighborhoodTool(db=_get_db()).call(
             {"node_id": node_id, "max_distance": max_distance, "limit": limit}
-        )
-        return neighborhood
-    except Exception as e:
-        return [{"error": f"Error finding node neighborhood: {e!s}"}]
+        ),
+        on_error="Error finding node neighborhood",
+    )
 
 
 @mcp.tool()
-def search_node_vectors(index_name: str, query_vector: list[float], limit: int = 10) -> list[dict[str, Any]]:
+def search_node_vectors(
+    index_name: str,
+    query_vector: list[float],
+    limit: int = 10,
+    ctx: Context | None = None,
+) -> list[dict[str, Any]]:
     """Perform vector similarity search on nodes in Memgraph"""
     logger.info("Performing vector search on index %s with limit %s", index_name, limit)
-    try:
-        vector_search = NodeVectorSearchTool(db=db).call(
+    return _safe_call(
+        lambda: NodeVectorSearchTool(db=_get_db()).call(
             {
                 "index_name": index_name,
                 "query_vector": query_vector,
                 "limit": limit,
             }
-        )
-        return vector_search
-    except Exception as e:
-        return [{"error": f"Error performing vector search: {e!s}"}]
+        ),
+        on_error="Error performing vector search",
+    )

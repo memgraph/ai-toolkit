@@ -9,8 +9,10 @@ from .servers.server import (
     get_schema,
     get_storage,
     get_triggers,
+    list_databases,
     run_query,
     search_node_vectors,
+    use_database,
 )
 
 # Note: 'mcp' and 'logger' are server-specific and loaded dynamically
@@ -27,6 +29,8 @@ __all__ = [
     "get_schema",
     "get_storage",
     "get_triggers",
+    "list_databases",
     "run_query",
     "search_node_vectors",
+    "use_database",
 ]
