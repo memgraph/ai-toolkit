@@ -47,8 +47,7 @@ def main():
     if config.transport == "stdio":
         if auth_config.enabled:
             logger.warning(
-                "MCP_AUTH_ENABLED=true is ignored for stdio transport "
-                "(authentication only applies to streamable-http)."
+                "MCP_AUTH_ENABLED=true is ignored for stdio transport (authentication only applies to streamable-http)."
             )
         mcp.run(transport=transport)
         return

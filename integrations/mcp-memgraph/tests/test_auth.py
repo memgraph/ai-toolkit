@@ -131,9 +131,7 @@ def test_verify_bearer_rejects_wrong_audience(monkeypatch, rsa_keypair, fake_jwk
 def test_verify_bearer_rejects_expired_token(monkeypatch, rsa_keypair, fake_jwks_client):
     cfg = _make_cfg(monkeypatch=monkeypatch)
     private_pem, _, _ = rsa_keypair
-    token = _mint(
-        private_pem, iss=cfg.issuer, aud=cfg.audience, tenants=["tenant-a"], expires_in=-10
-    )
+    token = _mint(private_pem, iss=cfg.issuer, aud=cfg.audience, tenants=["tenant-a"], expires_in=-10)
 
     with pytest.raises(auth_mod.AuthError):
         auth_mod.verify_bearer(token, cfg)
@@ -142,9 +140,7 @@ def test_verify_bearer_rejects_expired_token(monkeypatch, rsa_keypair, fake_jwks
 def test_verify_bearer_rejects_missing_required_scope(monkeypatch, rsa_keypair, fake_jwks_client):
     cfg = _make_cfg(monkeypatch=monkeypatch)
     private_pem, _, _ = rsa_keypair
-    token = _mint(
-        private_pem, iss=cfg.issuer, aud=cfg.audience, tenants=["tenant-a"], scope="other"
-    )
+    token = _mint(private_pem, iss=cfg.issuer, aud=cfg.audience, tenants=["tenant-a"], scope="other")
 
     with pytest.raises(auth_mod.AuthError, match="missing required scope"):
         auth_mod.verify_bearer(token, cfg)

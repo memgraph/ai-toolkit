@@ -123,10 +123,7 @@ def list_databases(ctx: Context | None = None) -> list[dict[str, Any]]:
     if sa is None:
         # Auth disabled or stdio: there's exactly one database.
         return [{"name": memgraph_config.database, "current": True}]
-    return [
-        {"name": name, "current": (name == sa.current_tenant)}
-        for name in sorted(sa.allowed_tenants)
-    ]
+    return [{"name": name, "current": (name == sa.current_tenant)} for name in sorted(sa.allowed_tenants)]
 
 
 @mcp.tool()

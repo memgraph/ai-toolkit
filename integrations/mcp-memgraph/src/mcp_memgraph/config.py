@@ -250,9 +250,7 @@ class MCPAuthConfig:
         if not self.tenant_catalog:
             missing.append("MCP_TENANT_CATALOG")
         if missing:
-            raise ValueError(
-                f"MCP_AUTH_ENABLED=true but required env vars are missing: {', '.join(missing)}"
-            )
+            raise ValueError(f"MCP_AUTH_ENABLED=true but required env vars are missing: {', '.join(missing)}")
 
 
 # Global instance placeholders for the singleton pattern
