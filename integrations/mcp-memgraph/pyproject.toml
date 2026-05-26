@@ -27,7 +27,7 @@ dependencies = [
   "memgraph-toolbox>=0.1.11",
   "fastmcp>=3.2.0",
   "pyjwt[crypto]>=2.10.1",
-  "uvicorn>=0.30",
+  "uvicorn>=0.48",
 ]
 
 [project.optional-dependencies]
