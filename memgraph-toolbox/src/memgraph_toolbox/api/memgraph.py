@@ -11,8 +11,42 @@ MEMGRAPH_ENV_DEFAULTS = {
     "MEMGRAPH_USER": "",
     "MEMGRAPH_PASSWORD": "",
     "MEMGRAPH_DATABASE": "memgraph",
+    "MEMGRAPH_HA_CLUSTER": "false",
 }
 MEMGRAPH_ENV_KEYS = tuple(MEMGRAPH_ENV_DEFAULTS)
+
+# URL schemes that enable Bolt+routing (auto-routing to the current MAIN in an
+# HA cluster). See:
+# https://memgraph.com/docs/clustering/high-availability/querying-the-cluster-in-high-availability
+_ROUTING_SCHEMES = ("neo4j://", "neo4j+s://", "neo4j+ssc://")
+_BOLT_TO_ROUTING_SCHEME = {
+    "bolt://": "neo4j://",
+    "bolt+s://": "neo4j+s://",
+    "bolt+ssc://": "neo4j+ssc://",
+}
+
+
+def _as_bool(value: str | bool | None) -> bool:
+    """Interpret a truthy string/bool flag (e.g. from an env var)."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def to_routing_url(url: str) -> str:
+    """Return ``url`` using a Bolt+routing scheme so the driver routes to the MAIN.
+
+    A ``bolt://`` URL pointed at the coordinators is upgraded to ``neo4j://``;
+    URLs that already use a routing scheme are returned unchanged.
+    """
+    if url.startswith(_ROUTING_SCHEMES):
+        return url
+    for bolt_scheme, routing_scheme in _BOLT_TO_ROUTING_SCHEME.items():
+        if url.startswith(bolt_scheme):
+            return routing_scheme + url[len(bolt_scheme) :]
+    return url
 
 
 def memgraph_env(
@@ -21,6 +55,7 @@ def memgraph_env(
     username: str | None = None,
     password: str | None = None,
     database: str | None = None,
+    ha_cluster: bool | None = None,
     environ: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     """Return canonical Memgraph connection environment values.
@@ -45,6 +80,11 @@ def memgraph_env(
             if database is not None
             else env.get("MEMGRAPH_DATABASE", MEMGRAPH_ENV_DEFAULTS["MEMGRAPH_DATABASE"])
         ),
+        "MEMGRAPH_HA_CLUSTER": (
+            ("true" if ha_cluster else "false")
+            if ha_cluster is not None
+            else env.get("MEMGRAPH_HA_CLUSTER", MEMGRAPH_ENV_DEFAULTS["MEMGRAPH_HA_CLUSTER"])
+        ),
     }
 
 
@@ -63,6 +103,7 @@ class Memgraph:
         database: str = None,
         driver_config: dict | None = None,
         user_agent: str | None = None,
+        ha_cluster: bool | None = None,
     ):
         """
         Initialize Memgraph client with connection parameters.
@@ -72,6 +113,7 @@ class Memgraph:
         - MEMGRAPH_USER (default: "")
         - MEMGRAPH_PASSWORD (default: "")
         - MEMGRAPH_DATABASE (default: "memgraph")
+        - MEMGRAPH_HA_CLUSTER (default: "false")
 
         Args:
             url: The Memgraph connection URL
@@ -80,13 +122,26 @@ class Memgraph:
             database: The database name to connect to (default: "memgraph")
             driver_config: Additional Neo4j driver configuration
             user_agent: Client name sent to the server (e.g. "mcp-memgraph", "langchain-memgraph", "sql2graph", etc.)
+            ha_cluster: Connect to a Memgraph high-availability cluster. When enabled,
+                the URL should point at the coordinators (e.g. "neo4j://mg-coordinators:7687")
+                and Bolt+routing is used so queries are automatically routed to the current
+                MAIN instance, surviving failovers. A "bolt://" URL is upgraded to "neo4j://".
+                See https://memgraph.com/docs/clustering/high-availability/querying-the-cluster-in-high-availability
         """
 
         # Load from the shared Memgraph environment contract with fallbacks.
-        env = memgraph_env(url=url, username=username, password=password, database=database)
+        env = memgraph_env(
+            url=url, username=username, password=password, database=database, ha_cluster=ha_cluster
+        )
         url = env["MEMGRAPH_URL"]
         username = env["MEMGRAPH_USER"]
         password = env["MEMGRAPH_PASSWORD"]
+
+        # In HA mode, use Bolt+routing so the driver always reaches the current MAIN
+        # through the coordinators and refreshes its routing table on failover.
+        self.ha_cluster = _as_bool(env["MEMGRAPH_HA_CLUSTER"])
+        if self.ha_cluster:
+            url = to_routing_url(url)
 
         config = dict(driver_config or {})
         config.setdefault("user_agent", user_agent or self.DEFAULT_USER_AGENT)
