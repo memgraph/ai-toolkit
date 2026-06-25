@@ -19,8 +19,6 @@ from mcp_memgraph.config import get_auth_config, get_mcp_config, get_memgraph_co
 from mcp_memgraph.tenant_routing import get_registry
 from memgraph_toolbox.api.memgraph import Memgraph
 from memgraph_toolbox.tools.cypher import CypherTool
-from memgraph_toolbox.tools.index import ShowIndexInfoTool
-from memgraph_toolbox.tools.schema import ShowSchemaInfoTool
 from memgraph_toolbox.utils.logger import logger_init
 
 # Get configuration instances
@@ -110,7 +108,7 @@ def get_current_indexes() -> IndexInfo:
     index_info = IndexInfo()
 
     try:
-        indexes_raw = ShowIndexInfoTool(db=_get_db()).call({})
+        indexes_raw = CypherTool(db=_get_db()).call({"query": "SHOW INDEX INFO"})
 
         for idx in indexes_raw:
             # Parse index information based on Memgraph's
@@ -725,7 +723,7 @@ def get_index_info() -> list[dict[str, Any]]:
     """
     logger.info("Getting index information")
     try:
-        indexes = ShowIndexInfoTool(db=_get_db()).call({})
+        indexes = CypherTool(db=_get_db()).call({"query": "SHOW INDEX INFO"})
         return indexes
     except Exception as e:
         return [{"error": f"Error getting index info: {e!s}"}]
@@ -742,7 +740,7 @@ def get_schema_info() -> list[dict[str, Any]]:
     """
     logger.info("Getting schema information")
     try:
-        schema = ShowSchemaInfoTool(db=_get_db()).call({})
+        schema = CypherTool(db=_get_db()).call({"query": "SHOW SCHEMA INFO"})
         return schema
     except Exception as e:
         return [{"error": f"Error getting schema info: {e!s}"}]

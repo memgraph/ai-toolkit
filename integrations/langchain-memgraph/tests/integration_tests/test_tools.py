@@ -1,36 +1,13 @@
 from langchain_tests.integration_tests import ToolsIntegrationTests
 
 from langchain_memgraph.tools import (
-    RunBetweennessCentralityTool,
-    RunNodeNeighborhoodTool,
-    RunNodeVectorSearchTool,
-    RunPageRankMemgraphTool,
+    RunEnumSchemaTool,
+    RunNodeSchemaTool,
     RunQueryTool,
-    RunShowConfigTool,
-    RunShowConstraintInfoTool,
-    RunShowIndexInfoTool,
-    RunShowSchemaInfoTool,
-    RunShowStorageInfoTool,
-    RunShowTriggersTool,
+    RunRelationshipSchemaTool,
+    RunSearchSchemaTool,
 )
 from memgraph_toolbox.api.memgraph import Memgraph
-
-
-class TestSchemaInfoIntegration(ToolsIntegrationTests):
-    @property
-    def tool_constructor(self) -> type[RunShowSchemaInfoTool]:
-        return RunShowSchemaInfoTool
-
-    @property
-    def tool_constructor_params(self) -> dict:
-        return {"db": Memgraph("bolt://localhost:7687", "", "")}
-
-    @property
-    def tool_invoke_params_example(self) -> dict:
-        """
-        Returns empty dict since ShowSchemaInfoTool doesn't require any parameters
-        """
-        return {}
 
 
 class TestCypherIntegration(ToolsIntegrationTests):
@@ -47,24 +24,10 @@ class TestCypherIntegration(ToolsIntegrationTests):
         return {"query": "MATCH (n) RETURN n LIMIT 1"}
 
 
-class TestPageRankIntegration(ToolsIntegrationTests):
+class TestSearchSchemaIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> type[RunPageRankMemgraphTool]:
-        return RunPageRankMemgraphTool
-
-    @property
-    def tool_constructor_params(self) -> dict:
-        return {"db": Memgraph("bolt://localhost:7687", "", "")}
-
-    @property
-    def tool_invoke_params_example(self) -> dict:
-        return {"limit": 5}
-
-
-class TestStorageInfoIntegration(ToolsIntegrationTests):
-    @property
-    def tool_constructor(self) -> type[RunShowStorageInfoTool]:
-        return RunShowStorageInfoTool
+    def tool_constructor(self) -> type[RunSearchSchemaTool]:
+        return RunSearchSchemaTool
 
     @property
     def tool_constructor_params(self) -> dict:
@@ -72,16 +35,13 @@ class TestStorageInfoIntegration(ToolsIntegrationTests):
 
     @property
     def tool_invoke_params_example(self) -> dict:
-        """
-        Returns empty dict since ShowStorageInfoTool doesn't require any parameters.
-        """
-        return {}
+        return {"pattern": ".*"}
 
 
-class TestConstraintInfoIntegration(ToolsIntegrationTests):
+class TestNodeSchemaIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> type[RunShowConstraintInfoTool]:
-        return RunShowConstraintInfoTool
+    def tool_constructor(self) -> type[RunNodeSchemaTool]:
+        return RunNodeSchemaTool
 
     @property
     def tool_constructor_params(self) -> dict:
@@ -89,16 +49,13 @@ class TestConstraintInfoIntegration(ToolsIntegrationTests):
 
     @property
     def tool_invoke_params_example(self) -> dict:
-        """
-        Returns empty dict since ShowConstraintInfoTool doesn't require any parameters.
-        """
-        return {}
+        return {"node_labels": ["Person"]}
 
 
-class TestIndexInfoIntegration(ToolsIntegrationTests):
+class TestRelationshipSchemaIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> type[RunShowIndexInfoTool]:
-        return RunShowIndexInfoTool
+    def tool_constructor(self) -> type[RunRelationshipSchemaTool]:
+        return RunRelationshipSchemaTool
 
     @property
     def tool_constructor_params(self) -> dict:
@@ -106,33 +63,17 @@ class TestIndexInfoIntegration(ToolsIntegrationTests):
 
     @property
     def tool_invoke_params_example(self) -> dict:
-        """
-        Returns empty dict since ShowIndexInfoTool doesn't require any parameters.
-        """
-        return {}
+        return {
+            "relationship_type": "KNOWS",
+            "start_node_labels": ["Person"],
+            "end_node_labels": ["Person"],
+        }
 
 
-class TestConfigInfoIntegration(ToolsIntegrationTests):
+class TestEnumSchemaIntegration(ToolsIntegrationTests):
     @property
-    def tool_constructor(self) -> type[RunShowConfigTool]:
-        return RunShowConfigTool
-
-    @property
-    def tool_constructor_params(self) -> dict:
-        return {"db": Memgraph("bolt://localhost:7687", "", "")}
-
-    @property
-    def tool_invoke_params_example(self) -> dict:
-        """
-        Returns empty dict since ShowConfigTool doesn't require any parameters.
-        """
-        return {}
-
-
-class TestTriggersIntegration(ToolsIntegrationTests):
-    @property
-    def tool_constructor(self) -> type[RunShowTriggersTool]:
-        return RunShowTriggersTool
+    def tool_constructor(self) -> type[RunEnumSchemaTool]:
+        return RunEnumSchemaTool
 
     @property
     def tool_constructor_params(self) -> dict:
@@ -140,49 +81,4 @@ class TestTriggersIntegration(ToolsIntegrationTests):
 
     @property
     def tool_invoke_params_example(self) -> dict:
-        """
-        Returns empty dict since ShowTriggersTool doesn't require any parameters.
-        """
-        return {}
-
-
-class TestBetweennessCentralityIntegration(ToolsIntegrationTests):
-    @property
-    def tool_constructor(self) -> type[RunBetweennessCentralityTool]:
-        return RunBetweennessCentralityTool
-
-    @property
-    def tool_constructor_params(self) -> dict:
-        return {"db": Memgraph("bolt://localhost:7687", "", "")}
-
-    @property
-    def tool_invoke_params_example(self) -> dict:
-        return {"isDirectionIgnored": True, "limit": 5}
-
-
-class TestNodeNeighborhoodIntegration(ToolsIntegrationTests):
-    @property
-    def tool_constructor(self) -> type[RunNodeNeighborhoodTool]:
-        return RunNodeNeighborhoodTool
-
-    @property
-    def tool_constructor_params(self) -> dict:
-        return {"db": Memgraph("bolt://localhost:7687", "", "")}
-
-    @property
-    def tool_invoke_params_example(self) -> dict:
-        return {"node_id": "1", "max_distance": 2, "limit": 10}
-
-
-class TestNodeVectorSearchIntegration(ToolsIntegrationTests):
-    @property
-    def tool_constructor(self) -> type[RunNodeVectorSearchTool]:
-        return RunNodeVectorSearchTool
-
-    @property
-    def tool_constructor_params(self) -> dict:
-        return {"db": Memgraph("bolt://localhost:7687", "", "")}
-
-    @property
-    def tool_invoke_params_example(self) -> dict:
-        return {"index_name": "test_index", "query_vector": [1.0, 2.0, 3.0], "limit": 5}
+        return {"enum_name": "Status"}

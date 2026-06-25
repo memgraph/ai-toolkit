@@ -50,23 +50,17 @@ def test_memgraph_toolbox():
 
     tools = toolkit.get_all_tools()
 
-    # Check if we have all 9 tools
-    assert len(tools) == 11
+    # Check if we have all the tools
+    assert len(tools) == 5
 
     # Check for specific tool names
     tool_names = [tool.name for tool in tools]
     expected_tools = [
-        "run_betweenness_centrality",
-        "show_config",
-        "show_constraint_info",
-        "run_cypher",
-        "show_index_info",
-        "node_vector_search",
-        "page_rank",
-        "show_schema_info",
-        "show_storage_info",
-        "show_triggers",
-        "node_neighborhood",
+        "run_cypher_query",
+        "search_schema",
+        "get_node_schema",
+        "get_relationship_schema",
+        "get_enum_schema",
     ]
 
     for expected_tool in expected_tools:
