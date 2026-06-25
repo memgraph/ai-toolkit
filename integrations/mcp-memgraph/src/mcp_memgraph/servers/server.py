@@ -21,7 +21,19 @@ auth_config = get_auth_config()
 logger = logger_init("mcp-memgraph")
 
 # Initialize FastMCP server
-mcp = FastMCP("mcp-memgraph")
+mcp = FastMCP(
+    "mcp-memgraph",
+    instructions=(
+        "You are connected to a Memgraph graph database through this MCP server. "
+        "Use `run_cypher_query` to execute Cypher queries for reading and writing graph data. "
+        "Before writing queries, explore the graph model first: use `search_schema` to find "
+        "relevant node labels, relationship types, and properties by keyword, then use "
+        "`get_node_schema` and `get_relationship_schema` to get full details including "
+        "property types, indexes, and constraints. This helps you write accurate Cypher "
+        "that matches the actual graph structure. Use `get_enum_schema` to inspect enum "
+        "definitions when properties are enum-typed."
+    ),
+)
 
 # Read-only mode flag (from config)
 READ_ONLY_MODE = mcp_config.read_only
