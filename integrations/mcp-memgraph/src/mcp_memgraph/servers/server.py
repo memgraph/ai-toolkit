@@ -116,7 +116,7 @@ async def health_check(request):
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def list_databases(ctx: Context | None = None) -> list[dict[str, Any]]:
     """List databases this session can access. The active one is flagged."""
     sa = current_session_auth()
@@ -161,7 +161,7 @@ def _safe_call(fn, *, on_error: str):
         return [{"error": f"{on_error}: {e!s}"}]
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": READ_ONLY_MODE})
 def run_query(query: str, ctx: Context | None = None) -> list[dict[str, Any]]:
     """Run a Cypher query on Memgraph. Write operations are blocked if
     server is in read-only mode."""
@@ -182,49 +182,49 @@ def run_query(query: str, ctx: Context | None = None) -> list[dict[str, Any]]:
     return _safe_call(lambda: CypherTool(db=_get_db()).call({"query": query}), on_error="Error running query")
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_configuration(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get Memgraph configuration information"""
     logger.info("Fetching Memgraph configuration...")
     return _safe_call(lambda: ShowConfigTool(db=_get_db()).call({}), on_error="Error fetching configuration")
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_index(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get Memgraph index information"""
     logger.info("Fetching Memgraph index...")
     return _safe_call(lambda: ShowIndexInfoTool(db=_get_db()).call({}), on_error="Error fetching index")
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_constraint(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get Memgraph constraint information"""
     logger.info("Fetching Memgraph constraint...")
     return _safe_call(lambda: ShowConstraintInfoTool(db=_get_db()).call({}), on_error="Error fetching constraint")
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_schema(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get Memgraph schema information"""
     logger.info("Fetching Memgraph schema...")
     return _safe_call(lambda: ShowSchemaInfoTool(db=_get_db()).call({}), on_error="Error fetching schema")
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_storage(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get Memgraph storage information"""
     logger.info("Fetching Memgraph storage...")
     return _safe_call(lambda: ShowStorageInfoTool(db=_get_db()).call({}), on_error="Error fetching storage")
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_triggers(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get Memgraph triggers information"""
     logger.info("Fetching Memgraph triggers...")
     return _safe_call(lambda: ShowTriggersTool(db=_get_db()).call({}), on_error="Error fetching triggers")
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_procedures(ctx: Context | None = None) -> list[dict[str, Any]]:
     """List all available Memgraph procedures (query modules).
 
@@ -236,7 +236,7 @@ def get_procedures(ctx: Context | None = None) -> list[dict[str, Any]]:
     return _safe_call(lambda: ShowProceduresTool(db=_get_db()).call({}), on_error="Error fetching procedures")
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_betweenness_centrality(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get betweenness centrality information"""
     logger.info("Fetching betweenness centrality...")
@@ -246,14 +246,14 @@ def get_betweenness_centrality(ctx: Context | None = None) -> list[dict[str, Any
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_page_rank(ctx: Context | None = None) -> list[dict[str, Any]]:
     """Get page rank information"""
     logger.info("Fetching page rank...")
     return _safe_call(lambda: PageRankTool(db=_get_db()).call({}), on_error="Error fetching page rank")
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_node_neighborhood(
     node_id: str,
     max_distance: int = 1,
@@ -274,7 +274,7 @@ def get_node_neighborhood(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def search_node_vectors(
     index_name: str,
     query_vector: list[float],
