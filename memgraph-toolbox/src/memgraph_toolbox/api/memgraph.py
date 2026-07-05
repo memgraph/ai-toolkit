@@ -1,3 +1,4 @@
+import logging
 import os
 from collections.abc import Mapping
 from typing import Any
@@ -5,6 +6,8 @@ from typing import Any
 from neo4j import GraphDatabase
 
 from ..utils.serialization import serialize_record_data
+
+logger = logging.getLogger(__name__)
 
 MEMGRAPH_ENV_DEFAULTS = {
     "MEMGRAPH_URL": "bolt://localhost:7687",
@@ -24,6 +27,18 @@ _BOLT_TO_ROUTING_SCHEME = {
     "bolt+s://": "neo4j+s://",
     "bolt+ssc://": "neo4j+ssc://",
 }
+
+
+def _is_committed_on_main_error(message: str) -> bool:
+    """True for an HA commit that reached the MAIN but failed to replicate to a SYNC replica.
+
+    In a Memgraph high-availability cluster, if a SYNC replica is momentarily unavailable,
+    the commit raises an error even though the write IS committed on the MAIN (and other
+    alive replicas), and the lagging replica is recovered automatically. Aborting the caller
+    would be wrong: the data is durably committed. An idempotent client should tolerate this.
+    See https://memgraph.com/docs/clustering/high-availability
+    """
+    return "Replication Exception" in message and "committed on the main" in message
 
 
 def _as_bool(value: str | bool | None) -> bool:
@@ -169,6 +184,10 @@ class Memgraph:
         """
         Execute a Cypher query and return results as a list of dictionaries.
 
+        In an HA cluster, a commit that reaches the MAIN but fails to replicate to a
+        momentarily-unavailable SYNC replica is tolerated (logged as a warning) because
+        the write is already committed on the MAIN and the replica recovers automatically.
+
         Args:
             query: The Cypher query to execute
 
@@ -179,6 +198,22 @@ class Memgraph:
 
         if params is None:
             params = {}
+        try:
+            return self._execute(query, params)
+        except Neo4jError as e:
+            if _is_committed_on_main_error(getattr(e, "message", "") or str(e)):
+                logger.warning(
+                    "Memgraph HA: commit reached the MAIN but a SYNC replica failed to "
+                    "replicate; continuing since the write is committed on the MAIN and "
+                    "the replica recovers automatically (%s)",
+                    getattr(e, "message", "") or e,
+                )
+                return []
+            raise
+
+    def _execute(self, query: str, params: dict) -> list[dict[str, Any]]:
+        from neo4j.exceptions import Neo4jError
+
         try:
             data, _, _ = self.driver.execute_query(
                 query,
