@@ -195,7 +195,11 @@ class MemgraphDocStatusStorage(DocStatusStorage):
         return counts
 
     async def get_all_status_counts(self) -> dict[str, int]:
-        return await self.get_status_counts()
+        # Mirror the reference impls (Json/Redis/Mongo/OpenSearch): include an
+        # "all" key with the grand total, which the status-counts API relies on.
+        counts = await self.get_status_counts()
+        counts["all"] = sum(counts.values())
+        return counts
 
     async def get_docs_by_status(self, status: DocStatus) -> dict[str, DocProcessingStatus]:
         return await self.get_docs_by_statuses([status])

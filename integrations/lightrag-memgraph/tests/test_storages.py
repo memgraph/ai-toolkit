@@ -126,3 +126,27 @@ def test_doc_status_reconstruction_roundtrip():
     assert status.file_path == "doc1"
     assert status.chunks_count is None
     assert status.metadata == {}
+
+
+@pytest.mark.asyncio
+async def test_get_all_status_counts_includes_all_key(monkeypatch):
+    """get_all_status_counts must add an 'all' grand-total key (reference contract)."""
+    from lightrag.base import DocStatus
+
+    from lightrag_memgraph import MemgraphDocStatusStorage
+
+    store = MemgraphDocStatusStorage(
+        namespace="doc_status",
+        workspace="base",
+        global_config=_global_config(),
+        embedding_func=_fake_embedding_func(),
+    )
+
+    async def _fake_status_counts():
+        return {s.value: 0 for s in DocStatus} | {DocStatus.PROCESSED.value: 3, DocStatus.PENDING.value: 2}
+
+    monkeypatch.setattr(store, "get_status_counts", _fake_status_counts)
+
+    counts = await store.get_all_status_counts()
+    assert counts["all"] == 5
+    assert counts[DocStatus.PROCESSED.value] == 3
