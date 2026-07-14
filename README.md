@@ -128,13 +128,13 @@ docker run --rm -i -e MCP_TRANSPORT=stdio memgraph/mcp-memgraph:latest
 
 **Available Tools:**
 
-| Tool                    | Description                |
-| ----------------------- | -------------------------- |
-| `run_query`             | Execute Cypher queries     |
-| `get_schema`            | Fetch graph schema         |
-| `get_page_rank`         | Compute PageRank scores    |
-| `get_node_neighborhood` | Find nodes within distance |
-| `search_node_vectors`   | Vector similarity search   |
+| Tool                     | Description                                           |
+| ------------------------ | ----------------------------------------------------- |
+| `run_query`              | Execute Cypher queries                                |
+| `search_schema`          | Search the graph schema by regex pattern              |
+| `get_node_schema`        | Get full schema definition of a node by its labels    |
+| `get_relationship_schema`| Get full schema definition of a relationship          |
+| `get_enum_schema`        | Get schema definition of an enum by its name          |
 
 👉 [Full Documentation](https://memgraph.com/docs/ai-ecosystem/integrations#model-context-protocol-mcp)
 

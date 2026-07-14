@@ -8,20 +8,8 @@ from mcp_memgraph.auth import current_session_auth
 from mcp_memgraph.config import get_auth_config, get_mcp_config, get_memgraph_config
 from mcp_memgraph.tenant_routing import UnknownTenantError, get_registry
 from memgraph_toolbox.api.memgraph import Memgraph
-from memgraph_toolbox.tools.betweenness_centrality import (
-    BetweennessCentralityTool,
-)
-from memgraph_toolbox.tools.config import ShowConfigTool
-from memgraph_toolbox.tools.constraint import ShowConstraintInfoTool
 from memgraph_toolbox.tools.cypher import CypherTool
-from memgraph_toolbox.tools.index import ShowIndexInfoTool
-from memgraph_toolbox.tools.node_neighborhood import NodeNeighborhoodTool
-from memgraph_toolbox.tools.node_vector_search import NodeVectorSearchTool
-from memgraph_toolbox.tools.page_rank import PageRankTool
-from memgraph_toolbox.tools.procedures import ShowProceduresTool
-from memgraph_toolbox.tools.schema import ShowSchemaInfoTool
-from memgraph_toolbox.tools.storage import ShowStorageInfoTool
-from memgraph_toolbox.tools.trigger import ShowTriggersTool
+from memgraph_toolbox.tools.schema import EnumSchemaTool, NodeSchemaTool, RelationshipSchemaTool, SearchSchemaTool
 from memgraph_toolbox.utils.logger import logger_init
 
 # Get configuration instances
@@ -33,7 +21,33 @@ auth_config = get_auth_config()
 logger = logger_init("mcp-memgraph")
 
 # Initialize FastMCP server
-mcp = FastMCP("mcp-memgraph")
+mcp = FastMCP(
+    "mcp-memgraph",
+    instructions=(
+        "You are connected to a Memgraph graph database through this MCP server. "
+        "Use `run_cypher_query` to execute Cypher queries for reading and writing graph data. "
+        "Note that the server may run in read-only mode, in which case write queries are "
+        "rejected with an error. "
+        "Before writing queries, explore the graph model first: use `search_schema` to find "
+        "relevant node labels, relationship types, and properties by keyword, then use "
+        "`get_node_schema` and `get_relationship_schema` to get full details including "
+        "property types, indexes, and constraints. This helps you write accurate Cypher "
+        "that matches the actual graph structure. Use `get_enum_schema` to inspect enum "
+        "definitions when properties are enum-typed. "
+        "Use `list_databases` to see which databases this session can access and which one "
+        "is active, and `use_database` to switch the active database for the session.\n\n"
+        "To discover available procedures, including MAGE graph algorithms and custom query "
+        "modules, use a query like the following (the WHERE clause is optional and filters "
+        "procedure names by a regex pattern, e.g. '.*page.*'):\n\n"
+        "CALL mg.procedures()\n"
+        "YIELD name, signature, is_write\n"
+        "WHERE name =~ '<regex_pattern>'\n"
+        "RETURN name, signature, is_write\n\n"
+        "Each procedure includes its name, signature, and whether it performs write "
+        "operations. Use this to discover available graph algorithms and utility functions "
+        "before executing them."
+    ),
+)
 
 # Read-only mode flag (from config)
 READ_ONLY_MODE = mcp_config.read_only
@@ -162,9 +176,14 @@ def _safe_call(fn, *, on_error: str):
 
 
 @mcp.tool()
-def run_query(query: str, ctx: Context | None = None) -> list[dict[str, Any]]:
-    """Run a Cypher query on Memgraph. Write operations are blocked if
-    server is in read-only mode."""
+def run_cypher_query(query: str, ctx: Context | None = None) -> list[dict[str, Any]]:
+    """
+    Run a Cypher query on Memgraph. Write operations are blocked if
+    server is in read-only mode.
+
+    Args:
+        query: The Cypher query to execute on the Memgraph database.
+    """
     logger.info("Running query: %s", query)
 
     # Check if query is a write operation in read-only mode
@@ -183,113 +202,76 @@ def run_query(query: str, ctx: Context | None = None) -> list[dict[str, Any]]:
 
 
 @mcp.tool()
-def get_configuration(ctx: Context | None = None) -> list[dict[str, Any]]:
-    """Get Memgraph configuration information"""
-    logger.info("Fetching Memgraph configuration...")
-    return _safe_call(lambda: ShowConfigTool(db=_get_db()).call({}), on_error="Error fetching configuration")
+def search_schema(pattern: str, ctx: Context | None = None) -> list[dict[str, Any]]:
+    """
+    Search the entire graph schema (nodes, relationships and enums) by a regex pattern.
+    Matches against labels, types, descriptions, and property keys/descriptions.
 
-
-@mcp.tool()
-def get_index(ctx: Context | None = None) -> list[dict[str, Any]]:
-    """Get Memgraph index information"""
-    logger.info("Fetching Memgraph index...")
-    return _safe_call(lambda: ShowIndexInfoTool(db=_get_db()).call({}), on_error="Error fetching index")
-
-
-@mcp.tool()
-def get_constraint(ctx: Context | None = None) -> list[dict[str, Any]]:
-    """Get Memgraph constraint information"""
-    logger.info("Fetching Memgraph constraint...")
-    return _safe_call(lambda: ShowConstraintInfoTool(db=_get_db()).call({}), on_error="Error fetching constraint")
-
-
-@mcp.tool()
-def get_schema(ctx: Context | None = None) -> list[dict[str, Any]]:
-    """Get Memgraph schema information"""
-    logger.info("Fetching Memgraph schema...")
-    return _safe_call(lambda: ShowSchemaInfoTool(db=_get_db()).call({}), on_error="Error fetching schema")
-
-
-@mcp.tool()
-def get_storage(ctx: Context | None = None) -> list[dict[str, Any]]:
-    """Get Memgraph storage information"""
-    logger.info("Fetching Memgraph storage...")
-    return _safe_call(lambda: ShowStorageInfoTool(db=_get_db()).call({}), on_error="Error fetching storage")
-
-
-@mcp.tool()
-def get_triggers(ctx: Context | None = None) -> list[dict[str, Any]]:
-    """Get Memgraph triggers information"""
-    logger.info("Fetching Memgraph triggers...")
-    return _safe_call(lambda: ShowTriggersTool(db=_get_db()).call({}), on_error="Error fetching triggers")
-
-
-@mcp.tool()
-def get_procedures(ctx: Context | None = None) -> list[dict[str, Any]]:
-    """List all available Memgraph procedures (query modules).
-
-    Returns information about all available procedures including MAGE algorithms
-    and custom query modules. Each procedure includes its name, signature, and
-    whether it performs write operations. Use this to discover available graph
-    algorithms and utility functions before executing them."""
-    logger.info("Fetching Memgraph procedures...")
-    return _safe_call(lambda: ShowProceduresTool(db=_get_db()).call({}), on_error="Error fetching procedures")
-
-
-@mcp.tool()
-def get_betweenness_centrality(ctx: Context | None = None) -> list[dict[str, Any]]:
-    """Get betweenness centrality information"""
-    logger.info("Fetching betweenness centrality...")
+    Args:
+        pattern: A case-insensitive regex pattern to search for (e.g. "person", "pay.*ment").
+    """
+    logger.info("Searching schema with pattern: %s", pattern)
     return _safe_call(
-        lambda: BetweennessCentralityTool(db=_get_db()).call({}),
-        on_error="Error fetching betweenness centrality",
+        lambda: SearchSchemaTool(db=_get_db()).call({"pattern": pattern}),
+        on_error="Error searching schema",
     )
 
 
 @mcp.tool()
-def get_page_rank(ctx: Context | None = None) -> list[dict[str, Any]]:
-    """Get page rank information"""
-    logger.info("Fetching page rank...")
-    return _safe_call(lambda: PageRankTool(db=_get_db()).call({}), on_error="Error fetching page rank")
+def get_node_schema(node_labels: list[str], ctx: Context | None = None) -> list[dict[str, Any]]:
+    """
+    Get the full schema definition of a node by its labels. Returns properties,
+    indexes, constraints, and all relationships where this node appears.
+
+    Args:
+        node_labels: The labels of the node to get the details of.
+    """
+    logger.info("Fetching node schema for labels: %s", node_labels)
+    return _safe_call(
+        lambda: NodeSchemaTool(db=_get_db()).call({"node_labels": node_labels}),
+        on_error="Error fetching node schema",
+    )
 
 
 @mcp.tool()
-def get_node_neighborhood(
-    node_id: str,
-    max_distance: int = 1,
-    limit: int = 100,
+def get_relationship_schema(
+    relationship_type: str,
+    start_node_labels: list[str],
+    end_node_labels: list[str],
     ctx: Context | None = None,
 ) -> list[dict[str, Any]]:
-    """Find nodes within a specified distance from a given node"""
-    logger.info(
-        "Finding neighborhood for node %s with max distance %s",
-        node_id,
-        max_distance,
-    )
-    return _safe_call(
-        lambda: NodeNeighborhoodTool(db=_get_db()).call(
-            {"node_id": node_id, "max_distance": max_distance, "limit": limit}
-        ),
-        on_error="Error finding node neighborhood",
-    )
+    """
+    Get the full schema definition of a relationship by its type and connected
+    node labels. Returns properties and indexes.
 
-
-@mcp.tool()
-def search_node_vectors(
-    index_name: str,
-    query_vector: list[float],
-    limit: int = 10,
-    ctx: Context | None = None,
-) -> list[dict[str, Any]]:
-    """Perform vector similarity search on nodes in Memgraph"""
-    logger.info("Performing vector search on index %s with limit %s", index_name, limit)
+    Args:
+        relationship_type: The type of the relationship to get the details of.
+        start_node_labels: The labels of the start node of the relationship.
+        end_node_labels: The labels of the end node of the relationship.
+    """
+    logger.info("Fetching relationship schema for type: %s", relationship_type)
     return _safe_call(
-        lambda: NodeVectorSearchTool(db=_get_db()).call(
+        lambda: RelationshipSchemaTool(db=_get_db()).call(
             {
-                "index_name": index_name,
-                "query_vector": query_vector,
-                "limit": limit,
+                "relationship_type": relationship_type,
+                "start_node_labels": start_node_labels,
+                "end_node_labels": end_node_labels,
             }
         ),
-        on_error="Error performing vector search",
+        on_error="Error fetching relationship schema",
+    )
+
+
+@mcp.tool()
+def get_enum_schema(enum_name: str, ctx: Context | None = None) -> list[dict[str, Any]]:
+    """
+    Get the schema definition of an enum by its name. Returns the enum name and its values.
+
+    Args:
+        enum_name: The name of the enum to get the details of.
+    """
+    logger.info("Fetching enum schema for: %s", enum_name)
+    return _safe_call(
+        lambda: EnumSchemaTool(db=_get_db()).call({"enum_name": enum_name}),
+        on_error="Error fetching enum schema",
     )

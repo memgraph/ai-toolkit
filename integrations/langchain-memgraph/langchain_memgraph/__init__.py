@@ -6,15 +6,11 @@ from langchain_memgraph.graphs.memgraph import MemgraphLangChain
 from langchain_memgraph.retrievers import MemgraphRetriever
 from langchain_memgraph.toolkits import MemgraphToolkit
 from langchain_memgraph.tools import (
-    RunBetweennessCentralityTool,
-    RunPageRankMemgraphTool,
+    RunEnumSchemaTool,
+    RunNodeSchemaTool,
     RunQueryTool,
-    RunShowConfigTool,
-    RunShowConstraintInfoTool,
-    RunShowIndexInfoTool,
-    RunShowSchemaInfoTool,
-    RunShowStorageInfoTool,
-    RunShowTriggersTool,
+    RunRelationshipSchemaTool,
+    RunSearchSchemaTool,
 )
 
 try:
@@ -30,14 +26,10 @@ __all__ = [
     "MemgraphQAChain",
     "MemgraphRetriever",
     "MemgraphToolkit",
-    "RunBetweennessCentralityTool",
-    "RunPageRankMemgraphTool",
+    "RunEnumSchemaTool",
+    "RunNodeSchemaTool",
     "RunQueryTool",
-    "RunShowConfigTool",
-    "RunShowConstraintInfoTool",
-    "RunShowIndexInfoTool",
-    "RunShowSchemaInfoTool",
-    "RunShowStorageInfoTool",
-    "RunShowTriggersTool",
+    "RunRelationshipSchemaTool",
+    "RunSearchSchemaTool",
     "__version__",
 ]

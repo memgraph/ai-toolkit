@@ -84,7 +84,11 @@ needs a database object and LLM access since different tools leverage different 
 
 Currently supported tools:
 
-1. **QueryMemgraphTool** - Basic Cypher query execution tool
+1. **RunQueryTool** - Cypher query execution
+2. **RunSearchSchemaTool** - Search the graph schema by regex pattern
+3. **RunNodeSchemaTool** - Get full schema definition of a node by its labels
+4. **RunRelationshipSchemaTool** - Get full schema definition of a relationship
+5. **RunEnumSchemaTool** - Get schema definition of an enum by its name
 
 ```python
 import os

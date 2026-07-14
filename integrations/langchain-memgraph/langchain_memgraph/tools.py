@@ -9,17 +9,13 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
 from memgraph_toolbox.api.memgraph import Memgraph
-from memgraph_toolbox.tools.betweenness_centrality import BetweennessCentralityTool
-from memgraph_toolbox.tools.config import ShowConfigTool
-from memgraph_toolbox.tools.constraint import ShowConstraintInfoTool
 from memgraph_toolbox.tools.cypher import CypherTool
-from memgraph_toolbox.tools.index import ShowIndexInfoTool
-from memgraph_toolbox.tools.node_neighborhood import NodeNeighborhoodTool
-from memgraph_toolbox.tools.node_vector_search import NodeVectorSearchTool
-from memgraph_toolbox.tools.page_rank import PageRankTool
-from memgraph_toolbox.tools.schema import ShowSchemaInfoTool
-from memgraph_toolbox.tools.storage import ShowStorageInfoTool
-from memgraph_toolbox.tools.trigger import ShowTriggersTool
+from memgraph_toolbox.tools.schema import (
+    EnumSchemaTool,
+    NodeSchemaTool,
+    RelationshipSchemaTool,
+    SearchSchemaTool,
+)
 
 
 class BaseMemgraphTool(BaseModel):
@@ -35,10 +31,6 @@ class BaseMemgraphTool(BaseModel):
 
 
 class _QueryMemgraphToolInput(BaseModel):
-    """
-    Input query for Memgraph Query tool.
-    """
-
     query: str = Field(..., description="The query to be executed in Memgraph.")
 
 
@@ -46,320 +38,100 @@ class RunQueryTool(BaseMemgraphTool, BaseTool):
     """Tool for querying Memgraph."""
 
     name: str = CypherTool(db=None).get_name()
-    """The name that is passed to the model when performing tool calling."""
-
     description: str = CypherTool(db=None).get_description()
-    """The description that is passed to the model when performing tool calling."""
-
     args_schema: type[BaseModel] = _QueryMemgraphToolInput
-    """The schema that is passed to the model when performing tool calling."""
 
     def _run(
         self,
         query: str,
         run_manager: CallbackManagerForToolRun | None = None,
     ) -> list[dict[str, Any]]:
-        return CypherTool(
-            db=self.db,
-        ).call({"query": query})
+        return CypherTool(db=self.db).call({"query": query})
 
 
-class RunShowSchemaInfoTool(BaseMemgraphTool, BaseTool):
-    """Tool for retrieving schema information from Memgraph."""
-
-    name: str = ShowSchemaInfoTool(db=None).get_name()
-    """The name that is passed to the model when performing tool calling."""
-
-    description: str = ShowSchemaInfoTool(db=None).get_description()
-    """The description that is passed to the model when performing tool calling."""
-
-    args_schema: type[BaseModel] | None = None
-    """The schema that is passed to the model when performing tool calling."""
-
-    def _run(
-        self,
-        run_manager: CallbackManagerForToolRun | None = None,
-    ) -> list[dict[str, Any]]:
-        """Run the tool to get schema information."""
-
-        schema_info = ShowSchemaInfoTool(
-            db=self.db,
-        )
-        result = schema_info.call({})
-
-        return result
-
-
-class RunShowStorageInfoTool(BaseMemgraphTool, BaseTool):
-    """Tool for retrieving storage information from Memgraph."""
-
-    name: str = ShowStorageInfoTool(db=None).get_name()
-    """The name that is passed to the model when performing tool calling."""
-
-    description: str = ShowStorageInfoTool(db=None).get_description()
-    """The description that is passed to the model when performing tool calling."""
-
-    args_schema: type[BaseModel] | None = None
-    """The schema that is passed to the model when performing tool calling."""
-
-    def _run(
-        self,
-        run_manager: CallbackManagerForToolRun | None = None,
-    ) -> list[dict[str, Any]]:
-        """Run the tool to get storage information."""
-
-        storage_info = ShowStorageInfoTool(
-            db=self.db,
-        )
-        result = storage_info.call({})
-
-        return result
-
-
-class _PageRankMemgraphToolInput(BaseModel):
-    """
-    Input schema for the PageRank Memgraph tool.
-    """
-
-    limit: int = Field(10, description="Number of nodes to return.")
-
-
-class RunPageRankMemgraphTool(BaseMemgraphTool, BaseTool):
-    """Tool for running PageRank on Memgraph."""
-
-    name: str = PageRankTool(db=None).get_name()
-    """The name that is passed to the model when performing tool calling."""
-
-    description: str = PageRankTool(db=None).get_description()
-    """The description that is passed to the model when performing tool calling."""
-
-    args_schema: type[BaseModel] = _PageRankMemgraphToolInput
-    """The schema that is passed to the model when performing tool calling."""
-
-    def _run(
-        self,
-        limit: int = 10,
-        run_manager: CallbackManagerForToolRun | None = None,
-    ) -> list[dict[str, Any]]:
-        return PageRankTool(
-            db=self.db,
-        ).call({"limit": limit})
-
-
-class RunShowConstraintInfoTool(BaseMemgraphTool, BaseTool):
-    """Tool for retrieving constraint information from Memgraph."""
-
-    name: str = ShowConstraintInfoTool(db=None).get_name()
-    """The name that is passed to the model when performing tool calling."""
-
-    description: str = ShowConstraintInfoTool(db=None).get_description()
-    """The description that is passed to the model when performing tool calling."""
-
-    args_schema: type[BaseModel] | None = None
-    """The schema that is passed to the model when performing tool calling."""
-
-    def _run(
-        self,
-        run_manager: CallbackManagerForToolRun | None = None,
-    ) -> list[dict[str, Any]]:
-        """Run the tool to get constraint information."""
-
-        constraint_info = ShowConstraintInfoTool(
-            db=self.db,
-        )
-        result = constraint_info.call({})
-
-        return result
-
-
-class RunShowIndexInfoTool(BaseMemgraphTool, BaseTool):
-    """Tool for retrieving index information from Memgraph."""
-
-    name: str = ShowIndexInfoTool(db=None).get_name()
-    """The name that is passed to the model when performing tool calling."""
-
-    description: str = ShowIndexInfoTool(db=None).get_description()
-    """The description that is passed to the model when performing tool calling."""
-
-    args_schema: type[BaseModel] | None = None
-    """The schema that is passed to the model when performing tool calling."""
-
-    def _run(
-        self,
-        run_manager: CallbackManagerForToolRun | None = None,
-    ) -> list[dict[str, Any]]:
-        """Run the tool to get index information."""
-
-        index_info = ShowIndexInfoTool(
-            db=self.db,
-        )
-        result = index_info.call({})
-
-        return result
-
-
-class RunShowConfigTool(BaseMemgraphTool, BaseTool):
-    """Tool for retrieving configuration information from Memgraph."""
-
-    name: str = ShowConfigTool(db=None).get_name()
-    """The name that is passed to the model when performing tool calling."""
-
-    description: str = ShowConfigTool(db=None).get_description()
-    """The description that is passed to the model when performing tool calling."""
-
-    args_schema: type[BaseModel] | None = None
-    """The schema that is passed to the model when performing tool calling."""
-
-    def _run(
-        self,
-        run_manager: CallbackManagerForToolRun | None = None,
-    ) -> list[dict[str, Any]]:
-        """Run the tool to get configuration information."""
-
-        config_info = ShowConfigTool(
-            db=self.db,
-        )
-        result = config_info.call({})
-
-        return result
-
-
-class RunShowTriggersTool(BaseMemgraphTool, BaseTool):
-    """Tool for retrieving trigger information from Memgraph."""
-
-    name: str = ShowTriggersTool(db=None).get_name()
-    """The name that is passed to the model when performing tool calling."""
-
-    description: str = ShowTriggersTool(db=None).get_description()
-    """The description that is passed to the model when performing tool calling."""
-
-    args_schema: type[BaseModel] | None = None
-    """The schema that is passed to the model when performing tool calling."""
-
-    def _run(
-        self,
-        run_manager: CallbackManagerForToolRun | None = None,
-    ) -> list[dict[str, Any]]:
-        """Run the tool to get trigger information."""
-
-        trigger_info = ShowTriggersTool(
-            db=self.db,
-        )
-        result = trigger_info.call({})
-
-        return result
-
-
-class _BetweennessCentralityToolInput(BaseModel):
-    """
-    Input schema for the Betweenness Centrality Memgraph tool.
-    """
-
-    isDirectionIgnored: bool = Field(
-        True,
-        description="Set to false to consider the direction of relationships. Default is true.",
+class _SearchSchemaToolInput(BaseModel):
+    pattern: str = Field(
+        ..., description='A case-insensitive regex pattern to search for (e.g. "person", "pay.*ment").'
     )
-    limit: int = Field(10, description="Limit the number of nodes to return. Default is 10.")
 
 
-class RunBetweennessCentralityTool(BaseMemgraphTool, BaseTool):
-    """Tool for running Betweenness Centrality on Memgraph."""
+class RunSearchSchemaTool(BaseMemgraphTool, BaseTool):
+    """Tool for searching the graph schema by a regex pattern."""
 
-    name: str = BetweennessCentralityTool(db=None).get_name()
-    """The name that is passed to the model when performing tool calling."""
-
-    description: str = BetweennessCentralityTool(db=None).get_description()
-    """The description that is passed to the model when performing tool calling."""
-
-    args_schema: type[BaseModel] = _BetweennessCentralityToolInput
-    """The schema that is passed to the model when performing tool calling."""
+    name: str = SearchSchemaTool(db=None).get_name()
+    description: str = SearchSchemaTool(db=None).get_description()
+    args_schema: type[BaseModel] = _SearchSchemaToolInput
 
     def _run(
         self,
-        isDirectionIgnored: bool = True,
-        limit: int = 10,
+        pattern: str,
         run_manager: CallbackManagerForToolRun | None = None,
     ) -> list[dict[str, Any]]:
-        return BetweennessCentralityTool(
-            db=self.db,
-        ).call({"isDirectionIgnored": isDirectionIgnored, "limit": limit})
+        return SearchSchemaTool(db=self.db).call({"pattern": pattern})
 
 
-class _NodeNeighborhoodToolInput(BaseModel):
-    """
-    Input schema for the Node Neighborhood Memgraph tool.
-    """
-
-    node_id: str = Field(
-        ...,
-        description="The ID of the starting node to find neighborhood around",
-    )
-    max_distance: int = Field(
-        1,
-        description="Maximum distance (hops) to search from the starting node. Default is 1.",
-    )
-    limit: int = Field(100, description="Maximum number of nodes to return. Default is 100.")
+class _NodeSchemaToolInput(BaseModel):
+    node_labels: list[str] = Field(..., description="The labels of the node to get the details of.")
 
 
-class RunNodeNeighborhoodTool(BaseMemgraphTool, BaseTool):
-    """Tool for finding nodes within a specified neighborhood distance in Memgraph."""
+class RunNodeSchemaTool(BaseMemgraphTool, BaseTool):
+    """Tool for getting the full schema definition of a node."""
 
-    name: str = NodeNeighborhoodTool(db=None).get_name()
-    """The name that is passed to the model when performing tool calling."""
-
-    description: str = NodeNeighborhoodTool(db=None).get_description()
-    """The description that is passed to the model when performing tool calling."""
-
-    args_schema: type[BaseModel] = _NodeNeighborhoodToolInput
-    """The schema that is passed to the model when performing tool calling."""
+    name: str = NodeSchemaTool(db=None).get_name()
+    description: str = NodeSchemaTool(db=None).get_description()
+    args_schema: type[BaseModel] = _NodeSchemaToolInput
 
     def _run(
         self,
-        node_id: str,
-        max_distance: int = 1,
-        limit: int = 100,
+        node_labels: list[str],
         run_manager: CallbackManagerForToolRun | None = None,
     ) -> list[dict[str, Any]]:
-        return NodeNeighborhoodTool(
-            db=self.db,
-        ).call({"node_id": node_id, "max_distance": max_distance, "limit": limit})
+        return NodeSchemaTool(db=self.db).call({"node_labels": node_labels})
 
 
-class _NodeVectorSearchToolInput(BaseModel):
-    """
-    Input schema for the Node Vector Search Memgraph tool.
-    """
-
-    index_name: str = Field(
-        ...,
-        description="Name of the index to use for the vector search",
-    )
-    query_vector: list[float] = Field(
-        ...,
-        description="Query vector to search for similarity",
-    )
-    limit: int = Field(10, description="Number of similar nodes to return. Default is 10.")
+class _RelationshipSchemaToolInput(BaseModel):
+    relationship_type: str = Field(..., description="The type of the relationship to get the details of.")
+    start_node_labels: list[str] = Field(..., description="The labels of the start node of the relationship.")
+    end_node_labels: list[str] = Field(..., description="The labels of the end node of the relationship.")
 
 
-class RunNodeVectorSearchTool(BaseMemgraphTool, BaseTool):
-    """Tool for performing vector similarity search on nodes in Memgraph."""
+class RunRelationshipSchemaTool(BaseMemgraphTool, BaseTool):
+    """Tool for getting the full schema definition of a relationship."""
 
-    name: str = NodeVectorSearchTool(db=None).get_name()
-    """The name that is passed to the model when performing tool calling."""
-
-    description: str = NodeVectorSearchTool(db=None).get_description()
-    """The description that is passed to the model when performing tool calling."""
-
-    args_schema: type[BaseModel] = _NodeVectorSearchToolInput
-    """The schema that is passed to the model when performing tool calling."""
+    name: str = RelationshipSchemaTool(db=None).get_name()
+    description: str = RelationshipSchemaTool(db=None).get_description()
+    args_schema: type[BaseModel] = _RelationshipSchemaToolInput
 
     def _run(
         self,
-        index_name: str,
-        query_vector: list[float],
-        limit: int = 10,
+        relationship_type: str,
+        start_node_labels: list[str],
+        end_node_labels: list[str],
         run_manager: CallbackManagerForToolRun | None = None,
     ) -> list[dict[str, Any]]:
-        return NodeVectorSearchTool(
-            db=self.db,
-        ).call({"index_name": index_name, "query_vector": query_vector, "limit": limit})
+        return RelationshipSchemaTool(db=self.db).call(
+            {
+                "relationship_type": relationship_type,
+                "start_node_labels": start_node_labels,
+                "end_node_labels": end_node_labels,
+            }
+        )
+
+
+class _EnumSchemaToolInput(BaseModel):
+    enum_name: str = Field(..., description="The name of the enum to get the details of.")
+
+
+class RunEnumSchemaTool(BaseMemgraphTool, BaseTool):
+    """Tool for getting the schema definition of an enum."""
+
+    name: str = EnumSchemaTool(db=None).get_name()
+    description: str = EnumSchemaTool(db=None).get_description()
+    args_schema: type[BaseModel] = _EnumSchemaToolInput
+
+    def _run(
+        self,
+        enum_name: str,
+        run_manager: CallbackManagerForToolRun | None = None,
+    ) -> list[dict[str, Any]]:
+        return EnumSchemaTool(db=self.db).call({"enum_name": enum_name})
