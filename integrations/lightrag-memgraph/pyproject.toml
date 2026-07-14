@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "lightrag-hku>=1.4.14",
+    "lightrag-hku>=1.5,<1.6",
     "memgraph-toolbox>=0.1.11",
     "numpy>=1.22.0",
     "anthropic>=0.40.0",

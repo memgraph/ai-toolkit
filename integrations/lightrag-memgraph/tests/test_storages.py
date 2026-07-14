@@ -129,6 +129,33 @@ def test_doc_status_reconstruction_roundtrip():
 
 
 @pytest.mark.asyncio
+async def test_get_doc_by_basename_and_hash_none_cases():
+    """Empty input and the 'unknown_source' sentinel short-circuit to None.
+
+    These paths return before touching Memgraph, so they are exercised here as
+    unit tests; the positive round-trip lives in the live integration test.
+    """
+    from lightrag_memgraph import MemgraphDocStatusStorage
+
+    store = MemgraphDocStatusStorage(
+        namespace="doc_status",
+        workspace="base",
+        global_config=_global_config(),
+        embedding_func=_fake_embedding_func(),
+    )
+    assert await store.get_doc_by_file_basename("") is None
+    assert await store.get_doc_by_file_basename("unknown_source") is None
+    assert await store.get_doc_by_content_hash("") is None
+
+
+def test_content_hash_is_indexed_field():
+    """content_hash must be promoted to an indexed node property in 1.5.x."""
+    from lightrag_memgraph.docstatus_impl import _INDEXED_FIELDS
+
+    assert "content_hash" in _INDEXED_FIELDS
+
+
+@pytest.mark.asyncio
 async def test_get_all_status_counts_includes_all_key(monkeypatch):
     """get_all_status_counts must add an 'all' grand-total key (reference contract)."""
     from lightrag.base import DocStatus

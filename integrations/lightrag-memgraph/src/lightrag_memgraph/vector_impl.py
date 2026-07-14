@@ -156,16 +156,22 @@ class MemgraphVectorStorage(BaseVectorStorage):
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             try:
+                # Memgraph's vector_search.search takes the index name as a
+                # string-literal argument (see the toolbox NodeVectorSearchTool
+                # and unstructured2graph's graphrag example), not a query
+                # parameter. `_index_name` is sanitized to [A-Za-z0-9_] by
+                # `sanitize_index_name`, so interpolating it here is injection
+                # safe. The procedure yields `similarity` (cosine, higher =
+                # closer) alongside `node`/`distance`; we filter and order on it.
                 result = await session.run(
-                    """
-                    CALL vector_search.search($index_name, $top_k, $embedding)
+                    f"""
+                    CALL vector_search.search("{self._index_name}", $top_k, $embedding)
                     YIELD node, similarity
                     WITH node, similarity
                     WHERE similarity >= $threshold
                     RETURN node.id AS id, similarity AS similarity, properties(node) AS props
                     ORDER BY similarity DESC
                     """,
-                    index_name=self._index_name,
                     top_k=int(top_k),
                     embedding=embedding,
                     threshold=self.cosine_better_than_threshold,

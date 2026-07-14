@@ -179,8 +179,24 @@ jobs:
 
       - name: Start Memgraph container
         run: |
+          # MAGE image bundles the vector_search + embeddings modules the
+          # integration tests exercise. One instance is reused for the whole job.
           docker run -d -p 7687:7687 --name memgraph memgraph/memgraph-mage:latest --schema-info-enabled=True --telemetry-enabled=false
-          sleep 5
+        working-directory: .
+
+      - name: Wait for Memgraph to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if (echo > /dev/tcp/localhost/7687) 2>/dev/null; then
+              echo "Memgraph is accepting Bolt connections"
+              exit 0
+            fi
+            echo "Waiting for Memgraph (attempt $i)..."
+            sleep 2
+          done
+          echo "Memgraph did not become ready in time" >&2
+          docker logs memgraph || true
+          exit 1
         working-directory: .
 
       - name: Install uv
@@ -188,6 +204,13 @@ jobs:
         working-directory: .
 
       - name: Install dependencies and run tests
+        env:
+          # Point the storage backends at the reused Memgraph instance so the
+          # live integration tests actually run (they skip when unreachable).
+          MEMGRAPH_URI: bolt://localhost:7687
+          MEMGRAPH_USERNAME: ""
+          MEMGRAPH_PASSWORD: ""
+          MEMGRAPH_DATABASE: memgraph
         run: |
           uv venv
           uv pip install -e .[dev]

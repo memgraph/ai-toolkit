@@ -27,7 +27,7 @@ from ._connection import (
 )
 
 # Node properties promoted out of the JSON blob so they can be indexed / queried.
-_INDEXED_FIELDS = ("status", "track_id", "file_path", "created_at", "updated_at")
+_INDEXED_FIELDS = ("status", "track_id", "file_path", "content_hash", "created_at", "updated_at")
 _SORT_FIELDS = {"created_at", "updated_at", "id", "file_path"}
 
 
@@ -250,11 +250,18 @@ class MemgraphDocStatusStorage(DocStatusStorage):
     async def get_docs_paginated(
         self,
         status_filter: DocStatus | None = None,
+        status_filters: list[DocStatus] | None = None,
         page: int = 1,
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
+        # Normalize single- and multi-status filters into a set of status
+        # values (mirrors JsonDocStatusStorage / DocStatusStorage helper).
+        status_values = self.resolve_status_filter_values(
+            status_filter=status_filter,
+            status_filters=status_filters,
+        )
         if page < 1:
             page = 1
         if page_size < 10:
@@ -266,17 +273,19 @@ class MemgraphDocStatusStorage(DocStatusStorage):
         order = "DESC" if sort_direction.lower() != "asc" else "ASC"
         skip = (page - 1) * page_size
 
-        where = "" if status_filter is None else "WHERE n.status = $status"
+        where = "" if status_values is None else "WHERE n.status IN $statuses"
         sort_expr = "n.id" if sort_field == "id" else f"n.{sort_field}"
         params: dict[str, Any] = {"skip": skip, "limit": page_size}
-        if status_filter is not None:
-            params["status"] = status_filter.value
+        filter_params: dict[str, Any] = {}
+        if status_values is not None:
+            filter_params["statuses"] = list(status_values)
+        params.update(filter_params)
 
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             count_result = await session.run(
                 f"MATCH (n:`{self._label}`) {where} RETURN count(n) AS total",
-                **({"status": status_filter.value} if status_filter is not None else {}),
+                **filter_params,
             )
             count_record = await count_result.single()
             await count_result.consume()
@@ -316,6 +325,48 @@ class MemgraphDocStatusStorage(DocStatusStorage):
         if not record or record["data"] is None:
             return None
         return json.loads(record["data"])
+
+    async def get_doc_by_file_basename(self, basename: str) -> tuple[str, dict[str, Any]] | None:
+        """Find a record whose canonical file_path basename matches (exact match).
+
+        Mirrors JsonDocStatusStorage: callers pass an already-canonical
+        basename, the stored ``file_path`` is compared exactly, empty input and
+        the ``"unknown_source"`` sentinel return None.
+        """
+        if not basename or basename == "unknown_source":
+            return None
+        driver = await get_driver()
+        async with driver.session(database=get_database(), default_access_mode="READ") as session:
+            result = await session.run(
+                f"MATCH (n:`{self._label}` {{file_path: $basename}}) RETURN n.id AS id, n.data AS data LIMIT 1",
+                basename=basename,
+            )
+            record = await result.single()
+            await result.consume()
+        if not record or record["data"] is None:
+            return None
+        return record["id"], json.loads(record["data"])
+
+    async def get_doc_by_content_hash(self, content_hash: str) -> tuple[str, dict[str, Any]] | None:
+        """Find a record whose ``content_hash`` field matches (exact match).
+
+        ``content_hash`` is promoted to an indexed top-level node property (see
+        ``_INDEXED_FIELDS``) so this lookup uses the index. Empty input returns
+        None, mirroring JsonDocStatusStorage.
+        """
+        if not content_hash:
+            return None
+        driver = await get_driver()
+        async with driver.session(database=get_database(), default_access_mode="READ") as session:
+            result = await session.run(
+                f"MATCH (n:`{self._label}` {{content_hash: $content_hash}}) RETURN n.id AS id, n.data AS data LIMIT 1",
+                content_hash=content_hash,
+            )
+            record = await result.single()
+            await result.consume()
+        if not record or record["data"] is None:
+            return None
+        return record["id"], json.loads(record["data"])
 
     async def drop(self) -> dict[str, str]:
         try:
