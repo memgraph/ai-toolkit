@@ -163,13 +163,29 @@ class MemgraphVectorStorage(BaseVectorStorage):
                 # `sanitize_index_name`, so interpolating it here is injection
                 # safe. The procedure yields `similarity` (cosine, higher =
                 # closer) alongside `node`/`distance`; we filter and order on it.
+                #
+                # The vector index can retain a stale entry for a node that has
+                # since been deleted from the graph (Memgraph's HNSW index defers
+                # cleanup). Reading a property off such a dangling handle raises
+                # 50N42 "Trying to get a property from a deleted object", which
+                # would abort the whole search and drop live matches too. To be
+                # robust regardless of index-eviction timing we NEVER read a
+                # property off the raw `node` handle: we re-MATCH the live nodes
+                # by identity and read properties only off those. A dangling
+                # candidate matches no live node and is silently excluded.
+                # Identity comparison (`live IN cand_nodes` / `p.node = live`)
+                # touches no properties, so it cannot raise on a deleted handle.
                 result = await session.run(
                     f"""
                     CALL vector_search.search("{self._index_name}", $top_k, $embedding)
                     YIELD node, similarity
-                    WITH node, similarity
+                    WITH collect(node) AS cand_nodes,
+                         collect({{node: node, similarity: similarity}}) AS cand_pairs
+                    MATCH (live:`{self._label}`)
+                    WHERE live IN cand_nodes
+                    WITH live, [p IN cand_pairs WHERE p.node = live | p.similarity][0] AS similarity
                     WHERE similarity >= $threshold
-                    RETURN node.id AS id, similarity AS similarity, properties(node) AS props
+                    RETURN live.id AS id, similarity AS similarity, properties(live) AS props
                     ORDER BY similarity DESC
                     """,
                     top_k=int(top_k),
@@ -179,8 +195,13 @@ class MemgraphVectorStorage(BaseVectorStorage):
                 records = [record async for record in result]
                 await result.consume()
             except Exception as e:
+                # The re-MATCH above means a stale/dangling index entry can never
+                # reach this handler, so anything caught here is a genuine
+                # failure (missing vector_search module, lost connection, ...).
+                # Surface it instead of masking it as an empty result set, which
+                # would silently hide real errors from callers.
                 logger.error(f"[{self.workspace}] Vector search failed for {self.namespace}: {e}")
-                return []
+                raise
 
         output: list[dict[str, Any]] = []
         for record in records:
@@ -255,11 +276,17 @@ class MemgraphVectorStorage(BaseVectorStorage):
             return
         driver = await get_driver()
         async with driver.session(database=get_database()) as session:
+            # Clear the indexed embedding property before deleting the node so
+            # the entry is evicted from the native vector index. A bare
+            # DETACH DELETE removes the node from the graph but can leave a
+            # dangling entry in the HNSW index, which vector_search.search would
+            # then return as a handle to a deleted object (50N42).
             await (
                 await session.run(
                     f"""
                     UNWIND $ids AS target_id
                     MATCH (n:`{self._label}` {{id: target_id}})
+                    SET n.embedding = NULL
                     DETACH DELETE n
                     """,
                     ids=list(ids),
@@ -273,11 +300,14 @@ class MemgraphVectorStorage(BaseVectorStorage):
     async def delete_entity_relation(self, entity_name: str) -> None:
         driver = await get_driver()
         async with driver.session(database=get_database()) as session:
+            # Null the embedding first (see `delete`) so these nodes leave the
+            # vector index rather than lingering as dangling index entries.
             await (
                 await session.run(
                     f"""
                     MATCH (n:`{self._label}`)
                     WHERE n.src_id = $entity_name OR n.tgt_id = $entity_name
+                    SET n.embedding = NULL
                     DETACH DELETE n
                     """,
                     entity_name=entity_name,
@@ -288,7 +318,10 @@ class MemgraphVectorStorage(BaseVectorStorage):
         try:
             driver = await get_driver()
             async with driver.session(database=get_database()) as session:
-                await (await session.run(f"MATCH (n:`{self._label}`) DETACH DELETE n")).consume()
+                # Null the embeddings first so nodes leave the vector index even
+                # if the subsequent DROP VECTOR INDEX fails for any reason,
+                # avoiding dangling index entries pointing at deleted nodes.
+                await (await session.run(f"MATCH (n:`{self._label}`) SET n.embedding = NULL DETACH DELETE n")).consume()
                 try:
                     await (await session.run(f"DROP VECTOR INDEX {self._index_name}")).consume()
                 except Exception as e:
