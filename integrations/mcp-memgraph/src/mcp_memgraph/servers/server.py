@@ -26,12 +26,26 @@ mcp = FastMCP(
     instructions=(
         "You are connected to a Memgraph graph database through this MCP server. "
         "Use `run_cypher_query` to execute Cypher queries for reading and writing graph data. "
+        "Note that the server may run in read-only mode, in which case write queries are "
+        "rejected with an error. "
         "Before writing queries, explore the graph model first: use `search_schema` to find "
         "relevant node labels, relationship types, and properties by keyword, then use "
         "`get_node_schema` and `get_relationship_schema` to get full details including "
         "property types, indexes, and constraints. This helps you write accurate Cypher "
         "that matches the actual graph structure. Use `get_enum_schema` to inspect enum "
-        "definitions when properties are enum-typed."
+        "definitions when properties are enum-typed. "
+        "Use `list_databases` to see which databases this session can access and which one "
+        "is active, and `use_database` to switch the active database for the session.\n\n"
+        "To discover available procedures, including MAGE graph algorithms and custom query "
+        "modules, use a query like the following (the WHERE clause is optional and filters "
+        "procedure names by a regex pattern, e.g. '.*page.*'):\n\n"
+        "CALL mg.procedures()\n"
+        "YIELD name, signature, is_write\n"
+        "WHERE name =~ '<regex_pattern>'\n"
+        "RETURN name, signature, is_write\n\n"
+        "Each procedure includes its name, signature, and whether it performs write "
+        "operations. Use this to discover available graph algorithms and utility functions "
+        "before executing them."
     ),
 )
 
