@@ -7,6 +7,8 @@ from lightrag.kg.shared_storage import initialize_pipeline_status
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
 from lightrag.utils import EmbeddingFunc, setup_logger
 
+from .registry import register_memgraph_storages
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # Read from MEMGRAPH_URL (consistent with memgraph-toolbox) and set MEMGRAPH_URI for LightRAG
 MEMGRAPH_URL = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
@@ -27,9 +29,26 @@ class MemgraphLightRAGWrapper:
         self,
         log_level: str = "INFO",
         disable_embeddings: bool = False,
+        full_memgraph_persistence: bool = True,
     ):
+        """Wrap LightRAG configured to use Memgraph as its storage backend.
+
+        Args:
+            log_level: Logging level for LightRAG's loggers.
+            disable_embeddings: If True, embeddings are stubbed out and the
+                vector store falls back to LightRAG's local NanoVectorDB (a
+                real vector index needs a real embedding dimension). KV and
+                doc-status still persist to Memgraph when
+                ``full_memgraph_persistence`` is enabled.
+            full_memgraph_persistence: If True (default), LightRAG's KV,
+                doc-status and (when embeddings are enabled) vector stores are
+                persisted to Memgraph in addition to the graph. If False, only
+                the graph is stored in Memgraph and the other stores use
+                LightRAG's file-based defaults in ``working_dir``.
+        """
         self.log_level = log_level
         self.disable_embeddings = disable_embeddings
+        self.full_memgraph_persistence = full_memgraph_persistence
         self.rag: LightRAG | None = None
 
     # https://github.com/HKUDS/LightRAG/blob/main/lightrag/lightrag.py
@@ -41,6 +60,18 @@ class MemgraphLightRAGWrapper:
         if self.disable_embeddings:
             lightrag_kwargs["embedding_func"] = _dummy_embedding_func(dim=1)
             lightrag_kwargs["vector_storage"] = "NanoVectorDBStorage"
+        if self.full_memgraph_persistence:
+            # Register the Memgraph KV/vector/doc-status backends so LightRAG
+            # accepts them by name, then route each store to Memgraph. KV and
+            # doc-status always go to Memgraph; the vector store only goes to
+            # Memgraph when embeddings are enabled (a real vector index needs a
+            # real embedding dimension), otherwise it keeps the local
+            # NanoVectorDB fallback set above. Explicit caller overrides win.
+            register_memgraph_storages()
+            lightrag_kwargs.setdefault("kv_storage", "MemgraphKVStorage")
+            lightrag_kwargs.setdefault("doc_status_storage", "MemgraphDocStatusStorage")
+            if not self.disable_embeddings:
+                lightrag_kwargs.setdefault("vector_storage", "MemgraphVectorStorage")
         if "working_dir" in lightrag_kwargs:
             working_dir = lightrag_kwargs["working_dir"]
             if not os.path.exists(working_dir):

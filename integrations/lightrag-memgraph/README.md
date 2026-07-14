@@ -49,6 +49,54 @@ asyncio.run(main())
 
 See `example.py` in this repo for a full run with sample texts and graph output.
 
+## Storage / persistence
+
+By default the wrapper persists **LightRAG's entire working state** into
+Memgraph, not just the entity/relationship graph:
+
+| LightRAG store | Backend | Memgraph node label |
+|---|---|---|
+| Graph (entities + relations) | `MemgraphStorage` (built into lightrag) | `<workspace>` (default `base`) |
+| Key/value (`full_docs`, `text_chunks`, `llm_response_cache`, ...) | `MemgraphKVStorage` | `LightRAGKV_<workspace>_<namespace>` |
+| Vector (`entities`, `relationships`, `chunks`) | `MemgraphVectorStorage` | `LightRAGVector_<workspace>_<namespace>` |
+| Document status | `MemgraphDocStatusStorage` | `LightRAGDocStatus_<workspace>` |
+
+The KV/vector/doc-status labels are namespaced by workspace + namespace so they
+never collide with the graph's entity nodes. The vector store uses Memgraph's
+native vector index (`CREATE VECTOR INDEX ... {"metric": "cos"}` +
+`CALL vector_search.search(...)`).
+
+Connection settings are read from the same environment variables as lightrag's
+graph backend: `MEMGRAPH_URI` (or `MEMGRAPH_URL`, which the wrapper bridges to
+`MEMGRAPH_URI`), `MEMGRAPH_USERNAME`, `MEMGRAPH_PASSWORD`, `MEMGRAPH_DATABASE`
+and the optional `MEMGRAPH_WORKSPACE`.
+
+### Opting out
+
+- `MemgraphLightRAGWrapper(full_memgraph_persistence=False)` keeps only the
+  graph in Memgraph and stores KV/vector/doc-status as local JSON files in
+  `working_dir` (the previous behaviour).
+- `MemgraphLightRAGWrapper(disable_embeddings=True)` keeps KV and doc-status in
+  Memgraph but falls back to the local NanoVectorDB for vectors (a native
+  vector index needs a real embedding dimension).
+
+To register the backends manually (e.g. when calling `LightRAG(...)` directly
+rather than through the wrapper):
+
+```python
+from lightrag import LightRAG
+from lightrag_memgraph import register_memgraph_storages
+
+register_memgraph_storages()  # idempotent; call before constructing LightRAG
+rag = LightRAG(
+    graph_storage="MemgraphStorage",
+    kv_storage="MemgraphKVStorage",
+    vector_storage="MemgraphVectorStorage",
+    doc_status_storage="MemgraphDocStatusStorage",
+    ...,
+)
+```
+
 ## Using Anthropic (Claude) as the LLM
 
 LightRAG supports Claude via the `lightrag.llm.anthropic` module. Set your API
