@@ -8,7 +8,7 @@ with ``package="lightrag"``, out-of-tree backends must be registered with an
 ABSOLUTE module path (``lightrag_memgraph.*``), which LightRAG's
 ``lazy_external_import`` imports unchanged.
 
-Call :func:`register_memgraph_storages` once before constructing ``LightRAG``.
+Call :func:`register_memgraph_storage` once before constructing ``LightRAG``.
 It is idempotent and safe to call multiple times.
 """
 
@@ -29,7 +29,7 @@ _ENV_REQUIREMENTS = ["MEMGRAPH_URI"]
 _registered = False
 
 
-def register_memgraph_storages() -> None:
+def register_memgraph_storage() -> None:
     """Patch LightRAG's storage registry so it accepts the Memgraph backends by name.
 
     Idempotent: repeated calls are no-ops after the first successful registration.

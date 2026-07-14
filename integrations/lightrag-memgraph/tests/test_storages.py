@@ -30,10 +30,10 @@ def _global_config() -> dict:
 def test_register_is_idempotent():
     import lightrag.kg as kg
 
-    from lightrag_memgraph import register_memgraph_storages
+    from lightrag_memgraph import register_memgraph_storage
 
-    register_memgraph_storages()
-    register_memgraph_storages()  # second call must be a no-op
+    register_memgraph_storage()
+    register_memgraph_storage()  # second call must be a no-op
 
     for name, storage_type in [
         ("MemgraphKVStorage", "KV_STORAGE"),
@@ -55,9 +55,9 @@ def test_register_is_idempotent():
     ],
 )
 def test_verify_storage_implementation_accepts_names(name, storage_type):
-    from lightrag_memgraph import register_memgraph_storages
+    from lightrag_memgraph import register_memgraph_storage
 
-    register_memgraph_storages()
+    register_memgraph_storage()
     # Should not raise.
     verify_storage_implementation(storage_type, name)
 

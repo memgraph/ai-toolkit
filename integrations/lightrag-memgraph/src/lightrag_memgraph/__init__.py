@@ -7,7 +7,7 @@ This package provides a wrapper around LightRAG that uses Memgraph as the graph 
 from .core import MemgraphLightRAGWrapper
 from .docstatus_impl import MemgraphDocStatusStorage
 from .kv_impl import MemgraphKVStorage
-from .registry import register_memgraph_storages
+from .registry import register_memgraph_storage
 from .vector_impl import MemgraphVectorStorage
 
 
@@ -128,5 +128,5 @@ __all__ = [
     "MemgraphKVStorage",
     "MemgraphLightRAGWrapper",
     "MemgraphVectorStorage",
-    "register_memgraph_storages",
+    "register_memgraph_storage",
 ]

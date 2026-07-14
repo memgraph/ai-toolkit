@@ -3,7 +3,7 @@
 Persists LightRAG's vector namespaces (``entities``, ``relationships``,
 ``chunks``) as nodes in Memgraph and searches them with Memgraph's native
 vector index (``CREATE VECTOR INDEX`` + ``CALL vector_search.search``) instead
-of a local NanoVectorDB file.
+of a local vector-database file.
 
 Each record is one node labelled ``LightRAGVector_<workspace>_<namespace>`` keyed
 by an ``id`` property. The declared ``meta_fields`` plus ``content`` are stored

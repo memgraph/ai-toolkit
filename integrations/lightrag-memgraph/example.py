@@ -5,6 +5,7 @@ import time
 import traceback
 
 from lightrag.llm.anthropic import anthropic_complete
+from lightrag.llm.openai import openai_embed
 
 from lightrag_memgraph import MemgraphLightRAGWrapper
 from memgraph_toolbox.api.memgraph import Memgraph
@@ -65,13 +66,14 @@ DUMMY_TEXTS = [
 
 
 async def main():
-    lightrag_wrapper = MemgraphLightRAGWrapper(disable_embeddings=True)
+    lightrag_wrapper = MemgraphLightRAGWrapper()
     try:
         await lightrag_wrapper.initialize(
             working_dir=WORKING_DIR,
             max_parallel_insert=8,
             llm_model_func=anthropic_complete,
             llm_model_name="claude-haiku-4-5",
+            embedding_func=openai_embed,
         )
 
         total_time = 0.0
