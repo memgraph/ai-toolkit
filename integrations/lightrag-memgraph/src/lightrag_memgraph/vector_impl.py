@@ -47,6 +47,7 @@ class MemgraphVectorStorage(BaseVectorStorage):
         self.workspace = workspace
         self._label = sanitize_label(f"LightRAGVector_{workspace}_{self.namespace}")
         self._index_name = sanitize_index_name(f"lightrag_vec_{workspace}_{self.namespace}")
+        self._index_ready = False
 
         kwargs = self.global_config.get("vector_db_storage_cls_kwargs", {})
         cosine_threshold = kwargs.get("cosine_better_than_threshold")
@@ -83,7 +84,14 @@ class MemgraphVectorStorage(BaseVectorStorage):
         pass
 
     async def _ensure_vector_index(self, session) -> None:
-        """Create the cosine vector index if it does not already exist."""
+        """Create the cosine vector index once per instance and cache that fact.
+
+        Memgraph does not raise when the index already exists, so without the
+        cached flag this ran (and logged "Created...") on every single
+        ``upsert()`` call instead of just the first one.
+        """
+        if self._index_ready:
+            return
         query = (
             f"CREATE VECTOR INDEX {self._index_name} ON :`{self._label}`(embedding) "
             f'WITH CONFIG {{"dimension": {int(self._dimension)}, '
@@ -95,6 +103,7 @@ class MemgraphVectorStorage(BaseVectorStorage):
         except Exception as e:
             # Index may already exist, which is not an error.
             logger.debug(f"[{self.workspace}] Vector index {self._index_name} creation skipped or already exists: {e}")
+        self._index_ready = True
 
     async def _embed(self, texts: list[str]) -> list[list[float]]:
         """Embed texts in batches, returning plain float lists suitable as Cypher params."""
@@ -333,6 +342,7 @@ class MemgraphVectorStorage(BaseVectorStorage):
                     await (await session.run(f"DROP VECTOR INDEX {self._index_name}")).consume()
                 except Exception as e:
                     logger.debug(f"[{self.workspace}] Dropping vector index {self._index_name} skipped: {e}")
+            self._index_ready = False
             logger.info(f"[{self.workspace}] Dropped Memgraph vector storage for {self.namespace}")
             return {"status": "success", "message": "data dropped"}
         except Exception as e:
