@@ -9,9 +9,25 @@ from lightrag.utils import setup_logger
 from .registry import register_memgraph_storage
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# Read from MEMGRAPH_URL (consistent with memgraph-toolbox) and set MEMGRAPH_URI for LightRAG
-MEMGRAPH_URL = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
-os.environ["MEMGRAPH_URI"] = MEMGRAPH_URL
+
+
+def _bridge_lightrag_env_names() -> None:
+    """Bridge the canonical toolbox env names to LightRAG's graph-backend names.
+
+    The toolbox -- and this integration's KV/vector/doc-status storages via
+    ``AsyncMemgraph``/``memgraph_env`` -- read the canonical ``MEMGRAPH_URL`` /
+    ``MEMGRAPH_USER``. LightRAG's bundled graph backend
+    (``lightrag.kg.memgraph_impl.MemgraphStorage``) instead reads
+    ``MEMGRAPH_URI`` / ``MEMGRAPH_USERNAME``. Mirror the canonical names onto the
+    LightRAG names (only when the LightRAG name is unset, so an explicit override
+    is never clobbered) so the graph backend and our storages resolve to the
+    SAME instance from a single env set. ``MEMGRAPH_PASSWORD`` /
+    ``MEMGRAPH_DATABASE`` already share names, so no bridge is needed for them.
+    """
+    if "MEMGRAPH_URL" in os.environ and "MEMGRAPH_URI" not in os.environ:
+        os.environ["MEMGRAPH_URI"] = os.environ["MEMGRAPH_URL"]
+    if "MEMGRAPH_USER" in os.environ and "MEMGRAPH_USERNAME" not in os.environ:
+        os.environ["MEMGRAPH_USERNAME"] = os.environ["MEMGRAPH_USER"]
 
 
 class MemgraphLightRAGWrapper:
@@ -45,6 +61,10 @@ class MemgraphLightRAGWrapper:
     async def initialize(self, **lightrag_kwargs) -> None:
         setup_logger("lightrag", level=self.log_level)
         logging.getLogger("pikepdf").setLevel(self.log_level)
+        # Bridge the canonical toolbox env names to LightRAG's graph-backend
+        # names so the built-in MemgraphStorage and our storages hit the same
+        # instance from a single env set.
+        _bridge_lightrag_env_names()
         if self.full_memgraph_persistence:
             # Register the Memgraph KV/vector/doc-status backends so LightRAG
             # accepts them by name, then route every store to Memgraph. Vectors

@@ -43,7 +43,7 @@ def test_register_is_idempotent():
         impls = kg.STORAGE_IMPLEMENTATIONS[storage_type]["implementations"]
         assert impls.count(name) == 1
         assert kg.STORAGES[name].startswith("lightrag_memgraph.")
-        assert kg.STORAGE_ENV_REQUIREMENTS[name] == ["MEMGRAPH_URI"]
+        assert kg.STORAGE_ENV_REQUIREMENTS[name] == ["MEMGRAPH_URL"]
 
 
 @pytest.mark.parametrize(

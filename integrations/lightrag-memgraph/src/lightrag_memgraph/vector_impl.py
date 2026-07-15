@@ -154,6 +154,9 @@ class MemgraphVectorStorage(BaseVectorStorage):
             embedding = np.asarray(embedded[0], dtype=float).tolist()
 
         driver = await get_driver()
+        # `default_access_mode="READ"` is only a read/write routing hint (for
+        # clustered/replica setups); on a single instance it is a no-op and it
+        # does NOT change the vector index's isolation -- see below.
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             try:
                 # Memgraph's vector_search.search takes the index name as a
@@ -164,17 +167,21 @@ class MemgraphVectorStorage(BaseVectorStorage):
                 # safe. The procedure yields `similarity` (cosine, higher =
                 # closer) alongside `node`/`distance`; we filter and order on it.
                 #
-                # The vector index can retain a stale entry for a node that has
-                # since been deleted from the graph (Memgraph's HNSW index defers
-                # cleanup). Reading a property off such a dangling handle raises
-                # 50N42 "Trying to get a property from a deleted object", which
-                # would abort the whole search and drop live matches too. To be
-                # robust regardless of index-eviction timing we NEVER read a
-                # property off the raw `node` handle: we re-MATCH the live nodes
-                # by identity and read properties only off those. A dangling
-                # candidate matches no live node and is silently excluded.
-                # Identity comparison (`live IN cand_nodes` / `p.node = live`)
-                # touches no properties, so it cannot raise on a deleted handle.
+                # The native vector index always operates at READ_UNCOMMITTED
+                # (independent of the session/transaction isolation) and GC of
+                # deleted entries is deferred, so vector_search.search can return
+                # a handle to a node that is already deleted. Reading a property
+                # off such a dangling handle raises 50N42 "Trying to get a
+                # property from a deleted object", which would abort the whole
+                # search and drop live matches too. Our defense is two-sided:
+                # `delete`/`delete_entity_relation`/`drop` null the embedding
+                # before DETACH DELETE so the entry is evicted deterministically,
+                # and here we NEVER read a property off the raw `node` handle --
+                # we re-MATCH the live nodes by identity and read properties only
+                # off those. A dangling candidate matches no live node and is
+                # silently excluded. Identity comparison (`live IN cand_nodes` /
+                # `p.node = live`) touches no properties, so it cannot raise on a
+                # deleted handle.
                 result = await session.run(
                     f"""
                     CALL vector_search.search("{self._index_name}", $top_k, $embedding)

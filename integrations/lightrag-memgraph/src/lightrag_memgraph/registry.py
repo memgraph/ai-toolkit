@@ -24,7 +24,9 @@ _STORAGES = {
     "MemgraphDocStatusStorage": ("DOC_STATUS_STORAGE", "lightrag_memgraph.docstatus_impl"),
 }
 
-_ENV_REQUIREMENTS = ["MEMGRAPH_URI"]
+# The canonical toolbox connection env var (the rest of ai-toolkit and our
+# storages resolve connection config from MEMGRAPH_URL via memgraph_env).
+_ENV_REQUIREMENTS = ["MEMGRAPH_URL"]
 
 _registered = False
 

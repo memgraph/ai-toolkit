@@ -207,13 +207,11 @@ jobs:
         env:
           # Point the storage backends at the reused Memgraph instance so the
           # live integration tests actually run (they skip when unreachable).
-          # Both the LightRAG env-var names (MEMGRAPH_URI/MEMGRAPH_USERNAME) and
-          # the memgraph-toolbox names (MEMGRAPH_URL/MEMGRAPH_USER) are set to
-          # the same values so the graph backend and the toolbox-backed KV /
+          # Only the canonical memgraph-toolbox names are set here; core.py
+          # bridges them to LightRAG's graph-backend names (MEMGRAPH_URI/
+          # MEMGRAPH_USERNAME) so the graph backend and the toolbox-backed KV /
           # vector / doc-status storages all resolve to the same instance.
-          MEMGRAPH_URI: bolt://localhost:7687
           MEMGRAPH_URL: bolt://localhost:7687
-          MEMGRAPH_USERNAME: ""
           MEMGRAPH_USER: ""
           MEMGRAPH_PASSWORD: ""
           MEMGRAPH_DATABASE: memgraph

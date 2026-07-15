@@ -12,8 +12,9 @@ every test. Tests are isolated from one another by giving each test a unique
 data at the end. This keeps the shared instance consistent "across the changes".
 
 Connection settings are read exactly the way the storage backends read them:
-``MEMGRAPH_URI`` (or ``MEMGRAPH_HOST`` + ``MEMGRAPH_PORT`` as a convenience),
-``MEMGRAPH_USERNAME``, ``MEMGRAPH_PASSWORD`` and ``MEMGRAPH_DATABASE``.
+through the toolbox's ``memgraph_env`` (the canonical ``MEMGRAPH_URL`` /
+``MEMGRAPH_USER`` / ``MEMGRAPH_PASSWORD`` / ``MEMGRAPH_DATABASE`` names), with
+``MEMGRAPH_HOST`` + ``MEMGRAPH_PORT`` accepted as a convenience.
 
 If no Memgraph server is reachable the whole module is skipped (not failed), so
 a unit-only run still passes. CI provides a Memgraph service container so these
@@ -34,11 +35,27 @@ from lightrag.utils import EmbeddingFunc
 from lightrag_memgraph._connection import (
     close_driver,
     get_driver,
-    read_connection_config,
 )
 from lightrag_memgraph.docstatus_impl import MemgraphDocStatusStorage
 from lightrag_memgraph.kv_impl import MemgraphKVStorage
 from lightrag_memgraph.vector_impl import MemgraphVectorStorage
+from memgraph_toolbox.api.memgraph import memgraph_env
+
+
+def _connection_settings() -> tuple[str, str, str, str]:
+    """Resolve (url, username, password, database) via the toolbox's memgraph_env.
+
+    This is exactly how the storage backends resolve their connection, so the
+    reachability probe below targets the same instance the backends will use.
+    """
+    env = memgraph_env()
+    return (
+        env["MEMGRAPH_URL"],
+        env["MEMGRAPH_USER"],
+        env["MEMGRAPH_PASSWORD"],
+        env["MEMGRAPH_DATABASE"],
+    )
+
 
 # All async tests / fixtures share ONE event loop for the whole session so the
 # per-loop shared driver in `_connection` is created once and reused everywhere.
@@ -95,20 +112,22 @@ def _global_config() -> dict:
 def _resolve_uri() -> str:
     """Resolve the Memgraph bolt URI the same way the backends will.
 
-    Honours ``MEMGRAPH_URI`` directly, or builds one from ``MEMGRAPH_HOST`` /
-    ``MEMGRAPH_PORT`` as a convenience, then exports ``MEMGRAPH_URI`` so the
-    storage backends (which only read ``MEMGRAPH_URI``) see the same target.
+    The storage backends resolve their connection through the toolbox's
+    ``memgraph_env`` (canonical ``MEMGRAPH_URL`` name). Honour ``MEMGRAPH_URL``
+    directly, or build one from ``MEMGRAPH_HOST`` / ``MEMGRAPH_PORT`` as a
+    convenience, then export ``MEMGRAPH_URL`` so the storage backends see the
+    same target.
     """
-    uri = os.environ.get("MEMGRAPH_URI")
+    uri = os.environ.get("MEMGRAPH_URL")
     if not uri:
         host = os.environ.get("MEMGRAPH_HOST")
         port = os.environ.get("MEMGRAPH_PORT")
         if host:
             uri = f"bolt://{host}:{port or 7687}"
     if uri:
-        os.environ["MEMGRAPH_URI"] = uri
+        os.environ["MEMGRAPH_URL"] = uri
     else:
-        uri = read_connection_config()[0]
+        uri = _connection_settings()[0]
     return uri
 
 
@@ -116,7 +135,7 @@ def _resolve_uri() -> str:
 def memgraph_uri() -> str:
     """Skip the whole module unless a live Memgraph is reachable (session scope)."""
     uri = _resolve_uri()
-    _uri, username, password, database = read_connection_config()
+    _uri, username, password, database = _connection_settings()
 
     try:
         from neo4j import GraphDatabase
@@ -142,7 +161,7 @@ def vector_search_supported(memgraph_uri: str) -> bool:
     """Skip vector tests if the server has no ``vector_search`` module."""
     from neo4j import GraphDatabase
 
-    _uri, username, password, database = read_connection_config()
+    _uri, username, password, database = _connection_settings()
     driver = GraphDatabase.driver(memgraph_uri, auth=(username, password))
     try:
         with driver.session(database=database) as session:
