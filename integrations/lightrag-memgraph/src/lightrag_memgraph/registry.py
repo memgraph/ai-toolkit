@@ -1,15 +1,11 @@
 """Register the Memgraph KV / vector / doc-status backends with LightRAG.
 
-LightRAG resolves storage backends by name through the registry in
-``lightrag.kg`` (``STORAGES``, ``STORAGE_IMPLEMENTATIONS`` and
-``STORAGE_ENV_REQUIREMENTS``) and rejects any name that is not listed there via
-``verify_storage_implementation``. Because LightRAG imports built-in backends
-with ``package="lightrag"``, out-of-tree backends must be registered with an
-ABSOLUTE module path (``lightrag_memgraph.*``), which LightRAG's
-``lazy_external_import`` imports unchanged.
+LightRAG only accepts storage backends listed in its ``lightrag.kg`` registry,
+and imports out-of-tree backends by an ABSOLUTE module path (built-ins load
+with ``package="lightrag"``, so a relative path wouldn't resolve).
 
-Call :func:`register_memgraph_storage` once before constructing ``LightRAG``.
-It is idempotent and safe to call multiple times.
+Call :func:`register_memgraph_storage` once before constructing ``LightRAG``;
+it's idempotent.
 """
 
 from __future__ import annotations
@@ -24,33 +20,25 @@ _STORAGES = {
     "MemgraphDocStatusStorage": ("DOC_STATUS_STORAGE", "lightrag_memgraph.docstatus_impl"),
 }
 
-# The canonical toolbox connection env var (the rest of ai-toolkit and our
-# storages resolve connection config from MEMGRAPH_URL via memgraph_env).
+# Canonical toolbox connection env var; storages resolve it via memgraph_env.
 _ENV_REQUIREMENTS = ["MEMGRAPH_URL"]
 
 _registered = False
 
 
 def register_memgraph_storage() -> None:
-    """Patch LightRAG's storage registry so it accepts the Memgraph backends by name.
-
-    Idempotent: repeated calls are no-ops after the first successful registration.
-    """
+    """Patch LightRAG's storage registry to accept the Memgraph backends by name. Idempotent."""
     global _registered
     if _registered:
         return
 
     for name, (storage_type, module_path) in _STORAGES.items():
-        # 1) Map the storage name to its (absolute) module path for lazy import.
-        _kg.STORAGES[name] = module_path
+        _kg.STORAGES[name] = module_path  # absolute module path for lazy import
 
-        # 2) Declare it as a compatible implementation of its storage type so
-        #    verify_storage_implementation() accepts the name.
         implementations = _kg.STORAGE_IMPLEMENTATIONS[storage_type]["implementations"]
         if name not in implementations:
-            implementations.append(name)
+            implementations.append(name)  # accepted by verify_storage_implementation()
 
-        # 3) Declare its required environment variables.
         _kg.STORAGE_ENV_REQUIREMENTS[name] = list(_ENV_REQUIREMENTS)
 
     _registered = True

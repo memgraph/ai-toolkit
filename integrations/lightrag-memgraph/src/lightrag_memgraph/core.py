@@ -12,17 +12,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def _bridge_lightrag_env_names() -> None:
-    """Bridge the canonical toolbox env names to LightRAG's graph-backend names.
-
-    The toolbox -- and this integration's KV/vector/doc-status storages via
-    ``AsyncMemgraph``/``memgraph_env`` -- read the canonical ``MEMGRAPH_URL`` /
-    ``MEMGRAPH_USER``. LightRAG's bundled graph backend
-    (``lightrag.kg.memgraph_impl.MemgraphStorage``) instead reads
-    ``MEMGRAPH_URI`` / ``MEMGRAPH_USERNAME``. Mirror the canonical names onto the
-    LightRAG names (only when the LightRAG name is unset, so an explicit override
-    is never clobbered) so the graph backend and our storages resolve to the
-    SAME instance from a single env set. ``MEMGRAPH_PASSWORD`` /
-    ``MEMGRAPH_DATABASE`` already share names, so no bridge is needed for them.
+    """Mirror MEMGRAPH_URL/USER onto LightRAG's graph-backend names (MEMGRAPH_URI/USERNAME) so
+    both resolve to the same instance from one env set. Never overwrites an explicit override.
     """
     if "MEMGRAPH_URL" in os.environ and "MEMGRAPH_URI" not in os.environ:
         os.environ["MEMGRAPH_URI"] = os.environ["MEMGRAPH_URL"]
@@ -38,19 +29,14 @@ class MemgraphLightRAGWrapper:
     ):
         """Wrap LightRAG configured to use Memgraph as its storage backend.
 
-        LightRAG's entire working state -- graph, key/value, vector and
-        doc-status stores -- is persisted in Memgraph. Vectors always go to
-        Memgraph's native vector index, so a real ``embedding_func`` is required
-        (there is no local vector-database fallback and no
-        embedding-disabled mode).
+        Vectors always go to Memgraph's native vector index, so a real
+        ``embedding_func`` is required.
 
         Args:
             log_level: Logging level for LightRAG's loggers.
-            full_memgraph_persistence: If True (default), LightRAG's KV, vector
-                and doc-status stores are persisted to Memgraph in addition to
-                the graph. If False, only the graph is stored in Memgraph and
-                the other stores use LightRAG's file-based defaults in
-                ``working_dir``.
+            full_memgraph_persistence: If True (default), KV/vector/doc-status
+                also persist to Memgraph. If False, only the graph does, and
+                the rest use LightRAG's file-based defaults in `working_dir`.
         """
         self.log_level = log_level
         self.full_memgraph_persistence = full_memgraph_persistence
@@ -61,15 +47,9 @@ class MemgraphLightRAGWrapper:
     async def initialize(self, **lightrag_kwargs) -> None:
         setup_logger("lightrag", level=self.log_level)
         logging.getLogger("pikepdf").setLevel(self.log_level)
-        # Bridge the canonical toolbox env names to LightRAG's graph-backend
-        # names so the built-in MemgraphStorage and our storages hit the same
-        # instance from a single env set.
         _bridge_lightrag_env_names()
         if self.full_memgraph_persistence:
-            # Register the Memgraph KV/vector/doc-status backends so LightRAG
-            # accepts them by name, then route every store to Memgraph. Vectors
-            # always persist to Memgraph's native vector index (a real embedding
-            # function is required). Explicit caller overrides win.
+            # Route every store to Memgraph; explicit caller overrides still win.
             register_memgraph_storage()
             lightrag_kwargs.setdefault("kv_storage", "MemgraphKVStorage")
             lightrag_kwargs.setdefault("doc_status_storage", "MemgraphDocStatusStorage")

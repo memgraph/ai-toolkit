@@ -1,14 +1,10 @@
 """Memgraph-backed vector storage for LightRAG.
 
 Persists LightRAG's vector namespaces (``entities``, ``relationships``,
-``chunks``) as nodes in Memgraph and searches them with Memgraph's native
-vector index (``CREATE VECTOR INDEX`` + ``CALL vector_search.search``) instead
-of a local vector-database file.
-
-Each record is one node labelled ``LightRAGVector_<workspace>_<namespace>`` keyed
-by an ``id`` property. The declared ``meta_fields`` plus ``content`` are stored
-as node properties and the embedding is stored on an ``embedding`` property
-covered by a cosine vector index.
+``chunks``) as nodes searched via Memgraph's native vector index
+(``CREATE VECTOR INDEX`` + ``CALL vector_search.search``). Each record is a
+node labelled ``LightRAGVector_<workspace>_<namespace>``, keyed by ``id``,
+with the embedding on an ``embedding`` property.
 """
 
 from __future__ import annotations
@@ -31,8 +27,7 @@ from ._connection import (
     sanitize_label,
 )
 
-# Default upper bound on the number of vectors an index may hold. Memgraph
-# requires a capacity to be declared at index-creation time.
+# Memgraph requires a capacity at index-creation time.
 DEFAULT_VECTOR_INDEX_CAPACITY = 1_000_000
 
 
@@ -84,12 +79,7 @@ class MemgraphVectorStorage(BaseVectorStorage):
         pass
 
     async def _ensure_vector_index(self, session) -> None:
-        """Create the cosine vector index once per instance and cache that fact.
-
-        Memgraph does not raise when the index already exists, so without the
-        cached flag this ran (and logged "Created...") on every single
-        ``upsert()`` call instead of just the first one.
-        """
+        """Create the vector index once; cached since Memgraph doesn't raise if it already exists."""
         if self._index_ready:
             return
         query = (
@@ -163,34 +153,15 @@ class MemgraphVectorStorage(BaseVectorStorage):
             embedding = np.asarray(embedded[0], dtype=float).tolist()
 
         driver = await get_driver()
-        # `default_access_mode="READ"` is only a read/write routing hint (for
-        # clustered/replica setups); on a single instance it is a no-op and it
-        # does NOT change the vector index's isolation -- see below.
+        # default_access_mode="READ" is just a routing hint; it doesn't affect the vector index's isolation.
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             try:
-                # Memgraph's vector_search.search takes the index name as a
-                # string-literal argument (see the toolbox NodeVectorSearchTool
-                # and unstructured2graph's graphrag example), not a query
-                # parameter. `_index_name` is sanitized to [A-Za-z0-9_] by
-                # `sanitize_index_name`, so interpolating it here is injection
-                # safe. The procedure yields `similarity` (cosine, higher =
-                # closer) alongside `node`/`distance`; we filter and order on it.
-                #
-                # The native vector index always operates at READ_UNCOMMITTED
-                # (independent of the session/transaction isolation) and GC of
-                # deleted entries is deferred, so vector_search.search can return
-                # a handle to a node that is already deleted. Reading a property
-                # off such a dangling handle raises 50N42 "Trying to get a
-                # property from a deleted object", which would abort the whole
-                # search and drop live matches too. Our defense is two-sided:
-                # `delete`/`delete_entity_relation`/`drop` null the embedding
-                # before DETACH DELETE so the entry is evicted deterministically,
-                # and here we NEVER read a property off the raw `node` handle --
-                # we re-MATCH the live nodes by identity and read properties only
-                # off those. A dangling candidate matches no live node and is
-                # silently excluded. Identity comparison (`live IN cand_nodes` /
-                # `p.node = live`) touches no properties, so it cannot raise on a
-                # deleted handle.
+                # Memgraph's vector index runs at READ_UNCOMMITTED with deferred GC, so
+                # vector_search.search can hand back a handle to an already-deleted node --
+                # reading a property off it raises 50N42. We never touch that raw `node`
+                # handle: re-MATCH by identity and read properties only off live nodes, so
+                # a dangling candidate is silently excluded instead of erroring.
+                # Index name is a sanitized string literal (not accepted as a query param).
                 result = await session.run(
                     f"""
                     CALL vector_search.search("{self._index_name}", $top_k, $embedding)
@@ -211,11 +182,7 @@ class MemgraphVectorStorage(BaseVectorStorage):
                 records = [record async for record in result]
                 await result.consume()
             except Exception as e:
-                # The re-MATCH above means a stale/dangling index entry can never
-                # reach this handler, so anything caught here is a genuine
-                # failure (missing vector_search module, lost connection, ...).
-                # Surface it instead of masking it as an empty result set, which
-                # would silently hide real errors from callers.
+                # Real failure, not a dangling index entry (those are excluded above) -- surface it.
                 logger.error(f"[{self.workspace}] Vector search failed for {self.namespace}: {e}")
                 raise
 
@@ -292,11 +259,8 @@ class MemgraphVectorStorage(BaseVectorStorage):
             return
         driver = await get_driver()
         async with driver.session(database=get_database()) as session:
-            # Clear the indexed embedding property before deleting the node so
-            # the entry is evicted from the native vector index. A bare
-            # DETACH DELETE removes the node from the graph but can leave a
-            # dangling entry in the HNSW index, which vector_search.search would
-            # then return as a handle to a deleted object (50N42).
+            # Null the embedding before DETACH DELETE so the entry leaves the vector index
+            # (a bare delete would leave a dangling entry -- see query()'s 50N42 note).
             await (
                 await session.run(
                     f"""
@@ -316,8 +280,7 @@ class MemgraphVectorStorage(BaseVectorStorage):
     async def delete_entity_relation(self, entity_name: str) -> None:
         driver = await get_driver()
         async with driver.session(database=get_database()) as session:
-            # Null the embedding first (see `delete`) so these nodes leave the
-            # vector index rather than lingering as dangling index entries.
+            # See delete() -- null the embedding first so these leave the vector index.
             await (
                 await session.run(
                     f"""
@@ -334,9 +297,7 @@ class MemgraphVectorStorage(BaseVectorStorage):
         try:
             driver = await get_driver()
             async with driver.session(database=get_database()) as session:
-                # Null the embeddings first so nodes leave the vector index even
-                # if the subsequent DROP VECTOR INDEX fails for any reason,
-                # avoiding dangling index entries pointing at deleted nodes.
+                # Null embeddings first in case DROP VECTOR INDEX below fails (see delete()).
                 await (await session.run(f"MATCH (n:`{self._label}`) SET n.embedding = NULL DETACH DELETE n")).consume()
                 try:
                     await (await session.run(f"DROP VECTOR INDEX {self._index_name}")).consume()

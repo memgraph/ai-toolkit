@@ -170,17 +170,11 @@ class Memgraph:
 
 
 class AsyncMemgraph:
-    """
-    Async Memgraph client mirroring :class:`Memgraph`.
+    """Async Memgraph client mirroring :class:`Memgraph` (same env vars, defaults, query semantics).
 
-    Uses ``neo4j.AsyncGraphDatabase`` so callers running inside an event loop can
-    reuse the same connection contract (env vars, defaults and ``query``
-    semantics) as the sync client. Connectivity is intentionally NOT verified in
-    ``__init__`` (the async driver cannot be awaited there); call
-    :meth:`verify_connectivity` explicitly when a live check is needed.
-
-    The raw ``driver`` and ``database`` are exposed as public attributes so
-    callers that need to open their own async sessions can do so.
+    Connectivity is NOT verified in ``__init__`` (can't await there) -- call
+    :meth:`verify_connectivity` explicitly. ``driver``/``database`` are public
+    for callers that need their own async sessions.
     """
 
     DEFAULT_USER_AGENT = "memgraph-toolbox"

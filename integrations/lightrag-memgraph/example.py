@@ -4,12 +4,8 @@ import shutil
 import time
 import traceback
 
-# OpenAI-only so this minimal example is self-consistent and needs a single API
-# key (OPENAI_API_KEY): the LLM and the embedder come from the same provider.
-# Alternative: keep Claude as the LLM (lightrag.llm.anthropic.anthropic_complete)
-# but pair it with a SEPARATE embedder -- Anthropic ships no embeddings API -- so
-# openai_embed or Voyage (lightrag.llm.anthropic.anthropic_embed) supplies the
-# embedding_func. See the README's "Using Anthropic (Claude)" section.
+# OpenAI-only for a single-API-key example. To use Claude instead, see the
+# README's "Using Anthropic (Claude)" section (needs a separate embedder).
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
 
 from lightrag_memgraph import MemgraphLightRAGWrapper

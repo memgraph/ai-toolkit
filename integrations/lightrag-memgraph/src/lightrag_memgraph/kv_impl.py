@@ -1,14 +1,9 @@
 """Memgraph-backed key/value storage for LightRAG.
 
-Persists LightRAG's KV namespaces (``full_docs``, ``text_chunks``,
-``llm_response_cache`` ...) as nodes in Memgraph instead of local JSON files,
-so the whole LightRAG working state lives in the same database as the graph.
-
-Each record is one node labelled ``LightRAGKV_<workspace>_<namespace>`` keyed by
-an ``id`` property, with the full value dict stored as a JSON string in a
-``data`` property. The label is namespaced by workspace + namespace so it never
-collides with the graph backend's entity nodes (which use the bare workspace
-label).
+Each record is a node labelled ``LightRAGKV_<workspace>_<namespace>``, keyed
+by ``id``, with the value dict stored as JSON in a ``data`` property.
+Namespacing the label keeps it from colliding with the graph backend's
+entity nodes (which use the bare workspace label).
 """
 
 from __future__ import annotations
@@ -82,8 +77,7 @@ class MemgraphKVStorage(BaseKVStorage):
             return self._decode(id, record["data"] if record else None)
 
     async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
-        # Contract mirrors JsonKVStorage: result list is aligned with `ids`,
-        # with None in the slot of any id that does not exist.
+        # Aligned with `ids`; None in the slot of any id that doesn't exist (mirrors JsonKVStorage).
         if not ids:
             return []
         driver = await get_driver()
@@ -127,8 +121,7 @@ class MemgraphKVStorage(BaseKVStorage):
         if not data:
             return
         current_time = int(time.time())
-        # Determine which keys already exist so we can set create_time only for
-        # new records (matching JsonKVStorage timestamp semantics).
+        # create_time only set for genuinely new records (matches JsonKVStorage semantics).
         existing = set(data.keys()) - await self.filter_keys(set(data.keys()))
         entries = []
         for k, v in data.items():

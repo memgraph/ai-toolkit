@@ -1,20 +1,11 @@
 """Shared Memgraph connection helpers for the LightRAG storage backends.
 
-All three storage backends (KV, vector, doc-status) reuse a single async Bolt
-driver per running event loop instead of opening one driver per storage
-instance or per call. The driver comes from
-``memgraph_toolbox.api.memgraph.AsyncMemgraph`` so this integration shares the
-toolbox's connection contract instead of maintaining a bespoke driver.
-
-Connection settings are owned entirely by the toolbox: ``AsyncMemgraph`` is
-constructed with no explicit connection arguments and resolves
-``MEMGRAPH_URL`` / ``MEMGRAPH_USER`` / ``MEMGRAPH_PASSWORD`` /
-``MEMGRAPH_DATABASE`` through ``memgraph_env`` (the single source of truth).
-These are the canonical toolbox names. LightRAG's bundled graph backend
-(``lightrag.kg.memgraph_impl.MemgraphStorage``) uses the alternative names
-``MEMGRAPH_URI`` / ``MEMGRAPH_USERNAME``; that naming difference is bridged in
-exactly one place (``core.py``), so this module does not read the LightRAG
-aliases itself.
+KV, vector and doc-status storages share one async driver per event loop (via
+``memgraph_toolbox.api.memgraph.AsyncMemgraph``) instead of one per call.
+Connection config comes entirely from the toolbox's ``memgraph_env``
+(``MEMGRAPH_URL``/``USER``/``PASSWORD``/``DATABASE``); LightRAG's graph
+backend uses different names (``MEMGRAPH_URI``/``USERNAME``), bridged once in
+``core.py``.
 """
 
 from __future__ import annotations
@@ -30,10 +21,8 @@ from memgraph_toolbox.api.memgraph import AsyncMemgraph, memgraph_env
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
 
-# One shared AsyncMemgraph client per event loop, keyed by id(loop). Reusing the
-# driver across storages avoids the overhead of a driver-per-call and keeps a
-# single connection pool, while keying by loop id keeps async test suites (which
-# spin up a fresh loop per test) from reusing a driver bound to a closed loop.
+# Keyed by event-loop id so tests spinning up a fresh loop per test don't
+# reuse a driver bound to a closed loop.
 _clients: dict[int, AsyncMemgraph] = {}
 
 
@@ -42,9 +31,6 @@ def _get_client() -> AsyncMemgraph:
     loop_id = id(asyncio.get_running_loop())
     client = _clients.get(loop_id)
     if client is None:
-        # No explicit connection args: the toolbox resolves the canonical
-        # MEMGRAPH_URL/USER/PASSWORD/DATABASE via memgraph_env, the single
-        # source of truth for connection config.
         client = AsyncMemgraph(user_agent="lightrag-memgraph")
         _clients[loop_id] = client
         logger.info(f"Opened shared Memgraph driver for LightRAG storages at {memgraph_env()['MEMGRAPH_URL']}")
@@ -75,19 +61,10 @@ async def close_driver() -> None:
 
 
 def sanitize_label(value: str) -> str:
-    """Escape a value for safe use as a backtick-quoted Cypher label identifier.
-
-    Backticks are doubled to prevent Cypher injection; all other characters are
-    preserved. The result is intended to be wrapped in backticks, e.g.
-    ``MATCH (n:`{label}`)``. Mirrors ``MemgraphStorage._get_workspace_label``.
-    """
+    """Escape for safe use as a backtick-quoted Cypher label (doubles backticks to prevent injection)."""
     return value.strip().replace("`", "``")
 
 
 def sanitize_index_name(value: str) -> str:
-    """Coerce a value into a bare (unquoted) identifier for a vector index name.
-
-    Memgraph vector-index names are unquoted identifiers, so every character
-    outside ``[A-Za-z0-9_]`` is replaced with an underscore.
-    """
+    """Coerce into a bare identifier: Memgraph vector-index names are unquoted, so replace anything outside [A-Za-z0-9_]."""
     return re.sub(r"[^A-Za-z0-9_]", "_", value)

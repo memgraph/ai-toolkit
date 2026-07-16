@@ -1,12 +1,9 @@
 """Memgraph-backed document-status storage for LightRAG.
 
-Persists LightRAG's ``doc_status`` namespace as nodes in Memgraph instead of a
-local JSON file. Each document is one node labelled
-``LightRAGDocStatus_<workspace>`` keyed by an ``id`` property. The full status
-dict is stored as a JSON string in a ``data`` property, while the fields needed
-for filtering / sorting (``status``, ``track_id``, ``file_path``,
-``created_at``, ``updated_at``) are also stored as top-level node properties and
-indexed.
+Each document is a node labelled ``LightRAGDocStatus_<workspace>``, keyed by
+``id``. The full status dict is JSON in a ``data`` property; filter/sort
+fields (``status``, ``track_id``, ``file_path``, ``created_at``,
+``updated_at``) are also promoted to indexed top-level properties.
 """
 
 from __future__ import annotations
@@ -195,8 +192,7 @@ class MemgraphDocStatusStorage(DocStatusStorage):
         return counts
 
     async def get_all_status_counts(self) -> dict[str, int]:
-        # Mirror the reference impls (Json/Redis/Mongo/OpenSearch): include an
-        # "all" key with the grand total, which the status-counts API relies on.
+        # "all" grand total: other DocStatusStorage impls include it and the status-counts API relies on it.
         counts = await self.get_status_counts()
         counts["all"] = sum(counts.values())
         return counts
@@ -256,8 +252,6 @@ class MemgraphDocStatusStorage(DocStatusStorage):
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
-        # Normalize single- and multi-status filters into a set of status
-        # values (mirrors JsonDocStatusStorage / DocStatusStorage helper).
         status_values = self.resolve_status_filter_values(
             status_filter=status_filter,
             status_filters=status_filters,
@@ -327,12 +321,7 @@ class MemgraphDocStatusStorage(DocStatusStorage):
         return json.loads(record["data"])
 
     async def get_doc_by_file_basename(self, basename: str) -> tuple[str, dict[str, Any]] | None:
-        """Find a record whose canonical file_path basename matches (exact match).
-
-        Mirrors JsonDocStatusStorage: callers pass an already-canonical
-        basename, the stored ``file_path`` is compared exactly, empty input and
-        the ``"unknown_source"`` sentinel return None.
-        """
+        """Exact match on file_path. Mirrors JsonDocStatusStorage: empty input / "unknown_source" return None."""
         if not basename or basename == "unknown_source":
             return None
         driver = await get_driver()
@@ -348,12 +337,7 @@ class MemgraphDocStatusStorage(DocStatusStorage):
         return record["id"], json.loads(record["data"])
 
     async def get_doc_by_content_hash(self, content_hash: str) -> tuple[str, dict[str, Any]] | None:
-        """Find a record whose ``content_hash`` field matches (exact match).
-
-        ``content_hash`` is promoted to an indexed top-level node property (see
-        ``_INDEXED_FIELDS``) so this lookup uses the index. Empty input returns
-        None, mirroring JsonDocStatusStorage.
-        """
+        """Exact match on the indexed content_hash property. Empty input returns None."""
         if not content_hash:
             return None
         driver = await get_driver()
