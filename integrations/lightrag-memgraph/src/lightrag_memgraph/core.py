@@ -1,46 +1,59 @@
 import logging
 import os
 
-import numpy as np
 from lightrag import LightRAG
 from lightrag.kg.shared_storage import initialize_pipeline_status
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
-from lightrag.utils import EmbeddingFunc, setup_logger
+from lightrag.utils import setup_logger
+
+from .registry import register_memgraph_storage
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# Read from MEMGRAPH_URL (consistent with memgraph-toolbox) and set MEMGRAPH_URI for LightRAG
-MEMGRAPH_URL = os.getenv("MEMGRAPH_URL", "bolt://localhost:7687")
-os.environ["MEMGRAPH_URI"] = MEMGRAPH_URL
 
 
-def _dummy_embedding_func(dim: int = 1) -> EmbeddingFunc:
-    """Build an EmbeddingFunc that returns constant embeddings (for disable_embeddings=True)."""
-
-    async def _dummy_embed_func(texts: list[str]) -> np.ndarray:
-        return np.ones((len(texts), dim), dtype=float)
-
-    return EmbeddingFunc(embedding_dim=dim, func=_dummy_embed_func)
+def _bridge_lightrag_env_names() -> None:
+    """Mirror MEMGRAPH_URL/USER onto LightRAG's graph-backend names (MEMGRAPH_URI/USERNAME) so
+    both resolve to the same instance from one env set. Never overwrites an explicit override.
+    """
+    if "MEMGRAPH_URL" in os.environ and "MEMGRAPH_URI" not in os.environ:
+        os.environ["MEMGRAPH_URI"] = os.environ["MEMGRAPH_URL"]
+    if "MEMGRAPH_USER" in os.environ and "MEMGRAPH_USERNAME" not in os.environ:
+        os.environ["MEMGRAPH_USERNAME"] = os.environ["MEMGRAPH_USER"]
 
 
 class MemgraphLightRAGWrapper:
     def __init__(
         self,
         log_level: str = "INFO",
-        disable_embeddings: bool = False,
+        full_memgraph_persistence: bool = True,
     ):
+        """Wrap LightRAG configured to use Memgraph as its storage backend.
+
+        Vectors always go to Memgraph's native vector index, so a real
+        ``embedding_func`` is required.
+
+        Args:
+            log_level: Logging level for LightRAG's loggers.
+            full_memgraph_persistence: If True (default), KV/vector/doc-status
+                also persist to Memgraph. If False, only the graph does, and
+                the rest use LightRAG's file-based defaults in `working_dir`.
+        """
         self.log_level = log_level
-        self.disable_embeddings = disable_embeddings
+        self.full_memgraph_persistence = full_memgraph_persistence
         self.rag: LightRAG | None = None
 
     # https://github.com/HKUDS/LightRAG/blob/main/lightrag/lightrag.py
     # https://github.com/HKUDS/LightRAG/blob/main/lightrag/llm
     async def initialize(self, **lightrag_kwargs) -> None:
         setup_logger("lightrag", level=self.log_level)
-        logging.getLogger("nano-vectordb").setLevel(self.log_level)
         logging.getLogger("pikepdf").setLevel(self.log_level)
-        if self.disable_embeddings:
-            lightrag_kwargs["embedding_func"] = _dummy_embedding_func(dim=1)
-            lightrag_kwargs["vector_storage"] = "NanoVectorDBStorage"
+        _bridge_lightrag_env_names()
+        if self.full_memgraph_persistence:
+            # Route every store to Memgraph; explicit caller overrides still win.
+            register_memgraph_storage()
+            lightrag_kwargs.setdefault("kv_storage", "MemgraphKVStorage")
+            lightrag_kwargs.setdefault("doc_status_storage", "MemgraphDocStatusStorage")
+            lightrag_kwargs.setdefault("vector_storage", "MemgraphVectorStorage")
         if "working_dir" in lightrag_kwargs:
             working_dir = lightrag_kwargs["working_dir"]
             if not os.path.exists(working_dir):

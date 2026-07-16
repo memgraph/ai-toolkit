@@ -28,7 +28,7 @@ async def from_unstructured_with_prep():
     memgraph.query("MATCH (n) DETACH DELETE n;")
     create_index(memgraph, "Chunk", "hash")
 
-    lightrag_wrapper = MemgraphLightRAGWrapper(log_level="WARNING", disable_embeddings=True)
+    lightrag_wrapper = MemgraphLightRAGWrapper(log_level="WARNING")
     await lightrag_wrapper.initialize(working_dir=LIGHTRAG_DIR)
 
     await from_unstructured(
