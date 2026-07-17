@@ -146,6 +146,18 @@ class MemgraphVectorStorage(BaseVectorStorage):
         logger.debug(f"[{self.workspace}] Upserted {len(entries)} vectors to {self.namespace}")
 
     async def query(self, query: str, top_k: int, query_embedding: list[float] = None) -> list[dict[str, Any]]:
+        """Vector-search this namespace and return up to ``top_k`` live results.
+
+        Known Memgraph limitation: the native vector index is garbage-collected
+        on a delay after a node delete, so ``vector_search.search`` can still
+        hand back index entries for nodes that were already deleted (see the
+        inline comment below for how those are detected and excluded). Right
+        after a bulk delete this means ``query()`` may legitimately return
+        fewer than ``top_k`` -- or zero -- results even though the index
+        reports ``top_k`` hits. A warning is logged with both counts whenever
+        this happens, so callers can tell "nothing else matched" apart from
+        "results were dropped because of GC lag".
+        """
         if query_embedding is not None:
             embedding = np.asarray(query_embedding, dtype=float).tolist()
         else:
@@ -159,25 +171,22 @@ class MemgraphVectorStorage(BaseVectorStorage):
                 # Memgraph's vector index runs at READ_UNCOMMITTED with deferred GC, so
                 # vector_search.search can hand back a handle to an already-deleted node --
                 # reading a property off it raises 50N42. We never touch that raw `node`
-                # handle: re-MATCH by identity and read properties only off live nodes, so
-                # a dangling candidate is silently excluded instead of erroring.
+                # handle directly: re-MATCH each candidate by identity via OPTIONAL MATCH,
+                # so a dangling candidate comes back as a row with `id IS NULL` instead of
+                # erroring, and we can count + log it below instead of silently dropping it.
                 # Index name is a sanitized string literal (not accepted as a query param).
                 result = await session.run(
                     f"""
                     CALL vector_search.search("{self._index_name}", $top_k, $embedding)
                     YIELD node, similarity
-                    WITH collect(node) AS cand_nodes,
-                         collect({{node: node, similarity: similarity}}) AS cand_pairs
-                    MATCH (live:`{self._label}`)
-                    WHERE live IN cand_nodes
-                    WITH live, [p IN cand_pairs WHERE p.node = live | p.similarity][0] AS similarity
-                    WHERE similarity >= $threshold
-                    RETURN live.id AS id, similarity AS similarity, properties(live) AS props
-                    ORDER BY similarity DESC
+                    WITH collect({{node: node, similarity: similarity}}) AS cand_pairs
+                    UNWIND cand_pairs AS cp
+                    OPTIONAL MATCH (live:`{self._label}`) WHERE live = cp.node
+                    RETURN live.id AS id, cp.similarity AS similarity,
+                           CASE WHEN live IS NULL THEN NULL ELSE properties(live) END AS props
                     """,
                     top_k=int(top_k),
                     embedding=embedding,
-                    threshold=self.cosine_better_than_threshold,
                 )
                 records = [record async for record in result]
                 await result.consume()
@@ -186,8 +195,22 @@ class MemgraphVectorStorage(BaseVectorStorage):
                 logger.error(f"[{self.workspace}] Vector search failed for {self.namespace}: {e}")
                 raise
 
+        raw_hit_count = len(records)
+        live_records = [record for record in records if record["id"] is not None]
+        live_count = len(live_records)
+        if live_count != raw_hit_count:
+            logger.warning(
+                f"[{self.workspace}] vector_search.search returned {raw_hit_count} candidate(s) for "
+                f"{self.namespace} but only {live_count} were still live; "
+                f"{raw_hit_count - live_count} were excluded as GC-pending deletes"
+            )
+
+        threshold = self.cosine_better_than_threshold
+        live_records = [record for record in live_records if record["similarity"] >= threshold]
+        live_records.sort(key=lambda record: record["similarity"], reverse=True)
+
         output: list[dict[str, Any]] = []
-        for record in records:
+        for record in live_records:
             props = dict(record["props"])
             props.pop("embedding", None)
             created_at = props.pop("created_at", None)

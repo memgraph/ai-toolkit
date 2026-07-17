@@ -71,6 +71,19 @@ graph backend: `MEMGRAPH_URI` (or `MEMGRAPH_URL`, which the wrapper bridges to
 `MEMGRAPH_URI`), `MEMGRAPH_USERNAME`, `MEMGRAPH_PASSWORD`, `MEMGRAPH_DATABASE`
 and the optional `MEMGRAPH_WORKSPACE`.
 
+### Known limitations
+
+- **Vector search can under-return right after a bulk delete.** Memgraph's
+  native vector index is garbage-collected on a delay after a node delete, so
+  `CALL vector_search.search(...)` can still hand back index entries for nodes
+  that were already deleted. `MemgraphVectorStorage.query()` detects and
+  excludes these dead candidates, so a query issued shortly after a large
+  delete may legitimately return fewer than `top_k` (or zero) results even
+  though the index itself reports `top_k` hits. When this happens a warning
+  is logged (`vector_search.search returned N candidate(s) ... but only M
+  were still live`) so you can tell a genuine lack of matches apart from
+  GC-lag under-return.
+
 ### Opting out
 
 - `MemgraphLightRAGWrapper(full_memgraph_persistence=False)` keeps only the
@@ -127,7 +140,7 @@ https://platform.claude.com/docs/en/about-claude/models.
    `claude_3_sonnet_complete`, `claude_3_haiku_complete` (fixed older model
    IDs). For current models, use `anthropic_complete` with the desired
    `llm_model_name`.
-   
+
 3. **Embeddings**: Anthropic does not provide embeddings, and vectors always
 persist to Memgraph's native vector index, so a real `embedding_func` is
 required. Set `embedding_func` to another provider (e.g. `openai_embed` from
