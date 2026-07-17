@@ -11,7 +11,7 @@ class CypherTool(BaseTool):
 
     def __init__(self, db: Memgraph):
         super().__init__(
-            name="run_cypher",
+            name="run_cypher_query",
             description="Executes a Cypher query on a Memgraph database",
             input_schema={
                 "type": "object",
@@ -29,5 +29,7 @@ class CypherTool(BaseTool):
     def call(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
         """Execute the provided Cypher query and return the results."""
         query = arguments["query"]
-        result = self.db.query(query)
-        return result
+        try:
+            return self.db.query(query)
+        except Exception as e:
+            return [{"error": f"Failed to execute query: {e!s}"}]

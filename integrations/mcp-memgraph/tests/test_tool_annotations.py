@@ -5,20 +5,12 @@ import os
 
 import pytest
 
-
 READ_ONLY_TOOLS = {
     "list_databases",
-    "get_configuration",
-    "get_index",
-    "get_constraint",
-    "get_schema",
-    "get_storage",
-    "get_triggers",
-    "get_procedures",
-    "get_betweenness_centrality",
-    "get_page_rank",
-    "get_node_neighborhood",
-    "search_node_vectors",
+    "search_schema",
+    "get_node_schema",
+    "get_relationship_schema",
+    "get_enum_schema",
 }
 
 # Tools that must NOT be advertised as read-only
@@ -84,24 +76,22 @@ def test_non_readonly_tools_do_not_have_readonly_hint(tool_annotations_readonly_
     """Tools that mutate session state must not be advertised as read-only."""
     annotations = tool_annotations_readonly_mode.get(tool_name)
     read_only_hint = annotations.readOnlyHint if annotations is not None else None
-    assert read_only_hint is not True, (
-        f"Tool '{tool_name}' must not have readOnlyHint=True (it mutates session state)"
-    )
+    assert read_only_hint is not True, f"Tool '{tool_name}' must not have readOnlyHint=True (it mutates session state)"
 
 
-def test_run_query_is_readonly_when_mode_is_readonly(tool_annotations_readonly_mode):
-    """run_query must advertise readOnlyHint=True when MCP_READ_ONLY=true."""
-    annotations = tool_annotations_readonly_mode.get("run_query")
-    assert annotations is not None, "run_query has no annotations in read-only mode"
+def test_run_cypher_query_is_readonly_when_mode_is_readonly(tool_annotations_readonly_mode):
+    """run_cypher_query must advertise readOnlyHint=True when MCP_READ_ONLY=true."""
+    annotations = tool_annotations_readonly_mode.get("run_cypher_query")
+    assert annotations is not None, "run_cypher_query has no annotations in read-only mode"
     assert annotations.readOnlyHint is True, (
-        f"run_query should have readOnlyHint=True in read-only mode, got {annotations.readOnlyHint}"
+        f"run_cypher_query should have readOnlyHint=True in read-only mode, got {annotations.readOnlyHint}"
     )
 
 
-def test_run_query_is_not_readonly_when_writes_allowed(tool_annotations_readwrite_mode):
-    """run_query must not advertise readOnlyHint=True when MCP_READ_ONLY=false."""
-    annotations = tool_annotations_readwrite_mode.get("run_query")
+def test_run_cypher_query_is_not_readonly_when_writes_allowed(tool_annotations_readwrite_mode):
+    """run_cypher_query must not advertise readOnlyHint=True when MCP_READ_ONLY=false."""
+    annotations = tool_annotations_readwrite_mode.get("run_cypher_query")
     read_only_hint = annotations.readOnlyHint if annotations is not None else None
     assert read_only_hint is not True, (
-        f"run_query should not have readOnlyHint=True when writes are allowed, got {read_only_hint}"
+        f"run_cypher_query should not have readOnlyHint=True when writes are allowed, got {read_only_hint}"
     )

@@ -53,6 +53,15 @@ async def main():
 asyncio.run(main())
 ```
 
+> **Persistence:** `MemgraphLightRAGWrapper` now persists LightRAG's *full*
+> working state into Memgraph by default — the entity/relationship graph plus
+> the key/value store, vector store, and document-status store. The
+> `working_dir` argument is still accepted (and used as a fallback location for
+> any store not backed by Memgraph), but with the default settings the JSON
+> stores are no longer written there. See the
+> [lightrag-memgraph README](../integrations/lightrag-memgraph/README.md#storage--persistence)
+> for the label/index schema and opt-out flags.
+
 ## Key Features
 
 | Feature                  | Description                                                       |

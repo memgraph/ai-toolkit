@@ -5,17 +5,11 @@ from langchain_core.tools import BaseTool, BaseToolkit
 from pydantic import ConfigDict, Field
 
 from langchain_memgraph.tools import (
-    RunBetweennessCentralityTool,
-    RunNodeNeighborhoodTool,
-    RunNodeVectorSearchTool,
-    RunPageRankMemgraphTool,
+    RunEnumSchemaTool,
+    RunNodeSchemaTool,
     RunQueryTool,
-    RunShowConfigTool,
-    RunShowConstraintInfoTool,
-    RunShowIndexInfoTool,
-    RunShowSchemaInfoTool,
-    RunShowStorageInfoTool,
-    RunShowTriggersTool,
+    RunRelationshipSchemaTool,
+    RunSearchSchemaTool,
 )
 from memgraph_toolbox.api.memgraph import Memgraph
 
@@ -54,8 +48,11 @@ class MemgraphToolkit(BaseToolkit):
 
         .. code-block:: none
 
-            QueryMemgraphTool
-
+            RunQueryTool
+            RunSearchSchemaTool
+            RunNodeSchemaTool
+            RunRelationshipSchemaTool
+            RunEnumSchemaTool
 
     """
 
@@ -70,14 +67,8 @@ class MemgraphToolkit(BaseToolkit):
         """Return the list of tools in the toolkit."""
         return [
             RunQueryTool(db=self.db),
-            RunPageRankMemgraphTool(db=self.db),
-            RunBetweennessCentralityTool(db=self.db),
-            RunShowIndexInfoTool(db=self.db),
-            RunShowConfigTool(db=self.db),
-            RunShowSchemaInfoTool(db=self.db),
-            RunShowStorageInfoTool(db=self.db),
-            RunShowTriggersTool(db=self.db),
-            RunShowConstraintInfoTool(db=self.db),
-            RunNodeNeighborhoodTool(db=self.db),
-            RunNodeVectorSearchTool(db=self.db),
+            RunSearchSchemaTool(db=self.db),
+            RunNodeSchemaTool(db=self.db),
+            RunRelationshipSchemaTool(db=self.db),
+            RunEnumSchemaTool(db=self.db),
         ]

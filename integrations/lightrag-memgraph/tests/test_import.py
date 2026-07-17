@@ -16,7 +16,7 @@ def test_wrapper_instantiation():
     assert wrapper is not None
     assert wrapper.rag is None
     assert wrapper.log_level == "INFO"
-    assert wrapper.disable_embeddings is False
+    assert wrapper.full_memgraph_persistence is True
 
 
 def test_wrapper_with_custom_params():
@@ -25,7 +25,7 @@ def test_wrapper_with_custom_params():
 
     wrapper = MemgraphLightRAGWrapper(
         log_level="DEBUG",
-        disable_embeddings=True,
+        full_memgraph_persistence=False,
     )
     assert wrapper.log_level == "DEBUG"
-    assert wrapper.disable_embeddings is True
+    assert wrapper.full_memgraph_persistence is False

@@ -5,6 +5,10 @@ This package provides a wrapper around LightRAG that uses Memgraph as the graph 
 """
 
 from .core import MemgraphLightRAGWrapper
+from .docstatus_impl import MemgraphDocStatusStorage
+from .kv_impl import MemgraphKVStorage
+from .registry import register_memgraph_storage
+from .vector_impl import MemgraphVectorStorage
 
 
 # Patch lightrag.llm.anthropic for current Anthropic SDK:
@@ -119,4 +123,10 @@ def _patch_anthropic() -> None:
 
 _patch_anthropic()
 
-__all__ = ["MemgraphLightRAGWrapper"]
+__all__ = [
+    "MemgraphDocStatusStorage",
+    "MemgraphKVStorage",
+    "MemgraphLightRAGWrapper",
+    "MemgraphVectorStorage",
+    "register_memgraph_storage",
+]

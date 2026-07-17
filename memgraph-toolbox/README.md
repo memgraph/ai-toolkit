@@ -10,17 +10,11 @@ They are made to be easily called from other frameworks such as
 
 Below is a list of tools included in the toolbox, along with their descriptions:
 
-1. `ShowTriggersTool` - Shows [trigger](https://memgraph.com/docs/fundamentals/triggers) information from a Memgraph database.
-2. `ShowStorageInfoTool` - Shows storage information from a Memgraph database.
-3. `ShowSchemaInfoTool` - Shows [schema](https://memgraph.com/docs/querying/schema) information from a Memgraph database.
-4. `PageRankTool` - Calculates [PageRank](https://memgraph.com/docs/advanced-algorithms/available-algorithms/pagerank) on a graph in Memgraph.
-5. `BetweennessCentralityTool` - Calculates [betweenness centrality](https://memgraph.com/docs/advanced-algorithms/available-algorithms/betweenness_centrality) for nodes in a graph.
-6. `ShowIndexInfoTool` - Shows [index](https://memgraph.com/docs/fundamentals/indexes) information from a Memgraph database.
-7. `CypherTool` - Executes arbitrary [Cypher queries](https://memgraph.com/docs/querying) on a Memgraph database.
-8. `ShowConstraintInfoTool` - Shows [constraint](https://memgraph.com/docs/fundamentals/constraints) information from a Memgraph database.
-9. `ShowConfigTool` - Shows [configuration](https://memgraph.com/docs/database-management/configuration) information from a Memgraph database.
-10. `NodeVectorSearchTool` - Searches the most similar nodes using the Memgraph's [vector search](https://memgraph.com/docs/querying/vector-search).
-11. `NodeNeighborhoodTool` - Searches for the data attached to a given node using Memgraph's [deep-path traversals](https://memgraph.com/docs/advanced-algorithms/deep-path-traversal).
+1. `CypherTool` - Executes arbitrary [Cypher queries](https://memgraph.com/docs/querying) on a Memgraph database.
+2. `SearchSchemaTool` - Searches the entire graph [schema](https://memgraph.com/docs/querying/schema) (nodes, relationships and enums) by a regex pattern.
+3. `NodeSchemaTool` - Returns the full [schema](https://memgraph.com/docs/querying/schema) definition of a node by its labels, including properties, indexes, constraints, and connected relationships.
+4. `RelationshipSchemaTool` - Returns the full [schema](https://memgraph.com/docs/querying/schema) definition of a relationship by its type and connected node labels, including properties and indexes.
+5. `EnumSchemaTool` - Returns the [schema](https://memgraph.com/docs/querying/schema) definition of an enum by its name, including its values.
 
 ## Usage
 
@@ -33,7 +27,6 @@ tool:
 Example:
 
 ```python
-from memgraph_toolbox.tools.trigger import ShowTriggersTool
 from memgraph_toolbox.api.memgraph import Memgraph
 from memgraph_toolbox.memgraph_toolbox import MemgraphToolbox
 
@@ -45,10 +38,15 @@ toolbox = MemgraphToolbox(db)
 for tool in toolbox.get_all_tools():
     print(f"Tool Name: {tool.name}, Description: {tool.description}")
 
-# Use the ShowTriggersTool
-tool = ShowTriggersTool(db)
-triggers = tool.call({})
-print(triggers)
+# Run a Cypher query
+cypher_tool = toolbox.get_tool("run_cypher_query")
+result = cypher_tool.call({"query": "MATCH (n) RETURN n LIMIT 5"})
+print(result)
+
+# Get the schema definition of a node
+node_schema_tool = toolbox.get_tool("get_node_schema")
+result = node_schema_tool.call({"node_labels": ["Person"]})
+print(result)
 ```
 
 ## Installation
@@ -89,7 +87,7 @@ pip install 'memgraph-toolbox[client,evaluations,test]'
 
 - Python 3.10+
 - Running [Memgraph instance](https://memgraph.com/docs/getting-started)
-- Memgraph [MAGE library](https://memgraph.com/docs/advanced-algorithms/install-mage) (for certain tools like `pagerank` and `run_betweenness_centrality`)
+- _(Optional)_ Memgraph [MAGE library](https://memgraph.com/docs/advanced-algorithms/install-mage) (for certain algorithms like pagerank and betweenness_centrality)
 
 ## Contributing
 
