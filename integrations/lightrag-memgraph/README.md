@@ -71,20 +71,6 @@ graph backend: `MEMGRAPH_URI` (or `MEMGRAPH_URL`, which the wrapper bridges to
 `MEMGRAPH_URI`), `MEMGRAPH_USERNAME`, `MEMGRAPH_PASSWORD`, `MEMGRAPH_DATABASE`
 and the optional `MEMGRAPH_WORKSPACE`.
 
-### Vector search under concurrent deletes
-
-Memgraph's native vector index operates at `READ_UNCOMMITTED` isolation by
-design (see the
-[vector search docs](https://memgraph.com/docs/querying/vector-search)), so
-while a *concurrent* transaction is deleting matching nodes but hasn't
-committed yet, `CALL vector_search.search(...)` can still hand back those
-nodes as candidates. `MemgraphVectorStorage.query()` detects and excludes any
-such candidate, so a query that races a concurrent delete may momentarily
-return fewer than `top_k` (or zero) results even though the index itself
-reports `top_k` hits -- once that delete commits, this no longer happens.
-When it does happen a warning is logged (`vector_search.search returned N
-candidate(s) ... but only M were still live`) so you can tell a genuine lack
-of matches apart from a concurrent delete in flight.
 
 ### Opting out
 
