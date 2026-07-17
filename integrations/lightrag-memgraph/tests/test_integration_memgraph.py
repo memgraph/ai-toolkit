@@ -23,6 +23,7 @@ tests actually run there.
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 
@@ -34,6 +35,7 @@ from lightrag.utils import EmbeddingFunc
 
 from lightrag_memgraph._connection import (
     close_driver,
+    get_database,
     get_driver,
 )
 from lightrag_memgraph.docstatus_impl import MemgraphDocStatusStorage
@@ -439,5 +441,55 @@ async def test_vector_respects_threshold(shared_driver, vector_search_supported,
         # cos(cat, kitten) = 0.8 < 0.95, so only the exact match survives.
         results = await store.query("cat", top_k=4)
         assert [r["id"] for r in results] == ["v-cat"]
+    finally:
+        await store.drop()
+
+
+async def test_vector_query_logs_and_excludes_stale_candidates(
+    shared_driver, vector_search_supported, workspace, caplog
+):
+    """A node deleted without nulling its embedding first (bypassing the
+    store's own delete(), which nulls it precisely to avoid this) can still
+    surface as a vector_search.search candidate even though it's gone from
+    the graph. query() must exclude it instead of erroring, and warn with
+    the raw-hit vs live-candidate counts.
+    """
+    store = MemgraphVectorStorage(
+        namespace="chunks",
+        workspace=workspace,
+        global_config=_global_config(),
+        embedding_func=_fake_embedding_func(),
+        meta_fields={"content"},
+    )
+    await store.initialize()
+    try:
+        await store.upsert(
+            {
+                "v-cat": {"content": "cat"},
+                "v-kitten": {"content": "kitten"},
+            }
+        )
+
+        # Bypass store.delete() (which nulls the embedding first) so the raw
+        # DETACH DELETE leaves a stale entry in the native vector index.
+        driver = await get_driver()
+        async with driver.session(database=get_database()) as session:
+            await (await session.run(f"MATCH (n:`{store._label}` {{id: 'v-cat'}}) DETACH DELETE n")).consume()
+
+        # lightrag's logger has propagate=False, so caplog.at_level (which only
+        # relies on root-logger propagation) never sees its records; attach the
+        # capture handler directly instead.
+        lightrag_logger = logging.getLogger("lightrag")
+        lightrag_logger.addHandler(caplog.handler)
+        try:
+            results = await store.query("cat", top_k=4)
+        finally:
+            lightrag_logger.removeHandler(caplog.handler)
+
+        # The stale candidate is excluded, not erroring and not silently
+        # dropped without a trace.
+        assert [r["id"] for r in results] == ["v-kitten"]
+        warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
+        assert any("vector_search.search returned" in m and "but only" in m for m in warnings), warnings
     finally:
         await store.drop()

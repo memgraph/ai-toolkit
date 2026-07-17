@@ -71,6 +71,7 @@ graph backend: `MEMGRAPH_URI` (or `MEMGRAPH_URL`, which the wrapper bridges to
 `MEMGRAPH_URI`), `MEMGRAPH_USERNAME`, `MEMGRAPH_PASSWORD`, `MEMGRAPH_DATABASE`
 and the optional `MEMGRAPH_WORKSPACE`.
 
+
 ### Opting out
 
 - `MemgraphLightRAGWrapper(full_memgraph_persistence=False)` keeps only the
@@ -127,7 +128,7 @@ https://platform.claude.com/docs/en/about-claude/models.
    `claude_3_sonnet_complete`, `claude_3_haiku_complete` (fixed older model
    IDs). For current models, use `anthropic_complete` with the desired
    `llm_model_name`.
-   
+
 3. **Embeddings**: Anthropic does not provide embeddings, and vectors always
 persist to Memgraph's native vector index, so a real `embedding_func` is
 required. Set `embedding_func` to another provider (e.g. `openai_embed` from
