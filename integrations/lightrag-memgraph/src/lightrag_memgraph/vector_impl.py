@@ -148,15 +148,17 @@ class MemgraphVectorStorage(BaseVectorStorage):
     async def query(self, query: str, top_k: int, query_embedding: list[float] = None) -> list[dict[str, Any]]:
         """Vector-search this namespace and return up to ``top_k`` live results.
 
-        Known Memgraph limitation: the native vector index is garbage-collected
-        on a delay after a node delete, so ``vector_search.search`` can still
-        hand back index entries for nodes that were already deleted (see the
-        inline comment below for how those are detected and excluded). Right
-        after a bulk delete this means ``query()`` may legitimately return
-        fewer than ``top_k`` -- or zero -- results even though the index
-        reports ``top_k`` hits. A warning is logged with both counts whenever
-        this happens, so callers can tell "nothing else matched" apart from
-        "results were dropped because of GC lag".
+        By design, Memgraph's native vector index operates at ``READ_UNCOMMITTED``
+        isolation (see https://memgraph.com/docs/querying/vector-search), so while
+        a concurrent transaction is deleting matching nodes but hasn't committed
+        yet, ``vector_search.search`` can still hand back those nodes as
+        candidates (see the inline comment below for how those are detected and
+        excluded). While such a delete is in flight, ``query()`` may therefore
+        return fewer than ``top_k`` -- or zero -- results even though the index
+        reports ``top_k`` hits; once the concurrent transaction commits, this
+        no longer happens. A warning is logged with both counts whenever this
+        happens, so callers can tell "nothing else matched" apart from "a
+        concurrent delete was in flight".
         """
         if query_embedding is not None:
             embedding = np.asarray(query_embedding, dtype=float).tolist()
@@ -168,12 +170,14 @@ class MemgraphVectorStorage(BaseVectorStorage):
         # default_access_mode="READ" is just a routing hint; it doesn't affect the vector index's isolation.
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             try:
-                # Memgraph's vector index runs at READ_UNCOMMITTED with deferred GC, so
-                # vector_search.search can hand back a handle to an already-deleted node --
+                # Memgraph's vector index runs at READ_UNCOMMITTED isolation by design, so
+                # while a concurrent transaction's delete of a matching node hasn't committed
+                # yet, vector_search.search can still hand back a handle to that node --
                 # reading a property off it raises 50N42. We never touch that raw `node`
                 # handle directly: re-MATCH each candidate by identity via OPTIONAL MATCH,
-                # so a dangling candidate comes back as a row with `id IS NULL` instead of
-                # erroring, and we can count + log it below instead of silently dropping it.
+                # so a candidate caught mid-delete comes back as a row with `id IS NULL`
+                # instead of erroring, and we can count + log it below instead of silently
+                # dropping it.
                 # Index name is a sanitized string literal (not accepted as a query param).
                 result = await session.run(
                     f"""
@@ -191,7 +195,7 @@ class MemgraphVectorStorage(BaseVectorStorage):
                 records = [record async for record in result]
                 await result.consume()
             except Exception as e:
-                # Real failure, not a dangling index entry (those are excluded above) -- surface it.
+                # Real failure, not a candidate caught mid-delete (those are excluded above) -- surface it.
                 logger.error(f"[{self.workspace}] Vector search failed for {self.namespace}: {e}")
                 raise
 
@@ -202,7 +206,7 @@ class MemgraphVectorStorage(BaseVectorStorage):
             logger.warning(
                 f"[{self.workspace}] vector_search.search returned {raw_hit_count} candidate(s) for "
                 f"{self.namespace} but only {live_count} were still live; "
-                f"{raw_hit_count - live_count} were excluded as GC-pending deletes"
+                f"{raw_hit_count - live_count} were excluded as concurrent, not-yet-committed deletes"
             )
 
         threshold = self.cosine_better_than_threshold
@@ -283,7 +287,8 @@ class MemgraphVectorStorage(BaseVectorStorage):
         driver = await get_driver()
         async with driver.session(database=get_database()) as session:
             # Null the embedding before DETACH DELETE so the entry leaves the vector index
-            # (a bare delete would leave a dangling entry -- see query()'s 50N42 note).
+            # (a bare delete can still surface via vector_search.search while this
+            # transaction is in flight -- see query()'s note on READ_UNCOMMITTED).
             await (
                 await session.run(
                     f"""

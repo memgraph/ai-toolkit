@@ -445,12 +445,14 @@ async def test_vector_respects_threshold(shared_driver, vector_search_supported,
         await store.drop()
 
 
-async def test_vector_query_logs_and_excludes_gc_pending_deletes(
+async def test_vector_query_logs_and_excludes_stale_candidates(
     shared_driver, vector_search_supported, workspace, caplog
 ):
-    """A node deleted without nulling its embedding first leaves a dangling
-    vector-index entry (Memgraph's deferred GC). query() must exclude it
-    instead of erroring, and warn with the raw-hit vs live-candidate counts.
+    """A node deleted without nulling its embedding first (bypassing the
+    store's own delete(), which nulls it precisely to avoid this) can still
+    surface as a vector_search.search candidate even though it's gone from
+    the graph. query() must exclude it instead of erroring, and warn with
+    the raw-hit vs live-candidate counts.
     """
     store = MemgraphVectorStorage(
         namespace="chunks",
@@ -469,7 +471,7 @@ async def test_vector_query_logs_and_excludes_gc_pending_deletes(
         )
 
         # Bypass store.delete() (which nulls the embedding first) so the raw
-        # DETACH DELETE leaves a dangling entry in the native vector index.
+        # DETACH DELETE leaves a stale entry in the native vector index.
         driver = await get_driver()
         async with driver.session(database=get_database()) as session:
             await (await session.run(f"MATCH (n:`{store._label}` {{id: 'v-cat'}}) DETACH DELETE n")).consume()
@@ -484,7 +486,7 @@ async def test_vector_query_logs_and_excludes_gc_pending_deletes(
         finally:
             lightrag_logger.removeHandler(caplog.handler)
 
-        # The dangling candidate is excluded, not erroring and not silently
+        # The stale candidate is excluded, not erroring and not silently
         # dropped without a trace.
         assert [r["id"] for r in results] == ["v-kitten"]
         warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
