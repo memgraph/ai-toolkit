@@ -121,9 +121,7 @@ class MemgraphKVStorage(BaseKVStorage):
         if not data:
             return
         current_time = int(time.time())
-        # Precompute both the "new record" and "existing record" JSON payloads per entry;
-        # MERGE picks the right one via ON CREATE/ON MATCH in a single round trip instead of
-        # a separate filter_keys() query to decide in Python (which was also a TOCTOU race).
+        # MERGE picks new vs. existing payload via ON CREATE/ON MATCH -- no separate filter_keys() round trip.
         entries = []
         for k, v in data.items():
             value = dict(v)
