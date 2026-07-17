@@ -8,6 +8,7 @@ fields (``status``, ``track_id``, ``file_path``, ``created_at``,
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from dataclasses import dataclass
@@ -276,26 +277,35 @@ class MemgraphDocStatusStorage(DocStatusStorage):
         params.update(filter_params)
 
         driver = await get_driver()
-        async with driver.session(database=get_database(), default_access_mode="READ") as session:
-            count_result = await session.run(
-                f"MATCH (n:`{self._label}`) {where} RETURN count(n) AS total",
-                **filter_params,
-            )
-            count_record = await count_result.single()
-            await count_result.consume()
-            total = count_record["total"] if count_record else 0
 
-            page_result = await session.run(
-                f"""
-                MATCH (n:`{self._label}`) {where}
-                RETURN n.id AS id, n.data AS data
-                ORDER BY {sort_expr} {order}
-                SKIP $skip LIMIT $limit
-                """,
-                **params,
-            )
-            records = [record async for record in page_result]
-            await page_result.consume()
+        async def _count() -> int:
+            async with driver.session(database=get_database(), default_access_mode="READ") as session:
+                result = await session.run(
+                    f"MATCH (n:`{self._label}`) {where} RETURN count(n) AS total",
+                    **filter_params,
+                )
+                record = await result.single()
+                await result.consume()
+                return record["total"] if record else 0
+
+        async def _page() -> list:
+            async with driver.session(database=get_database(), default_access_mode="READ") as session:
+                result = await session.run(
+                    f"""
+                    MATCH (n:`{self._label}`) {where}
+                    RETURN n.id AS id, n.data AS data
+                    ORDER BY {sort_expr} {order}
+                    SKIP $skip LIMIT $limit
+                    """,
+                    **params,
+                )
+                records = [record async for record in result]
+                await result.consume()
+                return records
+
+        # No data dependency between the count and the page -- run them concurrently
+        # instead of two sequential round trips.
+        total, records = await asyncio.gather(_count(), _page())
 
         docs: list[tuple[str, DocProcessingStatus]] = []
         for record in records:

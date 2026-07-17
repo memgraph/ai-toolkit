@@ -121,20 +121,31 @@ class MemgraphKVStorage(BaseKVStorage):
         if not data:
             return
         current_time = int(time.time())
-        # create_time only set for genuinely new records (matches JsonKVStorage semantics).
-        existing = set(data.keys()) - await self.filter_keys(set(data.keys()))
+        # Precompute both the "new record" and "existing record" JSON payloads per entry;
+        # MERGE picks the right one via ON CREATE/ON MATCH in a single round trip instead of
+        # a separate filter_keys() query to decide in Python (which was also a TOCTOU race).
         entries = []
         for k, v in data.items():
             value = dict(v)
             if self.namespace.endswith("text_chunks") and "llm_cache_list" not in value:
                 value["llm_cache_list"] = []
-            if k in existing:
-                value["update_time"] = current_time
-            else:
-                value["create_time"] = current_time
-                value["update_time"] = current_time
             value["_id"] = k
-            entries.append({"id": k, "data": json.dumps(value, ensure_ascii=False), "ts": current_time})
+
+            new_value = dict(value)
+            new_value["create_time"] = current_time
+            new_value["update_time"] = current_time
+
+            update_value = dict(value)
+            update_value["update_time"] = current_time
+
+            entries.append(
+                {
+                    "id": k,
+                    "new_data": json.dumps(new_value, ensure_ascii=False),
+                    "update_data": json.dumps(update_value, ensure_ascii=False),
+                    "ts": current_time,
+                }
+            )
 
         driver = await get_driver()
         async with driver.session(database=get_database()) as session:
@@ -143,8 +154,9 @@ class MemgraphKVStorage(BaseKVStorage):
                     f"""
                     UNWIND $entries AS e
                     MERGE (n:`{self._label}` {{id: e.id}})
-                    ON CREATE SET n.created_at = e.ts
-                    SET n.data = e.data, n.updated_at = e.ts
+                    ON CREATE SET n.data = e.new_data, n.created_at = e.ts
+                    ON MATCH SET n.data = e.update_data
+                    SET n.updated_at = e.ts
                     """,
                     entries=entries,
                 )
