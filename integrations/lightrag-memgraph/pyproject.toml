@@ -22,12 +22,9 @@ classifiers = [
 ]
 
 dependencies = [
-    # Capped below 1.6: 1.5.4 added new abstract DocStatusStorage methods
-    # (get_doc_by_file_basename, get_doc_by_content_hash, and a status_filters
-    # param on get_docs_paginated) that broke this integration until it was
-    # updated to match. registry.py also monkey-patches undocumented
-    # lightrag.kg internals, so a 1.6+ release is not safe to pick up silently.
-    # Bump only after verifying compatibility against the new release.
+    # Capped below 1.6: 1.5.4 broke this integration's DocStatusStorage once
+    # already (see registry.py's compat guard). Bump only after verifying
+    # compatibility with the new release.
     "lightrag-hku>=1.5,<1.6",
     "memgraph-toolbox>=0.1.11",
     "numpy>=1.22.0",
