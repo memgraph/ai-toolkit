@@ -62,6 +62,34 @@ def test_verify_storage_implementation_accepts_names(name, storage_type):
     verify_storage_implementation(storage_type, name)
 
 
+def test_check_lightrag_kg_shape_reports_missing_attribute(monkeypatch):
+    import lightrag.kg as kg
+
+    from lightrag_memgraph.registry import (
+        LightRAGCompatibilityError,
+        _check_lightrag_kg_shape,
+    )
+
+    monkeypatch.delattr(kg, "STORAGE_ENV_REQUIREMENTS")
+
+    with pytest.raises(LightRAGCompatibilityError, match="STORAGE_ENV_REQUIREMENTS"):
+        _check_lightrag_kg_shape()
+
+
+def test_check_lightrag_kg_shape_reports_missing_implementations_key(monkeypatch):
+    import lightrag.kg as kg
+
+    from lightrag_memgraph.registry import (
+        LightRAGCompatibilityError,
+        _check_lightrag_kg_shape,
+    )
+
+    monkeypatch.setitem(kg.STORAGE_IMPLEMENTATIONS, "KV_STORAGE", {})
+
+    with pytest.raises(LightRAGCompatibilityError, match="KV_STORAGE"):
+        _check_lightrag_kg_shape()
+
+
 def test_kv_storage_instantiation():
     from lightrag_memgraph import MemgraphKVStorage
 

@@ -22,7 +22,10 @@ classifiers = [
 ]
 
 dependencies = [
-    "lightrag-hku>=1.5",
+    # Capped below 1.6: 1.5.4 broke this integration's DocStatusStorage once
+    # already (see registry.py's compat guard). Bump only after verifying
+    # compatibility with the new release.
+    "lightrag-hku>=1.5,<1.6",
     "memgraph-toolbox>=0.1.11",
     "numpy>=1.22.0",
     "anthropic>=0.40.0",
