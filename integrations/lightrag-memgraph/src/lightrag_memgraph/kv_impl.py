@@ -9,7 +9,6 @@ entity nodes (which use the bare workspace label).
 from __future__ import annotations
 
 import json
-import os
 import time
 from dataclasses import dataclass
 from typing import Any, final
@@ -18,20 +17,23 @@ from lightrag.base import BaseKVStorage
 from lightrag.utils import logger
 
 from ._connection import (
+    MemgraphCrudMixin,
     close_driver,
+    create_index,
     get_database,
     get_driver,
+    resolve_workspace,
     sanitize_label,
 )
 
 
 @final
 @dataclass
-class MemgraphKVStorage(BaseKVStorage):
+class MemgraphKVStorage(MemgraphCrudMixin, BaseKVStorage):
     """Key/value storage backend that persists LightRAG KV namespaces in Memgraph."""
 
     def __post_init__(self):
-        workspace = os.environ.get("MEMGRAPH_WORKSPACE") or self.workspace or "base"
+        workspace = resolve_workspace(self.workspace)
         self.workspace = workspace
         self._label = sanitize_label(f"LightRAGKV_{workspace}_{self.namespace}")
 
@@ -39,12 +41,7 @@ class MemgraphKVStorage(BaseKVStorage):
         """Create the id index for this namespace (idempotent)."""
         driver = await get_driver()
         async with driver.session(database=get_database()) as session:
-            try:
-                await (await session.run(f"CREATE INDEX ON :`{self._label}`(id)")).consume()
-            except Exception as e:  # index may already exist, which is not an error
-                logger.warning(
-                    f"[{self.workspace}] Index creation on :`{self._label}`(id) may have failed or already exists: {e}"
-                )
+            await create_index(session, label=self._label, prop="id", workspace=self.workspace)
             await (await session.run("RETURN 1")).consume()
         logger.info(f"[{self.workspace}] Initialized Memgraph KV storage for {self.namespace}")
 
@@ -97,26 +94,6 @@ class MemgraphKVStorage(BaseKVStorage):
             await result.consume()
         return [self._decode(i, found.get(i)) for i in ids]
 
-    async def filter_keys(self, keys: set[str]) -> set[str]:
-        # Returns the subset of `keys` that do NOT exist in storage.
-        if not keys:
-            return set()
-        driver = await get_driver()
-        async with driver.session(database=get_database(), default_access_mode="READ") as session:
-            result = await session.run(
-                f"""
-                UNWIND $keys AS k
-                OPTIONAL MATCH (n:`{self._label}` {{id: k}})
-                WITH k, n
-                WHERE n IS NULL
-                RETURN k
-                """,
-                keys=list(keys),
-            )
-            missing = {record["k"] async for record in result}
-            await result.consume()
-        return missing
-
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
         if not data:
             return
@@ -161,37 +138,4 @@ class MemgraphKVStorage(BaseKVStorage):
             ).consume()
         logger.debug(f"[{self.workspace}] Upserted {len(entries)} records to {self.namespace}")
 
-    async def delete(self, ids: list[str]) -> None:
-        if not ids:
-            return
-        driver = await get_driver()
-        async with driver.session(database=get_database()) as session:
-            await (
-                await session.run(
-                    f"""
-                    UNWIND $ids AS target_id
-                    MATCH (n:`{self._label}` {{id: target_id}})
-                    DETACH DELETE n
-                    """,
-                    ids=list(ids),
-                )
-            ).consume()
-
-    async def is_empty(self) -> bool:
-        driver = await get_driver()
-        async with driver.session(database=get_database(), default_access_mode="READ") as session:
-            result = await session.run(f"MATCH (n:`{self._label}`) RETURN n LIMIT 1")
-            record = await result.single()
-            await result.consume()
-            return record is None
-
-    async def drop(self) -> dict[str, str]:
-        try:
-            driver = await get_driver()
-            async with driver.session(database=get_database()) as session:
-                await (await session.run(f"MATCH (n:`{self._label}`) DETACH DELETE n")).consume()
-            logger.info(f"[{self.workspace}] Dropped Memgraph KV storage for {self.namespace}")
-            return {"status": "success", "message": "data dropped"}
-        except Exception as e:
-            logger.error(f"[{self.workspace}] Error dropping KV storage {self.namespace}: {e}")
-            return {"status": "error", "message": str(e)}
+    # is_empty/filter_keys/delete/drop are provided by MemgraphCrudMixin.
