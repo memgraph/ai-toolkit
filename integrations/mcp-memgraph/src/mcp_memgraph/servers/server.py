@@ -140,7 +140,7 @@ def list_databases(ctx: Context | None = None) -> list[dict[str, Any]]:
     return [{"name": name, "current": (name == sa.current_tenant)} for name in sorted(sa.allowed_tenants)]
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def use_database(name: str, ctx: Context | None = None) -> dict[str, Any]:
     """Switch the active database for this MCP session.
 

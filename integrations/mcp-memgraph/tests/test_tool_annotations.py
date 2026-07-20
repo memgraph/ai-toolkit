@@ -7,14 +7,12 @@ import pytest
 
 READ_ONLY_TOOLS = {
     "list_databases",
+    "use_database",
     "search_schema",
     "get_node_schema",
     "get_relationship_schema",
     "get_enum_schema",
 }
-
-# Tools that must NOT be advertised as read-only
-NOT_READ_ONLY_TOOLS = {"use_database"}
 
 
 def _get_tool_annotations_map():
@@ -69,14 +67,6 @@ def test_read_only_tools_have_readonly_hint(tool_annotations_readonly_mode, tool
     assert annotations.readOnlyHint is True, (
         f"Tool '{tool_name}' should have readOnlyHint=True, got {annotations.readOnlyHint}"
     )
-
-
-@pytest.mark.parametrize("tool_name", sorted(NOT_READ_ONLY_TOOLS))
-def test_non_readonly_tools_do_not_have_readonly_hint(tool_annotations_readonly_mode, tool_name):
-    """Tools that mutate session state must not be advertised as read-only."""
-    annotations = tool_annotations_readonly_mode.get(tool_name)
-    read_only_hint = annotations.readOnlyHint if annotations is not None else None
-    assert read_only_hint is not True, f"Tool '{tool_name}' must not have readOnlyHint=True (it mutates session state)"
 
 
 def test_run_cypher_query_is_readonly_when_mode_is_readonly(tool_annotations_readonly_mode):
