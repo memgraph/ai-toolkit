@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from dataclasses import dataclass
 from typing import Any, final
 
@@ -18,9 +17,12 @@ from lightrag.base import DocProcessingStatus, DocStatus, DocStatusStorage
 from lightrag.utils import logger
 
 from ._connection import (
+    MemgraphCrudMixin,
     close_driver,
+    create_index,
     get_database,
     get_driver,
+    resolve_workspace,
     sanitize_label,
 )
 
@@ -31,11 +33,11 @@ _SORT_FIELDS = {"created_at", "updated_at", "id", "file_path"}
 
 @final
 @dataclass
-class MemgraphDocStatusStorage(DocStatusStorage):
+class MemgraphDocStatusStorage(MemgraphCrudMixin, DocStatusStorage):
     """Document-status storage backend that persists LightRAG doc status in Memgraph."""
 
     def __post_init__(self):
-        workspace = os.environ.get("MEMGRAPH_WORKSPACE") or self.workspace or "base"
+        workspace = resolve_workspace(self.workspace)
         self.workspace = workspace
         self._label = sanitize_label(f"LightRAGDocStatus_{workspace}")
 
@@ -44,12 +46,7 @@ class MemgraphDocStatusStorage(DocStatusStorage):
         driver = await get_driver()
         async with driver.session(database=get_database()) as session:
             for prop in ("id", *_INDEXED_FIELDS):
-                try:
-                    await (await session.run(f"CREATE INDEX ON :`{self._label}`({prop})")).consume()
-                except Exception as e:
-                    logger.warning(
-                        f"[{self.workspace}] Index creation on :`{self._label}`({prop}) may have failed or already exists: {e}"
-                    )
+                await create_index(session, label=self._label, prop=prop, workspace=self.workspace)
             await (await session.run("RETURN 1")).consume()
         logger.info(f"[{self.workspace}] Initialized Memgraph doc-status storage")
 
@@ -107,25 +104,6 @@ class MemgraphDocStatusStorage(DocStatusStorage):
             await result.consume()
         return [json.loads(found[i]) if i in found else None for i in ids]
 
-    async def filter_keys(self, keys: set[str]) -> set[str]:
-        if not keys:
-            return set()
-        driver = await get_driver()
-        async with driver.session(database=get_database(), default_access_mode="READ") as session:
-            result = await session.run(
-                f"""
-                UNWIND $keys AS k
-                OPTIONAL MATCH (n:`{self._label}` {{id: k}})
-                WITH k, n
-                WHERE n IS NULL
-                RETURN k
-                """,
-                keys=list(keys),
-            )
-            missing = {record["k"] async for record in result}
-            await result.consume()
-        return missing
-
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
         if not data:
             return
@@ -155,29 +133,7 @@ class MemgraphDocStatusStorage(DocStatusStorage):
             ).consume()
         logger.debug(f"[{self.workspace}] Upserted {len(entries)} doc-status records")
 
-    async def delete(self, ids: list[str]) -> None:
-        if not ids:
-            return
-        driver = await get_driver()
-        async with driver.session(database=get_database()) as session:
-            await (
-                await session.run(
-                    f"""
-                    UNWIND $ids AS target_id
-                    MATCH (n:`{self._label}` {{id: target_id}})
-                    DETACH DELETE n
-                    """,
-                    ids=list(ids),
-                )
-            ).consume()
-
-    async def is_empty(self) -> bool:
-        driver = await get_driver()
-        async with driver.session(database=get_database(), default_access_mode="READ") as session:
-            result = await session.run(f"MATCH (n:`{self._label}`) RETURN n LIMIT 1")
-            record = await result.single()
-            await result.consume()
-            return record is None
+    # is_empty/filter_keys/delete are provided by MemgraphCrudMixin.
 
     # --- DocStatusStorage interface ---------------------------------------------
 
@@ -362,13 +318,4 @@ class MemgraphDocStatusStorage(DocStatusStorage):
             return None
         return record["id"], json.loads(record["data"])
 
-    async def drop(self) -> dict[str, str]:
-        try:
-            driver = await get_driver()
-            async with driver.session(database=get_database()) as session:
-                await (await session.run(f"MATCH (n:`{self._label}`) DETACH DELETE n")).consume()
-            logger.info(f"[{self.workspace}] Dropped Memgraph doc-status storage")
-            return {"status": "success", "message": "data dropped"}
-        except Exception as e:
-            logger.error(f"[{self.workspace}] Error dropping doc-status storage: {e}")
-            return {"status": "error", "message": str(e)}
+    # drop() is provided by MemgraphCrudMixin.

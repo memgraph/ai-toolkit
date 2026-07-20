@@ -10,7 +10,6 @@ with the embedding on an ``embedding`` property.
 from __future__ import annotations
 
 import asyncio
-import os
 import time
 from dataclasses import dataclass
 from typing import Any, final
@@ -21,8 +20,10 @@ from lightrag.utils import compute_mdhash_id, logger
 
 from ._connection import (
     close_driver,
+    create_index,
     get_database,
     get_driver,
+    resolve_workspace,
     sanitize_index_name,
     sanitize_label,
 )
@@ -38,7 +39,7 @@ class MemgraphVectorStorage(BaseVectorStorage):
 
     def __post_init__(self):
         self._validate_embedding_func()
-        workspace = os.environ.get("MEMGRAPH_WORKSPACE") or self.workspace or "base"
+        workspace = resolve_workspace(self.workspace)
         self.workspace = workspace
         self._label = sanitize_label(f"LightRAGVector_{workspace}_{self.namespace}")
         self._index_name = sanitize_index_name(f"lightrag_vec_{workspace}_{self.namespace}")
@@ -58,12 +59,7 @@ class MemgraphVectorStorage(BaseVectorStorage):
         """Create the id index and the native vector index (both idempotent)."""
         driver = await get_driver()
         async with driver.session(database=get_database()) as session:
-            try:
-                await (await session.run(f"CREATE INDEX ON :`{self._label}`(id)")).consume()
-            except Exception as e:
-                logger.warning(
-                    f"[{self.workspace}] Index creation on :`{self._label}`(id) may have failed or already exists: {e}"
-                )
+            await create_index(session, label=self._label, prop="id", workspace=self.workspace)
             await self._ensure_vector_index(session)
             await (await session.run("RETURN 1")).consume()
         logger.info(
@@ -281,52 +277,51 @@ class MemgraphVectorStorage(BaseVectorStorage):
             await result.consume()
         return vectors
 
-    async def delete(self, ids: list[str]):
-        if not ids:
-            return
+    async def _detach_delete(self, where_clause: str, params: dict[str, Any]) -> None:
+        """Null the embedding then DETACH DELETE the nodes matched by ``where_clause``.
+
+        Nulling first makes a to-be-deleted entry leave the native vector index
+        before the node itself is removed -- a bare delete can still surface via
+        vector_search.search while the delete transaction is in flight (see
+        query()'s note on READ_UNCOMMITTED). Every deletion path (delete,
+        delete_entity_relation, drop) routes through here so none of them can
+        forget this step.
+        """
         driver = await get_driver()
         async with driver.session(database=get_database()) as session:
-            # Null the embedding before DETACH DELETE so the entry leaves the vector index
-            # (a bare delete can still surface via vector_search.search while this
-            # transaction is in flight -- see query()'s note on READ_UNCOMMITTED).
             await (
                 await session.run(
                     f"""
-                    UNWIND $ids AS target_id
-                    MATCH (n:`{self._label}` {{id: target_id}})
+                    MATCH (n:`{self._label}`)
+                    {where_clause}
                     SET n.embedding = NULL
                     DETACH DELETE n
                     """,
-                    ids=list(ids),
+                    **params,
                 )
             ).consume()
+
+    async def delete(self, ids: list[str]):
+        if not ids:
+            return
+        await self._detach_delete("WHERE n.id IN $ids", {"ids": list(ids)})
 
     async def delete_entity(self, entity_name: str) -> None:
         entity_id = compute_mdhash_id(entity_name, prefix="ent-")
         await self.delete([entity_id])
 
     async def delete_entity_relation(self, entity_name: str) -> None:
-        driver = await get_driver()
-        async with driver.session(database=get_database()) as session:
-            # See delete() -- null the embedding first so these leave the vector index.
-            await (
-                await session.run(
-                    f"""
-                    MATCH (n:`{self._label}`)
-                    WHERE n.src_id = $entity_name OR n.tgt_id = $entity_name
-                    SET n.embedding = NULL
-                    DETACH DELETE n
-                    """,
-                    entity_name=entity_name,
-                )
-            ).consume()
+        await self._detach_delete(
+            "WHERE n.src_id = $entity_name OR n.tgt_id = $entity_name",
+            {"entity_name": entity_name},
+        )
 
     async def drop(self) -> dict[str, str]:
         try:
+            # Null embeddings first in case DROP VECTOR INDEX below fails (see _detach_delete()).
+            await self._detach_delete("", {})
             driver = await get_driver()
             async with driver.session(database=get_database()) as session:
-                # Null embeddings first in case DROP VECTOR INDEX below fails (see delete()).
-                await (await session.run(f"MATCH (n:`{self._label}`) SET n.embedding = NULL DETACH DELETE n")).consume()
                 try:
                     await (await session.run(f"DROP VECTOR INDEX {self._index_name}")).consume()
                 except Exception as e:

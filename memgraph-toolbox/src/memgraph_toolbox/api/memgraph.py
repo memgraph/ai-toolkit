@@ -15,6 +15,36 @@ MEMGRAPH_ENV_DEFAULTS = {
 MEMGRAPH_ENV_KEYS = tuple(MEMGRAPH_ENV_DEFAULTS)
 
 
+def _is_implicit_transaction_fallback_error(error: Any) -> bool:
+    """True if `error` (a ``Neo4jError``) means the query can't run in a managed
+    transaction and should be retried as an implicit one.
+
+    Shared by :meth:`Memgraph.query` and :meth:`AsyncMemgraph.query` so the two
+    stay in lockstep instead of drifting as two hand-copied predicates.
+    """
+    return (
+        (
+            (  # isCallInTransactionError
+                error.code == "Neo.DatabaseError.Statement.ExecutionFailed"
+                or error.code == "Neo.DatabaseError.Transaction.TransactionStartFailed"
+            )
+            and "in an implicit transaction" in error.message
+        )
+        or (  # isPeriodicCommitError
+            error.code == "Neo.ClientError.Statement.SemanticError"
+            and (
+                "in an open transaction is not possible" in error.message
+                or "tried to execute in an explicit transaction" in error.message
+            )
+        )
+        or (
+            error.code == "Memgraph.ClientError.MemgraphError.MemgraphError"
+            and ("in multicommand transactions" in error.message)
+        )
+        or (error.code == "Memgraph.ClientError.MemgraphError.MemgraphError" and "SchemaInfo disabled" in error.message)
+    )
+
+
 def memgraph_env(
     *,
     url: str | None = None,
@@ -133,27 +163,7 @@ class Memgraph:
             json_data = [serialize_record_data(r.data()) for r in data]
             return json_data
         except Neo4jError as e:
-            if not (
-                (
-                    (  # isCallInTransactionError
-                        e.code == "Neo.DatabaseError.Statement.ExecutionFailed"
-                        or e.code == "Neo.DatabaseError.Transaction.TransactionStartFailed"
-                    )
-                    and "in an implicit transaction" in e.message
-                )
-                or (  # isPeriodicCommitError
-                    e.code == "Neo.ClientError.Statement.SemanticError"
-                    and (
-                        "in an open transaction is not possible" in e.message
-                        or "tried to execute in an explicit transaction" in e.message
-                    )
-                )
-                or (
-                    e.code == "Memgraph.ClientError.MemgraphError.MemgraphError"
-                    and ("in multicommand transactions" in e.message)
-                )
-                or (e.code == "Memgraph.ClientError.MemgraphError.MemgraphError" and "SchemaInfo disabled" in e.message)
-            ):
+            if not _is_implicit_transaction_fallback_error(e):
                 raise
 
         # fallback to allow implicit transactions
@@ -253,27 +263,7 @@ class AsyncMemgraph:
             json_data = [serialize_record_data(r.data()) for r in data]
             return json_data
         except Neo4jError as e:
-            if not (
-                (
-                    (  # isCallInTransactionError
-                        e.code == "Neo.DatabaseError.Statement.ExecutionFailed"
-                        or e.code == "Neo.DatabaseError.Transaction.TransactionStartFailed"
-                    )
-                    and "in an implicit transaction" in e.message
-                )
-                or (  # isPeriodicCommitError
-                    e.code == "Neo.ClientError.Statement.SemanticError"
-                    and (
-                        "in an open transaction is not possible" in e.message
-                        or "tried to execute in an explicit transaction" in e.message
-                    )
-                )
-                or (
-                    e.code == "Memgraph.ClientError.MemgraphError.MemgraphError"
-                    and ("in multicommand transactions" in e.message)
-                )
-                or (e.code == "Memgraph.ClientError.MemgraphError.MemgraphError" and "SchemaInfo disabled" in e.message)
-            ):
+            if not _is_implicit_transaction_fallback_error(e):
                 raise
 
         # fallback to allow implicit transactions
