@@ -40,6 +40,7 @@ from lightrag_memgraph._connection import (
     get_driver,
 )
 from lightrag_memgraph.docstatus_impl import MemgraphDocStatusStorage
+from lightrag_memgraph.embeddings import DEFAULT_EMBEDDING_DIM, memgraph_sentence_embed
 from lightrag_memgraph.kv_impl import MemgraphKVStorage
 from lightrag_memgraph.vector_impl import MemgraphVectorStorage
 from memgraph_toolbox.api.memgraph import memgraph_env
@@ -171,6 +172,23 @@ def vector_search_supported(memgraph_uri: str) -> bool:
             names = {record["name"] for record in session.run("CALL mg.procedures() YIELD name RETURN name")}
         if not any(n.startswith("vector_search.") for n in names):
             pytest.skip("Memgraph server has no vector_search module")
+    finally:
+        driver.close()
+    return True
+
+
+@pytest.fixture(scope="session")
+def embeddings_module_supported(memgraph_uri: str) -> bool:
+    """Skip if the server has no ``embeddings`` module (needs the memgraph-mage image)."""
+    from neo4j import GraphDatabase
+
+    _uri, username, password, database = _connection_settings()
+    driver = GraphDatabase.driver(memgraph_uri, auth=(username, password))
+    try:
+        with driver.session(database=database) as session:
+            names = {record["name"] for record in session.run("CALL mg.procedures() YIELD name RETURN name")}
+        if not any(n.startswith("embeddings.") for n in names):
+            pytest.skip("Memgraph server has no embeddings module (needs the memgraph-mage image)")
     finally:
         driver.close()
     return True
@@ -565,6 +583,39 @@ async def test_wrapper_full_persistence_false_works_with_zero_env_vars(
         # A real round trip against Memgraph, not just a successful construction.
         result = await graph.drop()
         assert result["status"] == "success"
+    finally:
+        if wrapper.rag is not None:
+            await wrapper.afinalize()
+
+
+# --- default embedding_func ---------------------------------------------------
+
+
+async def test_wrapper_defaults_embedding_func_to_working_memgraph_sentence_embed(
+    shared_driver, embeddings_module_supported, workspace, tmp_path, monkeypatch
+):
+    """Omitting embedding_func must not silently fall back to a billed
+    openai_embed call. It must resolve to Memgraph's own sentence-transformer
+    default, and that default must actually work end to end.
+    """
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    wrapper = MemgraphLightRAGWrapper()
+    try:
+        await wrapper.initialize(
+            working_dir=str(tmp_path),
+            workspace=workspace,
+            llm_model_func=_dummy_llm_model_func,
+            # embedding_func intentionally omitted.
+        )
+        rag = wrapper.get_lightrag()
+        # LightRAG re-wraps the passed EmbeddingFunc (concurrency-limiting the
+        # underlying callable, unwrapping the EmbeddingFunc nesting), so identity
+        # doesn't survive the round trip -- the declared model/dim and, most
+        # importantly, actual behaviour do.
+        assert rag.embedding_func.model_name == memgraph_sentence_embed.model_name
+        assert rag.embedding_func.embedding_dim == DEFAULT_EMBEDDING_DIM
+        vectors = await rag.embedding_func(["hello world", "graph databases are fast"])
+        assert vectors.shape == (2, DEFAULT_EMBEDDING_DIM)
     finally:
         if wrapper.rag is not None:
             await wrapper.afinalize()

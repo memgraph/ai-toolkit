@@ -5,8 +5,8 @@ import time
 import traceback
 
 # OpenAI-only for a single-API-key example. To use Claude instead, see the
-# README's "Using Anthropic (Claude)" section (needs a separate embedder).
-from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
+# README's "Using Anthropic (Claude)" section.
+from lightrag.llm.openai import gpt_4o_mini_complete
 
 from lightrag_memgraph import MemgraphLightRAGWrapper
 from memgraph_toolbox.api.memgraph import Memgraph
@@ -73,7 +73,8 @@ async def main():
             working_dir=WORKING_DIR,
             max_parallel_insert=8,
             llm_model_func=gpt_4o_mini_complete,
-            embedding_func=openai_embed,
+            # embedding_func omitted: defaults to Memgraph's local
+            # sentence-transformer (see README's "Embeddings" section).
         )
 
         total_time = 0.0
