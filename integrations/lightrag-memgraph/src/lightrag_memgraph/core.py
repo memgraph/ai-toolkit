@@ -4,8 +4,9 @@ import os
 from lightrag import LightRAG
 from lightrag.kg.shared_storage import initialize_pipeline_status
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
-from lightrag.utils import setup_logger
+from lightrag.utils import logger, setup_logger
 
+from .embeddings import DEFAULT_EMBEDDING_DIM, DEFAULT_MODEL_NAME, memgraph_sentence_embed
 from .registry import register_memgraph_storage
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -25,6 +26,32 @@ def _bridge_lightrag_env_names() -> None:
         os.environ["MEMGRAPH_USERNAME"] = os.environ["MEMGRAPH_USER"]
 
 
+def _apply_lightrag_defaults(lightrag_kwargs: dict) -> None:
+    """Fill in `llm_model_func`/`embedding_func` defaults in place.
+
+    `embedding_func` defaults to Memgraph's own local sentence-transformer
+    (via the `embeddings` MAGE module, see `embeddings.py`), not `openai_embed`
+    -- a zero-config wrapper should not silently make billed OpenAI calls
+    (issue #222). Defaulting is logged since it changes what network calls
+    `ainsert`/`aquery` make.
+    """
+    if "llm_model_func" not in lightrag_kwargs:
+        lightrag_kwargs["llm_model_func"] = gpt_4o_mini_complete
+    if "embedding_func" not in lightrag_kwargs:
+        logger.warning(
+            "embedding_func not provided to MemgraphLightRAGWrapper.initialize(); defaulting to "
+            f"Memgraph's local sentence-transformer embeddings ({DEFAULT_MODEL_NAME}, "
+            f"{DEFAULT_EMBEDDING_DIM} dims) via the `embeddings` MAGE module -- no API key or "
+            "external cost involved. Pass an explicit embedding_func (e.g. openai_embed) to use "
+            "a different provider."
+        )
+        lightrag_kwargs["embedding_func"] = memgraph_sentence_embed
+    if lightrag_kwargs["llm_model_func"] == gpt_4o_mini_complete or lightrag_kwargs["embedding_func"] == openai_embed:
+        openai_api_key = os.environ.get("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise OSError("OPENAI_API_KEY environment variable is not set. Please set your OpenAI API key.")
+
+
 class MemgraphLightRAGWrapper:
     def __init__(
         self,
@@ -34,7 +61,9 @@ class MemgraphLightRAGWrapper:
         """Wrap LightRAG configured to use Memgraph as its storage backend.
 
         Vectors always go to Memgraph's native vector index, so a real
-        ``embedding_func`` is required.
+        ``embedding_func`` is required; if omitted from ``initialize()``, it
+        defaults to Memgraph's own local sentence-transformer (see
+        ``embeddings.py``), not a billed external API.
 
         Args:
             log_level: Logging level for LightRAG's loggers.
@@ -62,17 +91,7 @@ class MemgraphLightRAGWrapper:
             working_dir = lightrag_kwargs["working_dir"]
             if not os.path.exists(working_dir):
                 os.mkdir(working_dir)
-        if "llm_model_func" not in lightrag_kwargs:
-            lightrag_kwargs["llm_model_func"] = gpt_4o_mini_complete
-        if "embedding_func" not in lightrag_kwargs:
-            lightrag_kwargs["embedding_func"] = openai_embed
-        if (
-            lightrag_kwargs["llm_model_func"] == gpt_4o_mini_complete
-            or lightrag_kwargs["embedding_func"] == openai_embed
-        ):
-            openai_api_key = os.environ.get("OPENAI_API_KEY")
-            if not openai_api_key:
-                raise OSError("OPENAI_API_KEY environment variable is not set. Please set your OpenAI API key.")
+        _apply_lightrag_defaults(lightrag_kwargs)
         self.rag = LightRAG(graph_storage="MemgraphStorage", **lightrag_kwargs)
         await self.rag.initialize_storages()
         await initialize_pipeline_status()

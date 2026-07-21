@@ -20,9 +20,10 @@ specific document page or chunk).
 
 ## Quick start
 
-**Prerequisites:** [Memgraph](https://memgraph.com/docs/getting-started) running
-*(default `bolt://localhost:7687`), and an LLM API key (e.g. `OPENAI_API_KEY` or
-*`ANTHROPIC_API_KEY`).
+**Prerequisites:** [Memgraph MAGE](https://memgraph.com/docs/getting-started)
+running (default `bolt://localhost:7687`; the `memgraph-mage` image, not plain
+`memgraph`, since the default embeddings below need its `embeddings` module),
+and an LLM API key (e.g. `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`).
 
 **Install:**
 
@@ -64,7 +65,8 @@ Memgraph, not just the entity/relationship graph:
 The KV/vector/doc-status labels are namespaced by workspace + namespace so they
 never collide with the graph's entity nodes. Vectors always persist to
 Memgraph's native vector index (`CREATE VECTOR INDEX ... {"metric": "cos"}` +
-`CALL vector_search.search(...)`), so a real `embedding_func` is required.
+`CALL vector_search.search(...)`), so a real `embedding_func` is required --
+see [Embeddings](#embeddings) below for the default.
 
 Connection settings are read from the same environment variables as lightrag's
 graph backend: `MEMGRAPH_URI` (or `MEMGRAPH_URL`, which the wrapper bridges to
@@ -95,6 +97,36 @@ rag = LightRAG(
 )
 ```
 
+## Embeddings
+
+If `embedding_func` is not passed to `initialize()`, the wrapper defaults to
+`memgraph_sentence_embed`: a local sentence-transformer (`all-MiniLM-L6-v2`,
+384 dims) run by Memgraph itself, via the
+[`embeddings` MAGE module](https://memgraph.com/docs/advanced-algorithms/available-algorithms/embeddings)'s
+`embeddings.text()` procedure. This requires no API key and makes no external
+network calls -- unlike LightRAG's own `openai_embed`, which used to be this
+wrapper's silent default and would bill your `OPENAI_API_KEY` for every
+insert/query even if you only meant to use OpenAI for the LLM, or not at all
+(see [#222](https://github.com/memgraph/ai-toolkit/issues/222)). Applying this
+default is logged as a warning so it's never silent.
+
+This default requires the `memgraph-mage` Docker image (not plain `memgraph`)
+so the `embeddings` module is loaded.
+
+To use a different local model served the same way, build a variant with
+`build_memgraph_sentence_embed`:
+
+```python
+from lightrag_memgraph import build_memgraph_sentence_embed
+
+# A different local model -- embedding_dim must match what it actually outputs.
+embedding_func = build_memgraph_sentence_embed(model_name="all-mpnet-base-v2", embedding_dim=768)
+```
+
+To use OpenAI/Anthropic-compatible/other Python embedding functions instead,
+pass `embedding_func` explicitly, as shown in the Anthropic and OpenAI
+sections below.
+
 ## Using Anthropic (Claude) as the LLM
 
 LightRAG supports Claude via the `lightrag.llm.anthropic` module. Set your API
@@ -112,7 +144,6 @@ https://platform.claude.com/docs/en/about-claude/models.
 
    ```python
    from lightrag.llm.anthropic import anthropic_complete
-   from lightrag.llm.openai import openai_embed
    from lightrag_memgraph import MemgraphLightRAGWrapper
 
    wrapper = MemgraphLightRAGWrapper()
@@ -120,7 +151,8 @@ https://platform.claude.com/docs/en/about-claude/models.
        working_dir="./lightrag_storage",
        llm_model_func=anthropic_complete,
        llm_model_name="claude-3-5-sonnet-20241022",  # or claude-3-haiku-20240307, etc.
-       embedding_func=openai_embed,  # Anthropic has no embeddings; supply one
+       # embedding_func omitted: defaults to Memgraph's local sentence-transformer,
+       # see Embeddings above. Anthropic itself has no embeddings API.
    )
    ```
 
@@ -129,11 +161,13 @@ https://platform.claude.com/docs/en/about-claude/models.
    IDs). For current models, use `anthropic_complete` with the desired
    `llm_model_name`.
 
-3. **Embeddings**: Anthropic does not provide embeddings, and vectors always
-persist to Memgraph's native vector index, so a real `embedding_func` is
-required. Set `embedding_func` to another provider (e.g. `openai_embed` from
-`lightrag.llm.openai` with `OPENAI_API_KEY`, or Voyage AI via
-`lightrag.llm.anthropic.anthropic_embed` with `VOYAGE_API_KEY`).
+3. **Embeddings**: Anthropic does not provide embeddings. Leaving
+`embedding_func` unset (as above) uses Memgraph's local sentence-transformer
+default -- no additional API key needed, no silent no-op option exists (a real
+`embedding_func` always runs since vectors persist to Memgraph's native vector
+index). To use a different provider instead, set `embedding_func` explicitly,
+e.g. `openai_embed` from `lightrag.llm.openai` with `OPENAI_API_KEY`, or
+Voyage AI via `lightrag.llm.anthropic.anthropic_embed` with `VOYAGE_API_KEY`.
 
 ## Using OpenAI as the LLM
 
