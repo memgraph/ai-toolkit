@@ -130,7 +130,7 @@ async def health_check(request):
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def list_databases(ctx: Context | None = None) -> list[dict[str, Any]]:
     """List databases this session can access. The active one is flagged."""
     sa = current_session_auth()
@@ -140,7 +140,7 @@ def list_databases(ctx: Context | None = None) -> list[dict[str, Any]]:
     return [{"name": name, "current": (name == sa.current_tenant)} for name in sorted(sa.allowed_tenants)]
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def use_database(name: str, ctx: Context | None = None) -> dict[str, Any]:
     """Switch the active database for this MCP session.
 
@@ -175,7 +175,7 @@ def _safe_call(fn, *, on_error: str):
         return [{"error": f"{on_error}: {e!s}"}]
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": READ_ONLY_MODE})
 def run_cypher_query(query: str, ctx: Context | None = None) -> list[dict[str, Any]]:
     """
     Run a Cypher query on Memgraph. Write operations are blocked if
@@ -201,7 +201,7 @@ def run_cypher_query(query: str, ctx: Context | None = None) -> list[dict[str, A
     return _safe_call(lambda: CypherTool(db=_get_db()).call({"query": query}), on_error="Error running query")
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def search_schema(pattern: str, ctx: Context | None = None) -> list[dict[str, Any]]:
     """
     Search the entire graph schema (nodes, relationships and enums) by a regex pattern.
@@ -217,7 +217,7 @@ def search_schema(pattern: str, ctx: Context | None = None) -> list[dict[str, An
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_node_schema(node_labels: list[str], ctx: Context | None = None) -> list[dict[str, Any]]:
     """
     Get the full schema definition of a node by its labels. Returns properties,
@@ -233,7 +233,7 @@ def get_node_schema(node_labels: list[str], ctx: Context | None = None) -> list[
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_relationship_schema(
     relationship_type: str,
     start_node_labels: list[str],
@@ -262,7 +262,7 @@ def get_relationship_schema(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_enum_schema(enum_name: str, ctx: Context | None = None) -> list[dict[str, Any]]:
     """
     Get the schema definition of an enum by its name. Returns the enum name and its values.
