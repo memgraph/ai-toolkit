@@ -74,9 +74,9 @@ def test_bridge_never_overwrites_explicit_username(monkeypatch):
 
 
 def test_embedding_func_defaults_to_memgraph_sentence_embed_not_openai(monkeypatch):
-    """Regression test for #222: a caller who omits embedding_func must not
-    silently get billed OpenAI calls. The default is Memgraph's own local
-    sentence-transformer instead, which needs no OPENAI_API_KEY.
+    """A caller who omits embedding_func must not silently get billed OpenAI
+    calls. The default is Memgraph's own local sentence-transformer instead,
+    which needs no OPENAI_API_KEY.
     """
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     kwargs = {"llm_model_func": lambda *a, **kw: None}  # non-default LLM, so no key is required
@@ -129,8 +129,8 @@ def test_requires_openai_api_key_when_embedding_func_is_explicitly_openai(monkey
 
 
 def test_no_openai_key_required_with_non_openai_llm_and_embedding_default(monkeypatch):
-    """The whole point of #222's fix: a Claude-only setup (no OPENAI_API_KEY at
-    all) must be able to omit embedding_func and still initialize.
+    """A Claude-only setup (no OPENAI_API_KEY at all) must be able to omit
+    embedding_func and still initialize.
     """
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     kwargs = {"llm_model_func": lambda *a, **kw: None}

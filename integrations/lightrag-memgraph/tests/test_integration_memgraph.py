@@ -588,15 +588,15 @@ async def test_wrapper_full_persistence_false_works_with_zero_env_vars(
             await wrapper.afinalize()
 
 
-# --- default embedding_func (#222 regression) ---------------------------------
+# --- default embedding_func ---------------------------------------------------
 
 
 async def test_wrapper_defaults_embedding_func_to_working_memgraph_sentence_embed(
     shared_driver, embeddings_module_supported, workspace, tmp_path, monkeypatch
 ):
-    """Regression test for #222: omitting embedding_func must not silently fall
-    back to a billed openai_embed call. It must resolve to Memgraph's own
-    sentence-transformer default, and that default must actually work end to end.
+    """Omitting embedding_func must not silently fall back to a billed
+    openai_embed call. It must resolve to Memgraph's own sentence-transformer
+    default, and that default must actually work end to end.
     """
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     wrapper = MemgraphLightRAGWrapper()

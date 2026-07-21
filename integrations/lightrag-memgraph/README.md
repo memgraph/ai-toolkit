@@ -106,9 +106,8 @@ If `embedding_func` is not passed to `initialize()`, the wrapper defaults to
 `embeddings.text()` procedure. This requires no API key and makes no external
 network calls -- unlike LightRAG's own `openai_embed`, which used to be this
 wrapper's silent default and would bill your `OPENAI_API_KEY` for every
-insert/query even if you only meant to use OpenAI for the LLM, or not at all
-(see [#222](https://github.com/memgraph/ai-toolkit/issues/222)). Applying this
-default is logged as a warning so it's never silent.
+insert/query even if you only meant to use OpenAI for the LLM, or not at all.
+Applying this default is logged as a warning so it's never silent.
 
 This default requires the `memgraph-mage` Docker image (not plain `memgraph`)
 so the `embeddings` module is loaded.

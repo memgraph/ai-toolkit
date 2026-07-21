@@ -7,9 +7,9 @@ https://memgraph.com/docs/advanced-algorithms/available-algorithms/embeddings
 using it as the default `embedding_func` means a zero-config
 `MemgraphLightRAGWrapper` needs no external API key and incurs no per-call
 embedding cost -- unlike `openai_embed`, which was the previous silent
-default (see issue #222). It also avoids pulling `torch` /
-`sentence-transformers` into this package: the model runs on the Memgraph
-server, reusing the same driver already used for storage.
+default. It also avoids pulling `torch` / `sentence-transformers` into this
+package: the model runs on the Memgraph server, reusing the same driver
+already used for storage.
 """
 
 from __future__ import annotations

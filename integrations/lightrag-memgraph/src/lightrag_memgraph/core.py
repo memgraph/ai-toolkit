@@ -31,9 +31,9 @@ def _apply_lightrag_defaults(lightrag_kwargs: dict) -> None:
 
     `embedding_func` defaults to Memgraph's own local sentence-transformer
     (via the `embeddings` MAGE module, see `embeddings.py`), not `openai_embed`
-    -- a zero-config wrapper should not silently make billed OpenAI calls
-    (issue #222). Defaulting is logged since it changes what network calls
-    `ainsert`/`aquery` make.
+    -- a zero-config wrapper should not silently make billed OpenAI calls.
+    Defaulting is logged since it changes what network calls `ainsert`/`aquery`
+    make.
     """
     if "llm_model_func" not in lightrag_kwargs:
         lightrag_kwargs["llm_model_func"] = gpt_4o_mini_complete
