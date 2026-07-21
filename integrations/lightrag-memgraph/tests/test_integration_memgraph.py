@@ -33,6 +33,7 @@ import pytest_asyncio
 from lightrag.base import DocStatus
 from lightrag.utils import EmbeddingFunc
 
+from lightrag_memgraph import MemgraphLightRAGWrapper
 from lightrag_memgraph._connection import (
     close_driver,
     get_database,
@@ -493,3 +494,77 @@ async def test_vector_query_logs_and_excludes_stale_candidates(
         assert any("vector_search.search returned" in m and "but only" in m for m in warnings), warnings
     finally:
         await store.drop()
+
+
+# --- zero-config MemgraphLightRAGWrapper (#217 regression) -------------------
+
+# All Memgraph-related names the wrapper/backends could possibly read, so the
+# regression test below can genuinely start from zero Memgraph env vars.
+_ALL_MEMGRAPH_ENV_NAMES = (
+    "MEMGRAPH_URL",
+    "MEMGRAPH_URI",
+    "MEMGRAPH_USER",
+    "MEMGRAPH_USERNAME",
+    "MEMGRAPH_PASSWORD",
+    "MEMGRAPH_DATABASE",
+    "MEMGRAPH_HOST",
+    "MEMGRAPH_PORT",
+    "MEMGRAPH_WORKSPACE",
+)
+
+
+@pytest.fixture(scope="session")
+def default_memgraph_reachable() -> None:
+    """Skip unless a Memgraph is reachable at the true zero-config default:
+    bolt://localhost:7687 with no auth. This is what full_memgraph_persistence=False
+    must fall back to with no Memgraph env vars set at all, independent of whatever
+    MEMGRAPH_URL the rest of this module resolves to.
+    """
+    from neo4j import GraphDatabase
+
+    driver = None
+    try:
+        driver = GraphDatabase.driver("bolt://localhost:7687", auth=("", ""), connection_timeout=5)
+        driver.verify_connectivity()
+    except Exception as exc:  # pragma: no cover - depends on the environment
+        pytest.skip(f"No live Memgraph reachable at the zero-config default bolt://localhost:7687: {exc}")
+    finally:
+        if driver is not None:
+            driver.close()
+
+
+async def _dummy_llm_model_func(prompt, **kwargs):
+    return "dummy response"
+
+
+async def test_wrapper_full_persistence_false_works_with_zero_env_vars(
+    default_memgraph_reachable, tmp_path, monkeypatch
+):
+    """Regression test for #217.
+
+    MemgraphLightRAGWrapper(full_memgraph_persistence=False).initialize(...) must
+    work with zero Memgraph-related env vars set, against a local default Memgraph,
+    same as on main. Before the fix, _bridge_lightrag_env_names() left MEMGRAPH_URI
+    unset in this case, and LightRAG's own MemgraphStorage graph backend raised
+    ValueError("... requires the following environment variables: MEMGRAPH_URI")
+    during initialize_storages().
+    """
+    for name in _ALL_MEMGRAPH_ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
+
+    wrapper = MemgraphLightRAGWrapper(full_memgraph_persistence=False)
+    ws = "it_" + uuid.uuid4().hex[:10]
+    try:
+        await wrapper.initialize(
+            working_dir=str(tmp_path),
+            workspace=ws,
+            embedding_func=_fake_embedding_func(),
+            llm_model_func=_dummy_llm_model_func,
+        )
+        graph = wrapper.get_lightrag().chunk_entity_relation_graph
+        # A real round trip against Memgraph, not just a successful construction.
+        result = await graph.drop()
+        assert result["status"] == "success"
+    finally:
+        if wrapper.rag is not None:
+            await wrapper.afinalize()

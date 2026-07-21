@@ -14,9 +14,13 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 def _bridge_lightrag_env_names() -> None:
     """Mirror MEMGRAPH_URL/USER onto LightRAG's graph-backend names (MEMGRAPH_URI/USERNAME) so
     both resolve to the same instance from one env set. Never overwrites an explicit override.
+
+    If neither name is set, default MEMGRAPH_URI to the local default Memgraph instance, matching
+    the zero-config behaviour of a locally-running default Memgraph.
     """
     if "MEMGRAPH_URL" in os.environ and "MEMGRAPH_URI" not in os.environ:
         os.environ["MEMGRAPH_URI"] = os.environ["MEMGRAPH_URL"]
+    os.environ.setdefault("MEMGRAPH_URI", "bolt://localhost:7687")
     if "MEMGRAPH_USER" in os.environ and "MEMGRAPH_USERNAME" not in os.environ:
         os.environ["MEMGRAPH_USERNAME"] = os.environ["MEMGRAPH_USER"]
 
