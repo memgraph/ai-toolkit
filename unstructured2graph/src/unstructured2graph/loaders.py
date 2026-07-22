@@ -16,6 +16,7 @@ from memgraph_toolbox.api.memgraph import Memgraph
 from .memgraph import (
     connect_chunks_to_entities,
     create_nodes_from_list,
+    create_unique_constraint,
     link_nodes_in_order,
 )
 
@@ -129,10 +130,9 @@ async def from_unstructured(
             ocr_languages, headers, ssl_verify, etc.)
     """
 
-    # TODO(gitbuda): Create all required indexes.
-    # TODO(gitbuda): Make the calls idempotent.
     # TODO(gitbuda): Implement batching on the Cypher side as well under memgraph.compute_embeddings
     # NOTE: LightRAG uses { source_id: "chunk-ID..." } to reference its chunks.
+    create_unique_constraint(memgraph, "Chunk", "hash")
     chunked_documents = make_chunks(sources, partition_kwargs=partition_kwargs)
     total_chunks = sum(len(document.chunks) for document in chunked_documents)
     start_time = time.time()
@@ -147,7 +147,7 @@ async def from_unstructured(
         for chunk in document.chunks:
             logger.debug(f"Chunk: {chunk.hash} - {chunk.text}")
             memgraph_node_props.append({"hash": chunk.hash, "text": chunk.text})
-        create_nodes_from_list(memgraph, memgraph_node_props, "Chunk", 100)
+        create_nodes_from_list(memgraph, memgraph_node_props, "Chunk", 100, merge_key="hash")
 
         if link_chunks:
             hash_pairs = [

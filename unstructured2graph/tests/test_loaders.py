@@ -1,10 +1,11 @@
 """Simple test for unstructured2graph loaders."""
 
 import os
+from unittest.mock import MagicMock
 
 import pytest
 
-from unstructured2graph import Chunk, ChunkedDocument, make_chunks, parse_source
+from unstructured2graph import Chunk, ChunkedDocument, from_unstructured, make_chunks, parse_source
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -72,6 +73,22 @@ def test_partition_kwargs_passed_through(tmp_path):
     # Should not raise - just verify kwargs are accepted
     chunks = parse_source(test_file, partition_kwargs={"encoding": "utf-8"})
     assert isinstance(chunks, list)
+
+
+@pytest.mark.asyncio
+async def test_from_unstructured_creates_unique_constraint_and_upserts_chunks(tmp_path):
+    """from_unstructured must self-provision its Chunk.hash constraint and
+    upsert (not duplicate-insert) Chunk nodes, so re-runs are safe."""
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("Some content for idempotent ingestion.")
+    memgraph = MagicMock()
+    lightrag_wrapper = MagicMock()
+
+    await from_unstructured([str(test_file)], memgraph, lightrag_wrapper, only_chunks=True)
+
+    queries = [call.args[0] for call in memgraph.query.call_args_list]
+    assert any("CONSTRAINT" in q and "Chunk" in q and "hash" in q for q in queries)
+    assert any("MERGE (n:Chunk {hash: data.hash})" in q for q in queries)
 
 
 @pytest.mark.skip(reason="Requires sample-data files and network access - run locally with full deps")
