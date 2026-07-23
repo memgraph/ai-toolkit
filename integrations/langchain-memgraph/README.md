@@ -125,7 +125,6 @@ for event in events:
     event["messages"][-1].pretty_print()
 
 print(last_event)
-
 ```
 
 ## 🧪 Test
