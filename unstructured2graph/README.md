@@ -34,6 +34,7 @@ from memgraph_toolbox.api.memgraph import Memgraph
 from lightrag_memgraph import MemgraphLightRAGWrapper
 from unstructured2graph import from_unstructured, create_property_index
 
+
 async def main():
     memgraph = Memgraph(user_agent="unstructured2graph")
     create_property_index(memgraph, "Chunk", "hash")
@@ -49,6 +50,7 @@ async def main():
         link_chunks=True,  # Create NEXT relationships between chunks
     )
     await lightrag.afinalize()
+
 
 asyncio.run(main())
 ```

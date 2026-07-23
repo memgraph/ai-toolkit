@@ -22,7 +22,7 @@ jobs:
         run: python -m pip install uv
 
       - name: Install ruff
-        run: uv tool install ruff
+        run: uv tool install ruff==0.16.0
 
       - name: Ruff check
         run: ruff check .

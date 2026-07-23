@@ -88,6 +88,7 @@ from skills_graph.connector import SkillGraphConnector
 skills = SkillGraph()
 skills.setup()
 
+
 # 2. Define a tool whose name matches the SkillGraphConnector defaults
 @function_tool
 def get_skill(name: str) -> str:
@@ -95,6 +96,7 @@ def get_skill(name: str) -> str:
     if skill is None:
         return f"Skill '{name}' not found."
     return f"{skill.name}: {skill.description}\n{skill.content}"
+
 
 # 3. Wire up the link
 link = AgentLink()
@@ -344,6 +346,7 @@ Implement `RuntimeAdapter`:
 from agent_context_graph import AgentLink, ToolStartEvent
 from agent_context_graph.protocols import RuntimeAdapter
 
+
 class MyRuntimeAdapter(RuntimeAdapter):
     def __init__(self, link: AgentLink, session_id: str):
         self._link = link
@@ -370,6 +373,7 @@ Implement `GraphConnector` in the graph package:
 ```python
 from agent_context_graph import EventType
 from agent_context_graph.protocols import GraphConnector
+
 
 class MyGraphConnector(GraphConnector):
     def supports(self, event):

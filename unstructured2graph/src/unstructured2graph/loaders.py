@@ -160,11 +160,10 @@ async def from_unstructured(
                 relationships = [{"from": from_hash, "to": to_hash} for from_hash, to_hash in hash_pairs]
                 link_nodes_in_order(memgraph, "Chunk", "hash", relationships, "NEXT")
 
-        for chunk in document.chunks:
-            if not only_chunks:
+        if not only_chunks:
+            for chunk in document.chunks:
                 await lightrag_wrapper.ainsert(input=chunk.text, file_paths=[chunk.hash])
-            if not only_chunks:
-                connect_chunks_to_entities(memgraph, "Chunk", "base")
+            connect_chunks_to_entities(memgraph, "Chunk", "base")
 
         processed_chunks += len(document.chunks)
         elapsed_time = time.time() - start_time

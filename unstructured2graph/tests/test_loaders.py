@@ -1,7 +1,7 @@
 """Simple test for unstructured2graph loaders."""
 
 import os
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -73,6 +73,28 @@ def test_partition_kwargs_passed_through(tmp_path):
     # Should not raise - just verify kwargs are accepted
     chunks = parse_source(test_file, partition_kwargs={"encoding": "utf-8"})
     assert isinstance(chunks, list)
+
+
+@pytest.mark.asyncio
+async def test_connect_chunks_to_entities_called_once_per_document():
+    """connect_chunks_to_entities is a full graph scan; it must run once per
+    document, not once per chunk."""
+    memgraph = MagicMock()
+    lightrag_wrapper = MagicMock()
+    lightrag_wrapper.ainsert = AsyncMock()
+    fake_document = ChunkedDocument(
+        chunks=[Chunk(text="a", hash="h1"), Chunk(text="b", hash="h2"), Chunk(text="c", hash="h3")],
+        source="fake.txt",
+    )
+
+    with (
+        patch("unstructured2graph.loaders.make_chunks", return_value=[fake_document]),
+        patch("unstructured2graph.loaders.connect_chunks_to_entities") as mock_connect,
+    ):
+        await from_unstructured(["fake.txt"], memgraph, lightrag_wrapper, only_chunks=False)
+
+    assert lightrag_wrapper.ainsert.await_count == 3
+    mock_connect.assert_called_once_with(memgraph, "Chunk", "base")
 
 
 @pytest.mark.asyncio
