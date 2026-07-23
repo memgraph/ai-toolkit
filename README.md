@@ -47,11 +47,11 @@ Transform PDFs, URLs, and documents into queryable knowledge graphs:
 import asyncio
 from memgraph_toolbox.api.memgraph import Memgraph
 from lightrag_memgraph import MemgraphLightRAGWrapper
-from unstructured2graph import from_unstructured, create_index
+from unstructured2graph import from_unstructured, create_property_index
 
 async def main():
     memgraph = Memgraph()
-    create_index(memgraph, "Chunk", "hash")
+    create_property_index(memgraph, "Chunk", "hash")
 
     lightrag = MemgraphLightRAGWrapper()
     await lightrag.initialize(working_dir="./lightrag_storage")
@@ -167,13 +167,13 @@ uv run main.py
 
 ## ❓ FAQ
 
-**Which databases are supported?**  
+**Which databases are supported?**
 Memgraph is the primary target. The sql2graph agent supports MySQL and PostgreSQL as source databases.
 
-**Do I need an LLM API key?**  
+**Do I need an LLM API key?**
 Yes, for features like entity extraction (unstructured2graph) and natural language queries (langchain-memgraph).
 
-**Can I use local LLMs?**  
+**Can I use local LLMs?**
 Yes! LangChain integration supports any LangChain-compatible model, including Ollama.
 
 ---

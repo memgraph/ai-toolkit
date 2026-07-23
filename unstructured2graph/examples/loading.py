@@ -7,7 +7,7 @@ import sources as SOURCES
 
 from lightrag_memgraph import MemgraphLightRAGWrapper
 from memgraph_toolbox.api.memgraph import Memgraph
-from unstructured2graph import create_index, from_unstructured
+from unstructured2graph import create_property_index, from_unstructured
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 LIGHTRAG_DIR = os.path.join(SCRIPT_DIR, "..", "lightrag_storage.out")
@@ -26,7 +26,7 @@ async def from_unstructured_with_prep():
     # Cleanup Memgraph database.
     memgraph = Memgraph(user_agent="unstructured2graph")
     memgraph.query("MATCH (n) DETACH DELETE n;")
-    create_index(memgraph, "Chunk", "hash")
+    create_property_index(memgraph, "Chunk", "hash")
 
     lightrag_wrapper = MemgraphLightRAGWrapper(log_level="WARNING")
     await lightrag_wrapper.initialize(working_dir=LIGHTRAG_DIR)

@@ -97,6 +97,27 @@ async def test_connect_chunks_to_entities_called_once_per_document():
     mock_connect.assert_called_once_with(memgraph, "Chunk", "base")
 
 
+@pytest.mark.asyncio
+async def test_from_unstructured_requires_lightrag_wrapper_when_not_only_chunks():
+    """lightrag_wrapper=None should raise a clear error unless only_chunks=True."""
+    memgraph = MagicMock()
+
+    with pytest.raises(ValueError, match="lightrag_wrapper"):
+        await from_unstructured(["irrelevant.txt"], memgraph, lightrag_wrapper=None, only_chunks=False)
+
+
+@pytest.mark.asyncio
+async def test_from_unstructured_only_chunks_works_without_lightrag_wrapper(tmp_path):
+    """only_chunks=True should not require a lightrag_wrapper at all."""
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("Some content for chunk-only ingestion.")
+    memgraph = MagicMock()
+
+    await from_unstructured([str(test_file)], memgraph, lightrag_wrapper=None, only_chunks=True)
+
+    assert memgraph.query.called
+
+
 @pytest.mark.skip(reason="Requires sample-data files and network access - run locally with full deps")
 def test_chunking_of_different_sources():
     pypdf_samples_dir = os.path.join(SCRIPT_DIR, "..", "sample-data", "pdf", "sample-files")

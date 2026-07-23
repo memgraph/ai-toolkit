@@ -111,7 +111,7 @@ def make_chunks(
 async def from_unstructured(
     sources: list[str | Path],
     memgraph: Memgraph,
-    lightrag_wrapper: MemgraphLightRAGWrapper,
+    lightrag_wrapper: MemgraphLightRAGWrapper | None = None,
     only_chunks: bool = False,
     link_chunks: bool = False,
     partition_kwargs: dict[str, Any] | None = None,
@@ -121,13 +121,16 @@ async def from_unstructured(
     Args:
         sources: List of file paths or URLs to process
         memgraph: Memgraph instance for database operations
-        lightrag_wrapper: MemgraphLightRAGWrapper instance (requires lightrag-memgraph)
+        lightrag_wrapper: MemgraphLightRAGWrapper instance (requires lightrag-memgraph).
+            Required unless only_chunks=True, since it's only used for entity extraction.
         only_chunks: If True, only create chunk nodes without LightRAG processing
         link_chunks: If True, link chunks in order with NEXT relationship
         partition_kwargs: Additional keyword arguments to pass to unstructured's
             partition function (e.g., strategy, languages, pdf_infer_table_structure,
             ocr_languages, headers, ssl_verify, etc.)
     """
+    if not only_chunks and lightrag_wrapper is None:
+        raise ValueError("lightrag_wrapper is required when only_chunks=False")
 
     # TODO(gitbuda): Create all required indexes.
     # TODO(gitbuda): Make the calls idempotent.

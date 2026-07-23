@@ -32,11 +32,11 @@ pip install -e ".[all-docs]"
 import asyncio
 from memgraph_toolbox.api.memgraph import Memgraph
 from lightrag_memgraph import MemgraphLightRAGWrapper
-from unstructured2graph import from_unstructured, create_index
+from unstructured2graph import from_unstructured, create_property_index
 
 async def main():
     memgraph = Memgraph(user_agent="unstructured2graph")
-    create_index(memgraph, "Chunk", "hash")
+    create_property_index(memgraph, "Chunk", "hash")
 
     lightrag = MemgraphLightRAGWrapper()
     await lightrag.initialize(working_dir="./lightrag_storage")
