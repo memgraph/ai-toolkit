@@ -125,9 +125,9 @@ Main class for interacting with the graph.
 graph = ActionsGraph()
 
 # Setup
-graph.setup()      # Create indexes
-graph.drop()       # Remove indexes
-graph.clear()      # Clear all data
+graph.setup()  # Create indexes
+graph.drop()  # Remove indexes
+graph.clear()  # Clear all data
 
 # Sessions
 graph.create_session(session)
@@ -228,11 +228,14 @@ tool_calls = graph.get_session_actions(
 ### Custom Cypher queries
 
 ```python
-rows = graph._db.query("""
+rows = graph._db.query(
+    """
     MATCH (s:Session {session_id: $session_id})-[:HAS_ACTION]->(a:ToolCall)
     RETURN a.tool_name AS tool, count(*) AS count
     ORDER BY count DESC
-""", params={"session_id": "my-session"})
+""",
+    params={"session_id": "my-session"},
+)
 ```
 
 ## License

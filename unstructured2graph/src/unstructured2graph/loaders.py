@@ -111,7 +111,7 @@ def make_chunks(
 async def from_unstructured(
     sources: list[str | Path],
     memgraph: Memgraph,
-    lightrag_wrapper: MemgraphLightRAGWrapper,
+    lightrag_wrapper: MemgraphLightRAGWrapper | None = None,
     only_chunks: bool = False,
     link_chunks: bool = False,
     entity_workspace: str | None = None,
@@ -122,7 +122,8 @@ async def from_unstructured(
     Args:
         sources: List of file paths or URLs to process
         memgraph: Memgraph instance for database operations
-        lightrag_wrapper: MemgraphLightRAGWrapper instance (requires lightrag-memgraph)
+        lightrag_wrapper: MemgraphLightRAGWrapper instance (requires lightrag-memgraph).
+            Required unless only_chunks=True, since it's only used for entity extraction.
         only_chunks: If True, only create chunk nodes without LightRAG processing
         link_chunks: If True, link chunks in order with NEXT relationship
         entity_workspace: Node label LightRAG entities were written under. If None
@@ -132,6 +133,8 @@ async def from_unstructured(
             partition function (e.g., strategy, languages, pdf_infer_table_structure,
             ocr_languages, headers, ssl_verify, etc.)
     """
+    if not only_chunks and lightrag_wrapper is None:
+        raise ValueError("lightrag_wrapper is required when only_chunks=False")
 
     # TODO(gitbuda): Create all required indexes.
     # TODO(gitbuda): Make the calls idempotent.
@@ -168,11 +171,10 @@ async def from_unstructured(
                 relationships = [{"from": from_hash, "to": to_hash} for from_hash, to_hash in hash_pairs]
                 link_nodes_in_order(memgraph, "Chunk", "hash", relationships, "NEXT")
 
-        for chunk in document.chunks:
-            if not only_chunks:
+        if not only_chunks:
+            for chunk in document.chunks:
                 await lightrag_wrapper.ainsert(input=chunk.text, file_paths=[chunk.hash])
-            if not only_chunks:
-                connect_chunks_to_entities(memgraph, "Chunk", resolved_entity_workspace)
+            connect_chunks_to_entities(memgraph, "Chunk", resolved_entity_workspace)
 
         processed_chunks += len(document.chunks)
         elapsed_time = time.time() - start_time
