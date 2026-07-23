@@ -1,10 +1,11 @@
 """Simple test for unstructured2graph loaders."""
 
 import os
+from unittest.mock import MagicMock
 
 import pytest
 
-from unstructured2graph import Chunk, ChunkedDocument, make_chunks, parse_source
+from unstructured2graph import Chunk, ChunkedDocument, from_unstructured, make_chunks, parse_source
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -72,6 +73,27 @@ def test_partition_kwargs_passed_through(tmp_path):
     # Should not raise - just verify kwargs are accepted
     chunks = parse_source(test_file, partition_kwargs={"encoding": "utf-8"})
     assert isinstance(chunks, list)
+
+
+@pytest.mark.asyncio
+async def test_from_unstructured_requires_lightrag_wrapper_when_not_only_chunks():
+    """lightrag_wrapper=None should raise a clear error unless only_chunks=True."""
+    memgraph = MagicMock()
+
+    with pytest.raises(ValueError, match="lightrag_wrapper"):
+        await from_unstructured(["irrelevant.txt"], memgraph, lightrag_wrapper=None, only_chunks=False)
+
+
+@pytest.mark.asyncio
+async def test_from_unstructured_only_chunks_works_without_lightrag_wrapper(tmp_path):
+    """only_chunks=True should not require a lightrag_wrapper at all."""
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("Some content for chunk-only ingestion.")
+    memgraph = MagicMock()
+
+    await from_unstructured([str(test_file)], memgraph, lightrag_wrapper=None, only_chunks=True)
+
+    assert memgraph.query.called
 
 
 @pytest.mark.skip(reason="Requires sample-data files and network access - run locally with full deps")
