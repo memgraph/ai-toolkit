@@ -10,6 +10,17 @@ from unstructured2graph import Chunk, ChunkedDocument, from_unstructured, make_c
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
+def _fake_document():
+    return ChunkedDocument(chunks=[Chunk(text="a", hash="h1")], source="fake.txt")
+
+
+def _lightrag_wrapper_with_workspace(workspace):
+    wrapper = MagicMock()
+    wrapper.ainsert = AsyncMock()
+    wrapper.get_lightrag.return_value.chunk_entity_relation_graph.workspace = workspace
+    return wrapper
+
+
 def test_parse_source_with_simple_text(tmp_path):
     """Test that parse_source can handle a simple text file."""
     # Create a simple text file
@@ -76,12 +87,57 @@ def test_partition_kwargs_passed_through(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_entity_workspace_explicit_override_wins():
+    memgraph = MagicMock()
+    lightrag_wrapper = _lightrag_wrapper_with_workspace("auto-derived")
+
+    with (
+        patch("unstructured2graph.loaders.make_chunks", return_value=[_fake_document()]),
+        patch("unstructured2graph.loaders.connect_chunks_to_entities") as mock_connect,
+    ):
+        await from_unstructured(
+            ["fake.txt"], memgraph, lightrag_wrapper, only_chunks=False, entity_workspace="explicit"
+        )
+
+    mock_connect.assert_called_once_with(memgraph, "Chunk", "explicit")
+
+
+@pytest.mark.asyncio
+async def test_entity_workspace_auto_derived_from_lightrag_wrapper():
+    memgraph = MagicMock()
+    lightrag_wrapper = _lightrag_wrapper_with_workspace("tenant-42")
+
+    with (
+        patch("unstructured2graph.loaders.make_chunks", return_value=[_fake_document()]),
+        patch("unstructured2graph.loaders.connect_chunks_to_entities") as mock_connect,
+    ):
+        await from_unstructured(["fake.txt"], memgraph, lightrag_wrapper, only_chunks=False)
+
+    mock_connect.assert_called_once_with(memgraph, "Chunk", "tenant-42")
+
+
+@pytest.mark.asyncio
+async def test_entity_workspace_falls_back_to_base_when_auto_derive_fails():
+    memgraph = MagicMock()
+    lightrag_wrapper = MagicMock()
+    lightrag_wrapper.ainsert = AsyncMock()
+    lightrag_wrapper.get_lightrag.side_effect = RuntimeError("not initialized")
+
+    with (
+        patch("unstructured2graph.loaders.make_chunks", return_value=[_fake_document()]),
+        patch("unstructured2graph.loaders.connect_chunks_to_entities") as mock_connect,
+    ):
+        await from_unstructured(["fake.txt"], memgraph, lightrag_wrapper, only_chunks=False)
+
+    mock_connect.assert_called_once_with(memgraph, "Chunk", "base")
+
+
+@pytest.mark.asyncio
 async def test_connect_chunks_to_entities_called_once_per_document():
     """connect_chunks_to_entities is a full graph scan; it must run once per
     document, not once per chunk."""
     memgraph = MagicMock()
-    lightrag_wrapper = MagicMock()
-    lightrag_wrapper.ainsert = AsyncMock()
+    lightrag_wrapper = _lightrag_wrapper_with_workspace("base")
     fake_document = ChunkedDocument(
         chunks=[Chunk(text="a", hash="h1"), Chunk(text="b", hash="h2"), Chunk(text="c", hash="h3")],
         source="fake.txt",
