@@ -88,7 +88,7 @@ def link_nodes_in_order(
         logger.error(f"Error creating chunk chain relationships: {e}")
 
 
-def create_index(memgraph: Memgraph, label: str, property: str):
+def create_property_index(memgraph: Memgraph, label: str, property: str):
     try:
         memgraph.query(f"CREATE INDEX ON :{label}({property});")
     except Exception as e:

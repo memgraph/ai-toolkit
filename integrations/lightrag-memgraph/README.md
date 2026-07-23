@@ -38,12 +38,14 @@ pip install lightrag-memgraph
 import asyncio
 from lightrag_memgraph import MemgraphLightRAGWrapper
 
+
 async def main():
     wrapper = MemgraphLightRAGWrapper()
     await wrapper.initialize(working_dir="./lightrag_storage")
     await wrapper.ainsert(input="Your document text here.", file_paths=["doc1"])
     # optional: rag = wrapper.get_lightrag(); print(await rag.get_graph_labels())
     await wrapper.afinalize()
+
 
 asyncio.run(main())
 ```

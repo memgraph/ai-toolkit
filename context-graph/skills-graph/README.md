@@ -22,11 +22,13 @@ sg = SkillGraph()
 sg.setup()
 
 # Store a skill
-sg.add_skill(Skill(
-    name="memgraph-cypher",
-    description="Writing Cypher queries for Memgraph",
-    content="# Cypher for Memgraph\n\nUse MATCH, CREATE, MERGE ...",
-))
+sg.add_skill(
+    Skill(
+        name="memgraph-cypher",
+        description="Writing Cypher queries for Memgraph",
+        content="# Cypher for Memgraph\n\nUse MATCH, CREATE, MERGE ...",
+    )
+)
 
 # Retrieve by name
 skill = sg.get_skill("memgraph-cypher")

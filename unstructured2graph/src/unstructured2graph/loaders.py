@@ -112,9 +112,10 @@ def make_chunks(
 async def from_unstructured(
     sources: list[str | Path],
     memgraph: Memgraph,
-    lightrag_wrapper: MemgraphLightRAGWrapper,
+    lightrag_wrapper: MemgraphLightRAGWrapper | None = None,
     only_chunks: bool = False,
     link_chunks: bool = False,
+    entity_workspace: str | None = None,
     partition_kwargs: dict[str, Any] | None = None,
 ):
     """
@@ -122,17 +123,30 @@ async def from_unstructured(
     Args:
         sources: List of file paths or URLs to process
         memgraph: Memgraph instance for database operations
-        lightrag_wrapper: MemgraphLightRAGWrapper instance (requires lightrag-memgraph)
+        lightrag_wrapper: MemgraphLightRAGWrapper instance (requires lightrag-memgraph).
+            Required unless only_chunks=True, since it's only used for entity extraction.
         only_chunks: If True, only create chunk nodes without LightRAG processing
         link_chunks: If True, link chunks in order with NEXT relationship
+        entity_workspace: Node label LightRAG entities were written under. If None
+            (default), auto-derived from lightrag_wrapper's resolved LightRAG
+            workspace, falling back to "base" if that fails.
         partition_kwargs: Additional keyword arguments to pass to unstructured's
             partition function (e.g., strategy, languages, pdf_infer_table_structure,
             ocr_languages, headers, ssl_verify, etc.)
     """
+    if not only_chunks and lightrag_wrapper is None:
+        raise ValueError("lightrag_wrapper is required when only_chunks=False")
 
     # TODO(gitbuda): Implement batching on the Cypher side as well under memgraph.compute_embeddings
     # NOTE: LightRAG uses { source_id: "chunk-ID..." } to reference its chunks.
     create_unique_constraint(memgraph, "Chunk", "hash")
+    resolved_entity_workspace = entity_workspace
+    if not only_chunks and resolved_entity_workspace is None:
+        try:
+            resolved_entity_workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
+        except Exception as e:
+            logger.warning(f"Could not auto-derive LightRAG entity workspace, falling back to 'base': {e}")
+            resolved_entity_workspace = "base"
     chunked_documents = make_chunks(sources, partition_kwargs=partition_kwargs)
     total_chunks = sum(len(document.chunks) for document in chunked_documents)
     start_time = time.time()
@@ -157,11 +171,10 @@ async def from_unstructured(
                 relationships = [{"from": from_hash, "to": to_hash} for from_hash, to_hash in hash_pairs]
                 link_nodes_in_order(memgraph, "Chunk", "hash", relationships, "NEXT")
 
-        for chunk in document.chunks:
-            if not only_chunks:
+        if not only_chunks:
+            for chunk in document.chunks:
                 await lightrag_wrapper.ainsert(input=chunk.text, file_paths=[chunk.hash])
-            if not only_chunks:
-                connect_chunks_to_entities(memgraph, "Chunk", "base")
+            connect_chunks_to_entities(memgraph, "Chunk", resolved_entity_workspace)
 
         processed_chunks += len(document.chunks)
         elapsed_time = time.time() - start_time
