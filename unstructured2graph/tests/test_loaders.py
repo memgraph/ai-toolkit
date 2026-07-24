@@ -87,6 +87,22 @@ def test_partition_kwargs_passed_through(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_from_unstructured_creates_unique_constraint_and_upserts_chunks(tmp_path):
+    """from_unstructured must self-provision its Chunk.hash constraint and
+    upsert (not duplicate-insert) Chunk nodes, so re-runs are safe."""
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("Some content for idempotent ingestion.")
+    memgraph = MagicMock()
+    lightrag_wrapper = MagicMock()
+
+    await from_unstructured([str(test_file)], memgraph, lightrag_wrapper, only_chunks=True)
+
+    queries = [call.args[0] for call in memgraph.query.call_args_list]
+    assert any("CONSTRAINT" in q and "Chunk" in q and "hash" in q for q in queries)
+    assert any("MERGE (n:Chunk {hash: data.hash})" in q for q in queries)
+
+
+@pytest.mark.asyncio
 async def test_entity_workspace_explicit_override_wins():
     memgraph = MagicMock()
     lightrag_wrapper = _lightrag_wrapper_with_workspace("auto-derived")

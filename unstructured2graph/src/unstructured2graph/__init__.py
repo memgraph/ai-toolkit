@@ -18,6 +18,7 @@ from .memgraph import (
     create_label_index,
     create_nodes_from_list,
     create_property_index,
+    create_unique_constraint,
     create_vector_search_index,
     link_nodes_in_order,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "create_label_index",
     "create_nodes_from_list",
     "create_property_index",
+    "create_unique_constraint",
     "create_vector_search_index",
     "from_unstructured",
     "link_nodes_in_order",
