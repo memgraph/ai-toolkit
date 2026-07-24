@@ -21,14 +21,14 @@ pip install sessions-graph[agent-context-graph]
 ```python
 from sessions_graph import SessionsGraph
 
-graph = SessionsGraph()   # connects via MEMGRAPH_HOST / MEMGRAPH_PORT env vars
-graph.setup()           # creates constraints and the text index (run once)
+graph = SessionsGraph()  # connects via MEMGRAPH_HOST / MEMGRAPH_PORT env vars
+graph.setup()  # creates constraints and the text index (run once)
 
 # Write a memory
 mem = graph.save_memory(
     user_id="alice",
     content="Prefers Python over TypeScript",
-    session_id="s-abc123",   # optional — links memory to a session for provenance
+    session_id="s-abc123",  # optional — links memory to a session for provenance
 )
 
 # Retrieve all memories for a user
