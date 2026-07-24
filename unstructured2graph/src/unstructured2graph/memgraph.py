@@ -1,6 +1,7 @@
 import logging
 import time
 
+from lightrag_memgraph import DEFAULT_EMBEDDING_DIM
 from memgraph_toolbox.api.memgraph import Memgraph
 
 logger = logging.getLogger(__name__)
@@ -127,10 +128,17 @@ def create_label_index(memgraph: Memgraph, label: str):
         logger.warning(f"Could not create label index on :{label}: {e}")
 
 
-def create_vector_search_index(memgraph: Memgraph, label: str, property: str):
+def create_vector_search_index(
+    memgraph: Memgraph,
+    label: str,
+    property: str,
+    dimension: int = DEFAULT_EMBEDDING_DIM,
+    index_name: str = "vs_name",
+):
     try:
         memgraph.query(
-            f"CREATE VECTOR INDEX vs_name ON :{label}({property}) WITH CONFIG {{'dimension': 384, 'capacity': 10000}};"
+            f"CREATE VECTOR INDEX {index_name} ON :{label}({property}) "
+            f"WITH CONFIG {{'dimension': {dimension}, 'capacity': 10000}};"
         )
     except Exception as e:
         logger.warning(f"Error creating vector search index: {e}")

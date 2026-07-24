@@ -6,7 +6,12 @@ This package provides a wrapper around LightRAG that uses Memgraph as the graph 
 
 from .core import MemgraphLightRAGWrapper
 from .docstatus_impl import MemgraphDocStatusStorage
-from .embeddings import build_memgraph_sentence_embed, memgraph_sentence_embed
+from .embeddings import (
+    DEFAULT_EMBEDDING_DIM,
+    DEFAULT_MODEL_NAME,
+    build_memgraph_sentence_embed,
+    memgraph_sentence_embed,
+)
 from .kv_impl import MemgraphKVStorage
 from .registry import register_memgraph_storage
 from .vector_impl import MemgraphVectorStorage
@@ -125,6 +130,8 @@ def _patch_anthropic() -> None:
 _patch_anthropic()
 
 __all__ = [
+    "DEFAULT_EMBEDDING_DIM",
+    "DEFAULT_MODEL_NAME",
     "MemgraphDocStatusStorage",
     "MemgraphKVStorage",
     "MemgraphLightRAGWrapper",

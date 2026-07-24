@@ -29,3 +29,13 @@ def test_wrapper_with_custom_params():
     )
     assert wrapper.log_level == "DEBUG"
     assert wrapper.full_memgraph_persistence is False
+
+
+def test_embedding_defaults_are_exported_from_top_level():
+    """DEFAULT_EMBEDDING_DIM/DEFAULT_MODEL_NAME must be reachable without
+    digging into the embeddings submodule, so downstream packages can treat
+    them as the single source of truth for the default embedding dimension."""
+    from lightrag_memgraph import DEFAULT_EMBEDDING_DIM, DEFAULT_MODEL_NAME, embeddings
+
+    assert DEFAULT_EMBEDDING_DIM == embeddings.DEFAULT_EMBEDDING_DIM
+    assert DEFAULT_MODEL_NAME == embeddings.DEFAULT_MODEL_NAME
