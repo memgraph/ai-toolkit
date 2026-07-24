@@ -3,8 +3,7 @@
 from unittest.mock import MagicMock
 
 from lightrag_memgraph import DEFAULT_EMBEDDING_DIM
-from unstructured2graph.memgraph import create_vector_search_index
-from unstructured2graph.memgraph import create_nodes_from_list, create_unique_constraint
+from unstructured2graph.memgraph import create_nodes_from_list, create_unique_constraint, create_vector_search_index
 
 
 def test_create_vector_search_index_defaults_match_embedding_dim():
