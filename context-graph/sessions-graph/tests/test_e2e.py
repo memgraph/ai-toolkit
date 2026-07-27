@@ -4,8 +4,8 @@ Requires Memgraph reachable at bolt://localhost:7687 (default) -- override
 via MEMGRAPH_URL/MEMGRAPH_USER/MEMGRAPH_PASSWORD/MEMGRAPH_DATABASE. Skips
 cleanly if unreachable (see conftest.py's `memgraph`/`graph` fixtures).
 
-No LLM calls in this file -- see test_e2e_enrichment.py for the tier that
-exercises real entity extraction via enrich_session().
+No LLM calls in this file -- see test_e2e_reconciliation.py for the tier that
+exercises real entity extraction via reconcile_session().
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ def test_connector_session_start_creates_user_and_session(graph, memgraph):
     assert rows[0]["count"] == 1
 
 
-def test_connector_session_end_marks_enrichment_pending(graph, memgraph):
+def test_connector_session_end_marks_reconciliation_pending(graph, memgraph):
     pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
     from sessions_graph.connector import SessionsGraphConnector
 
@@ -78,8 +78,8 @@ def test_connector_session_end_marks_enrichment_pending(graph, memgraph):
     connector.on_event(SessionStartEvent(session_id="s-1", user_id="alice"))
     connector.on_event(SessionEndEvent(session_id="s-1"))
 
-    rows = memgraph.query("MATCH (s:Session {session_id: 's-1'}) RETURN s.enrichment_status AS status")
+    rows = memgraph.query("MATCH (s:Session {session_id: 's-1'}) RETURN s.reconciliation_status AS status")
     assert rows[0]["status"] == "pending"
 
-    pending = graph.get_pending_enrichment_sessions()
+    pending = graph.get_pending_reconciliation_sessions()
     assert "s-1" in pending

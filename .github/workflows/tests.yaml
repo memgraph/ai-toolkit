@@ -388,7 +388,7 @@ jobs:
 
       - name: Start Memgraph container
         run: |
-          # MAGE image bundles the embeddings module the enrichment e2e test exercises.
+          # MAGE image bundles the embeddings module the reconciliation e2e test exercises.
           docker run -d -p 7687:7687 --name memgraph memgraph/memgraph-mage:latest --schema-info-enabled=True --telemetry-enabled=false
 
       - name: Wait for Memgraph to be ready
@@ -413,11 +413,11 @@ jobs:
         env:
           # Explicit env vars, not just memgraph-toolbox's Python-level
           # defaults: LightRAG's own storage backends (exercised by
-          # test_e2e_enrichment.py) read these directly and raise if
+          # test_e2e_reconciliation.py) read these directly and raise if
           # MEMGRAPH_URL is unset, even when a real Memgraph is reachable by default.
           MEMGRAPH_URL: bolt://localhost:7687
           MEMGRAPH_USER: ""
           MEMGRAPH_PASSWORD: ""
           MEMGRAPH_DATABASE: memgraph
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: uv run --package sessions-graph --extra test --extra enrichment --extra agent-context-graph pytest tests/ -v
+        run: uv run --package sessions-graph --extra test --extra reconciliation --extra agent-context-graph pytest tests/ -v

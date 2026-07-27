@@ -1,4 +1,4 @@
-"""End-to-end test that exercises real session enrichment.
+"""End-to-end test that exercises real session reconciliation.
 
 Requires:
 - A live Memgraph reachable at MEMGRAPH_URL (see conftest.py's `memgraph`/
@@ -10,7 +10,7 @@ Requires:
   when a real Memgraph is reachable at the default bolt://localhost:7687.
 - OPENAI_API_KEY -- skips if unset (mirrors skills-graph's
   tests/test_connector_e2e.py `requires_openai_key` convention).
-- The `sessions-graph[enrichment]` extra (actions-graph + unstructured2graph).
+- The `sessions-graph[reconciliation]` extra (actions-graph + unstructured2graph).
 
 Embedding stays at MemgraphLightRAGWrapper's default (Memgraph's own local
 sentence-transformer via the mage image's `embeddings` module), so only the
@@ -61,10 +61,10 @@ async def lightrag_wrapper(memgraph, tmp_path):
 
 @requires_openai_key
 @pytest.mark.asyncio
-async def test_enrich_session_extracts_real_entities_from_session_content(
+async def test_reconcile_session_extracts_real_entities_from_session_content(
     graph, memgraph, actions_graph, lightrag_wrapper
 ):
-    session_id = "s-e2e-enrichment"
+    session_id = "s-e2e-reconciliation"
     actions_graph.create_session(Session(session_id=session_id))
     actions_graph.record_message(
         session_id=session_id,
@@ -82,14 +82,14 @@ async def test_enrich_session_extracts_real_entities_from_session_content(
         session_id=session_id,
     )
 
-    summary = await graph.enrich_session(session_id, lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
+    summary = await graph.reconcile_session(session_id, lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
 
     assert summary.status == "completed"
     assert summary.texts_considered == 3
     assert summary.texts_deduped == 3
 
     rows = memgraph.query(
-        "MATCH (s:Session {session_id: $session_id}) RETURN s.enrichment_status AS status",
+        "MATCH (s:Session {session_id: $session_id}) RETURN s.reconciliation_status AS status",
         params={"session_id": session_id},
     )
     assert rows[0]["status"] == "completed"

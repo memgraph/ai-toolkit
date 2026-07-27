@@ -19,7 +19,7 @@ dependencies = [
 agent-context-graph = [
     "agent-context-graph>=0.1.4",
 ]
-enrichment = [
+reconciliation = [
     "actions-graph>=0.1.1",
     "unstructured2graph>=0.3.0",
 ]

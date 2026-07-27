@@ -164,7 +164,7 @@ class TestSessionsGraphConnector:
         assert connector.active_user_id is None
         assert connector.active_session_id is None
 
-    def test_auto_enrich_defaults_off_and_does_not_spawn_process(self):
+    def test_auto_reconcile_defaults_off_and_does_not_spawn_process(self):
         connector, _graph, _db, SessionStartEvent, SessionEndEvent = self._make()
 
         with patch("sessions_graph.connector.subprocess.Popen") as mock_popen:
@@ -173,11 +173,11 @@ class TestSessionsGraphConnector:
 
         mock_popen.assert_not_called()
 
-    def test_auto_enrich_true_spawns_detached_process(self):
+    def test_auto_reconcile_true_spawns_detached_process(self):
         from sessions_graph.connector import SessionsGraphConnector
 
         _connector, graph, _db, SessionStartEvent, SessionEndEvent = self._make()
-        connector = SessionsGraphConnector(graph, auto_enrich=True)
+        connector = SessionsGraphConnector(graph, auto_reconcile=True)
 
         with patch("sessions_graph.connector.subprocess.Popen") as mock_popen:
             connector.on_event(SessionStartEvent(session_id="s-1", user_id="alice"))
@@ -185,13 +185,13 @@ class TestSessionsGraphConnector:
 
         mock_popen.assert_called_once()
         command = mock_popen.call_args.args[0]
-        assert command[-3:] == ["enrich", "--session", "s-1"]
+        assert command[-3:] == ["reconcile", "--session", "s-1"]
         assert mock_popen.call_args.kwargs["start_new_session"] is True
 
-    def test_auto_enrich_env_var_enables_spawn_when_not_passed_explicitly(self, monkeypatch):
+    def test_auto_reconcile_env_var_enables_spawn_when_not_passed_explicitly(self, monkeypatch):
         from sessions_graph.connector import SessionsGraphConnector
 
-        monkeypatch.setenv("SESSIONS_GRAPH_AUTO_ENRICH", "1")
+        monkeypatch.setenv("SESSIONS_GRAPH_AUTO_RECONCILE", "1")
         _connector, graph, _db, SessionStartEvent, SessionEndEvent = self._make()
         connector = SessionsGraphConnector(graph)
 

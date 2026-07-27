@@ -1,4 +1,4 @@
-"""Session-content enrichment: turn Actions Graph / Memory text into entities.
+"""Session-content reconciliation: turn Actions Graph / Memory text into entities.
 
 Session content (Messages, ToolCalls, ToolResults, Memories) is mostly opaque
 strings and JSON blobs today. This module extracts plain text worth
@@ -6,7 +6,7 @@ entity-extracting out of that content and hands it to unstructured2graph's
 chunk + LightRAG pipeline, so knowledge embedded in past sessions becomes
 queryable graph entities instead of unread properties.
 
-Requires the ``sessions-graph[enrichment]`` extra (actions-graph +
+Requires the ``sessions-graph[reconciliation]`` extra (actions-graph +
 unstructured2graph).
 """
 
@@ -25,10 +25,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# A single enrichable text unit sent to unstructured2graph's LightRAG pipeline
+# A single reconcilable text unit sent to unstructured2graph's LightRAG pipeline
 # is capped at this length; anything longer is truncated with a logged
 # warning rather than billed in full to an LLM.
-MAX_ENRICHABLE_CHARS = 8000
+MAX_RECONCILABLE_CHARS = 8000
 
 
 def content_hash(text: str) -> str:
@@ -49,7 +49,7 @@ def _content_to_text(content: Any) -> str | None:
     return str(content)
 
 
-def extract_enrichable_text(action: Action) -> str | None:
+def extract_reconcilable_text(action: Action) -> str | None:
     """Pull one plain-text unit worth entity-extracting out of an Action.
 
     Only Messages, ToolCalls, and ToolResults carry text worth running through
@@ -73,20 +73,20 @@ def extract_enrichable_text(action: Action) -> str | None:
         return None
 
     text = text.strip()
-    if len(text) > MAX_ENRICHABLE_CHARS:
+    if len(text) > MAX_RECONCILABLE_CHARS:
         logger.warning(
-            "Truncating enrichable text for action %s from %d to %d chars",
+            "Truncating reconcilable text for action %s from %d to %d chars",
             action.action_id,
             len(text),
-            MAX_ENRICHABLE_CHARS,
+            MAX_RECONCILABLE_CHARS,
         )
-        text = text[:MAX_ENRICHABLE_CHARS]
+        text = text[:MAX_RECONCILABLE_CHARS]
 
     return text
 
 
 @dataclass(frozen=True)
-class EnrichmentSource:
+class ReconciliationSource:
     """One piece of session content queued for entity extraction.
 
     ``kind`` identifies which node the resulting Chunk(s) get linked back to
@@ -99,7 +99,7 @@ class EnrichmentSource:
     text: str
 
 
-#: Maps an EnrichmentSource.kind to the (node label, id property) it links to.
+#: Maps an ReconciliationSource.kind to the (node label, id property) it links to.
 NODE_LABELS: dict[str, tuple[str, str]] = {
     "action": ("Action", "action_id"),
     "memory": ("Memory", "memory_id"),
@@ -107,8 +107,8 @@ NODE_LABELS: dict[str, tuple[str, str]] = {
 
 
 @dataclass(frozen=True)
-class EnrichmentSummary:
-    """Result of one ``SessionsGraph.enrich_session`` call."""
+class ReconciliationSummary:
+    """Result of one ``SessionsGraph.reconcile_session`` call."""
 
     session_id: str
     status: str  # "completed" | "failed"
@@ -117,22 +117,22 @@ class EnrichmentSummary:
     error: str | None = None
 
 
-def build_enrichment_sources(
+def build_reconciliation_sources(
     actions: list[Action],
     memories: list[Memory],
-) -> list[EnrichmentSource]:
-    """Build the ordered list of enrichable text sources for a session.
+) -> list[ReconciliationSource]:
+    """Build the ordered list of reconcilable text sources for a session.
 
     Order matters: it lines up 1:1 with the ``texts`` list passed to
     ``unstructured2graph.from_texts``, whose grouped return value is zipped
     back against this list by index to link Chunks to their source node.
     """
-    sources: list[EnrichmentSource] = []
+    sources: list[ReconciliationSource] = []
     for action in actions:
-        text = extract_enrichable_text(action)
+        text = extract_reconcilable_text(action)
         if text:
-            sources.append(EnrichmentSource(kind="action", node_id=action.action_id, text=text))
+            sources.append(ReconciliationSource(kind="action", node_id=action.action_id, text=text))
     for memory in memories:
         if memory.content and memory.content.strip():
-            sources.append(EnrichmentSource(kind="memory", node_id=memory.memory_id, text=memory.content.strip()))
+            sources.append(ReconciliationSource(kind="memory", node_id=memory.memory_id, text=memory.content.strip()))
     return sources

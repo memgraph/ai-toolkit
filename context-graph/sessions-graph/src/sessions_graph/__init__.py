@@ -34,7 +34,7 @@ Integration with Agent Context Graph::
 """
 
 from .core import SessionsGraph
-from .enrichment import EnrichmentSummary
 from .models import Memory, MemoryValidationError
+from .reconciliation import ReconciliationSummary
 
-__all__ = ["EnrichmentSummary", "Memory", "MemoryValidationError", "SessionsGraph"]
+__all__ = ["Memory", "MemoryValidationError", "ReconciliationSummary", "SessionsGraph"]

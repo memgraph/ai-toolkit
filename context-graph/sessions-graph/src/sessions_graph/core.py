@@ -20,14 +20,14 @@ from typing import TYPE_CHECKING, Any
 
 from memgraph_toolbox.api.memgraph import Memgraph
 
-from .enrichment import (
+from .models import Memory, validate_content, validate_memory_id, validate_user_id
+from .reconciliation import (
     NODE_LABELS,
-    EnrichmentSource,
-    EnrichmentSummary,
-    build_enrichment_sources,
+    ReconciliationSource,
+    ReconciliationSummary,
+    build_reconciliation_sources,
     content_hash,
 )
-from .models import Memory, validate_content, validate_memory_id, validate_user_id
 
 if TYPE_CHECKING:
     from actions_graph import ActionsGraph
@@ -67,9 +67,9 @@ class SessionsGraph:
         self._db.query("CREATE INDEX ON :Memory(user_id);")
         self._db.query("CREATE INDEX ON :Memory(created_at);")
         self._db.query(f"CREATE TEXT INDEX {_FULLTEXT_INDEX} ON :Memory(content);")
-        self._db.query("CREATE INDEX ON :Session(enrichment_status);")
+        self._db.query("CREATE INDEX ON :Session(reconciliation_status);")
         # Shared with unstructured2graph's Chunk.hash convention; ensured here
-        # too so enrich_session() works even without a prior unstructured2graph call.
+        # too so reconcile_session() works even without a prior unstructured2graph call.
         self._db.query("CREATE CONSTRAINT ON (c:Chunk) ASSERT c.hash IS UNIQUE;")
 
     def drop(self) -> None:
@@ -172,7 +172,7 @@ class SessionsGraph:
 
         Unlike :meth:`get_memories` (user-scoped), this follows
         ``PRODUCED_MEMORY`` provenance rather than ``HAS_MEMORY`` ownership —
-        used by :meth:`enrich_session` to gather a session's Memory content.
+        used by :meth:`reconcile_session` to gather a session's Memory content.
         """
         rows = self._db.query(
             """
@@ -260,20 +260,20 @@ class SessionsGraph:
         )
 
     # ------------------------------------------------------------------
-    # Enrichment
+    # Reconciliation
     # ------------------------------------------------------------------
 
-    async def enrich_session(
+    async def reconcile_session(
         self,
         session_id: str,
         *,
         lightrag_wrapper: Any,
         actions_graph: ActionsGraph | None = None,
         entity_workspace: str | None = None,
-    ) -> EnrichmentSummary:
+    ) -> ReconciliationSummary:
         """Batch-extract entities from a session's Action + Memory content.
 
-        Pulls all enrichable Message/ToolCall/ToolResult text recorded for
+        Pulls all reconcilable Message/ToolCall/ToolResult text recorded for
         *session_id* in Actions Graph, plus this session's Memories, dedupes
         by content hash, and runs the result through unstructured2graph's
         chunk + LightRAG entity-extraction pipeline. Resulting Chunk nodes are
@@ -283,13 +283,13 @@ class SessionsGraph:
         This is deliberately not wired to run automatically inside the
         ``SESSION_END`` hook — LightRAG extraction is LLM-backed and slow, and
         hook subprocesses run under a runtime timeout. Call this from a
-        separate process (e.g. the ``sessions-graph enrich`` CLI) instead.
+        separate process (e.g. the ``sessions-graph reconcile`` CLI) instead.
 
-        Requires the ``sessions-graph[enrichment]`` extra (actions-graph +
+        Requires the ``sessions-graph[reconciliation]`` extra (actions-graph +
         unstructured2graph).
 
         Args:
-            session_id: Session to enrich.
+            session_id: Session to reconcile.
             lightrag_wrapper: An initialised ``MemgraphLightRAGWrapper``.
             actions_graph: An ``ActionsGraph`` instance sharing this graph's
                 Memgraph connection. Constructed automatically if omitted.
@@ -299,7 +299,7 @@ class SessionsGraph:
                 document-ingested ones and can merge.
 
         Returns:
-            An :class:`EnrichmentSummary` describing what happened. Never
+            An :class:`ReconciliationSummary` describing what happened. Never
             raises for per-session failures — the failure is recorded on the
             Session node and returned so a sweep over many sessions can
             continue past one bad session.
@@ -308,19 +308,19 @@ class SessionsGraph:
             try:
                 from actions_graph import ActionsGraph as _ActionsGraph
             except ImportError as exc:
-                msg = "actions-graph is required for enrich_session; install sessions-graph[enrichment]"
+                msg = "actions-graph is required for reconcile_session; install sessions-graph[reconciliation]"
                 raise ImportError(msg) from exc
             actions_graph = _ActionsGraph(self._db)
 
         try:
             from unstructured2graph import from_texts
         except ImportError as exc:
-            msg = "unstructured2graph is required for enrich_session; install sessions-graph[enrichment]"
+            msg = "unstructured2graph is required for reconcile_session; install sessions-graph[reconciliation]"
             raise ImportError(msg) from exc
 
         actions = actions_graph.get_session_actions(session_id)
         memories = self.get_memories_for_session(session_id)
-        sources = build_enrichment_sources(actions, memories)
+        sources = build_reconciliation_sources(actions, memories)
 
         unique_texts: dict[str, str] = {}
         for source in sources:
@@ -340,11 +340,11 @@ class SessionsGraph:
             self._db.query(
                 """
                 MATCH (s:Session {session_id: $session_id})
-                SET s.enrichment_status = 'completed', s.enriched_at = $enriched_at
+                SET s.reconciliation_status = 'completed', s.reconcileed_at = $reconcileed_at
                 """,
-                params={"session_id": session_id, "enriched_at": datetime.now(timezone.utc).isoformat()},
+                params={"session_id": session_id, "reconcileed_at": datetime.now(timezone.utc).isoformat()},
             )
-            return EnrichmentSummary(
+            return ReconciliationSummary(
                 session_id=session_id,
                 status="completed",
                 texts_considered=len(sources),
@@ -354,11 +354,11 @@ class SessionsGraph:
             self._db.query(
                 """
                 MATCH (s:Session {session_id: $session_id})
-                SET s.enrichment_status = 'failed', s.enrichment_error = $error
+                SET s.reconciliation_status = 'failed', s.reconciliation_error = $error
                 """,
                 params={"session_id": session_id, "error": str(e)},
             )
-            return EnrichmentSummary(
+            return ReconciliationSummary(
                 session_id=session_id,
                 status="failed",
                 texts_considered=len(sources),
@@ -366,11 +366,11 @@ class SessionsGraph:
                 error=str(e),
             )
 
-    def get_pending_enrichment_sessions(self, *, limit: int = 100) -> list[str]:
-        """Return session_ids marked ``enrichment_status = 'pending'``."""
+    def get_pending_reconciliation_sessions(self, *, limit: int = 100) -> list[str]:
+        """Return session_ids marked ``reconciliation_status = 'pending'``."""
         rows = self._db.query(
             """
-            MATCH (s:Session {enrichment_status: 'pending'})
+            MATCH (s:Session {reconciliation_status: 'pending'})
             RETURN s.session_id AS session_id
             ORDER BY s.session_id
             LIMIT $limit
@@ -381,7 +381,7 @@ class SessionsGraph:
 
     def _link_chunks_to_sources(
         self,
-        sources: list[EnrichmentSource],
+        sources: list[ReconciliationSource],
         chunks_by_text_hash: dict[str, list[Any]],
     ) -> None:
         """Wire (:Action|:Memory)-[:HAS_CHUNK]->(:Chunk) for each source.
