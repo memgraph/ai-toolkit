@@ -237,6 +237,7 @@ class SessionsGraph:
             """
             MATCH (m:Memory {memory_id: $memory_id})
             SET m.content = $content
+            WITH m
             OPTIONAL MATCH (s:Session)-[:PRODUCED_MEMORY]->(m)
             RETURN m.memory_id  AS memory_id,
                    m.user_id    AS user_id,
