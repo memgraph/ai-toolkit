@@ -81,9 +81,8 @@ asyncio.run(main())
 - `parse_source(source, partition_kwargs)` - Parse a single file or URL into chunks
 - `parse_text(text, partition_kwargs)` - Chunk a raw in-memory string (no file/URL involved)
 - `make_chunks(sources, partition_kwargs)` - Process multiple sources into `ChunkedDocument` objects
-- `from_unstructured(sources, memgraph, lightrag_wrapper, ...)` - Full ingestion pipeline for files/URLs
+- `from_unstructured(sources, memgraph, lightrag_wrapper, ...)` - Full ingestion pipeline for files/URLs; returns one Chunk group per source
 - `from_texts(texts, memgraph, lightrag_wrapper, ...)` - Full ingestion pipeline for raw strings; returns one Chunk group per input text
-- `ingest_chunks(chunks, memgraph, lightrag_wrapper, ...)` - Shared Chunk-node + LightRAG ingestion step used by both pipelines above
 
 ### Graph Operations
 

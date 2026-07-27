@@ -15,7 +15,6 @@ from unstructured2graph import (
     parse_source,
     parse_text,
 )
-from unstructured2graph.loaders import INLINE_TEXT_MAX_CHARS
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -200,12 +199,41 @@ async def test_from_unstructured_only_chunks_works_without_lightrag_wrapper(tmp_
     assert memgraph.query.called
 
 
+@pytest.mark.asyncio
+async def test_from_unstructured_returns_grouped_chunks_per_source():
+    """from_unstructured() must mirror from_texts()'s grouped-return contract:
+    one list of Chunks per source, in `sources` order."""
+    memgraph = MagicMock()
+    doc_a = ChunkedDocument(chunks=[Chunk(text="a1", hash="ha1"), Chunk(text="a2", hash="ha2")], source="a.txt")
+    doc_b = ChunkedDocument(chunks=[Chunk(text="b1", hash="hb1")], source="b.txt")
+
+    with patch("unstructured2graph.loaders.make_chunks", return_value=[doc_a, doc_b]):
+        grouped = await from_unstructured(["a.txt", "b.txt"], memgraph, only_chunks=True)
+
+    assert grouped == [doc_a.chunks, doc_b.chunks]
+
+
+@pytest.mark.asyncio
+async def test_from_unstructured_source_with_no_chunks_contributes_empty_group():
+    memgraph = MagicMock()
+    empty_doc = ChunkedDocument(chunks=[], source="empty.txt")
+    doc = ChunkedDocument(chunks=[Chunk(text="x", hash="hx")], source="x.txt")
+
+    with patch("unstructured2graph.loaders.make_chunks", return_value=[empty_doc, doc]):
+        grouped = await from_unstructured(["empty.txt", "x.txt"], memgraph, only_chunks=True)
+
+    assert grouped == [[], doc.chunks]
+
+
 def test_parse_text_empty_returns_no_chunks():
     assert parse_text("") == []
     assert parse_text("   \n  ") == []
 
 
-def test_parse_text_short_text_becomes_single_chunk():
+def test_parse_text_short_simple_text_becomes_single_chunk():
+    """A short, single-sentence input has nothing for chunk_by_title to split
+    on, so it naturally comes back as one chunk -- via the real pipeline, not
+    a length-based shortcut."""
     text = "User prefers Python over TypeScript."
     chunks = parse_text(text)
 
@@ -216,7 +244,6 @@ def test_parse_text_short_text_becomes_single_chunk():
 
 def test_parse_text_long_text_is_chunked_via_unstructured():
     long_text = "Section one.\n\n" + ("Filler sentence. " * 500) + "\n\nSection two.\n\n" + ("More filler. " * 500)
-    assert len(long_text) > INLINE_TEXT_MAX_CHARS
 
     chunks = parse_text(long_text)
 
@@ -225,6 +252,21 @@ def test_parse_text_long_text_is_chunked_via_unstructured():
     assert all(chunk.text.strip() for chunk in chunks)
     # Long text must not collapse into a single chunk identical to the whole input.
     assert not (len(chunks) == 1 and chunks[0].text == long_text)
+
+
+def test_parse_text_splits_by_content_size_regardless_of_total_length():
+    """Regression guard: parse_text() must not fork behavior on an arbitrary
+    input-length threshold. This text is short enough that an earlier
+    version of parse_text() forced it into a single Chunk unconditionally;
+    it must still be split the same way unstructured's chunk_by_title would
+    split it on its own (chunk_by_title's default max_characters is ~500,
+    well under this text's length)."""
+    text = ("This is a filler sentence used to pad content out. " * 20).strip()
+    assert len(text) < 2000  # well under the old (now-removed) inline-threshold
+
+    chunks = parse_text(text)
+
+    assert len(chunks) > 1
 
 
 @pytest.mark.asyncio
