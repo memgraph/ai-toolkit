@@ -15,11 +15,22 @@ Relationships:
 from __future__ import annotations
 
 import contextlib
-from typing import Any
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
 from memgraph_toolbox.api.memgraph import Memgraph
 
+from .enrichment import (
+    NODE_LABELS,
+    EnrichmentSource,
+    EnrichmentSummary,
+    build_enrichment_sources,
+    content_hash,
+)
 from .models import Memory, validate_content, validate_memory_id, validate_user_id
+
+if TYPE_CHECKING:
+    from actions_graph import ActionsGraph
 
 _FULLTEXT_INDEX = "memory_content_index"
 
@@ -56,6 +67,10 @@ class SessionsGraph:
         self._db.query("CREATE INDEX ON :Memory(user_id);")
         self._db.query("CREATE INDEX ON :Memory(created_at);")
         self._db.query(f"CREATE TEXT INDEX {_FULLTEXT_INDEX} ON :Memory(content);")
+        self._db.query("CREATE INDEX ON :Session(enrichment_status);")
+        # Shared with unstructured2graph's Chunk.hash convention; ensured here
+        # too so enrich_session() works even without a prior unstructured2graph call.
+        self._db.query("CREATE CONSTRAINT ON (c:Chunk) ASSERT c.hash IS UNIQUE;")
 
     def drop(self) -> None:
         """Remove all Memory-related constraints and indexes."""
@@ -152,6 +167,27 @@ class SessionsGraph:
         )
         return [self._row_to_memory(r) for r in rows]
 
+    def get_memories_for_session(self, session_id: str) -> list[Memory]:
+        """Return all Memories produced by *session_id*, newest first.
+
+        Unlike :meth:`get_memories` (user-scoped), this follows
+        ``PRODUCED_MEMORY`` provenance rather than ``HAS_MEMORY`` ownership —
+        used by :meth:`enrich_session` to gather a session's Memory content.
+        """
+        rows = self._db.query(
+            """
+            MATCH (s:Session {session_id: $session_id})-[:PRODUCED_MEMORY]->(m:Memory)
+            RETURN m.memory_id  AS memory_id,
+                   m.user_id    AS user_id,
+                   m.content    AS content,
+                   m.created_at AS created_at,
+                   $session_id  AS session_id
+            ORDER BY m.created_at DESC
+            """,
+            params={"session_id": session_id},
+        )
+        return [self._row_to_memory(r) for r in rows]
+
     def search_memories(self, user_id: str, query: str, *, limit: int = 10) -> list[Memory]:
         """Full-text search over Memory content for *user_id*.
 
@@ -221,6 +257,158 @@ class SessionsGraph:
             "MATCH (m:Memory {memory_id: $memory_id}) DETACH DELETE m;",
             params={"memory_id": memory_id},
         )
+
+    # ------------------------------------------------------------------
+    # Enrichment
+    # ------------------------------------------------------------------
+
+    async def enrich_session(
+        self,
+        session_id: str,
+        *,
+        lightrag_wrapper: Any,
+        actions_graph: ActionsGraph | None = None,
+        entity_workspace: str | None = None,
+    ) -> EnrichmentSummary:
+        """Batch-extract entities from a session's Action + Memory content.
+
+        Pulls all enrichable Message/ToolCall/ToolResult text recorded for
+        *session_id* in Actions Graph, plus this session's Memories, dedupes
+        by content hash, and runs the result through unstructured2graph's
+        chunk + LightRAG entity-extraction pipeline. Resulting Chunk nodes are
+        linked back to their source Action/Memory node via ``HAS_CHUNK`` so
+        entities trace back to the session that produced them.
+
+        This is deliberately not wired to run automatically inside the
+        ``SESSION_END`` hook — LightRAG extraction is LLM-backed and slow, and
+        hook subprocesses run under a runtime timeout. Call this from a
+        separate process (e.g. the ``sessions-graph enrich`` CLI) instead.
+
+        Requires the ``sessions-graph[enrichment]`` extra (actions-graph +
+        unstructured2graph).
+
+        Args:
+            session_id: Session to enrich.
+            lightrag_wrapper: An initialised ``MemgraphLightRAGWrapper``.
+            actions_graph: An ``ActionsGraph`` instance sharing this graph's
+                Memgraph connection. Constructed automatically if omitted.
+            entity_workspace: Passed through to ``unstructured2graph.from_texts``.
+                Defaults to whatever the LightRAG wrapper resolves to, so
+                session-derived entities land in the same workspace as
+                document-ingested ones and can merge.
+
+        Returns:
+            An :class:`EnrichmentSummary` describing what happened. Never
+            raises for per-session failures — the failure is recorded on the
+            Session node and returned so a sweep over many sessions can
+            continue past one bad session.
+        """
+        if actions_graph is None:
+            try:
+                from actions_graph import ActionsGraph as _ActionsGraph
+            except ImportError as exc:
+                msg = "actions-graph is required for enrich_session; install sessions-graph[enrichment]"
+                raise ImportError(msg) from exc
+            actions_graph = _ActionsGraph(self._db)
+
+        try:
+            from unstructured2graph import from_texts
+        except ImportError as exc:
+            msg = "unstructured2graph is required for enrich_session; install sessions-graph[enrichment]"
+            raise ImportError(msg) from exc
+
+        actions = actions_graph.get_session_actions(session_id)
+        memories = self.get_memories_for_session(session_id)
+        sources = build_enrichment_sources(actions, memories)
+
+        unique_texts: dict[str, str] = {}
+        for source in sources:
+            unique_texts.setdefault(content_hash(source.text), source.text)
+
+        try:
+            if unique_texts:
+                grouped_chunks = await from_texts(
+                    list(unique_texts.values()),
+                    memgraph=self._db,
+                    lightrag_wrapper=lightrag_wrapper,
+                    entity_workspace=entity_workspace,
+                )
+                chunks_by_text_hash = dict(zip(unique_texts.keys(), grouped_chunks, strict=True))
+                self._link_chunks_to_sources(sources, chunks_by_text_hash)
+
+            self._db.query(
+                """
+                MATCH (s:Session {session_id: $session_id})
+                SET s.enrichment_status = 'completed', s.enriched_at = $enriched_at
+                """,
+                params={"session_id": session_id, "enriched_at": datetime.now(timezone.utc).isoformat()},
+            )
+            return EnrichmentSummary(
+                session_id=session_id,
+                status="completed",
+                texts_considered=len(sources),
+                texts_deduped=len(unique_texts),
+            )
+        except Exception as e:
+            self._db.query(
+                """
+                MATCH (s:Session {session_id: $session_id})
+                SET s.enrichment_status = 'failed', s.enrichment_error = $error
+                """,
+                params={"session_id": session_id, "error": str(e)},
+            )
+            return EnrichmentSummary(
+                session_id=session_id,
+                status="failed",
+                texts_considered=len(sources),
+                texts_deduped=len(unique_texts),
+                error=str(e),
+            )
+
+    def get_pending_enrichment_sessions(self, *, limit: int = 100) -> list[str]:
+        """Return session_ids marked ``enrichment_status = 'pending'``."""
+        rows = self._db.query(
+            """
+            MATCH (s:Session {enrichment_status: 'pending'})
+            RETURN s.session_id AS session_id
+            ORDER BY s.session_id
+            LIMIT $limit
+            """,
+            params={"limit": limit},
+        )
+        return [row["session_id"] for row in rows]
+
+    def _link_chunks_to_sources(
+        self,
+        sources: list[EnrichmentSource],
+        chunks_by_text_hash: dict[str, list[Any]],
+    ) -> None:
+        """Wire (:Action|:Memory)-[:HAS_CHUNK]->(:Chunk) for each source.
+
+        Looks up each source's actual output Chunks via from_texts()'s grouped
+        return value (keyed by the source text's hash) rather than
+        recomputing a hash from the original text — a text long enough to be
+        split by parse_text() produces multiple Chunks with hashes that don't
+        match a hash of the whole original text, so the grouping is load-bearing.
+        """
+        rows_by_kind: dict[str, list[dict[str, str]]] = {kind: [] for kind in NODE_LABELS}
+        for source in sources:
+            for chunk in chunks_by_text_hash.get(content_hash(source.text), []):
+                rows_by_kind[source.kind].append({"node_id": source.node_id, "hash": chunk.hash})
+
+        for kind, rows in rows_by_kind.items():
+            if not rows:
+                continue
+            label, id_prop = NODE_LABELS[kind]
+            self._db.query(
+                f"""
+                UNWIND $rows AS row
+                MATCH (n:{label} {{{id_prop}: row.node_id}})
+                MERGE (c:Chunk {{hash: row.hash}})
+                MERGE (n)-[:HAS_CHUNK]->(c)
+                """,
+                params={"rows": rows},
+            )
 
     # ------------------------------------------------------------------
     # Helpers

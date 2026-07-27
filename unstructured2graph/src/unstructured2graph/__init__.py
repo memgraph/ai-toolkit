@@ -8,9 +8,12 @@ ingesting them into Memgraph knowledge graphs using LightRAG.
 from .loaders import (
     Chunk,
     ChunkedDocument,
+    from_texts,
     from_unstructured,
+    ingest_chunks,
     make_chunks,
     parse_source,
+    parse_text,
 )
 from .memgraph import (
     compute_embeddings,
@@ -34,8 +37,11 @@ __all__ = [
     "create_property_index",
     "create_unique_constraint",
     "create_vector_search_index",
+    "from_texts",
     "from_unstructured",
+    "ingest_chunks",
     "link_nodes_in_order",
     "make_chunks",
     "parse_source",
+    "parse_text",
 ]

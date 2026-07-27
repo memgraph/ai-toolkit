@@ -1,11 +1,21 @@
 """Simple test for unstructured2graph loaders."""
 
+import hashlib
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from unstructured2graph import Chunk, ChunkedDocument, from_unstructured, make_chunks, parse_source
+from unstructured2graph import (
+    Chunk,
+    ChunkedDocument,
+    from_texts,
+    from_unstructured,
+    make_chunks,
+    parse_source,
+    parse_text,
+)
+from unstructured2graph.loaders import INLINE_TEXT_MAX_CHARS
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -188,6 +198,82 @@ async def test_from_unstructured_only_chunks_works_without_lightrag_wrapper(tmp_
     await from_unstructured([str(test_file)], memgraph, lightrag_wrapper=None, only_chunks=True)
 
     assert memgraph.query.called
+
+
+def test_parse_text_empty_returns_no_chunks():
+    assert parse_text("") == []
+    assert parse_text("   \n  ") == []
+
+
+def test_parse_text_short_text_becomes_single_chunk():
+    text = "User prefers Python over TypeScript."
+    chunks = parse_text(text)
+
+    assert len(chunks) == 1
+    assert chunks[0].text == text
+    assert chunks[0].hash == hashlib.sha256(text.encode()).hexdigest()
+
+
+def test_parse_text_long_text_is_chunked_via_unstructured():
+    long_text = "Section one.\n\n" + ("Filler sentence. " * 500) + "\n\nSection two.\n\n" + ("More filler. " * 500)
+    assert len(long_text) > INLINE_TEXT_MAX_CHARS
+
+    chunks = parse_text(long_text)
+
+    assert len(chunks) >= 1
+    assert all(isinstance(chunk, Chunk) for chunk in chunks)
+    assert all(chunk.text.strip() for chunk in chunks)
+    # Long text must not collapse into a single chunk identical to the whole input.
+    assert not (len(chunks) == 1 and chunks[0].text == long_text)
+
+
+@pytest.mark.asyncio
+async def test_from_texts_only_chunks_creates_chunk_nodes_without_lightrag():
+    memgraph = MagicMock()
+
+    grouped = await from_texts(["First memory.", "Second memory."], memgraph, only_chunks=True)
+
+    assert len(grouped) == 2
+    assert all(len(group) == 1 for group in grouped)
+    queries = [call.args[0] for call in memgraph.query.call_args_list]
+    assert any("MERGE (n:Chunk {hash: data.hash})" in q for q in queries)
+
+
+@pytest.mark.asyncio
+async def test_from_texts_requires_lightrag_wrapper_when_not_only_chunks():
+    memgraph = MagicMock()
+
+    with pytest.raises(ValueError, match="lightrag_wrapper"):
+        await from_texts(["some text"], memgraph, lightrag_wrapper=None, only_chunks=False)
+
+
+@pytest.mark.asyncio
+async def test_from_texts_runs_entity_extraction_and_connects_chunks():
+    memgraph = MagicMock()
+    lightrag_wrapper = _lightrag_wrapper_with_workspace("base")
+
+    with patch("unstructured2graph.loaders.connect_chunks_to_entities") as mock_connect:
+        grouped = await from_texts(["Alice works on the graph engine."], memgraph, lightrag_wrapper)
+
+    assert len(grouped) == 1
+    assert len(grouped[0]) == 1
+    lightrag_wrapper.ainsert.assert_awaited_once()
+    mock_connect.assert_called_once_with(memgraph, "Chunk", "base")
+
+
+@pytest.mark.asyncio
+async def test_from_texts_preserves_grouping_for_empty_texts():
+    """Empty inputs must still get an (empty) group, so callers can zip
+    grouped results back against their original source list by index."""
+    memgraph = MagicMock()
+
+    grouped = await from_texts(["", "   ", "actual content"], memgraph, only_chunks=True)
+
+    assert len(grouped) == 3
+    assert grouped[0] == []
+    assert grouped[1] == []
+    assert len(grouped[2]) == 1
+    assert grouped[2][0].text == "actual content"
 
 
 @pytest.mark.skip(reason="Requires sample-data files and network access - run locally with full deps")
