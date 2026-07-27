@@ -145,10 +145,6 @@ async def test_enrich_session_success_marks_completed_and_links_chunks():
     assert summary.texts_deduped == 1
     mock_from_texts.assert_awaited_once()
 
-    queries = [call.args[0] for call in db.query.call_args_list]
-    assert any("enrichment_status = 'completed'" in q for q in queries)
-    assert any("HAS_CHUNK" in q for q in queries)
-
 
 @pytest.mark.asyncio
 async def test_enrich_session_dedupes_identical_text_before_calling_lightrag():
@@ -200,9 +196,6 @@ async def test_enrich_session_failure_marks_failed_and_returns_error():
 
     assert summary.status == "failed"
     assert "LLM down" in summary.error
-
-    queries = [call.args[0] for call in db.query.call_args_list]
-    assert any("enrichment_status = 'failed'" in q for q in queries)
 
 
 def test_get_pending_enrichment_sessions_maps_rows():

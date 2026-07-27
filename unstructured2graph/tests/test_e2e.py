@@ -125,3 +125,19 @@ async def test_from_unstructured_only_chunks_creates_real_chunk_nodes(memgraph, 
     assert len(grouped[0]) >= 1
     rows = memgraph.query("MATCH (n:Chunk) RETURN count(n) AS count")
     assert rows[0]["count"] == len(grouped[0])
+
+
+@pytest.mark.asyncio
+async def test_from_unstructured_reruns_are_idempotent_not_duplicated(memgraph, tmp_path):
+    """from_unstructured must self-provision its Chunk.hash constraint and
+    upsert (not duplicate-insert) Chunk nodes, so re-runs over the same
+    source are safe."""
+    test_file = tmp_path / "doc.txt"
+    test_file.write_text("Some content for idempotent end-to-end ingestion.")
+
+    first = await from_unstructured([str(test_file)], memgraph, only_chunks=True)
+    second = await from_unstructured([str(test_file)], memgraph, only_chunks=True)
+
+    assert first == second
+    rows = memgraph.query("MATCH (n:Chunk) RETURN count(n) AS count")
+    assert rows[0]["count"] == len(first[0])

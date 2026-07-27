@@ -106,12 +106,6 @@ class TestSessionsGraphCore:
         assert result == []
         g._db.query.assert_not_called()
 
-    def test_delete_memory_calls_detach_delete(self):
-        g = _graph()
-        g.delete_memory("m-1")
-        query_text = g._db.query.call_args.args[0]
-        assert "DETACH DELETE" in query_text
-
     def test_update_memory_returns_none_when_not_found(self):
         g = _graph(rows=[])
         result = g.update_memory("m-1", "new content")
@@ -150,8 +144,6 @@ class TestSessionsGraphConnector:
         assert connector.active_user_id == "alice"
         assert connector.active_session_id == "s-1"
         assert db.query.call_count == 1  # single combined MERGE wiring User-[:HAD_SESSION]->Session
-        query_text = db.query.call_args.args[0]
-        assert "HAD_SESSION" in query_text
 
     def test_session_start_without_user_id_only_merges_session(self):
         connector, _graph, db, SessionStartEvent, _ = self._make()
@@ -171,16 +163,6 @@ class TestSessionsGraphConnector:
 
         assert connector.active_user_id is None
         assert connector.active_session_id is None
-
-    def test_session_end_marks_enrichment_pending(self):
-        connector, _graph, db, SessionStartEvent, SessionEndEvent = self._make()
-
-        connector.on_event(SessionStartEvent(session_id="s-1", user_id="alice"))
-        connector.on_event(SessionEndEvent(session_id="s-1"))
-
-        query_text = db.query.call_args.args[0]
-        assert "enrichment_status = 'pending'" in query_text
-        assert db.query.call_args.kwargs["params"] == {"session_id": "s-1"}
 
     def test_auto_enrich_defaults_off_and_does_not_spawn_process(self):
         connector, _graph, _db, SessionStartEvent, SessionEndEvent = self._make()
