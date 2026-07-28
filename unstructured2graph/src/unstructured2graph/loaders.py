@@ -9,6 +9,7 @@ from typing import Any
 
 from unstructured.chunking.title import chunk_by_title
 from unstructured.partition.auto import partition
+from unstructured.partition.text import partition_text
 
 from lightrag_memgraph import MemgraphLightRAGWrapper
 from memgraph_toolbox.api.memgraph import Memgraph
@@ -69,6 +70,40 @@ def parse_source(
         raise ValueError(f"Error parsing source {source_str}: {e!s}") from e
 
 
+def parse_text(
+    text: str,
+    partition_kwargs: dict[str, Any] | None = None,
+) -> list[Chunk]:
+    """
+    Parse raw in-memory text (not a file or URL) into chunks.
+
+    Always goes through the same partition_text + chunk_by_title pipeline
+    parse_source() uses for files/URLs, regardless of input length, so
+    chunking behavior only ever depends on content, never on text size.
+
+    Args:
+        text: Raw text to chunk.
+        partition_kwargs: Additional keyword arguments to pass to unstructured's
+            partition_text function.
+    Returns:
+        List of text chunks. Empty/whitespace-only input returns an empty list.
+    """
+    if not text or not text.strip():
+        return []
+
+    partition_kwargs = partition_kwargs or {}
+    try:
+        elements = partition_text(text=text, **partition_kwargs)
+        chunks = chunk_by_title(elements)
+        return [
+            Chunk(text=str(chunk), hash=hashlib.sha256(str(chunk).encode()).hexdigest())
+            for chunk in chunks
+            if chunk.text and chunk.text.strip()
+        ]
+    except Exception as e:
+        raise ValueError(f"Error parsing text: {e!s}") from e
+
+
 def make_chunks(
     sources: list[str | Path],
     partition_kwargs: dict[str, Any] | None = None,
@@ -109,6 +144,135 @@ def make_chunks(
     return documents
 
 
+def _resolve_entity_workspace(
+    lightrag_wrapper: MemgraphLightRAGWrapper | None,
+    entity_workspace: str | None,
+    only_chunks: bool,
+) -> str | None:
+    if only_chunks or entity_workspace is not None:
+        return entity_workspace
+    try:
+        return lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
+    except Exception as e:
+        logger.warning(f"Could not auto-derive LightRAG entity workspace, falling back to 'base': {e}")
+        return "base"
+
+
+async def _ingest_chunks(
+    chunks: list[Chunk],
+    memgraph: Memgraph,
+    lightrag_wrapper: MemgraphLightRAGWrapper | None = None,
+    only_chunks: bool = False,
+    link_chunks: bool = False,
+    entity_workspace: str | None = None,
+) -> list[Chunk]:
+    """
+    Ingest an already-produced flat list of chunks into Memgraph: upsert Chunk
+    nodes, optionally chain them with NEXT, and (unless only_chunks) run
+    LightRAG entity extraction and connect the resulting entities back to
+    their chunks via MENTIONED_IN.
+
+    Internal helper shared by from_unstructured() and from_texts(). Not
+    exported: it relies on its caller having already ensured the Chunk.hash
+    uniqueness constraint (see create_unique_constraint) and resolved
+    entity_workspace (see _resolve_entity_workspace) once per call rather than
+    per chunk batch — an unresolved entity_workspace=None with
+    only_chunks=False would silently build a MATCH (n:None) query in
+    connect_chunks_to_entities, so this precondition isn't safe to expose on
+    a public function.
+
+    Args:
+        chunks: Chunks to upsert (e.g. from parse_source/parse_text).
+        memgraph: Memgraph instance for database operations.
+        lightrag_wrapper: MemgraphLightRAGWrapper instance. Required unless only_chunks=True.
+        only_chunks: If True, only create chunk nodes without LightRAG processing.
+        link_chunks: If True, link chunks in order with NEXT relationship.
+        entity_workspace: Node label LightRAG entities were written under.
+    Returns:
+        The same chunks that were passed in, for convenience chaining.
+    """
+    if not chunks:
+        logger.warning("No chunks provided to _ingest_chunks")
+        return chunks
+
+    if not only_chunks and lightrag_wrapper is None:
+        raise ValueError("lightrag_wrapper is required when only_chunks=False")
+
+    memgraph_node_props = []
+    for chunk in chunks:
+        logger.debug(f"Chunk: {chunk.hash} - {chunk.text}")
+        memgraph_node_props.append({"hash": chunk.hash, "text": chunk.text})
+    create_nodes_from_list(memgraph, memgraph_node_props, "Chunk", 100, merge_key="hash")
+
+    if link_chunks:
+        hash_pairs = [(chunks[i].hash, chunks[i + 1].hash) for i in range(len(chunks) - 1)]
+        if hash_pairs:
+            relationships = [{"from": from_hash, "to": to_hash} for from_hash, to_hash in hash_pairs]
+            link_nodes_in_order(memgraph, "Chunk", "hash", relationships, "NEXT")
+
+    if not only_chunks:
+        for chunk in chunks:
+            await lightrag_wrapper.ainsert(input=chunk.text, file_paths=[chunk.hash])
+        connect_chunks_to_entities(memgraph, "Chunk", entity_workspace)
+
+    return chunks
+
+
+async def from_texts(
+    texts: list[str],
+    memgraph: Memgraph,
+    lightrag_wrapper: MemgraphLightRAGWrapper | None = None,
+    only_chunks: bool = False,
+    entity_workspace: str | None = None,
+) -> list[list[Chunk]]:
+    """
+    Ingest raw in-memory strings (not files or URLs) into Memgraph.
+
+    Each text is chunked with parse_text() and the results are fed through the
+    same Chunk-node + LightRAG entity-extraction pipeline as from_unstructured().
+    Unlike from_unstructured(), texts are treated as independent units rather
+    than a single sequential document, so there is no NEXT chunk linking.
+
+    Args:
+        texts: Raw strings to ingest. Empty/whitespace-only entries produce no chunks.
+        memgraph: Memgraph instance for database operations.
+        lightrag_wrapper: MemgraphLightRAGWrapper instance. Required unless only_chunks=True.
+        only_chunks: If True, only create chunk nodes without LightRAG processing.
+        entity_workspace: Node label LightRAG entities were written under. If None
+            (default), auto-derived from lightrag_wrapper's resolved LightRAG
+            workspace, falling back to "base" if that fails.
+    Returns:
+        One list of Chunks per input text, in input order. A text that
+        parse_text() splits into several pieces contributes several Chunks in
+        its group; empty/whitespace-only input contributes an empty group.
+        Grouping (rather than a flat list) is what lets callers trace an
+        output Chunk back to the exact source text/record that produced it —
+        recomputing a hash from the original text only works while that text
+        is short enough for parse_text() to keep it as a single Chunk.
+    """
+    if not only_chunks and lightrag_wrapper is None:
+        raise ValueError("lightrag_wrapper is required when only_chunks=False")
+
+    create_unique_constraint(memgraph, "Chunk", "hash")
+    resolved_entity_workspace = _resolve_entity_workspace(lightrag_wrapper, entity_workspace, only_chunks)
+
+    grouped_chunks = [parse_text(text) for text in texts]
+    flat_chunks = [chunk for group in grouped_chunks for chunk in group]
+    if not flat_chunks:
+        logger.warning("No chunks produced from provided texts")
+        return grouped_chunks
+
+    await _ingest_chunks(
+        flat_chunks,
+        memgraph,
+        lightrag_wrapper=lightrag_wrapper,
+        only_chunks=only_chunks,
+        link_chunks=False,
+        entity_workspace=resolved_entity_workspace,
+    )
+    return grouped_chunks
+
+
 async def from_unstructured(
     sources: list[str | Path],
     memgraph: Memgraph,
@@ -117,7 +281,7 @@ async def from_unstructured(
     link_chunks: bool = False,
     entity_workspace: str | None = None,
     partition_kwargs: dict[str, Any] | None = None,
-):
+) -> list[list[Chunk]]:
     """
     Process unstructured sources and ingest them into Memgraph using LightRAG.
     Args:
@@ -133,6 +297,10 @@ async def from_unstructured(
         partition_kwargs: Additional keyword arguments to pass to unstructured's
             partition function (e.g., strategy, languages, pdf_infer_table_structure,
             ocr_languages, headers, ssl_verify, etc.)
+    Returns:
+        One list of Chunks per source, in `sources` order — the same
+        grouped-return contract as from_texts(). A source that produced no
+        chunks contributes an empty group.
     """
     if not only_chunks and lightrag_wrapper is None:
         raise ValueError("lightrag_wrapper is required when only_chunks=False")
@@ -140,41 +308,28 @@ async def from_unstructured(
     # TODO(gitbuda): Implement batching on the Cypher side as well under memgraph.compute_embeddings
     # NOTE: LightRAG uses { source_id: "chunk-ID..." } to reference its chunks.
     create_unique_constraint(memgraph, "Chunk", "hash")
-    resolved_entity_workspace = entity_workspace
-    if not only_chunks and resolved_entity_workspace is None:
-        try:
-            resolved_entity_workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
-        except Exception as e:
-            logger.warning(f"Could not auto-derive LightRAG entity workspace, falling back to 'base': {e}")
-            resolved_entity_workspace = "base"
+    resolved_entity_workspace = _resolve_entity_workspace(lightrag_wrapper, entity_workspace, only_chunks)
     chunked_documents = make_chunks(sources, partition_kwargs=partition_kwargs)
     total_chunks = sum(len(document.chunks) for document in chunked_documents)
     start_time = time.time()
     processed_chunks = 0
+    grouped_chunks: list[list[Chunk]] = []
     for document in chunked_documents:
         if not document.chunks:
             logger.warning(f"No chunks found in document: {document.source}")
+            grouped_chunks.append([])
             continue
 
         logger.info(f"Processing {len(document.chunks)} chunks from {document.source}...")
-        memgraph_node_props = []
-        for chunk in document.chunks:
-            logger.debug(f"Chunk: {chunk.hash} - {chunk.text}")
-            memgraph_node_props.append({"hash": chunk.hash, "text": chunk.text})
-        create_nodes_from_list(memgraph, memgraph_node_props, "Chunk", 100, merge_key="hash")
-
-        if link_chunks:
-            hash_pairs = [
-                (document.chunks[i].hash, document.chunks[i + 1].hash) for i in range(len(document.chunks) - 1)
-            ]
-            if hash_pairs:
-                relationships = [{"from": from_hash, "to": to_hash} for from_hash, to_hash in hash_pairs]
-                link_nodes_in_order(memgraph, "Chunk", "hash", relationships, "NEXT")
-
-        if not only_chunks:
-            for chunk in document.chunks:
-                await lightrag_wrapper.ainsert(input=chunk.text, file_paths=[chunk.hash])
-            connect_chunks_to_entities(memgraph, "Chunk", resolved_entity_workspace)
+        await _ingest_chunks(
+            document.chunks,
+            memgraph,
+            lightrag_wrapper=lightrag_wrapper,
+            only_chunks=only_chunks,
+            link_chunks=link_chunks,
+            entity_workspace=resolved_entity_workspace,
+        )
+        grouped_chunks.append(document.chunks)
 
         processed_chunks += len(document.chunks)
         elapsed_time = time.time() - start_time
@@ -191,3 +346,5 @@ async def from_unstructured(
             logger.info(
                 f"Processed {processed_chunks} chunks out of {total_chunks}. Estimated time remaining: {time_str}"
             )
+
+    return grouped_chunks

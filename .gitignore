@@ -190,3 +190,5 @@ cython_debug/
 
 # Project specific files
 /enterprise-context/sic-agent/sic-scrapper/output/*
+unstructured2graph/docs/adr/
+unstructured2graph/CONTEXT.md

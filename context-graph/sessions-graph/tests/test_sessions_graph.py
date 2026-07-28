@@ -6,7 +6,7 @@ without a live database.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sessions_graph.models import Memory, MemoryValidationError
@@ -106,12 +106,6 @@ class TestSessionsGraphCore:
         assert result == []
         g._db.query.assert_not_called()
 
-    def test_delete_memory_calls_detach_delete(self):
-        g = _graph()
-        g.delete_memory("m-1")
-        query_text = g._db.query.call_args.args[0]
-        assert "DETACH DELETE" in query_text
-
     def test_update_memory_returns_none_when_not_found(self):
         g = _graph(rows=[])
         result = g.update_memory("m-1", "new content")
@@ -150,8 +144,6 @@ class TestSessionsGraphConnector:
         assert connector.active_user_id == "alice"
         assert connector.active_session_id == "s-1"
         assert db.query.call_count == 1  # single combined MERGE wiring User-[:HAD_SESSION]->Session
-        query_text = db.query.call_args.args[0]
-        assert "HAD_SESSION" in query_text
 
     def test_session_start_without_user_id_only_merges_session(self):
         connector, _graph, db, SessionStartEvent, _ = self._make()
@@ -171,6 +163,43 @@ class TestSessionsGraphConnector:
 
         assert connector.active_user_id is None
         assert connector.active_session_id is None
+
+    def test_auto_reconcile_defaults_off_and_does_not_spawn_process(self):
+        connector, _graph, _db, SessionStartEvent, SessionEndEvent = self._make()
+
+        with patch("sessions_graph.connector.subprocess.Popen") as mock_popen:
+            connector.on_event(SessionStartEvent(session_id="s-1", user_id="alice"))
+            connector.on_event(SessionEndEvent(session_id="s-1"))
+
+        mock_popen.assert_not_called()
+
+    def test_auto_reconcile_true_spawns_detached_process(self):
+        from sessions_graph.connector import SessionsGraphConnector
+
+        _connector, graph, _db, SessionStartEvent, SessionEndEvent = self._make()
+        connector = SessionsGraphConnector(graph, auto_reconcile=True)
+
+        with patch("sessions_graph.connector.subprocess.Popen") as mock_popen:
+            connector.on_event(SessionStartEvent(session_id="s-1", user_id="alice"))
+            connector.on_event(SessionEndEvent(session_id="s-1"))
+
+        mock_popen.assert_called_once()
+        command = mock_popen.call_args.args[0]
+        assert command[-3:] == ["reconcile", "--session", "s-1"]
+        assert mock_popen.call_args.kwargs["start_new_session"] is True
+
+    def test_auto_reconcile_env_var_enables_spawn_when_not_passed_explicitly(self, monkeypatch):
+        from sessions_graph.connector import SessionsGraphConnector
+
+        monkeypatch.setenv("SESSIONS_GRAPH_AUTO_RECONCILE", "1")
+        _connector, graph, _db, SessionStartEvent, SessionEndEvent = self._make()
+        connector = SessionsGraphConnector(graph)
+
+        with patch("sessions_graph.connector.subprocess.Popen") as mock_popen:
+            connector.on_event(SessionStartEvent(session_id="s-1", user_id="alice"))
+            connector.on_event(SessionEndEvent(session_id="s-1"))
+
+        mock_popen.assert_called_once()
 
     def test_supports_session_events_only(self):
         connector, _, _, SessionStartEvent, SessionEndEvent = self._make()

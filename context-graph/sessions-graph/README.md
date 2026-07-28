@@ -16,6 +16,12 @@ To use with Agent Context Graph:
 pip install sessions-graph[agent-context-graph]
 ```
 
+To use [session reconciliation](#session-reconciliation) (entity extraction from session content):
+
+```bash
+pip install sessions-graph[reconciliation]
+```
+
 ## Quick start
 
 ```python
@@ -78,11 +84,24 @@ graph.save_memory(
 ```
 (:User {user_id})
     └─[:HAS_MEMORY]─▶ (:Memory {memory_id, user_id, content, created_at})
-                              ▲
-              [:PRODUCED_MEMORY]
+                              ▲                        │
+              [:PRODUCED_MEMORY]              [:HAS_CHUNK]
+                              │                        ▼
+                      (:Session {session_id,   (:Chunk {hash, text})
+                                 reconciliation_status,     ▲
+                                 reconcileed_at})  [:HAS_CHUNK]
+                              │                        │
+                        [:HAS_ACTION]                  │
+                              ▼                        │
+                        (:Action) ─────────────────────┘
                               │
-                      (:Session {session_id})   ← shared idempotent coordination point
+                                              (:Entity)-[:MENTIONED_IN]->(:Chunk)
 ```
+
+`(:Action)` is owned by [Actions Graph](../actions-graph/); `(:Chunk)` and the
+extracted entity nodes are owned by
+[unstructured2graph](../../unstructured2graph/). See [Session
+reconciliation](#session-reconciliation) below for how they get linked.
 
 ## Text search
 
@@ -105,14 +124,83 @@ LIMIT 10;
 
 The query string follows [Tantivy query syntax](https://docs.rs/tantivy/latest/tantivy/query/struct.QueryParser.html).
 
+## Session reconciliation
+
+A session's Actions Graph content (Messages, ToolCalls, ToolResults) and
+Memories are mostly opaque text today. Session reconciliation runs that content
+through [unstructured2graph](../../unstructured2graph/)'s chunk + LightRAG
+entity-extraction pipeline, turning it into queryable graph entities linked
+back to the session that produced them — see
+[`CONTEXT.md`](./CONTEXT.md#language) for the **Session Reconciliation** /
+**Reconcilable Content** / **Reconciliation Status** terminology.
+
+This requires the `sessions-graph[reconciliation]` extra and an LLM API key
+(`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`) for LightRAG — see the
+[lightrag-memgraph README](../../integrations/lightrag-memgraph/README.md).
+
+**Reconciliation never runs inside the `SESSION_END` hook itself.** LightRAG
+entity extraction is LLM-backed and slow, and hook runtimes (Claude Code,
+Codex) enforce a timeout on hook commands. Instead:
+
+- On `SESSION_END`, `SessionsGraphConnector` cheaply marks the session
+  `reconciliation_status = 'pending'` — no LLM calls, safe inside the hook.
+- The actual reconciliation run happens out-of-band, via the CLI:
+
+  ```bash
+  # Reconcile one session
+  sessions-graph reconcile --session s-abc123
+
+  # Sweep every session still marked 'pending' (e.g. from cron)
+  sessions-graph reconcile --pending --limit 50
+  ```
+
+- Or, if you want it triggered automatically without a manual/cron step, opt
+  in to a **best-effort detached background process** spawned right after a
+  session ends: pass `SessionsGraphConnector(graph, auto_reconcile=True)`, or set
+  `SESSIONS_GRAPH_AUTO_RECONCILE=1` in the environment the connector is
+  constructed in (this is what hook-based runtimes read, since they don't
+  expose a constructor kwarg for it). This is fire-and-forget — if the
+  process dies before finishing (machine sleep, crash), the session stays
+  `pending` and `sessions-graph reconcile --pending` is the reliable backfill.
+
+Programmatically:
+
+```python
+from sessions_graph import SessionsGraph
+from lightrag_memgraph import MemgraphLightRAGWrapper
+
+graph = SessionsGraph()
+graph.setup()
+
+lightrag_wrapper = MemgraphLightRAGWrapper()
+await lightrag_wrapper.initialize(working_dir="./lightrag_storage")
+
+summary = await graph.reconcile_session("s-abc123", lightrag_wrapper=lightrag_wrapper)
+print(summary.status, summary.texts_considered, summary.texts_deduped)
+```
+
+Extracted entities land in the same LightRAG workspace as any documents
+ingested via unstructured2graph by default, so a person or concept mentioned
+both in a session and in an ingested document merges into one node. Pass
+`entity_workspace=` explicitly to `reconcile_session()` to isolate them instead.
+
+Content is deduplicated by hash before ever reaching the LLM, so re-running a
+sweep over already-processed content never re-bills it — but session content
+is pulled *in full*, including tool output, so the first run over a chatty
+session can still be substantial. Consider this before enabling
+`auto_reconcile` broadly.
+
 ## API reference
 
 | Method | Description |
 |---|---|
-| `setup()` | Create constraints and text index. Run once on first use. |
+| `setup()` | Create constraints, text index, and reconciliation indexes. Run once on first use. |
 | `drop()` | Remove all Memory-related constraints and indexes. |
 | `save_memory(user_id, content, *, session_id, memory_id)` | Persist a new Memory. Returns the stored `Memory` object. |
 | `get_memories(user_id)` | Return all Memories for a user, newest first. |
+| `get_memories_for_session(session_id)` | Return all Memories produced by a session, newest first. |
 | `search_memories(user_id, query, *, limit=10)` | Full-text search over Memory content. |
 | `update_memory(memory_id, content)` | Replace the content of an existing Memory. Returns `None` if not found. |
 | `delete_memory(memory_id)` | Remove a Memory and all its relationships. |
+| `reconcile_session(session_id, *, lightrag_wrapper, actions_graph=None, entity_workspace=None)` | Run session reconciliation for one session. Returns an `ReconciliationSummary`. Requires the `reconciliation` extra. |
+| `get_pending_reconciliation_sessions(*, limit=100)` | Return session IDs marked `reconciliation_status = 'pending'`. |

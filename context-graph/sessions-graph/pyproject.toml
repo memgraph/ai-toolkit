@@ -19,14 +19,27 @@ dependencies = [
 agent-context-graph = [
     "agent-context-graph>=0.1.4",
 ]
+reconciliation = [
+    "actions-graph>=0.1.1",
+    "unstructured2graph>=0.3.0",
+]
 test = [
     "pytest>=9.0.3",
+    "pytest-asyncio>=0.24.0",
 ]
+
+[project.scripts]
+sessions-graph = "sessions_graph.cli:main"
 
 [tool.uv.sources]
 agent-context-graph = { workspace = true }
 memgraph-toolbox = { workspace = true }
+actions-graph = { workspace = true }
+unstructured2graph = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
