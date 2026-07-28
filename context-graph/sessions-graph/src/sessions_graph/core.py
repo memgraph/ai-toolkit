@@ -207,6 +207,7 @@ class SessionsGraph:
             f"""
             CALL text_search.search_all('{_FULLTEXT_INDEX}', $query)
             YIELD node AS m, score
+            WITH m, score
             WHERE m.user_id = $user_id
             OPTIONAL MATCH (s:Session)-[:PRODUCED_MEMORY]->(m)
             RETURN m.memory_id  AS memory_id,

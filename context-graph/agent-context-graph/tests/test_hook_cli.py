@@ -265,6 +265,13 @@ def test_top_level_cli_bootstrap_accepts_zero_port(monkeypatch, capsys):
     )
     monkeypatch.setattr("agent_context_graph.cli._doctor", lambda args: 0)
 
+    from pathlib import Path
+
+    monkeypatch.setattr(
+        "agent_context_graph.adapters._identity.write_full_config",
+        lambda **kwargs: Path("/tmp/fake-config.toml"),
+    )
+
     def fake_reachable(host, port):
         captured["host"] = host
         captured["port"] = port
