@@ -1,6 +1,6 @@
 [project]
 name = "sessions-graph"
-version = "0.1.2"
+version = "0.2.0"
 description = "Cross-session memory store for agents, backed by Memgraph"
 readme = "README.md"
 license = { text = "MIT" }
@@ -21,7 +21,7 @@ agent-context-graph = [
 ]
 reconciliation = [
     "actions-graph>=0.1.1",
-    "unstructured2graph>=0.3.0",
+    "unstructured2graph>=0.4.0",
 ]
 test = [
     "pytest>=9.0.3",
