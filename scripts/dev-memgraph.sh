@@ -68,6 +68,9 @@ Commands:
   hooks-local        Point your REAL, live Claude Code plugin at the main container
                      (backs up your current ~/.config/context-graph/config.toml first).
   hooks-restore       Restore your real hook config from the hooks-local backup.
+  dogfood-env         Print export statements enabling auto_reconcile (true, automatic,
+                     event-driven reconciliation on SESSION_END) for a claude session
+                     launched afterward. Usage: eval \"\$(./scripts/dev-memgraph.sh dogfood-env)\" && claude
   test [pkg...]      Run test suites against a SEPARATE, disposable container --
                      never touches the main one. Default packages: ${ALL_PACKAGES[*]}
 
@@ -79,6 +82,10 @@ Typical workflow (exploration -- the actual goal of this script):
   $(basename "$0") inspect
   $(basename "$0") hooks-restore      # point your real hooks back before you forget
   $(basename "$0") down               # only when fully done -- this deletes your explored data
+
+Automatic reconciliation instead of the manual \`reconcile\` step above --
+takes effect for a NEW claude session, not one already running:
+  eval \"\$($(basename "$0") dogfood-env)\" && claude
 
 Running the automated suites any time (does not touch the above):
   $(basename "$0") test
@@ -233,6 +240,30 @@ _resolve_openai_api_key() {
   [ -n "${OPENAI_API_KEY:-}" ]
 }
 
+# Prints export statements for the vars SessionsGraphConnector's own
+# auto_reconcile fallback (SESSIONS_GRAPH_AUTO_RECONCILE) and the detached
+# reconcile subprocess it spawns actually need. Deliberately NOT something
+# this script sets permanently in a shell profile: env vars set on an
+# already-running `claude` process can't retroactively reach it (or its hook
+# subprocesses) -- they only take effect for a `claude` you launch fresh
+# afterward, from a shell that has run this first. Usage:
+#   eval "$(./scripts/dev-memgraph.sh dogfood-env)" && claude
+# Scoped to that one shell/session; a plain new terminal is unaffected.
+cmd_dogfood_env() {
+  if ! _resolve_openai_api_key; then
+    echo "ERROR: OPENAI_API_KEY is not set and was not found in ${REPO_ROOT}/.env" >&2
+    exit 1
+  fi
+  cat <<EOF
+export SESSIONS_GRAPH_AUTO_RECONCILE=1
+export MEMGRAPH_URL="${LOCAL_MEMGRAPH_URL}"
+export MEMGRAPH_USER="${LOCAL_MEMGRAPH_USER}"
+export MEMGRAPH_PASSWORD="${LOCAL_MEMGRAPH_PASSWORD}"
+export MEMGRAPH_DATABASE="${LOCAL_MEMGRAPH_DATABASE}"
+export OPENAI_API_KEY="${OPENAI_API_KEY}"
+EOF
+}
+
 cmd_reconcile() {
   _require_container_reachable
 
@@ -377,6 +408,7 @@ main() {
     test) cmd_test "$@" ;;
     test-down) cmd_test_down ;;
     reconcile) cmd_reconcile "$@" ;;
+    dogfood-env) cmd_dogfood_env ;;
     hooks-local) cmd_hooks_local ;;
     hooks-restore) cmd_hooks_restore ;;
     -h | --help | "") echo "$_HELP" ;;
