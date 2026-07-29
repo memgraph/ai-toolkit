@@ -1,8 +1,12 @@
 import logging
 import time
+from typing import TYPE_CHECKING
 
 from lightrag_memgraph import DEFAULT_EMBEDDING_DIM
 from memgraph_toolbox.api.memgraph import Memgraph
+
+if TYPE_CHECKING:
+    from .ontology import Ontology
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +71,29 @@ def connect_chunks_to_entities(memgraph: Memgraph, chunk_label: str, entity_labe
         MERGE (n)-[:MENTIONED_IN]->(m);
         """
     )
+
+
+def promote_entity_types_to_labels(memgraph: Memgraph, workspace_label: str, ontology: "Ontology") -> None:
+    """
+    Additively promote each entity's `entity_type` property to a real
+    Memgraph label (e.g. entity_type="person" -> :Person), for entity_type
+    values that match the given ontology.
+
+    The workspace label is never touched: LightRAG's own upsert_node()
+    re-MERGEs future updates by matching on it, so removing it would break
+    LightRAG's ability to recognize this node on subsequent re-ingestion.
+    Entities whose entity_type doesn't match any type in the ontology are
+    left as-is -- no label is added, nothing is rejected or deleted.
+    """
+    for label in ontology.allowed_labels():
+        memgraph.query(
+            f"""
+            MATCH (n:{workspace_label})
+            WHERE toLower(n.entity_type) = toLower($label)
+            SET n:{label}
+            """,
+            params={"label": label},
+        )
 
 
 def link_nodes_in_order(

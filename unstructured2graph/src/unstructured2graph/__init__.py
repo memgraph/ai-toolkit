@@ -23,12 +23,17 @@ from .memgraph import (
     create_unique_constraint,
     create_vector_search_index,
     link_nodes_in_order,
+    promote_entity_types_to_labels,
 )
+from .ontology import DEFAULT_ONTOLOGY, EntityType, Ontology
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 __all__ = [
+    "DEFAULT_ONTOLOGY",
     "Chunk",
     "ChunkedDocument",
+    "EntityType",
+    "Ontology",
     "compute_embeddings",
     "connect_chunks_to_entities",
     "create_label_index",
@@ -42,4 +47,5 @@ __all__ = [
     "make_chunks",
     "parse_source",
     "parse_text",
+    "promote_entity_types_to_labels",
 ]

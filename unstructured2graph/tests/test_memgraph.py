@@ -3,7 +3,13 @@
 from unittest.mock import MagicMock
 
 from lightrag_memgraph import DEFAULT_EMBEDDING_DIM
-from unstructured2graph.memgraph import create_nodes_from_list, create_unique_constraint, create_vector_search_index
+from unstructured2graph.memgraph import (
+    create_nodes_from_list,
+    create_unique_constraint,
+    create_vector_search_index,
+    promote_entity_types_to_labels,
+)
+from unstructured2graph.ontology import EntityType, Ontology
 
 
 def test_create_vector_search_index_defaults_match_embedding_dim():
@@ -84,3 +90,42 @@ def test_create_unique_constraint_is_idempotent_on_repeated_calls():
 
     create_unique_constraint(memgraph, "Chunk", "hash")
     create_unique_constraint(memgraph, "Chunk", "hash")  # should log a warning, not raise
+
+
+def test_promote_entity_types_to_labels_issues_one_query_per_ontology_type():
+    memgraph = MagicMock()
+    ontology = Ontology(entity_types=(EntityType("Person", "..."), EntityType("Organization", "...")))
+
+    promote_entity_types_to_labels(memgraph, "base", ontology)
+
+    assert memgraph.query.call_count == 2
+    first_query, first_kwargs = memgraph.query.call_args_list[0]
+    assert "MATCH (n:base)" in first_query[0]
+    assert "toLower(n.entity_type) = toLower($label)" in first_query[0]
+    assert "SET n:Person" in first_query[0]
+    assert first_kwargs["params"] == {"label": "Person"}
+
+    second_query, second_kwargs = memgraph.query.call_args_list[1]
+    assert "SET n:Organization" in second_query[0]
+    assert second_kwargs["params"] == {"label": "Organization"}
+
+
+def test_promote_entity_types_to_labels_never_removes_workspace_label():
+    """Additive only -- must never strip the workspace label LightRAG's own
+    upsert_node() relies on to re-MERGE this node on future updates."""
+    memgraph = MagicMock()
+    ontology = Ontology(entity_types=(EntityType("Person", "..."),))
+
+    promote_entity_types_to_labels(memgraph, "base", ontology)
+
+    query = memgraph.query.call_args[0][0]
+    assert "REMOVE" not in query
+    assert "DELETE" not in query
+
+
+def test_promote_entity_types_to_labels_with_empty_ontology_issues_no_queries():
+    memgraph = MagicMock()
+
+    promote_entity_types_to_labels(memgraph, "base", Ontology(entity_types=()))
+
+    memgraph.query.assert_not_called()

@@ -61,3 +61,19 @@ async def test_from_texts_extracts_real_entity_and_links_mentioned_in(memgraph, 
     workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
     rows = memgraph.query(f"MATCH (e:{workspace})-[:MENTIONED_IN]->(c:Chunk) RETURN count(*) AS count")
     assert rows[0]["count"] > 0
+
+
+@requires_openai_key
+@pytest.mark.asyncio
+async def test_from_texts_promotes_entity_type_to_label_by_default(memgraph, lightrag_wrapper):
+    """DEFAULT_ONTOLOGY is applied automatically -- no ontology= needed to get
+    real Memgraph labels alongside the LightRAG workspace label."""
+    await from_texts(
+        ["Alice Johnson works at Acme Corp on the graph database engine."],
+        memgraph,
+        lightrag_wrapper,
+    )
+
+    workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
+    rows = memgraph.query(f"MATCH (p:Person:{workspace}) RETURN count(*) AS count")
+    assert rows[0]["count"] > 0
