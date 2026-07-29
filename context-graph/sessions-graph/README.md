@@ -89,7 +89,7 @@ graph.save_memory(
                               │                        ▼
                       (:Session {session_id,   (:Chunk {hash, text})
                                  reconciliation_status,     ▲
-                                 reconcileed_at})  [:HAS_CHUNK]
+                                 reconciled_at})  [:HAS_CHUNK]
                               │                        │
                         [:HAS_ACTION]                  │
                               ▼                        │

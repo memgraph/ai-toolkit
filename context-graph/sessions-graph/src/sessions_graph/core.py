@@ -207,6 +207,7 @@ class SessionsGraph:
             f"""
             CALL text_search.search_all('{_FULLTEXT_INDEX}', $query)
             YIELD node AS m, score
+            WITH m, score
             WHERE m.user_id = $user_id
             OPTIONAL MATCH (s:Session)-[:PRODUCED_MEMORY]->(m)
             RETURN m.memory_id  AS memory_id,
@@ -340,9 +341,9 @@ class SessionsGraph:
             self._db.query(
                 """
                 MATCH (s:Session {session_id: $session_id})
-                SET s.reconciliation_status = 'completed', s.reconcileed_at = $reconcileed_at
+                SET s.reconciliation_status = 'completed', s.reconciled_at = $reconciled_at
                 """,
-                params={"session_id": session_id, "reconcileed_at": datetime.now(timezone.utc).isoformat()},
+                params={"session_id": session_id, "reconciled_at": datetime.now(timezone.utc).isoformat()},
             )
             return ReconciliationSummary(
                 session_id=session_id,
