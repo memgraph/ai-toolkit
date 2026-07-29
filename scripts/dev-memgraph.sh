@@ -39,6 +39,10 @@ Commands:
   test [pkg...]      Run test suites against the local container.
                      Default packages: ${ALL_PACKAGES[*]}
   inspect            Print a node-count summary of what is currently in the local graph.
+  reconcile [args]    Run 'sessions-graph reconcile' against the local container.
+                     Defaults to --pending (sweeps every session marked pending);
+                     pass --session <id> to target one. Pulls OPENAI_API_KEY from
+                     the environment, or from .env at the repo root if unset.
   hooks-local        Point your REAL, live Claude Code plugin at the local container
                      (backs up your current ~/.config/context-graph/config.toml first).
   hooks-restore       Restore your real hook config from the hooks-local backup.
@@ -48,6 +52,8 @@ Typical workflow:
   $(basename "$0") test              # proves correctness -- graph ends EMPTY by design
                                        # (the test fixtures clean up before/after each test)
   $(basename "$0") hooks-local        # now drive a REAL Claude Code session to see data land
+  $(basename "$0") inspect
+  $(basename "$0") reconcile          # runs real entity extraction on pending sessions (costs an LLM call)
   $(basename "$0") inspect
   $(basename "$0") hooks-restore      # point your real hooks back before you forget
   $(basename "$0") down
@@ -161,6 +167,45 @@ try:
 finally:
     m.close()
 PYEOF
+}
+
+# Resolves OPENAI_API_KEY for cmd_reconcile: prefer whatever is already in the
+# environment, otherwise pull it from .env at the repo root. Never prints the
+# value anywhere.
+_resolve_openai_api_key() {
+  if [ -n "${OPENAI_API_KEY:-}" ]; then
+    return 0
+  fi
+  local env_file="${REPO_ROOT}/.env"
+  if [ -f "${env_file}" ]; then
+    OPENAI_API_KEY="$(grep -E '^OPENAI_API_KEY=' "${env_file}" | head -1 | cut -d'=' -f2-)"
+    export OPENAI_API_KEY
+  fi
+  [ -n "${OPENAI_API_KEY:-}" ]
+}
+
+cmd_reconcile() {
+  _require_container_reachable
+
+  if ! _resolve_openai_api_key; then
+    echo "ERROR: OPENAI_API_KEY is not set and was not found in ${REPO_ROOT}/.env" >&2
+    echo "Session reconciliation calls a real LLM (via LightRAG) and needs it." >&2
+    exit 1
+  fi
+
+  local target=("$@")
+  if [ "${#target[@]}" -eq 0 ]; then
+    target=(--pending)
+  fi
+
+  echo "Running: sessions-graph reconcile ${target[*]}"
+  (cd "$REPO_ROOT" && env \
+    "MEMGRAPH_URL=${LOCAL_MEMGRAPH_URL}" \
+    "MEMGRAPH_USER=${LOCAL_MEMGRAPH_USER}" \
+    "MEMGRAPH_PASSWORD=${LOCAL_MEMGRAPH_PASSWORD}" \
+    "MEMGRAPH_DATABASE=${LOCAL_MEMGRAPH_DATABASE}" \
+    "OPENAI_API_KEY=${OPENAI_API_KEY}" \
+    uv run --package sessions-graph --extra reconciliation sessions-graph reconcile "${target[@]}")
 }
 
 cmd_test() {
@@ -279,6 +324,7 @@ main() {
     status) cmd_status ;;
     inspect) cmd_inspect ;;
     test) cmd_test "$@" ;;
+    reconcile) cmd_reconcile "$@" ;;
     hooks-local) cmd_hooks_local ;;
     hooks-restore) cmd_hooks_restore ;;
     -h | --help | "") echo "$_HELP" ;;

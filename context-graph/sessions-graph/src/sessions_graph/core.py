@@ -341,9 +341,9 @@ class SessionsGraph:
             self._db.query(
                 """
                 MATCH (s:Session {session_id: $session_id})
-                SET s.reconciliation_status = 'completed', s.reconcileed_at = $reconcileed_at
+                SET s.reconciliation_status = 'completed', s.reconciled_at = $reconciled_at
                 """,
-                params={"session_id": session_id, "reconcileed_at": datetime.now(timezone.utc).isoformat()},
+                params={"session_id": session_id, "reconciled_at": datetime.now(timezone.utc).isoformat()},
             )
             return ReconciliationSummary(
                 session_id=session_id,

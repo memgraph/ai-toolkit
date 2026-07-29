@@ -96,7 +96,7 @@ async def _run_reconcile(parsed: argparse.Namespace) -> int:
         for session_id in session_ids:
             summary = await graph.reconcile_session(session_id, lightrag_wrapper=lightrag_wrapper)
             if summary.status == "completed":
-                print(f"OK {session_id}: {summary.texts_deduped}/{summary.texts_considered} unique texts reconcileed")
+                print(f"OK {session_id}: {summary.texts_deduped}/{summary.texts_considered} unique texts reconciled")
             else:
                 print(f"FAILED {session_id}: {summary.error}", file=sys.stderr)
                 exit_code = 1
