@@ -114,6 +114,63 @@ def test_load_ontology_entry_missing_description_raises_value_error(tmp_path):
         load_ontology(ontology_file)
 
 
+def test_load_ontology_null_entity_types_raises_value_error(tmp_path):
+    """entity_types: null must raise a clear ValueError, not a TypeError from
+    iterating over None."""
+    ontology_file = tmp_path / "null_types.yaml"
+    ontology_file.write_text("entity_types:")
+
+    with pytest.raises(ValueError, match="entity_types"):
+        load_ontology(ontology_file)
+
+
+def test_load_ontology_entity_types_as_mapping_raises_value_error(tmp_path):
+    """entity_types as a YAML mapping (not a list) must raise a clear
+    ValueError rather than a confusing downstream error."""
+    ontology_file = tmp_path / "mapping_types.yaml"
+    ontology_file.write_text(
+        """
+        entity_types:
+          label: Person
+          description: Human individuals
+        """
+    )
+
+    with pytest.raises(ValueError, match="entity_types"):
+        load_ontology(ontology_file)
+
+
+def test_load_ontology_rejects_label_with_unsafe_characters(tmp_path):
+    """A label is interpolated directly into Cypher (SET n:{label}) --
+    anything outside safe identifier characters must be rejected up front
+    rather than risk breaking or injecting into the generated query."""
+    ontology_file = tmp_path / "unsafe_label.yaml"
+    ontology_file.write_text(
+        """
+        entity_types:
+          - label: "Person`) DETACH DELETE (m"
+            description: malicious
+        """
+    )
+
+    with pytest.raises(ValueError, match="identifier"):
+        load_ontology(ontology_file)
+
+
+def test_load_ontology_rejects_label_starting_with_digit(tmp_path):
+    ontology_file = tmp_path / "digit_label.yaml"
+    ontology_file.write_text(
+        """
+        entity_types:
+          - label: "1Person"
+            description: Human individuals
+        """
+    )
+
+    with pytest.raises(ValueError, match="identifier"):
+        load_ontology(ontology_file)
+
+
 def test_load_ontology_two_calls_on_same_path_produce_equal_ontologies(tmp_path):
     """Coordination between LightRAG's addon_params and Memgraph's label
     gating relies on independent load_ontology() calls against the same path

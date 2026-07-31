@@ -111,6 +111,19 @@ def test_promote_entity_types_to_labels_issues_one_query_per_ontology_type():
     assert second_kwargs["params"] == {"label": "Organization"}
 
 
+def test_promote_entity_types_to_labels_skips_already_labeled_nodes():
+    """The per-type SET must guard on NOT already having that label, so
+    re-running promotion over an already-processed workspace doesn't
+    needlessly rewrite every matching node on every call."""
+    memgraph = MagicMock()
+    ontology = Ontology(entity_types=(EntityType("Person", "..."),))
+
+    promote_entity_types_to_labels(memgraph, "base", ontology)
+
+    set_query = memgraph.query.call_args_list[0][0][0]
+    assert "AND NOT n:Person" in set_query
+
+
 def test_promote_entity_types_to_labels_never_removes_workspace_label():
     """Additive only -- must never strip the workspace label LightRAG's own
     upsert_node() relies on to re-MERGE this node on future updates. The

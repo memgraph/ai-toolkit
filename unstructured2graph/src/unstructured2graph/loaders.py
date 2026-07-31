@@ -167,14 +167,15 @@ async def _ingest_chunks(
     only_chunks: bool = False,
     link_chunks: bool = False,
     entity_workspace: str | None = None,
+    enforce_ontology: bool = False,
     ontology_path: str | Path | None = None,
 ) -> list[Chunk]:
     """
     Ingest an already-produced flat list of chunks into Memgraph: upsert Chunk
     nodes, optionally chain them with NEXT, and (unless only_chunks) run
     LightRAG entity extraction, connect the resulting entities back to their
-    chunks via MENTIONED_IN, and promote entity_type to a real label for
-    entities that match the ontology.
+    chunks via MENTIONED_IN, and (if enforce_ontology) promote entity_type to
+    a real label for entities that match the ontology.
 
     Internal helper shared by from_unstructured() and from_texts(). Not
     exported: it relies on its caller having already ensured the Chunk.hash
@@ -192,8 +193,11 @@ async def _ingest_chunks(
         only_chunks: If True, only create chunk nodes without LightRAG processing.
         link_chunks: If True, link chunks in order with NEXT relationship.
         entity_workspace: Node label LightRAG entities were written under.
-        ontology_path: Path to an ontology YAML config file. Governs which entity_type
-            values get promoted to labels. Defaults to DEFAULT_ONTOLOGY_PATH.
+        enforce_ontology: If True, promote entity_type to labels per ontology_path (or
+            DEFAULT_ONTOLOGY_PATH). If False (default), entities are left exactly as
+            LightRAG wrote them -- no label promotion, no ontology_conformant flagging.
+        ontology_path: Path to an ontology YAML config file. Only consulted when
+            enforce_ontology=True; defaults to DEFAULT_ONTOLOGY_PATH.
     Returns:
         The same chunks that were passed in, for convenience chaining.
     """
@@ -203,6 +207,9 @@ async def _ingest_chunks(
 
     if not only_chunks and lightrag_wrapper is None:
         raise ValueError("lightrag_wrapper is required when only_chunks=False")
+
+    if ontology_path and not enforce_ontology:
+        logger.warning("ontology_path was provided but enforce_ontology=False; ignoring ontology_path")
 
     memgraph_node_props = []
     for chunk in chunks:
@@ -220,8 +227,9 @@ async def _ingest_chunks(
         for chunk in chunks:
             await lightrag_wrapper.ainsert(input=chunk.text, file_paths=[chunk.hash])
         connect_chunks_to_entities(memgraph, "Chunk", entity_workspace)
-        ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
-        promote_entity_types_to_labels(memgraph, entity_workspace, ontology)
+        if enforce_ontology:
+            ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
+            promote_entity_types_to_labels(memgraph, entity_workspace, ontology)
 
     return chunks
 
@@ -232,6 +240,7 @@ async def from_texts(
     lightrag_wrapper: MemgraphLightRAGWrapper | None = None,
     only_chunks: bool = False,
     entity_workspace: str | None = None,
+    enforce_ontology: bool = False,
     ontology_path: str | Path | None = None,
 ) -> list[list[Chunk]]:
     """
@@ -250,17 +259,20 @@ async def from_texts(
         entity_workspace: Node label LightRAG entities were written under. If None
             (default), auto-derived from lightrag_wrapper's resolved LightRAG
             workspace, falling back to "base" if that fails.
-        ontology_path: Path to an ontology YAML config file (see load_ontology()),
-            governing which entity_type values get promoted to a real Memgraph label
-            (e.g. entity_type="person" -> :Person) in addition to the entity_workspace
-            label every entity already gets. Defaults to DEFAULT_ONTOLOGY_PATH, which
-            mirrors LightRAG's own built-in type vocabulary. entity_type values outside
-            the ontology are never rejected -- the node and its entity_type property
-            are kept, stamped ontology_conformant=false instead of getting a label. To
-            also steer LightRAG's extraction itself toward the same vocabulary, load
-            the same path with load_ontology() and pass its addon_params() into
-            MemgraphLightRAGWrapper.initialize() -- using the same path at both call
-            sites is what keeps them in sync.
+        enforce_ontology: If False (default), entities are left exactly as LightRAG
+            wrote them -- no label promotion, no ontology_conformant flagging. If True,
+            entity_type gets promoted to a real Memgraph label (e.g. entity_type="person"
+            -> :Person) in addition to the entity_workspace label every entity already
+            gets, per ontology_path.
+        ontology_path: Path to an ontology YAML config file (see load_ontology()). Only
+            consulted when enforce_ontology=True; defaults to DEFAULT_ONTOLOGY_PATH,
+            which mirrors LightRAG's own built-in type vocabulary. entity_type values
+            outside the ontology are never rejected -- the node and its entity_type
+            property are kept, stamped ontology_conformant=false instead of getting a
+            label. To also steer LightRAG's extraction itself toward the same
+            vocabulary, load the same path with load_ontology() and pass its
+            addon_params() into MemgraphLightRAGWrapper.initialize() -- using the same
+            path at both call sites is what keeps them in sync.
     Returns:
         One list of Chunks per input text, in input order. A text that
         parse_text() splits into several pieces contributes several Chunks in
@@ -289,6 +301,7 @@ async def from_texts(
         only_chunks=only_chunks,
         link_chunks=False,
         entity_workspace=resolved_entity_workspace,
+        enforce_ontology=enforce_ontology,
         ontology_path=ontology_path,
     )
     return grouped_chunks
@@ -302,6 +315,7 @@ async def from_unstructured(
     link_chunks: bool = False,
     entity_workspace: str | None = None,
     partition_kwargs: dict[str, Any] | None = None,
+    enforce_ontology: bool = False,
     ontology_path: str | Path | None = None,
 ) -> list[list[Chunk]]:
     """
@@ -319,10 +333,11 @@ async def from_unstructured(
         partition_kwargs: Additional keyword arguments to pass to unstructured's
             partition function (e.g., strategy, languages, pdf_infer_table_structure,
             ocr_languages, headers, ssl_verify, etc.)
-        ontology_path: Path to an ontology YAML config file, governing which entity_type
-            values get promoted to a real Memgraph label, in addition to the
-            entity_workspace label every entity already gets. Defaults to
-            DEFAULT_ONTOLOGY_PATH. See from_texts() for details.
+        enforce_ontology: If False (default), no label promotion or ontology_conformant
+            flagging happens. If True, entity_type gets promoted to a real Memgraph
+            label per ontology_path. See from_texts() for details.
+        ontology_path: Path to an ontology YAML config file. Only consulted when
+            enforce_ontology=True; defaults to DEFAULT_ONTOLOGY_PATH.
     Returns:
         One list of Chunks per source, in `sources` order — the same
         grouped-return contract as from_texts(). A source that produced no
@@ -354,6 +369,7 @@ async def from_unstructured(
             only_chunks=only_chunks,
             link_chunks=link_chunks,
             entity_workspace=resolved_entity_workspace,
+            enforce_ontology=enforce_ontology,
             ontology_path=ontology_path,
         )
         grouped_chunks.append(document.chunks)

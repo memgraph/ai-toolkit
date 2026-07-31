@@ -65,14 +65,35 @@ async def test_from_texts_extracts_real_entity_and_links_mentioned_in(memgraph, 
 
 @requires_openai_key
 @pytest.mark.asyncio
-async def test_from_texts_promotes_entity_type_to_label_by_default(memgraph, lightrag_wrapper):
-    """DEFAULT_ONTOLOGY_PATH is applied automatically -- no ontology_path
-    needed to get real Memgraph labels alongside the LightRAG workspace
-    label."""
+async def test_from_texts_does_not_promote_labels_unless_enforced(memgraph, lightrag_wrapper):
+    """enforce_ontology defaults to False -- entities are left exactly as
+    LightRAG wrote them, no real label and no ontology_conformant property
+    at all, even against a real extraction."""
     await from_texts(
         ["Alice Johnson works at Acme Corp on the graph database engine."],
         memgraph,
         lightrag_wrapper,
+    )
+
+    workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
+    rows = memgraph.query(f"MATCH (n:{workspace}) RETURN labels(n) AS labels, n.ontology_conformant AS conformant")
+    assert len(rows) > 0
+    for row in rows:
+        assert row["labels"] == [workspace]
+        assert row["conformant"] is None
+
+
+@requires_openai_key
+@pytest.mark.asyncio
+async def test_from_texts_promotes_entity_type_to_label_when_enforced(memgraph, lightrag_wrapper):
+    """With enforce_ontology=True and no ontology_path, DEFAULT_ONTOLOGY_PATH
+    is applied automatically to get real Memgraph labels alongside the
+    LightRAG workspace label."""
+    await from_texts(
+        ["Alice Johnson works at Acme Corp on the graph database engine."],
+        memgraph,
+        lightrag_wrapper,
+        enforce_ontology=True,
     )
 
     workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
@@ -100,6 +121,7 @@ async def test_from_texts_flags_entities_outside_a_custom_ontology(memgraph, lig
         ["Alice Johnson works at Acme Corp on the graph database engine."],
         memgraph,
         lightrag_wrapper,
+        enforce_ontology=True,
         ontology_path=str(ontology_file),
     )
 

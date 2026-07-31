@@ -286,6 +286,48 @@ async def test_from_texts_runs_entity_extraction_and_connects_chunks():
 
 
 @pytest.mark.asyncio
+async def test_from_texts_defaults_to_no_ontology_enforcement():
+    """enforce_ontology defaults to False -- entities are left exactly as
+    LightRAG wrote them, no label promotion queries at all."""
+    memgraph = MagicMock()
+    lightrag_wrapper = _lightrag_wrapper_with_workspace("base")
+
+    with patch("unstructured2graph.loaders.promote_entity_types_to_labels") as mock_promote:
+        await from_texts(["Alice works on the graph engine."], memgraph, lightrag_wrapper)
+
+    mock_promote.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_from_texts_enforce_ontology_true_promotes_labels():
+    memgraph = MagicMock()
+    lightrag_wrapper = _lightrag_wrapper_with_workspace("base")
+
+    with patch("unstructured2graph.loaders.promote_entity_types_to_labels") as mock_promote:
+        await from_texts(["Alice works on the graph engine."], memgraph, lightrag_wrapper, enforce_ontology=True)
+
+    mock_promote.assert_called_once()
+    assert mock_promote.call_args[0][1] == "base"
+
+
+@pytest.mark.asyncio
+async def test_from_texts_ontology_path_without_enforce_ontology_is_ignored(caplog):
+    memgraph = MagicMock()
+    lightrag_wrapper = _lightrag_wrapper_with_workspace("base")
+
+    with patch("unstructured2graph.loaders.promote_entity_types_to_labels") as mock_promote:
+        await from_texts(
+            ["Alice works on the graph engine."],
+            memgraph,
+            lightrag_wrapper,
+            ontology_path="/some/custom/ontology.yaml",
+        )
+
+    mock_promote.assert_not_called()
+    assert "ontology_path was provided but enforce_ontology=False" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_from_texts_preserves_grouping_for_empty_texts():
     """Empty inputs must still get an (empty) group, so callers can zip
     grouped results back against their original source list by index."""

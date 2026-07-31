@@ -95,7 +95,7 @@ def promote_entity_types_to_labels(memgraph: Memgraph, workspace_label: str, ont
         memgraph.query(
             f"""
             MATCH (n:{workspace_label})
-            WHERE toLower(n.entity_type) = toLower($label)
+            WHERE toLower(n.entity_type) = toLower($label) AND NOT n:{label}
             SET n:{label}
             """,
             params={"label": label},

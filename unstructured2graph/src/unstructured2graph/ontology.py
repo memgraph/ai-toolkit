@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -6,6 +7,12 @@ import yaml
 
 SCRIPT_DIR = Path(__file__).parent
 DEFAULT_ONTOLOGY_PATH = SCRIPT_DIR / "default_ontology.yaml"
+
+# A label gets f-string-interpolated directly into Cypher (SET n:{label}) in
+# promote_entity_types_to_labels(), so it's restricted to safe identifier
+# characters -- anything else (backticks, colons, whitespace, quotes) could
+# otherwise break or inject into the generated query.
+_VALID_LABEL_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 @dataclass(frozen=True)
@@ -62,16 +69,28 @@ def load_ontology(path: str | Path) -> Ontology:
     except yaml.YAMLError as e:
         raise ValueError(f"Invalid YAML in ontology file {resolved_path}: {e}") from e
 
-    if not isinstance(raw, dict) or "entity_types" not in raw:
-        raise ValueError(f"Ontology file {resolved_path} must be a YAML mapping with an 'entity_types' key")
+    if not isinstance(raw, dict) or not isinstance(raw.get("entity_types"), list):
+        raise ValueError(f"Ontology file {resolved_path} must be a YAML mapping with an 'entity_types' list")
 
     entity_types = []
     for index, item in enumerate(raw["entity_types"]):
-        if not isinstance(item, dict) or "label" not in item or "description" not in item:
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("label"), str)
+            or not isinstance(item.get("description"), str)
+        ):
             raise ValueError(
-                f"Ontology file {resolved_path}: entity_types[{index}] must be a mapping with 'label' and 'description'"
+                f"Ontology file {resolved_path}: entity_types[{index}] must be a mapping with "
+                "string 'label' and 'description'"
             )
-        entity_types.append(EntityType(label=item["label"], description=item["description"]))
+        label = item["label"]
+        if not _VALID_LABEL_PATTERN.match(label):
+            raise ValueError(
+                f"Ontology file {resolved_path}: entity_types[{index}] label {label!r} must be a valid "
+                "identifier (letters, digits, underscore, not starting with a digit) since it's used "
+                "directly as a Memgraph label"
+            )
+        entity_types.append(EntityType(label=label, description=item["description"]))
 
     return Ontology(entity_types=tuple(entity_types))
 

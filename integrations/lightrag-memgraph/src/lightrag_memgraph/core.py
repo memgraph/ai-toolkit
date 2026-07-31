@@ -121,8 +121,15 @@ class MemgraphLightRAGWrapper:
         locks bound to this instance's (by-then-closed) event loop and raises
         "bound to a different event loop" -- e.g. two real-LightRAG tests
         run back-to-back under pytest-asyncio's function-scoped event loop.
+
+        The reset runs in a finally block: if finalize_storages() raises
+        (e.g. a transient network error), the shared-storage state would
+        otherwise stay registered as initialized and break every subsequent
+        LightRAG instance in this process, not just this one's cleanup.
         """
         if self.rag is None:
             raise RuntimeError("LightRAG not initialized. Call initialize() first.")
-        await self.rag.finalize_storages()
-        finalize_share_data()
+        try:
+            await self.rag.finalize_storages()
+        finally:
+            finalize_share_data()
