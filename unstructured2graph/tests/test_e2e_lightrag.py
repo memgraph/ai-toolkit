@@ -61,3 +61,77 @@ async def test_from_texts_extracts_real_entity_and_links_mentioned_in(memgraph, 
     workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
     rows = memgraph.query(f"MATCH (e:{workspace})-[:MENTIONED_IN]->(c:Chunk) RETURN count(*) AS count")
     assert rows[0]["count"] > 0
+
+
+@requires_openai_key
+@pytest.mark.asyncio
+async def test_from_texts_does_not_promote_labels_unless_enforced(memgraph, lightrag_wrapper):
+    """enforce_ontology defaults to False -- entities are left exactly as
+    LightRAG wrote them, no real label and no ontology_conformant property
+    at all, even against a real extraction."""
+    await from_texts(
+        ["Alice Johnson works at Acme Corp on the graph database engine."],
+        memgraph,
+        lightrag_wrapper,
+    )
+
+    workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
+    rows = memgraph.query(f"MATCH (n:{workspace}) RETURN labels(n) AS labels, n.ontology_conformant AS conformant")
+    assert len(rows) > 0
+    for row in rows:
+        assert row["labels"] == [workspace]
+        assert row["conformant"] is None
+
+
+@requires_openai_key
+@pytest.mark.asyncio
+async def test_from_texts_promotes_entity_type_to_label_when_enforced(memgraph, lightrag_wrapper):
+    """With enforce_ontology=True and no ontology_path, DEFAULT_ONTOLOGY_PATH
+    is applied automatically to get real Memgraph labels alongside the
+    LightRAG workspace label."""
+    await from_texts(
+        ["Alice Johnson works at Acme Corp on the graph database engine."],
+        memgraph,
+        lightrag_wrapper,
+        enforce_ontology=True,
+    )
+
+    workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
+    rows = memgraph.query(f"MATCH (p:Person:{workspace}) RETURN count(*) AS count")
+    assert rows[0]["count"] > 0
+
+
+@requires_openai_key
+@pytest.mark.asyncio
+async def test_from_texts_flags_entities_outside_a_custom_ontology(memgraph, lightrag_wrapper, tmp_path):
+    """A narrow, project-specific ontology (here: only Location) still keeps
+    every extracted entity and its raw entity_type -- entities outside it
+    just don't get a real label, and are flagged ontology_conformant=false
+    instead of being rejected."""
+    ontology_file = tmp_path / "ontology.yaml"
+    ontology_file.write_text(
+        """
+        entity_types:
+          - label: Location
+            description: Geographic places (cities, countries, buildings, regions)
+        """
+    )
+
+    await from_texts(
+        ["Alice Johnson works at Acme Corp on the graph database engine."],
+        memgraph,
+        lightrag_wrapper,
+        enforce_ontology=True,
+        ontology_path=str(ontology_file),
+    )
+
+    workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
+    rows = memgraph.query(
+        f"MATCH (n:{workspace}) WHERE n.ontology_conformant = false RETURN n.entity_type AS entity_type, "
+        "n.entity_id AS entity_id"
+    )
+    assert len(rows) > 0
+    assert all(row["entity_type"] is not None for row in rows)
+
+    person_rows = memgraph.query(f"MATCH (n:Person:{workspace}) RETURN count(*) AS count")
+    assert person_rows[0]["count"] == 0

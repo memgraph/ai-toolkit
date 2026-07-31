@@ -1,0 +1,27 @@
+# Default entity-type ontology. Mirrors LightRAG's own built-in vocabulary
+# (lightrag.prompt's default_entity_types_guidance), so label promotion
+# matches what LightRAG extracts by default even before this file is
+# customized or overridden with a project-specific ontology_path.
+entity_types:
+  - label: Person
+    description: Human individuals, real or fictional
+  - label: Creature
+    description: Non-human living beings (animals, mythical beings, etc.)
+  - label: Organization
+    description: Companies, institutions, government bodies, groups
+  - label: Location
+    description: Geographic places (cities, countries, buildings, regions)
+  - label: Event
+    description: Occurrences, incidents, ceremonies, meetings
+  - label: Concept
+    description: Abstract ideas, theories, principles, beliefs
+  - label: Method
+    description: Procedures, techniques, algorithms, workflows
+  - label: Content
+    description: Creative or informational works (books, articles, films, reports)
+  - label: Data
+    description: Quantitative or structured information (statistics, datasets, measurements)
+  - label: Artifact
+    description: Physical or digital objects created by humans (tools, software, devices)
+  - label: NaturalObject
+    description: Natural non-living objects (minerals, celestial bodies, chemical compounds)

@@ -1,8 +1,12 @@
 import logging
 import time
+from typing import TYPE_CHECKING
 
 from lightrag_memgraph import DEFAULT_EMBEDDING_DIM
 from memgraph_toolbox.api.memgraph import Memgraph
+
+if TYPE_CHECKING:
+    from .ontology import Ontology
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +71,43 @@ def connect_chunks_to_entities(memgraph: Memgraph, chunk_label: str, entity_labe
         MERGE (n)-[:MENTIONED_IN]->(m);
         """
     )
+
+
+def promote_entity_types_to_labels(memgraph: Memgraph, workspace_label: str, ontology: "Ontology") -> None:
+    """
+    Additively promote each entity's `entity_type` property to a real
+    Memgraph label (e.g. entity_type="person" -> :Person), for entity_type
+    values that match the given ontology.
+
+    The workspace label is never touched: LightRAG's own upsert_node()
+    re-MERGEs future updates by matching on it, so removing it would break
+    LightRAG's ability to recognize this node on subsequent re-ingestion.
+    Entities whose entity_type doesn't match any type in the ontology are
+    never rejected -- the node and its raw entity_type are always kept, and
+    are instead stamped `ontology_conformant: false` so what the ontology
+    doesn't recognize stays visible and queryable rather than silently
+    indistinguishable from an unprocessed node. Re-running this (e.g. after
+    the ontology grows a new type) clears the flag on anything that now
+    conforms.
+    """
+    labels = ontology.allowed_labels()
+    for label in labels:
+        memgraph.query(
+            f"""
+            MATCH (n:{workspace_label})
+            WHERE toLower(n.entity_type) = toLower($label) AND NOT n:{label}
+            SET n:{label}
+            """,
+            params={"label": label},
+        )
+
+    if not labels:
+        memgraph.query(f"MATCH (n:{workspace_label}) SET n.ontology_conformant = false")
+        return
+
+    conforms_clause = " OR ".join(f"n:{label}" for label in labels)
+    memgraph.query(f"MATCH (n:{workspace_label}) WHERE NOT ({conforms_clause}) SET n.ontology_conformant = false")
+    memgraph.query(f"MATCH (n:{workspace_label}) WHERE {conforms_clause} REMOVE n.ontology_conformant")
 
 
 def link_nodes_in_order(

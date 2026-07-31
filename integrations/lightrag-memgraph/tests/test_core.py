@@ -9,12 +9,13 @@ runs an insert/query).
 from __future__ import annotations
 
 import os
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
 from lightrag.utils import logger as lightrag_logger
 
-from lightrag_memgraph.core import _apply_lightrag_defaults, _bridge_lightrag_env_names
+from lightrag_memgraph.core import MemgraphLightRAGWrapper, _apply_lightrag_defaults, _bridge_lightrag_env_names
 from lightrag_memgraph.embeddings import memgraph_sentence_embed
 
 _MEMGRAPH_ENV_NAMES = ("MEMGRAPH_URL", "MEMGRAPH_URI", "MEMGRAPH_USER", "MEMGRAPH_USERNAME")
@@ -136,3 +137,34 @@ def test_no_openai_key_required_with_non_openai_llm_and_embedding_default(monkey
     kwargs = {"llm_model_func": lambda *a, **kw: None}
     _apply_lightrag_defaults(kwargs)  # must not raise
     assert kwargs["embedding_func"] is memgraph_sentence_embed
+
+
+@pytest.mark.asyncio
+async def test_afinalize_resets_shared_data_on_success():
+    wrapper = MemgraphLightRAGWrapper()
+    wrapper.rag = AsyncMock()
+
+    with patch("lightrag_memgraph.core.finalize_share_data") as mock_finalize_share_data:
+        await wrapper.afinalize()
+
+    wrapper.rag.finalize_storages.assert_awaited_once()
+    mock_finalize_share_data.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_afinalize_resets_shared_data_even_if_finalize_storages_raises():
+    """A transient error in finalize_storages() must not leave the
+    process-global shared-storage state stuck as initialized -- that would
+    break every subsequent LightRAG instance in this process, not just this
+    one's cleanup."""
+    wrapper = MemgraphLightRAGWrapper()
+    wrapper.rag = AsyncMock()
+    wrapper.rag.finalize_storages.side_effect = RuntimeError("transient network error")
+
+    with (
+        patch("lightrag_memgraph.core.finalize_share_data") as mock_finalize_share_data,
+        pytest.raises(RuntimeError, match="transient network error"),
+    ):
+        await wrapper.afinalize()
+
+    mock_finalize_share_data.assert_called_once()
