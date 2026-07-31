@@ -98,7 +98,8 @@ def test_promote_entity_types_to_labels_issues_one_query_per_ontology_type():
 
     promote_entity_types_to_labels(memgraph, "base", ontology)
 
-    assert memgraph.query.call_count == 2
+    # 2 per-type SET queries + 2 ontology_conformant marker queries (flag / clear).
+    assert memgraph.query.call_count == 4
     first_query, first_kwargs = memgraph.query.call_args_list[0]
     assert "MATCH (n:base)" in first_query[0]
     assert "toLower(n.entity_type) = toLower($label)" in first_query[0]
@@ -112,20 +113,52 @@ def test_promote_entity_types_to_labels_issues_one_query_per_ontology_type():
 
 def test_promote_entity_types_to_labels_never_removes_workspace_label():
     """Additive only -- must never strip the workspace label LightRAG's own
-    upsert_node() relies on to re-MERGE this node on future updates."""
+    upsert_node() relies on to re-MERGE this node on future updates. The
+    ontology_conformant *property* removal (for entities that now conform)
+    is fine and expected -- this only guards the workspace label itself."""
     memgraph = MagicMock()
     ontology = Ontology(entity_types=(EntityType("Person", "..."),))
 
     promote_entity_types_to_labels(memgraph, "base", ontology)
 
-    query = memgraph.query.call_args[0][0]
-    assert "REMOVE" not in query
-    assert "DELETE" not in query
+    all_queries = [call.args[0] for call in memgraph.query.call_args_list]
+    assert not any("REMOVE n:base" in q or "DELETE" in q for q in all_queries)
 
 
-def test_promote_entity_types_to_labels_with_empty_ontology_issues_no_queries():
+def test_promote_entity_types_to_labels_flags_nonconforming_entities():
+    memgraph = MagicMock()
+    ontology = Ontology(entity_types=(EntityType("Person", "..."), EntityType("Organization", "...")))
+
+    promote_entity_types_to_labels(memgraph, "base", ontology)
+
+    flag_query = memgraph.query.call_args_list[2][0][0]
+    assert "MATCH (n:base)" in flag_query
+    assert "WHERE NOT (n:Person OR n:Organization)" in flag_query
+    assert "SET n.ontology_conformant = false" in flag_query
+
+
+def test_promote_entity_types_to_labels_clears_flag_for_conforming_entities():
+    """Re-running promotion (e.g. after the ontology grows a new type) must
+    clear a stale ontology_conformant=false left over from an earlier pass."""
+    memgraph = MagicMock()
+    ontology = Ontology(entity_types=(EntityType("Person", "..."),))
+
+    promote_entity_types_to_labels(memgraph, "base", ontology)
+
+    clear_query = memgraph.query.call_args_list[-1][0][0]
+    assert "MATCH (n:base)" in clear_query
+    assert "WHERE n:Person" in clear_query
+    assert "REMOVE n.ontology_conformant" in clear_query
+
+
+def test_promote_entity_types_to_labels_with_empty_ontology_flags_everything_nonconformant():
+    """An empty ontology means nothing conforms -- every entity under the
+    workspace label gets flagged, none rejected or deleted."""
     memgraph = MagicMock()
 
     promote_entity_types_to_labels(memgraph, "base", Ontology(entity_types=()))
 
-    memgraph.query.assert_not_called()
+    memgraph.query.assert_called_once()
+    query = memgraph.query.call_args[0][0]
+    assert "MATCH (n:base)" in query
+    assert "SET n.ontology_conformant = false" in query

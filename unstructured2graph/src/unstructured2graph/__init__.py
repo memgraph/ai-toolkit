@@ -25,11 +25,12 @@ from .memgraph import (
     link_nodes_in_order,
     promote_entity_types_to_labels,
 )
-from .ontology import DEFAULT_ONTOLOGY, EntityType, Ontology
+from .ontology import DEFAULT_ONTOLOGY, DEFAULT_ONTOLOGY_PATH, EntityType, Ontology, load_ontology
 
 __version__ = "0.5.0"
 __all__ = [
     "DEFAULT_ONTOLOGY",
+    "DEFAULT_ONTOLOGY_PATH",
     "Chunk",
     "ChunkedDocument",
     "EntityType",
@@ -44,6 +45,7 @@ __all__ = [
     "from_texts",
     "from_unstructured",
     "link_nodes_in_order",
+    "load_ontology",
     "make_chunks",
     "parse_source",
     "parse_text",

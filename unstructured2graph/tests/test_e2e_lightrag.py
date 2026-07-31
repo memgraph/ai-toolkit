@@ -66,8 +66,9 @@ async def test_from_texts_extracts_real_entity_and_links_mentioned_in(memgraph, 
 @requires_openai_key
 @pytest.mark.asyncio
 async def test_from_texts_promotes_entity_type_to_label_by_default(memgraph, lightrag_wrapper):
-    """DEFAULT_ONTOLOGY is applied automatically -- no ontology= needed to get
-    real Memgraph labels alongside the LightRAG workspace label."""
+    """DEFAULT_ONTOLOGY_PATH is applied automatically -- no ontology_path
+    needed to get real Memgraph labels alongside the LightRAG workspace
+    label."""
     await from_texts(
         ["Alice Johnson works at Acme Corp on the graph database engine."],
         memgraph,
@@ -77,3 +78,38 @@ async def test_from_texts_promotes_entity_type_to_label_by_default(memgraph, lig
     workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
     rows = memgraph.query(f"MATCH (p:Person:{workspace}) RETURN count(*) AS count")
     assert rows[0]["count"] > 0
+
+
+@requires_openai_key
+@pytest.mark.asyncio
+async def test_from_texts_flags_entities_outside_a_custom_ontology(memgraph, lightrag_wrapper, tmp_path):
+    """A narrow, project-specific ontology (here: only Location) still keeps
+    every extracted entity and its raw entity_type -- entities outside it
+    just don't get a real label, and are flagged ontology_conformant=false
+    instead of being rejected."""
+    ontology_file = tmp_path / "ontology.yaml"
+    ontology_file.write_text(
+        """
+        entity_types:
+          - label: Location
+            description: Geographic places (cities, countries, buildings, regions)
+        """
+    )
+
+    await from_texts(
+        ["Alice Johnson works at Acme Corp on the graph database engine."],
+        memgraph,
+        lightrag_wrapper,
+        ontology_path=str(ontology_file),
+    )
+
+    workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
+    rows = memgraph.query(
+        f"MATCH (n:{workspace}) WHERE n.ontology_conformant = false RETURN n.entity_type AS entity_type, "
+        "n.entity_id AS entity_id"
+    )
+    assert len(rows) > 0
+    assert all(row["entity_type"] is not None for row in rows)
+
+    person_rows = memgraph.query(f"MATCH (n:Person:{workspace}) RETURN count(*) AS count")
+    assert person_rows[0]["count"] == 0
