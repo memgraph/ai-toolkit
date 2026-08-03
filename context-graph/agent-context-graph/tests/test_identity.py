@@ -76,6 +76,33 @@ def test_cli_flag_overrides_config(config_dir):
     assert env["MEMGRAPH_URL"] == "bolt://flag:9999"
 
 
+# --- resolve_llm_env ---
+
+
+def test_llm_defaults_when_no_config(config_dir):
+    env = _identity.resolve_llm_env()
+    assert env["OPENAI_API_KEY"] == ""
+    assert env["ANTHROPIC_API_KEY"] == ""
+
+
+def test_llm_from_config_file(config_dir):
+    _identity.write_full_config(openai_api_key="sk-openai-secret", anthropic_api_key="sk-anthropic-secret")
+    _identity._reset_cache()
+    env = _identity.resolve_llm_env()
+    assert env["OPENAI_API_KEY"] == "sk-openai-secret"
+    assert env["ANTHROPIC_API_KEY"] == "sk-anthropic-secret"
+
+
+def test_write_config_preserves_llm_keys(config_dir):
+    _identity.write_full_config(openai_api_key="sk-openai-secret")
+    _identity._reset_cache()
+    _identity.write_config(user_id="someone")
+    _identity._reset_cache()
+    config = _identity.load_config()
+    assert config.openai_api_key == "sk-openai-secret"
+    assert config.user_id == "someone"
+
+
 # --- write_config ---
 
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from typing import TYPE_CHECKING
 
@@ -77,7 +78,28 @@ def _reconcile(argv: list[str]) -> int:
     return asyncio.run(_run_reconcile(parsed))
 
 
+def _fill_env_from_context_graph_config() -> None:
+    """Best-effort fallback for standalone (manual/cron) ``reconcile`` runs.
+
+    When spawned by the SESSION_END hook, the parent process already overlays
+    context-graph's config.toml onto this subprocess's environment (see
+    sessions_graph.connector._reconciliation_env). Run standalone, there's no
+    such parent, so fill in the same values here -- only for keys not already
+    set, so explicit ambient env always wins. agent-context-graph is an
+    optional extra; silently skip if it isn't installed.
+    """
+    try:
+        from agent_context_graph.adapters._identity import resolve_llm_env, resolve_memgraph_env
+    except ImportError:
+        return
+    for key, value in {**resolve_memgraph_env(), **resolve_llm_env()}.items():
+        if value:
+            os.environ.setdefault(key, value)
+
+
 async def _run_reconcile(parsed: argparse.Namespace) -> int:
+    _fill_env_from_context_graph_config()
+
     from lightrag_memgraph import MemgraphLightRAGWrapper
     from sessions_graph import SessionsGraph
 

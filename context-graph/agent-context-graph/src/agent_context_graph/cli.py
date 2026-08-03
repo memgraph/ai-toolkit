@@ -80,7 +80,10 @@ def _config(argv: list[str]) -> int:
         "memgraph.user": "memgraph_user",
         "memgraph.password": "memgraph_password",
         "memgraph.database": "memgraph_database",
+        "llm.openai_api_key": "openai_api_key",
+        "llm.anthropic_api_key": "anthropic_api_key",
     }
+    _SECRET_KEYS = {"memgraph.password", "llm.openai_api_key", "llm.anthropic_api_key"}
 
     if not argv or argv[0] in {"-h", "--help"}:
         print("usage: agent-context-graph config set <key> <value>")
@@ -103,6 +106,8 @@ def _config(argv: list[str]) -> int:
         print(f"memgraph.user = {config.memgraph_user!r}")
         print(f"memgraph.password = {'***' if config.memgraph_password else repr('')}")
         print(f"memgraph.database = {config.memgraph_database!r}")
+        print(f"llm.openai_api_key = {'***' if config.openai_api_key else repr('')}")
+        print(f"llm.anthropic_api_key = {'***' if config.anthropic_api_key else repr('')}")
         return 0
 
     if action == "set":
@@ -115,12 +120,12 @@ def _config(argv: list[str]) -> int:
             print(f"Supported keys: {', '.join(_CONFIG_KEYS)}", file=sys.stderr)
             return 2
 
-        # Password: read from stdin if value not provided.
+        # Secrets: read from stdin if value not provided.
         if len(argv) < 3:
-            if key == "memgraph.password":
+            if key in _SECRET_KEYS:
                 import getpass
 
-                value = getpass.getpass("Enter memgraph password: ")
+                value = getpass.getpass(f"Enter {key}: ")
             else:
                 print(f"usage: agent-context-graph config set {key} <value>", file=sys.stderr)
                 return 2
@@ -128,7 +133,7 @@ def _config(argv: list[str]) -> int:
             value = argv[2]
 
         write_config(**{_CONFIG_KEYS[key]: value})
-        display_value = "***" if key == "memgraph.password" else repr(value)
+        display_value = "***" if key in _SECRET_KEYS else repr(value)
         print(f"Wrote {key} = {display_value} to {config_path}")
         return 0
 
@@ -147,8 +152,8 @@ def _config(argv: list[str]) -> int:
         if value is None:
             print(f"{key} is not set in {config_path}", file=sys.stderr)
             return 1
-        # Don't print password to stdout unless explicitly requested.
-        if key == "memgraph.password":
+        # Don't print secrets to stdout unless explicitly requested.
+        if key in _SECRET_KEYS:
             print("***")
         else:
             print(value)
@@ -265,6 +270,8 @@ def _bootstrap(argv: list[str]) -> int:
     memgraph_user = os.environ.get("MEMGRAPH_USER", "")
     memgraph_password = os.environ.get("MEMGRAPH_PASSWORD", "")
     memgraph_database = os.environ.get("MEMGRAPH_DATABASE", "memgraph")
+    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+    anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
 
     config_path = write_full_config(
         user_id=user_id,
@@ -272,6 +279,8 @@ def _bootstrap(argv: list[str]) -> int:
         memgraph_user=memgraph_user,
         memgraph_password=memgraph_password,
         memgraph_database=memgraph_database,
+        openai_api_key=openai_api_key,
+        anthropic_api_key=anthropic_api_key,
     )
     print(f"OK config: wrote {config_path}")
     if user_id:
@@ -279,6 +288,18 @@ def _bootstrap(argv: list[str]) -> int:
     else:
         print("   identity.user_id is empty — set it with: agent-context-graph config set identity.user_id <your-name>")
     print(f"   memgraph.url = {memgraph_url!r}")
+    if openai_api_key or anthropic_api_key:
+        found = ", ".join(
+            name
+            for name, value in (("llm.openai_api_key", openai_api_key), ("llm.anthropic_api_key", anthropic_api_key))
+            if value
+        )
+        print(f"   {found} captured from environment")
+    else:
+        print(
+            "   no LLM API key found in environment — sessions-graph reconciliation needs one; "
+            "set with: agent-context-graph config set llm.openai_api_key"
+        )
 
     doctor_args = ["--runtime", args.runtime]
     for connector in connectors:
@@ -344,6 +365,10 @@ def _check_config() -> dict[str, object]:
     else:
         parts.append("user_id=NOT SET")
     parts.append(f"memgraph.url={config.memgraph_url!r}")
+    llm_key_set = bool(config.openai_api_key or config.anthropic_api_key)
+    parts.append(
+        "llm_key=SET" if llm_key_set else "llm_key=NOT SET (needed only for sessions-graph auto-reconciliation)"
+    )
     return {"name": "config", "ok": bool(config.user_id), "detail": f"{path} — {'; '.join(parts)}"}
 
 
