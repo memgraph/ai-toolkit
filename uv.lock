@@ -4544,7 +4544,8 @@ dependencies = [
     { name = "click" },
     { name = "joblib" },
     { name = "regex" },
-    { name = "tqdm", version = "4.67.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "tqdm", version = "4.67.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "tqdm", version = "4.67.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/74/a1/b3b4adf15585a5bc4c357adde150c01ebeeb642173ded4d871e89468767c/nltk-3.9.4.tar.gz", hash = "sha256:ed03bc098a40481310320808b2db712d95d13ca65b27372f8a403949c8b523d0", size = 2946864, upload-time = "2026-03-24T06:13:40.641Z" }
 wheels = [
@@ -8340,7 +8341,7 @@ wheels = [
 
 [[package]]
 name = "sessions-graph"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "context-graph/sessions-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -9826,11 +9827,12 @@ wheels = [
 
 [[package]]
 name = "unstructured2graph"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "unstructured2graph" }
 dependencies = [
     { name = "lightrag-memgraph" },
     { name = "memgraph-toolbox" },
+    { name = "nltk" },
     { name = "pyyaml" },
     { name = "unstructured", version = "0.18.32", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "unstructured", version = "0.22.20", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -9850,6 +9852,7 @@ test = [
 requires-dist = [
     { name = "lightrag-memgraph", editable = "integrations/lightrag-memgraph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
+    { name = "nltk", specifier = "<3.10" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.21.0" },
     { name = "pyyaml", specifier = ">=6.0" },

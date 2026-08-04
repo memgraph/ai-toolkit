@@ -26,6 +26,12 @@ dependencies = [
     "lightrag-memgraph>=0.3.0",
     "memgraph-toolbox>=0.1.11",
     "pyyaml>=6.0",
+    # unstructured depends on nltk with no version bound. Capped below 3.10:
+    # 3.10.1 (2026-08-01) added a CWD-import security check (nltk/inisec.py)
+    # that raises ImportError during pytest collection in CI (uv pip install
+    # -e resolves nltk live, ignoring the lockfile). Bump once that's no
+    # longer a false positive under pytest's test-collection working dir.
+    "nltk<3.10",
 ]
 [project.optional-dependencies]
 all-docs = [
