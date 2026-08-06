@@ -85,6 +85,28 @@ async def test_from_texts_does_not_promote_labels_unless_enforced(memgraph, ligh
 
 @requires_openai_key
 @pytest.mark.asyncio
+async def test_from_texts_promote_labels_true_promotes_without_ontology_gate(memgraph, lightrag_wrapper):
+    """promote_labels=True promotes entity_type to a real label with no
+    fixed vocabulary -- unlike enforce_ontology=True, nothing gets flagged
+    ontology_conformant, since there's no ontology to be non-conformant
+    relative to."""
+    await from_texts(
+        ["Alice Johnson works at Acme Corp on the graph database engine."],
+        memgraph,
+        lightrag_wrapper,
+        promote_labels=True,
+    )
+
+    workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
+    person_rows = memgraph.query(f"MATCH (p:Person:{workspace}) RETURN count(*) AS count")
+    assert person_rows[0]["count"] > 0
+
+    rows = memgraph.query(f"MATCH (n:{workspace}) RETURN n.ontology_conformant AS conformant")
+    assert all(row["conformant"] is None for row in rows)
+
+
+@requires_openai_key
+@pytest.mark.asyncio
 async def test_from_texts_promotes_entity_type_to_label_when_enforced(memgraph, lightrag_wrapper):
     """With enforce_ontology=True and no ontology_path, DEFAULT_ONTOLOGY_PATH
     is applied automatically to get real Memgraph labels alongside the

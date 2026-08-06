@@ -147,6 +147,32 @@ async def test_reconcile_session_success_marks_completed_and_links_chunks():
 
 
 @pytest.mark.asyncio
+async def test_reconcile_session_passes_promotion_and_ontology_kwargs_through_to_from_texts():
+    db = _stub_db()
+    g = _graph(db)
+    actions = [Message(session_id="s-1", role=MessageRole.ASSISTANT, content="Alice works on the graph engine.")]
+    actions_graph = _fake_actions_graph(actions)
+    lightrag_wrapper = MagicMock()
+
+    fake_chunk = Chunk(text="Alice works on the graph engine.", hash=content_hash("Alice works on the graph engine."))
+    with patch("unstructured2graph.from_texts", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_texts:
+        await g.reconcile_session(
+            "s-1",
+            lightrag_wrapper=lightrag_wrapper,
+            actions_graph=actions_graph,
+            promote_labels=True,
+            enforce_ontology=True,
+            ontology_path="/some/ontology.yaml",
+        )
+
+    mock_from_texts.assert_awaited_once()
+    call_kwargs = mock_from_texts.call_args.kwargs
+    assert call_kwargs["promote_labels"] is True
+    assert call_kwargs["enforce_ontology"] is True
+    assert call_kwargs["ontology_path"] == "/some/ontology.yaml"
+
+
+@pytest.mark.asyncio
 async def test_reconcile_session_dedupes_identical_text_before_calling_lightrag():
     db = _stub_db()
     g = _graph(db)

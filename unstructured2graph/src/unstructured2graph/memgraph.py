@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 from typing import TYPE_CHECKING
 
@@ -9,6 +10,26 @@ if TYPE_CHECKING:
     from .ontology import Ontology
 
 logger = logging.getLogger(__name__)
+
+# A derived label gets f-string-interpolated directly into Cypher
+# (SET n:{label}), so it's restricted to safe identifier characters.
+_VALID_LABEL_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_LABEL_WORD_SPLIT_PATTERN = re.compile(r"[^A-Za-z0-9]+")
+
+
+def _entity_type_to_label(entity_type: str) -> str | None:
+    """
+    Convert a raw entity_type value (e.g. "natural object") into a
+    PascalCase Memgraph label ("NaturalObject"). Returns None if nothing
+    safe can be derived -- e.g. empty after stripping non-alphanumeric
+    characters, or the result would start with a digit -- so callers can
+    skip promoting that entity_type rather than risk an invalid label.
+    """
+    words = [w for w in _LABEL_WORD_SPLIT_PATTERN.split(entity_type.strip()) if w]
+    if not words:
+        return None
+    label = "".join(word[:1].upper() + word[1:].lower() for word in words)
+    return label if _VALID_LABEL_PATTERN.match(label) else None
 
 
 def create_nodes_from_list(
@@ -108,6 +129,38 @@ def promote_entity_types_to_labels(memgraph: Memgraph, workspace_label: str, ont
     conforms_clause = " OR ".join(f"n:{label}" for label in labels)
     memgraph.query(f"MATCH (n:{workspace_label}) WHERE NOT ({conforms_clause}) SET n.ontology_conformant = false")
     memgraph.query(f"MATCH (n:{workspace_label}) WHERE {conforms_clause} REMOVE n.ontology_conformant")
+
+
+def promote_all_entity_types_to_labels(memgraph: Memgraph, workspace_label: str) -> None:
+    """
+    Promote every entity's entity_type to a real Memgraph label, with no
+    fixed vocabulary to restrict against -- unlike
+    promote_entity_types_to_labels(), there's no ontology_conformant
+    flagging here, since without an ontology there's nothing to be
+    non-conformant relative to; an entity_type is either promoted or
+    skipped, never flagged.
+
+    entity_type values that don't sanitize into a safe label (see
+    _entity_type_to_label) are skipped and logged; the node, its workspace
+    label, and its raw entity_type are always left as-is either way.
+    """
+    rows = memgraph.query(
+        f"MATCH (n:{workspace_label}) WHERE n.entity_type IS NOT NULL RETURN DISTINCT n.entity_type AS entity_type"
+    )
+    for row in rows:
+        entity_type = row["entity_type"]
+        label = _entity_type_to_label(entity_type)
+        if label is None:
+            logger.warning(f"Skipping entity_type {entity_type!r}: could not derive a safe Memgraph label from it")
+            continue
+        memgraph.query(
+            f"""
+            MATCH (n:{workspace_label})
+            WHERE toLower(n.entity_type) = toLower($entity_type) AND NOT n:{label}
+            SET n:{label}
+            """,
+            params={"entity_type": entity_type},
+        )
 
 
 def link_nodes_in_order(

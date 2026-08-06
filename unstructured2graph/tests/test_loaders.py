@@ -328,6 +328,46 @@ async def test_from_texts_ontology_path_without_enforce_ontology_is_ignored(capl
 
 
 @pytest.mark.asyncio
+async def test_from_texts_promote_labels_true_promotes_without_ontology_gate():
+    """promote_labels is a separate, weaker concern from enforce_ontology --
+    it must call the unrestricted promotion path, not the ontology-gated one."""
+    memgraph = MagicMock()
+    lightrag_wrapper = _lightrag_wrapper_with_workspace("base")
+
+    with (
+        patch("unstructured2graph.loaders.promote_all_entity_types_to_labels") as mock_promote_all,
+        patch("unstructured2graph.loaders.promote_entity_types_to_labels") as mock_promote_gated,
+    ):
+        await from_texts(["Alice works on the graph engine."], memgraph, lightrag_wrapper, promote_labels=True)
+
+    mock_promote_all.assert_called_once_with(memgraph, "base")
+    mock_promote_gated.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_from_texts_enforce_ontology_takes_precedence_over_promote_labels():
+    """When both are set, enforce_ontology (the stricter, gated mode) wins --
+    promote_labels doesn't also run the unrestricted path on top."""
+    memgraph = MagicMock()
+    lightrag_wrapper = _lightrag_wrapper_with_workspace("base")
+
+    with (
+        patch("unstructured2graph.loaders.promote_all_entity_types_to_labels") as mock_promote_all,
+        patch("unstructured2graph.loaders.promote_entity_types_to_labels") as mock_promote_gated,
+    ):
+        await from_texts(
+            ["Alice works on the graph engine."],
+            memgraph,
+            lightrag_wrapper,
+            promote_labels=True,
+            enforce_ontology=True,
+        )
+
+    mock_promote_gated.assert_called_once()
+    mock_promote_all.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_from_texts_preserves_grouping_for_empty_texts():
     """Empty inputs must still get an (empty) group, so callers can zip
     grouped results back against their original source list by index."""

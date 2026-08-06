@@ -94,7 +94,9 @@ async def _run_reconcile(parsed: argparse.Namespace) -> int:
     try:
         exit_code = 0
         for session_id in session_ids:
-            summary = await graph.reconcile_session(session_id, lightrag_wrapper=lightrag_wrapper)
+            summary = await graph.reconcile_session(
+                session_id, lightrag_wrapper=lightrag_wrapper, enforce_ontology=True
+            )
             if summary.status == "completed":
                 print(f"OK {session_id}: {summary.texts_deduped}/{summary.texts_considered} unique texts reconciled")
             else:

@@ -30,6 +30,8 @@ from .reconciliation import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from actions_graph import ActionsGraph
 
 _FULLTEXT_INDEX = "memory_content_index"
@@ -271,6 +273,9 @@ class SessionsGraph:
         lightrag_wrapper: Any,
         actions_graph: ActionsGraph | None = None,
         entity_workspace: str | None = None,
+        promote_labels: bool = False,
+        enforce_ontology: bool = False,
+        ontology_path: str | Path | None = None,
     ) -> ReconciliationSummary:
         """Batch-extract entities from a session's Action + Memory content.
 
@@ -298,6 +303,19 @@ class SessionsGraph:
                 Defaults to whatever the LightRAG wrapper resolves to, so
                 session-derived entities land in the same workspace as
                 document-ingested ones and can merge.
+            promote_labels: Passed through to ``unstructured2graph.from_texts``.
+                Promotes every entity_type to a real Memgraph label with no fixed
+                vocabulary and no ontology_conformant flagging. Ignored if
+                enforce_ontology is also True. Both default to False, matching
+                unstructured2graph's own default: no label promotion unless
+                explicitly requested.
+            enforce_ontology: Passed through to ``unstructured2graph.from_texts``.
+                Restricts entity_type promotion to ontology_path's vocabulary (or
+                unstructured2graph's bundled default), flagging anything outside it
+                ontology_conformant=false instead of promoting a label. Takes
+                precedence over promote_labels.
+            ontology_path: Passed through to ``unstructured2graph.from_texts``. Only
+                consulted when enforce_ontology=True.
 
         Returns:
             An :class:`ReconciliationSummary` describing what happened. Never
@@ -334,6 +352,9 @@ class SessionsGraph:
                     memgraph=self._db,
                     lightrag_wrapper=lightrag_wrapper,
                     entity_workspace=entity_workspace,
+                    promote_labels=promote_labels,
+                    enforce_ontology=enforce_ontology,
+                    ontology_path=ontology_path,
                 )
                 chunks_by_text_hash = dict(zip(unique_texts.keys(), grouped_chunks, strict=True))
                 self._link_chunks_to_sources(sources, chunks_by_text_hash)
