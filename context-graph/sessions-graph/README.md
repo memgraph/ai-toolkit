@@ -27,7 +27,7 @@ pip install sessions-graph[reconciliation]
 ```python
 from sessions_graph import SessionsGraph
 
-graph = SessionsGraph()  # connects via MEMGRAPH_HOST / MEMGRAPH_PORT env vars
+graph = SessionsGraph()  # connects via MEMGRAPH_URL / MEMGRAPH_USER / MEMGRAPH_PASSWORD env vars
 graph.setup()  # creates constraints and the text index (run once)
 
 # Write a memory
@@ -83,13 +83,13 @@ graph.save_memory(
 
 ```
 (:User {user_id})
-    └─[:HAS_MEMORY]─▶ (:Memory {memory_id, user_id, content, created_at})
-                              ▲                        │
-              [:PRODUCED_MEMORY]              [:HAS_CHUNK]
-                              │                        ▼
-                      (:Session {session_id,   (:Chunk {hash, text})
-                                 reconciliation_status,     ▲
-                                 reconciled_at})  [:HAS_CHUNK]
+    ├─[:HAS_MEMORY]──▶ (:Memory {memory_id, user_id, content, created_at})
+    │                          ▲                        │
+    │            [:PRODUCED_MEMORY]              [:HAS_CHUNK]
+    │                          │                        ▼
+    └─[:HAD_SESSION]─▶ (:Session {session_id,   (:Chunk {hash, text})
+                                  reconciliation_status,     ▲
+                                  reconciled_at})  [:HAS_CHUNK]
                               │                        │
                         [:HAS_ACTION]                  │
                               ▼                        │
@@ -97,6 +97,9 @@ graph.save_memory(
                               │
                                               (:Entity)-[:MENTIONED_IN]->(:Chunk)
 ```
+
+`(:User)-[:HAD_SESSION]->(:Session)` is written by `SessionsGraphConnector` on
+session start; it is the join key other Context Graph components hang off of.
 
 `(:Action)` is owned by [Actions Graph](../actions-graph/); `(:Chunk)` and the
 extracted entity nodes are owned by
@@ -152,7 +155,15 @@ Codex) enforce a timeout on hook commands. Instead:
 
   # Sweep every session still marked 'pending' (e.g. from cron)
   sessions-graph reconcile --pending --limit 50
+
+  # Optional: override LightRAG's working dir (default ./lightrag_storage)
+  sessions-graph reconcile --pending --working-dir ./lightrag_storage
   ```
+
+  The CLI runs with **`enforce_ontology=True`**: extracted entities get real
+  type labels (`:Person`, `:Organization`, …) gated by unstructured2graph's
+  default ontology, and anything outside it is kept but flagged
+  `ontology_conformant = false`. See [entity typing](../../unstructured2graph/README.md#entity-typing--ontology).
 
 - Or, if you want it triggered automatically without a manual/cron step, opt
   in to a **best-effort detached background process** spawned right after a
@@ -175,9 +186,20 @@ graph.setup()
 lightrag_wrapper = MemgraphLightRAGWrapper()
 await lightrag_wrapper.initialize(working_dir="./lightrag_storage")
 
-summary = await graph.reconcile_session("s-abc123", lightrag_wrapper=lightrag_wrapper)
+summary = await graph.reconcile_session(
+    "s-abc123",
+    lightrag_wrapper=lightrag_wrapper,
+    enforce_ontology=True,   # match the CLI: promote entity_type to real labels
+)
 print(summary.status, summary.texts_considered, summary.texts_deduped)
 ```
+
+Label promotion is opt-in and mirrors unstructured2graph's flags: the default
+(`enforce_ontology=False, promote_labels=False`) leaves entities under the
+LightRAG workspace label with an `entity_type` property only; `enforce_ontology=True`
+restricts promotion to an ontology (pass `ontology_path=` for a custom one);
+`promote_labels=True` promotes every `entity_type` with no vocabulary. See
+[unstructured2graph § entity typing](../../unstructured2graph/README.md#entity-typing--ontology).
 
 Extracted entities land in the same LightRAG workspace as any documents
 ingested via unstructured2graph by default, so a person or concept mentioned
@@ -185,10 +207,11 @@ both in a session and in an ingested document merges into one node. Pass
 `entity_workspace=` explicitly to `reconcile_session()` to isolate them instead.
 
 Content is deduplicated by hash before ever reaching the LLM, so re-running a
-sweep over already-processed content never re-bills it — but session content
-is pulled *in full*, including tool output, so the first run over a chatty
-session can still be substantial. Consider this before enabling
-`auto_reconcile` broadly.
+sweep over already-processed content never re-bills it. Each reconcilable unit
+(a message, tool call, tool result, or memory) is truncated to
+`MAX_RECONCILABLE_CHARS` (8000) before extraction, but a chatty session still
+has many units, so the first run can be substantial. Consider this before
+enabling `auto_reconcile` broadly.
 
 ## API reference
 
@@ -202,5 +225,5 @@ session can still be substantial. Consider this before enabling
 | `search_memories(user_id, query, *, limit=10)` | Full-text search over Memory content. |
 | `update_memory(memory_id, content)` | Replace the content of an existing Memory. Returns `None` if not found. |
 | `delete_memory(memory_id)` | Remove a Memory and all its relationships. |
-| `reconcile_session(session_id, *, lightrag_wrapper, actions_graph=None, entity_workspace=None)` | Run session reconciliation for one session. Returns an `ReconciliationSummary`. Requires the `reconciliation` extra. |
+| `async reconcile_session(session_id, *, lightrag_wrapper, actions_graph=None, entity_workspace=None, promote_labels=False, enforce_ontology=False, ontology_path=None)` | Run session reconciliation for one session. `promote_labels`/`enforce_ontology`/`ontology_path` control entity-type label promotion (see above). Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
 | `get_pending_reconciliation_sessions(*, limit=100)` | Return session IDs marked `reconciliation_status = 'pending'`. |

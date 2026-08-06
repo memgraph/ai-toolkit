@@ -39,6 +39,38 @@ pip install unstructured2graph
 
 ## 📚 Usage Examples
 
+### Context Graph - Capture Your Agent Sessions
+
+Turn your Claude Code and Codex sessions into a queryable knowledge graph. Install the plugin and every session records the tools it called, the skills it used, and the memories it wrote — all joined on a shared `(:Session)` node in Memgraph.
+
+Inside Claude Code:
+
+```text
+/plugin marketplace add memgraph/ai-toolkit
+/plugin install context-graph@context-graph-plugins
+```
+
+Then bootstrap, set your identity, and verify:
+
+```bash
+agent-context-graph bootstrap --runtime claude-code \
+  --connector skills-graph --connector actions-graph --connector sessions-graph
+agent-context-graph config set identity.user_id "your-name"
+agent-context-graph doctor --runtime claude-code \
+  --connector skills-graph --connector actions-graph --connector sessions-graph
+```
+
+Query across every session — e.g. which skills a user has used:
+
+```cypher
+MATCH (:User {user_id: "your-name"})-[:HAD_SESSION]->(:Session)-[:USED_SKILL]->(s:Skill)
+RETURN s.name, count(*) AS uses ORDER BY uses DESC;
+```
+
+👉 [Context Graph guide](/context-graph/) — components, Codex setup, SDK usage, and reconciling sessions into an entity graph.
+
+---
+
 ### unstructured2graph - Build Knowledge Graphs from Documents
 
 Transform PDFs, URLs, and documents into queryable knowledge graphs:
@@ -47,12 +79,11 @@ Transform PDFs, URLs, and documents into queryable knowledge graphs:
 import asyncio
 from memgraph_toolbox.api.memgraph import Memgraph
 from lightrag_memgraph import MemgraphLightRAGWrapper
-from unstructured2graph import from_unstructured, create_property_index
+from unstructured2graph import from_unstructured
 
 
 async def main():
     memgraph = Memgraph()
-    create_property_index(memgraph, "Chunk", "hash")
 
     lightrag = MemgraphLightRAGWrapper()
     await lightrag.initialize(working_dir="./lightrag_storage")
@@ -63,6 +94,7 @@ async def main():
         memgraph=memgraph,
         lightrag_wrapper=lightrag,
         link_chunks=True,
+        enforce_ontology=True,  # promote entity_type to real labels (:Person, :Organization, ...)
     )
     await lightrag.afinalize()
 
@@ -163,7 +195,19 @@ uv run main.py
 | [langchain-memgraph](/integrations/langchain-memgraph/) | LangChain tools and chains   | `pip install langchain-memgraph` |
 | [mcp-memgraph](/integrations/mcp-memgraph/)             | MCP server for LLMs          | `pip install mcp-memgraph`       |
 | [unstructured2graph](/unstructured2graph/)              | Document to graph conversion | `pip install unstructured2graph` |
+| [lightrag-memgraph](/integrations/lightrag-memgraph/)   | LightRAG storage on Memgraph | `pip install lightrag-memgraph`  |
 | [sql2graph](/agents/sql2graph/)                         | Database migration agent     | See docs                         |
+
+### Context Graph — capture agent sessions
+
+A family of components that persist your Claude Code / Codex sessions into one Memgraph graph. See the [Context Graph guide](/context-graph/).
+
+| Package                                                          | Description                                    | Install                             |
+| --------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------- |
+| [agent-context-graph](/context-graph/agent-context-graph/)      | Event hub: routes runtime hooks to connectors  | `pip install agent-context-graph`   |
+| [actions-graph](/context-graph/actions-graph/)                  | Tool calls, results, messages as action nodes  | `pip install actions-graph`         |
+| [skills-graph](/context-graph/skills-graph/)                    | Skill definitions and per-session skill usage  | `pip install skills-graph`          |
+| [sessions-graph](/context-graph/sessions-graph/)                | User/session provenance, memories, reconciliation | `pip install sessions-graph`     |
 
 ---
 
@@ -217,17 +261,22 @@ uv pip install -e integrations/mcp-memgraph[test]
 pytest -s integrations/mcp-memgraph/tests
 ```
 
-### Agent integration tests
+### Context Graph tests
+
+The Context Graph components (and unstructured2graph) test against a live Memgraph. `scripts/dev-memgraph.sh` owns that lifecycle — it starts an isolated instance, runs each component's suite against it, and tears down:
 
 ```bash
-uv pip install -e integrations/agents[test]
-pytest -s integrations/agents/tests
+./scripts/dev-memgraph.sh up
+./scripts/dev-memgraph.sh test          # all components; or e.g. `test sessions-graph`
+./scripts/dev-memgraph.sh down
 ```
 
-To run a complete migration workflow with the agent:
+### sql2graph agent
+
+To run a complete database migration workflow with the agent:
 
 ```bash
-cd integrations/agents
+cd agents/sql2graph
 uv run main.py
 ```
 

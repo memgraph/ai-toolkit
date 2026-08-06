@@ -12,6 +12,8 @@ Runtime Adapter  ->  Event Protocol  ->  Graph Connector(s)
 
 Runtime plugins are the distribution layer for host-specific hook wiring. They install hooks, skills, and setup helpers for a runtime, then call Agent Context Graph. They are not graph components and should not encode graph-specific meaning.
 
+> **Just want to capture your Claude Code / Codex sessions?** Start with the [Context Graph guide](../README.md) — it walks through installing the plugin and wiring all the connectors end to end. This README covers the adapter layer itself and the in-process SDK path.
+
 ## Installation
 
 For command-hook runtimes such as Codex and Claude Code, prefer a user-level tool install:
@@ -145,63 +147,97 @@ Implemented:
 
 ### First-Time Plugin Setup
 
-For Codex and Claude Code plugins, the recommended first-run path is the bootstrap command. It installs the runtime package, checks Memgraph, installs the graph connector extra, and runs `doctor`.
+For Codex and Claude Code plugins, the recommended first-run path is the bootstrap command. It installs the runtime package (with the connector extras), checks Memgraph, and runs `doctor`.
 
 Prerequisites:
 
-- `uv` on `PATH`.
-- Memgraph running and reachable over Bolt. Defaults are `bolt://localhost:7687`, empty user/password, and database `memgraph`.
+- `uv` on `PATH`. (`uv` manages Python for the tool; if uv-managed Python downloads are blocked, install Python 3.10+ and rerun bootstrap.)
+- Memgraph running and reachable over Bolt. Defaults are `bolt://localhost:7687`, empty user/password, database `memgraph`. If it isn't running locally:
 
-**Environment variables:**
+  ```bash
+  docker run --rm -p 7687:7687 memgraph/memgraph
+  ```
 
-| Variable | Default | Description |
-|---|---|---|
-| `MEMGRAPH_URL` | `bolt://localhost:7687` | Bolt URL — set to a remote host for non-local Memgraph |
-| `MEMGRAPH_USER` | `""` | Bolt username (service account) |
-| `MEMGRAPH_PASSWORD` | `""` | Bolt password or OAuth token |
-| `MEMGRAPH_DATABASE` | `memgraph` | Target database name |
-| `AGENT_CONTEXT_GRAPH_USER_ID` | _(none)_ | Human identity stored on Memory nodes — required for sessions-graph to associate memories with a user |
-
-If Memgraph is not running locally, start it first:
+**1. Bootstrap all three connectors** (this is what the installed plugin wires into its hooks):
 
 ```bash
-docker run --rm -p 7687:7687 memgraph/memgraph
+# Codex
+agent-context-graph bootstrap --runtime codex \
+  --connector skills-graph --connector actions-graph --connector sessions-graph
+
+# Claude Code
+agent-context-graph bootstrap --runtime claude-code \
+  --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
-`uv` manages Python for the tool. If uv-managed Python downloads are blocked in your environment, install Python 3.10+ and rerun bootstrap.
-
-For Codex:
-
-```bash
-agent-context-graph bootstrap --runtime codex --connector skills-graph
-```
-
-For Claude Code:
-
-```bash
-agent-context-graph bootstrap --runtime claude-code --connector skills-graph
-```
-
-Expected successful doctor output looks like:
-
-```text
-OK agent-context-graph executable: ...
-OK agent-context-graph: ...
-OK connector:skills-graph: installed=...; memgraph=reachable
-OK runtime:codex: strict hook smoke passed
-```
-
-Use the matching runtime value when checking Claude Code:
-
-```text
-OK runtime:claude-code: strict hook smoke passed
-```
-
-The plugin wrapper scripts call the same bootstrap command. If `agent-context-graph` is not installed yet, they fall back to `uvx`:
+The plugin wrapper script runs the same command (and falls back to `uvx` if the tool isn't installed yet):
 
 ```bash
 ./scripts/bootstrap.sh
 ```
+
+**2. Configure identity and connection.** Bootstrap writes `~/.config/context-graph/config.toml`; hooks read their configuration from that file at runtime (see [Configuration](#configuration) — env vars are **not** read at hook time). Set your identity, which sessions-graph requires:
+
+```bash
+agent-context-graph config set identity.user_id "your-name"
+```
+
+The Memgraph connection defaults to `bolt://localhost:7687`. For a remote or HA instance:
+
+```bash
+agent-context-graph config set memgraph.url "neo4j://<coordinator-host>:7687"
+agent-context-graph config set memgraph.user "<user>"
+agent-context-graph config set memgraph.password        # prompts; stored 0600
+agent-context-graph config set memgraph.database "memgraph"
+```
+
+**3. Verify:**
+
+```bash
+agent-context-graph config show
+agent-context-graph doctor --runtime claude-code \
+  --connector skills-graph --connector actions-graph --connector sessions-graph
+```
+
+Expected successful doctor output (use `--runtime codex` for Codex):
+
+```text
+OK agent-context-graph executable: ...
+OK agent-context-graph: ...
+OK config: identity.user_id set
+OK memgraph: reachable
+OK connector:skills-graph: installed=...; memgraph=reachable
+OK connector:actions-graph: installed=...; memgraph=reachable
+OK connector:sessions-graph: installed=...; memgraph=reachable
+OK runtime:claude-code: strict hook smoke passed
+```
+
+> **Reconciliation is a separate step.** The connectors capture session activity, but turning a session's text into extracted entities (a `:Person`/`:Organization` graph) is done out-of-band — see [sessions-graph § reconciliation](../sessions-graph/README.md#session-reconciliation). By default a finished session is marked `reconciliation_status = 'pending'` and `sessions-graph reconcile --pending` extracts it.
+
+### Configuration
+
+Bootstrap and the `config` command write `~/.config/context-graph/config.toml` (mode `0600`). **Hook subprocesses resolve their configuration from CLI flags and this file only — never from environment variables** (they don't inherit your shell), per [ADR 0002](docs/adr/0002-config-file-only-hook-resolution.md).
+
+```toml
+[identity]
+user_id = "your-name"
+
+[memgraph]
+url = "bolt://localhost:7687"
+user = ""
+password = ""
+database = "memgraph"
+```
+
+Manage it with:
+
+```bash
+agent-context-graph config show
+agent-context-graph config get memgraph.url
+agent-context-graph config set <key> <value>   # keys: identity.user_id, memgraph.{url,user,password,database}
+```
+
+Environment variables (`MEMGRAPH_URL`, `MEMGRAPH_USER`, `MEMGRAPH_PASSWORD`, `MEMGRAPH_DATABASE`, `AGENT_CONTEXT_GRAPH_USER_ID`) are consulted **only at bootstrap time** — if set, `bootstrap` persists them into the config file. Exporting them later has no effect on running hooks; use `config set` instead.
 
 ### OpenAI Codex Plugin
 
@@ -235,7 +271,7 @@ Check the installed hook environment with:
 agent-context-graph doctor --runtime codex --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
-Keep graph credentials in the process environment, not in plugin hook files. Runtime hooks use `memgraph-toolbox` defaults unless the Codex process has `MEMGRAPH_*` variables set.
+Graph credentials live in `~/.config/context-graph/config.toml` (written by `bootstrap`/`config set`), not in plugin hook files or the process environment — hooks read that file at runtime. See [Configuration](#configuration).
 
 ### Claude Code Plugin
 
@@ -334,9 +370,11 @@ All runtime adapters emit runtime-agnostic `Event` dataclasses:
 
 | Connector | Graph Component | Events Handled |
 |-----------|----------------|----------------|
-| `SkillGraphConnector` | skills-graph | Tool events matching skill access/search operations |
+| `SkillGraphConnector` | [skills-graph](../skills-graph/) | Tool/message events matching skill access/search operations |
+| `ActionsGraphConnector` | [actions-graph](../actions-graph/) | Session, tool, message, subagent, and error events → action nodes |
+| `SessionsGraphConnector` | [sessions-graph](../sessions-graph/) | `SessionStartEvent`/`SessionEndEvent` → `(:User)`, `(:Session)`, `HAD_SESSION`; marks sessions for reconciliation on end |
 
-Additional graph connectors should live in the packages that own those graph schemas.
+The installed plugin wires **all three** (`--connector skills-graph --connector actions-graph --connector sessions-graph`). Each connector lives in the package that owns its graph schema; additional connectors should too.
 
 ### Adding a New Runtime Adapter
 
