@@ -290,7 +290,7 @@ def validate_llm_providers() -> tuple[bool, list[str], list[str]]:
         try:
             from langchain_anthropic import ChatAnthropic
 
-            llm = ChatAnthropic(model="claude-sonnet-4-20250514", temperature=0.1)
+            llm = ChatAnthropic(model=os.getenv("LLM_MODEL", "claude-sonnet-5"))
             llm.invoke("Test")
             valid_providers.append("Anthropic")
         except ImportError:

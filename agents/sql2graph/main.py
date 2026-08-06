@@ -704,10 +704,8 @@ def _detect_llm() -> Any:
         if os.getenv("ANTHROPIC_API_KEY"):
             from langchain_anthropic import ChatAnthropic
 
-            return ChatAnthropic(
-                model=os.getenv("LLM_MODEL", "claude-sonnet-4-20250514"),
-                temperature=0.1,
-            )
+            # Current Claude models reject `temperature`; steer via prompting instead.
+            return ChatAnthropic(model=os.getenv("LLM_MODEL", "claude-sonnet-5"))
         if os.getenv("GOOGLE_API_KEY"):
             from langchain_google_genai import ChatGoogleGenerativeAI
 
