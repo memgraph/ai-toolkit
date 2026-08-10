@@ -335,8 +335,8 @@ jobs:
       - name: Wait for Memgraph to be ready
         run: |
           for i in $(seq 1 30); do
-            if (echo > /dev/tcp/localhost/7687) 2>/dev/null; then
-              echo "Memgraph is accepting Bolt connections"
+            if echo "RETURN 1;" | docker exec -i memgraph mgconsole --host 127.0.0.1 --port 7687 >/dev/null 2>&1; then
+              echo "Memgraph is ready to serve queries"
               exit 0
             fi
             echo "Waiting for Memgraph (attempt $i)..."
@@ -378,8 +378,8 @@ jobs:
       - name: Wait for Memgraph to be ready
         run: |
           for i in $(seq 1 30); do
-            if (echo > /dev/tcp/localhost/7687) 2>/dev/null; then
-              echo "Memgraph is accepting Bolt connections"
+            if echo "RETURN 1;" | docker exec -i memgraph mgconsole --host 127.0.0.1 --port 7687 >/dev/null 2>&1; then
+              echo "Memgraph is ready to serve queries"
               exit 0
             fi
             echo "Waiting for Memgraph (attempt $i)..."
