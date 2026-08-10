@@ -5,6 +5,8 @@ This package provides utilities for parsing various document formats and
 ingesting them into Memgraph knowledge graphs using LightRAG.
 """
 
+from importlib import metadata
+
 from .loaders import (
     Chunk,
     ChunkedDocument,
@@ -28,7 +30,13 @@ from .memgraph import (
 )
 from .ontology import DEFAULT_ONTOLOGY, DEFAULT_ONTOLOGY_PATH, EntityType, Ontology, load_ontology
 
-__version__ = "0.6.0"
+try:
+    __version__ = metadata.version(__package__)
+except metadata.PackageNotFoundError:
+    # Case where package metadata is not available.
+    __version__ = ""
+del metadata  # optional, avoids polluting the results of dir(__package__)
+
 __all__ = [
     "DEFAULT_ONTOLOGY",
     "DEFAULT_ONTOLOGY_PATH",
@@ -36,6 +44,7 @@ __all__ = [
     "ChunkedDocument",
     "EntityType",
     "Ontology",
+    "__version__",
     "compute_embeddings",
     "connect_chunks_to_entities",
     "create_label_index",

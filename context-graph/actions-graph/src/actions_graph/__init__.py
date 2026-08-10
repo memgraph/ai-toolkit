@@ -33,6 +33,8 @@ Integration with Agent Context Graph:
     link.add_connector(ActionsGraphConnector(graph))
 """
 
+from importlib import metadata
+
 from .core import ActionsGraph
 from .models import (
     Action,
@@ -51,6 +53,13 @@ from .models import (
     ToolResult,
 )
 
+try:
+    __version__ = metadata.version(__package__)
+except metadata.PackageNotFoundError:
+    # Case where package metadata is not available.
+    __version__ = ""
+del metadata  # optional, avoids polluting the results of dir(__package__)
+
 __all__ = [
     "Action",
     "ActionStatus",
@@ -67,6 +76,5 @@ __all__ = [
     "SubagentEvent",
     "ToolCall",
     "ToolResult",
+    "__version__",
 ]
-
-__version__ = "0.1.2"
