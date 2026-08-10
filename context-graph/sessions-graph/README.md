@@ -189,7 +189,7 @@ await lightrag_wrapper.initialize(working_dir="./lightrag_storage")
 summary = await graph.reconcile_session(
     "s-abc123",
     lightrag_wrapper=lightrag_wrapper,
-    enforce_ontology=True,   # match the CLI: promote entity_type to real labels
+    enforce_ontology=True,  # match the CLI: promote entity_type to real labels
 )
 print(summary.status, summary.texts_considered, summary.texts_deduped)
 ```

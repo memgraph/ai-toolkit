@@ -46,8 +46,8 @@ async def main():
         sources=["https://example.com/doc.pdf", "./local_file.md"],
         memgraph=memgraph,
         lightrag_wrapper=lightrag,
-        link_chunks=True,        # create NEXT relationships between chunks
-        enforce_ontology=True,   # promote entity_type to real labels (:Person, :Organization, ...)
+        link_chunks=True,  # create NEXT relationships between chunks
+        enforce_ontology=True,  # promote entity_type to real labels (:Person, :Organization, ...)
     )
     await lightrag.afinalize()
 
@@ -108,7 +108,7 @@ await from_unstructured(
     memgraph=memgraph,
     lightrag_wrapper=lightrag,
     enforce_ontology=True,
-    ontology_path="my_ontology.yaml",   # omit to use the bundled default
+    ontology_path="my_ontology.yaml",  # omit to use the bundled default
 )
 ```
 
@@ -120,7 +120,7 @@ from unstructured2graph import load_ontology
 ontology = load_ontology("my_ontology.yaml")
 await lightrag.initialize(
     working_dir="./lightrag_storage",
-    addon_params=ontology.addon_params(),   # {"entity_types_guidance": "..."}
+    addon_params=ontology.addon_params(),  # {"entity_types_guidance": "..."}
 )
 await from_unstructured(..., enforce_ontology=True, ontology_path="my_ontology.yaml")
 ```
