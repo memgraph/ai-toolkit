@@ -52,6 +52,12 @@ asyncio.run(main())
 
 See `example.py` in this repo for a full run with sample texts and graph output.
 
+`initialize(**lightrag_kwargs)` forwards anything to `LightRAG(...)`, and explicit
+values override the Memgraph-storage defaults — e.g. `max_parallel_insert=8`, or
+`addon_params={"entity_types_guidance": "..."}` to steer entity extraction toward a
+specific vocabulary. [unstructured2graph](../../unstructured2graph/README.md#entity-typing--ontology)
+produces that `addon_params` from an ontology file via `Ontology.addon_params()`.
+
 ## Storage / persistence
 
 By default the wrapper persists **LightRAG's entire working state** into
@@ -151,7 +157,7 @@ https://platform.claude.com/docs/en/about-claude/models.
    await wrapper.initialize(
        working_dir="./lightrag_storage",
        llm_model_func=anthropic_complete,
-       llm_model_name="claude-3-5-sonnet-20241022",  # or claude-3-haiku-20240307, etc.
+       llm_model_name="claude-sonnet-4-20250514",  # any current Claude model id
        # embedding_func omitted: defaults to Memgraph's local sentence-transformer,
        # see Embeddings above. Anthropic itself has no embeddings API.
    )

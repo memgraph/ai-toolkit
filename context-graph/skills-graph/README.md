@@ -2,13 +2,18 @@
 
 A small library to persist, retrieve and evolve AI skills in [Memgraph](https://memgraph.com).
 
+> Part of the [Context Graph](../README.md) family — usually wired into `agent-context-graph` so that skill usage across Claude Code / Codex sessions is recorded automatically. This README covers using it directly.
+
 ## Graph Model
 
 ```
-(:Skill {name, description, content, created_at, updated_at})
+(:Skill {name, description, content, license, compatibility,
+         allowed_tools, metadata, created_at, updated_at, source_path?})
 (:Skill)-[:DEPENDS_ON]->(:Skill)
-(:Session)-[:USED_SKILL]->(:Skill)
+(:Session)-[:USED_SKILL {first_access, last_access, access_count, actions}]->(:Skill)
 ```
+
+`USED_SKILL` is written from a `MERGE (:Session {session_id})` — skills-graph MERGEs the shared Session node it does not own (see the [Context Graph map](../CONTEXT-MAP.md)). `source_path` is set only when a skill is created by observing a local `SKILL.md` read.
 
 ## Quick Start
 
@@ -21,7 +26,9 @@ sg = SkillGraph()
 # Prepare the database schema (constraints + indexes)
 sg.setup()
 
-# Store a skill
+# Store a skill.
+# name: lowercase letters/digits/hyphens only, 1-64 chars, no leading/trailing/
+# consecutive hyphens (an invalid name raises SkillValidationError).
 sg.add_skill(
     Skill(
         name="memgraph-cypher",
@@ -50,19 +57,41 @@ sg.update_skill("memgraph-cypher", content="updated content")
 sg.delete_skill("memgraph-cypher")
 ```
 
-## Codex Hook Integration
+## Agent Context Graph integration
 
-When used through `agent-context-graph`'s Codex hook adapter, `SkillGraphConnector` records direct tool names like `get_skill` and Codex MCP-style names like `mcp__skills__get_skill`.
+Wire `SkillGraphConnector` into an `AgentLink` and skill usage is recorded automatically from any runtime adapter's event stream (Claude Code, Codex, OpenAI SDK):
 
-It also records local reads of valid Agent Skills definitions, such as `/skills/<name>/SKILL.md`, as skill usage. This supports runtimes where using a skill appears as a filesystem or shell tool reading the skill's `SKILL.md` file rather than as a dedicated `get_skill` tool call.
+```python
+from skills_graph import SkillGraph
+from skills_graph.connector import SkillGraphConnector
+from agent_context_graph import AgentLink
+from agent_context_graph.adapters.claude import ClaudeAdapter
 
-Search/list tool results can be Python lists or JSON tool content containing skill objects with `name` fields. Today those results are recorded through `USED_SKILL` with result actions; future work will split weaker surfacing signals into a separate relationship.
+link = AgentLink()
+link.add_connector(SkillGraphConnector(SkillGraph()))
+
+adapter = ClaudeAdapter(link, session_id="s-1")
+hooks = adapter.get_runtime_hooks()
+```
+
+Requires the `agent-context-graph` extra: `pip install "skills-graph[agent-context-graph]"`.
+
+The connector detects skill usage from `TOOL_START`/`TOOL_END`/`MESSAGE` events — direct tool names like `get_skill`, MCP-style names like `mcp__skills__get_skill`, and local reads of an Agent Skills definition (`.../skills/<name>/SKILL.md`), which covers runtimes where using a skill appears as a file read rather than a dedicated tool call. Search/list results that surface skill objects are also recorded through `USED_SKILL`.
 
 ## Installation
 
 ```bash
-uv sync
+pip install skills-graph
+# or, for the connector:  pip install "skills-graph[agent-context-graph]"
 ```
+
+Needs a running Memgraph (default `bolt://localhost:7687`):
+
+```bash
+docker run --rm -p 7687:7687 memgraph/memgraph
+```
+
+From a workspace checkout, `uv sync` installs it with its siblings.
 
 ## Testing
 
