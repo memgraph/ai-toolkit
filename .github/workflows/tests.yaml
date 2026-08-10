@@ -14,6 +14,7 @@ on:
       - "context-graph/actions-graph/**"
       - "context-graph/agent-context-graph/**"
       - "context-graph/sessions-graph/**"
+      - ".github/workflows/tests.yaml"
   pull_request:
     paths:
       - "memgraph-toolbox/**"
@@ -25,6 +26,7 @@ on:
       - "context-graph/actions-graph/**"
       - "context-graph/agent-context-graph/**"
       - "context-graph/sessions-graph/**"
+      - ".github/workflows/tests.yaml"
 
 jobs:
   changes:
@@ -50,34 +52,43 @@ jobs:
           filters: |
             memgraph-toolbox:
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
             mcp-memgraph:
               - 'integrations/mcp-memgraph/**'
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
             langchain-memgraph:
               - 'integrations/langchain-memgraph/**'
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
             lightrag-memgraph:
               - 'integrations/lightrag-memgraph/**'
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
             unstructured2graph:
               - 'unstructured2graph/**'
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
             agent-context-graph:
               - 'context-graph/agent-context-graph/**'
+              - '.github/workflows/tests.yaml'
             skills-graph:
               - 'context-graph/skills-graph/**'
               - 'context-graph/agent-context-graph/**'
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
             actions-graph:
               - 'context-graph/actions-graph/**'
               - 'context-graph/agent-context-graph/**'
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
             sessions-graph:
               - 'context-graph/sessions-graph/**'
               - 'context-graph/actions-graph/**'
               - 'context-graph/agent-context-graph/**'
               - 'unstructured2graph/**'
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
 
   test-memgraph-toolbox:
     needs: changes
@@ -273,7 +284,16 @@ jobs:
         run: python -m pip install uv
         working-directory: .
 
-      - name: Install dependencies and run tests
+      - name: Install dependencies
+        run: |
+          uv venv
+          uv pip install -e .[test]
+
+      - name: Download NLTK data
+        run: |
+          .venv/bin/python -m nltk.downloader averaged_perceptron_tagger_eng punkt_tab
+
+      - name: Run tests
         env:
           # Explicit env vars, not just memgraph-toolbox's Python-level
           # defaults: LightRAG's own storage backends (exercised by
@@ -284,10 +304,7 @@ jobs:
           MEMGRAPH_PASSWORD: ""
           MEMGRAPH_DATABASE: memgraph
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          uv venv
-          uv pip install -e .[test]
-          .venv/bin/python -m pytest .
+        run: .venv/bin/python -m pytest .
 
   test-agent-context-graph:
     needs: changes
