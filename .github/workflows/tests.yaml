@@ -291,11 +291,6 @@ jobs:
 
       - name: Download NLTK data
         run: |
-          # unstructured.nlp.tokenize auto-downloads these on first import
-          # (AUTO_DOWNLOAD_NLTK, quiet=True by default), which failed silently
-          # in CI and surfaced as 22 unrelated-looking pytest failures instead
-          # of a clear error -- see #257. Downloading explicitly here, with
-          # real output, makes a real failure loud instead of silent.
           .venv/bin/python -m nltk.downloader averaged_perceptron_tagger_eng punkt_tab
 
       - name: Run tests
