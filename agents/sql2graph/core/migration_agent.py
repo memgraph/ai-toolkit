@@ -129,8 +129,9 @@ class SQLToMemgraphAgent:
                 logger.info("Initialized OpenAI client with model: %s", model)
 
             elif provider_lower == "anthropic":
-                model = llm_model or os.getenv("LLM_MODEL", "claude-sonnet-4-20250514")
-                self.llm = ChatAnthropic(model=model, temperature=0.1)
+                model = llm_model or os.getenv("LLM_MODEL", "claude-sonnet-5")
+                # Current Claude models reject `temperature`; steer via prompting instead.
+                self.llm = ChatAnthropic(model=model)
                 logger.info("Initialized Anthropic client with model: %s", model)
 
             elif provider_lower == "gemini":

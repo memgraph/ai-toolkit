@@ -2,6 +2,8 @@
 
 Store and track LLM actions, tool calls, and sessions in Memgraph.
 
+> Part of the [Context Graph](../README.md) family — usually wired into `agent-context-graph` to capture Claude Code / Codex sessions automatically. This README covers using it directly.
+
 Actions Graph provides a graph-based storage system for tracking all LLM interactions, including:
 - **Tool Calls**: Function/tool invocations by the LLM
 - **Tool Results**: Outputs from tool executions
@@ -30,15 +32,21 @@ For Agent Context Graph integration:
 pip install "actions-graph[agent-context-graph]"
 ```
 
+Needs a running Memgraph (default `bolt://localhost:7687`); `ActionsGraph()` reads `MEMGRAPH_URL`, `MEMGRAPH_USER`, `MEMGRAPH_PASSWORD`, `MEMGRAPH_DATABASE` (or takes them as kwargs):
+
+```bash
+docker run --rm -p 7687:7687 memgraph/memgraph
+```
+
 ## Quick Start
 
 ### Basic Usage
 
 ```python
-from actions_graph import ActionsGraph, Session, ToolCall
+from actions_graph import ActionsGraph, Session
 
 # Initialize the graph
-graph = ActionsGraph()
+graph = ActionsGraph()  # reads MEMGRAPH_URL / MEMGRAPH_USER / MEMGRAPH_PASSWORD
 graph.setup()  # Create indexes and constraints
 
 # Create a session
@@ -98,8 +106,9 @@ Actions Graph should consume runtime activity through Agent Context Graph when p
   - Properties: `session_id`, `started_at`, `ended_at`, `status`, `model`, `total_cost_usd`, etc.
 
 - **Action**: Individual actions with type-specific labels
-  - Labels: `ToolCall`, `ToolResult`, `Message`, `StructuredOutput`, `SubagentEvent`, etc.
-  - Properties: `action_id`, `session_id`, `action_type`, `timestamp`, `status`, etc.
+  - Labels: `ToolCall`, `ToolResult`, `Message` (plus a role label `UserMessage`/`AssistantMessage`/`SystemMessage`), `StructuredOutput`, `SubagentEvent`, `PermissionRequest`, `ErrorEvent`, `RateLimitEvent`
+  - Properties: `action_id`, `action_type`, `timestamp`, `status`, `duration_ms`, `parent_action_id`, `tool_name`, `is_error`, `is_mcp`, `properties` (type-specific), `metadata`
+  - The session link is the `HAS_ACTION` edge, not a property — there is no `session_id` on `(:Action)`.
 
 - **Tool**: Tool definitions
   - Properties: `name`, `is_mcp`, `mcp_server`
@@ -108,11 +117,10 @@ Actions Graph should consume runtime activity through Agent Context Graph when p
 
 ```
 (:Session)-[:HAS_ACTION]->(:Action)
-(:Action)-[:FOLLOWED_BY]->(:Action)
-(:Action)-[:PARENT_OF]->(:Action)
+(:Action)-[:FOLLOWED_BY]->(:Action)   # temporal sequence
+(:Action)-[:PARENT_OF]->(:Action)     # nested, e.g. subagent
 (:Session)-[:FORKED_FROM]->(:Session)
-(:Action)-[:USED_TOOL]->(:Tool)
-(:Session)-[:HAS_TAG]->(:Tag)
+(:Action)-[:USED_TOOL]->(:Tool)       # ToolCall actions only
 ```
 
 ## API Reference
@@ -133,7 +141,7 @@ graph.clear()  # Clear all data
 graph.create_session(session)
 graph.get_session(session_id)
 graph.end_session(session_id, status=ActionStatus.COMPLETED)
-graph.list_sessions(limit=100, status=None, tag=None)
+graph.list_sessions(limit=100, status=None)  # keyword-only args
 
 # Actions
 graph.record_action(action)

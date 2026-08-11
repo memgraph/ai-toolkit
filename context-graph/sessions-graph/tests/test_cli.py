@@ -53,6 +53,7 @@ def test_reconcile_single_session_success(capsys):
     assert exit_code == 0
     fake_graph.reconcile_session.assert_awaited_once()
     assert fake_graph.reconcile_session.call_args.args[0] == "s-1"
+    assert fake_graph.reconcile_session.call_args.kwargs["enforce_ontology"] is True
     assert "OK s-1" in capsys.readouterr().out
 
 

@@ -14,6 +14,7 @@ on:
       - "context-graph/actions-graph/**"
       - "context-graph/agent-context-graph/**"
       - "context-graph/sessions-graph/**"
+      - ".github/workflows/tests.yaml"
   pull_request:
     paths:
       - "memgraph-toolbox/**"
@@ -25,6 +26,7 @@ on:
       - "context-graph/actions-graph/**"
       - "context-graph/agent-context-graph/**"
       - "context-graph/sessions-graph/**"
+      - ".github/workflows/tests.yaml"
 
 jobs:
   changes:
@@ -50,34 +52,43 @@ jobs:
           filters: |
             memgraph-toolbox:
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
             mcp-memgraph:
               - 'integrations/mcp-memgraph/**'
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
             langchain-memgraph:
               - 'integrations/langchain-memgraph/**'
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
             lightrag-memgraph:
               - 'integrations/lightrag-memgraph/**'
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
             unstructured2graph:
               - 'unstructured2graph/**'
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
             agent-context-graph:
               - 'context-graph/agent-context-graph/**'
+              - '.github/workflows/tests.yaml'
             skills-graph:
               - 'context-graph/skills-graph/**'
               - 'context-graph/agent-context-graph/**'
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
             actions-graph:
               - 'context-graph/actions-graph/**'
               - 'context-graph/agent-context-graph/**'
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
             sessions-graph:
               - 'context-graph/sessions-graph/**'
               - 'context-graph/actions-graph/**'
               - 'context-graph/agent-context-graph/**'
               - 'unstructured2graph/**'
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
 
   test-memgraph-toolbox:
     needs: changes
@@ -91,7 +102,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -121,7 +132,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -149,7 +160,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -182,7 +193,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -244,7 +255,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -273,7 +284,16 @@ jobs:
         run: python -m pip install uv
         working-directory: .
 
-      - name: Install dependencies and run tests
+      - name: Install dependencies
+        run: |
+          uv venv
+          uv pip install -e .[test]
+
+      - name: Download NLTK data
+        run: |
+          .venv/bin/python -m nltk.downloader averaged_perceptron_tagger_eng punkt_tab
+
+      - name: Run tests
         env:
           # Explicit env vars, not just memgraph-toolbox's Python-level
           # defaults: LightRAG's own storage backends (exercised by
@@ -284,10 +304,7 @@ jobs:
           MEMGRAPH_PASSWORD: ""
           MEMGRAPH_DATABASE: memgraph
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          uv venv
-          uv pip install -e .[test]
-          .venv/bin/python -m pytest .
+        run: .venv/bin/python -m pytest .
 
   test-agent-context-graph:
     needs: changes
@@ -301,7 +318,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -324,14 +341,27 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Start Memgraph container
         run: |
           docker run -d -p 7687:7687 --name memgraph memgraph/memgraph-mage:latest --schema-info-enabled=True --telemetry-enabled=false
-          sleep 5
+
+      - name: Wait for Memgraph to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if echo "RETURN 1;" | docker exec -i memgraph mgconsole --host 127.0.0.1 --port 7687 >/dev/null 2>&1; then
+              echo "Memgraph is ready to serve queries"
+              exit 0
+            fi
+            echo "Waiting for Memgraph (attempt $i)..."
+            sleep 2
+          done
+          echo "Memgraph did not become ready in time" >&2
+          docker logs memgraph || true
+          exit 1
 
       - name: Install uv
         run: python -m pip install uv
@@ -354,14 +384,27 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Start Memgraph container
         run: |
           docker run -d -p 7687:7687 --name memgraph memgraph/memgraph-mage:latest --schema-info-enabled=True --telemetry-enabled=false
-          sleep 5
+
+      - name: Wait for Memgraph to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if echo "RETURN 1;" | docker exec -i memgraph mgconsole --host 127.0.0.1 --port 7687 >/dev/null 2>&1; then
+              echo "Memgraph is ready to serve queries"
+              exit 0
+            fi
+            echo "Waiting for Memgraph (attempt $i)..."
+            sleep 2
+          done
+          echo "Memgraph did not become ready in time" >&2
+          docker logs memgraph || true
+          exit 1
 
       - name: Install uv
         run: python -m pip install uv
@@ -382,7 +425,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 

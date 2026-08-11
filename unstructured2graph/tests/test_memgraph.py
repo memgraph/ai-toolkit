@@ -4,9 +4,11 @@ from unittest.mock import MagicMock
 
 from lightrag_memgraph import DEFAULT_EMBEDDING_DIM
 from unstructured2graph.memgraph import (
+    _entity_type_to_label,
     create_nodes_from_list,
     create_unique_constraint,
     create_vector_search_index,
+    promote_all_entity_types_to_labels,
     promote_entity_types_to_labels,
 )
 from unstructured2graph.ontology import EntityType, Ontology
@@ -175,3 +177,63 @@ def test_promote_entity_types_to_labels_with_empty_ontology_flags_everything_non
     query = memgraph.query.call_args[0][0]
     assert "MATCH (n:base)" in query
     assert "SET n.ontology_conformant = false" in query
+
+
+def test_entity_type_to_label_converts_multi_word_snake_and_space_forms():
+    assert _entity_type_to_label("person") == "Person"
+    assert _entity_type_to_label("natural object") == "NaturalObject"
+    assert _entity_type_to_label("natural_object") == "NaturalObject"
+    assert _entity_type_to_label("  Organization  ") == "Organization"
+
+
+def test_entity_type_to_label_returns_none_for_unsalvageable_values():
+    assert _entity_type_to_label("") is None
+    assert _entity_type_to_label("   ") is None
+    assert _entity_type_to_label("---") is None
+
+
+def test_entity_type_to_label_returns_none_when_result_starts_with_digit():
+    assert _entity_type_to_label("3d model") is None
+
+
+def test_promote_all_entity_types_to_labels_discovers_distinct_values_and_promotes_each():
+    memgraph = MagicMock()
+    memgraph.query.return_value = [{"entity_type": "person"}, {"entity_type": "natural object"}]
+
+    promote_all_entity_types_to_labels(memgraph, "base")
+
+    discover_query = memgraph.query.call_args_list[0][0][0]
+    assert "MATCH (n:base)" in discover_query
+    assert "RETURN DISTINCT n.entity_type" in discover_query
+
+    assert memgraph.query.call_count == 3  # 1 discovery + 2 promotions
+    person_query, person_kwargs = memgraph.query.call_args_list[1]
+    assert "SET n:Person" in person_query[0]
+    assert "AND NOT n:Person" in person_query[0]
+    assert person_kwargs["params"] == {"entity_type": "person"}
+
+    object_query, object_kwargs = memgraph.query.call_args_list[2]
+    assert "SET n:NaturalObject" in object_query[0]
+    assert object_kwargs["params"] == {"entity_type": "natural object"}
+
+
+def test_promote_all_entity_types_to_labels_skips_unsanitizable_values():
+    memgraph = MagicMock()
+    memgraph.query.return_value = [{"entity_type": "person"}, {"entity_type": "---"}]
+
+    promote_all_entity_types_to_labels(memgraph, "base")
+
+    # 1 discovery query + only 1 promotion (for "person"); "---" is skipped entirely.
+    assert memgraph.query.call_count == 2
+
+
+def test_promote_all_entity_types_to_labels_never_flags_ontology_conformant():
+    """Without a fixed vocabulary there's nothing to be non-conformant
+    relative to -- this path must never touch ontology_conformant."""
+    memgraph = MagicMock()
+    memgraph.query.return_value = [{"entity_type": "person"}]
+
+    promote_all_entity_types_to_labels(memgraph, "base")
+
+    all_queries = [call.args[0] for call in memgraph.query.call_args_list]
+    assert not any("ontology_conformant" in q for q in all_queries)

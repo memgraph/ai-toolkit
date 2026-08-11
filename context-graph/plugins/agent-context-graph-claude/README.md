@@ -38,6 +38,26 @@ Bootstrap installs and verifies:
 agent-context-graph bootstrap --runtime claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
+## Configure
+
+Bootstrap writes `~/.config/context-graph/config.toml`; hooks read it at runtime (not environment variables). Set your identity — **required** for sessions-graph to attach sessions to a user:
+
+```bash
+agent-context-graph config set identity.user_id "your-name"
+```
+
+For a remote/HA Memgraph, also `agent-context-graph config set memgraph.url "neo4j://<host>:7687"` (and `memgraph.user`/`memgraph.password`/`memgraph.database`). The default is `bolt://localhost:7687`. See the [agent-context-graph README](../../agent-context-graph/README.md#configuration).
+
+## Reconciliation (optional)
+
+Captured sessions are marked `reconciliation_status = 'pending'` on end. To extract entities from that content into the graph:
+
+```bash
+pip install "sessions-graph[reconciliation]"
+export OPENAI_API_KEY=...    # or ANTHROPIC_API_KEY
+sessions-graph reconcile --pending
+```
+
 ## Prerequisites
 
 - Memgraph running and reachable over Bolt.
