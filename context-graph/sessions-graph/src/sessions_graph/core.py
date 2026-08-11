@@ -5,12 +5,13 @@ Graph schema
 Nodes:
     (:User  {user_id})
     (:Memory {memory_id, user_id, content, created_at, session_id?})
-    (:Session {session_id, summary?, summarized_at?})   — summary/summarized_at
-        written by reconcile_session(), see below
+    (:Session {session_id})
+    (:Episode {summary, summarized_at})   — written by reconcile_session(), see below
 
 Relationships:
     (:User)-[:HAS_MEMORY]->(:Memory)
     (:Session)-[:PRODUCED_MEMORY]->(:Memory)   — only when session_id is provided
+    (:Session)-[:HAS_EPISODE]->(:Episode)      — at most one per session
 """
 
 from __future__ import annotations
@@ -288,12 +289,14 @@ class SessionsGraph:
         linked back to their source Action/Memory node via ``HAS_CHUNK`` so
         entities trace back to the session that produced them.
 
-        This same pass also produces the session's episodic memory: a
-        narrative ``summary`` written onto the ``(:Session)`` node via a
-        second, dedicated LLM call (entity extraction and narrative
-        summarization are different task shapes, so this doesn't piggyback on
-        LightRAG's own extraction prompt) -- but it's still one trigger, one
-        fetch/dedupe of session text, no separate schedule.
+        This same pass also produces the session's episodic memory: an
+        ``(:Episode {summary, summarized_at})`` node linked from the session
+        via ``HAS_EPISODE``, via a second, dedicated LLM call (entity
+        extraction and narrative summarization are different task shapes, so
+        this doesn't piggyback on LightRAG's own extraction prompt) -- but
+        it's still one trigger, one fetch/dedupe of session text, no separate
+        schedule. Re-reconciling a session updates its one Episode rather
+        than creating another.
 
         This is deliberately not wired to run automatically inside the
         ``SESSION_END`` hook — LightRAG extraction is LLM-backed and slow, and
@@ -379,10 +382,14 @@ class SessionsGraph:
                 params={"session_id": session_id, "reconciled_at": reconciled_at},
             )
             if summary_text:
+                # MERGE on the (Session)-[:HAS_EPISODE]->(Episode) pattern (not just CREATE)
+                # so re-reconciling a session updates its one Episode instead of accumulating
+                # duplicates -- Episode has no natural external id of its own to dedupe on.
                 self._db.query(
                     """
                     MATCH (s:Session {session_id: $session_id})
-                    SET s.summary = $summary, s.summarized_at = $summarized_at
+                    MERGE (s)-[:HAS_EPISODE]->(e:Episode)
+                    SET e.summary = $summary, e.summarized_at = $summarized_at
                     """,
                     params={"session_id": session_id, "summary": summary_text, "summarized_at": reconciled_at},
                 )

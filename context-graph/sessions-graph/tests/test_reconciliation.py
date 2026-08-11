@@ -179,7 +179,7 @@ async def test_reconcile_session_success_marks_completed_and_links_chunks():
 
 
 @pytest.mark.asyncio
-async def test_reconcile_session_writes_session_summary_from_dedicated_llm_call():
+async def test_reconcile_session_writes_episode_from_dedicated_llm_call():
     db = _stub_db()
     g = _graph(db)
     actions = [Message(session_id="s-1", role=MessageRole.ASSISTANT, content="Alice works on the graph engine.")]
@@ -192,10 +192,10 @@ async def test_reconcile_session_writes_session_summary_from_dedicated_llm_call(
 
     assert summary.summary_written is True
     lightrag_wrapper.get_lightrag.return_value.llm_model_func.assert_awaited_once()
-    summary_calls = [call for call in db.query.call_args_list if "s.summary = $summary" in call.args[0]]
-    assert len(summary_calls) == 1
-    assert summary_calls[0].kwargs["params"]["summary"] == "Alice was discussed working on the graph engine."
-    assert summary_calls[0].kwargs["params"]["session_id"] == "s-1"
+    episode_calls = [call for call in db.query.call_args_list if "HAS_EPISODE" in call.args[0]]
+    assert len(episode_calls) == 1
+    assert episode_calls[0].kwargs["params"]["summary"] == "Alice was discussed working on the graph engine."
+    assert episode_calls[0].kwargs["params"]["session_id"] == "s-1"
 
 
 @pytest.mark.asyncio

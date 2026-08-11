@@ -137,11 +137,13 @@ back to the session that produced them — see
 [`CONTEXT.md`](./CONTEXT.md#language) for the **Session Reconciliation** /
 **Reconcilable Content** / **Reconciliation Status** terminology.
 
-The same pass also writes the session's **episodic memory**: a narrative
-`summary` property on the `(:Session)` node (plus `summarized_at`), produced
-by a second, dedicated LLM call over the same deduped session text — a
-"what happened in this session" gist, not the structured entity graph. This
-is what a "what did we do last time?" recall query actually reads.
+The same pass also writes the session's **episodic memory**: an
+`(:Episode {summary, summarized_at})` node linked via
+`(:Session)-[:HAS_EPISODE]->(:Episode)` (at most one per session — re-running
+reconciliation updates it rather than adding another), produced by a second,
+dedicated LLM call over the same deduped session text — a "what happened in
+this session" gist, not the structured entity graph. This is what a "what did
+we do last time?" recall query actually reads.
 
 This requires the `sessions-graph[reconciliation]` extra and an LLM API key
 (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`) for LightRAG — see the
