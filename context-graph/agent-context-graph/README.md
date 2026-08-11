@@ -406,29 +406,30 @@ class MyRuntimeAdapter(RuntimeAdapter):
 
 ### Adding a New Command-Hook Runtime Adapter
 
-The pattern above fits **in-process** runtimes — something that calls your Python code directly (an SDK callback, an embedded framework). **Command-hook** runtimes are different: the harness invokes an external command with a JSON payload on stdin (Claude Code, Codex), rather than calling into your process. That needs three extra pieces beyond `RuntimeAdapter` itself, all shown in full in `adapters/claude_code.py` and `adapters/codex.py`:
+The pattern above fits **in-process** runtimes — something that calls your Python code directly (an SDK callback, an embedded framework). **Command-hook** runtimes are different: the harness invokes an external command with a JSON payload on stdin (Claude Code, Codex), rather than calling into your process.
 
-1. **A payload translator.** Same idea as `RuntimeAdapter.get_runtime_hooks()`, but the input is the harness's raw JSON payload (read from stdin) rather than a native callback. Map each of the harness's hook event names to the matching `Event` subclass and call `link.emit(...)` — see `ClaudeCodeHooksAdapter._events_from_payload` for the full mapping.
-2. **A hook-config generator.** A plain function that builds whatever config shape the harness expects for wiring hooks (a `hooks.json`-style block, a plugin manifest, ...), pointing every hook at your CLI entry point. See `build_hooks_config` in `adapters/claude_code.py`.
-3. **A CLI entry point.** Reads one JSON payload from stdin (`load_payload`), constructs an `AgentLink` with the requested connectors, feeds the payload through your adapter, and — if the harness expects one — writes a JSON response to stdout (`response_for_payload`). This is what the generated hook config actually invokes.
+Three pieces beyond `RuntimeAdapter` itself, exactly as `adapters/claude_code.py` and `adapters/codex.py` implement them:
 
-Skeleton:
+1. **A payload translator.** Same idea as `RuntimeAdapter.get_runtime_hooks()`, but the input is the harness's raw JSON payload rather than a native callback. Map each of the harness's hook event names to the matching `Event` subclass and call `link.emit(...)`.
+2. **A hook-config generator** (`build_hooks_config(command)`). Builds whatever config shape the harness expects for wiring hooks, pointing every hook at your CLI entry point.
+3. **A response function** (`response_for_payload(payload)`). Returns the JSON the harness expects back on stdout, or `None`.
+
+The stdin-loading, connector-construction, and CLI-argument-parsing scaffolding around those three pieces is **shared** — `hooks/runner.py`'s `run_hook(plugin, argv)` does that for every registered runtime, so a new adapter doesn't write its own `main()` at all. Register your runtime as a **plugin** and the generic runner (plus `bootstrap`/`doctor`/`hook run`/`hook init`) picks it up automatically — no changes to `agent-context-graph` itself:
 
 ```python
-import json
-import sys
+# my_package/adapter.py
+from dataclasses import dataclass
 
-from agent_context_graph.link import AgentLink
 from agent_context_graph.protocols import RuntimeAdapter
 
 
 class MyCommandHookAdapter(RuntimeAdapter):
-    def __init__(self, link: AgentLink, session_id: str | None = None):
+    def __init__(self, link, session_id: str | None = None):
         self._link = link
         self._session_id = session_id
 
     def get_runtime_hooks(self):
-        return build_hooks_config("my-adapter hook run")
+        return build_hooks_config("my-runtime hook run my-runtime")
 
     def handle_payload(self, payload: dict) -> None:
         for event in self._events_from_payload(payload):
@@ -439,21 +440,43 @@ class MyCommandHookAdapter(RuntimeAdapter):
         ...
 
 
-def build_hooks_config(command: str) -> dict:
-    # Return whatever config format your harness expects, every hook
-    # pointing at `command`.
+def build_hooks_config(command: str, *, timeout: int = 30) -> dict:
+    # Return whatever config format your harness expects, every hook pointing at `command`.
     ...
 
 
-def main() -> int:
-    payload = json.loads(sys.stdin.read() or "{}")
-    link = AgentLink()
-    # ... add_connector(...) per --connector flags, as in claude_code.py's create_link
-    MyCommandHookAdapter(link).handle_payload(payload)
-    return 0
+def response_for_payload(payload: dict) -> dict | None:
+    # Return the JSON your harness expects back, or None.
+    ...
+
+
+@dataclass(frozen=True)
+class MyRuntimePlugin:
+    name: str = "my-runtime"
+    adapter_class: type = MyCommandHookAdapter
+
+    def response_for_payload(self, payload: dict) -> dict | None:
+        return response_for_payload(payload)
+
+    def build_hooks_config(self, command: str, *, timeout: int = 30) -> dict:
+        return build_hooks_config(command, timeout=timeout)
+
+    # init(project_dir, connectors, **kwargs) is optional -- omit it if your
+    # runtime has no project-local hook-config file to generate (matching
+    # ClaudeCodeHooksAdapter's own plugin, which doesn't define one yet).
+
+
+PLUGIN = MyRuntimePlugin()
 ```
 
-Note: `claude_code.py` and `codex.py` currently duplicate the stdin-loading/connector-construction/CLI-runner scaffolding rather than sharing a helper module for it (flagged in a `# TODO` in `codex.py`) — a third adapter is a good trigger to finally extract that shared plumbing, but isn't required to add one today.
+Then register it in your own package's `pyproject.toml` — this is the entire integration, no fork or PR against this repo required:
+
+```toml
+[project.entry-points."agent_context_graph.runtimes"]
+my-runtime = "my_package.adapter:PLUGIN"
+```
+
+Once installed, `agent-context-graph bootstrap --runtime my-runtime`, `doctor --runtime my-runtime`, `hook run my-runtime`, and `hook init my-runtime` (if `init` is implemented) all work exactly like the built-in Codex and Claude Code plugins — see `runtime_plugin.py` for the full protocol and `pyproject.toml`'s own `[project.entry-points."agent_context_graph.runtimes"]` for how Codex/Claude Code register themselves.
 
 ### Adding a New Graph Component
 

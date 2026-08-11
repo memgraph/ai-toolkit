@@ -7,10 +7,7 @@ the common Event protocol used by AgentLink.
 
 from __future__ import annotations
 
-import argparse
-import json
-import os
-import sys
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from agent_context_graph.events import (
@@ -23,13 +20,14 @@ from agent_context_graph.events import (
     ToolEndEvent,
     ToolStartEvent,
 )
-from agent_context_graph.link import AgentLink
+from agent_context_graph.hooks.runner import create_link, load_payload  # noqa: F401 (re-exported for callers)
 from agent_context_graph.protocols import RuntimeAdapter
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Sequence
 
     from agent_context_graph.events import Event
+    from agent_context_graph.link import AgentLink
 
 _SOURCE = "claude-code"
 _DEFAULT_COMMAND = "agent-context-graph hook run claude-code"
@@ -239,46 +237,6 @@ def build_hooks_config(command: str, *, timeout: int = 30) -> dict[str, list[dic
     return config
 
 
-def load_payload(stream: Any | None = None) -> dict[str, Any]:
-    """Read one Claude Code hook payload from a text stream."""
-    if stream is None:
-        stream = sys.stdin
-    raw = stream.read()
-    if not raw.strip():
-        return {}
-    payload = json.loads(raw)
-    if not isinstance(payload, dict):
-        msg = "Claude Code hook payload must be a JSON object"
-        raise TypeError(msg)
-    return payload
-
-
-def create_link(connector_names: Iterable[str] = (), *, memgraph_env: dict[str, str] | None = None) -> AgentLink:
-    """Create an AgentLink with optional connectors named by CLI/config.
-
-    Args:
-        connector_names: Which graph connectors to attach.
-        memgraph_env: Resolved Memgraph connection dict (keys: MEMGRAPH_URL,
-            MEMGRAPH_USER, MEMGRAPH_PASSWORD, MEMGRAPH_DATABASE).  When None,
-            connectors fall back to their own default resolution.
-    """
-    link = AgentLink()
-    for connector_name in connector_names:
-        normalized = connector_name.strip().replace("-", "_")
-        if not normalized:
-            continue
-        if normalized == "skills_graph":
-            _add_skills_graph_connector(link, memgraph_env)
-        elif normalized == "actions_graph":
-            _add_actions_graph_connector(link, memgraph_env)
-        elif normalized == "sessions_graph":
-            _add_sessions_graph_connector(link, memgraph_env)
-        else:
-            msg = f"Unsupported connector: {connector_name}"
-            raise ValueError(msg)
-    return link
-
-
 def response_for_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
     """Return hook JSON response, when Claude Code benefits from one."""
     hook_event_name = payload.get("hook_event_name")
@@ -287,133 +245,32 @@ def response_for_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+@dataclass(frozen=True)
+class _ClaudeCodePlugin:
+    """Registered under the ``agent_context_graph.runtimes`` entry point as ``PLUGIN``.
+
+    No ``init`` -- Claude Code project-local hook setup isn't implemented yet
+    (see ``hooks/cli.py``'s generic ``_init`` dispatch, which reports that
+    clearly rather than assuming every runtime supports it).
+    """
+
+    name: str = "claude-code"
+    adapter_class: type[RuntimeAdapter] = ClaudeCodeHooksAdapter
+
+    def response_for_payload(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return response_for_payload(payload)
+
+    def build_hooks_config(self, command: str, *, timeout: int = 30) -> dict[str, Any]:
+        return build_hooks_config(command, timeout=timeout)
+
+
+PLUGIN = _ClaudeCodePlugin()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Bridge Claude Code hooks to agent-context-graph.")
-    parser.add_argument(
-        "--connector",
-        action="append",
-        default=None,
-        help="Graph connector to enable. Currently supported: skills-graph, actions-graph, sessions-graph.",
-    )
-    parser.add_argument(
-        "--session-id",
-        default=None,
-        help="Override the session id from the Claude Code hook payload.",
-    )
-    parser.add_argument(
-        "--memgraph-url",
-        default=None,
-        help="Memgraph Bolt URL. Overrides config file value.",
-    )
-    parser.add_argument(
-        "--memgraph-user",
-        default=None,
-        help="Memgraph username. Overrides config file value.",
-    )
-    parser.add_argument(
-        "--memgraph-password",
-        default=None,
-        help="Memgraph password. Overrides config file value.",
-    )
-    parser.add_argument(
-        "--memgraph-database",
-        default=None,
-        help="Memgraph database. Overrides config file value.",
-    )
-    parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="Return a non-zero status if the hook payload cannot be recorded.",
-    )
-    args = parser.parse_args(argv)
+    from agent_context_graph.hooks.runner import run_hook
 
-    connector_names = args.connector
-    if connector_names is None:
-        connector_names = _connectors_from_env()
-
-    # Resolve Memgraph connection: CLI flag > config file > default.
-    from agent_context_graph.adapters._identity import resolve_memgraph_env
-
-    memgraph_env = resolve_memgraph_env(
-        url=args.memgraph_url,
-        user=args.memgraph_user,
-        password=args.memgraph_password,
-        database=args.memgraph_database,
-    )
-
-    payload: dict[str, Any] = {}
-    try:
-        payload = load_payload()
-        link = create_link(connector_names, memgraph_env=memgraph_env)
-        adapter = ClaudeCodeHooksAdapter(link, session_id=args.session_id)
-        adapter.handle_payload(payload)
-        response = response_for_payload(payload)
-        if response is not None:
-            print(json.dumps(response))
-    except Exception as exc:
-        if args.strict or os.environ.get("AGENT_CONTEXT_GRAPH_CLAUDE_CODE_STRICT") == "1":
-            raise
-        response = response_for_payload(payload)
-        if response is not None:
-            print(json.dumps(response))
-        _debug_log(f"agent-context-graph Claude Code hook skipped: {exc}")
-    return 0
-
-
-def _add_skills_graph_connector(link: AgentLink, memgraph_env: dict[str, str] | None = None) -> None:
-    try:
-        from skills_graph import SkillGraph
-        from skills_graph.connector import SkillGraphConnector
-    except ImportError as exc:
-        msg = "skills-graph is required for the skills-graph Claude Code connector"
-        raise ImportError(msg) from exc
-
-    kwargs = _memgraph_kwargs(memgraph_env)
-    graph = SkillGraph(**kwargs)
-    link.add_connector(SkillGraphConnector(graph))
-
-
-def _add_sessions_graph_connector(link: AgentLink, memgraph_env: dict[str, str] | None = None) -> None:
-    try:
-        from sessions_graph import SessionsGraph
-        from sessions_graph.connector import SessionsGraphConnector
-    except ImportError as exc:
-        msg = "sessions-graph is required for the sessions-graph Claude Code connector"
-        raise ImportError(msg) from exc
-
-    kwargs = _memgraph_kwargs(memgraph_env)
-    graph = SessionsGraph(**kwargs)
-    link.add_connector(SessionsGraphConnector(graph))
-
-
-def _add_actions_graph_connector(link: AgentLink, memgraph_env: dict[str, str] | None = None) -> None:
-    try:
-        from actions_graph import ActionsGraph
-        from actions_graph.connector import ActionsGraphConnector
-    except ImportError as exc:
-        msg = "actions-graph is required for the actions-graph Claude Code connector"
-        raise ImportError(msg) from exc
-
-    kwargs = _memgraph_kwargs(memgraph_env)
-    graph = ActionsGraph(**kwargs)
-    link.add_connector(ActionsGraphConnector(graph))
-
-
-def _memgraph_kwargs(memgraph_env: dict[str, str] | None) -> dict[str, str]:
-    """Convert resolved memgraph env dict to kwargs for graph component constructors."""
-    if memgraph_env is None:
-        return {}
-    return {
-        "url": memgraph_env["MEMGRAPH_URL"],
-        "username": memgraph_env["MEMGRAPH_USER"],
-        "password": memgraph_env["MEMGRAPH_PASSWORD"],
-        "database": memgraph_env["MEMGRAPH_DATABASE"],
-    }
-
-
-def _connectors_from_env() -> list[str]:
-    value = os.environ.get("AGENT_CONTEXT_GRAPH_CLAUDE_CODE_CONNECTORS", "")
-    return [part.strip() for part in value.split(",") if part.strip()]
+    return run_hook(PLUGIN, argv)
 
 
 def _metadata_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -462,11 +319,6 @@ def _resolve_user_id(payload: dict[str, Any]) -> str | None:
     from agent_context_graph.adapters._identity import resolve_user_id
 
     return resolve_user_id(payload)
-
-
-def _debug_log(message: str) -> None:
-    if os.environ.get("AGENT_CONTEXT_GRAPH_CLAUDE_CODE_DEBUG") == "1":
-        print(message, file=sys.stderr)
 
 
 if __name__ == "__main__":
