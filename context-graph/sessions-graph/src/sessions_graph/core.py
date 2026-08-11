@@ -5,7 +5,8 @@ Graph schema
 Nodes:
     (:User  {user_id})
     (:Memory {memory_id, user_id, content, created_at, session_id?})
-    (:Session {session_id})
+    (:Session {session_id, summary?, summarized_at?})   — summary/summarized_at
+        written by reconcile_session(), see below
 
 Relationships:
     (:User)-[:HAS_MEMORY]->(:Memory)
@@ -27,6 +28,7 @@ from .reconciliation import (
     ReconciliationSummary,
     build_reconciliation_sources,
     content_hash,
+    summarize_session_texts,
 )
 
 if TYPE_CHECKING:
@@ -277,7 +279,7 @@ class SessionsGraph:
         enforce_ontology: bool = False,
         ontology_path: str | Path | None = None,
     ) -> ReconciliationSummary:
-        """Batch-extract entities from a session's Action + Memory content.
+        """Batch-extract entities and a narrative summary from a session's content.
 
         Pulls all reconcilable Message/ToolCall/ToolResult text recorded for
         *session_id* in Actions Graph, plus this session's Memories, dedupes
@@ -285,6 +287,13 @@ class SessionsGraph:
         chunk + LightRAG entity-extraction pipeline. Resulting Chunk nodes are
         linked back to their source Action/Memory node via ``HAS_CHUNK`` so
         entities trace back to the session that produced them.
+
+        This same pass also produces the session's episodic memory: a
+        narrative ``summary`` written onto the ``(:Session)`` node via a
+        second, dedicated LLM call (entity extraction and narrative
+        summarization are different task shapes, so this doesn't piggyback on
+        LightRAG's own extraction prompt) -- but it's still one trigger, one
+        fetch/dedupe of session text, no separate schedule.
 
         This is deliberately not wired to run automatically inside the
         ``SESSION_END`` hook — LightRAG extraction is LLM-backed and slow, and
@@ -346,6 +355,7 @@ class SessionsGraph:
             unique_texts.setdefault(content_hash(source.text), source.text)
 
         try:
+            summary_text: str | None = None
             if unique_texts:
                 grouped_chunks = await from_texts(
                     list(unique_texts.values()),
@@ -358,19 +368,30 @@ class SessionsGraph:
                 )
                 chunks_by_text_hash = dict(zip(unique_texts.keys(), grouped_chunks, strict=True))
                 self._link_chunks_to_sources(sources, chunks_by_text_hash)
+                summary_text = await summarize_session_texts(lightrag_wrapper, list(unique_texts.values()))
 
+            reconciled_at = datetime.now(timezone.utc).isoformat()
             self._db.query(
                 """
                 MATCH (s:Session {session_id: $session_id})
                 SET s.reconciliation_status = 'completed', s.reconciled_at = $reconciled_at
                 """,
-                params={"session_id": session_id, "reconciled_at": datetime.now(timezone.utc).isoformat()},
+                params={"session_id": session_id, "reconciled_at": reconciled_at},
             )
+            if summary_text:
+                self._db.query(
+                    """
+                    MATCH (s:Session {session_id: $session_id})
+                    SET s.summary = $summary, s.summarized_at = $summarized_at
+                    """,
+                    params={"session_id": session_id, "summary": summary_text, "summarized_at": reconciled_at},
+                )
             return ReconciliationSummary(
                 session_id=session_id,
                 status="completed",
                 texts_considered=len(sources),
                 texts_deduped=len(unique_texts),
+                summary_written=summary_text is not None,
             )
         except Exception as e:
             self._db.query(

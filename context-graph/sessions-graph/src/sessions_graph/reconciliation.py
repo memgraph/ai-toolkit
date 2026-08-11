@@ -115,6 +115,35 @@ class ReconciliationSummary:
     texts_considered: int
     texts_deduped: int
     error: str | None = None
+    summary_written: bool = False
+
+
+_SUMMARY_PROMPT_TEMPLATE = (
+    "Summarize what happened in this agent session in 2-3 sentences, for future recall "
+    '(e.g. answering "what did we do last time?"). Be concrete: name entities, decisions, and '
+    "outcomes; skip meta-commentary about the summarization task itself.\n\n"
+    "Session content:\n{content}"
+)
+
+
+def build_session_summary_prompt(texts: list[str]) -> str:
+    """Build the prompt for distilling a session's reconcilable text into a narrative gist."""
+    return _SUMMARY_PROMPT_TEMPLATE.format(content="\n\n".join(texts))
+
+
+async def summarize_session_texts(lightrag_wrapper: Any, texts: list[str]) -> str:
+    """Produce a narrative session summary via the same LLM the LightRAG wrapper is configured with.
+
+    This is a second, dedicated LLM call alongside the entity-extraction pass ``from_texts``
+    already makes -- narrative summarization and structured entity/relationship extraction are
+    different task shapes, so this doesn't piggyback on LightRAG's own extraction prompt. It's
+    still one ``reconcile_session`` pass: one trigger, one fetch/dedupe of session text, no
+    separate schedule.
+    """
+    rag = lightrag_wrapper.get_lightrag()
+    prompt = build_session_summary_prompt(texts)
+    result = await rag.llm_model_func(prompt)
+    return result.strip()
 
 
 def build_reconciliation_sources(

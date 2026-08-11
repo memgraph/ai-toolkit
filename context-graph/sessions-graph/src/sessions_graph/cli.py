@@ -120,7 +120,11 @@ async def _run_reconcile(parsed: argparse.Namespace) -> int:
                 session_id, lightrag_wrapper=lightrag_wrapper, enforce_ontology=True
             )
             if summary.status == "completed":
-                print(f"OK {session_id}: {summary.texts_deduped}/{summary.texts_considered} unique texts reconciled")
+                summarized = " (summary written)" if summary.summary_written else ""
+                print(
+                    f"OK {session_id}: {summary.texts_deduped}/{summary.texts_considered} "
+                    f"unique texts reconciled{summarized}"
+                )
             else:
                 print(f"FAILED {session_id}: {summary.error}", file=sys.stderr)
                 exit_code = 1

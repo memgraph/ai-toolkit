@@ -87,12 +87,16 @@ async def test_reconcile_session_extracts_real_entities_from_session_content(
     assert summary.status == "completed"
     assert summary.texts_considered == 3
     assert summary.texts_deduped == 3
+    assert summary.summary_written is True
 
     rows = memgraph.query(
-        "MATCH (s:Session {session_id: $session_id}) RETURN s.reconciliation_status AS status",
+        "MATCH (s:Session {session_id: $session_id}) RETURN s.reconciliation_status AS status, "
+        "s.summary AS summary, s.summarized_at AS summarized_at",
         params={"session_id": session_id},
     )
     assert rows[0]["status"] == "completed"
+    assert rows[0]["summary"]
+    assert rows[0]["summarized_at"]
 
     has_chunk_rows = memgraph.query(
         """
