@@ -87,12 +87,22 @@ async def test_reconcile_session_extracts_real_entities_from_session_content(
     assert summary.status == "completed"
     assert summary.texts_considered == 3
     assert summary.texts_deduped == 3
+    assert summary.summary_written is True
 
     rows = memgraph.query(
         "MATCH (s:Session {session_id: $session_id}) RETURN s.reconciliation_status AS status",
         params={"session_id": session_id},
     )
     assert rows[0]["status"] == "completed"
+
+    episode_rows = memgraph.query(
+        "MATCH (:Session {session_id: $session_id})-[:HAS_EPISODE]->(e:Episode) "
+        "RETURN e.summary AS summary, e.summarized_at AS summarized_at",
+        params={"session_id": session_id},
+    )
+    assert len(episode_rows) == 1
+    assert episode_rows[0]["summary"]
+    assert episode_rows[0]["summarized_at"]
 
     has_chunk_rows = memgraph.query(
         """
@@ -106,3 +116,14 @@ async def test_reconcile_session_extracts_real_entities_from_session_content(
     workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
     entity_rows = memgraph.query(f"MATCH (:{workspace})-[:MENTIONED_IN]->(:Chunk) RETURN count(*) AS count")
     assert entity_rows[0]["count"] > 0
+
+    # Re-reconciling the same session must update the one Episode, not accumulate another.
+    second_summary = await graph.reconcile_session(
+        session_id, lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph
+    )
+    assert second_summary.summary_written is True
+    episode_rows_after_rerun = memgraph.query(
+        "MATCH (:Session {session_id: $session_id})-[:HAS_EPISODE]->(e:Episode) RETURN count(e) AS count",
+        params={"session_id": session_id},
+    )
+    assert episode_rows_after_rerun[0]["count"] == 1
