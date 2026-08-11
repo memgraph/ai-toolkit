@@ -404,6 +404,57 @@ class MyRuntimeAdapter(RuntimeAdapter):
         )
 ```
 
+### Adding a New Command-Hook Runtime Adapter
+
+The pattern above fits **in-process** runtimes — something that calls your Python code directly (an SDK callback, an embedded framework). **Command-hook** runtimes are different: the harness invokes an external command with a JSON payload on stdin (Claude Code, Codex), rather than calling into your process. That needs three extra pieces beyond `RuntimeAdapter` itself, all shown in full in `adapters/claude_code.py` and `adapters/codex.py`:
+
+1. **A payload translator.** Same idea as `RuntimeAdapter.get_runtime_hooks()`, but the input is the harness's raw JSON payload (read from stdin) rather than a native callback. Map each of the harness's hook event names to the matching `Event` subclass and call `link.emit(...)` — see `ClaudeCodeHooksAdapter._events_from_payload` for the full mapping.
+2. **A hook-config generator.** A plain function that builds whatever config shape the harness expects for wiring hooks (a `hooks.json`-style block, a plugin manifest, ...), pointing every hook at your CLI entry point. See `build_hooks_config` in `adapters/claude_code.py`.
+3. **A CLI entry point.** Reads one JSON payload from stdin (`load_payload`), constructs an `AgentLink` with the requested connectors, feeds the payload through your adapter, and — if the harness expects one — writes a JSON response to stdout (`response_for_payload`). This is what the generated hook config actually invokes.
+
+Skeleton:
+
+```python
+import json
+import sys
+
+from agent_context_graph.link import AgentLink
+from agent_context_graph.protocols import RuntimeAdapter
+
+
+class MyCommandHookAdapter(RuntimeAdapter):
+    def __init__(self, link: AgentLink, session_id: str | None = None):
+        self._link = link
+        self._session_id = session_id
+
+    def get_runtime_hooks(self):
+        return build_hooks_config("my-adapter hook run")
+
+    def handle_payload(self, payload: dict) -> None:
+        for event in self._events_from_payload(payload):
+            self._link.emit(event)
+
+    def _events_from_payload(self, payload: dict):
+        # Map the harness's own hook_event_name / payload shape to Event subclasses.
+        ...
+
+
+def build_hooks_config(command: str) -> dict:
+    # Return whatever config format your harness expects, every hook
+    # pointing at `command`.
+    ...
+
+
+def main() -> int:
+    payload = json.loads(sys.stdin.read() or "{}")
+    link = AgentLink()
+    # ... add_connector(...) per --connector flags, as in claude_code.py's create_link
+    MyCommandHookAdapter(link).handle_payload(payload)
+    return 0
+```
+
+Note: `claude_code.py` and `codex.py` currently duplicate the stdin-loading/connector-construction/CLI-runner scaffolding rather than sharing a helper module for it (flagged in a `# TODO` in `codex.py`) — a third adapter is a good trigger to finally extract that shared plumbing, but isn't required to add one today.
+
 ### Adding a New Graph Component
 
 Implement `GraphConnector` in the graph package:
