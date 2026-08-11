@@ -118,6 +118,22 @@ class TestSessionsGraphCore:
 
 
 class TestSessionsGraphConnector:
+    @pytest.fixture()
+    def context_graph_config(self, monkeypatch, tmp_path):
+        """Point agent_context_graph's hook config at a temp dir so tests never
+        touch a real ~/.config/context-graph/config.toml on the host running them.
+        """
+        pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
+        from agent_context_graph.adapters import _identity
+
+        config_dir = tmp_path / "context-graph"
+        config_file = config_dir / "config.toml"
+        monkeypatch.setattr(_identity, "_CONFIG_DIR", config_dir)
+        monkeypatch.setattr(_identity, "_CONFIG_FILE", config_file)
+        _identity._reset_cache()
+        yield _identity
+        _identity._reset_cache()
+
     def _make(self):
         pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
         from sessions_graph.connector import SessionsGraphConnector
@@ -173,8 +189,17 @@ class TestSessionsGraphConnector:
 
         mock_popen.assert_not_called()
 
-    def test_auto_reconcile_true_spawns_detached_process(self):
+    def test_auto_reconcile_true_spawns_detached_process(self, context_graph_config):
         from sessions_graph.connector import SessionsGraphConnector
+
+        context_graph_config.write_full_config(
+            memgraph_url="bolt://remote:7687",
+            memgraph_user="admin",
+            memgraph_password="secret",
+            memgraph_database="mydb",
+            openai_api_key="sk-test",
+        )
+        context_graph_config._reset_cache()
 
         _connector, graph, _db, SessionStartEvent, SessionEndEvent = self._make()
         connector = SessionsGraphConnector(graph, auto_reconcile=True)
@@ -187,8 +212,14 @@ class TestSessionsGraphConnector:
         command = mock_popen.call_args.args[0]
         assert command[-3:] == ["reconcile", "--session", "s-1"]
         assert mock_popen.call_args.kwargs["start_new_session"] is True
+        env = mock_popen.call_args.kwargs["env"]
+        assert env["MEMGRAPH_URL"] == "bolt://remote:7687"
+        assert env["MEMGRAPH_USER"] == "admin"
+        assert env["MEMGRAPH_PASSWORD"] == "secret"
+        assert env["MEMGRAPH_DATABASE"] == "mydb"
+        assert env["OPENAI_API_KEY"] == "sk-test"
 
-    def test_auto_reconcile_env_var_enables_spawn_when_not_passed_explicitly(self, monkeypatch):
+    def test_auto_reconcile_env_var_enables_spawn_when_not_passed_explicitly(self, monkeypatch, context_graph_config):
         from sessions_graph.connector import SessionsGraphConnector
 
         monkeypatch.setenv("SESSIONS_GRAPH_AUTO_RECONCILE", "1")
@@ -208,3 +239,45 @@ class TestSessionsGraphConnector:
         assert connector.supports(SessionStartEvent(session_id="s-1"))
         assert connector.supports(SessionEndEvent(session_id="s-1"))
         assert not connector.supports(ToolStartEvent(session_id="s-1", tool_name="read_file"))
+
+
+class TestReconciliationEnv:
+    """Unit tests for connector._reconciliation_env(), the fix for the detached
+    ``sessions-graph reconcile`` subprocess never seeing resolved Memgraph/LLM config.
+    """
+
+    @pytest.fixture()
+    def context_graph_config(self, monkeypatch, tmp_path):
+        pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
+        from agent_context_graph.adapters import _identity
+
+        config_dir = tmp_path / "context-graph"
+        config_file = config_dir / "config.toml"
+        monkeypatch.setattr(_identity, "_CONFIG_DIR", config_dir)
+        monkeypatch.setattr(_identity, "_CONFIG_FILE", config_file)
+        _identity._reset_cache()
+        yield _identity
+        _identity._reset_cache()
+
+    def test_merges_config_onto_ambient_env(self, context_graph_config, monkeypatch):
+        from sessions_graph.connector import _reconciliation_env
+
+        monkeypatch.setenv("PATH", "/usr/bin")
+        context_graph_config.write_full_config(memgraph_url="bolt://remote:7687", openai_api_key="sk-test")
+        context_graph_config._reset_cache()
+
+        env = _reconciliation_env()
+
+        assert env["PATH"] == "/usr/bin"  # ambient env preserved
+        assert env["MEMGRAPH_URL"] == "bolt://remote:7687"
+        assert env["OPENAI_API_KEY"] == "sk-test"
+
+    def test_ambient_llm_key_preserved_when_config_empty(self, context_graph_config, monkeypatch):
+        from sessions_graph.connector import _reconciliation_env
+
+        monkeypatch.setenv("OPENAI_API_KEY", "ambient-key")
+
+        env = _reconciliation_env()
+
+        # config.toml has no openai_api_key set -> must not clobber the ambient value
+        assert env["OPENAI_API_KEY"] == "ambient-key"

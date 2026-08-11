@@ -171,6 +171,28 @@ class SessionsGraphConnector(GraphConnector):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
+                env=_reconciliation_env(),
             )
         except OSError as e:
             logger.warning(f"Could not spawn detached reconciliation process for session {session_id}: {e}")
+
+
+def _reconciliation_env() -> dict[str, str]:
+    """Build the environment for the detached ``sessions-graph reconcile`` subprocess.
+
+    This hook process resolves Memgraph connection settings from
+    ``~/.config/context-graph/config.toml`` (per ADR 0002) purely as constructor
+    kwargs -- never writing them into ``os.environ``. A plain ``Popen`` without an
+    explicit ``env=`` would therefore leave the detached reconciliation subprocess
+    with ambient ``os.environ`` only, missing both the configured Memgraph
+    connection and any LLM API key LightRAG needs. Overlay the same config-file
+    resolution onto a copy of the ambient environment so the child gets what this
+    process would have used, without discarding real ambient values (e.g. an
+    OPENAI_API_KEY already exported) when config-file values are unset.
+    """
+    from agent_context_graph.adapters._identity import resolve_llm_env, resolve_memgraph_env
+
+    env = dict(os.environ)
+    env.update({k: v for k, v in resolve_memgraph_env().items() if v})
+    env.update({k: v for k, v in resolve_llm_env().items() if v})
+    return env

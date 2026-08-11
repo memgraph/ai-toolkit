@@ -51,6 +51,37 @@ The generated hook command does not embed any Memgraph connection values. At run
 
 If Memgraph requires a password, provide `MEMGRAPH_PASSWORD` to the Codex process environment. `.codex/hooks.json` should not contain Memgraph credentials.
 
+For the Claude Code plugin, connection settings instead come from
+`~/.config/context-graph/config.toml` (see "Persistent hook configuration"
+below) rather than from the hook process's environment.
+
+### Persistent hook configuration
+
+`agent-context-graph config set/get/show` read and write
+`~/.config/context-graph/config.toml`, which hook subprocesses consult
+directly (CLI flag > config file > default; see ADR 0002). Supported keys:
+
+```text
+identity.user_id
+memgraph.url
+memgraph.user
+memgraph.password
+memgraph.database
+llm.openai_api_key
+llm.anthropic_api_key
+```
+
+The `llm.*` keys are only needed if you enable the `sessions-graph` connector
+with `auto_reconcile` (`SESSIONS_GRAPH_AUTO_RECONCILE=1` at connector
+construction time): reconciliation shells out to a detached
+`sessions-graph reconcile` subprocess that does LLM-backed entity extraction
+via LightRAG, and needs an `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`) the same
+way it needs Memgraph credentials — resolved from this config file and
+injected into that subprocess's environment explicitly, not inherited from
+ambient shell env (see ADR 0003). `agent-context-graph bootstrap` captures
+`OPENAI_API_KEY`/`ANTHROPIC_API_KEY` from its own environment into the config
+file automatically, the same way it already does for `MEMGRAPH_*`.
+
 To smoke test the generated command, copy the `"command"` value from `.codex/hooks.json` and run:
 
 ```bash

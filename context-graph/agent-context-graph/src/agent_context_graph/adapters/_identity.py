@@ -2,8 +2,10 @@
 
 Agent runtimes (Claude Code, Codex) spawn hook commands as non-interactive
 subprocesses that do not inherit shell profile environment variables.  This
-module provides a config-file-only resolution path so hook subprocesses can
-reliably access identity and Memgraph connection settings.
+module provides a config-file-only resolution path so hook subprocesses (and
+subprocesses they in turn spawn, e.g. sessions-graph's detached
+reconciliation process) can reliably access identity, Memgraph connection,
+and LLM API key settings.
 
 Resolution order (per ADR 0002):
   CLI flag > config file > hardcoded default
@@ -32,6 +34,11 @@ _MEMGRAPH_DEFAULTS = {
     "database": "memgraph",
 }
 
+_LLM_DEFAULTS = {
+    "openai_api_key": "",
+    "anthropic_api_key": "",
+}
+
 _sentinel = object()
 _cached_config: object = _sentinel
 
@@ -45,6 +52,8 @@ class HookConfig:
     memgraph_user: str = _MEMGRAPH_DEFAULTS["user"]
     memgraph_password: str = _MEMGRAPH_DEFAULTS["password"]
     memgraph_database: str = _MEMGRAPH_DEFAULTS["database"]
+    openai_api_key: str = _LLM_DEFAULTS["openai_api_key"]
+    anthropic_api_key: str = _LLM_DEFAULTS["anthropic_api_key"]
 
 
 def load_config() -> HookConfig:
@@ -95,6 +104,22 @@ def resolve_memgraph_env(
     }
 
 
+def resolve_llm_env() -> dict[str, str]:
+    """Resolve LLM API key settings for hook subprocesses.
+
+    Config file only — mirrors :func:`resolve_memgraph_env`, but there is no
+    CLI-flag override path for these since nothing resolves them from argparse.
+    Values are empty strings when not configured; callers should treat an
+    empty value as "not configured" rather than overlaying it onto a child
+    process's environment.
+    """
+    config = load_config()
+    return {
+        "OPENAI_API_KEY": config.openai_api_key,
+        "ANTHROPIC_API_KEY": config.anthropic_api_key,
+    }
+
+
 def write_config(
     *,
     user_id: str | None = None,
@@ -102,6 +127,8 @@ def write_config(
     memgraph_user: str | None = None,
     memgraph_password: str | None = None,
     memgraph_database: str | None = None,
+    openai_api_key: str | None = None,
+    anthropic_api_key: str | None = None,
 ) -> Path:
     """Write or update the config file. Returns the path written to.
 
@@ -118,6 +145,8 @@ def write_config(
     final_user = memgraph_user if memgraph_user is not None else existing.memgraph_user
     final_password = memgraph_password if memgraph_password is not None else existing.memgraph_password
     final_database = memgraph_database if memgraph_database is not None else existing.memgraph_database
+    final_openai_api_key = openai_api_key if openai_api_key is not None else existing.openai_api_key
+    final_anthropic_api_key = anthropic_api_key if anthropic_api_key is not None else existing.anthropic_api_key
 
     content = _render_config(
         user_id=final_user_id or "",
@@ -125,6 +154,8 @@ def write_config(
         user=final_user,
         password=final_password,
         database=final_database,
+        openai_api_key=final_openai_api_key,
+        anthropic_api_key=final_anthropic_api_key,
     )
 
     _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -143,6 +174,8 @@ def write_full_config(
     memgraph_user: str = _MEMGRAPH_DEFAULTS["user"],
     memgraph_password: str = _MEMGRAPH_DEFAULTS["password"],
     memgraph_database: str = _MEMGRAPH_DEFAULTS["database"],
+    openai_api_key: str = _LLM_DEFAULTS["openai_api_key"],
+    anthropic_api_key: str = _LLM_DEFAULTS["anthropic_api_key"],
 ) -> Path:
     """Write a complete config file with all sections (used by bootstrap).
 
@@ -156,6 +189,8 @@ def write_full_config(
         user=memgraph_user,
         password=memgraph_password,
         database=memgraph_database,
+        openai_api_key=openai_api_key,
+        anthropic_api_key=anthropic_api_key,
     )
 
     _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -191,6 +226,7 @@ def _read_config_file() -> HookConfig:
 
     identity = sections.get("identity", {})
     memgraph = sections.get("memgraph", {})
+    llm = sections.get("llm", {})
 
     return HookConfig(
         user_id=identity.get("user_id") or None,
@@ -198,6 +234,8 @@ def _read_config_file() -> HookConfig:
         memgraph_user=memgraph.get("user", _MEMGRAPH_DEFAULTS["user"]),
         memgraph_password=memgraph.get("password", _MEMGRAPH_DEFAULTS["password"]),
         memgraph_database=memgraph.get("database") or _MEMGRAPH_DEFAULTS["database"],
+        openai_api_key=llm.get("openai_api_key", _LLM_DEFAULTS["openai_api_key"]),
+        anthropic_api_key=llm.get("anthropic_api_key", _LLM_DEFAULTS["anthropic_api_key"]),
     )
 
 
@@ -233,6 +271,8 @@ def _render_config(
     user: str,
     password: str,
     database: str,
+    openai_api_key: str,
+    anthropic_api_key: str,
 ) -> str:
     """Render the full config file content."""
     lines = [
@@ -248,6 +288,10 @@ def _render_config(
         f'user = "{user}"',
         f'password = "{password}"',
         f'database = "{database}"',
+        "",
+        "[llm]",
+        f'openai_api_key = "{openai_api_key}"',
+        f'anthropic_api_key = "{anthropic_api_key}"',
         "",
     ]
     return "\n".join(lines)
