@@ -3,15 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import json
-import os
-import shlex
-import shutil
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-from memgraph_toolbox.api.memgraph import MEMGRAPH_ENV_KEYS, memgraph_env
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -21,13 +15,12 @@ _HELP = """usage: agent-context-graph hook <command> [options]
 Bridge agent command hooks to agent-context-graph.
 
 Commands:
-  init codex   Generate private Codex hook config.
-  run codex    Run the OpenAI Codex command-hook adapter.
-  run claude-code
-               Run the Claude Code command-hook adapter.
+  init <runtime>   Generate a runtime's private hook config, if it supports one.
+  run <runtime>    Run a runtime's command-hook adapter.
 
-Runtimes:
-  claude-code  Claude Code command hooks.
+Runtimes are discovered via the `agent_context_graph.runtimes` entry point --
+run `agent-context-graph hook run --help` (or see `runtime_plugin.py`) to see
+what's registered in this environment.
 """
 
 
@@ -61,19 +54,16 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _run_runtime(runtime: str, runtime_args: list[str]) -> int:
-    if runtime == "codex":
-        from agent_context_graph.adapters.codex import main as codex_main
+    from agent_context_graph.hooks.runner import run_hook
+    from agent_context_graph.hooks.runtime_plugin import UnknownRuntimeError, get_runtime_plugin
 
-        return codex_main(runtime_args)
+    try:
+        plugin = get_runtime_plugin(runtime)
+    except UnknownRuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
-    if runtime in {"claude-code", "claude_code"}:
-        from agent_context_graph.adapters.claude_code import main as claude_code_main
-
-        return claude_code_main(runtime_args)
-
-    print(f"Unknown hook runtime: {runtime}", file=sys.stderr)
-    print(_HELP)
-    return 2
+    return run_hook(plugin, runtime_args)
 
 
 def _init(argv: list[str]) -> int:
@@ -81,168 +71,83 @@ def _init(argv: list[str]) -> int:
         print("usage: agent-context-graph hook init <runtime> [options]", file=sys.stderr)
         return 2
 
-    runtime = argv[0]
-    if runtime == "codex":
-        return _init_codex(argv[1:])
+    from agent_context_graph.hooks.runtime_plugin import UnknownRuntimeError, get_runtime_plugin
 
-    if runtime in {"claude-code", "claude_code"}:
-        print("Claude Code hook setup is not implemented yet.", file=sys.stderr)
+    runtime, init_argv = argv[0], argv[1:]
+    try:
+        plugin = get_runtime_plugin(runtime)
+    except UnknownRuntimeError as exc:
+        print(str(exc), file=sys.stderr)
         return 2
 
-    print(f"Unknown hook runtime for init: {runtime}", file=sys.stderr)
-    return 2
+    init = getattr(plugin, "init", None)
+    if init is None:
+        print(f"{plugin.name} hook setup is not implemented yet.", file=sys.stderr)
+        return 2
+
+    return _run_generic_init(plugin.name, init, init_argv)
 
 
-def _init_codex(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Generate private OpenAI Codex hook config.")
+def _run_generic_init(runtime_name: str, init: Any, argv: list[str]) -> int:
+    """Parse the shared ``hook init`` flags and delegate to *init*.
+
+    The flag set (project dir, connectors, hook command override, Memgraph
+    overrides, schema setup, timeout, force) is generic across runtimes; each
+    plugin's own ``init`` interprets only the kwargs it needs.
+    """
+    parser = argparse.ArgumentParser(description=f"Generate a private {runtime_name} hook config.")
     parser.add_argument(
         "--connector",
         action="append",
         default=None,
-        help="Graph connector to enable. Defaults to skills-graph.",
+        help="Graph connector to enable. Defaults to skills-graph, actions-graph, sessions-graph.",
     )
     parser.add_argument(
         "--project-dir",
         default=".",
-        help="Project directory where .codex config should be generated.",
+        help="Project directory where the runtime's config should be generated.",
     )
     parser.add_argument(
         "--hook-command",
         default=None,
-        help="Full command to place in hooks.json. Defaults to this installed CLI.",
+        help="Full command to place in the runtime's hook config. Defaults to this installed CLI.",
     )
+    parser.add_argument("--memgraph-url", default=None, help="Memgraph Bolt URL for the hook command.")
+    parser.add_argument("--memgraph-user", default=None, help="Memgraph username for the hook command.")
     parser.add_argument(
-        "--memgraph-url",
-        default=None,
-        help="Memgraph Bolt URL for the hook command. Defaults to MEMGRAPH_URL or bolt://localhost:7687.",
+        "--memgraph-password", default=None, help="Memgraph password for --setup-schema. Never written to disk."
     )
-    parser.add_argument(
-        "--memgraph-user",
-        default=None,
-        help="Memgraph username for the hook command. Defaults to MEMGRAPH_USER or empty.",
-    )
-    parser.add_argument(
-        "--memgraph-password",
-        default=None,
-        help="Memgraph password for --setup-schema. Never written to hooks.json.",
-    )
-    parser.add_argument(
-        "--memgraph-database",
-        default=None,
-        help="Memgraph database for the hook command. Defaults to MEMGRAPH_DATABASE or memgraph.",
-    )
+    parser.add_argument("--memgraph-database", default=None, help="Memgraph database for the hook command.")
     parser.add_argument(
         "--setup-schema",
         action="store_true",
         help="Connect to Memgraph now and initialize enabled graph connector schemas.",
     )
-    parser.add_argument(
-        "--timeout",
-        type=int,
-        default=30,
-        help="Codex hook timeout in seconds.",
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Overwrite existing .codex/config.toml or .codex/hooks.json.",
-    )
+    parser.add_argument("--timeout", type=int, default=30, help="Hook timeout in seconds.")
+    parser.add_argument("--force", action="store_true", help="Overwrite existing generated config.")
     args = parser.parse_args(argv)
 
     connectors = args.connector or ["skills-graph", "actions-graph", "sessions-graph"]
     project_dir = Path(args.project_dir).expanduser().resolve()
-    codex_dir = project_dir / ".codex"
-    config_path = codex_dir / "config.toml"
-    hooks_path = codex_dir / "hooks.json"
 
-    existing = [path for path in (config_path, hooks_path) if path.exists()]
-    if existing and not args.force:
-        names = ", ".join(str(path) for path in existing)
-        print(f"Refusing to overwrite existing Codex config: {names}", file=sys.stderr)
+    try:
+        init(
+            project_dir,
+            connectors,
+            hook_command=args.hook_command,
+            memgraph_url=args.memgraph_url,
+            memgraph_user=args.memgraph_user,
+            memgraph_password=args.memgraph_password,
+            memgraph_database=args.memgraph_database,
+            setup_schema=args.setup_schema,
+            timeout=args.timeout,
+            force=args.force,
+        )
+    except FileExistsError as exc:
+        print(str(exc), file=sys.stderr)
         print("Re-run with --force to replace generated files.", file=sys.stderr)
         return 1
-
-    from agent_context_graph.adapters.codex import build_hooks_config
-
-    memgraph_values = _memgraph_env_from_args(args)
-    hook_command = args.hook_command or _default_hook_command("codex", connectors)
-    codex_dir.mkdir(parents=True, exist_ok=True)
-    config_path.write_text("[features]\ncodex_hooks = true\n", encoding="utf-8")
-    hooks_path.write_text(
-        json.dumps({"hooks": build_hooks_config(hook_command, timeout=args.timeout)}, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    if args.setup_schema:
-        _setup_connector_schemas(connectors, memgraph_values)
-
-    print(f"Wrote {config_path}")
-    print(f"Wrote {hooks_path}")
-    print(f"Memgraph URL: {memgraph_values['MEMGRAPH_URL']}")
-    print(f"Memgraph database: {memgraph_values['MEMGRAPH_DATABASE']}")
-    print(f"Hook command: {_mask_secret(hook_command, memgraph_values['MEMGRAPH_PASSWORD'])}")
     return 0
-
-
-def _default_hook_command(runtime: str, connectors: list[str]) -> str:
-    executable = shutil.which("agent-context-graph")
-    base = [executable] if executable else [sys.executable, "-m", "agent_context_graph.cli"]
-    args = [*base, "hook", "run", runtime]
-    for connector in connectors:
-        args.extend(["--connector", connector])
-    return shlex.join(args)
-
-
-def _memgraph_env_from_args(args: argparse.Namespace) -> dict[str, str]:
-    return memgraph_env(
-        url=args.memgraph_url,
-        username=args.memgraph_user,
-        password=args.memgraph_password,
-        database=args.memgraph_database,
-    )
-
-
-def _setup_connector_schemas(connectors: list[str], memgraph_env: dict[str, str]) -> None:
-    previous = {key: os.environ.get(key) for key in MEMGRAPH_ENV_KEYS}
-    os.environ.update(memgraph_env)
-    try:
-        for connector in connectors:
-            normalized = connector.strip().replace("-", "_")
-            if normalized == "skills_graph":
-                _setup_skills_graph_schema()
-            elif normalized == "actions_graph":
-                _setup_actions_graph_schema()
-    finally:
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-
-
-def _setup_skills_graph_schema() -> None:
-    try:
-        from skills_graph import SkillGraph
-    except ImportError as exc:
-        msg = "skills-graph is required to initialize the skills-graph schema"
-        raise ImportError(msg) from exc
-
-    SkillGraph().setup()
-
-
-def _setup_actions_graph_schema() -> None:
-    try:
-        from actions_graph import ActionsGraph
-    except ImportError as exc:
-        msg = "actions-graph is required to initialize the actions-graph schema"
-        raise ImportError(msg) from exc
-
-    ActionsGraph().setup()
-
-
-def _mask_secret(value: str, secret: str) -> str:
-    if not secret:
-        return value
-    return value.replace(shlex.quote(secret), "'****'").replace(secret, "****")
 
 
 if __name__ == "__main__":

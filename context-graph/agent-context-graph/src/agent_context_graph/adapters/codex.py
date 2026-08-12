@@ -7,10 +7,12 @@ common Event protocol used by AgentLink.
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
+import shlex
+import shutil
 import sys
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from agent_context_graph.events import (
@@ -20,13 +22,16 @@ from agent_context_graph.events import (
     ToolEndEvent,
     ToolStartEvent,
 )
-from agent_context_graph.link import AgentLink
+from agent_context_graph.hooks.runner import create_link, load_payload  # noqa: F401 (re-exported for callers)
 from agent_context_graph.protocols import RuntimeAdapter
+from memgraph_toolbox.api.memgraph import MEMGRAPH_ENV_KEYS, memgraph_env
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Sequence
+    from pathlib import Path
 
     from agent_context_graph.events import Event
+    from agent_context_graph.link import AgentLink
 
 _SOURCE = "codex"
 _DEFAULT_COMMAND = "agent-context-graph hook run codex"
@@ -38,11 +43,6 @@ _SUPPORTED_HOOKS = (
     "PermissionRequest",
     "Stop",
 )
-
-# TODO: When adding Claude Code command hooks, extract the shared stdin
-# loading, connector construction, and CLI runner into a command-hook helper
-# module. Keep product-specific payload mapping and stdout response semantics
-# in each runtime adapter.
 
 
 class CodexHooksAdapter(RuntimeAdapter):
@@ -173,46 +173,6 @@ def build_hooks_config(command: str, *, timeout: int = 30) -> dict[str, list[dic
     return config
 
 
-def load_payload(stream: Any | None = None) -> dict[str, Any]:
-    """Read one Codex hook payload from a text stream."""
-    if stream is None:
-        stream = sys.stdin
-    raw = stream.read()
-    if not raw.strip():
-        return {}
-    payload = json.loads(raw)
-    if not isinstance(payload, dict):
-        msg = "Codex hook payload must be a JSON object"
-        raise TypeError(msg)
-    return payload
-
-
-def create_link(connector_names: Iterable[str] = (), *, memgraph_env: dict[str, str] | None = None) -> AgentLink:
-    """Create an AgentLink with optional connectors named by CLI/config.
-
-    Args:
-        connector_names: Which graph connectors to attach.
-        memgraph_env: Resolved Memgraph connection dict (keys: MEMGRAPH_URL,
-            MEMGRAPH_USER, MEMGRAPH_PASSWORD, MEMGRAPH_DATABASE).  When None,
-            connectors fall back to their own default resolution.
-    """
-    link = AgentLink()
-    for connector_name in connector_names:
-        normalized = connector_name.strip().replace("-", "_")
-        if not normalized:
-            continue
-        if normalized == "skills_graph":
-            _add_skills_graph_connector(link, memgraph_env)
-        elif normalized == "actions_graph":
-            _add_actions_graph_connector(link, memgraph_env)
-        elif normalized == "sessions_graph":
-            _add_sessions_graph_connector(link, memgraph_env)
-        else:
-            msg = f"Unsupported connector: {connector_name}"
-            raise ValueError(msg)
-    return link
-
-
 def response_for_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
     """Return hook JSON response, when Codex expects one."""
     if payload.get("hook_event_name") == "Stop":
@@ -220,133 +180,104 @@ def response_for_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def init(project_dir: Path, connectors: list[str], **kwargs: Any) -> None:
+    """Generate a private Codex hook config (``.codex/config.toml`` + ``.codex/hooks.json``).
+
+    Extracted from what was ``hooks/cli.py``'s ``_init_codex`` -- kwargs mirror
+    its former CLI flags: hook_command, memgraph_url/user/password/database,
+    setup_schema, timeout, force.
+    """
+    hook_command = kwargs.get("hook_command")
+    timeout = kwargs.get("timeout", 30)
+    force = kwargs.get("force", False)
+    setup_schema = kwargs.get("setup_schema", False)
+
+    codex_dir = project_dir / ".codex"
+    config_path = codex_dir / "config.toml"
+    hooks_path = codex_dir / "hooks.json"
+
+    existing = [path for path in (config_path, hooks_path) if path.exists()]
+    if existing and not force:
+        names = ", ".join(str(path) for path in existing)
+        msg = f"Refusing to overwrite existing Codex config: {names} (pass force=True to replace)"
+        raise FileExistsError(msg)
+
+    resolved_memgraph_env = memgraph_env(
+        url=kwargs.get("memgraph_url"),
+        username=kwargs.get("memgraph_user"),
+        password=kwargs.get("memgraph_password"),
+        database=kwargs.get("memgraph_database"),
+    )
+
+    if hook_command is None:
+        executable = shutil.which("agent-context-graph")
+        base = [executable] if executable else [sys.executable, "-m", "agent_context_graph.cli"]
+        command_parts = [*base, "hook", "run", "codex"]
+        for connector in connectors:
+            command_parts.extend(["--connector", connector])
+        hook_command = shlex.join(command_parts)
+
+    codex_dir.mkdir(parents=True, exist_ok=True)
+    config_path.write_text("[features]\ncodex_hooks = true\n", encoding="utf-8")
+    hooks_path.write_text(
+        json.dumps({"hooks": build_hooks_config(hook_command, timeout=timeout)}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    if setup_schema:
+        previous = {key: os.environ.get(key) for key in MEMGRAPH_ENV_KEYS}
+        os.environ.update(resolved_memgraph_env)
+        try:
+            for connector in connectors:
+                normalized = connector.strip().replace("-", "_")
+                if normalized == "skills_graph":
+                    from skills_graph import SkillGraph
+
+                    SkillGraph().setup()
+                elif normalized == "actions_graph":
+                    from actions_graph import ActionsGraph
+
+                    ActionsGraph().setup()
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    print(f"Wrote {config_path}")
+    print(f"Wrote {hooks_path}")
+    print(f"Memgraph URL: {resolved_memgraph_env['MEMGRAPH_URL']}")
+    print(f"Memgraph database: {resolved_memgraph_env['MEMGRAPH_DATABASE']}")
+    secret = resolved_memgraph_env["MEMGRAPH_PASSWORD"]
+    masked = hook_command.replace(shlex.quote(secret), "'****'").replace(secret, "****") if secret else hook_command
+    print(f"Hook command: {masked}")
+
+
+@dataclass(frozen=True)
+class _CodexPlugin:
+    """Registered under the ``agent_context_graph.runtimes`` entry point as ``PLUGIN``."""
+
+    name: str = "codex"
+    adapter_class: type[RuntimeAdapter] = CodexHooksAdapter
+
+    def response_for_payload(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return response_for_payload(payload)
+
+    def build_hooks_config(self, command: str, *, timeout: int = 30) -> dict[str, Any]:
+        return build_hooks_config(command, timeout=timeout)
+
+    def init(self, project_dir: Path, connectors: list[str], **kwargs: Any) -> None:
+        init(project_dir, connectors, **kwargs)
+
+
+PLUGIN = _CodexPlugin()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Bridge OpenAI Codex hooks to agent-context-graph.")
-    parser.add_argument(
-        "--connector",
-        action="append",
-        default=None,
-        help="Graph connector to enable. Currently supported: skills-graph, actions-graph, sessions-graph.",
-    )
-    parser.add_argument(
-        "--session-id",
-        default=None,
-        help="Override the session id from the Codex hook payload.",
-    )
-    parser.add_argument(
-        "--memgraph-url",
-        default=None,
-        help="Memgraph Bolt URL. Overrides config file value.",
-    )
-    parser.add_argument(
-        "--memgraph-user",
-        default=None,
-        help="Memgraph username. Overrides config file value.",
-    )
-    parser.add_argument(
-        "--memgraph-password",
-        default=None,
-        help="Memgraph password. Overrides config file value.",
-    )
-    parser.add_argument(
-        "--memgraph-database",
-        default=None,
-        help="Memgraph database. Overrides config file value.",
-    )
-    parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="Return a non-zero status if the hook payload cannot be recorded.",
-    )
-    args = parser.parse_args(argv)
+    from agent_context_graph.hooks.runner import run_hook
 
-    connector_names = args.connector
-    if connector_names is None:
-        connector_names = _connectors_from_env()
-
-    # Resolve Memgraph connection: CLI flag > config file > default.
-    from agent_context_graph.adapters._identity import resolve_memgraph_env
-
-    memgraph_env = resolve_memgraph_env(
-        url=args.memgraph_url,
-        user=args.memgraph_user,
-        password=args.memgraph_password,
-        database=args.memgraph_database,
-    )
-
-    payload: dict[str, Any] = {}
-    try:
-        payload = load_payload()
-        link = create_link(connector_names, memgraph_env=memgraph_env)
-        adapter = CodexHooksAdapter(link, session_id=args.session_id)
-        adapter.handle_payload(payload)
-        response = response_for_payload(payload)
-        if response is not None:
-            print(json.dumps(response))
-    except Exception as exc:
-        if args.strict or os.environ.get("AGENT_CONTEXT_GRAPH_CODEX_STRICT") == "1":
-            raise
-        response = response_for_payload(payload)
-        if response is not None:
-            print(json.dumps(response))
-        _debug_log(f"agent-context-graph Codex hook skipped: {exc}")
-    return 0
-
-
-def _add_skills_graph_connector(link: AgentLink, memgraph_env: dict[str, str] | None = None) -> None:
-    try:
-        from skills_graph import SkillGraph
-        from skills_graph.connector import SkillGraphConnector
-    except ImportError as exc:
-        msg = "skills-graph is required for the skills-graph Codex connector"
-        raise ImportError(msg) from exc
-
-    kwargs = _memgraph_kwargs(memgraph_env)
-    graph = SkillGraph(**kwargs)
-    link.add_connector(SkillGraphConnector(graph))
-
-
-def _add_sessions_graph_connector(link: AgentLink, memgraph_env: dict[str, str] | None = None) -> None:
-    try:
-        from sessions_graph import SessionsGraph
-        from sessions_graph.connector import SessionsGraphConnector
-    except ImportError as exc:
-        msg = "sessions-graph is required for the sessions-graph Codex connector"
-        raise ImportError(msg) from exc
-
-    kwargs = _memgraph_kwargs(memgraph_env)
-    graph = SessionsGraph(**kwargs)
-    link.add_connector(SessionsGraphConnector(graph))
-
-
-def _add_actions_graph_connector(link: AgentLink, memgraph_env: dict[str, str] | None = None) -> None:
-    try:
-        from actions_graph import ActionsGraph
-        from actions_graph.connector import ActionsGraphConnector
-    except ImportError as exc:
-        msg = "actions-graph is required for the actions-graph Codex connector"
-        raise ImportError(msg) from exc
-
-    kwargs = _memgraph_kwargs(memgraph_env)
-    graph = ActionsGraph(**kwargs)
-    link.add_connector(ActionsGraphConnector(graph))
-
-
-def _memgraph_kwargs(memgraph_env: dict[str, str] | None) -> dict[str, str]:
-    """Convert resolved memgraph env dict to kwargs for graph component constructors."""
-    if memgraph_env is None:
-        return {}
-    return {
-        "url": memgraph_env["MEMGRAPH_URL"],
-        "username": memgraph_env["MEMGRAPH_USER"],
-        "password": memgraph_env["MEMGRAPH_PASSWORD"],
-        "database": memgraph_env["MEMGRAPH_DATABASE"],
-    }
-
-
-def _connectors_from_env() -> list[str]:
-    value = os.environ.get("AGENT_CONTEXT_GRAPH_CODEX_CONNECTORS", "")
-    return [part.strip() for part in value.split(",") if part.strip()]
+    return run_hook(PLUGIN, argv)
 
 
 def _metadata_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -400,11 +331,6 @@ def _resolve_user_id(payload: dict[str, Any]) -> str | None:
     from agent_context_graph.adapters._identity import resolve_user_id
 
     return resolve_user_id(payload)
-
-
-def _debug_log(message: str) -> None:
-    if os.environ.get("AGENT_CONTEXT_GRAPH_CODEX_DEBUG") == "1":
-        print(message, file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -288,7 +288,7 @@ def test_top_level_cli_bootstrap_accepts_zero_port(monkeypatch, capsys):
 
 
 def test_top_level_cli_setup_aliases_codex_init(tmp_path, monkeypatch):
-    monkeypatch.setattr("agent_context_graph.hooks.cli.shutil.which", lambda _: "/bin/agent-context-graph")
+    monkeypatch.setattr("agent_context_graph.adapters.codex.shutil.which", lambda _: "/bin/agent-context-graph")
 
     assert top_level_main(["setup", "codex", "--project-dir", str(tmp_path)]) == 0
 
@@ -327,7 +327,7 @@ def test_init_codex_writes_private_config(tmp_path, capsys):
 
 
 def test_init_codex_does_not_bake_memgraph_connection_into_hook_command(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr("agent_context_graph.hooks.cli.shutil.which", lambda _: "/bin/agent-context-graph")
+    monkeypatch.setattr("agent_context_graph.adapters.codex.shutil.which", lambda _: "/bin/agent-context-graph")
 
     assert (
         main(
@@ -363,7 +363,7 @@ def test_init_codex_does_not_bake_memgraph_connection_into_hook_command(tmp_path
 
 
 def test_init_codex_uses_memgraph_env_only_for_setup_schema(tmp_path, monkeypatch):
-    monkeypatch.setattr("agent_context_graph.hooks.cli.shutil.which", lambda _: "/bin/agent-context-graph")
+    monkeypatch.setattr("agent_context_graph.adapters.codex.shutil.which", lambda _: "/bin/agent-context-graph")
     captured = {}
 
     class _SkillGraph:
@@ -412,7 +412,7 @@ def test_init_codex_uses_memgraph_env_only_for_setup_schema(tmp_path, monkeypatc
 
 
 def test_init_codex_sets_up_actions_graph_schema(tmp_path, monkeypatch):
-    monkeypatch.setattr("agent_context_graph.hooks.cli.shutil.which", lambda _: "/bin/agent-context-graph")
+    monkeypatch.setattr("agent_context_graph.adapters.codex.shutil.which", lambda _: "/bin/agent-context-graph")
     captured = {}
 
     class _ActionsGraph:
@@ -447,7 +447,7 @@ def test_init_codex_sets_up_actions_graph_schema(tmp_path, monkeypatch):
 
 
 def test_init_codex_uses_memgraph_toolbox_env_helper(tmp_path, monkeypatch):
-    monkeypatch.setattr("agent_context_graph.hooks.cli.shutil.which", lambda _: "/bin/agent-context-graph")
+    monkeypatch.setattr("agent_context_graph.adapters.codex.shutil.which", lambda _: "/bin/agent-context-graph")
     monkeypatch.setenv("MEMGRAPH_URL", "bolt://env-memgraph:7687")
     monkeypatch.setenv("MEMGRAPH_DATABASE", "env-skills")
 

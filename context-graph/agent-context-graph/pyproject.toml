@@ -18,6 +18,10 @@ dependencies = [
 [project.scripts]
 agent-context-graph = "agent_context_graph.cli:main"
 
+[project.entry-points."agent_context_graph.runtimes"]
+codex = "agent_context_graph.adapters.codex:PLUGIN"
+claude-code = "agent_context_graph.adapters.claude_code:PLUGIN"
+
 [project.optional-dependencies]
 claude = [
     "claude-agent-sdk>=0.1.0",

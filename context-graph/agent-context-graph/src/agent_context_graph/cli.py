@@ -164,10 +164,12 @@ def _config(argv: list[str]) -> int:
 
 
 def _bootstrap(argv: list[str]) -> int:
+    from agent_context_graph.hooks.runtime_plugin import load_runtime_plugins
+
     parser = argparse.ArgumentParser(description="Install and verify Agent Context Graph runtime dependencies.")
     parser.add_argument(
         "--runtime",
-        choices=["codex", "claude-code"],
+        choices=sorted(load_runtime_plugins()),
         required=True,
         help="Runtime hook adapter to bootstrap.",
     )
@@ -308,10 +310,12 @@ def _bootstrap(argv: list[str]) -> int:
 
 
 def _doctor(argv: list[str]) -> int:
+    from agent_context_graph.hooks.runtime_plugin import load_runtime_plugins
+
     parser = argparse.ArgumentParser(description="Check Agent Context Graph runtime hook setup.")
     parser.add_argument(
         "--runtime",
-        choices=["codex", "claude-code"],
+        choices=sorted(load_runtime_plugins()),
         default="claude-code",
         help="Runtime hook adapter to smoke test.",
     )
@@ -476,17 +480,12 @@ def _check_connector(connector_name: str) -> dict[str, object]:
 
 def _check_runtime(runtime: str, connectors: list[str]) -> dict[str, object]:
     try:
-        if runtime == "codex":
-            from agent_context_graph.adapters.codex import CodexHooksAdapter, create_link
+        from agent_context_graph.hooks.runner import create_link
+        from agent_context_graph.hooks.runtime_plugin import get_runtime_plugin
 
-            adapter_cls = CodexHooksAdapter
-        else:
-            from agent_context_graph.adapters.claude_code import ClaudeCodeHooksAdapter, create_link
-
-            adapter_cls = ClaudeCodeHooksAdapter
-
+        plugin = get_runtime_plugin(runtime)
         link = create_link(connectors)
-        adapter = adapter_cls(link)
+        adapter = plugin.adapter_class(link)
         adapter.handle_payload({"hook_event_name": "Stop", "session_id": "doctor"})
         return {"name": f"runtime:{runtime}", "ok": True, "detail": "strict hook smoke passed"}
     except Exception as exc:
