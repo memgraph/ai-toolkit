@@ -4,6 +4,7 @@ import pytest
 
 from ..api.memgraph import Memgraph
 from ..tools.cypher import CypherTool
+from ..tools.graph_cypher import GraphCypherTool
 from ..tools.schema import (
     EnumSchemaTool,
     NodeSchemaTool,
@@ -70,6 +71,72 @@ def test_cypher_date_time_serialization(db):
     assert "+01:00" in record["test_datetime"]
     assert isinstance(record["test_duration"], str)
     assert "PT2M2.33S" in record["test_duration"]
+
+
+def test_graph_cypher_projects_nodes_and_edges(db, schema_graph):
+    """A `RETURN a, r, b` projects connected nodes and a typed edge."""
+    tool = GraphCypherTool(db=db)
+    result = tool.call({"query": "MATCH (a:Person {name: 'Alice'})-[r:KNOWS]->(b:Person) RETURN a, r, b"})
+
+    assert isinstance(result, dict)
+    assert "nodes" in result and "relationships" in result
+
+    nodes = result["nodes"]
+    rels = result["relationships"]
+    assert len(nodes) == 2
+    assert len(rels) == 1
+
+    names = {n["properties"].get("name") for n in nodes}
+    assert names == {"Alice", "Bob"}
+    assert all("Person" in n["labels"] for n in nodes)
+
+    edge = rels[0]
+    assert edge["type"] == "KNOWS"
+    assert edge["properties"].get("since") == 2020
+    node_ids = {n["id"] for n in nodes}
+    assert edge["start"] in node_ids
+    assert edge["end"] in node_ids
+
+
+def test_graph_cypher_deduplicates_shared_nodes(db, schema_graph):
+    """A node appearing in several rows is emitted once, keyed on element id."""
+    tool = GraphCypherTool(db=db)
+    result = tool.call({"query": "MATCH (a)-[r]->(b) RETURN a, r, b"})
+
+    assert isinstance(result, dict)
+    assert len(result["nodes"]) == 3
+    assert len(result["relationships"]) == 2
+    ids = [n["id"] for n in result["nodes"]]
+    assert len(ids) == len(set(ids)), "nodes must be deduplicated"
+
+
+def test_graph_cypher_projects_path(db, schema_graph):
+    """A returned path is unrolled into its nodes and relationships."""
+    tool = GraphCypherTool(db=db)
+    result = tool.call({"query": "MATCH p = (:Person)-[:KNOWS]->(:Person) RETURN p"})
+
+    assert isinstance(result, dict)
+    assert len(result["nodes"]) == 2
+    assert len(result["relationships"]) == 1
+    assert result["relationships"][0]["type"] == "KNOWS"
+
+
+def test_graph_cypher_scalar_has_no_entities(db, schema_graph):
+    """A query returning only scalars yields an empty projection, not an error."""
+    tool = GraphCypherTool(db=db)
+    result = tool.call({"query": "RETURN 1 AS n"})
+
+    assert result == {"nodes": [], "relationships": []}
+
+
+def test_graph_cypher_invalid_query_returns_error(db):
+    """A syntactically invalid query returns the list-shaped error convention."""
+    tool = GraphCypherTool(db=db)
+    result = tool.call({"query": "NOT VALID CYPHER"})
+
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert "error" in result[0]
 
 
 def test_get_node_schema_found(db, schema_graph):

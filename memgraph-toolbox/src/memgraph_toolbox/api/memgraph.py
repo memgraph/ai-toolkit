@@ -172,6 +172,44 @@ class Memgraph:
             json_data = [serialize_record_data(r.data()) for r in data]
             return json_data
 
+    def query_raw(self, query: str, params: dict = None) -> list[Any]:
+        """
+        Execute a Cypher query and return the raw neo4j ``Record`` objects.
+
+        Unlike :meth:`query`, this does **not** flatten graph entities through
+        ``Record.data()``; the records still hold live ``neo4j.graph`` Node /
+        Relationship / Path objects, preserving element ids, labels,
+        relationship types, and endpoints. Callers that need graph topology
+        (e.g. the ``run_cypher_graph`` tool) build on this; :meth:`query`
+        remains the flat-dict path for existing consumers.
+
+        Args:
+            query: The Cypher query to execute
+            params: Optional query parameters
+
+        Returns:
+            List of neo4j ``Record`` objects
+        """
+        from neo4j.exceptions import Neo4jError
+
+        if params is None:
+            params = {}
+        try:
+            records, _, _ = self.driver.execute_query(
+                query,
+                parameters_=params,
+                database_=self.database,
+            )
+            return list(records)
+        except Neo4jError as e:
+            if not _is_implicit_transaction_fallback_error(e):
+                raise
+
+        # fallback to allow implicit transactions
+        with self.driver.session(database=self.database) as session:
+            result = session.run(query, params)
+            return list(result)
+
     def close(self) -> None:
         """
         Close the database connection.
@@ -271,6 +309,42 @@ class AsyncMemgraph:
             result = await session.run(query, params)
             json_data = [serialize_record_data(r.data()) async for r in result]
             return json_data
+
+    async def query_raw(self, query: str, params: dict = None) -> list[Any]:
+        """
+        Execute a Cypher query and return the raw neo4j ``Record`` objects.
+
+        Async mirror of :meth:`Memgraph.query_raw`, including the fallback to an
+        implicit transaction. The returned records still hold live
+        ``neo4j.graph`` Node / Relationship / Path objects, preserving element
+        ids, labels, relationship types, and endpoints.
+
+        Args:
+            query: The Cypher query to execute
+            params: Optional query parameters
+
+        Returns:
+            List of neo4j ``Record`` objects
+        """
+        from neo4j.exceptions import Neo4jError
+
+        if params is None:
+            params = {}
+        try:
+            records, _, _ = await self.driver.execute_query(
+                query,
+                parameters_=params,
+                database_=self.database,
+            )
+            return list(records)
+        except Neo4jError as e:
+            if not _is_implicit_transaction_fallback_error(e):
+                raise
+
+        # fallback to allow implicit transactions
+        async with self.driver.session(database=self.database) as session:
+            result = await session.run(query, params)
+            return [record async for record in result]
 
     async def close(self) -> None:
         """
