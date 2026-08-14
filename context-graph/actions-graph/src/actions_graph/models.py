@@ -29,6 +29,7 @@ class ActionValidationError(ValueError):
 # Validation patterns
 _SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
 _ACTION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
+_AGENT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
 
 
 def _utc_now() -> str:
@@ -55,6 +56,13 @@ def validate_action_id(action_id: str) -> str:
     return action_id
 
 
+def validate_agent_id(agent_id: str) -> str:
+    """Validate agent ID format."""
+    if not agent_id or not _AGENT_ID_RE.match(agent_id):
+        raise ActionValidationError(f"agent_id must match pattern {_AGENT_ID_RE.pattern}, got: {agent_id!r}")
+    return agent_id
+
+
 class ActionType(str, Enum):
     """Types of actions that can be tracked."""
 
@@ -64,8 +72,6 @@ class ActionType(str, Enum):
     ASSISTANT_MESSAGE = "assistant_message"
     SYSTEM_MESSAGE = "system_message"
     STRUCTURED_OUTPUT = "structured_output"
-    SUBAGENT_START = "subagent_start"
-    SUBAGENT_STOP = "subagent_stop"
     SESSION_START = "session_start"
     SESSION_END = "session_end"
     ERROR = "error"
@@ -111,7 +117,6 @@ class Session:
         working_directory: Working directory for the session
         git_branch: Git branch at start of session
         metadata: Additional session metadata
-        parent_session_id: ID of parent session if forked
     """
 
     session_id: str
@@ -125,12 +130,9 @@ class Session:
     working_directory: str | None = None
     git_branch: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
-    parent_session_id: str | None = None
 
     def __post_init__(self):
         validate_session_id(self.session_id)
-        if self.parent_session_id:
-            validate_session_id(self.parent_session_id)
 
 
 @dataclass
@@ -271,30 +273,39 @@ class StructuredOutput(Action):
 
 
 @dataclass
-class SubagentEvent(Action):
-    """Represents a subagent lifecycle event.
+class Agent:
+    """Represents a subagent's full lifecycle as a first-class node.
+
+    Unlike a flat Action pair (one for start, one for stop), an Agent is a
+    single entity whose lifecycle (start/stop, outcome) lives on its own
+    properties -- populated once at start, updated once at stop.
 
     Attributes:
-        agent_id: Unique identifier for the subagent
-        agent_type: Type of the subagent
-        description: Description of the subagent task
-        result: Result from subagent (if completed)
-        usage: Token usage for the subagent
-
-        action_type: Subagent lifecycle direction. Defaults to SUBAGENT_START.
+        agent_id: Unique identifier for the agent (harness-provided)
+        agent_type: Type/role of the agent (e.g. "Explore", "general-purpose")
+        session_id: ID of the session this agent belongs to
+        started_at: ISO timestamp when the agent started
+        ended_at: ISO timestamp when the agent finished (if completed)
+        status: Current status of the agent
+        description: Description of the agent's task, if provided
+        last_assistant_message: Final assistant message/output from the agent
+        metadata: Additional agent metadata
     """
 
-    action_type: ActionType = ActionType.SUBAGENT_START
-    agent_id: str = ""
+    agent_id: str
     agent_type: str = ""
+    session_id: str = ""
+    started_at: str = field(default_factory=_utc_now)
+    ended_at: str | None = None
+    status: ActionStatus = ActionStatus.IN_PROGRESS
     description: str = ""
-    result: str | None = None
-    usage: dict[str, Any] | None = None
+    last_assistant_message: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
-        super().__post_init__()
-        if self.action_type not in (ActionType.SUBAGENT_START, ActionType.SUBAGENT_STOP):
-            raise ActionValidationError("SubagentEvent action_type must be subagent_start or subagent_stop")
+        validate_agent_id(self.agent_id)
+        if self.session_id:
+            validate_session_id(self.session_id)
 
 
 @dataclass

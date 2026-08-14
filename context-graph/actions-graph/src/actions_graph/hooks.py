@@ -23,14 +23,13 @@ from typing import TYPE_CHECKING, Any
 
 from .models import (
     ActionStatus,
-    ActionType,
+    Agent,
     ErrorEvent,
     Message,
     MessageRole,
     PermissionRequest,
     RateLimitEvent,
     Session,
-    SubagentEvent,
     ToolCall,
     ToolResult,
 )
@@ -106,13 +105,7 @@ class ActionTracker:
         tool_name = input_data.get("tool_name", "")
         tool_input = input_data.get("tool_input", {})
         actual_tool_use_id = input_data.get("tool_use_id") or tool_use_id
-
-        # Get parent action from subagent context
-        parent_action_id = None
         agent_id = input_data.get("agent_id")
-        if agent_id:
-            # This is a subagent tool call
-            parent_action_id = self._tool_use_to_action.get(agent_id)
 
         action = ToolCall(
             session_id=self.session_id,
@@ -120,7 +113,6 @@ class ActionTracker:
             tool_input=tool_input,
             tool_use_id=actual_tool_use_id,
             status=ActionStatus.IN_PROGRESS,
-            parent_action_id=parent_action_id,
             metadata={
                 "agent_id": agent_id,
                 "agent_type": input_data.get("agent_type"),
@@ -128,9 +120,9 @@ class ActionTracker:
             },
         )
 
-        self.graph.record_action(action)
+        self.graph.record_action(action, container_agent_id=agent_id)
 
-        # Track tool use ID to action ID mapping
+        # Track tool use ID to action ID mapping (for ToolResult->ToolCall correlation)
         if actual_tool_use_id:
             self._tool_use_to_action[actual_tool_use_id] = action.action_id
 
@@ -152,6 +144,7 @@ class ActionTracker:
         tool_name = input_data.get("tool_name", "")
         actual_tool_use_id = input_data.get("tool_use_id") or tool_use_id
         tool_response = input_data.get("tool_response")
+        agent_id = input_data.get("agent_id")
 
         # Determine if this is an error response
         is_error = False
@@ -163,7 +156,8 @@ class ActionTracker:
             error_message = tool_response.get("error")
             content = tool_response.get("content", tool_response)
 
-        # Find parent tool call action
+        # Find parent tool call action (ToolResult->ToolCall correlation, unrelated to
+        # subagent nesting -- that's now handled by container_agent_id/HAS_ACTION below)
         parent_action_id = None
         if actual_tool_use_id:
             parent_action_id = self._tool_use_to_action.get(actual_tool_use_id)
@@ -177,12 +171,12 @@ class ActionTracker:
             error_message=error_message,
             parent_action_id=parent_action_id,
             metadata={
-                "agent_id": input_data.get("agent_id"),
+                "agent_id": agent_id,
                 "agent_type": input_data.get("agent_type"),
             },
         )
 
-        self.graph.record_action(action)
+        self.graph.record_action(action, container_agent_id=agent_id)
         return {}
 
     async def post_tool_use_failure(
@@ -261,7 +255,10 @@ class ActionTracker:
     ) -> dict[str, Any]:
         """Hook callback for SubagentStart events.
 
-        Records when subagents start.
+        Records when subagents start, as a first-class Agent node (#278) --
+        not a flat Action pair. The three-tier temporal-inference rule (#277)
+        run by start_agent() links the specific spawning tool call, when it
+        can be resolved unambiguously.
         """
         if not self.track_subagents:
             return {}
@@ -269,18 +266,14 @@ class ActionTracker:
         agent_id = input_data.get("agent_id", "")
         agent_type = input_data.get("agent_type", "")
 
-        action = SubagentEvent(
-            session_id=self.session_id,
-            action_type=ActionType.SUBAGENT_START,
-            agent_id=agent_id,
-            agent_type=agent_type,
-            status=ActionStatus.IN_PROGRESS,
+        self.graph.start_agent(
+            Agent(
+                agent_id=agent_id,
+                agent_type=agent_type,
+                session_id=self.session_id,
+                status=ActionStatus.IN_PROGRESS,
+            )
         )
-
-        self.graph.record_action(action)
-
-        # Track agent_id to action mapping for nested tool calls
-        self._tool_use_to_action[agent_id] = action.action_id
 
         return {}
 
@@ -292,32 +285,23 @@ class ActionTracker:
     ) -> dict[str, Any]:
         """Hook callback for SubagentStop events.
 
-        Records when subagents complete.
+        Records when subagents complete, updating the same Agent node
+        subagent_start() created rather than recording a separate Action.
         """
         if not self.track_subagents:
             return {}
 
         agent_id = input_data.get("agent_id", "")
-        agent_type = input_data.get("agent_type", "")
         stop_hook_active = input_data.get("stop_hook_active", False)
 
-        # Find the start event
-        parent_action_id = self._tool_use_to_action.get(agent_id)
-
-        action = SubagentEvent(
-            session_id=self.session_id,
-            action_type=ActionType.SUBAGENT_STOP,
-            agent_id=agent_id,
-            agent_type=agent_type,
-            status=ActionStatus.COMPLETED,
-            parent_action_id=parent_action_id,
+        self.graph.end_agent(
+            agent_id,
+            last_assistant_message=input_data.get("last_assistant_message"),
             metadata={
                 "stop_hook_active": stop_hook_active,
                 "agent_transcript_path": input_data.get("agent_transcript_path"),
             },
         )
-
-        self.graph.record_action(action)
         return {}
 
     async def permission_request(

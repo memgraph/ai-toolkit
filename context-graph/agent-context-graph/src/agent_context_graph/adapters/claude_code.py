@@ -88,6 +88,7 @@ class ClaudeCodeHooksAdapter(RuntimeAdapter):
                     source_sdk=_SOURCE,
                     role="user",
                     content=payload.get("prompt", ""),
+                    agent_name=_string_or_none(payload.get("agent_id")),
                     metadata=metadata,
                 )
             ]
@@ -100,6 +101,7 @@ class ClaudeCodeHooksAdapter(RuntimeAdapter):
                     tool_name=str(payload.get("tool_name") or ""),
                     tool_input=payload.get("tool_input"),
                     tool_use_id=_string_or_none(payload.get("tool_use_id")),
+                    agent_name=_string_or_none(payload.get("agent_id")),
                     metadata=metadata,
                 )
             ]
@@ -115,6 +117,7 @@ class ClaudeCodeHooksAdapter(RuntimeAdapter):
                     tool_name=str(payload.get("tool_name") or ""),
                     tool_use_id=_string_or_none(payload.get("tool_use_id")),
                     result=tool_response,
+                    agent_name=_string_or_none(payload.get("agent_id")),
                     metadata=metadata,
                 )
             ]
@@ -130,6 +133,7 @@ class ClaudeCodeHooksAdapter(RuntimeAdapter):
                     tool_use_id=_string_or_none(payload.get("tool_use_id")),
                     is_error=True,
                     error_message=_string_or_none(payload.get("error")),
+                    agent_name=_string_or_none(payload.get("agent_id")),
                     metadata=metadata,
                 )
             ]
@@ -141,6 +145,7 @@ class ClaudeCodeHooksAdapter(RuntimeAdapter):
                     source_sdk=_SOURCE,
                     role="system",
                     content=str(payload.get("tool_name") or "permission_request"),
+                    agent_name=_string_or_none(payload.get("agent_id")),
                     metadata=metadata,
                 )
             ]

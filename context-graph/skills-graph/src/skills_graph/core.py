@@ -167,14 +167,36 @@ class SkillGraph:
         content: str = "",
         source_path: str | None = None,
         metadata: dict[str, str] | None = None,
+        container_agent_id: str | None = None,
     ) -> None:
-        """Record that a session used a skill.
+        """Record that a session (or a specific Agent within it) used a skill.
 
         By default this preserves the historical behavior and only records
         usage for skills that already exist. Inferred local SKILL.md reads can
         opt into creating a minimal Skill node so filesystem-based skill use is
         not dropped.
+
+        Args:
+            container_agent_id: If set AND a matching Agent node already
+                exists, USED_SKILL attaches to it instead of the Session
+                directly, mirroring HAS_ACTION's either-container pattern
+                (actions-graph's Agent node, #278). Some adapters (e.g. the
+                OpenAI Agents SDK one) set an agent name for every running
+                agent, not just genuine nested subagents, and not every
+                caller wires actions-graph's connector to create the node at
+                all -- falling back to the Session when no such Agent node
+                exists (rather than a hard MATCH that would silently drop
+                the whole usage record) keeps this correct either way.
         """
+        resolved_agent_id = None
+        if container_agent_id:
+            exists_rows = self._db.query(
+                "MATCH (a:Agent {agent_id: $agent_id}) RETURN count(a) AS c",
+                params={"agent_id": container_agent_id},
+            )
+            if exists_rows and exists_rows[0]["c"] > 0:
+                resolved_agent_id = container_agent_id
+
         params = {
             "session_id": session_id,
             "skill_name": skill_name,
@@ -184,14 +206,21 @@ class SkillGraph:
             "content": content,
             "metadata": json.dumps(metadata or {}),
             "source_path": source_path,
+            "agent_id": resolved_agent_id,
         }
+
+        container_match = (
+            "MATCH (container:Agent {agent_id: $agent_id})"
+            if resolved_agent_id
+            else "MERGE (container:Session {session_id: $session_id})"
+        )
 
         if create_missing:
             self._db.query(
-                """
-                MERGE (sess:Session {session_id: $session_id})
-                WITH sess
-                MERGE (sk:Skill {name: $skill_name})
+                f"""
+                {container_match}
+                WITH container
+                MERGE (sk:Skill {{name: $skill_name}})
                 ON CREATE SET sk.description = $description,
                               sk.content = $content,
                               sk.license = null,
@@ -202,7 +231,7 @@ class SkillGraph:
                               sk.updated_at = $timestamp,
                               sk.source_path = $source_path
                 ON MATCH SET sk.source_path = coalesce(sk.source_path, $source_path)
-                MERGE (sess)-[r:USED_SKILL]->(sk)
+                MERGE (container)-[r:USED_SKILL]->(sk)
                 ON CREATE SET r.first_access = $timestamp,
                               r.access_count = 1,
                               r.actions = [$action]
@@ -215,11 +244,11 @@ class SkillGraph:
             return
 
         self._db.query(
-            """
-            MERGE (sess:Session {session_id: $session_id})
-            WITH sess
-            MATCH (sk:Skill {name: $skill_name})
-            MERGE (sess)-[r:USED_SKILL]->(sk)
+            f"""
+            {container_match}
+            WITH container
+            MATCH (sk:Skill {{name: $skill_name}})
+            MERGE (container)-[r:USED_SKILL]->(sk)
             ON CREATE SET r.first_access = $timestamp,
                           r.access_count = 1,
                           r.actions = [$action]

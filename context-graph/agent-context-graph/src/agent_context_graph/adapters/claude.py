@@ -203,6 +203,7 @@ class ClaudeAdapter(RuntimeAdapter):
                 source_sdk=_SOURCE,
                 role="user",
                 content=input_data.get("prompt", ""),
+                agent_name=input_data.get("agent_id"),
                 metadata={k: input_data.get(k) for k in ("cwd", "permission_mode") if input_data.get(k) is not None},
             )
         )
@@ -256,6 +257,7 @@ class ClaudeAdapter(RuntimeAdapter):
                 source_sdk=_SOURCE,
                 role="system",
                 content=input_data.get("message", ""),
+                agent_name=input_data.get("agent_id"),
                 metadata={
                     "title": input_data.get("title"),
                     "notification_type": input_data.get("notification_type"),

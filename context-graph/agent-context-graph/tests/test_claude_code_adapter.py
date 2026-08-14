@@ -119,6 +119,37 @@ def test_failed_tool_payload_emits_error_tool_end():
     assert event.error_message == "Command exited with non-zero status code 1"
 
 
+def test_tool_payloads_inside_subagent_carry_agent_name():
+    link = AgentLink()
+    rec = _RecordingConnector()
+    link.add_connector(rec)
+
+    adapter = ClaudeCodeHooksAdapter(link)
+    adapter.handle_payload(
+        {
+            "hook_event_name": "PreToolUse",
+            "session_id": "s1",
+            "tool_name": "Read",
+            "tool_input": {"file_path": "/skills/cypher/SKILL.md"},
+            "tool_use_id": "tu-1",
+            "agent_id": "agent-1",
+        }
+    )
+    adapter.handle_payload(
+        {
+            "hook_event_name": "PostToolUse",
+            "session_id": "s1",
+            "tool_name": "Read",
+            "tool_response": "skill body",
+            "tool_use_id": "tu-1",
+            "agent_id": "agent-1",
+        }
+    )
+
+    assert rec.events[0].agent_name == "agent-1"
+    assert rec.events[1].agent_name == "agent-1"
+
+
 def test_subagent_payloads_emit_agent_events():
     link = AgentLink()
     rec = _RecordingConnector()

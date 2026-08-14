@@ -80,6 +80,77 @@ def test_tool_start_creates_used_skill_relationship(wired):
     assert rows[0]["actions"] == ["get_skill"]
 
 
+def test_tool_call_inside_subagent_attaches_used_skill_to_agent_not_session(wired):
+    """A skill access inside a subagent links (:Agent)-[:USED_SKILL]->(:Skill), not the Session (#280)."""
+    sg = wired["sg"]
+    adapter = wired["adapter"]
+
+    sg.add_skill(Skill(name="pdf-processing", description="PDF tools", content="..."))
+    # Simulates an Agent node actions-graph's connector would already have created
+    # for this subagent (start_agent runs before any of its tool calls fire).
+    sg._db.query(
+        "CREATE (:Agent {agent_id: $agent_id, agent_type: 'Explore', started_at: '2026-01-01T00:00:00+00:00'})",
+        params={"agent_id": "agent-1"},
+    )
+
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(
+        adapter._pre_tool_use(
+            {
+                "tool_name": "get_skill",
+                "tool_input": {"name": "pdf-processing"},
+                "tool_use_id": "tu-agent-1",
+                "agent_id": "agent-1",
+            },
+            "tu-agent-1",
+            {},
+        )
+    )
+
+    agent_rows = sg._db.query(
+        "MATCH (:Agent {agent_id: $agent_id})-[r:USED_SKILL]->(:Skill {name: $name}) RETURN count(r) AS cnt",
+        params={"agent_id": "agent-1", "name": "pdf-processing"},
+    )
+    assert agent_rows[0]["cnt"] == 1
+
+    session_rows = sg._db.query(
+        "MATCH (:Session {session_id: $sid})-[r:USED_SKILL]->(:Skill {name: $name}) RETURN count(r) AS cnt",
+        params={"sid": "test-session", "name": "pdf-processing"},
+    )
+    assert session_rows[0]["cnt"] == 0
+
+
+def test_tool_call_with_agent_name_but_no_agent_node_falls_back_to_session(wired):
+    """Some adapters (e.g. OpenAI Agents SDK) set agent_name for the top-level
+    running agent too, not just genuine nested subagents -- and no Agent node
+    may exist for it at all if actions-graph's connector isn't wired. This must
+    fall back to the Session, not silently drop the whole USED_SKILL record."""
+    sg = wired["sg"]
+    adapter = wired["adapter"]
+
+    sg.add_skill(Skill(name="pdf-processing", description="PDF tools", content="..."))
+
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(
+        adapter._pre_tool_use(
+            {
+                "tool_name": "get_skill",
+                "tool_input": {"name": "pdf-processing"},
+                "tool_use_id": "tu-no-agent-node",
+                "agent_id": "top-level-agent-with-no-node",
+            },
+            "tu-no-agent-node",
+            {},
+        )
+    )
+
+    session_rows = sg._db.query(
+        "MATCH (:Session {session_id: $sid})-[r:USED_SKILL]->(:Skill {name: $name}) RETURN count(r) AS cnt",
+        params={"sid": "test-session", "name": "pdf-processing"},
+    )
+    assert session_rows[0]["cnt"] == 1
+
+
 def test_multiple_accesses_increment_count(wired):
     """Repeated tool calls to the same skill increment the counter."""
     sg = wired["sg"]
