@@ -430,6 +430,26 @@ class TestAgentOperations:
         )
         assert rows[0]["next_id"] == second.action_id
 
+    def test_record_action_falls_back_to_session_when_agent_node_does_not_exist(self, graph: ActionsGraph):
+        """Some adapters (e.g. OpenAI Agents SDK) set an agent name for every
+        running agent, not just genuine nested subagents, and no Agent node may
+        exist for it at all. A hard MATCH on the Agent would silently orphan
+        the Action (no HAS_ACTION link to anything); it must fall back to the
+        Session instead."""
+        session = Session(session_id="no-agent-node-session")
+        graph.create_session(session)
+
+        action = graph.record_action(
+            ToolCall(session_id="no-agent-node-session", tool_name="Read", tool_input={}),
+            container_agent_id="top-level-agent-with-no-node",
+        )
+
+        rows = graph._db.query(
+            "MATCH (:Session {session_id: $sid})-[:HAS_ACTION]->(a:Action {action_id: $action_id}) RETURN count(a) AS c",
+            params={"sid": "no-agent-node-session", "action_id": action.action_id},
+        )
+        assert rows[0]["c"] == 1
+
 
 class TestMCPTools:
     """Tests for MCP tool handling."""

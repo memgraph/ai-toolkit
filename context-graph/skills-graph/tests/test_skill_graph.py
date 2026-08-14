@@ -202,6 +202,8 @@ def test_record_skill_usage_matches_existing_skill_by_default(sg, mock_memgraph)
 
 
 def test_record_skill_usage_attaches_to_agent_container_when_given(sg, mock_memgraph):
+    mock_memgraph.query.return_value = [{"c": 1}]
+
     sg.record_skill_usage(
         session_id="s1",
         skill_name="cypher-basics",
@@ -214,6 +216,27 @@ def test_record_skill_usage_attaches_to_agent_container_when_given(sg, mock_memg
     assert "MATCH (container:Agent {agent_id: $agent_id})" in call.args[0]
     assert "MERGE (container)-[r:USED_SKILL]->(sk)" in call.args[0]
     assert call.kwargs["params"]["agent_id"] == "agent-1"
+
+
+def test_record_skill_usage_falls_back_to_session_when_agent_does_not_exist(sg, mock_memgraph):
+    """Some adapters (e.g. OpenAI Agents SDK) set an agent name for every running
+    agent, not just genuine nested subagents, and no Agent node for it may exist
+    at all (e.g. actions-graph's connector isn't wired). A hard MATCH would
+    silently drop the whole usage record; it must fall back to the Session."""
+    mock_memgraph.query.return_value = [{"c": 0}]
+
+    sg.record_skill_usage(
+        session_id="s1",
+        skill_name="cypher-basics",
+        action="get_skill",
+        timestamp="2026-04-30T00:00:00+00:00",
+        container_agent_id="top-level-agent",
+    )
+
+    call = mock_memgraph.query.call_args
+    assert "MERGE (container:Session {session_id: $session_id})" in call.args[0]
+    assert "MERGE (container)-[r:USED_SKILL]->(sk)" in call.args[0]
+    assert call.kwargs["params"]["agent_id"] is None
 
 
 def test_record_skill_usage_can_create_missing_skill(sg, mock_memgraph):

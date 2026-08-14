@@ -177,14 +177,26 @@ class SkillGraph:
         not dropped.
 
         Args:
-            container_agent_id: If set, the usage happened inside this Agent
-                (actions-graph's Agent node, #278) -- USED_SKILL attaches to
-                it instead of the Session directly, mirroring HAS_ACTION's
-                either-container pattern. The Agent is expected to already
-                exist (created by actions-graph's connector before any of its
-                tool calls fire); if it doesn't, this is a no-op rather than
-                fabricating one.
+            container_agent_id: If set AND a matching Agent node already
+                exists, USED_SKILL attaches to it instead of the Session
+                directly, mirroring HAS_ACTION's either-container pattern
+                (actions-graph's Agent node, #278). Some adapters (e.g. the
+                OpenAI Agents SDK one) set an agent name for every running
+                agent, not just genuine nested subagents, and not every
+                caller wires actions-graph's connector to create the node at
+                all -- falling back to the Session when no such Agent node
+                exists (rather than a hard MATCH that would silently drop
+                the whole usage record) keeps this correct either way.
         """
+        resolved_agent_id = None
+        if container_agent_id:
+            exists_rows = self._db.query(
+                "MATCH (a:Agent {agent_id: $agent_id}) RETURN count(a) AS c",
+                params={"agent_id": container_agent_id},
+            )
+            if exists_rows and exists_rows[0]["c"] > 0:
+                resolved_agent_id = container_agent_id
+
         params = {
             "session_id": session_id,
             "skill_name": skill_name,
@@ -194,12 +206,12 @@ class SkillGraph:
             "content": content,
             "metadata": json.dumps(metadata or {}),
             "source_path": source_path,
-            "agent_id": container_agent_id,
+            "agent_id": resolved_agent_id,
         }
 
         container_match = (
             "MATCH (container:Agent {agent_id: $agent_id})"
-            if container_agent_id
+            if resolved_agent_id
             else "MERGE (container:Session {session_id: $session_id})"
         )
 

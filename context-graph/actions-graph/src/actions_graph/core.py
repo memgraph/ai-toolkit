@@ -547,6 +547,13 @@ class ActionsGraph:
         # Tier 3: genuine ambiguity -- an honest null, never a guess
         return None
 
+    def _agent_exists(self, agent_id: str) -> bool:
+        rows = self._db.query(
+            "MATCH (a:Agent {agent_id: $agent_id}) RETURN count(a) AS c",
+            params={"agent_id": agent_id},
+        )
+        return bool(rows and rows[0]["c"] > 0)
+
     # ------------------------------------------------------------------
     # Action operations
     # ------------------------------------------------------------------
@@ -560,14 +567,22 @@ class ActionsGraph:
 
         Args:
             action: Action to record
-            container_agent_id: If set, the action happened inside this
-                Agent -- it links via (:Agent)-[:HAS_ACTION]->(:Action) and
-                its FOLLOWED_BY chain is scoped to that agent, instead of
-                linking directly to the Session.
+            container_agent_id: If set AND a matching Agent node already
+                exists, the action links via (:Agent)-[:HAS_ACTION]->(:Action)
+                and its FOLLOWED_BY chain is scoped to that agent, instead of
+                linking directly to the Session. Some adapters (e.g. the
+                OpenAI Agents SDK one) set an agent name for every running
+                agent, not just genuine nested subagents -- falling back to
+                the Session when no such Agent node exists (rather than a
+                hard MATCH that would silently drop the link) keeps this
+                correct either way.
 
         Returns:
             The recorded action
         """
+        container_agent_id = (
+            container_agent_id if container_agent_id and self._agent_exists(container_agent_id) else None
+        )
         container_key = ("agent", container_agent_id) if container_agent_id else ("session", action.session_id)
         last_action_id = self._last_action_id.get(container_key) or self._find_last_action_id(
             action.session_id, container_agent_id=container_agent_id
