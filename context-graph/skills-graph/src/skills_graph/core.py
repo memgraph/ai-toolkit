@@ -167,13 +167,23 @@ class SkillGraph:
         content: str = "",
         source_path: str | None = None,
         metadata: dict[str, str] | None = None,
+        container_agent_id: str | None = None,
     ) -> None:
-        """Record that a session used a skill.
+        """Record that a session (or a specific Agent within it) used a skill.
 
         By default this preserves the historical behavior and only records
         usage for skills that already exist. Inferred local SKILL.md reads can
         opt into creating a minimal Skill node so filesystem-based skill use is
         not dropped.
+
+        Args:
+            container_agent_id: If set, the usage happened inside this Agent
+                (actions-graph's Agent node, #278) -- USED_SKILL attaches to
+                it instead of the Session directly, mirroring HAS_ACTION's
+                either-container pattern. The Agent is expected to already
+                exist (created by actions-graph's connector before any of its
+                tool calls fire); if it doesn't, this is a no-op rather than
+                fabricating one.
         """
         params = {
             "session_id": session_id,
@@ -184,14 +194,21 @@ class SkillGraph:
             "content": content,
             "metadata": json.dumps(metadata or {}),
             "source_path": source_path,
+            "agent_id": container_agent_id,
         }
+
+        container_match = (
+            "MATCH (container:Agent {agent_id: $agent_id})"
+            if container_agent_id
+            else "MERGE (container:Session {session_id: $session_id})"
+        )
 
         if create_missing:
             self._db.query(
-                """
-                MERGE (sess:Session {session_id: $session_id})
-                WITH sess
-                MERGE (sk:Skill {name: $skill_name})
+                f"""
+                {container_match}
+                WITH container
+                MERGE (sk:Skill {{name: $skill_name}})
                 ON CREATE SET sk.description = $description,
                               sk.content = $content,
                               sk.license = null,
@@ -202,7 +219,7 @@ class SkillGraph:
                               sk.updated_at = $timestamp,
                               sk.source_path = $source_path
                 ON MATCH SET sk.source_path = coalesce(sk.source_path, $source_path)
-                MERGE (sess)-[r:USED_SKILL]->(sk)
+                MERGE (container)-[r:USED_SKILL]->(sk)
                 ON CREATE SET r.first_access = $timestamp,
                               r.access_count = 1,
                               r.actions = [$action]
@@ -215,11 +232,11 @@ class SkillGraph:
             return
 
         self._db.query(
-            """
-            MERGE (sess:Session {session_id: $session_id})
-            WITH sess
-            MATCH (sk:Skill {name: $skill_name})
-            MERGE (sess)-[r:USED_SKILL]->(sk)
+            f"""
+            {container_match}
+            WITH container
+            MATCH (sk:Skill {{name: $skill_name}})
+            MERGE (container)-[r:USED_SKILL]->(sk)
             ON CREATE SET r.first_access = $timestamp,
                           r.access_count = 1,
                           r.actions = [$action]

@@ -177,6 +177,7 @@ class MessageEvent(Event):
     role: str = ""
     content: Any = None
     model: str | None = None
+    agent_name: str | None = None
 
 
 # ------------------------------------------------------------------

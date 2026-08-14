@@ -34,6 +34,22 @@ def test_mcp_tool_name_is_treated_as_skill_tool():
     assert params["create_missing"] is False
 
 
+def test_tool_call_inside_subagent_attaches_usage_to_agent_container():
+    connector, graph = _connector()
+    event = ToolStartEvent(
+        session_id="s1",
+        tool_name="get_skill",
+        tool_input={"name": "cypher-basics"},
+        timestamp="2026-04-30T00:00:00+00:00",
+        agent_name="agent-1",
+    )
+
+    connector.on_event(event)
+
+    params = graph.record_skill_usage.call_args.kwargs
+    assert params["container_agent_id"] == "agent-1"
+
+
 def test_mcp_search_result_records_nested_json_skill_names():
     connector, graph = _connector()
     event = ToolEndEvent(

@@ -194,10 +194,26 @@ def test_record_skill_usage_matches_existing_skill_by_default(sg, mock_memgraph)
     )
 
     call = mock_memgraph.query.call_args
+    assert "MERGE (container:Session {session_id: $session_id})" in call.args[0]
     assert "MATCH (sk:Skill {name: $skill_name})" in call.args[0]
-    assert "MERGE (sess)-[r:USED_SKILL]->(sk)" in call.args[0]
+    assert "MERGE (container)-[r:USED_SKILL]->(sk)" in call.args[0]
     assert call.kwargs["params"]["skill_name"] == "cypher-basics"
     assert call.kwargs["params"]["action"] == "get_skill"
+
+
+def test_record_skill_usage_attaches_to_agent_container_when_given(sg, mock_memgraph):
+    sg.record_skill_usage(
+        session_id="s1",
+        skill_name="cypher-basics",
+        action="get_skill",
+        timestamp="2026-04-30T00:00:00+00:00",
+        container_agent_id="agent-1",
+    )
+
+    call = mock_memgraph.query.call_args
+    assert "MATCH (container:Agent {agent_id: $agent_id})" in call.args[0]
+    assert "MERGE (container)-[r:USED_SKILL]->(sk)" in call.args[0]
+    assert call.kwargs["params"]["agent_id"] == "agent-1"
 
 
 def test_record_skill_usage_can_create_missing_skill(sg, mock_memgraph):

@@ -6,14 +6,19 @@ LLM actions, tool calls, and sessions in a Memgraph graph database.
 Graph Schema:
     Nodes:
         - (:Session) - LLM conversation sessions
+        - (:Agent) - Subagent lifecycle (start/stop folded into one node)
         - (:Action) - Individual actions with labels for type (ToolCall, Message, etc.)
         - (:Tool) - Tool definitions
 
     Relationships:
-        - (:Session)-[:HAS_ACTION]->(:Action)
-        - (:Action)-[:FOLLOWED_BY]->(:Action) - Temporal sequence
-        - (:Action)-[:PARENT_OF]->(:Action) - Nested actions (e.g., subagent)
-        - (:Session)-[:FORKED_FROM]->(:Session)
+        - (:Session)-[:HAS_ACTION]->(:Action) - top-level actions
+        - (:Session)-[:HAS_AGENT]->(:Agent) - unconditional, every agent is session-reachable
+        - (:Agent)-[:HAS_ACTION]->(:Action) - actions that happened inside that agent
+        - (:Action)-[:SPAWNED]->(:Agent) - the tool call that spawned a subagent, when inferable
+        - (:Action)-[:FOLLOWED_BY]->(:Action) - temporal sequence, scoped per-container
+          (the Session's own chain, and each Agent's own separate chain)
+        - (:Action)-[:PARENT_OF]->(:Action) - ToolResult/error back to its ToolCall
+          (tool-call/result correlation; unrelated to subagent nesting)
         - (:Action)-[:USED_TOOL]->(:Tool)
 """
 
@@ -29,6 +34,7 @@ from .models import (
     Action,
     ActionStatus,
     ActionType,
+    Agent,
     ErrorEvent,
     Message,
     MessageRole,
@@ -36,7 +42,6 @@ from .models import (
     RateLimitEvent,
     Session,
     StructuredOutput,
-    SubagentEvent,
     ToolCall,
     ToolResult,
 )
@@ -61,7 +66,10 @@ class ActionsGraph:
             **kwargs: Forwarded to Memgraph() when memgraph is None.
         """
         self._db = memgraph or Memgraph(**kwargs)
-        self._last_action_id: dict[str, str] = {}  # session_id -> last action_id
+        # container key -> last action_id, where container key is ("session", session_id)
+        # or ("agent", agent_id) -- FOLLOWED_BY is scoped per-container, not one flat chain.
+        self._last_action_id: dict[tuple[str, str], str] = {}
+        self.agent_spawning_tool_names: set[str] = {"Task"}
 
     # ------------------------------------------------------------------
     # Schema setup
@@ -81,6 +89,11 @@ class ActionsGraph:
         self._db.query("CREATE INDEX ON :Action(timestamp);")
         self._db.query("CREATE INDEX ON :Action(action_type);")
 
+        # Agent constraints and indexes
+        self._db.query("CREATE CONSTRAINT ON (a:Agent) ASSERT a.agent_id IS UNIQUE;")
+        self._db.query("CREATE INDEX ON :Agent(agent_id);")
+        self._db.query("CREATE INDEX ON :Agent(agent_type);")
+
         # Tool indexes
         self._db.query("CREATE INDEX ON :Tool(name);")
 
@@ -96,11 +109,13 @@ class ActionsGraph:
             self._db.query("DROP CONSTRAINT ON (s:Session) ASSERT s.session_id IS UNIQUE;")
         with contextlib.suppress(Exception):
             self._db.query("DROP CONSTRAINT ON (a:Action) ASSERT a.action_id IS UNIQUE;")
+        with contextlib.suppress(Exception):
+            self._db.query("DROP CONSTRAINT ON (a:Agent) ASSERT a.agent_id IS UNIQUE;")
         # Indexes are dropped with constraints in most cases
 
     def clear(self) -> None:
         """Remove all session and action data from the graph."""
-        self._db.query("MATCH (n) WHERE n:Session OR n:Action OR n:Tool DETACH DELETE n;")
+        self._db.query("MATCH (n) WHERE n:Session OR n:Agent OR n:Action OR n:Tool DETACH DELETE n;")
         self._last_action_id.clear()
 
     # ------------------------------------------------------------------
@@ -146,20 +161,6 @@ class ActionsGraph:
                 "metadata": json.dumps(session.metadata),
             },
         )
-
-        # Handle forked sessions
-        if session.parent_session_id:
-            self._db.query(
-                """
-                MATCH (child:Session {session_id: $session_id})
-                MATCH (parent:Session {session_id: $parent_session_id})
-                MERGE (child)-[:FORKED_FROM]->(parent)
-                """,
-                params={
-                    "session_id": session.session_id,
-                    "parent_session_id": session.parent_session_id,
-                },
-            )
 
         return session
 
@@ -212,7 +213,6 @@ class ActionsGraph:
         rows = self._db.query(
             """
             MATCH (s:Session {session_id: $session_id})
-            OPTIONAL MATCH (s)-[:FORKED_FROM]->(p:Session)
             RETURN s.session_id AS session_id,
                    s.started_at AS started_at,
                    s.ended_at AS ended_at,
@@ -223,8 +223,7 @@ class ActionsGraph:
                    s.total_output_tokens AS total_output_tokens,
                    s.working_directory AS working_directory,
                    s.git_branch AS git_branch,
-                   s.metadata AS metadata,
-                   p.session_id AS parent_session_id
+                   s.metadata AS metadata
             """,
             params={"session_id": session_id},
         )
@@ -284,7 +283,7 @@ class ActionsGraph:
         )
 
         # Clean up last action tracking
-        self._last_action_id.pop(session_id, None)
+        self._last_action_id.pop(("session", session_id), None)
 
         return self.get_session(session_id)
 
@@ -316,7 +315,6 @@ class ActionsGraph:
             f"""
             MATCH (s:Session)
             {where_str}
-            OPTIONAL MATCH (s)-[:FORKED_FROM]->(p:Session)
             RETURN s.session_id AS session_id,
                    s.started_at AS started_at,
                    s.ended_at AS ended_at,
@@ -327,8 +325,7 @@ class ActionsGraph:
                    s.total_output_tokens AS total_output_tokens,
                    s.working_directory AS working_directory,
                    s.git_branch AS git_branch,
-                   s.metadata AS metadata,
-                   p.session_id AS parent_session_id
+                   s.metadata AS metadata
             ORDER BY s.started_at DESC
             LIMIT $limit
             """,
@@ -338,22 +335,243 @@ class ActionsGraph:
         return [self._row_to_session(row) for row in rows]
 
     # ------------------------------------------------------------------
+    # Agent operations
+    # ------------------------------------------------------------------
+
+    def start_agent(self, agent: Agent) -> Agent:
+        """Start tracking a subagent as a first-class node.
+
+        Creates the Agent node, links it unconditionally to its Session via
+        HAS_AGENT (even if the spawning action can't be inferred -- keeping
+        an ambiguous Agent reachable rather than orphaned), and attempts to
+        link the specific Action that spawned it via SPAWNED, using the
+        three-tier temporal-inference rule (open, agent-spawning tool calls
+        in this session; disambiguated by matching agent_type against the
+        candidate's tool_input; genuine ambiguity resolves to no link).
+
+        Args:
+            agent: Agent to persist
+
+        Returns:
+            The persisted agent
+        """
+        self._db.query(
+            """
+            MERGE (a:Agent {agent_id: $agent_id})
+            ON CREATE SET
+                a.agent_type = $agent_type,
+                a.started_at = $started_at,
+                a.status = $status,
+                a.description = $description,
+                a.metadata = $metadata
+            """,
+            params={
+                "agent_id": agent.agent_id,
+                "agent_type": agent.agent_type,
+                "started_at": agent.started_at,
+                "status": agent.status.value,
+                "description": agent.description,
+                "metadata": json.dumps(agent.metadata),
+            },
+        )
+
+        self._db.query(
+            """
+            MATCH (s:Session {session_id: $session_id})
+            MATCH (a:Agent {agent_id: $agent_id})
+            MERGE (s)-[:HAS_AGENT]->(a)
+            """,
+            params={"session_id": agent.session_id, "agent_id": agent.agent_id},
+        )
+
+        spawning_action_id = self._infer_spawning_action(agent.session_id, agent.agent_type)
+        if spawning_action_id:
+            self._db.query(
+                """
+                MATCH (parent:Action {action_id: $action_id})
+                MATCH (a:Agent {agent_id: $agent_id})
+                MERGE (parent)-[:SPAWNED]->(a)
+                """,
+                params={"action_id": spawning_action_id, "agent_id": agent.agent_id},
+            )
+
+        return agent
+
+    def end_agent(
+        self,
+        agent_id: str,
+        *,
+        status: ActionStatus = ActionStatus.COMPLETED,
+        last_assistant_message: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Agent | None:
+        """Mark an agent as finished.
+
+        Args:
+            agent_id: Agent to end
+            status: Final status
+            last_assistant_message: Final assistant message/output
+            metadata: Additional metadata to merge in (e.g. stop_hook_active)
+
+        Returns:
+            Updated agent or None if not found
+        """
+        ended_at = datetime.now(timezone.utc).isoformat()
+
+        existing = self.get_agent(agent_id)
+        merged_metadata = {**(existing.metadata if existing else {}), **(metadata or {})}
+
+        self._db.query(
+            """
+            MATCH (a:Agent {agent_id: $agent_id})
+            SET a.ended_at = $ended_at,
+                a.status = $status,
+                a.last_assistant_message = $last_assistant_message,
+                a.metadata = $metadata
+            """,
+            params={
+                "agent_id": agent_id,
+                "ended_at": ended_at,
+                "status": status.value,
+                "last_assistant_message": last_assistant_message,
+                "metadata": json.dumps(merged_metadata),
+            },
+        )
+
+        self._last_action_id.pop(("agent", agent_id), None)
+
+        return self.get_agent(agent_id)
+
+    def get_agent(self, agent_id: str) -> Agent | None:
+        """Retrieve an agent by ID.
+
+        Args:
+            agent_id: Unique agent identifier
+
+        Returns:
+            Agent object or None if not found
+        """
+        rows = self._db.query(
+            """
+            MATCH (a:Agent {agent_id: $agent_id})
+            OPTIONAL MATCH (s:Session)-[:HAS_AGENT]->(a)
+            RETURN a.agent_id AS agent_id,
+                   a.agent_type AS agent_type,
+                   s.session_id AS session_id,
+                   a.started_at AS started_at,
+                   a.ended_at AS ended_at,
+                   a.status AS status,
+                   a.description AS description,
+                   a.last_assistant_message AS last_assistant_message,
+                   a.metadata AS metadata
+            """,
+            params={"agent_id": agent_id},
+        )
+        if not rows:
+            return None
+        return self._row_to_agent(rows[0])
+
+    def get_session_agents(self, session_id: str) -> list[Agent]:
+        """Get all agents spawned within a session.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            List of agents ordered by start time
+        """
+        rows = self._db.query(
+            """
+            MATCH (s:Session {session_id: $session_id})-[:HAS_AGENT]->(a:Agent)
+            RETURN a.agent_id AS agent_id,
+                   a.agent_type AS agent_type,
+                   s.session_id AS session_id,
+                   a.started_at AS started_at,
+                   a.ended_at AS ended_at,
+                   a.status AS status,
+                   a.description AS description,
+                   a.last_assistant_message AS last_assistant_message,
+                   a.metadata AS metadata
+            ORDER BY a.started_at
+            """,
+            params={"session_id": session_id},
+        )
+        return [self._row_to_agent(row) for row in rows]
+
+    def _infer_spawning_action(self, session_id: str, agent_type: str) -> str | None:
+        """Infer which Action spawned a new Agent (the three-tier rule from #277).
+
+        Tier 1: filter open tool calls (no PostToolUse yet, not already linked
+        to another Agent via SPAWNED) by agent-spawning tool name, anywhere in
+        the session -- directly under it or inside another Agent.
+        Tier 2: if more than one is open, disambiguate by matching this
+        Agent's agent_type against each candidate's tool_input subagent_type.
+        Tier 3: genuine ambiguity (still more than one match) returns None
+        rather than guessing.
+        """
+        rows = self._db.query(
+            """
+            MATCH (s:Session {session_id: $session_id})
+            OPTIONAL MATCH (s)-[:HAS_ACTION]->(direct:Action:ToolCall)
+            OPTIONAL MATCH (s)-[:HAS_AGENT]->(:Agent)-[:HAS_ACTION]->(nested:Action:ToolCall)
+            WITH collect(DISTINCT direct) + collect(DISTINCT nested) AS calls
+            UNWIND calls AS call
+            WITH DISTINCT call
+            WHERE call.tool_name IN $spawn_tool_names
+            OPTIONAL MATCH (call)-[:PARENT_OF]->(has_result:Action:ToolResult)
+            OPTIONAL MATCH (call)-[:SPAWNED]->(has_spawned:Agent)
+            WITH call, has_result, has_spawned
+            WHERE has_result IS NULL AND has_spawned IS NULL
+            RETURN call.action_id AS action_id, call.timestamp AS timestamp, call.properties AS properties
+            ORDER BY call.timestamp DESC
+            """,
+            params={"session_id": session_id, "spawn_tool_names": list(self.agent_spawning_tool_names)},
+        )
+
+        if not rows:
+            return None
+        if len(rows) == 1:
+            return rows[0]["action_id"]
+
+        # Tier 2: disambiguate by matching agent_type against tool_input.subagent_type
+        matches = []
+        for row in rows:
+            props = json.loads(row["properties"]) if row.get("properties") else {}
+            tool_input = props.get("tool_input")
+            if isinstance(tool_input, dict) and tool_input.get("subagent_type") == agent_type:
+                matches.append(row["action_id"])
+
+        if len(matches) == 1:
+            return matches[0]
+
+        # Tier 3: genuine ambiguity -- an honest null, never a guess
+        return None
+
+    # ------------------------------------------------------------------
     # Action operations
     # ------------------------------------------------------------------
 
-    def record_action(self, action: Action) -> Action:
+    def record_action(self, action: Action, *, container_agent_id: str | None = None) -> Action:
         """Record an action in the graph.
 
-        Creates the action node, links it to the session, and creates
-        temporal FOLLOWED_BY relationships with the previous action.
+        Creates the action node, links it to its container, and creates a
+        temporal FOLLOWED_BY relationship with the previous action in that
+        same container.
 
         Args:
             action: Action to record
+            container_agent_id: If set, the action happened inside this
+                Agent -- it links via (:Agent)-[:HAS_ACTION]->(:Action) and
+                its FOLLOWED_BY chain is scoped to that agent, instead of
+                linking directly to the Session.
 
         Returns:
             The recorded action
         """
-        last_action_id = self._last_action_id.get(action.session_id) or self._find_last_action_id(action.session_id)
+        container_key = ("agent", container_agent_id) if container_agent_id else ("session", action.session_id)
+        last_action_id = self._last_action_id.get(container_key) or self._find_last_action_id(
+            action.session_id, container_agent_id=container_agent_id
+        )
 
         # Determine additional labels based on action type
         type_labels = self._get_type_labels(action)
@@ -399,17 +617,28 @@ class ActionsGraph:
             },
         )
 
-        # Link to session
-        self._db.query(
-            """
-            MATCH (s:Session {session_id: $session_id})
-            MATCH (a:Action {action_id: $action_id})
-            MERGE (s)-[:HAS_ACTION]->(a)
-            """,
-            params={"session_id": action.session_id, "action_id": action.action_id},
-        )
+        # Link to container: the specific Agent this action happened inside,
+        # or the Session directly when there's no such Agent.
+        if container_agent_id:
+            self._db.query(
+                """
+                MATCH (ag:Agent {agent_id: $agent_id})
+                MATCH (a:Action {action_id: $action_id})
+                MERGE (ag)-[:HAS_ACTION]->(a)
+                """,
+                params={"agent_id": container_agent_id, "action_id": action.action_id},
+            )
+        else:
+            self._db.query(
+                """
+                MATCH (s:Session {session_id: $session_id})
+                MATCH (a:Action {action_id: $action_id})
+                MERGE (s)-[:HAS_ACTION]->(a)
+                """,
+                params={"session_id": action.session_id, "action_id": action.action_id},
+            )
 
-        # Create temporal sequence
+        # Create temporal sequence, scoped to this same container
         if last_action_id:
             self._db.query(
                 """
@@ -420,7 +649,7 @@ class ActionsGraph:
                 params={"prev_id": last_action_id, "curr_id": action.action_id},
             )
 
-        self._last_action_id[action.session_id] = action.action_id
+        self._last_action_id[container_key] = action.action_id
 
         # Handle parent action relationship
         if action.parent_action_id:
@@ -452,16 +681,27 @@ class ActionsGraph:
 
         return action
 
-    def _find_last_action_id(self, session_id: str) -> str | None:
-        rows = self._db.query(
-            """
-            MATCH (s:Session {session_id: $session_id})-[:HAS_ACTION]->(a:Action)
-            RETURN a.action_id AS action_id
-            ORDER BY a.timestamp DESC
-            LIMIT 1
-            """,
-            params={"session_id": session_id},
-        )
+    def _find_last_action_id(self, session_id: str, *, container_agent_id: str | None = None) -> str | None:
+        if container_agent_id:
+            rows = self._db.query(
+                """
+                MATCH (ag:Agent {agent_id: $agent_id})-[:HAS_ACTION]->(a:Action)
+                RETURN a.action_id AS action_id
+                ORDER BY a.timestamp DESC
+                LIMIT 1
+                """,
+                params={"agent_id": container_agent_id},
+            )
+        else:
+            rows = self._db.query(
+                """
+                MATCH (s:Session {session_id: $session_id})-[:HAS_ACTION]->(a:Action)
+                RETURN a.action_id AS action_id
+                ORDER BY a.timestamp DESC
+                LIMIT 1
+                """,
+                params={"session_id": session_id},
+            )
         if not rows:
             return None
         return rows[0]["action_id"]
@@ -598,7 +838,14 @@ class ActionsGraph:
         action_type: ActionType | None = None,
         limit: int = 1000,
     ) -> list[Action]:
-        """Get all actions for a session.
+        """Get all actions for a session, including those inside subagents.
+
+        Every Agent is directly session-reachable via HAS_AGENT (#278), so
+        this traverses both the session's own top-level actions and each
+        agent's actions -- at any nesting depth, since a nested agent still
+        gets its own direct HAS_AGENT from the session rather than chaining
+        through its spawning agent (#281: a flat single-hop match here would
+        silently drop all subagent activity).
 
         Args:
             session_id: Session ID
@@ -617,7 +864,12 @@ class ActionsGraph:
 
         rows = self._db.query(
             f"""
-            MATCH (s:Session {{session_id: $session_id}})-[:HAS_ACTION]->(a:Action)
+            MATCH (s:Session {{session_id: $session_id}})
+            OPTIONAL MATCH (s)-[:HAS_ACTION]->(direct:Action)
+            OPTIONAL MATCH (s)-[:HAS_AGENT]->(:Agent)-[:HAS_ACTION]->(nested:Action)
+            WITH s, collect(DISTINCT direct) + collect(DISTINCT nested) AS actions
+            UNWIND actions AS a
+            WITH s, a
             {where_str}
             RETURN s.session_id AS session_id,
                    a.action_id AS action_id,
@@ -812,8 +1064,6 @@ class ActionsGraph:
             labels.append(action.role.value.title() + "Message")
         elif isinstance(action, StructuredOutput):
             labels.append("StructuredOutput")
-        elif isinstance(action, SubagentEvent):
-            labels.append("SubagentEvent")
         elif isinstance(action, PermissionRequest):
             labels.append("PermissionRequest")
         elif isinstance(action, ErrorEvent):
@@ -845,12 +1095,6 @@ class ActionsGraph:
             props["output_data"] = action.output_data
             props["schema"] = action.schema
             props["validation_passed"] = action.validation_passed
-        elif isinstance(action, SubagentEvent):
-            props["agent_id"] = action.agent_id
-            props["agent_type"] = action.agent_type
-            props["description"] = action.description
-            props["result"] = action.result
-            props["usage"] = action.usage
         elif isinstance(action, PermissionRequest):
             props["tool_input"] = action.tool_input
             props["decision"] = action.decision
@@ -886,7 +1130,24 @@ class ActionsGraph:
             working_directory=row.get("working_directory"),
             git_branch=row.get("git_branch"),
             metadata=metadata or {},
-            parent_session_id=row.get("parent_session_id"),
+        )
+
+    def _row_to_agent(self, row: dict[str, Any]) -> Agent:
+        """Convert a database row to an Agent object."""
+        metadata = row.get("metadata")
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata)
+
+        return Agent(
+            agent_id=row["agent_id"],
+            agent_type=row.get("agent_type") or "",
+            session_id=row.get("session_id") or "",
+            started_at=row["started_at"],
+            ended_at=row.get("ended_at"),
+            status=ActionStatus(row["status"]) if row.get("status") else ActionStatus.IN_PROGRESS,
+            description=row.get("description") or "",
+            last_assistant_message=row.get("last_assistant_message"),
+            metadata=metadata or {},
         )
 
     def _row_to_action(self, row: dict[str, Any]) -> Action:
@@ -945,17 +1206,6 @@ class ActionsGraph:
                 schema=props.get("schema"),
                 validation_passed=props.get("validation_passed", True),
             )
-        elif action_type in (ActionType.SUBAGENT_START, ActionType.SUBAGENT_STOP):
-            event = SubagentEvent(
-                **base_kwargs,
-                action_type=action_type,
-                agent_id=props.get("agent_id", ""),
-                agent_type=props.get("agent_type", ""),
-                description=props.get("description", ""),
-                result=props.get("result"),
-                usage=props.get("usage"),
-            )
-            return event
         elif action_type == ActionType.PERMISSION_REQUEST:
             return PermissionRequest(
                 **base_kwargs,

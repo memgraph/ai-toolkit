@@ -123,6 +123,7 @@ class SkillGraphConnector(GraphConnector):
                 content=metadata.get("content", ""),
                 source_path=str(skill_file),
                 metadata=metadata.get("metadata", {}),
+                container_agent_id=event.agent_name,
             )
             return
 
@@ -133,6 +134,7 @@ class SkillGraphConnector(GraphConnector):
                 skill_name=skill_name,
                 action=self._operation_name(event.tool_name),
                 timestamp=event.timestamp,
+                container_agent_id=event.agent_name,
             )
 
     def _on_tool_end(self, event: ToolEndEvent) -> None:
@@ -156,6 +158,7 @@ class SkillGraphConnector(GraphConnector):
                     content=metadata.get("content", ""),
                     source_path=metadata.get("metadata", {}).get("source_path"),
                     metadata=metadata.get("metadata", {}),
+                    container_agent_id=event.agent_name,
                 )
                 return
 
@@ -168,6 +171,7 @@ class SkillGraphConnector(GraphConnector):
                 skill_name=name,
                 action=f"{operation_name}_result",
                 timestamp=event.timestamp,
+                container_agent_id=event.agent_name,
             )
 
     def _on_message(self, event: MessageEvent) -> None:
@@ -188,6 +192,7 @@ class SkillGraphConnector(GraphConnector):
                 content=metadata.get("content", ""),
                 source_path=metadata.get("metadata", {}).get("source_path"),
                 metadata=metadata.get("metadata", {}),
+                container_agent_id=event.agent_name,
             )
 
     # ------------------------------------------------------------------
@@ -381,8 +386,13 @@ class SkillGraphConnector(GraphConnector):
         content: str = "",
         source_path: str | None = None,
         metadata: dict[str, str] | None = None,
+        container_agent_id: str | None = None,
     ) -> None:
-        """Persist a ``(:Session)-[:USED_SKILL]->(:Skill)`` edge."""
+        """Persist a ``(:Session|:Agent)-[:USED_SKILL]->(:Skill)`` edge.
+
+        Attaches to the specific Agent when usage happened inside a subagent
+        (#280), mirroring actions-graph's HAS_ACTION either-container pattern.
+        """
         self._graph.record_skill_usage(
             session_id=session_id,
             skill_name=skill_name,
@@ -393,6 +403,7 @@ class SkillGraphConnector(GraphConnector):
             content=content,
             source_path=source_path,
             metadata=metadata,
+            container_agent_id=container_agent_id,
         )
 
 

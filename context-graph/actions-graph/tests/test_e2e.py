@@ -9,6 +9,7 @@ from actions_graph import (
     ActionsGraph,
     ActionStatus,
     ActionType,
+    Agent,
     MessageRole,
     Session,
     ToolCall,
@@ -86,23 +87,6 @@ class TestSessionOperations:
 
         sessions = graph.list_sessions()
         assert len(sessions) == 3
-
-    def test_forked_session(self, graph: ActionsGraph):
-        """Test creating a forked session."""
-        # Create parent session
-        parent = Session(session_id="parent-session")
-        graph.create_session(parent)
-
-        # Create forked session
-        forked = Session(
-            session_id="forked-session",
-            parent_session_id="parent-session",
-        )
-        graph.create_session(forked)
-
-        retrieved = graph.get_session("forked-session")
-        assert retrieved is not None
-        assert retrieved.parent_session_id == "parent-session"
 
 
 class TestActionOperations:
@@ -290,6 +274,161 @@ class TestAnalytics:
         assert summary["user_message_count"] == 1
         assert summary["assistant_message_count"] == 1
         assert summary["tool_call_count"] == 1
+
+
+class TestAgentOperations:
+    """Tests for the Agent node lifecycle, SPAWNED inference, and containment (#277/#278)."""
+
+    def test_start_and_end_agent(self, graph: ActionsGraph):
+        session = Session(session_id="agent-lifecycle-session")
+        graph.create_session(session)
+
+        graph.start_agent(Agent(agent_id="agent-1", agent_type="Explore", session_id="agent-lifecycle-session"))
+        fetched = graph.get_agent("agent-1")
+        assert fetched is not None
+        assert fetched.status == ActionStatus.IN_PROGRESS
+        assert fetched.session_id == "agent-lifecycle-session"
+
+        graph.end_agent("agent-1", last_assistant_message="Found it")
+        ended = graph.get_agent("agent-1")
+        assert ended.status == ActionStatus.COMPLETED
+        assert ended.last_assistant_message == "Found it"
+
+    def test_agent_unconditionally_linked_to_session(self, graph: ActionsGraph):
+        session = Session(session_id="unconditional-agent-session")
+        graph.create_session(session)
+
+        # No open Task call exists -- SPAWNED can't be inferred, but HAS_AGENT
+        # must still exist so an ambiguous Agent stays reachable (#278).
+        graph.start_agent(
+            Agent(agent_id="agent-orphan", agent_type="Explore", session_id="unconditional-agent-session")
+        )
+
+        agents = graph.get_session_agents("unconditional-agent-session")
+        assert [a.agent_id for a in agents] == ["agent-orphan"]
+
+    def test_spawned_inference_links_unambiguous_open_task_call(self, graph: ActionsGraph):
+        session = Session(session_id="spawn-session")
+        graph.create_session(session)
+
+        spawning_call = graph.record_tool_call(
+            session_id="spawn-session",
+            tool_name="Task",
+            tool_input={"subagent_type": "Explore"},
+            tool_use_id="task-1",
+        )
+
+        graph.start_agent(Agent(agent_id="agent-2", agent_type="Explore", session_id="spawn-session"))
+
+        rows = graph._db.query(
+            "MATCH (parent:Action {action_id: $action_id})-[:SPAWNED]->(a:Agent {agent_id: $agent_id}) "
+            "RETURN count(*) AS c",
+            params={"action_id": spawning_call.action_id, "agent_id": "agent-2"},
+        )
+        assert rows[0]["c"] == 1
+
+    def test_spawned_inference_disambiguates_by_agent_type(self, graph: ActionsGraph):
+        session = Session(session_id="spawn-disambiguate-session")
+        graph.create_session(session)
+
+        explore_call = graph.record_tool_call(
+            session_id="spawn-disambiguate-session",
+            tool_name="Task",
+            tool_input={"subagent_type": "Explore"},
+            tool_use_id="task-explore",
+        )
+        graph.record_tool_call(
+            session_id="spawn-disambiguate-session",
+            tool_name="Task",
+            tool_input={"subagent_type": "general-purpose"},
+            tool_use_id="task-general",
+        )
+
+        graph.start_agent(
+            Agent(agent_id="agent-explore", agent_type="Explore", session_id="spawn-disambiguate-session")
+        )
+
+        rows = graph._db.query(
+            "MATCH (parent:Action)-[:SPAWNED]->(a:Agent {agent_id: $agent_id}) RETURN parent.action_id AS action_id",
+            params={"agent_id": "agent-explore"},
+        )
+        assert rows[0]["action_id"] == explore_call.action_id
+
+    def test_spawned_inference_returns_none_on_genuine_ambiguity(self, graph: ActionsGraph):
+        session = Session(session_id="spawn-ambiguous-session")
+        graph.create_session(session)
+
+        graph.record_tool_call(
+            session_id="spawn-ambiguous-session",
+            tool_name="Task",
+            tool_input={"subagent_type": "Explore"},
+            tool_use_id="task-a",
+        )
+        graph.record_tool_call(
+            session_id="spawn-ambiguous-session",
+            tool_name="Task",
+            tool_input={"subagent_type": "Explore"},
+            tool_use_id="task-b",
+        )
+
+        graph.start_agent(Agent(agent_id="agent-ambiguous", agent_type="Explore", session_id="spawn-ambiguous-session"))
+
+        rows = graph._db.query(
+            "MATCH ()-[:SPAWNED]->(a:Agent {agent_id: $agent_id}) RETURN count(*) AS c",
+            params={"agent_id": "agent-ambiguous"},
+        )
+        assert rows[0]["c"] == 0
+
+    def test_get_session_actions_includes_actions_nested_under_an_agent(self, graph: ActionsGraph):
+        session = Session(session_id="nested-actions-session")
+        graph.create_session(session)
+
+        graph.record_message(
+            session_id="nested-actions-session",
+            role=MessageRole.USER,
+            content="top-level message",
+        )
+        graph.start_agent(Agent(agent_id="agent-nested", agent_type="Explore", session_id="nested-actions-session"))
+        graph.record_action(
+            ToolCall(
+                session_id="nested-actions-session",
+                tool_name="Read",
+                tool_input={"file_path": "a.py"},
+            ),
+            container_agent_id="agent-nested",
+        )
+
+        actions = graph.get_session_actions("nested-actions-session")
+        assert len(actions) == 2
+        tool_names = {getattr(a, "tool_name", None) for a in actions}
+        assert "Read" in tool_names
+
+    def test_followed_by_scoped_per_agent_container(self, graph: ActionsGraph):
+        session = Session(session_id="followed-by-session")
+        graph.create_session(session)
+
+        graph.start_agent(Agent(agent_id="agent-chain", agent_type="Explore", session_id="followed-by-session"))
+        first = graph.record_action(
+            ToolCall(session_id="followed-by-session", tool_name="Read", tool_input={}),
+            container_agent_id="agent-chain",
+        )
+        second = graph.record_action(
+            ToolCall(session_id="followed-by-session", tool_name="Write", tool_input={}),
+            container_agent_id="agent-chain",
+        )
+        # A top-level action recorded after the agent's actions must not
+        # join the agent's own FOLLOWED_BY chain.
+        graph.record_message(
+            session_id="followed-by-session",
+            role=MessageRole.USER,
+            content="top-level, separate chain",
+        )
+
+        rows = graph._db.query(
+            "MATCH (a:Action {action_id: $first})-[:FOLLOWED_BY]->(b:Action) RETURN b.action_id AS next_id",
+            params={"first": first.action_id},
+        )
+        assert rows[0]["next_id"] == second.action_id
 
 
 class TestMCPTools:

@@ -26,12 +26,11 @@ from agent_context_graph.protocols import GraphConnector
 
 from .models import (
     ActionStatus,
-    ActionType,
+    Agent,
     ErrorEvent,
     Message,
     MessageRole,
     Session,
-    SubagentEvent,
     ToolCall,
     ToolResult,
 )
@@ -114,7 +113,8 @@ class ActionsGraphConnector(GraphConnector):
                 tool_input=self._dict_or_wrapped(event.tool_input),
                 tool_use_id=event.tool_use_id,
                 metadata=self._metadata(event, agent_name=event.agent_name),
-            )
+            ),
+            container_agent_id=event.agent_name,
         )
 
     def _on_tool_end(self, event: ToolEndEvent) -> None:
@@ -132,36 +132,30 @@ class ActionsGraphConnector(GraphConnector):
                 is_error=event.is_error,
                 error_message=event.error_message,
                 metadata=self._metadata(event, agent_name=event.agent_name),
-            )
+            ),
+            container_agent_id=event.agent_name,
         )
 
     def _on_agent_start(self, event: AgentStartEvent) -> None:
         self._ensure_session(event)
-        action = SubagentEvent(
-            action_id=self._action_id(event),
-            session_id=event.session_id,
-            action_type=ActionType.SUBAGENT_START,
-            timestamp=event.timestamp,
-            agent_id=event.agent_name,
-            agent_type=event.agent_type,
-            description=self._metadata_value(event, "description", ""),
-            metadata=self._metadata(event, parent_agent_name=event.parent_agent_name),
+        self._graph.start_agent(
+            Agent(
+                agent_id=event.agent_name,
+                agent_type=event.agent_type,
+                session_id=event.session_id,
+                started_at=event.timestamp,
+                description=self._metadata_value(event, "description", ""),
+                metadata=self._metadata(event, parent_agent_name=event.parent_agent_name),
+            )
         )
-        self._graph.record_action(action)
 
     def _on_agent_end(self, event: AgentEndEvent) -> None:
         self._ensure_session(event)
-        action = SubagentEvent(
-            action_id=self._action_id(event),
-            session_id=event.session_id,
-            action_type=ActionType.SUBAGENT_STOP,
-            timestamp=event.timestamp,
-            agent_id=event.agent_name,
-            agent_type=event.agent_type,
-            result=self._content(event.output),
+        self._graph.end_agent(
+            event.agent_name,
+            last_assistant_message=self._content(event.output),
             metadata=self._metadata(event),
         )
-        self._graph.record_action(action)
 
     def _on_message(self, event: MessageEvent) -> None:
         self._ensure_session(event)
@@ -173,8 +167,9 @@ class ActionsGraphConnector(GraphConnector):
                 role=self._role(event.role),
                 content=event.content,
                 model=event.model,
-                metadata=self._metadata(event),
-            )
+                metadata=self._metadata(event, agent_name=event.agent_name),
+            ),
+            container_agent_id=event.agent_name,
         )
 
     def _on_error(self, event: ErrorOccurredEvent) -> None:

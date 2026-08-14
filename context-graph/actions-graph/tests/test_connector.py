@@ -1,8 +1,9 @@
 """Tests for ActionsGraphConnector."""
 
 from actions_graph.connector import ActionsGraphConnector
-from actions_graph.models import ActionStatus, ErrorEvent, Message, Session, ToolCall, ToolResult
+from actions_graph.models import ActionStatus, Agent, ErrorEvent, Message, Session, ToolCall, ToolResult
 from agent_context_graph.events import (
+    AgentEndEvent,
     AgentStartEvent,
     ErrorOccurredEvent,
     MessageEvent,
@@ -17,7 +18,9 @@ class FakeActionsGraph:
     def __init__(self):
         self.sessions: dict[str, Session] = {}
         self.actions = []
+        self.recorded_containers: list[str | None] = []
         self.ended_sessions = []
+        self.agents: dict[str, Agent] = {}
 
     def get_session(self, session_id: str):
         return self.sessions.get(session_id)
@@ -33,9 +36,23 @@ class FakeActionsGraph:
         session.ended_at = "ended"
         return session
 
-    def record_action(self, action):
+    def record_action(self, action, *, container_agent_id: str | None = None):
         self.actions.append(action)
+        self.recorded_containers.append(container_agent_id)
         return action
+
+    def start_agent(self, agent: Agent):
+        self.agents[agent.agent_id] = agent
+        return agent
+
+    def end_agent(self, agent_id: str, *, last_assistant_message=None, status=ActionStatus.COMPLETED, metadata=None):
+        agent = self.agents.get(agent_id)
+        if agent is not None:
+            agent.status = status
+            agent.last_assistant_message = last_assistant_message
+            if metadata:
+                agent.metadata.update(metadata)
+        return agent
 
 
 def test_records_session_start():
@@ -81,6 +98,7 @@ def test_records_tool_start_as_tool_call_action():
     assert action.tool_use_id == "tool-1"
     assert action.status == ActionStatus.IN_PROGRESS
     assert action.metadata["agent_name"] == "codex"
+    assert graph.recorded_containers == ["codex"]
 
 
 def test_records_tool_end_as_tool_result_with_stable_parent_id():
@@ -166,7 +184,7 @@ def test_records_message_and_error_events():
     assert graph.actions[1].recoverable is False
 
 
-def test_records_agent_parent_name_as_metadata_not_description():
+def test_records_agent_start_as_agent_node_not_action():
     graph = FakeActionsGraph()
     connector = ActionsGraphConnector(graph)
 
@@ -181,9 +199,39 @@ def test_records_agent_parent_name_as_metadata_not_description():
         )
     )
 
-    action = graph.actions[0]
-    assert action.description == "Review patch"
-    assert action.metadata["parent_agent_name"] == "main"
+    assert graph.actions == []
+    agent = graph.agents["reviewer-1"]
+    assert agent.agent_type == "reviewer"
+    assert agent.session_id == "session-1"
+    assert agent.description == "Review patch"
+    assert agent.metadata["parent_agent_name"] == "main"
+
+
+def test_records_agent_end_updates_same_agent_node():
+    graph = FakeActionsGraph()
+    connector = ActionsGraphConnector(graph)
+
+    connector.on_event(
+        AgentStartEvent(
+            session_id="session-1",
+            timestamp="2026-01-01T00:00:00+00:00",
+            agent_name="reviewer-1",
+            agent_type="reviewer",
+        )
+    )
+    connector.on_event(
+        AgentEndEvent(
+            session_id="session-1",
+            timestamp="2026-01-01T00:00:01+00:00",
+            agent_name="reviewer-1",
+            agent_type="reviewer",
+            output="Looks good",
+        )
+    )
+
+    assert graph.actions == []
+    agent = graph.agents["reviewer-1"]
+    assert agent.last_assistant_message == "Looks good"
 
 
 def test_records_session_end():

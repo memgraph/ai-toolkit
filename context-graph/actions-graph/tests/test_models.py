@@ -6,6 +6,7 @@ from actions_graph.models import (
     ActionStatus,
     ActionType,
     ActionValidationError,
+    Agent,
     ErrorEvent,
     Message,
     MessageRole,
@@ -13,7 +14,6 @@ from actions_graph.models import (
     RateLimitEvent,
     Session,
     StructuredOutput,
-    SubagentEvent,
     ToolCall,
     ToolResult,
 )
@@ -51,14 +51,6 @@ class TestSession:
 
         with pytest.raises(ActionValidationError):
             Session(session_id="invalid session id with spaces")
-
-    def test_forked_session(self):
-        """Test creating a forked session."""
-        session = Session(
-            session_id="forked-session",
-            parent_session_id="original-session",
-        )
-        assert session.parent_session_id == "original-session"
 
 
 class TestToolCall:
@@ -180,31 +172,37 @@ class TestStructuredOutput:
         assert output.action_type == ActionType.STRUCTURED_OUTPUT
 
 
-class TestSubagentEvent:
-    """Tests for SubagentEvent model."""
+class TestAgent:
+    """Tests for Agent model."""
 
-    def test_create_subagent_start(self):
-        """Test creating a subagent start event."""
-        event = SubagentEvent(
-            session_id="session-123",
+    def test_create_agent(self):
+        """Test creating an agent."""
+        agent = Agent(
             agent_id="subagent-001",
             agent_type="code-reviewer",
+            session_id="session-123",
             description="Review the code changes",
         )
-        assert event.agent_id == "subagent-001"
-        assert event.action_type == ActionType.SUBAGENT_START
+        assert agent.agent_id == "subagent-001"
+        assert agent.status == ActionStatus.IN_PROGRESS
+        assert agent.ended_at is None
 
-    def test_create_subagent_stop(self):
-        """Test creating a subagent stop event."""
-        event = SubagentEvent(
-            session_id="session-123",
-            action_type=ActionType.SUBAGENT_STOP,
+    def test_agent_completed(self):
+        """Test an agent with a completed lifecycle."""
+        agent = Agent(
             agent_id="subagent-001",
             agent_type="code-reviewer",
-            result="Review completed successfully",
+            session_id="session-123",
+            status=ActionStatus.COMPLETED,
+            last_assistant_message="Review completed successfully",
         )
-        assert event.result == "Review completed successfully"
-        assert event.action_type == ActionType.SUBAGENT_STOP
+        assert agent.last_assistant_message == "Review completed successfully"
+        assert agent.status == ActionStatus.COMPLETED
+
+    def test_invalid_agent_id(self):
+        """Test that invalid agent IDs raise an error."""
+        with pytest.raises(ActionValidationError):
+            Agent(agent_id="")
 
 
 class TestErrorEvent:
