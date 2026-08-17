@@ -68,6 +68,15 @@ Commands:
   hooks-local        Point your REAL, live Claude Code plugin at the main container
                      (backs up your current ~/.config/context-graph/config.toml first).
   hooks-restore       Restore your real hook config from the hooks-local backup.
+  verify-nesting     Drive a real, non-interactive Claude Code session that spawns
+                     exactly one subagent, then assert the resulting graph shape
+                     (Session -HAS_AGENT-> Agent, the real spawning tool call
+                     -SPAWNED-> Agent, Agent -HAS_ACTION-> its own tool calls) is
+                     correct. Verifies #277's inference rule against a real
+                     session instead of synthetic e2e data. Needs ANTHROPIC_API_KEY
+                     (env, or .env at the repo root) and 'claude' + 'agent-context-graph'
+                     on PATH. Costs a real LLM call; Tier 1 only (one subagent,
+                     no concurrent-subagent disambiguation -- see issue #287).
   dogfood-env         Print export statements enabling auto_reconcile (true, automatic,
                      event-driven reconciliation on SESSION_END) for a claude session
                      launched afterward. Usage: eval \"\$(./scripts/dev-memgraph.sh dogfood-env)\" && claude
@@ -240,6 +249,21 @@ _resolve_openai_api_key() {
   [ -n "${OPENAI_API_KEY:-}" ]
 }
 
+# Resolves ANTHROPIC_API_KEY for cmd_verify_nesting: prefer whatever is
+# already in the environment, otherwise pull it from .env at the repo root.
+# Never prints the value anywhere.
+_resolve_anthropic_api_key() {
+  if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    return 0
+  fi
+  local env_file="${REPO_ROOT}/.env"
+  if [ -f "${env_file}" ]; then
+    ANTHROPIC_API_KEY="$(grep -E '^ANTHROPIC_API_KEY=' "${env_file}" | head -1 | cut -d'=' -f2-)"
+    export ANTHROPIC_API_KEY
+  fi
+  [ -n "${ANTHROPIC_API_KEY:-}" ]
+}
+
 # Prints export statements for the vars SessionsGraphConnector's own
 # auto_reconcile fallback (SESSIONS_GRAPH_AUTO_RECONCILE) and the detached
 # reconcile subprocess it spawns actually need. Deliberately NOT something
@@ -395,6 +419,167 @@ cmd_hooks_restore() {
   agent-context-graph config show 2>/dev/null || true
 }
 
+# Verifies #277's SPAWNED subagent-nesting inference rule against a REAL
+# Claude Code session, not synthetic e2e data (map #288). Tier 1 only: one
+# subagent, no concurrent-subagent disambiguation (see issue #287).
+#
+# Generates its own self-contained hooks config (via claude_code.py's
+# build_hooks_config, with the same --connector flags the installed
+# marketplace plugin uses) rather than depending on that plugin already being
+# installed -- this needs to work unattended on a bare CI runner, not just a
+# dogfooding dev machine. Only the Memgraph *target* still goes through the
+# existing hooks-local/hooks-restore swap, shared with the installed plugin.
+cmd_verify_nesting() {
+  _container_up "${CONTAINER_NAME}" "${HOST_PORT}"
+
+  if ! command -v claude >/dev/null 2>&1; then
+    echo "ERROR: claude is not on PATH." >&2
+    exit 1
+  fi
+  if ! command -v agent-context-graph >/dev/null 2>&1; then
+    echo "ERROR: agent-context-graph is not on PATH." >&2
+    echo "Install it first, e.g. via context-graph/plugins/agent-context-graph-claude/scripts/bootstrap.sh" >&2
+    exit 1
+  fi
+  if ! _resolve_anthropic_api_key; then
+    echo "ERROR: ANTHROPIC_API_KEY is not set and was not found in ${REPO_ROOT}/.env" >&2
+    echo "This drives a real Claude Code session and needs it." >&2
+    exit 1
+  fi
+
+  local settings_file
+  settings_file="$(mktemp -t verify-nesting-settings.XXXXXX.json)"
+  uv run --package agent-context-graph python3 - "${settings_file}" <<'PYEOF'
+import json
+import sys
+
+from agent_context_graph.adapters.claude_code import build_hooks_config
+
+# `uv run --package agent-context-graph agent-context-graph ...` rather than a
+# bare `agent-context-graph` -- a real, discovered-the-hard-way ambiguity: a
+# stale globally `uv tool install`ed copy can shadow (or be shadowed by) this
+# repo's own workspace venv on PATH, silently testing the wrong version of
+# this code. This form always resolves to the exact checkout being verified,
+# in CI or locally, regardless of what else is installed. --connector flags
+# match the installed marketplace plugin's own generated command
+# (context-graph-plugins/context-graph/*/hooks/hooks.json) -- without them,
+# `hook run` does nothing (a second real, silent gap this verification
+# tripped over).
+command = (
+    "uv run --package agent-context-graph agent-context-graph hook run claude-code "
+    "--connector skills-graph --connector actions-graph --connector sessions-graph"
+)
+with open(sys.argv[1], "w") as f:
+    json.dump({"hooks": build_hooks_config(command)}, f)
+PYEOF
+
+  # Only swap (and later restore) if hooks-local hasn't already been applied
+  # by the caller -- same convention cmd_hooks_local itself uses.
+  local we_swapped_hooks=0
+  if [ ! -f "${CONFIG_BACKUP}" ]; then
+    cmd_hooks_local
+    we_swapped_hooks=1
+  else
+    echo "Hook config already in local mode -- leaving as-is."
+  fi
+  if [ "${we_swapped_hooks}" -eq 1 ]; then
+    trap cmd_hooks_restore EXIT
+  fi
+
+  local session_id
+  session_id="$(uv run --package agent-context-graph python3 -c 'import uuid; print(uuid.uuid4())')"
+  echo "Driving a real Claude Code session (session_id=${session_id})..."
+
+  # Restricting the top-level session to ONLY the Task tool -- Claude Code's
+  # CLI/UI-facing name for subagent launch; it reports as tool_name "Agent" in
+  # the actual hook payloads, a real, non-obvious naming split this
+  # verification effort discovered -- forces genuine delegation: the model has
+  # no other way to accomplish anything, so it must spawn a subagent rather
+  # than maybe doing so.
+  local prompt="Use the Task tool to launch exactly one subagent (subagent_type: Explore) to search this repository for the string 'TODO' and report back a short summary of what it finds. Do not search yourself -- delegate the entire search to that one subagent."
+
+  local output_file
+  output_file="$(mktemp -t verify-nesting-output.XXXXXX.json)"
+  set +e
+  # Explicit cd: the hooks config's command embeds `uv run --package
+  # agent-context-graph ...`, which resolves relative to the hook
+  # subprocess's cwd -- which Claude Code sets to wherever `claude` itself
+  # was launched from. Must be $REPO_ROOT regardless of where this script
+  # was invoked from, or `uv run` won't find the workspace.
+  (cd "${REPO_ROOT}" && claude -p "${prompt}" \
+    --settings "${settings_file}" \
+    --setting-sources project \
+    --session-id "${session_id}" \
+    --output-format json \
+    --permission-mode bypassPermissions \
+    --allowedTools=Task) >"${output_file}" 2>&1
+  local claude_exit=$?
+  set -e
+
+  if [ "${claude_exit}" -ne 0 ]; then
+    echo "ERROR: claude exited with status ${claude_exit}:" >&2
+    cat "${output_file}" >&2
+    exit 1
+  fi
+
+  echo "Session complete. Checking graph shape for session_id=${session_id}..."
+  MEMGRAPH_URL="${LOCAL_MEMGRAPH_URL}" \
+    MEMGRAPH_USER="${LOCAL_MEMGRAPH_USER}" \
+    MEMGRAPH_PASSWORD="${LOCAL_MEMGRAPH_PASSWORD}" \
+    MEMGRAPH_DATABASE="${LOCAL_MEMGRAPH_DATABASE}" \
+    VERIFY_SESSION_ID="${session_id}" \
+    uv run --package actions-graph python3 - <<'PYEOF'
+import os
+import sys
+
+from actions_graph import ActionsGraph
+
+session_id = os.environ["VERIFY_SESSION_ID"]
+graph = ActionsGraph()
+
+checks = []
+
+session = graph.get_session(session_id)
+checks.append(("Session node exists", session is not None))
+
+agents = graph.get_session_agents(session_id) if session is not None else []
+checks.append(("HAS_AGENT: Session -> at least one Agent", len(agents) >= 1))
+
+spawned_ok = False
+has_action_ok = False
+if agents:
+    agent = agents[0]
+    rows = graph._db.query(
+        "MATCH (call:Action)-[:SPAWNED]->(:Agent {agent_id: $agent_id}) "
+        "RETURN call.tool_name AS tool_name",
+        params={"agent_id": agent.agent_id},
+    )
+    spawned_ok = len(rows) == 1 and rows[0]["tool_name"] in graph.agent_spawning_tool_names
+
+    action_rows = graph._db.query(
+        "MATCH (:Agent {agent_id: $agent_id})-[:HAS_ACTION]->(a:Action) RETURN count(a) AS c",
+        params={"agent_id": agent.agent_id},
+    )
+    has_action_ok = action_rows[0]["c"] >= 1
+
+checks.append(("SPAWNED: the real spawning tool call -> Agent", spawned_ok))
+checks.append(("HAS_ACTION: Agent -> its own tool calls", has_action_ok))
+
+print()
+all_ok = True
+for name, ok in checks:
+    print(f"  [{'PASS' if ok else 'FAIL'}] {name}")
+    all_ok = all_ok and ok
+
+print()
+if all_ok:
+    print("Tier 1 SPAWNED-inference verification PASSED against a real Claude Code session.")
+    sys.exit(0)
+print("Tier 1 SPAWNED-inference verification FAILED.")
+sys.exit(1)
+PYEOF
+}
+
 main() {
   local cmd="${1:-}"
   if [ "$#" -gt 0 ]; then
@@ -411,6 +596,7 @@ main() {
     dogfood-env) cmd_dogfood_env ;;
     hooks-local) cmd_hooks_local ;;
     hooks-restore) cmd_hooks_restore ;;
+    verify-nesting) cmd_verify_nesting ;;
     -h | --help | "") echo "$_HELP" ;;
     *)
       echo "Unknown command: $cmd" >&2

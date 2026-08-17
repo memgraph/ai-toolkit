@@ -327,6 +327,31 @@ class TestAgentOperations:
         )
         assert rows[0]["c"] == 1
 
+    def test_spawned_inference_matches_the_real_tool_name_agent_not_task(self, graph: ActionsGraph):
+        """Verified against a real live Claude Code session (map #288, 2026-08-17):
+        the tool that actually launches a subagent reports tool_name "Agent" in
+        hook payloads -- "Task" is how Claude Code's CLI/UI refers to it, not
+        what shows up in PreToolUse/PostToolUse. Locks in the fix to
+        agent_spawning_tool_names so it can't silently regress back to "Task"-only."""
+        session = Session(session_id="spawn-real-tool-name-session")
+        graph.create_session(session)
+
+        spawning_call = graph.record_tool_call(
+            session_id="spawn-real-tool-name-session",
+            tool_name="Agent",
+            tool_input={"subagent_type": "Explore"},
+            tool_use_id="agent-tool-1",
+        )
+
+        graph.start_agent(Agent(agent_id="agent-3", agent_type="Explore", session_id="spawn-real-tool-name-session"))
+
+        rows = graph._db.query(
+            "MATCH (parent:Action {action_id: $action_id})-[:SPAWNED]->(a:Agent {agent_id: $agent_id}) "
+            "RETURN count(*) AS c",
+            params={"action_id": spawning_call.action_id, "agent_id": "agent-3"},
+        )
+        assert rows[0]["c"] == 1
+
     def test_spawned_inference_disambiguates_by_agent_type(self, graph: ActionsGraph):
         session = Session(session_id="spawn-disambiguate-session")
         graph.create_session(session)

@@ -69,7 +69,11 @@ class ActionsGraph:
         # container key -> last action_id, where container key is ("session", session_id)
         # or ("agent", agent_id) -- FOLLOWED_BY is scoped per-container, not one flat chain.
         self._last_action_id: dict[tuple[str, str], str] = {}
-        self.agent_spawning_tool_names: set[str] = {"Task"}
+        # Verified against a real live Claude Code session (map #288): the tool
+        # that actually launches a subagent is named "Agent" in tool-call
+        # payloads, not "Task" as originally assumed from docs alone. Keeping
+        # both names since harness/version differences aren't fully known.
+        self.agent_spawning_tool_names: set[str] = {"Agent", "Task"}
 
     # ------------------------------------------------------------------
     # Schema setup
