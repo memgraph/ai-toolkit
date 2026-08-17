@@ -44,3 +44,21 @@ def graph(memgraph):
         # e2e fixture.
         g.setup()
     return g
+
+
+@pytest.fixture
+def actions_graph(memgraph):
+    """A real ActionsGraph wired to the same live Memgraph as `memgraph`/`graph`.
+
+    Shared by test_reconciliation.py and test_e2e_reconciliation.py so both
+    exercise reconcile_session against real recorded actions rather than a
+    hand-rolled fake that can silently drift from actions-graph's real shape.
+    Requires the sessions-graph[reconciliation] extra; skip is handled by
+    each test module's own pytest.importorskip("actions_graph").
+    """
+    from actions_graph import ActionsGraph
+
+    ag = ActionsGraph(memgraph)
+    with contextlib.suppress(Exception):
+        ag.setup()
+    return ag

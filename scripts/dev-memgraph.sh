@@ -552,6 +552,23 @@ checks = []
 session = graph.get_session(session_id)
 checks.append(("Session node exists", session is not None))
 
+# sessions-graph is wired into the same live run (--connector sessions-graph
+# above) and produces this data today -- previously unchecked here even
+# though it's free (same session, no extra LLM cost).
+user_rows = db.query(
+    "MATCH (:User)-[:HAD_SESSION]->(:Session {session_id: $sid}) RETURN count(*) AS c",
+    params={"sid": session_id},
+)
+checks.append(("sessions-graph: User -[:HAD_SESSION]-> Session", user_rows[0]["c"] == 1))
+
+status_rows = db.query(
+    "MATCH (s:Session {session_id: $sid}) RETURN s.reconciliation_status AS status",
+    params={"sid": session_id},
+)
+checks.append(
+    ("sessions-graph: Session.reconciliation_status is set", bool(status_rows) and status_rows[0]["status"] is not None)
+)
+
 agents = graph.get_session_agents(session_id) if session is not None else []
 checks.append(("HAS_AGENT: Session -> at least one Agent", len(agents) >= 1))
 
