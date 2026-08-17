@@ -277,7 +277,7 @@ class TestAnalytics:
 
 
 class TestAgentOperations:
-    """Tests for the Agent node lifecycle, SPAWNED inference, and containment (#277/#278)."""
+    """Tests for the Agent node lifecycle, SPAWNED inference, and containment."""
 
     def test_start_and_end_agent(self, graph: ActionsGraph):
         session = Session(session_id="agent-lifecycle-session")
@@ -299,7 +299,7 @@ class TestAgentOperations:
         graph.create_session(session)
 
         # No open Task call exists -- SPAWNED can't be inferred, but HAS_AGENT
-        # must still exist so an ambiguous Agent stays reachable (#278).
+        # must still exist so an ambiguous Agent stays reachable.
         graph.start_agent(
             Agent(agent_id="agent-orphan", agent_type="Explore", session_id="unconditional-agent-session")
         )
@@ -328,7 +328,7 @@ class TestAgentOperations:
         assert rows[0]["c"] == 1
 
     def test_spawned_inference_matches_the_real_tool_name_agent_not_task(self, graph: ActionsGraph):
-        """Verified against a real live Claude Code session (map #288, 2026-08-17):
+        """Verified against a real live Claude Code session (2026-08-17):
         the tool that actually launches a subagent reports tool_name "Agent" in
         hook payloads -- "Task" is how Claude Code's CLI/UI refers to it, not
         what shows up in PreToolUse/PostToolUse. Locks in the fix to

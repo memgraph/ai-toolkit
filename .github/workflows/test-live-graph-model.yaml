@@ -1,11 +1,11 @@
 name: Test graph model against a live Claude Code session (manual)
 
-# Manual-trigger only, deliberately not on push/pull_request (map #288):
+# Manual-trigger only, deliberately not on push/pull_request:
 # drives a real, billed Claude Code session, and subagent-spawning is
 # inherently non-deterministic (the model decides whether to delegate) -- a
 # bad fit for gating every PR. Run this deliberately when changing something
-# heavily around actions-graph's Agent node / SPAWNED inference rule (#277),
-# skills-graph's Agent-scoped skill-usage attachment (#280), or
+# heavily around actions-graph's Agent node / SPAWNED inference rule,
+# skills-graph's Agent-scoped skill-usage attachment, or
 # agent-context-graph's Claude Code adapter.
 on:
   workflow_dispatch: {}

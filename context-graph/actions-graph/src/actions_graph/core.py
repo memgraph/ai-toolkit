@@ -69,7 +69,7 @@ class ActionsGraph:
         # container key -> last action_id, where container key is ("session", session_id)
         # or ("agent", agent_id) -- FOLLOWED_BY is scoped per-container, not one flat chain.
         self._last_action_id: dict[tuple[str, str], str] = {}
-        # Verified against a real live Claude Code session (map #288): the tool
+        # Verified against a real live Claude Code session: the tool
         # that actually launches a subagent is named "Agent" in tool-call
         # payloads, not "Task" as originally assumed from docs alone. Keeping
         # both names since harness/version differences aren't fully known.
@@ -503,7 +503,7 @@ class ActionsGraph:
         return [self._row_to_agent(row) for row in rows]
 
     def _infer_spawning_action(self, session_id: str, agent_type: str) -> str | None:
-        """Infer which Action spawned a new Agent (the three-tier rule from #277).
+        """Infer which Action spawned a new Agent (the three-tier rule).
 
         Tier 1: filter open tool calls (no PostToolUse yet, not already linked
         to another Agent via SPAWNED) by agent-spawning tool name, anywhere in
@@ -859,12 +859,12 @@ class ActionsGraph:
     ) -> list[Action]:
         """Get all actions for a session, including those inside subagents.
 
-        Every Agent is directly session-reachable via HAS_AGENT (#278), so
-        this traverses both the session's own top-level actions and each
-        agent's actions -- at any nesting depth, since a nested agent still
-        gets its own direct HAS_AGENT from the session rather than chaining
-        through its spawning agent (#281: a flat single-hop match here would
-        silently drop all subagent activity).
+        Every Agent is directly session-reachable via HAS_AGENT, so this
+        traverses both the session's own top-level actions and each agent's
+        actions -- at any nesting depth, since a nested agent still gets its
+        own direct HAS_AGENT from the session rather than chaining through
+        its spawning agent (a flat single-hop match here would silently drop
+        all subagent activity).
 
         Args:
             session_id: Session ID

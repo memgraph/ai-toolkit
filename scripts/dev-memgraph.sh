@@ -76,12 +76,12 @@ Commands:
                      per-container FOLLOWED_BY chains (and that they never cross),
                      PARENT_OF (ToolCall->ToolResult) at both levels, USED_TOOL,
                      and USED_SKILL attaching to the Agent (not the Session).
-                     Verifies #277's inference rule and #280's skill-attachment
+                     Verifies the SPAWNED inference rule and the skill-attachment
                      rule against a real session instead of synthetic e2e data.
                      Needs ANTHROPIC_API_KEY (env, or .env at the repo root) and
                      'claude' + 'agent-context-graph' on PATH. Costs a real LLM
                      call; Tier 1 only (one subagent, no concurrent-subagent
-                     disambiguation -- see issue #287).
+                     disambiguation).
   dogfood-env         Print export statements enabling auto_reconcile (true, automatic,
                      event-driven reconciliation on SESSION_END) for a claude session
                      launched afterward. Usage: eval \"\$(./scripts/dev-memgraph.sh dogfood-env)\" && claude
@@ -425,10 +425,10 @@ cmd_hooks_restore() {
 }
 
 # Verifies a broad slice of the actions-graph/skills-graph model against a
-# REAL Claude Code session, not synthetic e2e data (map #288): #277's SPAWNED
-# subagent-nesting inference rule, #278's per-container HAS_ACTION/FOLLOWED_BY
-# containment, and #280's Agent-scoped skill-usage attachment. Tier 1 only:
-# one subagent, no concurrent-subagent disambiguation (see issue #287).
+# REAL Claude Code session, not synthetic e2e data: the SPAWNED subagent-
+# nesting inference rule, per-container HAS_ACTION/FOLLOWED_BY containment,
+# and Agent-scoped skill-usage attachment. Tier 1 only: one subagent, no
+# concurrent-subagent disambiguation.
 #
 # Generates its own self-contained hooks config (via claude_code.py's
 # build_hooks_config, with the same --connector flags the installed
@@ -504,7 +504,7 @@ PYEOF
   # no other way to accomplish anything, so it must spawn a subagent rather
   # than maybe doing so. The skill-file read is folded into the SAME subagent
   # call (rather than a second session) so this still costs exactly one LLM
-  # call while also exercising skills-graph's Agent-scoped USED_SKILL (#280).
+  # call while also exercising skills-graph's Agent-scoped USED_SKILL.
   local prompt="Use the Task tool to launch exactly one subagent (subagent_type: Explore) to do two things: (1) read the file skills/release/SKILL.md and note what it's for, and (2) search this repository for the string 'TODO'. Report back a short summary combining both. Do not do either yourself -- delegate the entire thing to that one subagent."
 
   local output_file
@@ -592,7 +592,7 @@ if len(agent_actions) >= 2:
         params={"ids": agent_ids},
     )
     followed_by_ok = rows[0]["c"] == len(agent_ids) - 1
-checks.append(("FOLLOWED_BY: Agent's own actions form one ordered chain (#278)", followed_by_ok))
+checks.append(("FOLLOWED_BY: Agent's own actions form one ordered chain", followed_by_ok))
 
 # FOLLOWED_BY: the top-level session's own chain never crosses into the Agent's.
 top_level_actions = db.query(
@@ -611,7 +611,7 @@ if agent and top_level_actions and agent_actions:
         params={"top_ids": top_ids, "agent_ids": agent_ids},
     )
     chain_separation_ok = rows[0]["c"] == 0
-checks.append(("FOLLOWED_BY: top-level chain never crosses into the Agent's chain (#278)", chain_separation_ok))
+checks.append(("FOLLOWED_BY: top-level chain never crosses into the Agent's chain", chain_separation_ok))
 
 # PARENT_OF: the spawning tool call itself resolves to its own ToolResult.
 parent_of_top_ok = False
@@ -645,7 +645,7 @@ if agent:
     used_tool_ok = rows[0]["c"] >= 1
 checks.append(("USED_TOOL: Agent's tool calls link to Tool nodes", used_tool_ok))
 
-# USED_SKILL (skills-graph, #280): attaches to the Agent, not the Session --
+# USED_SKILL (skills-graph): attaches to the Agent, not the Session --
 # reading skills/release/SKILL.md happened inside the subagent, so the
 # either-container design should route it there, not to the top-level Session.
 used_skill_agent_ok = False
@@ -661,7 +661,7 @@ if agent:
         params={"sid": session_id},
     )
     used_skill_session_absent_ok = session_rows[0]["c"] == 0
-checks.append(("USED_SKILL: attaches to the Agent, not the Session (#280)", used_skill_agent_ok))
+checks.append(("USED_SKILL: attaches to the Agent, not the Session", used_skill_agent_ok))
 checks.append(("USED_SKILL: correctly NOT also attached to the Session", used_skill_session_absent_ok))
 
 print()
