@@ -1,16 +1,17 @@
-name: Verify live subagent-nesting (manual)
+name: Test graph model against a live Claude Code session (manual)
 
 # Manual-trigger only, deliberately not on push/pull_request (map #288):
 # drives a real, billed Claude Code session, and subagent-spawning is
 # inherently non-deterministic (the model decides whether to delegate) -- a
 # bad fit for gating every PR. Run this deliberately when changing something
-# heavily around actions-graph's Agent node / SPAWNED inference rule (#277)
-# or agent-context-graph's Claude Code adapter.
+# heavily around actions-graph's Agent node / SPAWNED inference rule (#277),
+# skills-graph's Agent-scoped skill-usage attachment (#280), or
+# agent-context-graph's Claude Code adapter.
 on:
   workflow_dispatch: {}
 
 jobs:
-  verify-nesting:
+  test-graph-model:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -48,7 +49,7 @@ jobs:
       - name: Add workspace venv to PATH
         run: echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
-      - name: Run live subagent-nesting verification
+      - name: Run live graph-model verification
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: ./scripts/dev-memgraph.sh verify-nesting
+        run: ./scripts/dev-memgraph.sh test-graph-model
