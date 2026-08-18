@@ -526,6 +526,8 @@ PYEOF
 
   local output_file
   output_file="$(mktemp -t test-graph-model-output.XXXXXX.json)"
+  local debug_file
+  debug_file="$(mktemp -t test-graph-model-debug.XXXXXX.log)"
   set +e
   # Explicit cd: the hooks config's command embeds `uv run --package
   # agent-context-graph ...`, which resolves relative to the hook
@@ -534,6 +536,7 @@ PYEOF
   # was invoked from, or `uv run` won't find the workspace.
   (cd "${REPO_ROOT}" && claude -p "${prompt}" \
     --debug hooks \
+    --debug-file "${debug_file}" \
     --settings "${settings_file}" \
     --setting-sources project \
     --session-id "${session_id}" \
@@ -551,6 +554,9 @@ PYEOF
   echo "--- claude -p output (session_id=${session_id}) ---"
   cat "${output_file}"
   echo "--- end claude -p output ---"
+  echo "--- claude --debug-file (hooks) ---"
+  cat "${debug_file}" 2>/dev/null || echo "(no debug file written)"
+  echo "--- end claude --debug-file ---"
 
   if [ "${claude_exit}" -ne 0 ]; then
     echo "ERROR: claude exited with status ${claude_exit}" >&2
