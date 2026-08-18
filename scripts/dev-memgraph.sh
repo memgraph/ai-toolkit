@@ -507,8 +507,17 @@ PYEOF
     # done when we own this swap -- if hooks-local was already active
     # (someone else's real, still-running local-mode session), we have no
     # restore path for this and must not clobber their identity.
-    agent-context-graph config set identity.user_id "test-graph-model" >/dev/null
+    agent-context-graph config set identity.user_id "test-graph-model"
   fi
+
+  # TEMPORARY DIAGNOSTIC: confirm _on_session_start's MERGE actually succeeds
+  # with the identity just configured above, bypassing run_hook's default
+  # exception-swallowing via --strict.
+  echo "--- diagnostic: direct SessionStart hook invocation with --strict ---"
+  echo '{"hook_event_name":"SessionStart","session_id":"diag-session-start","cwd":"'"${REPO_ROOT}"'"}' \
+    | (cd "${REPO_ROOT}" && uv run --package agent-context-graph agent-context-graph hook run claude-code \
+        --connector skills-graph --connector actions-graph --connector sessions-graph --strict) 2>&1 || true
+  echo "--- end diagnostic ---"
 
   local session_id
   session_id="$(uv run --package agent-context-graph python3 -c 'import uuid; print(uuid.uuid4())')"
