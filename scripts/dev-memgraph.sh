@@ -489,7 +489,14 @@ PYEOF
   else
     echo "Hook config already in local mode -- leaving as-is."
   fi
-  if [ "${we_swapped_hooks}" -eq 1 ]; then
+  # Only arm the restore trap if a backup actually exists now -- on a machine
+  # with no pre-existing real config (e.g. a fresh CI runner), cmd_hooks_local
+  # has nothing to back up and creates no backup file, so there is nothing to
+  # restore either. Without this check, the trap would call cmd_hooks_restore
+  # unconditionally on exit, which errors ("no backup found") and calls
+  # `exit 1` from inside the trap -- clobbering even a successful run's exit
+  # code.
+  if [ "${we_swapped_hooks}" -eq 1 ] && [ -f "${CONFIG_BACKUP}" ]; then
     trap cmd_hooks_restore EXIT
   fi
 
@@ -535,9 +542,17 @@ PYEOF
   local claude_exit=$?
   set -e
 
+  # Always show what the session actually did -- a zero exit only means the
+  # CLI itself didn't crash, not that hooks fired or the model used the Task
+  # tool as instructed. Needed to diagnose graph-shape failures below without
+  # re-running (subagent spawning is model-decided, so failures aren't always
+  # reproducible).
+  echo "--- claude -p output (session_id=${session_id}) ---"
+  cat "${output_file}"
+  echo "--- end claude -p output ---"
+
   if [ "${claude_exit}" -ne 0 ]; then
-    echo "ERROR: claude exited with status ${claude_exit}:" >&2
-    cat "${output_file}" >&2
+    echo "ERROR: claude exited with status ${claude_exit}" >&2
     exit 1
   fi
 
