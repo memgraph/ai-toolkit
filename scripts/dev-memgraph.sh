@@ -499,6 +499,16 @@ PYEOF
   if [ "${we_swapped_hooks}" -eq 1 ] && [ -f "${CONFIG_BACKUP}" ]; then
     trap cmd_hooks_restore EXIT
   fi
+  if [ "${we_swapped_hooks}" -eq 1 ]; then
+    # sessions-graph only MERGEs (:User)-[:HAD_SESSION]->(:Session) when a
+    # user_id actually resolves (by design -- see connector.py's `if
+    # user_id:` guard). On a fresh machine with none configured, this is the
+    # difference between that check ever being able to pass at all. Only
+    # done when we own this swap -- if hooks-local was already active
+    # (someone else's real, still-running local-mode session), we have no
+    # restore path for this and must not clobber their identity.
+    agent-context-graph config set identity.user_id "test-graph-model" >/dev/null
+  fi
 
   local session_id
   session_id="$(uv run --package agent-context-graph python3 -c 'import uuid; print(uuid.uuid4())')"
