@@ -43,7 +43,17 @@ One command does everything below: starts a local Memgraph if none is reachable,
 curl -fsSL https://raw.githubusercontent.com/memgraph/ai-toolkit/main/context-graph/scripts/install.sh | bash
 ```
 
-Requires Docker (only if no Memgraph is already reachable) and the Claude Code CLI (`claude`) on `PATH`; it installs `uv` for you if missing. See the script's header for env overrides (`MEMGRAPH_HOST`/`PORT`, `AGENT_CONTEXT_GRAPH_USER_ID`, `SKIP_MEMGRAPH`, `SKIP_UV_INSTALL`).
+Requires Docker (only if no Memgraph is already reachable) and the Claude Code CLI (`claude`) on `PATH`; it installs `uv` for you if missing. Everything else is optional — all env vars, all with sane defaults:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AGENT_CONTEXT_GRAPH_USER_ID` | `git config user.name`, else `$USER` | Identity recorded on every session (`identity.user_id`) |
+| `MEMGRAPH_HOST` | `localhost` | Host to bootstrap against and, if starting one, to publish the container on |
+| `MEMGRAPH_PORT` | `7687` | Bolt port, same two uses as above |
+| `SKIP_MEMGRAPH` | unset | Set to `1` to fail instead of auto-starting a local Memgraph when none is reachable |
+| `SKIP_UV_INSTALL` | unset | Set to `1` to fail instead of auto-installing `uv` when missing |
+
+Already reachable Memgraph, already-registered marketplace, already-installed plugin — each is detected and skipped, so rerunning is safe (e.g. to pick up a new context-graph version).
 
 Once it finishes, use Claude Code normally — every session writes to the graph automatically: `(:User)-[:HAD_SESSION]->(:Session)`, tool actions, skill usage, and any Memories the agent records.
 
