@@ -131,7 +131,9 @@ def test_serialize_records_point(db):
 
 def test_serialize_records_temporals(db):
     """Temporal types serialize to ISO strings, zoned datetimes keeping the offset."""
-    rows = serialize_records(db.query_raw("RETURN datetime('2024-01-15T10:30:45+01:00') AS dt, duration('PT2M') AS dur"))
+    rows = serialize_records(
+        db.query_raw("RETURN datetime('2024-01-15T10:30:45+01:00') AS dt, duration('PT2M') AS dur")
+    )
 
     row = rows[0]
     assert "2024-01-15T10:30:45" in row["dt"]
