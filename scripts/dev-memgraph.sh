@@ -502,6 +502,20 @@ PYEOF
 
   local session_id
   session_id="$(uv run --package agent-context-graph python3 -c 'import uuid; print(uuid.uuid4())')"
+
+  # TEMPORARY DIAGNOSTIC: the hook runner (hooks/runner.py's run_hook)
+  # swallows every exception by default and only debug-logs it behind an env
+  # var nothing here sets -- so a real failure inside the connector chain is
+  # completely invisible through Claude Code's own logging. Feed a synthetic
+  # SessionStart payload directly into the exact same hook command, with
+  # --strict so any exception actually surfaces, to see if a truly fresh
+  # (schema-less) Memgraph instance is the trigger.
+  echo "--- diagnostic: direct hook invocation with --strict ---"
+  echo "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"${session_id}-diag\",\"cwd\":\"${REPO_ROOT}\"}" \
+    | (cd "${REPO_ROOT}" && uv run --package agent-context-graph agent-context-graph hook run claude-code \
+        --connector skills-graph --connector actions-graph --connector sessions-graph --strict) 2>&1 || true
+  echo "--- end diagnostic ---"
+
   echo "Driving a real Claude Code session (session_id=${session_id})..."
 
   # Restricting the top-level session to ONLY the Task tool -- Claude Code's
