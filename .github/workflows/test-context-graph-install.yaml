@@ -1,0 +1,38 @@
+name: Test context-graph install.sh (manual)
+
+# Manual-trigger only, deliberately not on push/pull_request: this drives real
+# external state on the runner -- installs the Claude Code CLI, registers the
+# real memgraph/ai-toolkit marketplace, and installs the published
+# context-graph plugin from it -- rather than anything scoped to this
+# checkout. That's intentional: the point is verifying the actual onboarding
+# path a new user hits, not the PR's diff in isolation. Run this deliberately
+# when changing context-graph/scripts/install.sh or its README instructions.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  install-sh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      # No ANTHROPIC_API_KEY here on purpose: plugin marketplace/install is
+      # local config + a public git clone, and agent-context-graph's bootstrap
+      # /doctor hook smoke test doesn't call the model either -- confirmed by
+      # a full green run with no key set.
+      - name: Run install.sh end-to-end
+        env:
+          AGENT_CONTEXT_GRAPH_USER_ID: ci-test-user
+        run: ./context-graph/scripts/install.sh

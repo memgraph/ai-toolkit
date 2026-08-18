@@ -35,7 +35,20 @@ Everything is joined by a shared `(:Session {session_id})` node, so one graph an
 
 ## Getting started (Claude Code)
 
-The fastest path is the plugin — it wires all three connectors into Claude Code's hooks so capture is automatic.
+One command does everything below: starts a local Memgraph if none is reachable, registers the plugin marketplace, installs the plugin (this is the step that actually wires hooks into Claude Code — running `bootstrap` on its own does not), installs the `agent-context-graph` CLI with all three connectors, sets your identity, and verifies with `doctor`.
+
+```bash
+./context-graph/scripts/install.sh
+# or, without a checkout:
+curl -fsSL https://raw.githubusercontent.com/memgraph/ai-toolkit/main/context-graph/scripts/install.sh | bash
+```
+
+Requires Docker (only if no Memgraph is already reachable) and the Claude Code CLI (`claude`) on `PATH`; it installs `uv` for you if missing. See the script's header for env overrides (`MEMGRAPH_HOST`/`PORT`, `AGENT_CONTEXT_GRAPH_USER_ID`, `SKIP_MEMGRAPH`, `SKIP_UV_INSTALL`).
+
+Once it finishes, use Claude Code normally — every session writes to the graph automatically: `(:User)-[:HAD_SESSION]->(:Session)`, tool actions, skill usage, and any Memories the agent records.
+
+<details>
+<summary>What the script does, step by step (or if you'd rather run it by hand)</summary>
 
 ### 1. Start Memgraph
 
@@ -47,11 +60,18 @@ Requires **Memgraph ≥ 3.6** (sessions-graph uses text search, stable from that
 
 ### 2. Install the plugin
 
-Inside Claude Code:
+This is the step a plain `bootstrap` cannot do for you: it wires the hooks into Claude Code so sessions are actually captured. Inside Claude Code:
 
 ```text
 /plugin marketplace add memgraph/ai-toolkit
 /plugin install context-graph@context-graph-plugins
+```
+
+Or non-interactively, from any shell:
+
+```bash
+claude plugin marketplace add memgraph/ai-toolkit --sparse .claude-plugin
+claude plugin install context-graph@context-graph-plugins -y
 ```
 
 ### 3. Bootstrap and configure
@@ -92,7 +112,9 @@ You want every line `OK` — config (user_id set), Memgraph reachable, each conn
 
 From here, every session writes to the graph automatically: `(:User)-[:HAD_SESSION]->(:Session)`, tool actions, skill usage, and any Memories the agent records.
 
-> **Codex** follows the same flow with `--runtime codex` and `codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins`. See [agent-context-graph](./agent-context-graph/) for both runtimes and for the in-process SDK path (no plugin).
+</details>
+
+> **Codex** follows the same connector/bootstrap flow with `--runtime codex` and `codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins` — but Codex has no non-interactive plugin-*install* step today, so `install.sh` doesn't cover it end-to-end. See [agent-context-graph](./agent-context-graph/) for both runtimes and for the in-process SDK path (no plugin).
 
 ## Turning sessions into an entity graph (reconciliation)
 
