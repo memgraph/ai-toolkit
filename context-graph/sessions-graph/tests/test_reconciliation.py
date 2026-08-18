@@ -1,5 +1,13 @@
-"""Unit tests for Sessions Graph reconciliation (extract_reconcilable_text,
+"""Tests for Sessions Graph reconciliation (extract_reconcilable_text,
 build_reconciliation_sources, SessionsGraph.reconcile_session).
+
+extract_reconcilable_text/build_reconciliation_sources/summarize_session_texts
+are pure-logic unit tests, no I/O. reconcile_session's own tests use a real
+Memgraph and a real ActionsGraph (via conftest.py's `graph`/`memgraph`/
+`actions_graph` fixtures, which skip cleanly if unreachable) -- only the LLM
+boundary (unstructured2graph.from_texts, the LightRAG wrapper's
+llm_model_func) is mocked, so schema drift between sessions-graph and
+actions-graph gets caught without needing OPENAI_API_KEY.
 
 These require the sessions-graph[reconciliation] extra (actions-graph +
 unstructured2graph); tests skip cleanly if it isn't installed.
@@ -130,8 +138,15 @@ class TestSummarizeSessionTexts:
 
 
 # ---------------------------------------------------------------------------
-# SessionsGraph.reconcile_session (stubbed Memgraph + mocked ActionsGraph/LightRAG)
+# SessionsGraph.reconcile_session (real Memgraph + real ActionsGraph, mocked LLM)
 # ---------------------------------------------------------------------------
+#
+# ActionsGraph is real here -- a hand-rolled fake let this file drift from
+# actions-graph's real shape unnoticed. Only the LLM boundary
+# (unstructured2graph.from_texts, the LightRAG wrapper's llm_model_func)
+# stays mocked: real, but cost-free and deterministic, protection against
+# schema drift without needing OPENAI_API_KEY the way test_e2e_reconciliation.py's
+# fully-real version does.
 
 
 def _stub_db():
@@ -148,12 +163,6 @@ def _graph(db=None):
     return g
 
 
-def _fake_actions_graph(actions):
-    ag = MagicMock()
-    ag.get_session_actions.return_value = actions
-    return ag
-
-
 def _fake_lightrag_wrapper(summary_text: str = "A narrative summary of the session."):
     wrapper = MagicMock()
     wrapper.get_lightrag.return_value.llm_model_func = AsyncMock(return_value=summary_text)
@@ -161,16 +170,18 @@ def _fake_lightrag_wrapper(summary_text: str = "A narrative summary of the sessi
 
 
 @pytest.mark.asyncio
-async def test_reconcile_session_success_marks_completed_and_links_chunks():
-    db = _stub_db()
-    g = _graph(db)
-    actions = [Message(session_id="s-1", role=MessageRole.ASSISTANT, content="Alice works on the graph engine.")]
-    actions_graph = _fake_actions_graph(actions)
+async def test_reconcile_session_success_marks_completed_and_links_chunks(graph, actions_graph):
+    from actions_graph import Session
+
+    actions_graph.create_session(Session(session_id="s-1"))
+    actions_graph.record_message(
+        session_id="s-1", role=MessageRole.ASSISTANT, content="Alice works on the graph engine."
+    )
     lightrag_wrapper = _fake_lightrag_wrapper()
 
     fake_chunk = Chunk(text="Alice works on the graph engine.", hash=content_hash("Alice works on the graph engine."))
     with patch("unstructured2graph.from_texts", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_texts:
-        summary = await g.reconcile_session("s-1", lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
+        summary = await graph.reconcile_session("s-1", lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
 
     assert summary.status == "completed"
     assert summary.texts_considered == 1
@@ -179,36 +190,42 @@ async def test_reconcile_session_success_marks_completed_and_links_chunks():
 
 
 @pytest.mark.asyncio
-async def test_reconcile_session_writes_episode_from_dedicated_llm_call():
-    db = _stub_db()
-    g = _graph(db)
-    actions = [Message(session_id="s-1", role=MessageRole.ASSISTANT, content="Alice works on the graph engine.")]
-    actions_graph = _fake_actions_graph(actions)
+async def test_reconcile_session_writes_episode_from_dedicated_llm_call(graph, memgraph, actions_graph):
+    from actions_graph import Session
+
+    actions_graph.create_session(Session(session_id="s-1"))
+    actions_graph.record_message(
+        session_id="s-1", role=MessageRole.ASSISTANT, content="Alice works on the graph engine."
+    )
     lightrag_wrapper = _fake_lightrag_wrapper("Alice was discussed working on the graph engine.")
 
     fake_chunk = Chunk(text="Alice works on the graph engine.", hash=content_hash("Alice works on the graph engine."))
     with patch("unstructured2graph.from_texts", new=AsyncMock(return_value=[[fake_chunk]])):
-        summary = await g.reconcile_session("s-1", lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
+        summary = await graph.reconcile_session("s-1", lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
 
     assert summary.summary_written is True
     lightrag_wrapper.get_lightrag.return_value.llm_model_func.assert_awaited_once()
-    episode_calls = [call for call in db.query.call_args_list if "HAS_EPISODE" in call.args[0]]
-    assert len(episode_calls) == 1
-    assert episode_calls[0].kwargs["params"]["summary"] == "Alice was discussed working on the graph engine."
-    assert episode_calls[0].kwargs["params"]["session_id"] == "s-1"
+    episode_rows = memgraph.query(
+        "MATCH (:Session {session_id: $session_id})-[:HAS_EPISODE]->(e:Episode) RETURN e.summary AS summary",
+        params={"session_id": "s-1"},
+    )
+    assert len(episode_rows) == 1
+    assert episode_rows[0]["summary"] == "Alice was discussed working on the graph engine."
 
 
 @pytest.mark.asyncio
-async def test_reconcile_session_passes_promotion_and_ontology_kwargs_through_to_from_texts():
-    db = _stub_db()
-    g = _graph(db)
-    actions = [Message(session_id="s-1", role=MessageRole.ASSISTANT, content="Alice works on the graph engine.")]
-    actions_graph = _fake_actions_graph(actions)
+async def test_reconcile_session_passes_promotion_and_ontology_kwargs_through_to_from_texts(graph, actions_graph):
+    from actions_graph import Session
+
+    actions_graph.create_session(Session(session_id="s-1"))
+    actions_graph.record_message(
+        session_id="s-1", role=MessageRole.ASSISTANT, content="Alice works on the graph engine."
+    )
     lightrag_wrapper = _fake_lightrag_wrapper()
 
     fake_chunk = Chunk(text="Alice works on the graph engine.", hash=content_hash("Alice works on the graph engine."))
     with patch("unstructured2graph.from_texts", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_texts:
-        await g.reconcile_session(
+        await graph.reconcile_session(
             "s-1",
             lightrag_wrapper=lightrag_wrapper,
             actions_graph=actions_graph,
@@ -225,19 +242,17 @@ async def test_reconcile_session_passes_promotion_and_ontology_kwargs_through_to
 
 
 @pytest.mark.asyncio
-async def test_reconcile_session_dedupes_identical_text_before_calling_lightrag():
-    db = _stub_db()
-    g = _graph(db)
-    actions = [
-        Message(session_id="s-1", role=MessageRole.USER, content="Same question"),
-        Message(session_id="s-1", role=MessageRole.ASSISTANT, content="Same question"),
-    ]
-    actions_graph = _fake_actions_graph(actions)
+async def test_reconcile_session_dedupes_identical_text_before_calling_lightrag(graph, actions_graph):
+    from actions_graph import Session
+
+    actions_graph.create_session(Session(session_id="s-1"))
+    actions_graph.record_message(session_id="s-1", role=MessageRole.USER, content="Same question")
+    actions_graph.record_message(session_id="s-1", role=MessageRole.ASSISTANT, content="Same question")
     lightrag_wrapper = _fake_lightrag_wrapper()
 
     fake_chunk = Chunk(text="Same question", hash=content_hash("Same question"))
     with patch("unstructured2graph.from_texts", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_texts:
-        summary = await g.reconcile_session("s-1", lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
+        summary = await graph.reconcile_session("s-1", lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
 
     assert summary.texts_considered == 2
     assert summary.texts_deduped == 1
@@ -247,14 +262,14 @@ async def test_reconcile_session_dedupes_identical_text_before_calling_lightrag(
 
 
 @pytest.mark.asyncio
-async def test_reconcile_session_no_reconcilable_content_skips_lightrag_but_still_completes():
-    db = _stub_db()
-    g = _graph(db)
-    actions_graph = _fake_actions_graph([])
+async def test_reconcile_session_no_reconcilable_content_skips_lightrag_but_still_completes(graph, actions_graph):
+    from actions_graph import Session
+
+    actions_graph.create_session(Session(session_id="s-1"))
     lightrag_wrapper = MagicMock()
 
     with patch("unstructured2graph.from_texts", new=AsyncMock()) as mock_from_texts:
-        summary = await g.reconcile_session("s-1", lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
+        summary = await graph.reconcile_session("s-1", lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
 
     assert summary.status == "completed"
     assert summary.texts_considered == 0
@@ -263,15 +278,15 @@ async def test_reconcile_session_no_reconcilable_content_skips_lightrag_but_stil
 
 
 @pytest.mark.asyncio
-async def test_reconcile_session_failure_marks_failed_and_returns_error():
-    db = _stub_db()
-    g = _graph(db)
-    actions = [Message(session_id="s-1", role=MessageRole.ASSISTANT, content="Some content")]
-    actions_graph = _fake_actions_graph(actions)
+async def test_reconcile_session_failure_marks_failed_and_returns_error(graph, actions_graph):
+    from actions_graph import Session
+
+    actions_graph.create_session(Session(session_id="s-1"))
+    actions_graph.record_message(session_id="s-1", role=MessageRole.ASSISTANT, content="Some content")
     lightrag_wrapper = MagicMock()
 
     with patch("unstructured2graph.from_texts", new=AsyncMock(side_effect=RuntimeError("LLM down"))):
-        summary = await g.reconcile_session("s-1", lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
+        summary = await graph.reconcile_session("s-1", lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
 
     assert summary.status == "failed"
     assert "LLM down" in summary.error

@@ -110,7 +110,7 @@ _wait_ready() {
   local port="$1" container="$2"
   echo "Waiting for Memgraph to accept Bolt connections on localhost:${port}..."
   for i in $(seq 1 30); do
-    if (echo >"/dev/tcp/localhost/${port}") 2>/dev/null; then
+    if (echo >"/dev/tcp/localhost/${port}") 2>/dev/null && _bolt_roundtrip_ok "${port}"; then
       echo "Memgraph is ready."
       return 0
     fi
@@ -120,6 +120,22 @@ _wait_ready() {
   echo "ERROR: Memgraph did not become ready in time." >&2
   docker logs "${container}" 2>&1 | tail -30 >&2 || true
   exit 1
+}
+
+# A bare TCP accept is not the same as the server being ready for a real Bolt
+# handshake -- confirmed live: on a freshly created container, the very
+# first hook invocation after this check passed (Claude Code's SessionStart,
+# firing within ~1s of `claude -p` starting) intermittently hit a
+# mid-handshake connection reset, silently dropping that event's writes
+# (sessions-graph's User/HAD_SESSION never got created, though every other
+# check -- all driven by later events -- passed). Do a real driver-level
+# round trip too, not just a socket connect.
+_bolt_roundtrip_ok() {
+  local port="$1"
+  uv run --package agent-context-graph python3 -c "
+from memgraph_toolbox.api.memgraph import Memgraph
+Memgraph(url='bolt://localhost:${port}', username='', password='', database='memgraph').query('RETURN 1')
+" >/dev/null 2>&1
 }
 
 _require_container_reachable() {
@@ -489,8 +505,25 @@ PYEOF
   else
     echo "Hook config already in local mode -- leaving as-is."
   fi
-  if [ "${we_swapped_hooks}" -eq 1 ]; then
+  # Only arm the restore trap if a backup actually exists now -- on a machine
+  # with no pre-existing real config (e.g. a fresh CI runner), cmd_hooks_local
+  # has nothing to back up and creates no backup file, so there is nothing to
+  # restore either. Without this check, the trap would call cmd_hooks_restore
+  # unconditionally on exit, which errors ("no backup found") and calls
+  # `exit 1` from inside the trap -- clobbering even a successful run's exit
+  # code.
+  if [ "${we_swapped_hooks}" -eq 1 ] && [ -f "${CONFIG_BACKUP}" ]; then
     trap cmd_hooks_restore EXIT
+  fi
+  if [ "${we_swapped_hooks}" -eq 1 ]; then
+    # sessions-graph only MERGEs (:User)-[:HAD_SESSION]->(:Session) when a
+    # user_id actually resolves (by design -- see connector.py's `if
+    # user_id:` guard). On a fresh machine with none configured, this is the
+    # difference between that check ever being able to pass at all. Only
+    # done when we own this swap -- if hooks-local was already active
+    # (someone else's real, still-running local-mode session), we have no
+    # restore path for this and must not clobber their identity.
+    agent-context-graph config set identity.user_id "test-graph-model"
   fi
 
   local session_id
@@ -505,7 +538,17 @@ PYEOF
   # than maybe doing so. The skill-file read is folded into the SAME subagent
   # call (rather than a second session) so this still costs exactly one LLM
   # call while also exercising skills-graph's Agent-scoped USED_SKILL.
-  local prompt="Use the Task tool to launch exactly one subagent (subagent_type: Explore) to do two things: (1) read the file skills/release/SKILL.md and note what it's for, and (2) search this repository for the string 'TODO'. Report back a short summary combining both. Do not do either yourself -- delegate the entire thing to that one subagent."
+  #
+  # Deliberately does NOT spell out the skill's literal path here: Claude
+  # Code propagates this top-level prompt into the parent "Agent" tool
+  # call's own metadata, and SkillGraphConnector scans metadata for any
+  # string that looks like a resolvable SKILL.md path -- so a literal path
+  # in THIS prompt gets mistaken for a top-level skill read, even though
+  # nothing at this level actually read anything (a real, pre-existing
+  # false-positive in SkillGraphConnector's detection, caught by this exact
+  # verification -- tracked separately, not fixed here). Making the
+  # subagent locate the file itself keeps the path out of this prompt.
+  local prompt="Use the Task tool to launch exactly one subagent (subagent_type: Explore) to do two things: (1) find this repository's 'release' skill (look for a directory under skills/ containing a SKILL.md describing it), read that file, and note what it's for, and (2) search this repository for the string 'TODO'. Report back a short summary combining both. Do not do either yourself -- delegate the entire thing to that one subagent."
 
   local output_file
   output_file="$(mktemp -t test-graph-model-output.XXXXXX.json)"
@@ -525,9 +568,17 @@ PYEOF
   local claude_exit=$?
   set -e
 
+  # Always show what the session actually did -- a zero exit only means the
+  # CLI itself didn't crash, not that hooks fired or the model used the Task
+  # tool as instructed. Needed to diagnose graph-shape failures below without
+  # re-running (subagent spawning is model-decided, so failures aren't always
+  # reproducible).
+  echo "--- claude -p output (session_id=${session_id}) ---"
+  cat "${output_file}"
+  echo "--- end claude -p output ---"
+
   if [ "${claude_exit}" -ne 0 ]; then
-    echo "ERROR: claude exited with status ${claude_exit}:" >&2
-    cat "${output_file}" >&2
+    echo "ERROR: claude exited with status ${claude_exit}" >&2
     exit 1
   fi
 
@@ -551,6 +602,23 @@ checks = []
 
 session = graph.get_session(session_id)
 checks.append(("Session node exists", session is not None))
+
+# sessions-graph is wired into the same live run (--connector sessions-graph
+# above) and produces this data today -- previously unchecked here even
+# though it's free (same session, no extra LLM cost).
+user_rows = db.query(
+    "MATCH (:User)-[:HAD_SESSION]->(:Session {session_id: $sid}) RETURN count(*) AS c",
+    params={"sid": session_id},
+)
+checks.append(("sessions-graph: User -[:HAD_SESSION]-> Session", user_rows[0]["c"] == 1))
+
+status_rows = db.query(
+    "MATCH (s:Session {session_id: $sid}) RETURN s.reconciliation_status AS status",
+    params={"sid": session_id},
+)
+checks.append(
+    ("sessions-graph: Session.reconciliation_status is set", bool(status_rows) and status_rows[0]["status"] is not None)
+)
 
 agents = graph.get_session_agents(session_id) if session is not None else []
 checks.append(("HAS_AGENT: Session -> at least one Agent", len(agents) >= 1))

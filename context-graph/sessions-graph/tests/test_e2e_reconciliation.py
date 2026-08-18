@@ -19,7 +19,6 @@ LLM completion call costs anything.
 
 from __future__ import annotations
 
-import contextlib
 import os
 
 import pytest
@@ -28,21 +27,13 @@ import pytest_asyncio
 pytest.importorskip("actions_graph", reason="actions-graph not installed")
 pytest.importorskip("unstructured2graph", reason="unstructured2graph not installed")
 
-from actions_graph import ActionsGraph, MessageRole, Session
+from actions_graph import MessageRole, Session
 from lightrag_memgraph import MemgraphLightRAGWrapper
 
 requires_openai_key = pytest.mark.skipif(
     not os.environ.get("OPENAI_API_KEY"),
     reason="OPENAI_API_KEY not set",
 )
-
-
-@pytest.fixture
-def actions_graph(memgraph):
-    ag = ActionsGraph(memgraph)
-    with contextlib.suppress(Exception):
-        ag.setup()
-    return ag
 
 
 @pytest_asyncio.fixture
