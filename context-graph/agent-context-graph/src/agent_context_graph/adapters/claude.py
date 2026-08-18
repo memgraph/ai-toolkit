@@ -3,6 +3,17 @@
 Translates Claude Agent SDK hook callbacks into the common Event protocol
 and forwards them to the AgentLink hub.
 
+Note: this adapter only wires up the ``hooks={...}`` callback API. The SDK's
+separate message-stream API (``query()``/``ClaudeSDKClient.receive_response()``,
+yielding ``UserMessage``/``AssistantMessage``) carries a genuine
+``parent_tool_use_id`` field that would let a subagent's spawning tool call be
+linked directly rather than inferred -- verified empirically, not just in
+docs. Deliberately not consumed here: doing so would make this one adapter
+strictly better than the other three (Claude Code, Codex, OpenAI Agents SDK),
+which have no equivalent field and stay on the general temporal/agent_type
+inference rule uniformly. Revisit only if that asymmetry becomes worth
+taking on.
+
 Usage::
 
     from agent_context_graph import AgentLink
