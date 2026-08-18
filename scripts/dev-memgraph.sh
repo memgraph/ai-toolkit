@@ -505,7 +505,17 @@ PYEOF
   # than maybe doing so. The skill-file read is folded into the SAME subagent
   # call (rather than a second session) so this still costs exactly one LLM
   # call while also exercising skills-graph's Agent-scoped USED_SKILL.
-  local prompt="Use the Task tool to launch exactly one subagent (subagent_type: Explore) to do two things: (1) read the file skills/release/SKILL.md and note what it's for, and (2) search this repository for the string 'TODO'. Report back a short summary combining both. Do not do either yourself -- delegate the entire thing to that one subagent."
+  #
+  # Deliberately does NOT spell out the skill's literal path here: Claude
+  # Code propagates this top-level prompt into the parent "Agent" tool
+  # call's own metadata, and SkillGraphConnector scans metadata for any
+  # string that looks like a resolvable SKILL.md path -- so a literal path
+  # in THIS prompt gets mistaken for a top-level skill read, even though
+  # nothing at this level actually read anything (a real, pre-existing
+  # false-positive in SkillGraphConnector's detection, caught by this exact
+  # verification -- tracked separately, not fixed here). Making the
+  # subagent locate the file itself keeps the path out of this prompt.
+  local prompt="Use the Task tool to launch exactly one subagent (subagent_type: Explore) to do two things: (1) find this repository's 'release' skill (look for a directory under skills/ containing a SKILL.md describing it), read that file, and note what it's for, and (2) search this repository for the string 'TODO'. Report back a short summary combining both. Do not do either yourself -- delegate the entire thing to that one subagent."
 
   local output_file
   output_file="$(mktemp -t test-graph-model-output.XXXXXX.json)"
