@@ -502,20 +502,6 @@ PYEOF
 
   local session_id
   session_id="$(uv run --package agent-context-graph python3 -c 'import uuid; print(uuid.uuid4())')"
-
-  # TEMPORARY DIAGNOSTIC: the hook runner (hooks/runner.py's run_hook)
-  # swallows every exception by default and only debug-logs it behind an env
-  # var nothing here sets -- so a real failure inside the connector chain is
-  # completely invisible through Claude Code's own logging. Feed a synthetic
-  # SessionStart payload directly into the exact same hook command, with
-  # --strict so any exception actually surfaces, to see if a truly fresh
-  # (schema-less) Memgraph instance is the trigger.
-  echo "--- diagnostic: direct hook invocation with --strict ---"
-  echo "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"${session_id}-diag\",\"cwd\":\"${REPO_ROOT}\"}" \
-    | (cd "${REPO_ROOT}" && uv run --package agent-context-graph agent-context-graph hook run claude-code \
-        --connector skills-graph --connector actions-graph --connector sessions-graph --strict) 2>&1 || true
-  echo "--- end diagnostic ---"
-
   echo "Driving a real Claude Code session (session_id=${session_id})..."
 
   # Restricting the top-level session to ONLY the Task tool -- Claude Code's
@@ -540,8 +526,6 @@ PYEOF
 
   local output_file
   output_file="$(mktemp -t test-graph-model-output.XXXXXX.json)"
-  local debug_file
-  debug_file="$(mktemp -t test-graph-model-debug.XXXXXX.log)"
   set +e
   # Explicit cd: the hooks config's command embeds `uv run --package
   # agent-context-graph ...`, which resolves relative to the hook
@@ -549,8 +533,6 @@ PYEOF
   # was launched from. Must be $REPO_ROOT regardless of where this script
   # was invoked from, or `uv run` won't find the workspace.
   (cd "${REPO_ROOT}" && claude -p "${prompt}" \
-    --debug hooks \
-    --debug-file "${debug_file}" \
     --settings "${settings_file}" \
     --setting-sources project \
     --session-id "${session_id}" \
@@ -568,9 +550,6 @@ PYEOF
   echo "--- claude -p output (session_id=${session_id}) ---"
   cat "${output_file}"
   echo "--- end claude -p output ---"
-  echo "--- claude --debug-file (hooks) ---"
-  cat "${debug_file}" 2>/dev/null || echo "(no debug file written)"
-  echo "--- end claude --debug-file ---"
 
   if [ "${claude_exit}" -ne 0 ]; then
     echo "ERROR: claude exited with status ${claude_exit}" >&2

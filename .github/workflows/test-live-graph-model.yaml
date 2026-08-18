@@ -34,12 +34,18 @@ jobs:
       # this explicitly (rather than a bare `uv sync`) is what makes
       # `agent-context-graph hook run claude-code --connector ...` actually
       # resolve real connectors instead of silently no-op'ing.
+      #
+      # Must be ONE `uv sync` call with every --package flag together --
+      # `uv sync --package X` resolves the venv to exactly X's own closure,
+      # so separate sequential calls each uninstall whatever the previous
+      # call just installed (confirmed live: a fresh runner ended up with
+      # only sessions-graph installed, skills-graph and actions-graph both
+      # uninstalled by the later sync calls -- `agent-context-graph hook run`
+      # then hit a bare `ModuleNotFoundError: No module named 'skills_graph'`
+      # on its very first live workflow_dispatch run).
       - name: Sync workspace environment
         run: |
-          uv sync --package agent-context-graph
-          uv sync --package actions-graph --extra agent-context-graph
-          uv sync --package skills-graph --extra agent-context-graph
-          uv sync --package sessions-graph --extra agent-context-graph
+          uv sync --package agent-context-graph --package actions-graph --package skills-graph --package sessions-graph --extra agent-context-graph
 
       # Puts this checkout's own workspace venv ahead of anything else on
       # PATH -- a real, discovered-the-hard-way risk: a stale globally
