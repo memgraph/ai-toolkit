@@ -8,54 +8,42 @@ The Memgraph MCP Server exposes the following tools over MCP. Each tool runs a M
 
 ### run_query(query: str)
 
-Run any arbitrary Cypher query against the connected Memgraph database.
-
-**Read-Only Mode:** By default, the server runs in read-only mode to prevent accidental data modifications. Write operations (CREATE, MERGE, DELETE, SET, DROP, REMOVE) are automatically blocked and will return an error. Set `MCP_READ_ONLY=false` to enable write operations.
-
-Parameters:
-
-- `query`: A valid Cypher query string.
-
-### run_cypher_graph(query: str)
-
-Run a Cypher query and return a **normalized graph projection** instead of raw
-tabular rows. The result is a structured object with two deduplicated lists:
+Run any arbitrary Cypher query against the connected Memgraph database. Returns
+one row per result, with each value in a **type-preserving** form: nodes,
+relationships and paths come back as `_type`-tagged objects carrying their `id`,
+`labels`/`type`, endpoints and `properties`; primitives, lists, maps, temporals
+and points keep their shape. A single node looks like:
 
 ```json
 {
-  "nodes": [
-    {
-      "id": "<element_id>",
-      "labels": ["Person"],
-      "properties": { "name": "Alice" }
-    }
-  ],
-  "relationships": [
-    {
-      "id": "<element_id>",
-      "type": "KNOWS",
-      "start": "<node_id>",
-      "end": "<node_id>",
-      "properties": { "since": 2020 }
-    }
-  ]
+  "n": {
+    "_type": "node",
+    "id": "<element_id>",
+    "labels": ["Person"],
+    "properties": { "name": "Alice" }
+  }
 }
 ```
 
-Unlike `run_cypher_query`, which returns one dict per row with graph entities
-flattened to bare property maps (labels, element ids, relationship type, and
-endpoints all discarded by the driver's `Record.data()`), this tool preserves
-graph topology, so consumers can rebuild or visualize the graph. Because the
-return type is typed, the server also emits an MCP `outputSchema` and populates
-`structuredContent`.
+Because rows are preserved, a query can mix graph entities with scalars — e.g.
+`MATCH (n)-[e]->() RETURN n, count(e) AS out_deg` returns each node alongside its
+count.
 
-Nodes and relationships are keyed on their stable `element_id`, so an entity
-appearing in multiple rows is emitted once. For a fully connected projection,
-return the endpoint nodes or a path, e.g. `MATCH (a)-[r]->(b) RETURN a, r, b` or
-`MATCH p=(...)-[...]->(...) RETURN p`.
+To get a **deduplicated, ready-to-render graph** (each node and relationship
+once — useful for visualization), let Cypher do the dedup and return the two
+lists directly:
 
-**Read-Only Mode:** Like `run_query`, write operations are blocked when the
-server runs in read-only mode.
+```cypher
+MATCH (n)-[r]->(m)
+WITH collect(DISTINCT r) AS relationships, collect(DISTINCT n) + collect(DISTINCT m) AS ns
+UNWIND ns AS nx
+RETURN collect(DISTINCT nx) AS nodes, relationships
+```
+
+Each collected node and relationship comes back in the same typed form as above,
+so the result is a compact graph payload without repeating shared nodes per row.
+
+**Read-Only Mode:** By default, the server runs in read-only mode to prevent accidental data modifications. Write operations (CREATE, MERGE, DELETE, SET, DROP, REMOVE) are automatically blocked and will return an error. Set `MCP_READ_ONLY=false` to enable write operations.
 
 Parameters:
 

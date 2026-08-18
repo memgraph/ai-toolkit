@@ -179,9 +179,10 @@ class Memgraph:
         Unlike :meth:`query`, this does **not** flatten graph entities through
         ``Record.data()``; the records still hold live ``neo4j.graph`` Node /
         Relationship / Path objects, preserving element ids, labels,
-        relationship types, and endpoints. Callers that need graph topology
-        (e.g. the ``run_cypher_graph`` tool) build on this; :meth:`query`
-        remains the flat-dict path for existing consumers.
+        relationship types, and endpoints. Callers that need type-preserving
+        serialization (e.g. the ``run_cypher_query`` tool via
+        ``serialize_records``) build on this; :meth:`query` remains the
+        flat-dict path for existing consumers.
 
         Args:
             query: The Cypher query to execute

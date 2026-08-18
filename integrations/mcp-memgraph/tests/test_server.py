@@ -11,7 +11,6 @@ from mcp_memgraph import (
     get_enum_schema,
     get_node_schema,
     get_relationship_schema,
-    run_cypher_graph,
     run_cypher_query,
     search_schema,
 )
@@ -179,53 +178,26 @@ async def test_write_query_allowed_when_readonly_disabled():
 
 
 @pytest.mark.asyncio
-async def test_run_cypher_graph_returns_typed_projection():
-    """A read query is mapped to a GraphResult with connected nodes and edges."""
-    # Seed via a direct client so the test is independent of read-only mode
-    # (the read-only guard lives at the MCP tool layer, not the DB).
+async def test_run_query_returns_typed_nodes():
+    """run_cypher_query returns nodes as _type-tagged objects with id and labels."""
     from memgraph_toolbox.api.memgraph import Memgraph
 
     db = Memgraph()
-    db.query("MATCH (n:GraphToolNode) DETACH DELETE n")
-    db.query("CREATE (:GraphToolNode {name: 'A'})-[:GRAPH_TOOL_REL {w: 1}]->(:GraphToolNode {name: 'B'})")
+    db.query("MATCH (n:TypedQueryNode) DETACH DELETE n")
+    db.query("CREATE (:TypedQueryNode {name: 'A'})")
     try:
-        result = run_cypher_graph("MATCH (a:GraphToolNode)-[r:GRAPH_TOOL_REL]->(b:GraphToolNode) RETURN a, r, b")
+        response = run_cypher_query("MATCH (n:TypedQueryNode) RETURN n")
 
-        assert result.error is None
-        assert len(result.nodes) == 2
-        assert len(result.relationships) == 1
-
-        edge = result.relationships[0]
-        assert edge.type == "GRAPH_TOOL_REL"
-        node_ids = {n.id for n in result.nodes}
-        assert edge.start in node_ids and edge.end in node_ids
+        assert isinstance(response, list)
+        assert len(response) == 1
+        node = response[0]["n"]
+        assert node["_type"] == "node"
+        assert "TypedQueryNode" in node["labels"]
+        assert node["properties"]["name"] == "A"
+        assert "id" in node
     finally:
-        db.query("MATCH (n:GraphToolNode) DETACH DELETE n")
+        db.query("MATCH (n:TypedQueryNode) DETACH DELETE n")
         db.close()
-
-
-@pytest.mark.asyncio
-async def test_run_cypher_graph_blocks_writes_in_readonly(monkeypatch):
-    """Write queries are rejected with an error when read-only mode is on."""
-    import mcp_memgraph.servers.server as server_mod
-
-    monkeypatch.setattr(server_mod, "READ_ONLY_MODE", True)
-    result = server_mod.run_cypher_graph("CREATE (n:GraphToolNode {name: 'x'}) RETURN n")
-
-    assert result.error is not None
-    assert "read-only" in result.error.lower()
-    assert result.nodes == []
-    assert result.relationships == []
-
-
-@pytest.mark.asyncio
-async def test_run_cypher_graph_reports_query_errors():
-    """An invalid query surfaces as a populated error, not a raised exception."""
-    result = run_cypher_graph("NOT VALID CYPHER")
-
-    assert result.error is not None
-    assert result.nodes == []
-    assert result.relationships == []
 
 
 @pytest.mark.asyncio
@@ -287,7 +259,6 @@ async def test_tools_and_resources():
         # TODO(@antejavor): Add this dynamically.
         expected_tools = [
             "run_cypher_query",
-            "run_cypher_graph",
             "search_schema",
             "get_node_schema",
             "get_relationship_schema",

@@ -6,13 +6,11 @@ from starlette.responses import JSONResponse
 
 from mcp_memgraph.auth import current_session_auth
 from mcp_memgraph.config import get_auth_config, get_mcp_config, get_memgraph_config
-from mcp_memgraph.graph import GraphNode, GraphRelationship, GraphResult
 from mcp_memgraph.tenant_routing import UnknownTenantError, get_registry
 from memgraph_toolbox.api.memgraph import Memgraph
-from memgraph_toolbox.tools.cypher import CypherTool
-from memgraph_toolbox.tools.graph_cypher import GraphCypherTool
 from memgraph_toolbox.tools.schema import EnumSchemaTool, NodeSchemaTool, RelationshipSchemaTool, SearchSchemaTool
 from memgraph_toolbox.utils.logger import logger_init
+from memgraph_toolbox.utils.serialization import serialize_records
 
 # Get configuration instances
 memgraph_config = get_memgraph_config()
@@ -180,8 +178,11 @@ def _safe_call(fn, *, on_error: str):
 @mcp.tool(annotations={"readOnlyHint": READ_ONLY_MODE})
 def run_cypher_query(query: str, ctx: Context | None = None) -> list[dict[str, Any]]:
     """
-    Run a Cypher query on Memgraph. Write operations are blocked if
-    server is in read-only mode.
+    Run a Cypher query on Memgraph and return one row per result, with each
+    value returned in a type-preserving form: nodes, relationships and paths are
+    tagged objects carrying their id, labels/type and endpoints; primitives,
+    maps, lists, temporals and points keep their shape. Write operations are
+    blocked if the server is in read-only mode.
 
     Args:
         query: The Cypher query to execute on the Memgraph database.
@@ -200,38 +201,7 @@ def run_cypher_query(query: str, ctx: Context | None = None) -> list[dict[str, A
             }
         ]
 
-    return _safe_call(lambda: CypherTool(db=_get_db()).call({"query": query}), on_error="Error running query")
-
-
-@mcp.tool(annotations={"readOnlyHint": READ_ONLY_MODE})
-def run_cypher_graph(query: str, ctx: Context | None = None) -> GraphResult:
-    """
-    Run a Cypher query on Memgraph and return a graph projection (deduplicated nodes and
-    relationships) instead of the tabular rows returned by `run_cypher_query`.
-    Use it when you need node/edge identity, labels, types, and endpoints.
-    Write operations are blocked if the server is in read-only mode.
-
-    Args:
-        query: The Cypher query to execute on the Memgraph database.
-    """
-    logger.info("Running graph query: %s", query)
-
-    if READ_ONLY_MODE and is_write_query(query):
-        logger.warning("Write operation blocked in read-only mode: %s", query)
-        return GraphResult(
-            error="Write operations are not allowed in read-only mode. Set MCP_READ_ONLY=false to enable."
-        )
-
-    result = _safe_call(lambda: GraphCypherTool(db=_get_db()).call({"query": query}), on_error="Error running query")
-
-    if isinstance(result, dict) and "error" not in result:
-        return GraphResult(
-            nodes=[GraphNode(**node) for node in result.get("nodes", [])],
-            relationships=[GraphRelationship(**rel) for rel in result.get("relationships", [])],
-        )
-
-    error = result[0].get("error") if isinstance(result, list) and result else result.get("error")
-    return GraphResult(error=error or "Unknown error running graph query")
+    return _safe_call(lambda: serialize_records(_get_db().query_raw(query)), on_error="Error running query")
 
 
 @mcp.tool(annotations={"readOnlyHint": True})

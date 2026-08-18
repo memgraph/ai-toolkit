@@ -4,13 +4,13 @@ import pytest
 
 from ..api.memgraph import Memgraph
 from ..tools.cypher import CypherTool
-from ..tools.graph_cypher import GraphCypherTool
 from ..tools.schema import (
     EnumSchemaTool,
     NodeSchemaTool,
     RelationshipSchemaTool,
     SearchSchemaTool,
 )
+from ..utils.serialization import serialize_records
 
 
 @pytest.fixture()
@@ -73,70 +73,71 @@ def test_cypher_date_time_serialization(db):
     assert "PT2M2.33S" in record["test_duration"]
 
 
-def test_graph_cypher_projects_nodes_and_edges(db, schema_graph):
-    """A `RETURN a, r, b` projects connected nodes and a typed edge."""
-    tool = GraphCypherTool(db=db)
-    result = tool.call({"query": "MATCH (a:Person {name: 'Alice'})-[r:KNOWS]->(b:Person) RETURN a, r, b"})
+def test_serialize_records_tags_graph_entities(db, schema_graph):
+    """Nodes, relationships and paths are returned as _type-tagged objects."""
+    rows = serialize_records(db.query_raw("MATCH p = (a:Person {name: 'Alice'})-[r:KNOWS]->(b) RETURN a, r, b, p"))
 
-    assert isinstance(result, dict)
-    assert "nodes" in result and "relationships" in result
+    assert len(rows) == 1
+    row = rows[0]
 
-    nodes = result["nodes"]
-    rels = result["relationships"]
-    assert len(nodes) == 2
-    assert len(rels) == 1
+    assert row["a"]["_type"] == "node"
+    assert "Person" in row["a"]["labels"]
+    assert row["a"]["properties"]["name"] == "Alice"
+    assert "id" in row["a"]
 
-    names = {n["properties"].get("name") for n in nodes}
-    assert names == {"Alice", "Bob"}
-    assert all("Person" in n["labels"] for n in nodes)
+    assert row["r"]["_type"] == "relationship"
+    assert row["r"]["type"] == "KNOWS"
+    assert row["r"]["start"] == row["a"]["id"]
+    assert row["r"]["end"] == row["b"]["id"]
 
-    edge = rels[0]
-    assert edge["type"] == "KNOWS"
-    assert edge["properties"].get("since") == 2020
-    node_ids = {n["id"] for n in nodes}
-    assert edge["start"] in node_ids
-    assert edge["end"] in node_ids
+    assert row["p"]["_type"] == "path"
+    assert len(row["p"]["nodes"]) == 2
+    assert len(row["p"]["relationships"]) == 1
 
 
-def test_graph_cypher_deduplicates_shared_nodes(db, schema_graph):
-    """A node appearing in several rows is emitted once, keyed on element id."""
-    tool = GraphCypherTool(db=db)
-    result = tool.call({"query": "MATCH (a)-[r]->(b) RETURN a, r, b"})
+def test_serialize_records_mixed_row(db, schema_graph):
+    """A row can mix a typed node with a scalar aggregation in the same result."""
+    rows = serialize_records(db.query_raw("MATCH (n:Person)-[e]->() RETURN n, count(e) AS out_deg"))
 
-    assert isinstance(result, dict)
-    assert len(result["nodes"]) == 3
-    assert len(result["relationships"]) == 2
-    ids = [n["id"] for n in result["nodes"]]
-    assert len(ids) == len(set(ids)), "nodes must be deduplicated"
+    assert len(rows) > 0
+    row = rows[0]
+    assert row["n"]["_type"] == "node"
+    assert isinstance(row["out_deg"], int)
 
 
-def test_graph_cypher_projects_path(db, schema_graph):
-    """A returned path is unrolled into its nodes and relationships."""
-    tool = GraphCypherTool(db=db)
-    result = tool.call({"query": "MATCH p = (:Person)-[:KNOWS]->(:Person) RETURN p"})
+def test_serialize_records_primitives_and_containers(db):
+    """Primitives, lists, maps and temporals pass through with their shape."""
+    rows = serialize_records(
+        db.query_raw("RETURN 1 AS i, 'x' AS s, [1, 2] AS lst, {k: 3} AS m, date('2024-01-15') AS d")
+    )
 
-    assert isinstance(result, dict)
-    assert len(result["nodes"]) == 2
-    assert len(result["relationships"]) == 1
-    assert result["relationships"][0]["type"] == "KNOWS"
-
-
-def test_graph_cypher_scalar_has_no_entities(db, schema_graph):
-    """A query returning only scalars yields an empty projection, not an error."""
-    tool = GraphCypherTool(db=db)
-    result = tool.call({"query": "RETURN 1 AS n"})
-
-    assert result == {"nodes": [], "relationships": []}
+    row = rows[0]
+    assert row["i"] == 1
+    assert row["s"] == "x"
+    assert row["lst"] == [1, 2]
+    assert row["m"] == {"k": 3}
+    assert row["d"] == "2024-01-15"
 
 
-def test_graph_cypher_invalid_query_returns_error(db):
-    """A syntactically invalid query returns the list-shaped error convention."""
-    tool = GraphCypherTool(db=db)
-    result = tool.call({"query": "NOT VALID CYPHER"})
+def test_serialize_records_point(db):
+    """A geo/point value is serialized to a tagged srid + coordinates record."""
+    rows = serialize_records(db.query_raw("RETURN point({x: 1.5, y: 2.5}) AS p"))
 
-    assert isinstance(result, list)
-    assert len(result) == 1
-    assert "error" in result[0]
+    point = rows[0]["p"]
+    assert point["_type"] == "point"
+    assert "srid" in point
+    assert point["coordinates"] == [1.5, 2.5]
+
+
+def test_serialize_records_temporals(db):
+    """Temporal types serialize to ISO strings, zoned datetimes keeping the offset."""
+    rows = serialize_records(db.query_raw("RETURN datetime('2024-01-15T10:30:45+01:00') AS dt, duration('PT2M') AS dur"))
+
+    row = rows[0]
+    assert "2024-01-15T10:30:45" in row["dt"]
+    assert "+01:00" in row["dt"]
+    assert isinstance(row["dur"], str)
+    assert "PT2M" in row["dur"]
 
 
 def test_get_node_schema_found(db, schema_graph):

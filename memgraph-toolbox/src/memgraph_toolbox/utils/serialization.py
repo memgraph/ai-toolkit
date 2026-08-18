@@ -5,6 +5,7 @@ Serialization utilities for Neo4j date/time types.
 from typing import Any
 
 from neo4j.graph import Node, Path, Relationship
+from neo4j.spatial import Point
 
 
 def serialize_neo4j_types(value: Any) -> Any:
@@ -100,52 +101,48 @@ def serialize_relationship(rel: Relationship) -> dict:
     }
 
 
-def project_graph(records: list[Any]) -> dict[str, list[dict]]:
-    """
-    Walk raw neo4j records and return deduplicated nodes and relationships.
-
-    Nodes and relationships are keyed on the driver's stable ``element_id``, so
-    the same entity appearing in several rows is emitted once. Explicitly
-    returned nodes take precedence over the lightweight endpoint stubs a
-    relationship may carry, so a node returned in full keeps its labels and
-    properties regardless of iteration order. Nodes, relationships and paths
-    nested inside lists or maps are traversed too.
-    """
-    nodes: dict[str, dict] = {}
-    relationships: dict[str, dict] = {}
-
-    def add_node(node: Node) -> None:
-        nodes[node.element_id] = serialize_node(node)
-
-    def add_relationship(rel: Relationship) -> None:
-        if rel.element_id not in relationships:
-            relationships[rel.element_id] = serialize_relationship(rel)
-        for endpoint in (rel.start_node, rel.end_node):
-            if isinstance(endpoint, Node):
-                nodes.setdefault(endpoint.element_id, serialize_node(endpoint))
-
-    def visit(value: Any) -> None:
-        if isinstance(value, Node):
-            add_node(value)
-        elif isinstance(value, Relationship):
-            add_relationship(value)
-        elif isinstance(value, Path):
-            for node in value.nodes:
-                add_node(node)
-            for rel in value.relationships:
-                add_relationship(rel)
-        elif isinstance(value, (list, tuple)):
-            for item in value:
-                visit(item)
-        elif isinstance(value, dict):
-            for item in value.values():
-                visit(item)
-
-    for record in records:
-        for value in record.values():
-            visit(value)
-
+def _serialize_point(point: Point) -> dict:
+    """Project a neo4j spatial Point into a JSON-safe record."""
     return {
-        "nodes": list(nodes.values()),
-        "relationships": list(relationships.values()),
+        "_type": "point",
+        "srid": point.srid,
+        "coordinates": [float(c) for c in point],
     }
+
+
+def serialize_value(value: Any) -> Any:
+    """Serialize a single Cypher result value, preserving its type.
+
+    The type-preserving counterpart to ``Record.data()`` (which flattens graph
+    entities into bare property maps): nodes, relationships and paths become
+    ``_type``-tagged objects with their identity and topology intact; points and
+    temporals become JSON-safe structures; lists and maps recurse; primitives
+    pass through.
+    """
+    if isinstance(value, Node):
+        return {"_type": "node", **serialize_node(value)}
+    if isinstance(value, Relationship):
+        return {"_type": "relationship", **serialize_relationship(value)}
+    if isinstance(value, Path):
+        return {
+            "_type": "path",
+            "nodes": [{"_type": "node", **serialize_node(n)} for n in value.nodes],
+            "relationships": [{"_type": "relationship", **serialize_relationship(r)} for r in value.relationships],
+        }
+    if isinstance(value, Point):
+        return _serialize_point(value)
+    if isinstance(value, list):
+        return [serialize_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: serialize_value(item) for key, item in value.items()}
+    return serialize_neo4j_types(value)
+
+
+def serialize_records(records: list[Any]) -> list[dict]:
+    """Serialize raw neo4j records into type-preserving rows (one dict per row).
+
+    Each row keeps its ``RETURN`` column names; each value is serialized with
+    :func:`serialize_value`, so nodes/edges/paths retain their identity instead
+    of collapsing to bare property maps.
+    """
+    return [{key: serialize_value(value) for key, value in record.items()} for record in records]
