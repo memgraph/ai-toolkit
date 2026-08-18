@@ -510,15 +510,6 @@ PYEOF
     agent-context-graph config set identity.user_id "test-graph-model"
   fi
 
-  # TEMPORARY DIAGNOSTIC: confirm _on_session_start's MERGE actually succeeds
-  # with the identity just configured above, bypassing run_hook's default
-  # exception-swallowing via --strict.
-  echo "--- diagnostic: direct SessionStart hook invocation with --strict ---"
-  echo '{"hook_event_name":"SessionStart","session_id":"diag-session-start","cwd":"'"${REPO_ROOT}"'"}' \
-    | (cd "${REPO_ROOT}" && uv run --package agent-context-graph agent-context-graph hook run claude-code \
-        --connector skills-graph --connector actions-graph --connector sessions-graph --strict) 2>&1 || true
-  echo "--- end diagnostic ---"
-
   local session_id
   session_id="$(uv run --package agent-context-graph python3 -c 'import uuid; print(uuid.uuid4())')"
   echo "Driving a real Claude Code session (session_id=${session_id})..."
@@ -604,6 +595,12 @@ user_rows = db.query(
     params={"sid": session_id},
 )
 checks.append(("sessions-graph: User -[:HAD_SESSION]-> Session", user_rows[0]["c"] == 1))
+
+# TEMPORARY DIAGNOSTIC: does ANY :User node exist at all, regardless of which
+# session it's linked to? Distinguishes "SessionStart never fired for
+# sessions-graph" from "it fired but linked to an unexpected session_id."
+_all_users = db.query("MATCH (u:User) RETURN u.user_id AS uid")
+print(f"DIAGNOSTIC: all :User nodes in graph: {_all_users}", file=sys.stderr)
 
 status_rows = db.query(
     "MATCH (s:Session {session_id: $sid}) RETURN s.reconciliation_status AS status",
