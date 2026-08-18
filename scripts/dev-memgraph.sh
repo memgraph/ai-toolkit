@@ -110,7 +110,7 @@ _wait_ready() {
   local port="$1" container="$2"
   echo "Waiting for Memgraph to accept Bolt connections on localhost:${port}..."
   for i in $(seq 1 30); do
-    if (echo >"/dev/tcp/localhost/${port}") 2>/dev/null; then
+    if (echo >"/dev/tcp/localhost/${port}") 2>/dev/null && _bolt_roundtrip_ok "${port}"; then
       echo "Memgraph is ready."
       return 0
     fi
@@ -120,6 +120,22 @@ _wait_ready() {
   echo "ERROR: Memgraph did not become ready in time." >&2
   docker logs "${container}" 2>&1 | tail -30 >&2 || true
   exit 1
+}
+
+# A bare TCP accept is not the same as the server being ready for a real Bolt
+# handshake -- confirmed live: on a freshly created container, the very
+# first hook invocation after this check passed (Claude Code's SessionStart,
+# firing within ~1s of `claude -p` starting) intermittently hit a
+# mid-handshake connection reset, silently dropping that event's writes
+# (sessions-graph's User/HAD_SESSION never got created, though every other
+# check -- all driven by later events -- passed). Do a real driver-level
+# round trip too, not just a socket connect.
+_bolt_roundtrip_ok() {
+  local port="$1"
+  uv run --package agent-context-graph python3 -c "
+from memgraph_toolbox.api.memgraph import Memgraph
+Memgraph(url='bolt://localhost:${port}', username='', password='', database='memgraph').query('RETURN 1')
+" >/dev/null 2>&1
 }
 
 _require_container_reachable() {
@@ -595,12 +611,6 @@ user_rows = db.query(
     params={"sid": session_id},
 )
 checks.append(("sessions-graph: User -[:HAD_SESSION]-> Session", user_rows[0]["c"] == 1))
-
-# TEMPORARY DIAGNOSTIC: does ANY :User node exist at all, regardless of which
-# session it's linked to? Distinguishes "SessionStart never fired for
-# sessions-graph" from "it fired but linked to an unexpected session_id."
-_all_users = db.query("MATCH (u:User) RETURN u.user_id AS uid")
-print(f"DIAGNOSTIC: all :User nodes in graph: {_all_users}", file=sys.stderr)
 
 status_rows = db.query(
     "MATCH (s:Session {session_id: $sid}) RETURN s.reconciliation_status AS status",
