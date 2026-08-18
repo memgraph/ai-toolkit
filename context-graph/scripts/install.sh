@@ -1,29 +1,28 @@
 #!/usr/bin/env bash
-# One-command setup for Context Graph on Claude Code: start Memgraph if
-# nothing is reachable, register the plugin marketplace, install the plugin
-# (this is what actually wires hooks into Claude Code -- `bootstrap` alone
-# does not), install the agent-context-graph CLI with all three connectors,
-# set your identity, and verify with `doctor`.
+# One-command setup for Context Graph on Claude Code or Codex: start Memgraph
+# if nothing is reachable, register the plugin marketplace, install the
+# plugin (this is what actually wires hooks into the runtime -- `bootstrap`
+# alone does not), install the agent-context-graph CLI with all three
+# connectors, set your identity, and verify with `doctor`.
 #
 # Usage:
 #   ./context-graph/scripts/install.sh
 #   curl -fsSL https://raw.githubusercontent.com/memgraph/ai-toolkit/main/context-graph/scripts/install.sh | bash
 #
 # Env overrides:
+#   CONTEXT_GRAPH_RUNTIME         claude-code (default) or codex
 #   AGENT_CONTEXT_GRAPH_USER_ID   identity to record (default: git user.name, else $USER)
 #   MEMGRAPH_HOST / MEMGRAPH_PORT default localhost:7687
 #   SKIP_MEMGRAPH=1               don't start a local Memgraph even if none is reachable
 #   SKIP_UV_INSTALL=1             don't auto-install uv if missing (just fail with instructions)
-#
-# Codex is NOT covered: unlike Claude Code, Codex has no non-interactive
-# plugin-install command today (its marketplace add is scriptable, but
-# enabling the plugin itself is a manual step in the Codex UI). Run this
-# script anyway to get Memgraph + the CLI + connectors installed, then finish
-# Codex's plugin step by hand -- see ../plugins/agent-context-graph-codex/README.md.
 
 set -euo pipefail
 
-RUNTIME="claude-code"
+RUNTIME="${CONTEXT_GRAPH_RUNTIME:-claude-code}"
+case "$RUNTIME" in
+  claude-code | codex) ;;
+  *) echo "FAIL unknown CONTEXT_GRAPH_RUNTIME: $RUNTIME (expected claude-code or codex)" >&2; exit 1 ;;
+esac
 CONNECTORS=(skills-graph actions-graph sessions-graph)
 MEMGRAPH_HOST="${MEMGRAPH_HOST:-localhost}"
 MEMGRAPH_PORT="${MEMGRAPH_PORT:-7687}"
@@ -80,25 +79,46 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 echo "OK uv: $(command -v uv)"
 
-# ---- 3. Claude Code plugin (marketplace + install) ---------------------------
+# ---- 3. Runtime plugin (marketplace + install) -------------------------------
 # This is the step the plain `bootstrap` command cannot do for you: it's what
-# wires hooks into Claude Code so sessions actually get captured. Without it,
+# wires hooks into the runtime so sessions actually get captured. Without it,
 # `doctor` below will look all-green but no real session will write anything.
-command -v claude >/dev/null 2>&1 || fail "claude (Claude Code CLI) not found on PATH -- install Claude Code first."
+case "$RUNTIME" in
+  claude-code)
+    command -v claude >/dev/null 2>&1 || fail "claude (Claude Code CLI) not found on PATH -- install Claude Code first."
 
-log "Registering the ai-toolkit plugin marketplace"
-if claude plugin marketplace list --json 2>/dev/null | grep -q '"context-graph-plugins"'; then
-  echo "Already registered."
-else
-  claude plugin marketplace add memgraph/ai-toolkit --sparse .claude-plugin
-fi
+    log "Registering the ai-toolkit plugin marketplace"
+    if claude plugin marketplace list --json 2>/dev/null | grep -q '"context-graph-plugins"'; then
+      echo "Already registered."
+    else
+      claude plugin marketplace add memgraph/ai-toolkit --sparse .claude-plugin
+    fi
 
-log "Installing the context-graph plugin"
-if claude plugin list --json 2>/dev/null | grep -q '"context-graph"'; then
-  echo "Already installed."
-else
-  claude plugin install context-graph@context-graph-plugins -y
-fi
+    log "Installing the context-graph plugin"
+    if claude plugin list --json 2>/dev/null | grep -q '"context-graph"'; then
+      echo "Already installed."
+    else
+      claude plugin install context-graph@context-graph-plugins -y
+    fi
+    ;;
+  codex)
+    command -v codex >/dev/null 2>&1 || fail "codex (Codex CLI) not found on PATH -- install Codex first."
+
+    log "Registering the ai-toolkit plugin marketplace"
+    if codex plugin marketplace list --json 2>/dev/null | grep -q '"context-graph-plugins"'; then
+      echo "Already registered."
+    else
+      codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins
+    fi
+
+    log "Installing the context-graph plugin"
+    if codex plugin list --json 2>/dev/null | grep -q '"context-graph"'; then
+      echo "Already installed."
+    else
+      codex plugin add context-graph@context-graph-plugins
+    fi
+    ;;
+esac
 
 # ---- 4. agent-context-graph CLI + connectors ---------------------------------
 log "Installing agent-context-graph with skills-graph, actions-graph, sessions-graph"
@@ -132,8 +152,9 @@ agent-context-graph config set identity.user_id "$USER_ID"
 log "Verifying"
 agent-context-graph doctor --runtime "$RUNTIME" "${connector_flags[@]}"
 
+RUNTIME_LABEL="Claude Code"; [[ "$RUNTIME" == "codex" ]] && RUNTIME_LABEL="Codex"
 echo ""
-echo -e "\033[1;32m✓ Context Graph is live.\033[0m Use Claude Code normally -- every session now"
+echo -e "\033[1;32m✓ Context Graph is live.\033[0m Use $RUNTIME_LABEL normally -- every session now"
 echo "writes Actions/Skills/Memories to bolt://${MEMGRAPH_HOST}:${MEMGRAPH_PORT}."
 echo ""
 echo "Explore the graph: docker run -d -p 3000:3000 --add-host=host.docker.internal:host-gateway \\"

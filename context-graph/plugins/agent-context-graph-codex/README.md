@@ -80,13 +80,14 @@ This repo exposes a public Git-backed marketplace at:
 .agents/plugins/marketplace.json
 ```
 
-Register the marketplace from GitHub:
+Register the marketplace from GitHub and install the plugin:
 
 ```bash
 codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins
+codex plugin add context-graph@context-graph-plugins
 ```
 
-Then install or enable `context-graph` from the Codex plugin UI.
+Both are non-interactive; `codex plugin add` installs and enables the plugin in one step.
 
 The Agent Context Graph skill is exposed as:
 

@@ -257,13 +257,14 @@ Plugin source:
 context-graph/plugins/agent-context-graph-codex
 ```
 
-Register the public Git-backed marketplace:
+Register the public Git-backed marketplace and install the plugin:
 
 ```bash
 codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins
+codex plugin add context-graph@context-graph-plugins
 ```
 
-Then install or enable `context-graph` from the Codex plugin UI.
+Both are non-interactive; `codex plugin add` installs and enables the plugin in one step (`codex plugin list --json` confirms `"enabled": true`).
 
 Check the installed hook environment with:
 
