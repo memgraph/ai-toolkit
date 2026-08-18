@@ -533,6 +533,7 @@ PYEOF
   # was launched from. Must be $REPO_ROOT regardless of where this script
   # was invoked from, or `uv run` won't find the workspace.
   (cd "${REPO_ROOT}" && claude -p "${prompt}" \
+    --debug hooks \
     --settings "${settings_file}" \
     --setting-sources project \
     --session-id "${session_id}" \
