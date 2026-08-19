@@ -103,6 +103,50 @@ def test_write_config_preserves_llm_keys(config_dir):
     assert config.user_id == "someone"
 
 
+# --- resolve_auto_reconcile ---
+
+
+def test_auto_reconcile_defaults_to_false(config_dir):
+    assert _identity.resolve_auto_reconcile() is False
+
+
+def test_auto_reconcile_from_config_file(config_dir):
+    _identity.write_full_config(auto_reconcile=True)
+    _identity._reset_cache()
+    assert _identity.resolve_auto_reconcile() is True
+
+
+def test_write_config_preserves_auto_reconcile(config_dir):
+    _identity.write_full_config(auto_reconcile=True)
+    _identity._reset_cache()
+    _identity.write_config(user_id="someone")
+    _identity._reset_cache()
+    config = _identity.load_config()
+    assert config.auto_reconcile is True
+    assert config.user_id == "someone"
+
+
+def test_write_config_can_toggle_auto_reconcile_off(config_dir):
+    _identity.write_full_config(auto_reconcile=True)
+    _identity._reset_cache()
+    _identity.write_config(auto_reconcile=False)
+    _identity._reset_cache()
+    assert _identity.load_config().auto_reconcile is False
+
+
+# --- parse_bool_flag ---
+
+
+def test_parse_bool_flag_truthy_values():
+    for value in ("1", "true", "True", "yes", "YES", "on"):
+        assert _identity.parse_bool_flag(value) is True
+
+
+def test_parse_bool_flag_falsy_values():
+    for value in ("0", "false", "no", "off", "", "garbage"):
+        assert _identity.parse_bool_flag(value) is False
+
+
 # --- write_config ---
 
 
@@ -130,6 +174,7 @@ def test_write_full_config_writes_all_defaults(config_dir):
     assert config.user_id is None  # empty string -> None
     assert config.memgraph_url == "bolt://localhost:7687"
     assert config.memgraph_database == "memgraph"
+    assert config.auto_reconcile is False
 
 
 # --- load_config ---

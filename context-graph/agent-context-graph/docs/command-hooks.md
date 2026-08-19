@@ -69,18 +69,27 @@ memgraph.password
 memgraph.database
 llm.openai_api_key
 llm.anthropic_api_key
+reconcile.auto_reconcile
 ```
 
-The `llm.*` keys are only needed if you enable the `sessions-graph` connector
-with `auto_reconcile` (`SESSIONS_GRAPH_AUTO_RECONCILE=1` at connector
-construction time): reconciliation shells out to a detached
-`sessions-graph reconcile` subprocess that does LLM-backed entity extraction
-via LightRAG, and needs an `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`) the same
-way it needs Memgraph credentials — resolved from this config file and
-injected into that subprocess's environment explicitly, not inherited from
-ambient shell env (see ADR 0003). `agent-context-graph bootstrap` captures
-`OPENAI_API_KEY`/`ANTHROPIC_API_KEY` from its own environment into the config
-file automatically, the same way it already does for `MEMGRAPH_*`.
+The `llm.*` keys and `reconcile.auto_reconcile` are only needed if you enable
+the `sessions-graph` connector's auto-trigger reconciliation
+(`agent-context-graph config set reconcile.auto_reconcile true`):
+reconciliation shells out to a detached `sessions-graph reconcile` subprocess
+that does LLM-backed entity extraction via LightRAG, and needs an
+`OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`) the same way it needs Memgraph
+credentials — resolved from this config file and injected into that
+subprocess's environment explicitly, not inherited from ambient shell env
+(see ADR 0003). `agent-context-graph bootstrap` captures
+`OPENAI_API_KEY`/`ANTHROPIC_API_KEY`/`SESSIONS_GRAPH_AUTO_RECONCILE` from its
+own environment into the config file automatically, the same way it already
+does for `MEMGRAPH_*`.
+
+`reconcile.auto_reconcile` itself is read directly by
+`agent_context_graph.hooks.runner._add_sessions_graph_connector` on every hook
+invocation (`resolve_auto_reconcile()`), not just at bootstrap/write time —
+unlike the `llm.*`/`memgraph.*` keys, which are only ever overlaid into a
+child subprocess's environment.
 
 To smoke test the generated command, copy the `"command"` value from `.codex/hooks.json` and run:
 

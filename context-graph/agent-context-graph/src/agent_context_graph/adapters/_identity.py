@@ -5,7 +5,7 @@ subprocesses that do not inherit shell profile environment variables.  This
 module provides a config-file-only resolution path so hook subprocesses (and
 subprocesses they in turn spawn, e.g. sessions-graph's detached
 reconciliation process) can reliably access identity, Memgraph connection,
-and LLM API key settings.
+LLM API key, and reconciliation opt-in settings.
 
 Resolution order (per ADR 0002):
   CLI flag > config file > hardcoded default
@@ -39,6 +39,10 @@ _LLM_DEFAULTS = {
     "anthropic_api_key": "",
 }
 
+_RECONCILE_DEFAULTS = {
+    "auto_reconcile": False,
+}
+
 _sentinel = object()
 _cached_config: object = _sentinel
 
@@ -54,6 +58,7 @@ class HookConfig:
     memgraph_database: str = _MEMGRAPH_DEFAULTS["database"]
     openai_api_key: str = _LLM_DEFAULTS["openai_api_key"]
     anthropic_api_key: str = _LLM_DEFAULTS["anthropic_api_key"]
+    auto_reconcile: bool = _RECONCILE_DEFAULTS["auto_reconcile"]
 
 
 def load_config() -> HookConfig:
@@ -120,6 +125,16 @@ def resolve_llm_env() -> dict[str, str]:
     }
 
 
+def resolve_auto_reconcile() -> bool:
+    """Resolve whether sessions-graph should auto-trigger reconciliation on SESSION_END.
+
+    Config file only — mirrors :func:`resolve_llm_env`. Off by default given
+    LightRAG entity extraction's LLM cost; opt in with
+    ``agent-context-graph config set reconcile.auto_reconcile true``.
+    """
+    return load_config().auto_reconcile
+
+
 def write_config(
     *,
     user_id: str | None = None,
@@ -129,6 +144,7 @@ def write_config(
     memgraph_database: str | None = None,
     openai_api_key: str | None = None,
     anthropic_api_key: str | None = None,
+    auto_reconcile: bool | None = None,
 ) -> Path:
     """Write or update the config file. Returns the path written to.
 
@@ -147,6 +163,7 @@ def write_config(
     final_database = memgraph_database if memgraph_database is not None else existing.memgraph_database
     final_openai_api_key = openai_api_key if openai_api_key is not None else existing.openai_api_key
     final_anthropic_api_key = anthropic_api_key if anthropic_api_key is not None else existing.anthropic_api_key
+    final_auto_reconcile = auto_reconcile if auto_reconcile is not None else existing.auto_reconcile
 
     content = _render_config(
         user_id=final_user_id or "",
@@ -156,6 +173,7 @@ def write_config(
         database=final_database,
         openai_api_key=final_openai_api_key,
         anthropic_api_key=final_anthropic_api_key,
+        auto_reconcile=final_auto_reconcile,
     )
 
     _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -176,6 +194,7 @@ def write_full_config(
     memgraph_database: str = _MEMGRAPH_DEFAULTS["database"],
     openai_api_key: str = _LLM_DEFAULTS["openai_api_key"],
     anthropic_api_key: str = _LLM_DEFAULTS["anthropic_api_key"],
+    auto_reconcile: bool = _RECONCILE_DEFAULTS["auto_reconcile"],
 ) -> Path:
     """Write a complete config file with all sections (used by bootstrap).
 
@@ -191,6 +210,7 @@ def write_full_config(
         database=memgraph_database,
         openai_api_key=openai_api_key,
         anthropic_api_key=anthropic_api_key,
+        auto_reconcile=auto_reconcile,
     )
 
     _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -227,6 +247,7 @@ def _read_config_file() -> HookConfig:
     identity = sections.get("identity", {})
     memgraph = sections.get("memgraph", {})
     llm = sections.get("llm", {})
+    reconcile = sections.get("reconcile", {})
 
     return HookConfig(
         user_id=identity.get("user_id") or None,
@@ -236,6 +257,7 @@ def _read_config_file() -> HookConfig:
         memgraph_database=memgraph.get("database") or _MEMGRAPH_DEFAULTS["database"],
         openai_api_key=llm.get("openai_api_key", _LLM_DEFAULTS["openai_api_key"]),
         anthropic_api_key=llm.get("anthropic_api_key", _LLM_DEFAULTS["anthropic_api_key"]),
+        auto_reconcile=parse_bool_flag(reconcile.get("auto_reconcile", "")),
     )
 
 
@@ -273,6 +295,7 @@ def _render_config(
     database: str,
     openai_api_key: str,
     anthropic_api_key: str,
+    auto_reconcile: bool,
 ) -> str:
     """Render the full config file content."""
     lines = [
@@ -293,8 +316,16 @@ def _render_config(
         f'openai_api_key = "{openai_api_key}"',
         f'anthropic_api_key = "{anthropic_api_key}"',
         "",
+        "[reconcile]",
+        f"auto_reconcile = {'true' if auto_reconcile else 'false'}",
+        "",
     ]
     return "\n".join(lines)
+
+
+def parse_bool_flag(value: str) -> bool:
+    """Parse a TOML/CLI boolean flag string. Truthy: "1"/"true"/"yes"/"on" (case-insensitive)."""
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _string_or_none(value: Any) -> str | None:

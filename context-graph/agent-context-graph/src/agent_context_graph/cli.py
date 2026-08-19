@@ -69,6 +69,7 @@ def _config(argv: list[str]) -> int:
     from agent_context_graph.adapters._identity import (
         config_file_path,
         load_config,
+        parse_bool_flag,
         write_config,
     )
 
@@ -82,8 +83,10 @@ def _config(argv: list[str]) -> int:
         "memgraph.database": "memgraph_database",
         "llm.openai_api_key": "openai_api_key",
         "llm.anthropic_api_key": "anthropic_api_key",
+        "reconcile.auto_reconcile": "auto_reconcile",
     }
     _SECRET_KEYS = {"memgraph.password", "llm.openai_api_key", "llm.anthropic_api_key"}
+    _BOOL_KEYS = {"reconcile.auto_reconcile"}
 
     if not argv or argv[0] in {"-h", "--help"}:
         print("usage: agent-context-graph config set <key> <value>")
@@ -108,6 +111,7 @@ def _config(argv: list[str]) -> int:
         print(f"memgraph.database = {config.memgraph_database!r}")
         print(f"llm.openai_api_key = {'***' if config.openai_api_key else repr('')}")
         print(f"llm.anthropic_api_key = {'***' if config.anthropic_api_key else repr('')}")
+        print(f"reconcile.auto_reconcile = {config.auto_reconcile!r}")
         return 0
 
     if action == "set":
@@ -132,8 +136,17 @@ def _config(argv: list[str]) -> int:
         else:
             value = argv[2]
 
-        write_config(**{_CONFIG_KEYS[key]: value})
-        display_value = "***" if key in _SECRET_KEYS else repr(value)
+        write_value: str | bool = value
+        if key in _BOOL_KEYS:
+            normalized = value.strip().lower()
+            _TRUTHY, _FALSY = {"1", "true", "yes", "on"}, {"0", "false", "no", "off"}
+            if normalized not in _TRUTHY | _FALSY:
+                print(f"Invalid value for {key}: {value!r} (expected true/false)", file=sys.stderr)
+                return 2
+            write_value = parse_bool_flag(normalized)
+
+        write_config(**{_CONFIG_KEYS[key]: write_value})
+        display_value = "***" if key in _SECRET_KEYS else repr(write_value)
         print(f"Wrote {key} = {display_value} to {config_path}")
         return 0
 
@@ -266,7 +279,7 @@ def _bootstrap(argv: list[str]) -> int:
     print(f"OK agent-context-graph executable: {executable}")
 
     # Write hook configuration file (auto-write + inform).
-    from agent_context_graph.adapters._identity import write_full_config
+    from agent_context_graph.adapters._identity import parse_bool_flag, write_full_config
 
     user_id = os.environ.get("AGENT_CONTEXT_GRAPH_USER_ID", "")
     memgraph_user = os.environ.get("MEMGRAPH_USER", "")
@@ -274,6 +287,7 @@ def _bootstrap(argv: list[str]) -> int:
     memgraph_database = os.environ.get("MEMGRAPH_DATABASE", "memgraph")
     openai_api_key = os.environ.get("OPENAI_API_KEY", "")
     anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    auto_reconcile = parse_bool_flag(os.environ.get("SESSIONS_GRAPH_AUTO_RECONCILE", ""))
 
     config_path = write_full_config(
         user_id=user_id,
@@ -283,6 +297,7 @@ def _bootstrap(argv: list[str]) -> int:
         memgraph_database=memgraph_database,
         openai_api_key=openai_api_key,
         anthropic_api_key=anthropic_api_key,
+        auto_reconcile=auto_reconcile,
     )
     print(f"OK config: wrote {config_path}")
     if user_id:
@@ -302,6 +317,8 @@ def _bootstrap(argv: list[str]) -> int:
             "   no LLM API key found in environment — sessions-graph reconciliation needs one; "
             "set with: agent-context-graph config set llm.openai_api_key"
         )
+    if auto_reconcile:
+        print("   reconcile.auto_reconcile = True (captured from SESSIONS_GRAPH_AUTO_RECONCILE)")
 
     doctor_args = ["--runtime", args.runtime]
     for connector in connectors:

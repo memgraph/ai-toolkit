@@ -50,11 +50,13 @@ logger = logging.getLogger(__name__)
 _SUPPORTED_EVENTS = {EventType.SESSION_START, EventType.SESSION_END}
 
 #: Read at connector construction time when auto_reconcile isn't passed explicitly.
-#: Note: hook-based runtimes (Claude Code, Codex) construct this connector
-#: without exposing a constructor kwarg for it (see
-#: agent_context_graph.adapters.claude_code/codex._add_sessions_graph_connector),
-#: so this env var is currently the only way to opt in there; SDK integrations
-#: that construct SessionsGraphConnector directly can pass auto_reconcile=True instead.
+#: Hook-based runtimes (Claude Code, Codex) no longer rely on this: since
+#: agent_context_graph 0.2.0, agent_context_graph.hooks.runner._add_sessions_graph_connector
+#: resolves the persistent ``reconcile.auto_reconcile`` config-file setting
+#: (agent_context_graph.adapters._identity.resolve_auto_reconcile(), set via
+#: ``agent-context-graph config set reconcile.auto_reconcile true``) and passes
+#: it explicitly, which takes priority. This env var remains a fallback for
+#: SDK integrations that construct SessionsGraphConnector directly.
 _AUTO_RECONCILE_ENV_VAR = "SESSIONS_GRAPH_AUTO_RECONCILE"
 
 
@@ -81,9 +83,11 @@ class SessionsGraphConnector(GraphConnector):
     Args:
         graph: An initialised :class:`SessionsGraph` instance.
         auto_reconcile: Whether to spawn a detached reconciliation process on
-            SESSION_END. Defaults to the ``SESSIONS_GRAPH_AUTO_RECONCILE`` env
-            var (truthy: "1"/"true"/"yes"/"on") when not given explicitly.
-            Off by default given LightRAG entity extraction's LLM cost.
+            SESSION_END. Hook-based runtimes pass this explicitly, resolved
+            from the persistent ``reconcile.auto_reconcile`` config-file
+            setting. Defaults to the ``SESSIONS_GRAPH_AUTO_RECONCILE`` env var
+            (truthy: "1"/"true"/"yes"/"on") when not given explicitly. Off by
+            default given LightRAG entity extraction's LLM cost.
     """
 
     def __init__(self, graph: SessionsGraph, *, auto_reconcile: bool | None = None) -> None:
