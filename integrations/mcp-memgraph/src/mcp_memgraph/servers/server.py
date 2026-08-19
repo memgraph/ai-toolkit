@@ -8,7 +8,6 @@ from mcp_memgraph.auth import current_session_auth
 from mcp_memgraph.config import get_auth_config, get_mcp_config, get_memgraph_config
 from mcp_memgraph.tenant_routing import UnknownTenantError, get_registry
 from memgraph_toolbox.api.memgraph import Memgraph
-from memgraph_toolbox.tools.cypher import CypherTool
 from memgraph_toolbox.tools.schema import EnumSchemaTool, NodeSchemaTool, RelationshipSchemaTool, SearchSchemaTool
 from memgraph_toolbox.utils.logger import logger_init
 
@@ -178,8 +177,11 @@ def _safe_call(fn, *, on_error: str):
 @mcp.tool(annotations={"readOnlyHint": READ_ONLY_MODE})
 def run_cypher_query(query: str, ctx: Context | None = None) -> list[dict[str, Any]]:
     """
-    Run a Cypher query on Memgraph. Write operations are blocked if
-    server is in read-only mode.
+    Run a Cypher query on Memgraph and return one row per result, with each
+    value returned in a type-preserving form: nodes, relationships and paths are
+    tagged objects carrying their id, labels/type and endpoints; primitives,
+    maps, lists, temporals and points keep their shape. Write operations are
+    blocked if the server is in read-only mode.
 
     Args:
         query: The Cypher query to execute on the Memgraph database.
@@ -198,7 +200,7 @@ def run_cypher_query(query: str, ctx: Context | None = None) -> list[dict[str, A
             }
         ]
 
-    return _safe_call(lambda: CypherTool(db=_get_db()).call({"query": query}), on_error="Error running query")
+    return _safe_call(lambda: _get_db().query(query), on_error="Error running query")
 
 
 @mcp.tool(annotations={"readOnlyHint": True})

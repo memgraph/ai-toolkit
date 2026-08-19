@@ -72,6 +72,71 @@ def test_cypher_date_time_serialization(db):
     assert "PT2M2.33S" in record["test_duration"]
 
 
+def test_query_tags_graph_entities(db, schema_graph):
+    """Nodes, relationships and paths are returned as _type-tagged objects."""
+    rows = db.query("MATCH p = (a:Person {name: 'Alice'})-[r:KNOWS]->(b) RETURN a, r, b, p")
+
+    assert len(rows) == 1
+    row = rows[0]
+
+    assert row["a"]["_type"] == "node"
+    assert "Person" in row["a"]["labels"]
+    assert row["a"]["properties"]["name"] == "Alice"
+    assert "id" in row["a"]
+
+    assert row["r"]["_type"] == "relationship"
+    assert row["r"]["type"] == "KNOWS"
+    assert row["r"]["start"] == row["a"]["id"]
+    assert row["r"]["end"] == row["b"]["id"]
+
+    assert row["p"]["_type"] == "path"
+    assert len(row["p"]["nodes"]) == 2
+    assert len(row["p"]["relationships"]) == 1
+
+
+def test_query_mixed_row(db, schema_graph):
+    """A row can mix a typed node with a scalar aggregation in the same result."""
+    rows = db.query("MATCH (n:Person)-[e]->() RETURN n, count(e) AS out_deg")
+
+    assert len(rows) > 0
+    row = rows[0]
+    assert row["n"]["_type"] == "node"
+    assert isinstance(row["out_deg"], int)
+
+
+def test_query_primitives_and_containers(db):
+    """Primitives, lists, maps and temporals pass through with their shape."""
+    rows = db.query("RETURN 1 AS i, 'x' AS s, [1, 2] AS lst, {k: 3} AS m, date('2024-01-15') AS d")
+
+    row = rows[0]
+    assert row["i"] == 1
+    assert row["s"] == "x"
+    assert row["lst"] == [1, 2]
+    assert row["m"] == {"k": 3}
+    assert row["d"] == "2024-01-15"
+
+
+def test_query_point(db):
+    """A geo/point value is serialized to a tagged srid + coordinates record."""
+    rows = db.query("RETURN point({x: 1.5, y: 2.5}) AS p")
+
+    point = rows[0]["p"]
+    assert point["_type"] == "point"
+    assert "srid" in point
+    assert point["coordinates"] == [1.5, 2.5]
+
+
+def test_query_temporals(db):
+    """Temporal types serialize to ISO strings, zoned datetimes keeping the offset."""
+    rows = db.query("RETURN datetime('2024-01-15T10:30:45+01:00') AS dt, duration('PT2M') AS dur")
+
+    row = rows[0]
+    assert "2024-01-15T10:30:45" in row["dt"]
+    assert "+01:00" in row["dt"]
+    assert isinstance(row["dur"], str)
+    assert "PT2M" in row["dur"]
+
+
 def test_get_node_schema_found(db, schema_graph):
     tool = NodeSchemaTool(db=db)
     result = tool.call({"node_labels": ["Person"]})

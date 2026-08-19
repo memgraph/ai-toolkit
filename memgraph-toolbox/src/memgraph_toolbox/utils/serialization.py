@@ -4,6 +4,9 @@ Serialization utilities for Neo4j date/time types.
 
 from typing import Any
 
+from neo4j.graph import Node, Path, Relationship
+from neo4j.spatial import Point
+
 
 def serialize_neo4j_types(value: Any) -> Any:
     """
@@ -62,3 +65,91 @@ def serialize_record_data(record_data: dict) -> dict:
             serialized[key] = serialize_neo4j_types(value)
 
     return serialized
+
+
+def serialize_node(node: Node) -> dict:
+    """
+    Project a neo4j Node into a JSON-safe node record.
+
+    Preserves the identity that ``Record.data()`` discards: the stable
+    ``element_id`` and ``labels``. Property values reuse
+    :func:`serialize_record_data` so temporal/duration types stay JSON-safe.
+    """
+    return {
+        "_type": "node",
+        "id": node.element_id,
+        "labels": sorted(node.labels),
+        "properties": serialize_record_data(dict(node)),
+    }
+
+
+def serialize_relationship(rel: Relationship) -> dict:
+    """
+    Project a neo4j Relationship into a JSON-safe edge record.
+
+    Keeps the type and the start/end endpoints, which ``Record.data()`` drops.
+    ``start``/``end`` are the endpoint nodes' ``element_id``s, or ``None`` when
+    the driver did not hydrate an endpoint.
+    """
+    start = rel.start_node
+    end = rel.end_node
+    return {
+        "_type": "relationship",
+        "id": rel.element_id,
+        "type": rel.type,
+        "start": start.element_id if start is not None else None,
+        "end": end.element_id if end is not None else None,
+        "properties": serialize_record_data(dict(rel)),
+    }
+
+
+def serialize_path(path: Path) -> dict:
+    """Project a neo4j Path into a JSON-safe record of its nodes and relationships."""
+    return {
+        "_type": "path",
+        "nodes": [serialize_node(node) for node in path.nodes],
+        "relationships": [serialize_relationship(rel) for rel in path.relationships],
+    }
+
+
+def serialize_point(point: Point) -> dict:
+    """Project a neo4j spatial Point into a JSON-safe record."""
+    return {
+        "_type": "point",
+        "srid": point.srid,
+        "coordinates": [float(c) for c in point],
+    }
+
+
+def serialize_value(value: Any) -> Any:
+    """Serialize a single Cypher result value, preserving its type.
+
+    The type-preserving counterpart to ``Record.data()`` (which flattens graph
+    entities into bare property maps): nodes, relationships and paths become
+    ``_type``-tagged objects with their identity and topology intact; points and
+    temporals become JSON-safe structures; lists and maps recurse; primitives
+    pass through.
+    """
+    if isinstance(value, Node):
+        return serialize_node(value)
+    if isinstance(value, Relationship):
+        return serialize_relationship(value)
+    if isinstance(value, Path):
+        return serialize_path(value)
+    if isinstance(value, Point):
+        return serialize_point(value)
+    if isinstance(value, list):
+        return [serialize_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: serialize_value(item) for key, item in value.items()}
+    return serialize_neo4j_types(value)
+
+
+def serialize_records(records: list[Any]) -> list[dict]:
+    """Serialize raw neo4j records into type-preserving rows (one dict per row).
+
+    Each row keeps its ``RETURN`` column names; each value is serialized with
+    :func:`serialize_value`, so nodes/edges/paths retain their identity instead
+    of collapsing to bare property maps.
+    """
+    return [{key: serialize_value(value) for key, value in record.items()} for record in records]

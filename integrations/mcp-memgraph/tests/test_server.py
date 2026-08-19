@@ -178,6 +178,29 @@ async def test_write_query_allowed_when_readonly_disabled():
 
 
 @pytest.mark.asyncio
+async def test_run_query_returns_typed_nodes():
+    """run_cypher_query returns nodes as _type-tagged objects with id and labels."""
+    from memgraph_toolbox.api.memgraph import Memgraph
+
+    db = Memgraph()
+    db.query("MATCH (n:TypedQueryNode) DETACH DELETE n")
+    db.query("CREATE (:TypedQueryNode {name: 'A'})")
+    try:
+        response = run_cypher_query("MATCH (n:TypedQueryNode) RETURN n")
+
+        assert isinstance(response, list)
+        assert len(response) == 1
+        node = response[0]["n"]
+        assert node["_type"] == "node"
+        assert "TypedQueryNode" in node["labels"]
+        assert node["properties"]["name"] == "A"
+        assert "id" in node
+    finally:
+        db.query("MATCH (n:TypedQueryNode) DETACH DELETE n")
+        db.close()
+
+
+@pytest.mark.asyncio
 async def test_search_schema():
     """Test the search_schema tool."""
     run_cypher_query("CREATE (:SchemaTestNode {name: 'test'})-[:SCHEMA_TEST_REL]->(:SchemaTestNode {name: 'test2'})")

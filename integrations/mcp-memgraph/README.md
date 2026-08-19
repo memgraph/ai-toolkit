@@ -8,7 +8,40 @@ The Memgraph MCP Server exposes the following tools over MCP. Each tool runs a M
 
 ### run_query(query: str)
 
-Run any arbitrary Cypher query against the connected Memgraph database.
+Run any arbitrary Cypher query against the connected Memgraph database. Returns
+one row per result, with each value in a **type-preserving** form: nodes,
+relationships and paths come back as `_type`-tagged objects carrying their `id`,
+`labels`/`type`, endpoints and `properties`; primitives, lists, maps, temporals
+and points keep their shape. A single node looks like:
+
+```json
+{
+  "n": {
+    "_type": "node",
+    "id": "<element_id>",
+    "labels": ["Person"],
+    "properties": { "name": "Alice" }
+  }
+}
+```
+
+Because rows are preserved, a query can mix graph entities with scalars — e.g.
+`MATCH (n)-[e]->() RETURN n, count(e) AS out_deg` returns each node alongside its
+count.
+
+To get a **deduplicated, ready-to-render graph** (each node and relationship
+once — useful for visualization), let Cypher do the dedup and return the two
+lists directly:
+
+```cypher
+MATCH (n)-[r]->(m)
+WITH collect(DISTINCT r) AS relationships, collect(DISTINCT n) + collect(DISTINCT m) AS ns
+UNWIND ns AS nx
+RETURN collect(DISTINCT nx) AS nodes, relationships
+```
+
+Each collected node and relationship comes back in the same typed form as above,
+so the result is a compact graph payload without repeating shared nodes per row.
 
 **Read-Only Mode:** By default, the server runs in read-only mode to prevent accidental data modifications. Write operations (CREATE, MERGE, DELETE, SET, DROP, REMOVE) are automatically blocked and will return an error. Set `MCP_READ_ONLY=false` to enable write operations.
 
@@ -85,13 +118,13 @@ Parameters:
 
 Uses `NodeVectorSearchTool` under the hood.
 
-### list_databases() — *auth-only*
+### list_databases() — _auth-only_
 
 Available only when `MCP_AUTH_ENABLED=true`. Returns the databases the calling
 user is authorized to access (the intersection of their JWT `tenants` claim and
 the server's `MCP_TENANT_CATALOG`). The currently-active database is flagged.
 
-### use_database(name: str) — *auth-only*
+### use_database(name: str) — _auth-only_
 
 Available only when `MCP_AUTH_ENABLED=true`. Switches the active database for
 the current MCP session. The new name must be in the caller's allowed set —
@@ -197,17 +230,17 @@ the server runs exactly as it did in 0.1.12.
 All no-ops when `MCP_AUTH_ENABLED=false` (default). When enabled, the server
 **fails fast at startup** if any of the three required vars are missing.
 
-| Var | Default | Required when auth on | Purpose |
-|---|---|---|---|
-| `MCP_AUTH_ENABLED` | `false` | — | Master switch |
-| `MCP_AUTH_ISSUER` | — | ✓ | OIDC issuer URL, e.g. `https://auth.example.com/realms/memgraph` |
-| `MCP_AUTH_AUDIENCE` | — | ✓ | Expected `aud` claim on JWTs the server will accept |
-| `MCP_TENANT_CATALOG` | — | ✓ | Comma-separated tenants this MCP deployment serves; names must match the JWT `tenants` claim values *and* the corresponding Memgraph database names |
-| `MCP_AUTH_JWKS_URL` | derived: `<issuer>/protocol/openid-connect/certs` | — | Override JWKS endpoint (rarely needed) |
-| `MCP_AUTH_TENANTS_CLAIM` | `tenants` | — | Claim holding the user's allowed tenant list (must be an array of strings) |
-| `MCP_AUTH_DEFAULT_TENANT_CLAIM` | `default_tenant` | — | Optional claim selecting the user's preferred initial tenant; if absent the server picks the alphabetically-first allowed one |
-| `MCP_AUTH_REQUIRED_SCOPE` | `mcp:tools` | — | Scope the JWT must carry |
-| `MCP_AUTH_STATIC_CLIENT_ID` | — | — | Opt-in DCR intercept (see below) |
+| Var                             | Default                                           | Required when auth on | Purpose                                                                                                                                             |
+| ------------------------------- | ------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MCP_AUTH_ENABLED`              | `false`                                           | —                     | Master switch                                                                                                                                       |
+| `MCP_AUTH_ISSUER`               | —                                                 | ✓                     | OIDC issuer URL, e.g. `https://auth.example.com/realms/memgraph`                                                                                    |
+| `MCP_AUTH_AUDIENCE`             | —                                                 | ✓                     | Expected `aud` claim on JWTs the server will accept                                                                                                 |
+| `MCP_TENANT_CATALOG`            | —                                                 | ✓                     | Comma-separated tenants this MCP deployment serves; names must match the JWT `tenants` claim values _and_ the corresponding Memgraph database names |
+| `MCP_AUTH_JWKS_URL`             | derived: `<issuer>/protocol/openid-connect/certs` | —                     | Override JWKS endpoint (rarely needed)                                                                                                              |
+| `MCP_AUTH_TENANTS_CLAIM`        | `tenants`                                         | —                     | Claim holding the user's allowed tenant list (must be an array of strings)                                                                          |
+| `MCP_AUTH_DEFAULT_TENANT_CLAIM` | `default_tenant`                                  | —                     | Optional claim selecting the user's preferred initial tenant; if absent the server picks the alphabetically-first allowed one                       |
+| `MCP_AUTH_REQUIRED_SCOPE`       | `mcp:tools`                                       | —                     | Scope the JWT must carry                                                                                                                            |
+| `MCP_AUTH_STATIC_CLIENT_ID`     | —                                                 | —                     | Opt-in DCR intercept (see below)                                                                                                                    |
 
 #### How it works
 
@@ -227,12 +260,12 @@ Inside a session, a user can switch among their allowed databases with the
 
 #### Discovery endpoints exposed when auth is enabled
 
-| Path | Purpose |
-|---|---|
-| `GET /.well-known/oauth-protected-resource` | RFC 9728 PRM telling MCP clients which authorization server to use |
-| `GET /.well-known/oauth-authorization-server` | RFC 8414 AS metadata (proxied from the upstream IdP) |
-| `GET /.well-known/openid-configuration` | OIDC discovery (proxied from the upstream IdP) |
-| `POST /register` | DCR intercept — only present when `MCP_AUTH_STATIC_CLIENT_ID` is set |
+| Path                                          | Purpose                                                              |
+| --------------------------------------------- | -------------------------------------------------------------------- |
+| `GET /.well-known/oauth-protected-resource`   | RFC 9728 PRM telling MCP clients which authorization server to use   |
+| `GET /.well-known/oauth-authorization-server` | RFC 8414 AS metadata (proxied from the upstream IdP)                 |
+| `GET /.well-known/openid-configuration`       | OIDC discovery (proxied from the upstream IdP)                       |
+| `POST /register`                              | DCR intercept — only present when `MCP_AUTH_STATIC_CLIENT_ID` is set |
 
 The discovery document fetched from the upstream IdP is cached in-process; it's
 re-fetched on next request if the cache is empty (e.g., the IdP was down on
