@@ -4,7 +4,7 @@ from typing import Any
 
 from neo4j import AsyncGraphDatabase, GraphDatabase
 
-from ..utils.serialization import serialize_record_data
+from ..utils.serialization import serialize_records
 
 MEMGRAPH_ENV_DEFAULTS = {
     "MEMGRAPH_URL": "bolt://localhost:7687",
@@ -142,54 +142,18 @@ class Memgraph:
 
     def query(self, query: str, params: dict = None) -> list[dict[str, Any]]:
         """
-        Execute a Cypher query and return results as a list of dictionaries.
+        Execute a Cypher query and return type-preserving result rows.
 
-        Args:
-            query: The Cypher query to execute
-
-        Returns:
-            List of dictionaries containing query results
-        """
-        from neo4j.exceptions import Neo4jError
-
-        if params is None:
-            params = {}
-        try:
-            data, _, _ = self.driver.execute_query(
-                query,
-                parameters_=params,
-                database_=self.database,
-            )
-            json_data = [serialize_record_data(r.data()) for r in data]
-            return json_data
-        except Neo4jError as e:
-            if not _is_implicit_transaction_fallback_error(e):
-                raise
-
-        # fallback to allow implicit transactions
-        with self.driver.session(database=self.database) as session:
-            data = session.run(query, params)
-            json_data = [serialize_record_data(r.data()) for r in data]
-            return json_data
-
-    def query_raw(self, query: str, params: dict = None) -> list[Any]:
-        """
-        Execute a Cypher query and return the raw neo4j ``Record`` objects.
-
-        Unlike :meth:`query`, this does **not** flatten graph entities through
-        ``Record.data()``; the records still hold live ``neo4j.graph`` Node /
-        Relationship / Path objects, preserving element ids, labels,
-        relationship types, and endpoints. Callers that need type-preserving
-        serialization (e.g. the ``run_cypher_query`` tool via
-        ``serialize_records``) build on this; :meth:`query` remains the
-        flat-dict path for existing consumers.
+        Each value keeps its type: nodes, relationships and paths become
+        ``_type``-tagged objects (id, labels/type, endpoints, properties);
+        primitives, lists, maps, temporals and points keep their shape.
 
         Args:
             query: The Cypher query to execute
             params: Optional query parameters
 
         Returns:
-            List of neo4j ``Record`` objects
+            List of dictionaries, one per result row
         """
         from neo4j.exceptions import Neo4jError
 
@@ -201,15 +165,14 @@ class Memgraph:
                 parameters_=params,
                 database_=self.database,
             )
-            return list(records)
+            return serialize_records(records)
         except Neo4jError as e:
             if not _is_implicit_transaction_fallback_error(e):
                 raise
 
         # fallback to allow implicit transactions
         with self.driver.session(database=self.database) as session:
-            result = session.run(query, params)
-            return list(result)
+            return serialize_records(session.run(query, params))
 
     def close(self) -> None:
         """
@@ -277,55 +240,18 @@ class AsyncMemgraph:
 
     async def query(self, query: str, params: dict = None) -> list[dict[str, Any]]:
         """
-        Execute a Cypher query and return results as a list of dictionaries.
+        Execute a Cypher query and return type-preserving result rows.
 
-        Mirrors :meth:`Memgraph.query`, including the fallback to an implicit
-        transaction for statements that cannot run inside a managed transaction.
-
-        Args:
-            query: The Cypher query to execute
-            params: Optional query parameters
-
-        Returns:
-            List of dictionaries containing query results
-        """
-        from neo4j.exceptions import Neo4jError
-
-        if params is None:
-            params = {}
-        try:
-            data, _, _ = await self.driver.execute_query(
-                query,
-                parameters_=params,
-                database_=self.database,
-            )
-            json_data = [serialize_record_data(r.data()) for r in data]
-            return json_data
-        except Neo4jError as e:
-            if not _is_implicit_transaction_fallback_error(e):
-                raise
-
-        # fallback to allow implicit transactions
-        async with self.driver.session(database=self.database) as session:
-            result = await session.run(query, params)
-            json_data = [serialize_record_data(r.data()) async for r in result]
-            return json_data
-
-    async def query_raw(self, query: str, params: dict = None) -> list[Any]:
-        """
-        Execute a Cypher query and return the raw neo4j ``Record`` objects.
-
-        Async mirror of :meth:`Memgraph.query_raw`, including the fallback to an
-        implicit transaction. The returned records still hold live
-        ``neo4j.graph`` Node / Relationship / Path objects, preserving element
-        ids, labels, relationship types, and endpoints.
+        Async mirror of :meth:`Memgraph.query`, including the fallback to an
+        implicit transaction for statements that cannot run inside a managed
+        transaction.
 
         Args:
             query: The Cypher query to execute
             params: Optional query parameters
 
         Returns:
-            List of neo4j ``Record`` objects
+            List of dictionaries, one per result row
         """
         from neo4j.exceptions import Neo4jError
 
@@ -337,7 +263,7 @@ class AsyncMemgraph:
                 parameters_=params,
                 database_=self.database,
             )
-            return list(records)
+            return serialize_records(records)
         except Neo4jError as e:
             if not _is_implicit_transaction_fallback_error(e):
                 raise
@@ -345,7 +271,8 @@ class AsyncMemgraph:
         # fallback to allow implicit transactions
         async with self.driver.session(database=self.database) as session:
             result = await session.run(query, params)
-            return [record async for record in result]
+            records = [record async for record in result]
+            return serialize_records(records)
 
     async def close(self) -> None:
         """

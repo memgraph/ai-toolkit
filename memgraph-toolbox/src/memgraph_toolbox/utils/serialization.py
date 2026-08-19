@@ -76,6 +76,7 @@ def serialize_node(node: Node) -> dict:
     :func:`serialize_record_data` so temporal/duration types stay JSON-safe.
     """
     return {
+        "_type": "node",
         "id": node.element_id,
         "labels": sorted(node.labels),
         "properties": serialize_record_data(dict(node)),
@@ -93,6 +94,7 @@ def serialize_relationship(rel: Relationship) -> dict:
     start = rel.start_node
     end = rel.end_node
     return {
+        "_type": "relationship",
         "id": rel.element_id,
         "type": rel.type,
         "start": start.element_id if start is not None else None,
@@ -101,7 +103,16 @@ def serialize_relationship(rel: Relationship) -> dict:
     }
 
 
-def _serialize_point(point: Point) -> dict:
+def serialize_path(path: Path) -> dict:
+    """Project a neo4j Path into a JSON-safe record of its nodes and relationships."""
+    return {
+        "_type": "path",
+        "nodes": [serialize_node(node) for node in path.nodes],
+        "relationships": [serialize_relationship(rel) for rel in path.relationships],
+    }
+
+
+def serialize_point(point: Point) -> dict:
     """Project a neo4j spatial Point into a JSON-safe record."""
     return {
         "_type": "point",
@@ -120,17 +131,13 @@ def serialize_value(value: Any) -> Any:
     pass through.
     """
     if isinstance(value, Node):
-        return {"_type": "node", **serialize_node(value)}
+        return serialize_node(value)
     if isinstance(value, Relationship):
-        return {"_type": "relationship", **serialize_relationship(value)}
+        return serialize_relationship(value)
     if isinstance(value, Path):
-        return {
-            "_type": "path",
-            "nodes": [{"_type": "node", **serialize_node(n)} for n in value.nodes],
-            "relationships": [{"_type": "relationship", **serialize_relationship(r)} for r in value.relationships],
-        }
+        return serialize_path(value)
     if isinstance(value, Point):
-        return _serialize_point(value)
+        return serialize_point(value)
     if isinstance(value, list):
         return [serialize_value(item) for item in value]
     if isinstance(value, dict):

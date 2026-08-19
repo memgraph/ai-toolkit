@@ -10,7 +10,6 @@ from mcp_memgraph.tenant_routing import UnknownTenantError, get_registry
 from memgraph_toolbox.api.memgraph import Memgraph
 from memgraph_toolbox.tools.schema import EnumSchemaTool, NodeSchemaTool, RelationshipSchemaTool, SearchSchemaTool
 from memgraph_toolbox.utils.logger import logger_init
-from memgraph_toolbox.utils.serialization import serialize_records
 
 # Get configuration instances
 memgraph_config = get_memgraph_config()
@@ -201,7 +200,7 @@ def run_cypher_query(query: str, ctx: Context | None = None) -> list[dict[str, A
             }
         ]
 
-    return _safe_call(lambda: serialize_records(_get_db().query_raw(query)), on_error="Error running query")
+    return _safe_call(lambda: _get_db().query(query), on_error="Error running query")
 
 
 @mcp.tool(annotations={"readOnlyHint": True})

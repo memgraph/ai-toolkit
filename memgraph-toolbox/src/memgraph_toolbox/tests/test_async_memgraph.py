@@ -54,31 +54,3 @@ async def test_async_memgraph_query_live():
         assert result == [{"value": 1}]
     finally:
         await client.close()
-
-
-@pytest.mark.asyncio
-async def test_async_memgraph_query_raw_live():
-    """query_raw returns raw neo4j records holding live graph objects, not flat dicts."""
-    import neo4j
-    from neo4j.graph import Node
-
-    client = AsyncMemgraph(url="bolt://localhost:7687", username="", password="")
-    try:
-        await client.verify_connectivity()
-    except (neo4j.exceptions.ServiceUnavailable, neo4j.exceptions.SessionExpired, OSError):
-        await client.close()
-        pytest.skip("No Memgraph server reachable at bolt://localhost:7687")
-
-    try:
-        await client.query("MATCH (n:AsyncRawNode) DETACH DELETE n")
-        await client.query("CREATE (:AsyncRawNode {name: 'A'})")
-        records = await client.query_raw("MATCH (n:AsyncRawNode) RETURN n")
-
-        assert len(records) == 1
-        node = records[0]["n"]
-        assert isinstance(node, Node)
-        assert "AsyncRawNode" in node.labels
-        assert node.element_id is not None
-    finally:
-        await client.query("MATCH (n:AsyncRawNode) DETACH DELETE n")
-        await client.close()

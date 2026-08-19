@@ -31,10 +31,11 @@ async def full_graphrag(args):
         RETURN dst LIMIT 5;
     """
     ):
-        if "description" in row["dst"]:
-            retrieved_chunks.append(row["dst"]["description"])
-        if "text" in row["dst"]:
-            retrieved_chunks.append(row["dst"]["text"])
+        props = row["dst"]["properties"]
+        if "description" in props:
+            retrieved_chunks.append(props["description"])
+        if "text" in props:
+            retrieved_chunks.append(props["text"])
 
     #### SUMMARIZATION
     if not retrieved_chunks:

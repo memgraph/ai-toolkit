@@ -285,11 +285,12 @@ class SQLToMemgraphAgent:
 
         if result:
             meta = result[0].get("meta", {})
-            node_data = meta.get("node_summaries") or "{}"
-            rel_data = meta.get("relationship_summaries") or "{}"
-            table_counts = meta.get("table_counts") or "{}"
+            props = meta.get("properties", {})
+            node_data = props.get("node_summaries") or "{}"
+            rel_data = props.get("relationship_summaries") or "{}"
+            table_counts = props.get("table_counts") or "{}"
             self._existing_meta_graph = {
-                "model_hash": meta.get("model_hash"),
+                "model_hash": props.get("model_hash"),
                 "node_summaries": json.loads(node_data),
                 "relationship_summaries": json.loads(rel_data),
                 "table_counts": json.loads(table_counts),
