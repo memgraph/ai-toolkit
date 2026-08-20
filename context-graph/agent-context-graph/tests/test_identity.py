@@ -106,14 +106,22 @@ def test_write_config_preserves_llm_keys(config_dir):
 # --- resolve_auto_reconcile ---
 
 
-def test_auto_reconcile_defaults_to_false(config_dir):
-    assert _identity.resolve_auto_reconcile() is False
+def test_auto_reconcile_is_none_when_never_configured(config_dir):
+    """None (not False) when never configured, so callers can fall back to the
+    SESSIONS_GRAPH_AUTO_RECONCILE env var instead of forcing it off (finding 1)."""
+    assert _identity.resolve_auto_reconcile() is None
 
 
 def test_auto_reconcile_from_config_file(config_dir):
     _identity.write_full_config(auto_reconcile=True)
     _identity._reset_cache()
     assert _identity.resolve_auto_reconcile() is True
+
+
+def test_auto_reconcile_explicit_false_is_not_collapsed_to_none(config_dir):
+    _identity.write_full_config(auto_reconcile=False)
+    _identity._reset_cache()
+    assert _identity.resolve_auto_reconcile() is False
 
 
 def test_write_config_preserves_auto_reconcile(config_dir):
@@ -134,6 +142,26 @@ def test_write_config_can_toggle_auto_reconcile_off(config_dir):
     assert _identity.load_config().auto_reconcile is False
 
 
+def test_write_full_config_preserves_auto_reconcile_when_not_given(config_dir):
+    """Simulates re-running `bootstrap`: it must not silently revert
+    reconcile.auto_reconcile to off just because it doesn't pass it (finding 2)."""
+    _identity.write_full_config(auto_reconcile=True)
+    _identity._reset_cache()
+    _identity.write_full_config(user_id="rebootstrapped")
+    _identity._reset_cache()
+    config = _identity.load_config()
+    assert config.auto_reconcile is True
+    assert config.user_id == "rebootstrapped"
+
+
+def test_write_full_config_can_explicitly_set_auto_reconcile(config_dir):
+    _identity.write_full_config(auto_reconcile=True)
+    _identity._reset_cache()
+    _identity.write_full_config(auto_reconcile=False)
+    _identity._reset_cache()
+    assert _identity.load_config().auto_reconcile is False
+
+
 # --- parse_bool_flag ---
 
 
@@ -145,6 +173,28 @@ def test_parse_bool_flag_truthy_values():
 def test_parse_bool_flag_falsy_values():
     for value in ("0", "false", "no", "off", "", "garbage"):
         assert _identity.parse_bool_flag(value) is False
+
+
+def test_parse_bool_flag_passes_real_bool_through(config_dir):
+    assert _identity.parse_bool_flag(True) is True
+    assert _identity.parse_bool_flag(False) is False
+
+
+# --- _parse_toml inline comments ---
+
+
+def test_parse_toml_strips_inline_comment_on_bare_value(config_dir, tmp_path):
+    f = tmp_path / "test.toml"
+    f.write_text("[reconcile]\nauto_reconcile = true  # off for now\n")
+    sections = _identity._parse_toml(f)
+    assert sections["reconcile"]["auto_reconcile"] == "true"
+
+
+def test_parse_toml_leaves_quoted_value_with_hash_alone(config_dir, tmp_path):
+    f = tmp_path / "test.toml"
+    f.write_text('[identity]\nuser_id = "user#123"\n')
+    sections = _identity._parse_toml(f)
+    assert sections["identity"]["user_id"] == "user#123"
 
 
 # --- write_config ---
@@ -174,7 +224,7 @@ def test_write_full_config_writes_all_defaults(config_dir):
     assert config.user_id is None  # empty string -> None
     assert config.memgraph_url == "bolt://localhost:7687"
     assert config.memgraph_database == "memgraph"
-    assert config.auto_reconcile is False
+    assert config.auto_reconcile is None
 
 
 # --- load_config ---

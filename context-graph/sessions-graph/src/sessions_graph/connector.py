@@ -50,13 +50,14 @@ logger = logging.getLogger(__name__)
 _SUPPORTED_EVENTS = {EventType.SESSION_START, EventType.SESSION_END}
 
 #: Read at connector construction time when auto_reconcile isn't passed explicitly.
-#: Hook-based runtimes (Claude Code, Codex) no longer rely on this: since
-#: agent_context_graph 0.2.0, agent_context_graph.hooks.runner._add_sessions_graph_connector
+#: As of agent_context_graph 0.2.1, agent_context_graph.hooks.runner._add_sessions_graph_connector
 #: resolves the persistent ``reconcile.auto_reconcile`` config-file setting
 #: (agent_context_graph.adapters._identity.resolve_auto_reconcile(), set via
 #: ``agent-context-graph config set reconcile.auto_reconcile true``) and passes
-#: it explicitly, which takes priority. This env var remains a fallback for
-#: SDK integrations that construct SessionsGraphConnector directly.
+#: that straight through -- an explicit True/False from the config file takes
+#: priority, but resolve_auto_reconcile() returns None when never configured,
+#: in which case this env var is still consulted below. SDK integrations that
+#: construct SessionsGraphConnector directly rely solely on this env var.
 _AUTO_RECONCILE_ENV_VAR = "SESSIONS_GRAPH_AUTO_RECONCILE"
 
 

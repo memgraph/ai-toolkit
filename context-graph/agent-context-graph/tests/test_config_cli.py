@@ -24,7 +24,7 @@ def config_dir(monkeypatch, tmp_path):
 
 def test_config_set_reconcile_auto_reconcile_true(config_dir, capsys):
     assert top_level_main(["config", "set", "reconcile.auto_reconcile", "true"]) == 0
-    assert "Wrote reconcile.auto_reconcile = True" in capsys.readouterr().out
+    assert "Wrote reconcile.auto_reconcile = true" in capsys.readouterr().out
     assert _identity.load_config().auto_reconcile is True
 
 
@@ -33,7 +33,7 @@ def test_config_set_reconcile_auto_reconcile_false(config_dir, capsys):
     _identity._reset_cache()
 
     assert top_level_main(["config", "set", "reconcile.auto_reconcile", "false"]) == 0
-    assert "Wrote reconcile.auto_reconcile = False" in capsys.readouterr().out
+    assert "Wrote reconcile.auto_reconcile = false" in capsys.readouterr().out
     assert _identity.load_config().auto_reconcile is False
 
 
@@ -50,6 +50,19 @@ def test_config_get_reconcile_auto_reconcile(config_dir, capsys):
     assert capsys.readouterr().out.strip() == "True"
 
 
-def test_config_show_includes_reconcile_auto_reconcile(config_dir, capsys):
+def test_config_get_reconcile_auto_reconcile_reports_unset(config_dir, capsys):
+    assert top_level_main(["config", "get", "reconcile.auto_reconcile"]) == 1
+    assert "not set" in capsys.readouterr().err
+
+
+def test_config_show_reports_unset_reconcile_auto_reconcile(config_dir, capsys):
     assert top_level_main(["config", "show"]) == 0
-    assert "reconcile.auto_reconcile = False" in capsys.readouterr().out
+    assert "reconcile.auto_reconcile = unset (defaults to false)" in capsys.readouterr().out
+
+
+def test_config_show_includes_explicit_reconcile_auto_reconcile(config_dir, capsys):
+    _identity.write_full_config(auto_reconcile=True)
+    _identity._reset_cache()
+
+    assert top_level_main(["config", "show"]) == 0
+    assert "reconcile.auto_reconcile = true" in capsys.readouterr().out

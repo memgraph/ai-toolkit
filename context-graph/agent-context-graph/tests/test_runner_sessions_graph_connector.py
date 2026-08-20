@@ -51,14 +51,29 @@ def fake_sessions_graph(monkeypatch):
     return constructed
 
 
-def test_sessions_graph_connector_defaults_auto_reconcile_off(config_dir, fake_sessions_graph):
+def test_sessions_graph_connector_passes_none_when_unconfigured(config_dir, fake_sessions_graph):
+    """Unconfigured must resolve to None, not False -- otherwise it silently
+    suppresses the connector's own SESSIONS_GRAPH_AUTO_RECONCILE env fallback
+    for anyone who has that var exported (finding 1)."""
     create_link(["sessions_graph"])
-    assert fake_sessions_graph["auto_reconcile"] is False
+    assert fake_sessions_graph["auto_reconcile"] is None
 
 
-def test_sessions_graph_connector_reads_auto_reconcile_from_config(config_dir, fake_sessions_graph):
+def test_sessions_graph_connector_reads_auto_reconcile_true_from_config(config_dir, fake_sessions_graph):
     _identity.write_full_config(auto_reconcile=True)
     _identity._reset_cache()
 
     create_link(["sessions_graph"])
     assert fake_sessions_graph["auto_reconcile"] is True
+
+
+def test_sessions_graph_connector_reads_explicit_false_from_config(config_dir, fake_sessions_graph):
+    """An explicit `config set reconcile.auto_reconcile false` must be passed
+    through as False (suppressing auto-reconcile), not collapsed to None."""
+    _identity.write_full_config(auto_reconcile=True)
+    _identity._reset_cache()
+    _identity.write_config(auto_reconcile=False)
+    _identity._reset_cache()
+
+    create_link(["sessions_graph"])
+    assert fake_sessions_graph["auto_reconcile"] is False
