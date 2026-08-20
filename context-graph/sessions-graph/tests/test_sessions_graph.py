@@ -180,14 +180,23 @@ class TestSessionsGraphConnector:
         assert connector.active_user_id is None
         assert connector.active_session_id is None
 
-    def test_auto_reconcile_defaults_off_and_does_not_spawn_process(self):
+    def test_auto_reconcile_defaults_off_and_does_not_spawn_process(self, monkeypatch):
+        # Must not consult ambient env for this -- a real shell with
+        # SESSIONS_GRAPH_AUTO_RECONCILE=1 exported would otherwise make this
+        # test flip Popen on and fail, dumping the *real* env= dict (secrets
+        # included) into the assertion failure message. Same bug class this
+        # test exists to catch, just at the test level instead of the code.
+        monkeypatch.delenv("SESSIONS_GRAPH_AUTO_RECONCILE", raising=False)
         connector, _graph, _db, SessionStartEvent, SessionEndEvent = self._make()
 
         with patch("sessions_graph.connector.subprocess.Popen") as mock_popen:
             connector.on_event(SessionStartEvent(session_id="s-1", user_id="alice"))
             connector.on_event(SessionEndEvent(session_id="s-1"))
 
-        mock_popen.assert_not_called()
+        # call_count, not assert_not_called(): the latter's failure message
+        # renders the full call args -- including env=dict(os.environ), real
+        # secrets and all -- which is exactly how this got flagged in review.
+        assert mock_popen.call_count == 0
 
     def test_auto_reconcile_true_spawns_detached_process(self, context_graph_config):
         from sessions_graph.connector import SessionsGraphConnector

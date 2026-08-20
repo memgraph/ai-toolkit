@@ -175,12 +175,26 @@ Codex) enforce a timeout on hook commands. Instead:
 
 - Or, if you want it triggered automatically without a manual/cron step, opt
   in to a **best-effort detached background process** spawned right after a
-  session ends: pass `SessionsGraphConnector(graph, auto_reconcile=True)`, or set
+  session ends. For hook-based runtimes (Claude Code, Codex), set this
+  persistently:
+
+  ```bash
+  agent-context-graph config set reconcile.auto_reconcile true
+  ```
+
+  This writes `[reconcile] auto_reconcile = true` to
+  `~/.config/context-graph/config.toml`, which
+  `agent_context_graph.hooks.runner._add_sessions_graph_connector` reads on
+  every hook invocation via `resolve_auto_reconcile()` — no shell/session
+  restart quirks, since hook subprocesses don't reliably inherit shell
+  profile environment variables. Direct SDK integrations that construct
+  `SessionsGraphConnector` themselves can instead pass
+  `SessionsGraphConnector(graph, auto_reconcile=True)`, or set
   `SESSIONS_GRAPH_AUTO_RECONCILE=1` in the environment the connector is
-  constructed in (this is what hook-based runtimes read, since they don't
-  expose a constructor kwarg for it). This is fire-and-forget — if the
-  process dies before finishing (machine sleep, crash), the session stays
-  `pending` and `sessions-graph reconcile --pending` is the reliable backfill.
+  constructed in (a fallback, only consulted when `auto_reconcile` isn't
+  passed explicitly). This is fire-and-forget — if the process dies before
+  finishing (machine sleep, crash), the session stays `pending` and
+  `sessions-graph reconcile --pending` is the reliable backfill.
 
 Programmatically:
 

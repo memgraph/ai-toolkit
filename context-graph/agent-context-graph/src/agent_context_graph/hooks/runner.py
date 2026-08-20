@@ -159,9 +159,11 @@ def _add_sessions_graph_connector(link: AgentLink, memgraph_env: dict[str, str] 
         msg = "sessions-graph is required for the sessions-graph connector"
         raise ImportError(msg) from exc
 
+    from agent_context_graph.adapters._identity import resolve_auto_reconcile
+
     kwargs = _memgraph_kwargs(memgraph_env)
     graph = SessionsGraph(**kwargs)
-    link.add_connector(SessionsGraphConnector(graph))
+    link.add_connector(SessionsGraphConnector(graph, auto_reconcile=resolve_auto_reconcile()))
 
 
 def _add_actions_graph_connector(link: AgentLink, memgraph_env: dict[str, str] | None = None) -> None:

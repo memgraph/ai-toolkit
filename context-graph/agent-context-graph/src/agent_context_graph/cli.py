@@ -67,8 +67,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _config(argv: list[str]) -> int:
     """Get or set persistent config values in ~/.config/context-graph/config.toml."""
     from agent_context_graph.adapters._identity import (
+        FALSY_VALUES,
+        TRUTHY_VALUES,
         config_file_path,
         load_config,
+        parse_bool_flag,
         write_config,
     )
 
@@ -82,8 +85,10 @@ def _config(argv: list[str]) -> int:
         "memgraph.database": "memgraph_database",
         "llm.openai_api_key": "openai_api_key",
         "llm.anthropic_api_key": "anthropic_api_key",
+        "reconcile.auto_reconcile": "auto_reconcile",
     }
     _SECRET_KEYS = {"memgraph.password", "llm.openai_api_key", "llm.anthropic_api_key"}
+    _BOOL_KEYS = {"reconcile.auto_reconcile"}
 
     if not argv or argv[0] in {"-h", "--help"}:
         print("usage: agent-context-graph config set <key> <value>")
@@ -108,6 +113,10 @@ def _config(argv: list[str]) -> int:
         print(f"memgraph.database = {config.memgraph_database!r}")
         print(f"llm.openai_api_key = {'***' if config.openai_api_key else repr('')}")
         print(f"llm.anthropic_api_key = {'***' if config.anthropic_api_key else repr('')}")
+        if config.auto_reconcile is None:
+            print("reconcile.auto_reconcile = unset (defaults to false)")
+        else:
+            print(f"reconcile.auto_reconcile = {'true' if config.auto_reconcile else 'false'}")
         return 0
 
     if action == "set":
@@ -132,8 +141,21 @@ def _config(argv: list[str]) -> int:
         else:
             value = argv[2]
 
-        write_config(**{_CONFIG_KEYS[key]: value})
-        display_value = "***" if key in _SECRET_KEYS else repr(value)
+        write_value: str | bool = value
+        if key in _BOOL_KEYS:
+            normalized = value.strip().lower()
+            if normalized not in TRUTHY_VALUES | FALSY_VALUES:
+                print(f"Invalid value for {key}: {value!r} (expected true/false)", file=sys.stderr)
+                return 2
+            write_value = parse_bool_flag(normalized)
+
+        write_config(**{_CONFIG_KEYS[key]: write_value})
+        if key in _SECRET_KEYS:
+            display_value = "***"
+        elif key in _BOOL_KEYS:
+            display_value = str(write_value).lower()
+        else:
+            display_value = repr(write_value)
         print(f"Wrote {key} = {display_value} to {config_path}")
         return 0
 
@@ -275,6 +297,13 @@ def _bootstrap(argv: list[str]) -> int:
     openai_api_key = os.environ.get("OPENAI_API_KEY", "")
     anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
 
+    # auto_reconcile is deliberately NOT captured from SESSIONS_GRAPH_AUTO_RECONCILE
+    # here, unlike the keys above: those have a legitimate ambient-env source
+    # (people already have OPENAI_API_KEY/MEMGRAPH_PASSWORD exported for other
+    # tools), but nobody has this env var set for an unrelated reason -- it's
+    # only ever set via `config set reconcile.auto_reconcile`. write_full_config
+    # preserves the existing value when auto_reconcile isn't passed, so
+    # re-running bootstrap can't silently revert it to off.
     config_path = write_full_config(
         user_id=user_id,
         memgraph_url=memgraph_url,
@@ -302,7 +331,6 @@ def _bootstrap(argv: list[str]) -> int:
             "   no LLM API key found in environment — sessions-graph reconciliation needs one; "
             "set with: agent-context-graph config set llm.openai_api_key"
         )
-
     doctor_args = ["--runtime", args.runtime]
     for connector in connectors:
         doctor_args.extend(["--connector", connector])
@@ -373,7 +401,13 @@ def _check_config() -> dict[str, object]:
     parts.append(
         "llm_key=SET" if llm_key_set else "llm_key=NOT SET (needed only for sessions-graph auto-reconciliation)"
     )
-    return {"name": "config", "ok": bool(config.user_id), "detail": f"{path} — {'; '.join(parts)}"}
+    auto_reconcile_on = bool(config.auto_reconcile)
+    parts.append(f"auto_reconcile={'ON' if auto_reconcile_on else 'OFF'}")
+    broken_auto_reconcile = auto_reconcile_on and not llm_key_set
+    if broken_auto_reconcile:
+        parts.append("WARNING: auto_reconcile is ON but no LLM key is set — reconciliation will fail")
+    ok = bool(config.user_id) and not broken_auto_reconcile
+    return {"name": "config", "ok": ok, "detail": f"{path} — {'; '.join(parts)}"}
 
 
 def _check_memgraph() -> dict[str, object]:

@@ -227,17 +227,39 @@ url = "bolt://localhost:7687"
 user = ""
 password = ""
 database = "memgraph"
+
+[llm]
+openai_api_key = ""
+anthropic_api_key = ""
+
+[reconcile]
+auto_reconcile = true
 ```
+
+`[llm]` and `[reconcile]` are only relevant if you enable sessions-graph's
+auto-trigger reconciliation (see
+[sessions-graph § reconciliation](../sessions-graph/README.md#session-reconciliation)).
+`[reconcile]` is omitted entirely from a freshly-bootstrapped file — absent
+means "never configured," distinct from an explicit `auto_reconcile = false`.
 
 Manage it with:
 
 ```bash
 agent-context-graph config show
 agent-context-graph config get memgraph.url
-agent-context-graph config set <key> <value>   # keys: identity.user_id, memgraph.{url,user,password,database}
+agent-context-graph config set <key> <value>
+# keys: identity.user_id, memgraph.{url,user,password,database},
+#       llm.{openai_api_key,anthropic_api_key}, reconcile.auto_reconcile
 ```
 
-Environment variables (`MEMGRAPH_URL`, `MEMGRAPH_USER`, `MEMGRAPH_PASSWORD`, `MEMGRAPH_DATABASE`, `AGENT_CONTEXT_GRAPH_USER_ID`) are consulted **only at bootstrap time** — if set, `bootstrap` persists them into the config file. Exporting them later has no effect on running hooks; use `config set` instead.
+Environment variables (`MEMGRAPH_URL`, `MEMGRAPH_USER`, `MEMGRAPH_PASSWORD`, `MEMGRAPH_DATABASE`, `AGENT_CONTEXT_GRAPH_USER_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) are consulted **only at bootstrap time** — if set, `bootstrap` persists them into the config file. Exporting them later has no effect on running hooks; use `config set` instead.
+
+`reconcile.auto_reconcile` is the one exception: `bootstrap` never captures
+`SESSIONS_GRAPH_AUTO_RECONCILE` from the environment, and re-running
+`bootstrap` preserves whatever it's currently set to rather than resetting it.
+Unlike the keys above, nobody has that env var exported for an unrelated
+reason — it's only ever set via `agent-context-graph config set
+reconcile.auto_reconcile true`.
 
 ### OpenAI Codex Plugin
 
