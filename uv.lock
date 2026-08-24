@@ -3054,7 +3054,7 @@ wheels = [
 
 [[package]]
 name = "langchain-memgraph"
-version = "0.1.14"
+version = "0.1.15"
 source = { editable = "integrations/langchain-memgraph" }
 dependencies = [
     { name = "langchain" },
