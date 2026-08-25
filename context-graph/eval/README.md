@@ -102,6 +102,26 @@ count adds variance for no information.
 Coverage is a **hard gate**; efficiency only ranks questions that cleared it.
 Otherwise the metric is trivially gamed by returning nothing.
 
+```python
+from context_graph_eval.scoring import aggregate, build_metrics, to_test_case
+
+report = aggregate(scored)
+report.by_tier[1].coverage_rate
+report.by_tier[1].median_efficiency_tokens   # median, not mean: one pathological
+                                             # payload shouldn't move the number
+                                             # compared across schema versions
+report.by_tier[1].abstention_correct         # reported apart -- here a confident
+                                             # answer is the failure
+```
+
+`RunReport` has **no** blended headline field, by design. A single number across
+tiers is exactly what would let an organizational-recall regression hide behind
+a personal-memory gain.
+
+The efficiency tokenizer is pinned for the same reason the judge model is: a
+tokenizer change silently shifts every efficiency number, and two runs measured
+differently aren't comparable.
+
 ## Isolation
 
 Each eval **batch** runs against a **dedicated Memgraph instance**, cleared

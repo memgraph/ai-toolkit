@@ -95,18 +95,48 @@ def is_write_query(cypher: str) -> bool:
 
 
 def graph_schema(graph: ReadOnlyGraph) -> str:
-    """A compact description of what is in the graph.
+    """A description of what is in the graph, for the agent to write Cypher against.
 
-    The agent writes its own Cypher, so without this it can only guess at the
-    labels and relationship types available.
+    Uses ``memgraph_toolbox``'s ``SearchSchemaTool`` -- the same implementation
+    the MCP server's ``search_schema`` tool wraps -- so the baseline really is
+    the existing query surface (#300) rather than a reimplementation of it,
+    while still being pointed at the dedicated eval instance.
+
+    Property-level detail matters here beyond tidiness: injected turn text lives
+    inside ``Action.properties`` as JSON rather than in a ``content`` property,
+    so an agent given only label names would have to guess that.
+
+    Falls back to labels and relationship types when Memgraph was started
+    without ``--schema-info-enabled``, so a contributor whose instance lacks the
+    flag gets a weaker prompt rather than a crash.
     """
+    detailed = _detailed_schema(graph)
+    if detailed:
+        return detailed
+
     labels = graph.query("MATCH (n) UNWIND labels(n) AS label RETURN DISTINCT label ORDER BY label")
     rel_types = graph.query("MATCH ()-[r]->() RETURN DISTINCT type(r) AS type ORDER BY type")
-    lines = [
-        "Node labels: " + ", ".join(row["label"] for row in labels),
-        "Relationship types: " + ", ".join(row["type"] for row in rel_types),
-    ]
-    return "\n".join(lines)
+    return "\n".join(
+        [
+            "Node labels: " + ", ".join(row["label"] for row in labels),
+            "Relationship types: " + ", ".join(row["type"] for row in rel_types),
+            "(property-level schema unavailable: start Memgraph with --schema-info-enabled)",
+        ]
+    )
+
+
+def _detailed_schema(graph: ReadOnlyGraph) -> str | None:
+    """Property-level schema, or None when Memgraph has schema info disabled."""
+    try:
+        from memgraph_toolbox.tools.schema import SearchSchemaTool
+
+        rows = SearchSchemaTool(db=graph._db).call({"pattern": ".*"})
+    except Exception:
+        return None
+
+    if not rows or any("error" in row for row in rows if isinstance(row, dict)):
+        return None
+    return "\n".join(str(row) for row in rows)
 
 
 @dataclass(frozen=True)
