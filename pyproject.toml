@@ -53,6 +53,7 @@ members = [
     "context-graph/actions-graph",
     "context-graph/agent-context-graph",
     "context-graph/sessions-graph",
+    "context-graph/eval",
 ]
 
 [tool.ruff]
