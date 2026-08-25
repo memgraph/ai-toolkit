@@ -60,6 +60,35 @@ LLM credentials resolve from context-graph's config file (ADR 0002) before
 falling back to the environment, so eval runs standalone without exported
 variables.
 
+## Retrieval
+
+The v1 baseline is deliberately the *existing* query surface: an agent gets the
+graph schema and writes its own read-only Cypher. No ranking, no query
+templates, no vector search — those are deferred until this baseline's failures
+say what they should be, since building them first means designing against a
+score nobody has seen.
+
+```python
+from context_graph_eval.retrieval import DeepEvalLLM, ReadOnlyGraph, retrieve
+
+result = await retrieve(question, graph=ReadOnlyGraph(db), llm=DeepEvalLLM(model))
+result.retrieval_context   # rows the graph returned -> scored, and token-counted
+result.queries             # what it actually asked -> makes a score diagnosable
+result.errors              # failed queries, recorded rather than raised
+```
+
+Writes are refused outright. Retrieval must not be able to alter the graph it is
+scored against — the same reasoning that keeps the corpus in git rather than in
+Memgraph. The step budget is bounded for a related reason: retrieval cost is
+itself scored, so an agent allowed to query indefinitely could buy coverage with
+an unbounded payload.
+
+Note the write guard duplicates `mcp_memgraph.servers.server.is_write_query`
+rather than importing it — that module binds a client registry to global env
+config at import time, which would point retrieval at whatever Memgraph the
+environment names instead of the eval instance. If that guard gains a pattern,
+this one needs it too.
+
 ## Scoring
 
 Quality is judged, cost is counted — asking an LLM to grade a number you can

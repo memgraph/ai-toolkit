@@ -65,7 +65,7 @@ def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph")
     for fixture in fixtures:
         deduped.setdefault(fixture.session_id, fixture)
 
-    graph.clear()
+    _wipe(graph)
 
     turns = 0
     for fixture in deduped.values():
@@ -91,6 +91,23 @@ def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph")
         _mark_pending(graph, fixture.session_id)
 
     return Written(sessions=len(deduped), turns=turns)
+
+
+def _wipe(graph: "ActionsGraph") -> None:
+    """Delete everything in the eval graph.
+
+    Deliberately not ``ActionsGraph.clear()``, which only removes
+    ``Session|Agent|Action|Tool``. That leaves ``Chunk``, ``Entity``,
+    ``Episode`` and ``Memory`` standing -- precisely what reconciliation
+    produces. Relying on it would let the previous batch's *distilled memory*
+    survive, so a question could be answered from the last run instead of this
+    batch's fixtures: the leak #309 exists to prevent, and it would inflate
+    scores invisibly.
+
+    Deleting the whole graph is only safe because the eval instance is
+    dedicated. **This must never point at a shared or development database.**
+    """
+    graph._db.query("MATCH (n) DETACH DELETE n")
 
 
 def _mark_pending(graph: "ActionsGraph", session_id: str) -> None:

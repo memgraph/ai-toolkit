@@ -82,6 +82,23 @@ def test_deduplicated_sessions_are_not_counted_twice(eval_graph: ActionsGraph):
     assert written.turns == 4
 
 
+def test_a_batch_also_clears_memory_tier_nodes_from_the_previous_run(eval_graph: ActionsGraph):
+    """ActionsGraph.clear() only removes Session|Agent|Action|Tool -- it leaves
+    Chunk, Entity, Episode and Memory standing. Those are exactly what
+    reconciliation produces, so relying on it alone would let the previous
+    batch's *distilled memory* survive into this one, and a question could be
+    answered from the last run rather than from this batch's fixtures. That is
+    the leak #309 exists to prevent.
+    """
+    eval_graph._db.query("CREATE (:Chunk {text: 'from a previous batch'})")
+    eval_graph._db.query("CREATE (:Episode {summary: 'from a previous batch'})")
+
+    inject_batch([_fixture("fresh")], graph=eval_graph)
+
+    survivors = eval_graph._db.query("MATCH (n) WHERE n:Chunk OR n:Episode RETURN count(n) AS n")
+    assert survivors[0]["n"] == 0
+
+
 def test_injection_reports_what_it_wrote(eval_graph: ActionsGraph):
     written = inject_batch([_fixture("s1"), _fixture("s2")], graph=eval_graph)
 
