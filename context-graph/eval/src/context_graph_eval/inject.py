@@ -39,6 +39,13 @@ class Written:
 def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph") -> Written:
     """Clear the eval graph, then load ``fixtures`` into it.
 
+    Fixtures are deduplicated by ``session_id``. Upstream reuses distractor
+    sessions across questions, and a repeated id carries identical content --
+    verified across the whole dataset -- so a repeat is the *same* session, not
+    a new one. Writing it per occurrence would append its turns again on every
+    reuse, duplicating content in the graph and paying to reconcile each copy
+    (about 4,600 redundant LLM-backed reconciliations over a full run).
+
     Returns counts of what was written, so a caller can assert the batch landed
     rather than inferring it from the absence of an exception.
     """
@@ -54,10 +61,14 @@ def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph")
         if not fixture.session_id:
             raise ValueError(f"fixture has no session_id: {fixture!r}")
 
+    deduped: dict[str, SessionFixture] = {}
+    for fixture in fixtures:
+        deduped.setdefault(fixture.session_id, fixture)
+
     graph.clear()
 
     turns = 0
-    for fixture in fixtures:
+    for fixture in deduped.values():
         graph.ensure_session(
             Session(
                 session_id=fixture.session_id,
@@ -79,7 +90,7 @@ def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph")
 
         _mark_pending(graph, fixture.session_id)
 
-    return Written(sessions=len(fixtures), turns=turns)
+    return Written(sessions=len(deduped), turns=turns)
 
 
 def _mark_pending(graph: "ActionsGraph", session_id: str) -> None:

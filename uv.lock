@@ -1156,6 +1156,8 @@ dependencies = [
 [package.optional-dependencies]
 pipeline = [
     { name = "actions-graph" },
+    { name = "agent-context-graph" },
+    { name = "lightrag-memgraph" },
     { name = "sessions-graph" },
     { name = "unstructured2graph" },
 ]
@@ -1167,7 +1169,9 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "actions-graph", marker = "extra == 'pipeline'", editable = "context-graph/actions-graph" },
+    { name = "agent-context-graph", marker = "extra == 'pipeline'", editable = "context-graph/agent-context-graph" },
     { name = "deepeval", specifier = ">=3.5.2" },
+    { name = "lightrag-memgraph", marker = "extra == 'pipeline'", editable = "integrations/lightrag-memgraph" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
     { name = "sessions-graph", marker = "extra == 'pipeline'", editable = "context-graph/sessions-graph" },

@@ -35,6 +35,31 @@ release. Only converted output is committed, never vendored raw datasets.
 Benchmark survey and licence findings:
 [`docs/research/2026-08-memory-benchmarks.md`](https://github.com/memgraph/ai-toolkit/blob/research/memory-benchmarks/docs/research/2026-08-memory-benchmarks.md).
 
+## Reconciliation
+
+Injection stages raw turns; **reconciliation** is what turns them into memory —
+the same pass a real harness session gets: one LLM call extracting entities into
+`Chunk`s (semantic) and a second producing the session's `Episode` (episodic).
+Retrieval is therefore scored against the genuine emerged graph, not a shortcut
+built for eval.
+
+It is a separate step from injection because it is LLM-backed and slow; folding
+it in would make staging a batch cost as much as scoring one.
+
+```python
+from context_graph_eval.reconcile import reconcile_batch
+
+result = await reconcile_batch(db, limit=50)   # bounded chunks
+```
+
+Partial failure is reported rather than raised: a score only means something if
+you know how much of the graph is actually populated, so one session that can't
+be distilled must not abandon the rest of the batch.
+
+LLM credentials resolve from context-graph's config file (ADR 0002) before
+falling back to the environment, so eval runs standalone without exported
+variables.
+
 ## Scoring
 
 Quality is judged, cost is counted — asking an LLM to grade a number you can

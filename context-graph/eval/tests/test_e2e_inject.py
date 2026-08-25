@@ -57,6 +57,31 @@ def test_a_batch_starts_from_a_clean_graph(eval_graph: ActionsGraph):
     assert eval_graph.get_session("fresh") is not None
 
 
+def test_a_session_shared_by_two_questions_is_written_once(eval_graph: ActionsGraph):
+    """Upstream reuses distractor sessions across questions, and repeated ids
+    carry identical content -- so a repeat is the same session, not a new one.
+    Writing it per occurrence would append its turns again on every reuse,
+    duplicating content in the graph and paying to reconcile each copy."""
+    shared = _fixture("shared")
+
+    inject_batch([shared, _fixture("unique"), shared], graph=eval_graph)
+
+    actions = eval_graph.get_session_actions("shared")
+    assert [a.content for a in actions] == [
+        "a user turn in shared",
+        "an assistant reply in shared",
+    ]
+
+
+def test_deduplicated_sessions_are_not_counted_twice(eval_graph: ActionsGraph):
+    shared = _fixture("shared")
+
+    written = inject_batch([shared, shared, _fixture("unique")], graph=eval_graph)
+
+    assert written.sessions == 2
+    assert written.turns == 4
+
+
 def test_injection_reports_what_it_wrote(eval_graph: ActionsGraph):
     written = inject_batch([_fixture("s1"), _fixture("s2")], graph=eval_graph)
 

@@ -25,13 +25,6 @@ SOURCE = "longmemeval-v1"
 #: suffix and none has that type.
 ABSTENTION_ID_SUFFIX = "_abs"
 
-#: Joins question id to haystack session id. Must survive actions-graph's
-#: ``^[a-zA-Z0-9_-]{1,128}$`` session_id validation, which rules out ':'. Both
-#: id types already contain single '_' and '-', so a doubled dash keeps the
-#: boundary unambiguous -- no question id in the real dataset contains one, and
-#: the longest real pairing is 17 + 2 + 27 characters, well under the limit.
-_NAMESPACE_SEPARATOR = "--"
-
 _REPO = "xiaowu0162/longmemeval-cleaned"
 
 #: Pinned upstream revision. A moving ref (``main``) would silently change the
@@ -215,17 +208,19 @@ def to_session_fixtures(record: dict) -> list[SessionFixture]:
     precision -- and so the payload-size efficiency metric -- something to
     measure; a haystack of evidence alone would score well by construction.
 
-    Session ids are namespaced by question id. Upstream draws distractors from a
-    shared pool and reuses them across questions -- 3,942 of 23,867 haystack ids
-    in the real dataset are duplicates -- so injecting them raw would MERGE
-    different questions' sessions onto one node, piling their turns together and
-    duplicating content on every reuse.
+    Session ids are kept verbatim. Upstream draws distractors from a shared pool
+    and reuses them across questions -- 3,942 of 23,867 haystack ids in the real
+    dataset repeat -- but *zero* of those repeats carry differing content, so a
+    repeated id genuinely is the same session. Letting it become one node
+    matches how a real organizational graph would hold it; namespacing per
+    question would store byte-identical copies and pay to reconcile each. The
+    duplicate-turns hazard that suggests is handled by deduplicating at
+    injection instead (see ``inject.inject_batch``).
     """
-    question_id = record["question_id"]
     evidence_ids = set(record["answer_session_ids"])
     return [
         SessionFixture(
-            session_id=f"{question_id}{_NAMESPACE_SEPARATOR}{session_id}",
+            session_id=session_id,
             date=date,
             turns=[Turn(role=turn["role"], content=turn["content"]) for turn in session],
             holds_evidence=session_id in evidence_ids,

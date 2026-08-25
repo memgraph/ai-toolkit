@@ -20,6 +20,10 @@ pipeline = [
     "sessions-graph>=0.5.0",
     "actions-graph>=0.1.1",
     "unstructured2graph>=0.6.0",
+    "lightrag-memgraph>=0.3.1",
+    # Only for resolving LLM credentials from context-graph's config file
+    # (ADR 0002), so eval runs standalone without exported env vars.
+    "agent-context-graph>=0.1.4",
 ]
 test = [
     "pytest>=9.0.3",
@@ -33,7 +37,12 @@ context-graph-eval = "context_graph_eval.cli:main"
 sessions-graph = { workspace = true }
 actions-graph = { workspace = true }
 unstructured2graph = { workspace = true }
+lightrag-memgraph = { workspace = true }
+agent-context-graph = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
