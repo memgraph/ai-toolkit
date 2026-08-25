@@ -58,9 +58,33 @@ ambient sessions happened to land that week.
 Markers inside a batch are provenance only — never the mechanism keeping
 eval-agent traces out of the graph under test.
 
+## Building the Tier 1 corpus
+
+```bash
+uv run --package context-graph-eval context-graph-eval build-corpus \
+    --limit 60 --out context-graph/eval/corpus/tier1-longmemeval.jsonl
+```
+
+Fetches a **pinned** LongMemEval revision, converts it, and writes the JSONL
+that gets committed. The downloaded upstream file is a build artifact and is
+never committed. Bumping `--revision` invalidates prior baselines, the same way
+bumping the judge model does.
+
+`--limit` samples deterministically, stratified by `(question_type, abstention)`
+and proportional to upstream with a small floor per stratum, so that:
+
+- a regenerated corpus produces no spurious diff, and two runs stay comparable;
+- the aggregate score reflects the real distribution rather than over-weighting
+  rare categories;
+- no category rounds to zero and vanishes silently.
+
+The `oracle` variant is refused: it ships evidence sessions only, so retrieval
+faces no distractors and both precision and payload-size efficiency would score
+well by construction.
+
 ## Development
 
 ```bash
 uv sync
-uv run pytest context-graph/eval/tests
+uv run --package context-graph-eval --extra test pytest context-graph/eval/tests
 ```

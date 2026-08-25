@@ -41,6 +41,16 @@ def test_question_and_answer_become_input_and_expected_output():
     assert golden.expected_output == "A beagle."
 
 
+def test_non_string_answers_are_coerced():
+    """Real LongMemEval data answers counting questions with a bare integer.
+    Golden.expected_output is typed str, so an uncoerced answer aborts the whole
+    corpus build -- found by running against the real dataset, not by the
+    hand-built records above."""
+    golden = to_golden(_record(question="How many dogs do I own?", answer=3))
+
+    assert golden.expected_output == "3"
+
+
 def test_context_holds_only_the_turns_flagged_as_evidence():
     golden = to_golden(_record())
 
@@ -62,9 +72,20 @@ def test_golden_carries_the_tier_and_question_type_it_is_scored_under():
 
 
 def test_abstention_questions_are_marked_so_they_can_be_scored_apart():
-    golden = to_golden(_record(question_type="abstention"))
+    """Abstention questions -- where the correct answer is "that isn't in
+    memory" -- are identified upstream by an ``_abs`` suffix on question_id, NOT
+    by question_type, which keeps its original value. Verified against the real
+    dataset: 30 of 500 records end in ``_abs`` and none has question_type
+    "abstention", despite the upstream README listing it as a type."""
+    golden = to_golden(_record(question_id="gpt4_1a2b3c_abs"))
 
     assert golden.additional_metadata["abstention"] is True
+
+
+def test_an_abstention_question_keeps_its_original_question_type():
+    golden = to_golden(_record(question_id="gpt4_1a2b3c_abs", question_type="temporal-reasoning"))
+
+    assert golden.additional_metadata["question_type"] == "temporal-reasoning"
 
 
 def test_ordinary_questions_are_not_marked_as_abstention():

@@ -5,33 +5,171 @@ the eval corpus -- questions that already carry gold answers, so they are
 converted rather than authored. See docs/research/2026-08-memory-benchmarks.md.
 """
 
+import itertools
+import json
+import urllib.request
+from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 
 from deepeval.dataset import Golden
 
 SOURCE = "longmemeval-v1"
 
-#: LongMemEval's own name for questions whose correct answer is "not in memory".
-ABSTENTION_QUESTION_TYPE = "abstention"
+#: How the dataset marks a question whose correct answer is "that isn't in
+#: memory". Note this is a ``question_id`` suffix, *not* a ``question_type``:
+#: abstention records keep their original type. The upstream README lists
+#: "abstention" among the question types, but the published data does not use
+#: it -- verified against the real dataset, where 30 of 500 records carry this
+#: suffix and none has that type.
+ABSTENTION_ID_SUFFIX = "_abs"
+
+_REPO = "xiaowu0162/longmemeval-cleaned"
+
+#: Pinned upstream revision. A moving ref (``main``) would silently change the
+#: corpus between runs, which would break the cross-version score comparison the
+#: committed corpus exists to make possible -- the same reason #304 pins the
+#: judge model. Bump deliberately; treat a bump as invalidating prior baselines.
+DEFAULT_REVISION = "98d7416c24c778c2fee6e6f3006e7a073259d48f"
+
+_VARIANT_FILES = {
+    "s": "longmemeval_s_cleaned.json",
+    "m": "longmemeval_m_cleaned.json",
+}
+
+
+def download_url(variant: str = "s", revision: str = DEFAULT_REVISION) -> str:
+    """URL of a pinned LongMemEval variant.
+
+    ``oracle`` is refused: it ships evidence sessions only, so retrieval faces
+    no distractors and both precision and the payload-size efficiency metric
+    would score well by construction.
+    """
+    if variant == "oracle":
+        raise ValueError(
+            "the oracle variant has no distractor sessions, so retrieval precision "
+            "and payload-size efficiency would score well by construction; use 's' or 'm'"
+        )
+    if variant not in _VARIANT_FILES:
+        raise ValueError(f"unknown variant {variant!r}; expected one of {sorted(_VARIANT_FILES)}")
+    return f"https://huggingface.co/datasets/{_REPO}/resolve/{revision}/{_VARIANT_FILES[variant]}"
+
+
+def fetch(variant: str = "s", revision: str = DEFAULT_REVISION, *, dest: Path) -> Path:
+    """Download a pinned LongMemEval variant to ``dest``.
+
+    Only the *converted* output is committed, never this file -- see #302.
+    """
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(download_url(variant, revision)) as response:
+        dest.write_bytes(response.read())
+    return dest
+
+
+def build_corpus(records: Iterable[dict], limit: int | None = None) -> list[Golden]:
+    """Convert upstream records into Goldens, optionally sampling down to ``limit``.
+
+    Sampling is deterministic, stratified by ``(question_type, abstention)``,
+    and proportional to upstream with a small floor per stratum.
+
+    *Deterministic* so a regenerated corpus produces no spurious diff and two
+    runs stay comparable.
+
+    *Stratified on both dimensions* because they are independent and upstream
+    clusters each: taking the first N would skew the question-type mix, and
+    stratifying on type alone samples zero abstention questions, since those sit
+    in contiguous runs at the end of each type block.
+
+    *Proportional* so the aggregate score reflects the real distribution --
+    equal-weighting strata over-samples rare ones badly (it turned an upstream
+    6% abstention rate into 40% of a 60-question sample, enough for abstention
+    behaviour to dominate the headline).
+
+    *With a floor* so a rare stratum cannot round to zero at small limits and
+    vanish silently.
+    """
+    records = list(records)
+    if limit is None or limit >= len(records):
+        return [to_golden(record) for record in records]
+
+    strata: dict[tuple[str, bool], list[dict]] = defaultdict(list)
+    for record in records:
+        strata[_stratum(record)].append(record)
+
+    quotas = _quotas({key: len(group) for key, group in strata.items()}, limit)
+
+    # Round-robin across strata up to each one's quota, so a truncated sample
+    # stays balanced rather than front-loading whichever stratum sorts first.
+    taken = [strata[key][: quotas[key]] for key in sorted(strata)]
+    sampled = [record for group in itertools.zip_longest(*taken) for record in group if record is not None]
+    return [to_golden(record) for record in sampled[:limit]]
+
+
+def _quotas(sizes: dict[tuple[str, bool], int], limit: int, floor: int = 2) -> dict[tuple[str, bool], int]:
+    """How many records to take from each stratum.
+
+    Proportional to stratum size, but at least ``floor`` (and never more than
+    the stratum holds). Largest strata absorb the rounding so the quotas sum to
+    ``limit``.
+    """
+    total = sum(sizes.values())
+    quotas = {key: min(size, max(floor, round(limit * size / total))) for key, size in sizes.items()}
+
+    # Reconcile rounding drift against the largest strata first -- they absorb a
+    # record with the least proportional distortion -- but rotate through them
+    # rather than repeatedly hitting the same one, which would leave equally
+    # sized categories with visibly unequal shares.
+    by_size = sorted(sizes, key=lambda key: (-sizes[key], key))
+    rotation = itertools.cycle(by_size)
+    stalled = 0
+    while (drift := sum(quotas.values()) - limit) != 0 and stalled <= len(by_size):
+        key = next(rotation)
+        if drift > 0 and quotas[key] > floor:
+            quotas[key] -= 1
+            stalled = 0
+        elif drift < 0 and quotas[key] < sizes[key]:
+            quotas[key] += 1
+            stalled = 0
+        else:
+            stalled += 1
+    return quotas
+
+
+def _stratum(record: dict) -> tuple[str, bool]:
+    return (
+        record["question_type"],
+        str(record["question_id"]).endswith(ABSTENTION_ID_SUFFIX),
+    )
+
+
+def load_raw(path: Path) -> list[dict]:
+    """Read a downloaded LongMemEval file."""
+    with Path(path).open(encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 def to_golden(record: dict) -> Golden:
     """Convert one LongMemEval question record into a Golden."""
-    question_type = record["question_type"]
+    question_id = record["question_id"]
     return Golden(
         input=record["question"],
-        expected_output=record["answer"],
+        # Coerced: counting questions upstream are answered with a bare int,
+        # and Golden.expected_output is typed str.
+        expected_output=str(record["answer"]),
         context=_evidence_turns(record),
-        name=record["question_id"],
+        name=question_id,
         source_file=SOURCE,
         additional_metadata={
             # Tier 1 is the adopted corpus, scored separately from the authored
             # Tier 2 so an organizational-recall regression cannot hide behind a
             # personal-memory gain.
             "tier": 1,
-            "question_type": question_type,
+            "question_type": record["question_type"],
             "question_date": record["question_date"],
-            "abstention": question_type == ABSTENTION_QUESTION_TYPE,
+            # Scored apart: for these, a confident answer is the failure.
+            "abstention": str(question_id).endswith(ABSTENTION_ID_SUFFIX),
         },
     )
 

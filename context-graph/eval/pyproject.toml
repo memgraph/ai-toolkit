@@ -26,6 +26,9 @@ test = [
     "pytest-asyncio>=0.24.0",
 ]
 
+[project.scripts]
+context-graph-eval = "context_graph_eval.cli:main"
+
 [tool.uv.sources]
 sessions-graph = { workspace = true }
 actions-graph = { workspace = true }
