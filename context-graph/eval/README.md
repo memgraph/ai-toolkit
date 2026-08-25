@@ -35,6 +35,36 @@ release. Only converted output is committed, never vendored raw datasets.
 Benchmark survey and licence findings:
 [`docs/research/2026-08-memory-benchmarks.md`](https://github.com/memgraph/ai-toolkit/blob/research/memory-benchmarks/docs/research/2026-08-memory-benchmarks.md).
 
+## Running a batch
+
+```bash
+docker run -d --name ai-toolkit-eval-memgraph -p 7689:7687 \
+    memgraph/memgraph-mage:latest --schema-info-enabled=true
+
+uv run --package context-graph-eval context-graph-eval run \
+    --limit 20 --judge-model claude-sonnet-4-5-20250929
+```
+
+The runner owns the **pipeline** loop; deepeval owns the **scoring** loop
+underneath it:
+
+```
+runner  ->  inject -> reconcile -> retrieve  ->  deepeval  ->  metrics
+```
+
+deepeval knows nothing about the first three stages, and all of them must
+happen before an `actual_output` exists to score. Ordering is the runner's real
+job: retrieving before injection would query an empty graph and score every
+question a miss, while scoring before reconciliation would score raw turns
+rather than emerged memory — the thing actually under test.
+
+`--skip-reconcile` reuses an already-reconciled graph. Reconciliation dominates
+run cost, so iterating on retrieval or scoring shouldn't pay for it twice.
+
+The runner **refuses to start** if `CONFIDENT_API_KEY` is set: deepeval uploads
+a test run whenever a Confident AI key is present, and eval results stay local
+for the same owned-IP reason the corpus does.
+
 ## Reconciliation
 
 Injection stages raw turns; **reconciliation** is what turns them into memory —

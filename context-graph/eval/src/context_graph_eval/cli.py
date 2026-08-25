@@ -6,6 +6,8 @@ and is not committed -- only the converted corpus is (see #302).
 """
 
 import argparse
+import os
+import sys
 import tempfile
 from pathlib import Path
 
@@ -46,10 +48,37 @@ def main(argv: list[str] | None = None) -> int:
         help="where to write the corpus JSONL",
     )
 
+    run = subcommands.add_parser("run", help="run an eval batch end to end and print the report")
+    run.add_argument("--variant", default="s", help="LongMemEval variant the corpus was built from")
+    run.add_argument("--revision", default=DEFAULT_REVISION, help="pinned upstream revision")
+    run.add_argument("--limit", type=int, default=20, help="how many questions to run")
+    run.add_argument(
+        "--memgraph-url",
+        default="bolt://localhost:7689",
+        help="the DEDICATED eval instance. It is wiped before each batch -- never point this at a "
+        "shared or development database.",
+    )
+    run.add_argument(
+        "--skip-reconcile",
+        action="store_true",
+        help="reuse an already-reconciled graph. Reconciliation dominates run cost, so iterating "
+        "on retrieval or scoring should not pay for it again.",
+    )
+    run.add_argument(
+        "--judge-model",
+        default=None,
+        help="Anthropic model id for the judge (#304 keeps the judge on a different provider from "
+        "the OpenAI-backed pipeline so their blind spots do not correlate). Omit to skip judging "
+        "and report efficiency only.",
+    )
+    run.add_argument("--agent-model", default=None, help="model id for the retrieval agent")
+
     args = parser.parse_args(argv)
 
     if args.command == "build-corpus":
         return _build_corpus(args)
+    if args.command == "run":
+        return _run(args)
     return 1
 
 
@@ -63,6 +92,105 @@ def _build_corpus(args) -> int:
         written = write_corpus(goldens, args.out)
         print(f"wrote {written} goldens to {args.out}")
     return 0
+
+
+def _run(args) -> int:
+    import asyncio
+
+    from actions_graph import ActionsGraph
+    from memgraph_toolbox.api.memgraph import Memgraph
+
+    from .convert.longmemeval import build_corpus as build_goldens
+    from .reconcile import _resolve_llm_credentials
+    from .retrieval import DeepEvalLLM
+    from .runner import RunPlan, check_offline, run_batch
+
+    check_offline()
+    _resolve_llm_credentials()
+
+    with tempfile.TemporaryDirectory() as workdir:
+        raw = fetch(args.variant, args.revision, dest=Path(workdir) / "upstream.json")
+        records = load_raw(raw)
+
+    goldens = build_goldens(records, limit=args.limit)
+    chosen = {g.name for g in goldens}
+    # Only the sampled questions' haystacks get injected: injecting the whole
+    # upstream file would reconcile thousands of sessions nobody asks about.
+    used_records = [r for r in records if r["question_id"] in chosen]
+    print(f"running {len(goldens)} questions from longmemeval-{args.variant} @ {args.revision[:12]}")
+
+    db = Memgraph(url=args.memgraph_url, username="", password="")
+    graph = ActionsGraph(memgraph=db)
+
+    judge = _build_model(args.judge_model, anthropic=True)
+    agent = _build_model(args.agent_model, anthropic=False)
+    if agent is None:
+        print("no agent model configured: set --agent-model or an OPENAI_API_KEY", file=sys.stderr)
+        return 1
+
+    report = asyncio.run(
+        run_batch(
+            goldens,
+            records=used_records,
+            graph=graph,
+            llm=DeepEvalLLM(agent),
+            plan=RunPlan(reconcile=not args.skip_reconcile, judge=judge),
+        )
+    )
+    _print_report(report, judged=judge is not None)
+    return 0
+
+
+def _build_model(model_id: str | None, *, anthropic: bool):
+    """Instantiate a deepeval model, or None when nothing is configured."""
+    try:
+        if anthropic:
+            if not (model_id or os.environ.get("ANTHROPIC_API_KEY")):
+                return None
+            from deepeval.models import AnthropicModel
+
+            return AnthropicModel(model=model_id) if model_id else AnthropicModel()
+        if not (model_id or os.environ.get("OPENAI_API_KEY")):
+            return None
+        from deepeval.models import GPTModel
+
+        return GPTModel(model=model_id) if model_id else GPTModel()
+    except Exception as exc:
+        print(f"could not build model {model_id!r}: {exc}", file=sys.stderr)
+        return None
+
+
+def _print_report(report, *, judged: bool) -> None:
+    if report.reconciled or report.reconcile_failures:
+        print(f"reconciled {report.reconciled} sessions ({report.reconcile_failures} failed)")
+
+    if not report.by_tier:
+        print("no questions scored")
+        return
+
+    # Printed per tier, never blended: a single cross-tier number would let an
+    # organizational-recall regression hide behind a personal-memory gain (#303).
+    for tier, summary in sorted(report.by_tier.items()):
+        print(f"\nTier {tier}: {summary.questions} questions")
+        if judged:
+            print(f"  coverage      {summary.covered}/{summary.questions} ({summary.coverage_rate:.0%})")
+            median = summary.median_efficiency_tokens
+            print(
+                f"  efficiency    median {median} tokens returned (over questions that cleared coverage)"
+                if median is not None
+                else "  efficiency    n/a -- no question cleared the coverage gate"
+            )
+        else:
+            print("  coverage      not judged (no judge model configured)")
+            # The gated median is empty without a judge, since nothing clears an
+            # unscored gate. The raw payload size is still deterministic and
+            # worth seeing -- labelled ungated so it is never mistaken for the
+            # comparable number, which #309 defines only within the gate.
+            payloads = sorted(s.efficiency_tokens for s in report.scored if s.tier == tier)
+            if payloads:
+                print(f"  payload       median {payloads[len(payloads) // 2]} tokens returned (UNGATED)")
+        if summary.abstention_total:
+            print(f"  abstention    {summary.abstention_correct}/{summary.abstention_total} correct")
 
 
 if __name__ == "__main__":
