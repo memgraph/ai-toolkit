@@ -25,6 +25,13 @@ SOURCE = "longmemeval-v1"
 #: suffix and none has that type.
 ABSTENTION_ID_SUFFIX = "_abs"
 
+#: Joins question id to haystack session id. Must survive actions-graph's
+#: ``^[a-zA-Z0-9_-]{1,128}$`` session_id validation, which rules out ':'. Both
+#: id types already contain single '_' and '-', so a doubled dash keeps the
+#: boundary unambiguous -- no question id in the real dataset contains one, and
+#: the longest real pairing is 17 + 2 + 27 characters, well under the limit.
+_NAMESPACE_SEPARATOR = "--"
+
 _REPO = "xiaowu0162/longmemeval-cleaned"
 
 #: Pinned upstream revision. A moving ref (``main``) would silently change the
@@ -184,8 +191,21 @@ class SessionFixture:
 
     session_id: str
     date: str
-    turns: list[str]
+    turns: list["Turn"]
     holds_evidence: bool
+
+
+@dataclass(frozen=True)
+class Turn:
+    """One conversational turn.
+
+    Role and content stay separate rather than pre-formatted into one string:
+    injection records each turn as a Message with its own role, and flattening
+    early would throw that away.
+    """
+
+    role: str
+    content: str
 
 
 def to_session_fixtures(record: dict) -> list[SessionFixture]:
@@ -194,13 +214,20 @@ def to_session_fixtures(record: dict) -> list[SessionFixture]:
     Distractor sessions are kept deliberately. They are what give retrieval
     precision -- and so the payload-size efficiency metric -- something to
     measure; a haystack of evidence alone would score well by construction.
+
+    Session ids are namespaced by question id. Upstream draws distractors from a
+    shared pool and reuses them across questions -- 3,942 of 23,867 haystack ids
+    in the real dataset are duplicates -- so injecting them raw would MERGE
+    different questions' sessions onto one node, piling their turns together and
+    duplicating content on every reuse.
     """
+    question_id = record["question_id"]
     evidence_ids = set(record["answer_session_ids"])
     return [
         SessionFixture(
-            session_id=session_id,
+            session_id=f"{question_id}{_NAMESPACE_SEPARATOR}{session_id}",
             date=date,
-            turns=[_format_turn(turn) for turn in session],
+            turns=[Turn(role=turn["role"], content=turn["content"]) for turn in session],
             holds_evidence=session_id in evidence_ids,
         )
         # strict: these three are parallel arrays upstream. If they ever

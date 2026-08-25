@@ -50,13 +50,34 @@ Otherwise the metric is trivially gamed by returning nothing.
 
 ## Isolation
 
-Each eval **batch** runs against its own Memgraph database, reset before
-fixtures load. This is a reproducibility requirement before it is a hygiene one:
-comparing two schema versions is meaningless if the graph also holds whatever
-ambient sessions happened to land that week.
+Each eval **batch** runs against a **dedicated Memgraph instance**, cleared
+before fixtures load. This is a reproducibility requirement before it is a
+hygiene one: comparing two schema versions is meaningless if the graph also
+holds whatever ambient sessions happened to land that week.
+
+> Per-batch *databases* were the original plan, but that is Memgraph
+> multi-tenancy and requires an Enterprise licence. A dedicated instance gives
+> the same known-fixed-state guarantee on a community licence, and clearing it
+> is safe precisely because nothing else lives there. **Never point this at a
+> shared or development database.**
+
+```bash
+docker run -d --name ai-toolkit-eval-memgraph -p 7689:7687 \
+    memgraph/memgraph-mage:latest
+```
+
+Tests read `EVAL_MEMGRAPH_URL` (default `bolt://localhost:7689`) and skip if no
+instance is reachable.
 
 Markers inside a batch are provenance only — never the mechanism keeping
-eval-agent traces out of the graph under test.
+eval-agent traces out of the graph under test. `SessionFixture.holds_evidence`
+is corpus-side bookkeeping and is deliberately never written to the graph:
+storing it would tell retrieval where the answer lives.
+
+Session ids are namespaced per question (`<question_id>--<session_id>`) because
+upstream reuses distractor sessions across questions — 3,942 of 23,867 haystack
+ids in the real dataset are duplicates, which would otherwise MERGE different
+questions' sessions onto one node.
 
 ## Building the Tier 1 corpus
 

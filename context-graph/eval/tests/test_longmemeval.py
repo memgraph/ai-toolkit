@@ -5,6 +5,8 @@ Record shape follows the schema documented in the LongMemEval repository
 docs/research/2026-08-memory-benchmarks.md.
 """
 
+import re
+
 from context_graph_eval.convert.longmemeval import to_golden, to_session_fixtures
 
 
@@ -97,16 +99,40 @@ def test_ordinary_questions_are_not_marked_as_abstention():
 def test_every_haystack_session_becomes_an_injectable_fixture():
     fixtures = to_session_fixtures(_record())
 
-    assert [f.session_id for f in fixtures] == ["answer_1", "distractor_1"]
+    assert [f.session_id for f in fixtures] == [
+        "gpt4_1a2b3c--answer_1",
+        "gpt4_1a2b3c--distractor_1",
+    ]
+
+
+def test_namespaced_ids_satisfy_the_actions_graph_constraint():
+    """actions-graph validates session_id against ^[a-zA-Z0-9_-]{1,128}$, so a
+    ':' separator is rejected outright at injection. Real ids are at worst 17 +
+    27 characters, leaving ample room under the limit."""
+    fixtures = to_session_fixtures(_record())
+
+    for fixture in fixtures:
+        assert re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", fixture.session_id)
+
+
+def test_session_ids_are_namespaced_per_question():
+    """Upstream reuses sessions across questions from a shared distractor pool
+    -- 3,942 of 23,867 haystack ids in the real dataset are duplicates. Injected
+    raw, colliding ids would MERGE onto one Session node, piling turns from
+    different questions together and duplicating content on every reuse."""
+    first = to_session_fixtures(_record(question_id="q1"))
+    second = to_session_fixtures(_record(question_id="q2"))
+
+    assert {f.session_id for f in first}.isdisjoint({f.session_id for f in second})
 
 
 def test_a_fixture_carries_its_session_date_and_turns():
     answer_session, _ = to_session_fixtures(_record())
 
     assert answer_session.date == "2023/05/20 (Sat) 14:03"
-    assert answer_session.turns == [
-        "user: I adopted a beagle named Max",
-        "assistant: Congratulations on Max!",
+    assert [(t.role, t.content) for t in answer_session.turns] == [
+        ("user", "I adopted a beagle named Max"),
+        ("assistant", "Congratulations on Max!"),
     ]
 
 
@@ -117,7 +143,7 @@ def test_distractor_sessions_are_kept_not_filtered_out():
     fixtures = to_session_fixtures(_record())
 
     distractor = fixtures[1]
-    assert distractor.session_id == "distractor_1"
+    assert distractor.session_id == "gpt4_1a2b3c--distractor_1"
     assert distractor.holds_evidence is False
 
 
