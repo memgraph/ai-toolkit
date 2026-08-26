@@ -1,10 +1,8 @@
 # AGENTS.md
 
 Guidance for coding agents working in `memgraph/ai-toolkit`. This file is
-gitignored (see `.gitignore`) — it's a local, living doc, same treatment as
-`context-graph/CONTEXT-MAP.md`, each component's `CONTEXT.md`, and the
-`docs/adr/` files described below. Don't be surprised it never shows up in
-`git status`; update it in place as things change.
+tracked in git — update it in place as things change, in the same PR as the
+change that made it stale where practical.
 
 ## What this repo is
 
@@ -51,8 +49,9 @@ node; only `sessions-graph` owns `(:User)` and `HAD_SESSION`.
   ```
 - Run a workspace package's own suite via `uv run --package <name> --extra test pytest ...`
   (see `.github/workflows/tests.yaml` for the exact invocation per package,
-  including which extras each one needs — e.g. `skills-graph` and
-  `actions-graph` also need `--extra agent-context-graph`).
+  including which extras each one needs — e.g. `skills-graph`, `actions-graph`,
+  and `sessions-graph` all also need `--extra agent-context-graph`, and
+  `sessions-graph` additionally needs `--extra reconciliation`).
 
 ## Common commands
 
@@ -140,8 +139,8 @@ touching `agent-context-graph`'s hook/config code.
 
 ## Local-only design docs — read before non-trivial Context Graph work
 
-This repo keeps several living design documents **gitignored and local-only**
-(same treatment as this file): `context-graph/CONTEXT-MAP.md`, each
+This repo keeps several living design documents **gitignored and
+local-only** (unlike this file): `context-graph/CONTEXT-MAP.md`, each
 component's own `context-graph/*/CONTEXT.md`, `unstructured2graph/CONTEXT.md`,
 and per-package `docs/adr/*.md` files. They aren't in git, so a fresh clone
 or a fresh worktree won't have them — check whether your checkout already
@@ -178,9 +177,12 @@ the essentials, if you don't have them locally:
 - Model only what real harness hook/SDK payloads actually provide (verified
   against primary docs, or against a live session via
   `dev-memgraph.sh test-graph-model`), never an aspirational field nobody
-  populates — this is why `PARENT_OF` (nested actions) and
-  `Session.parent_session_id`/`FORKED_FROM` were deleted outright rather than
-  kept unpopulated.
+  populates — this is why `Session.parent_session_id`/`FORKED_FROM` were
+  deleted outright (no harness ever populates a parent/previous session id)
+  and why `(:Action)-[:PARENT_OF]->(:Action)` was narrowed to only
+  `ToolResult`/error → its `ToolCall`: its old "nested actions" meaning
+  (subagent nesting) wasn't real either, and moved to the dedicated
+  `(:Agent)`/`SPAWNED` mechanism instead.
 
 **Planning workflow** for substantial Context Graph design work: tracked as
 GitHub issues labeled `wayfinder:map` (title `Map: ...`), broken into
