@@ -112,6 +112,52 @@ cannot be established inside the noise floor.
 > floor at small corpus sizes — scale the corpus before trusting small coverage
 > deltas.
 
+## The gold slice
+
+Tier 1 injects fixture text straight into the graph — fast and cheap, but it
+never exercises the capture layer. The gold slice runs a **real Claude Code
+session** with hooks live, so what gets scored is what the pipeline actually
+records. It is the only eval coverage `skills-graph` and subagent nesting get at
+all; #308 found no benchmark covers either.
+
+**One question, for now.** Each is a real, billed session, so the slice grows by
+*carrier* — where the fact physically lives in the graph — not by round number.
+
+The first carrier is a fact that exists **only inside a subagent**, because:
+
+- top-level recall is already covered by Tier 1's 20 questions, and
+- the nested carrier has a demonstrated silent-failure mode. #281 found
+  `get_session_actions()` does a single-hop `HAS_ACTION` match, so once subagent
+  activity moved under `(:Agent)`, reconciliation would stop seeing it — no
+  entities, no Episode mention, **no error**. Caught once by reading code; as a
+  gold-slice question it is caught automatically, forever.
+
+Three constraints shape the planting prompt, and each is load-bearing:
+
+| Constraint | Why |
+|---|---|
+| Prompt must not contain the fact | otherwise it lands top-level too, and recall passes with nesting fully broken |
+| Fact must be unguessable | a fact answerable from priors tests nothing; hence a hex revision, not "MIT" |
+| No literal `SKILL.md` path | `SkillGraphConnector` records a skill read that never happened (#293) |
+
+`evidence_is_nested()` is checked **before** trusting a recall result: if the
+model declines to delegate, the fact lands top-level and recall succeeds
+trivially — a false pass indistinguishable from a real one.
+
+### Still to build: the live-session driver
+
+The corpus item and nesting check are done and tested. What remains is the
+runner that drives the session.
+
+It cannot simply set `MEMGRAPH_URL`: per ADR 0002 hook subprocesses resolve
+configuration **only** from `~/.config/context-graph/config.toml`, and env vars
+are not consulted at hook runtime. So the driver has to back up, rewrite, and
+restore that file — pointing at the eval instance — exactly as
+`scripts/dev-memgraph.sh hooks-local` already does for the dev instance. Reuse
+that machinery rather than reimplementing it; it also carries several hard-won
+details (`Task` vs `Agent` naming, `hook run` needing explicit `--connector`
+flags, `uv run --package` to avoid PATH shadowing).
+
 ## Reconciliation
 
 Injection stages raw turns; **reconciliation** is what turns them into memory —
