@@ -88,6 +88,44 @@ def test_schema_describes_what_was_injected(populated: ReadOnlyGraph):
     assert "Session" in schema
 
 
+def test_schema_never_leaks_the_content_being_asked_about(populated: ReadOnlyGraph):
+    """The load-bearing constraint. Sampling values out of the graph under test
+    could hand the agent the answer directly, and retrieval would then 'succeed'
+    without having retrieved anything -- the eval measuring its own prompt."""
+    schema = graph_schema(populated)
+
+    assert "beagle" not in schema.lower()
+    assert "hardware store" not in schema.lower()
+
+
+def test_schema_names_low_cardinality_values(populated: ReadOnlyGraph):
+    """A property with a handful of distinct values *is* schema, not data.
+    Without this the model cannot know action_type holds 'message' rather than
+    a domain verb -- the exact hallucination observed against a real model,
+    which invented action_type='adopt_dog' and queried it four times."""
+    schema = graph_schema(populated)
+
+    assert "message" in schema.lower()
+
+
+def test_schema_reveals_the_keys_inside_the_properties_blob(populated: ReadOnlyGraph):
+    """Turn text lives inside Action.properties as a JSON string, so an agent
+    told only that 'properties' exists still cannot find content. Its inner
+    keys are structure and safe to show; its values are data and are not."""
+    schema = graph_schema(populated)
+
+    assert "content" in schema
+    assert "role" in schema
+
+
+def test_schema_marks_free_text_properties_as_searchable(populated: ReadOnlyGraph):
+    """High-cardinality text cannot be enumerated, so the agent needs telling
+    that it is free text to be searched rather than matched exactly."""
+    schema = graph_schema(populated)
+
+    assert "free text" in schema.lower()
+
+
 async def test_retrieval_returns_the_context_it_actually_saw(populated: ReadOnlyGraph):
     """retrieval_context is what the efficiency metric counts tokens over
     (#309), so it must be what came back from the graph -- not the model's
@@ -157,30 +195,32 @@ async def test_a_real_model_can_find_an_injected_fact(populated: ReadOnlyGraph):
     """#300's actual premise: given only schema and read-only Cypher, can a real
     model reach an injected fact?
 
-    Asserts it succeeds at least once in three attempts, not every time --
-    because measured against a real model it does **not** succeed every time.
-    Observed success rate on this, the easiest possible case (two sessions, one
-    fact, one distractor): roughly two runs in three.
+    Asserts a majority of three attempts rather than all three: this is a real
+    model, and treating it as deterministic would make the test flaky rather
+    than make the model reliable.
 
-    The failure mode is consistent: the model invents an ``action_type`` from
-    the question's wording ("adopt_dog"), and the schema dump gives it property
-    *keys* without values or samples, so nothing contradicts the guess. Adding
-    zero-row feedback to the loop made it recoverable but not reliable.
+    History, because the number moved a long way and the reason is the
+    interesting part. Originally this failed outright -- the model invented an
+    ``action_type`` from the question's wording ("adopt_dog"), queried that same
+    idea four times, and answered "not in memory". Two fixes moved it:
 
-    That unreliability is a finding about the baseline, not a flaky test to be
-    silenced: at ~2/3 on the easy case, a Tier 1 batch's coverage score would
-    largely measure whether the agent guessed workable Cypher rather than
-    whether the memory is any good. It is the concrete evidence #300 wanted
-    before designing retrieval v2, and it says a schema description carrying
-    real property *values* is the first thing to try.
+    1. Reporting zero-row results back, so a valid-but-empty query stopped being
+       indistinguishable from not having queried at all. Took it to roughly two
+       runs in three.
+    2. Describing property *values* rather than only keys -- so ``action_type``
+       is visibly ``user_message``, and ``properties`` is visibly a JSON string
+       whose keys include ``content``. Took it to 6/6 across six measured runs.
+
+    The second mattered more, and its lesson generalises: the agent was not
+    reasoning badly, it was reasoning correctly from a schema that said nothing
+    about where content actually lives.
     """
     from deepeval.models import GPTModel
 
     attempts = [
         await retrieve("What breed of dog was adopted?", graph=populated, llm=DeepEvalLLM(GPTModel())) for _ in range(3)
     ]
+    hits = [a for a in attempts if "beagle" in a.answer.lower()]
 
-    assert any("beagle" in a.answer.lower() for a in attempts), (
-        f"the baseline could not reach the fact in three attempts: {[a.answer for a in attempts]}"
-    )
+    assert len(hits) >= 2, f"the baseline reached the fact {len(hits)}/3 times: {[a.answer for a in attempts]}"
     assert all(a.queries for a in attempts)

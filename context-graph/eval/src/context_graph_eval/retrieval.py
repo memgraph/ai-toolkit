@@ -125,6 +125,19 @@ def graph_schema(graph: ReadOnlyGraph) -> str:
     )
 
 
+#: A property is treated as *schema* -- and its values shown -- only when it has
+#: few distinct values AND those values are short. Cardinality alone is not
+#: safe: in a small graph a free-text field can easily have only two distinct
+#: values, and printing those would put the content being asked about straight
+#: into the agent's prompt. Length is what separates an enum from a sentence.
+_MAX_DISTINCT_VALUES = 6
+_MAX_SCHEMA_VALUE_LENGTH = 40
+
+#: Bounds the introspection itself, so describing the graph cannot become more
+#: expensive than querying it.
+_MAX_LABELS = 25
+
+
 def _detailed_schema(graph: ReadOnlyGraph) -> str | None:
     """Property-level schema, or None when Memgraph has schema info disabled."""
     try:
@@ -136,7 +149,84 @@ def _detailed_schema(graph: ReadOnlyGraph) -> str | None:
 
     if not rows or any("error" in row for row in rows if isinstance(row, dict)):
         return None
-    return "\n".join(str(row) for row in rows)
+
+    lines = ["Node labels and their properties:"]
+    for labels in _label_sets(graph):
+        lines.append(f"  (:{':'.join(labels)})")
+        lines.extend(_describe_properties(graph, labels))
+
+    edges = [row for row in rows if isinstance(row, dict) and row.get("type") == "edge-match"]
+    if edges:
+        lines.append("")
+        lines.append("Relationships:")
+        for edge in edges:
+            start = ":".join(edge.get("start_labels") or ["?"])
+            end = ":".join(edge.get("end_labels") or ["?"])
+            lines.append(f"  (:{start})-[:{edge.get('edge_type')}]->(:{end})")
+    return "\n".join(lines)
+
+
+def _label_sets(graph: ReadOnlyGraph) -> list[list[str]]:
+    """Distinct label combinations present in the graph.
+
+    Combinations, not individual labels: a node carrying ``:Action:Message`` is
+    one thing with one property set, and splitting it would suggest two.
+    """
+    # Sorted in Python: Memgraph refuses ORDER BY on a list value.
+    rows = graph.query(f"MATCH (n) WITH labels(n) AS labels RETURN DISTINCT labels LIMIT {_MAX_LABELS}")
+    return sorted((row["labels"] for row in rows if row["labels"]), key=lambda labels: sorted(labels))
+
+
+def _describe_properties(graph: ReadOnlyGraph, labels: list[str]) -> list[str]:
+    """One line per property: its values when they are schema, its shape when not."""
+    match = f"MATCH (n:{':'.join(labels)})"
+    keys = graph.query(f"{match} UNWIND keys(n) AS key RETURN DISTINCT key ORDER BY key")
+
+    described: list[str] = []
+    for row in keys:
+        key = row["key"]
+        values = graph.query(
+            f"{match} WHERE n.`{key}` IS NOT NULL RETURN DISTINCT n.`{key}` AS value LIMIT {_MAX_DISTINCT_VALUES + 1}"
+        )
+        sample = [v["value"] for v in values]
+
+        json_keys = _json_keys(sample)
+        if json_keys:
+            # The blob that made this whole change necessary: turn text lives
+            # inside Action.properties as JSON, so an agent told only that
+            # "properties" exists still cannot find any content. Inner keys are
+            # structure and safe; inner values are data and stay hidden.
+            described.append(f"    {key}: JSON string, keys: {', '.join(json_keys)} (values are free text)")
+            continue
+
+        if _is_enumerable(sample):
+            described.append(f"    {key}: {', '.join(sorted(str(v) for v in sample))}")
+        else:
+            described.append(f"    {key}: free text (search it, do not match it exactly)")
+    return described
+
+
+def _is_enumerable(sample: list) -> bool:
+    """Whether these values describe the schema rather than carry its content."""
+    if not sample or len(sample) > _MAX_DISTINCT_VALUES:
+        return False
+    return all(len(str(value)) <= _MAX_SCHEMA_VALUE_LENGTH for value in sample)
+
+
+def _json_keys(sample: list) -> list[str]:
+    """Keys of a JSON-object-valued property, if that is what this is."""
+    import json
+
+    for value in sample:
+        if not isinstance(value, str) or not value.lstrip().startswith("{"):
+            continue
+        try:
+            parsed = json.loads(value)
+        except ValueError:
+            continue
+        if isinstance(parsed, dict):
+            return sorted(parsed)
+    return []
 
 
 @dataclass(frozen=True)
