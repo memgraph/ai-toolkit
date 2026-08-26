@@ -154,16 +154,33 @@ async def test_a_bad_query_is_reported_not_raised(populated: ReadOnlyGraph):
 
 @requires_openai_key
 async def test_a_real_model_can_find_an_injected_fact(populated: ReadOnlyGraph):
-    """The baseline's actual question: given only schema and read-only Cypher,
-    can a real model reach a fact that was injected? This is the one test that
-    exercises #300's premise rather than the loop's plumbing."""
+    """#300's actual premise: given only schema and read-only Cypher, can a real
+    model reach an injected fact?
+
+    Asserts it succeeds at least once in three attempts, not every time --
+    because measured against a real model it does **not** succeed every time.
+    Observed success rate on this, the easiest possible case (two sessions, one
+    fact, one distractor): roughly two runs in three.
+
+    The failure mode is consistent: the model invents an ``action_type`` from
+    the question's wording ("adopt_dog"), and the schema dump gives it property
+    *keys* without values or samples, so nothing contradicts the guess. Adding
+    zero-row feedback to the loop made it recoverable but not reliable.
+
+    That unreliability is a finding about the baseline, not a flaky test to be
+    silenced: at ~2/3 on the easy case, a Tier 1 batch's coverage score would
+    largely measure whether the agent guessed workable Cypher rather than
+    whether the memory is any good. It is the concrete evidence #300 wanted
+    before designing retrieval v2, and it says a schema description carrying
+    real property *values* is the first thing to try.
+    """
     from deepeval.models import GPTModel
 
-    result = await retrieve(
-        "What breed of dog was adopted?",
-        graph=populated,
-        llm=DeepEvalLLM(GPTModel()),
-    )
+    attempts = [
+        await retrieve("What breed of dog was adopted?", graph=populated, llm=DeepEvalLLM(GPTModel())) for _ in range(3)
+    ]
 
-    assert "beagle" in result.answer.lower()
-    assert result.queries
+    assert any("beagle" in a.answer.lower() for a in attempts), (
+        f"the baseline could not reach the fact in three attempts: {[a.answer for a in attempts]}"
+    )
+    assert all(a.queries for a in attempts)

@@ -10,6 +10,11 @@ contributor without one still gets meaningful coverage.
 import os
 
 import pytest
+
+# Resolve from context-graph's config file before deciding to skip, so a
+# contributor whose key lives in config.toml (ADR 0002) rather than the
+# environment still runs these instead of silently skipping them.
+from conftest import EVAL_MEMGRAPH_URL
 from context_graph_eval.convert.longmemeval import SessionFixture, Turn
 from context_graph_eval.inject import PENDING, inject_batch
 from context_graph_eval.reconcile import (
@@ -20,9 +25,6 @@ from context_graph_eval.reconcile import (
 
 from actions_graph import ActionsGraph
 
-# Resolve from context-graph's config file before deciding to skip, so a
-# contributor whose key lives in config.toml (ADR 0002) rather than the
-# environment still runs these instead of silently skipping them.
 _resolve_llm_credentials()
 
 requires_openai_key = pytest.mark.skipif(
@@ -66,7 +68,7 @@ def test_pending_can_be_limited(eval_graph: ActionsGraph):
 async def test_reconciling_a_batch_clears_its_pending_flag(eval_graph: ActionsGraph):
     inject_batch([_fixture("s1")], graph=eval_graph)
 
-    await reconcile_batch(eval_graph._db, limit=1)
+    await reconcile_batch(eval_graph._db, limit=1, memgraph_url=EVAL_MEMGRAPH_URL)
 
     rows = eval_graph._db.query("MATCH (s:Session {session_id: 's1'}) RETURN s.reconciliation_status AS status")
     assert rows[0]["status"] != PENDING
@@ -78,7 +80,7 @@ async def test_reconciling_produces_chunks_linked_to_their_source_action(eval_gr
     the Action that produced them."""
     inject_batch([_fixture("s1")], graph=eval_graph)
 
-    await reconcile_batch(eval_graph._db, limit=1)
+    await reconcile_batch(eval_graph._db, limit=1, memgraph_url=EVAL_MEMGRAPH_URL)
 
     rows = eval_graph._db.query(
         "MATCH (:Session {session_id: 's1'})-[:HAS_ACTION]->(a)-[:HAS_CHUNK]->(c:Chunk) RETURN count(c) AS n"
@@ -91,7 +93,7 @@ async def test_reconciling_produces_an_episode_for_the_session(eval_graph: Actio
     """The episodic-memory half of the same pass."""
     inject_batch([_fixture("s1")], graph=eval_graph)
 
-    await reconcile_batch(eval_graph._db, limit=1)
+    await reconcile_batch(eval_graph._db, limit=1, memgraph_url=EVAL_MEMGRAPH_URL)
 
     rows = eval_graph._db.query(
         "MATCH (:Session {session_id: 's1'})-[:HAS_EPISODE]->(e:Episode) RETURN e.summary AS summary"
@@ -103,7 +105,7 @@ async def test_reconciling_produces_an_episode_for_the_session(eval_graph: Actio
 async def test_reconcile_reports_per_session_outcomes(eval_graph: ActionsGraph):
     inject_batch([_fixture("s1")], graph=eval_graph)
 
-    result = await reconcile_batch(eval_graph._db, limit=1)
+    result = await reconcile_batch(eval_graph._db, limit=1, memgraph_url=EVAL_MEMGRAPH_URL)
 
     assert result.reconciled == 1
     assert result.failed == 0

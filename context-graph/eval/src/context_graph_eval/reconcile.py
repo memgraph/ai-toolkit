@@ -19,6 +19,16 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
 
 from .inject import PENDING
 
+#: LightRAG's fallback store for anything not backed by Memgraph. Matches
+#: `sessions-graph reconcile --working-dir`'s default, so both entry points
+#: behave the same.
+#:
+#: Must never be None. LightRAG guards on the *key* being present
+#: (``if "working_dir" in lightrag_kwargs``), not on its value, so a None
+#: reaches ``os.path.exists(None)`` and raises TypeError before any
+#: reconciliation happens -- which is exactly how this was found.
+DEFAULT_WORKING_DIR = "./lightrag_storage"
+
 
 @dataclass(frozen=True)
 class Reconciled:
@@ -67,7 +77,8 @@ async def reconcile_batch(
     db: "Memgraph",
     *,
     limit: int | None = None,
-    working_dir: str | None = None,
+    memgraph_url: str | None = None,
+    working_dir: str = DEFAULT_WORKING_DIR,
     lightrag_wrapper: Any = None,
 ) -> Reconciled:
     """Reconcile pending sessions in the eval graph.
@@ -79,7 +90,19 @@ async def reconcile_batch(
 
     No LightRAG wrapper is constructed when nothing is pending, so an empty
     batch costs nothing and needs no LLM credentials.
+
+    ``memgraph_url`` must name the same instance ``db`` is connected to, and is
+    not optional in practice. LightRAG's Memgraph storage backends resolve their
+    connection from the **environment**, not from the client passed in here --
+    they raise outright if ``MEMGRAPH_URL`` is unset, and worse, if it is set to
+    something else they will happily write reconciliation output to *that*
+    graph instead. Left unset while an ambient ``MEMGRAPH_URL`` points at a
+    development instance, an eval batch would distil straight into it: the exact
+    pollution #309's dedicated-instance decision exists to prevent, with nothing
+    to indicate it happened.
     """
+    import os
+
     from sessions_graph import SessionsGraph
 
     session_ids = pending_sessions(db, limit=limit)
@@ -87,6 +110,20 @@ async def reconcile_batch(
         return Reconciled(reconciled=0, failed=0)
 
     _resolve_llm_credentials()
+
+    if memgraph_url:
+        # Set, not defaulted: this is what LightRAG's stores actually follow.
+        os.environ["MEMGRAPH_URL"] = memgraph_url
+        os.environ.setdefault("MEMGRAPH_USER", "")
+        os.environ.setdefault("MEMGRAPH_PASSWORD", "")
+        os.environ.setdefault("MEMGRAPH_DATABASE", "memgraph")
+    elif not os.environ.get("MEMGRAPH_URL"):
+        raise ValueError(
+            "reconcile_batch needs memgraph_url (or MEMGRAPH_URL in the environment): "
+            "LightRAG's storage backends read the environment rather than the client "
+            "passed in, so without it reconciliation cannot start -- and with a wrong "
+            "one it would write to a different graph than the one being evaluated."
+        )
 
     graph = SessionsGraph(memgraph=db)
     graph.setup()

@@ -182,6 +182,17 @@ async def retrieve(
         except Exception as exc:
             errors.append(f"{cypher}: {exc}")
             continue
+
+        if not rows:
+            # A query that is valid Cypher but matches nothing used to be
+            # invisible: the loop recorded errors only, so the agent saw no
+            # difference between "I have not queried yet" and "my assumption
+            # was wrong". Observed against a real model -- it invented an
+            # action_type from the question's wording, got zero rows four times
+            # running with nothing to contradict it, and concluded the fact was
+            # not in memory. Reporting the empty result is what lets it revise.
+            errors.append(f"{cypher}: returned 0 rows")
+            continue
         seen.extend(_render(row) for row in rows)
 
     answer = await llm.complete(_answer_prompt(question, seen))
@@ -215,7 +226,12 @@ def _query_prompt(question: str, schema: str, seen: list[str], errors: list[str]
     if seen:
         parts += ["", "Rows so far:", *seen[:50]]
     if errors:
-        parts += ["", "Queries that failed (do not repeat them):", *errors]
+        parts += [
+            "",
+            "Queries that failed or matched nothing (do not repeat them, and revise your "
+            "assumptions about the schema rather than rephrasing the same idea):",
+            *errors,
+        ]
     return "\n".join(parts)
 
 
