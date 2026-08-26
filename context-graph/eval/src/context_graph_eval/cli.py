@@ -72,6 +72,21 @@ def main(argv: list[str] | None = None) -> int:
         "and report efficiency only.",
     )
     run.add_argument("--agent-model", default=None, help="model id for the retrieval agent")
+    run.add_argument("--save", type=Path, default=None, help="persist this run so it can be compared later")
+    run.add_argument("--label", default="run", help="name for this run in a later comparison")
+    run.add_argument("--changed", default="", help="what this run changed, shown in the comparison report")
+
+    cmp_ = subcommands.add_parser("compare", help="compare two saved runs and print the report")
+    cmp_.add_argument("baseline", type=Path)
+    cmp_.add_argument("candidate", type=Path)
+    cmp_.add_argument(
+        "--noise-floor",
+        type=float,
+        default=None,
+        help="coverage noise floor in percentage points, from #304's repeat-and-compare "
+        "calibration. Without it no delta is claimed real -- 'cannot tell' is reported "
+        "rather than a guess.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -79,7 +94,29 @@ def main(argv: list[str] | None = None) -> int:
         return _build_corpus(args)
     if args.command == "run":
         return _run(args)
+    if args.command == "compare":
+        return _compare(args)
     return 1
+
+
+def _compare(args) -> int:
+    from .report import compare, load_run, render
+
+    try:
+        comparison = compare(
+            load_run(args.baseline),
+            load_run(args.candidate),
+            noise_floor_pp=args.noise_floor,
+        )
+    except ValueError as exc:
+        # Not comparable is a refusal, not a warning: a delta computed across
+        # different pins measures the pin change as if it were the change under
+        # test, and says so confidently.
+        print(f"refusing to compare: {exc}", file=sys.stderr)
+        return 1
+
+    print(render(comparison))
+    return 0
 
 
 def _build_corpus(args) -> int:
@@ -138,6 +175,29 @@ def _run(args) -> int:
         )
     )
     _print_report(report, judged=judge is not None)
+
+    if args.save:
+        from .report import RunMeta, SavedRun, save_run
+        from .scoring import DEFAULT_TOKENIZER
+
+        saved = save_run(
+            SavedRun(
+                meta=RunMeta(
+                    label=args.label,
+                    corpus_revision=args.revision,
+                    corpus_variant=args.variant,
+                    # Recorded even when absent: a comparison must refuse to
+                    # measure an unjudged run against a judged one.
+                    judge_model=args.judge_model or "none",
+                    tokenizer=DEFAULT_TOKENIZER,
+                    questions=len(goldens),
+                    changed=args.changed,
+                ),
+                scored=report.scored,
+            ),
+            args.save,
+        )
+        print(f"\nsaved run to {saved}")
     return 0
 
 

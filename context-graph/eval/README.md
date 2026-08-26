@@ -65,6 +65,53 @@ The runner **refuses to start** if `CONFIDENT_API_KEY` is set: deepeval uploads
 a test run whenever a Confident AI key is present, and eval results stay local
 for the same owned-IP reason the corpus does.
 
+## Comparing runs
+
+Promotion is human-gated (#299), so the report's job is not to decide — it is
+to make the decision *makeable*.
+
+```bash
+context-graph-eval run --limit 20 --save runs/baseline.json --label baseline
+# ...change something...
+context-graph-eval run --limit 20 --save runs/candidate.json --label candidate \
+    --changed "decay rule v3 (7-day window -> usage-based)"
+
+context-graph-eval compare runs/baseline.json runs/candidate.json --noise-floor 4
+```
+
+```
+VERDICT  improved
+  noise floor +/-4pp
+
+Tier 1              base    cand   delta
+  coverage            12/20  13/20     +5pp  REAL
+  efficiency med     1,840   1,120      -39%
+  improvements     q_12
+```
+
+Two behaviours matter more than the layout:
+
+**It refuses to compare runs measured differently.** A different corpus
+revision, judge model, or tokenizer makes two runs incomparable — #302 and #304
+pinned those precisely so a comparison would mean something. Comparing across
+pins measures the pin change as though it were the change under test, and
+reports it confidently. That is a refusal, not a warning.
+
+**Without calibration it will not call anything real.** Judged scores vary run
+to run, so a bare `12/20 -> 13/20` invites reading a win into noise. The noise
+floor comes from #304's repeat-and-compare check; absent one, the report says
+`NOT CALIBRATED` and returns `inconclusive` rather than guessing.
+
+A real coverage regression decides the verdict even when efficiency improved —
+coverage is the gate (#309), and a cheaper answer missing facts is not a better
+one. Efficiency alone never declares an improvement, since "coverage held"
+cannot be established inside the noise floor.
+
+> Sizing caveat: at 20 questions one question is 5pp, so *any* single flip
+> clears a ±4pp floor. Coverage granularity is coarser than a plausible noise
+> floor at small corpus sizes — scale the corpus before trusting small coverage
+> deltas.
+
 ## Reconciliation
 
 Injection stages raw turns; **reconciliation** is what turns them into memory —
