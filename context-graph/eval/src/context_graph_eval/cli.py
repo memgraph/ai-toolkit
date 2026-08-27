@@ -88,6 +88,24 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--label", default="run", help="name for this run in a later comparison")
     run.add_argument("--changed", default="", help="what this run changed, shown in the comparison report")
 
+    gold = subcommands.add_parser(
+        "gold-slice",
+        help="plant the gold-slice fixture by driving a REAL, billed Claude Code session",
+    )
+    gold.add_argument("--memgraph-url", default="bolt://localhost:7689", help="the dedicated eval instance")
+    gold.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path.cwd(),
+        help="working directory for the session; hook commands resolve `uv run` against it",
+    )
+    gold.add_argument(
+        "--keep",
+        action="store_true",
+        help="do not wipe first. Use when Tier 1 fixtures are already loaded and the gold-slice "
+        "fact should be planted on top of them, among their distractors.",
+    )
+
     cal = subcommands.add_parser(
         "calibrate",
         help="derive a noise floor by running the same questions repeatedly (#304)",
@@ -116,7 +134,83 @@ def main(argv: list[str] | None = None) -> int:
         return _compare(args)
     if args.command == "calibrate":
         return _calibrate(args)
+    if args.command == "gold-slice":
+        return _gold_slice(args)
     return 1
+
+
+def _gold_slice(args) -> int:
+    """Plant the gold-slice fixture with a real Claude Code session."""
+    from actions_graph import ActionsGraph
+    from memgraph_toolbox.api.memgraph import Memgraph
+
+    from .goldslice import (
+        GOLD_SLICE_FACT,
+        GOLD_SLICE_PROMPT,
+        evidence_is_nested,
+        evidence_is_planted,
+        evidence_is_top_level,
+    )
+    from .live import LiveSessionError, drive_session, hooks_pointed_at
+
+    db = Memgraph(url=args.memgraph_url, username="", password="")
+    graph = ActionsGraph(memgraph=db)
+
+    if not args.keep:
+        # Wipe BEFORE the session, never after: the whole point is that the
+        # planted fact survives into the batch that scores it.
+        db.query("MATCH (n) DETACH DELETE n")
+        print("wiped the eval instance")
+
+    print("driving a real Claude Code session (billed)...")
+    try:
+        with hooks_pointed_at(args.memgraph_url) as env:
+            session_id, transcript = drive_session(GOLD_SLICE_PROMPT, repo_root=args.repo_root, env=env)
+    except LiveSessionError as exc:
+        print(f"gold slice: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"session {session_id} complete")
+    # Always shown. A zero exit means the CLI did not crash, not that the model
+    # delegated or that hooks recorded anything -- and re-running to find out
+    # costs another billed session.
+    print("--- session transcript ---")
+    print(transcript.strip()[:2000])
+    print("--- end transcript ---")
+
+    # Two checks, because they fail for different reasons and mean different
+    # things. Neither is a recall result -- they decide whether a recall result
+    # would mean anything at all.
+    if not evidence_is_planted(graph):
+        print(
+            "gold slice: the fact never reached the graph. Hooks may not be installed, or the "
+            "session did not read the file. Nothing here is scoreable.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not evidence_is_nested(graph, session_id, GOLD_SLICE_FACT):
+        print(
+            "gold slice: the fact is in the graph but NOT inside a subagent. The model declined "
+            "to delegate, so this run cannot test nested recall -- scoring it would pass or fail "
+            "for the wrong reason. Re-run; delegation is model-decided and not deterministic.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if evidence_is_top_level(graph, session_id, GOLD_SLICE_FACT):
+        print(
+            "gold slice: the fact is nested BUT also present at top level -- the subagent quoted "
+            "it in its report, which is recorded as the parent's Task ToolResult. Retrieval could "
+            "then answer without traversing HAS_AGENT, so this run tests nothing. Re-run; whether "
+            "the subagent obeys 'do not quote the value' is model-decided.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print("fixture planted, nested, and absent from top level. Score it with:")
+    print(f"  context-graph-eval run --gold-slice --skip-reconcile --memgraph-url {args.memgraph_url}")
+    return 0
 
 
 def _calibrate(args) -> int:

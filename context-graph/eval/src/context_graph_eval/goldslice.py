@@ -56,9 +56,10 @@ GOLD_SLICE_FACT = DEFAULT_REVISION[:12]
 #:    a skill read that never happened -- the open false-positive at #293.
 GOLD_SLICE_PROMPT = (
     "Use the Task tool to launch exactly one subagent (subagent_type: Explore). "
-    "Have that subagent open context-graph/eval/src/context_graph_eval/convert/longmemeval.py, "
-    "find the constant naming the pinned upstream dataset revision, and report its value "
-    "verbatim along with a one-line note on what it pins. "
+    "Have that subagent open context-graph/eval/src/context_graph_eval/convert/longmemeval.py "
+    "and locate the constant naming the pinned upstream dataset revision. "
+    "IMPORTANT: the subagent must report back ONLY the word CONFIRMED and the line number. "
+    "It must NOT quote, paraphrase, or include the constant's value anywhere in its report. "
     "Do not open the file yourself -- delegate the entire task to that one subagent."
 )
 
@@ -105,6 +106,31 @@ def evidence_is_planted(graph: "ActionsGraph", fact: str = GOLD_SLICE_FACT) -> b
     rows = graph._db.query(
         "MATCH (a:Action) WHERE a.properties CONTAINS $fact RETURN count(a) AS n",
         {"fact": fact},
+    )
+    return bool(rows and rows[0]["n"] > 0)
+
+
+def evidence_is_top_level(graph: "ActionsGraph", session_id: str, fact: str = GOLD_SLICE_FACT) -> bool:
+    """Whether ``fact`` also appears in an Action owned by the Session itself.
+
+    If it does, the question stops testing anything: retrieval can answer it
+    without ever traversing ``HAS_AGENT``, so it would pass even with nesting
+    completely broken.
+
+    This is not hypothetical and not a prompt slip. A subagent reports its
+    findings to its parent, and that report is recorded as the Task tool's
+    ``ToolResult`` at top level -- so **any** fact a subagent is asked to report
+    lands at both depths by construction. The prompt therefore asks the subagent
+    to confirm without quoting the value, and this check enforces it: a run that
+    leaks anyway is void rather than misleading.
+    """
+    rows = graph._db.query(
+        """
+        MATCH (:Session {session_id: $sid})-[:HAS_ACTION]->(a:Action)
+        WHERE a.properties CONTAINS $fact
+        RETURN count(a) AS n
+        """,
+        {"sid": session_id, "fact": fact},
     )
     return bool(rows and rows[0]["n"] > 0)
 
