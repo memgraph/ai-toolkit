@@ -196,6 +196,31 @@ async def test_prose_before_the_first_query_does_not_end_the_loop(populated: Rea
     assert any("beagle" in row for row in result.retrieval_context)
 
 
+async def test_the_agent_is_offered_a_named_way_to_stop(populated: ReadOnlyGraph):
+    """Once rows are in hand the prompt must name an explicit exit. "Reply with
+    prose if you have enough" was too weak against a model primed to emit
+    queries: it spent the whole step budget every run, long after the answer was
+    in hand, and each extra query enlarges the payload efficiency counts."""
+
+    class Capturing:
+        def __init__(self):
+            self.prompts = []
+            self.calls = 0
+
+        async def complete(self, prompt: str) -> str:
+            self.prompts.append(prompt)
+            self.calls += 1
+            if self.calls == 1:
+                return "MATCH (a:Action) RETURN a.properties AS props"
+            return "STOP"
+
+    llm = Capturing()
+    await retrieve("What breed is the dog?", graph=populated, llm=llm)
+
+    # The second prompt is the one issued with rows already retrieved.
+    assert "STOP" in llm.prompts[1]
+
+
 async def test_prose_after_retrieving_does_end_the_loop(populated: ReadOnlyGraph):
     """The other half of the same rule: once rows are in hand, a reply without a
     query is the model saying it has enough, and spending more steps on it would

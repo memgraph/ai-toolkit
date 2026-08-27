@@ -320,15 +320,38 @@ def _query_prompt(question: str, schema: str, seen: list[str], errors: list[str]
             # legitimate reason to reply in prose.
             "Reply with the query and NOTHING else -- no preamble, no explanation."
             if insist
-            else "Return only the query. Reply with prose instead if you already have enough."
+            # A named exit token, offered up front. "Reply with prose if you
+            # have enough" was too weak against a model primed to emit queries:
+            # it spent the whole step budget every run, long after the answer
+            # was already in hand, and every extra query enlarges the payload
+            # the efficiency metric counts (#309).
+            else "If the rows below already answer the question, reply with exactly STOP "
+            "and nothing else. Otherwise return only the next query."
         ),
+        "",
+        # Both learned from watching a real model fail against this graph.
+        "This is Memgraph, not Neo4j: APOC is NOT available, so JSON-valued "
+        "properties cannot be parsed in Cypher. Match substrings inside them "
+        "with CONTAINS instead.",
+        # The illustration is deliberately drawn from a domain no corpus
+        # question touches. An earlier version used the same words as a test
+        # question's answer, which put that answer into the prompt -- the agent
+        # could then "retrieve" what it had just been told, exactly the leak the
+        # schema description is careful to avoid.
+        "Stored wording rarely matches the question's wording, so prefer ONE broad "
+        "term over several ANDed together: someone asking about a vehicle may have "
+        "written 'motorcycle', and CONTAINS 'vehicle' would then find nothing.",
         "",
         f"Graph schema:\n{schema}",
         "",
         f"Question: {question}",
     ]
     if seen:
-        parts += ["", "Rows so far:", *seen[:50]]
+        parts += [
+            "",
+            f"Rows retrieved so far ({len(seen)}). Reply STOP if these answer the question:",
+            *seen[:50],
+        ]
     if errors:
         parts += [
             "",
