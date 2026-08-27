@@ -56,6 +56,13 @@ gh issue list --label wayfinder:map --state open
   ```bash
   uv pip install -e memgraph-toolbox"[test]"   # quote extras on zsh/macOS
   ```
+- Working from a nested worktree under this checkout (e.g.
+  `.claude/worktrees/<name>/`)? Run `uv venv` there first. With no local
+  `.venv`, `uv pip install -e ...`/`uv run --package ...` walk up and
+  silently reuse — and mutate — the outer checkout's shared `.venv`,
+  repointing its editable installs at whichever worktree you happen to run
+  from. That's a real collision if another worktree or session relies on
+  that same shared environment.
 - Run a workspace package's own suite via `uv run --package <name> --extra test pytest ...`
   (see `.github/workflows/tests.yaml` for the exact invocation per package,
   including which extras each one needs — e.g. `skills-graph`, `actions-graph`,
