@@ -87,10 +87,10 @@ class Memgraph:
 
     def __init__(
         self,
-        url: str = None,
-        username: str = None,
-        password: str = None,
-        database: str = None,
+        url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        database: str | None = None,
         driver_config: dict | None = None,
         user_agent: str | None = None,
     ):
@@ -140,7 +140,7 @@ class Memgraph:
                 f"Could not connect to Memgraph database. Authentication failed for user '{username}'"
             ) from e
 
-    def query(self, query: str, params: dict = None) -> list[dict[str, Any]]:
+    def query(self, query: str, params: dict | None = None) -> list[dict[str, Any]]:
         """
         Execute a Cypher query and return type-preserving result rows.
 
@@ -193,10 +193,10 @@ class AsyncMemgraph:
 
     def __init__(
         self,
-        url: str = None,
-        username: str = None,
-        password: str = None,
-        database: str = None,
+        url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        database: str | None = None,
         driver_config: dict | None = None,
         user_agent: str | None = None,
     ):
@@ -238,7 +238,7 @@ class AsyncMemgraph:
         """
         await self.driver.verify_connectivity()
 
-    async def query(self, query: str, params: dict = None) -> list[dict[str, Any]]:
+    async def query(self, query: str, params: dict | None = None) -> list[dict[str, Any]]:
         """
         Execute a Cypher query and return type-preserving result rows.
 

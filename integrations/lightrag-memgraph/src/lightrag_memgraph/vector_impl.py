@@ -141,7 +141,7 @@ class MemgraphVectorStorage(BaseVectorStorage):
             ).consume()
         logger.debug(f"[{self.workspace}] Upserted {len(entries)} vectors to {self.namespace}")
 
-    async def query(self, query: str, top_k: int, query_embedding: list[float] = None) -> list[dict[str, Any]]:
+    async def query(self, query: str, top_k: int, query_embedding: list[float] | None = None) -> list[dict[str, Any]]:
         """Vector-search this namespace and return up to ``top_k`` live results.
 
         By design, Memgraph's native vector index operates at ``READ_UNCOMMITTED``

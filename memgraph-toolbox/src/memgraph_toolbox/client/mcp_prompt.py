@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 async def prompt_with_tools(
     prompt: str,
     tool_selection_model_name: str = "openai/gpt-4o",
-    tool_selection_system_messages: list[dict[str, str]] = None,
+    tool_selection_system_messages: list[dict[str, str]] | None = None,
     response_model_name: str = "openai/gpt-4o",
-    response_system_messages: list[dict[str, str]] = None,
+    response_system_messages: list[dict[str, str]] | None = None,
     mcp_server_params: StdioServerParameters | None = None,
 ):
     """

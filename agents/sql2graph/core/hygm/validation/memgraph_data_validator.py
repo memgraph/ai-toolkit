@@ -53,7 +53,7 @@ class MemgraphDataValidator(BaseValidator):
         return self.validate_post_migration(expected_model)
 
     def validate_post_migration(
-        self, expected_model: GraphModel, expected_data_counts: dict[str, int] = None
+        self, expected_model: GraphModel, expected_data_counts: dict[str, int] | None = None
     ) -> ValidationResult:
         """
         Validate the migrated schema and data against expected model.
@@ -863,7 +863,7 @@ class MemgraphDataValidator(BaseValidator):
         self,
         expected: dict[str, Any],
         actual: dict[str, Any],
-        expected_data_counts: dict[str, int] = None,
+        expected_data_counts: dict[str, int] | None = None,
     ):
         """Update validation metrics using the base ValidationMetrics."""
         # Update basic counts
@@ -922,7 +922,7 @@ class MemgraphDataValidator(BaseValidator):
 def validate_memgraph_data(
     expected_model: GraphModel,
     memgraph_connection,
-    expected_data_counts: dict[str, int] = None,
+    expected_data_counts: dict[str, int] | None = None,
     detailed_report: bool = True,
 ) -> ValidationResult:
     """

@@ -55,6 +55,9 @@ members = [
     "context-graph/sessions-graph",
 ]
 
+[tool.ty.environment]
+python-version = "3.10"
+
 [tool.ruff]
 target-version = "py310"
 line-length = 120
@@ -79,7 +82,6 @@ ignore = [
     "N812",    # lowercase imported as non-lowercase — allows aliasing conventions like `import x as X`
     "N815",    # mixed-case variable in class scope — graph/DB field names follow external conventions
     "RUF001",  # ambiguous unicode character in string — false positives on intentional unicode content
-    "RUF013",  # implicit Optional — affects public API signatures, defer to a dedicated typing cleanup
 ]
 
 [tool.ruff.lint.isort]
