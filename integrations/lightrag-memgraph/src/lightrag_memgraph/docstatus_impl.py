@@ -11,13 +11,14 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import Any, final
+from typing import Any, cast, final
 
 from lightrag.base import DocProcessingStatus, DocStatus, DocStatusStorage
 from lightrag.utils import logger
 
 from ._connection import (
     MemgraphCrudMixin,
+    as_literal_query,
     close_driver,
     create_index,
     get_database,
@@ -74,7 +75,7 @@ class MemgraphDocStatusStorage(MemgraphCrudMixin, DocStatusStorage):
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             result = await session.run(
-                f"MATCH (n:`{self._label}` {{id: $id}}) RETURN n.data AS data",
+                as_literal_query(f"MATCH (n:`{self._label}` {{id: $id}}) RETURN n.data AS data"),
                 id=id,
             )
             record = await result.single()
@@ -90,11 +91,13 @@ class MemgraphDocStatusStorage(MemgraphCrudMixin, DocStatusStorage):
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             result = await session.run(
-                f"""
-                UNWIND $ids AS target_id
-                OPTIONAL MATCH (n:`{self._label}` {{id: target_id}})
-                RETURN target_id AS id, n.data AS data
-                """,
+                as_literal_query(
+                    f"""
+                    UNWIND $ids AS target_id
+                    OPTIONAL MATCH (n:`{self._label}` {{id: target_id}})
+                    RETURN target_id AS id, n.data AS data
+                    """
+                ),
                 ids=list(ids),
             )
             found: dict[str, str] = {}
@@ -102,7 +105,10 @@ class MemgraphDocStatusStorage(MemgraphCrudMixin, DocStatusStorage):
                 if record["data"] is not None:
                     found[record["id"]] = record["data"]
             await result.consume()
-        return [json.loads(found[i]) if i in found else None for i in ids]
+        # LightRAG's own BaseKVStorage.get_by_ids declares -> list[dict[str, Any]], but its
+        # reference JsonKVStorage impl (and this one, to match) legitimately puts None in the
+        # slot of any id that does not exist -- the upstream annotation itself is imprecise.
+        return cast("list[dict[str, Any]]", [json.loads(found[i]) if i in found else None for i in ids])
 
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
         if not data:
@@ -123,11 +129,13 @@ class MemgraphDocStatusStorage(MemgraphCrudMixin, DocStatusStorage):
         async with driver.session(database=get_database()) as session:
             await (
                 await session.run(
-                    f"""
-                    UNWIND $entries AS e
-                    MERGE (n:`{self._label}` {{id: e.id}})
-                    SET n.data = e.data, n += e.indexed
-                    """,
+                    as_literal_query(
+                        f"""
+                        UNWIND $entries AS e
+                        MERGE (n:`{self._label}` {{id: e.id}})
+                        SET n.data = e.data, n += e.indexed
+                        """
+                    ),
                     entries=entries,
                 )
             ).consume()
@@ -141,7 +149,9 @@ class MemgraphDocStatusStorage(MemgraphCrudMixin, DocStatusStorage):
         counts = {status.value: 0 for status in DocStatus}
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
-            result = await session.run(f"MATCH (n:`{self._label}`) RETURN n.status AS status, count(n) AS cnt")
+            result = await session.run(
+                as_literal_query(f"MATCH (n:`{self._label}`) RETURN n.status AS status, count(n) AS cnt")
+            )
             async for record in result:
                 if record["status"] in counts:
                     counts[record["status"]] = record["cnt"]
@@ -164,11 +174,13 @@ class MemgraphDocStatusStorage(MemgraphCrudMixin, DocStatusStorage):
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             result = await session.run(
-                f"""
-                MATCH (n:`{self._label}`)
-                WHERE n.status IN $statuses
-                RETURN n.id AS id, n.data AS data
-                """,
+                as_literal_query(
+                    f"""
+                    MATCH (n:`{self._label}`)
+                    WHERE n.status IN $statuses
+                    RETURN n.id AS id, n.data AS data
+                    """
+                ),
                 statuses=status_values,
             )
             records = [record async for record in result]
@@ -179,10 +191,12 @@ class MemgraphDocStatusStorage(MemgraphCrudMixin, DocStatusStorage):
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             result = await session.run(
-                f"""
-                MATCH (n:`{self._label}` {{track_id: $track_id}})
-                RETURN n.id AS id, n.data AS data
-                """,
+                as_literal_query(
+                    f"""
+                    MATCH (n:`{self._label}` {{track_id: $track_id}})
+                    RETURN n.id AS id, n.data AS data
+                    """
+                ),
                 track_id=track_id,
             )
             records = [record async for record in result]
@@ -237,7 +251,7 @@ class MemgraphDocStatusStorage(MemgraphCrudMixin, DocStatusStorage):
         async def _count() -> int:
             async with driver.session(database=get_database(), default_access_mode="READ") as session:
                 result = await session.run(
-                    f"MATCH (n:`{self._label}`) {where} RETURN count(n) AS total",
+                    as_literal_query(f"MATCH (n:`{self._label}`) {where} RETURN count(n) AS total"),
                     **filter_params,
                 )
                 record = await result.single()
@@ -247,12 +261,14 @@ class MemgraphDocStatusStorage(MemgraphCrudMixin, DocStatusStorage):
         async def _page() -> list:
             async with driver.session(database=get_database(), default_access_mode="READ") as session:
                 result = await session.run(
-                    f"""
-                    MATCH (n:`{self._label}`) {where}
-                    RETURN n.id AS id, n.data AS data
-                    ORDER BY {sort_expr} {order}
-                    SKIP $skip LIMIT $limit
-                    """,
+                    as_literal_query(
+                        f"""
+                        MATCH (n:`{self._label}`) {where}
+                        RETURN n.id AS id, n.data AS data
+                        ORDER BY {sort_expr} {order}
+                        SKIP $skip LIMIT $limit
+                        """
+                    ),
                     **params,
                 )
                 records = [record async for record in result]
@@ -277,7 +293,7 @@ class MemgraphDocStatusStorage(MemgraphCrudMixin, DocStatusStorage):
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             result = await session.run(
-                f"MATCH (n:`{self._label}` {{file_path: $file_path}}) RETURN n.data AS data LIMIT 1",
+                as_literal_query(f"MATCH (n:`{self._label}` {{file_path: $file_path}}) RETURN n.data AS data LIMIT 1"),
                 file_path=file_path,
             )
             record = await result.single()
@@ -293,7 +309,9 @@ class MemgraphDocStatusStorage(MemgraphCrudMixin, DocStatusStorage):
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             result = await session.run(
-                f"MATCH (n:`{self._label}` {{file_path: $basename}}) RETURN n.id AS id, n.data AS data LIMIT 1",
+                as_literal_query(
+                    f"MATCH (n:`{self._label}` {{file_path: $basename}}) RETURN n.id AS id, n.data AS data LIMIT 1"
+                ),
                 basename=basename,
             )
             record = await result.single()
@@ -309,7 +327,9 @@ class MemgraphDocStatusStorage(MemgraphCrudMixin, DocStatusStorage):
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             result = await session.run(
-                f"MATCH (n:`{self._label}` {{content_hash: $content_hash}}) RETURN n.id AS id, n.data AS data LIMIT 1",
+                as_literal_query(
+                    f"MATCH (n:`{self._label}` {{content_hash: $content_hash}}) RETURN n.id AS id, n.data AS data LIMIT 1"
+                ),
                 content_hash=content_hash,
             )
             record = await result.single()

@@ -19,6 +19,7 @@ from lightrag.base import BaseVectorStorage
 from lightrag.utils import compute_mdhash_id, logger
 
 from ._connection import (
+    as_literal_query,
     close_driver,
     create_index,
     get_database,
@@ -130,12 +131,14 @@ class MemgraphVectorStorage(BaseVectorStorage):
             await self._ensure_vector_index(session)
             await (
                 await session.run(
-                    f"""
-                    UNWIND $entries AS e
-                    MERGE (n:`{self._label}` {{id: e.id}})
-                    ON CREATE SET n.created_at = e.ts
-                    SET n += e.props, n.embedding = e.embedding, n.updated_at = e.ts
-                    """,
+                    as_literal_query(
+                        f"""
+                        UNWIND $entries AS e
+                        MERGE (n:`{self._label}` {{id: e.id}})
+                        ON CREATE SET n.created_at = e.ts
+                        SET n += e.props, n.embedding = e.embedding, n.updated_at = e.ts
+                        """
+                    ),
                     entries=entries,
                 )
             ).consume()
@@ -176,15 +179,17 @@ class MemgraphVectorStorage(BaseVectorStorage):
                 # dropping it.
                 # Index name is a sanitized string literal (not accepted as a query param).
                 result = await session.run(
-                    f"""
-                    CALL vector_search.search("{self._index_name}", $top_k, $embedding)
-                    YIELD node, similarity
-                    WITH collect({{node: node, similarity: similarity}}) AS cand_pairs
-                    UNWIND cand_pairs AS cp
-                    OPTIONAL MATCH (live:`{self._label}`) WHERE live = cp.node
-                    RETURN live.id AS id, cp.similarity AS similarity,
-                           CASE WHEN live IS NULL THEN NULL ELSE properties(live) END AS props
-                    """,
+                    as_literal_query(
+                        f"""
+                        CALL vector_search.search("{self._index_name}", $top_k, $embedding)
+                        YIELD node, similarity
+                        WITH collect({{node: node, similarity: similarity}}) AS cand_pairs
+                        UNWIND cand_pairs AS cp
+                        OPTIONAL MATCH (live:`{self._label}`) WHERE live = cp.node
+                        RETURN live.id AS id, cp.similarity AS similarity,
+                               CASE WHEN live IS NULL THEN NULL ELSE properties(live) END AS props
+                        """
+                    ),
                     top_k=int(top_k),
                     embedding=embedding,
                 )
@@ -225,7 +230,7 @@ class MemgraphVectorStorage(BaseVectorStorage):
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             result = await session.run(
-                f"MATCH (n:`{self._label}` {{id: $id}}) RETURN properties(n) AS props",
+                as_literal_query(f"MATCH (n:`{self._label}` {{id: $id}}) RETURN properties(n) AS props"),
                 id=id,
             )
             record = await result.single()
@@ -243,11 +248,13 @@ class MemgraphVectorStorage(BaseVectorStorage):
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             result = await session.run(
-                f"""
-                MATCH (n:`{self._label}`)
-                WHERE n.id IN $ids
-                RETURN n.id AS id, properties(n) AS props
-                """,
+                as_literal_query(
+                    f"""
+                    MATCH (n:`{self._label}`)
+                    WHERE n.id IN $ids
+                    RETURN n.id AS id, properties(n) AS props
+                    """
+                ),
                 ids=list(ids),
             )
             records = [record async for record in result]
@@ -266,11 +273,13 @@ class MemgraphVectorStorage(BaseVectorStorage):
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             result = await session.run(
-                f"""
-                MATCH (n:`{self._label}`)
-                WHERE n.id IN $ids AND n.embedding IS NOT NULL
-                RETURN n.id AS id, n.embedding AS embedding
-                """,
+                as_literal_query(
+                    f"""
+                    MATCH (n:`{self._label}`)
+                    WHERE n.id IN $ids AND n.embedding IS NOT NULL
+                    RETURN n.id AS id, n.embedding AS embedding
+                    """
+                ),
                 ids=list(ids),
             )
             vectors = {record["id"]: list(record["embedding"]) async for record in result}
@@ -291,12 +300,14 @@ class MemgraphVectorStorage(BaseVectorStorage):
         async with driver.session(database=get_database()) as session:
             await (
                 await session.run(
-                    f"""
-                    MATCH (n:`{self._label}`)
-                    {where_clause}
-                    SET n.embedding = NULL
-                    DETACH DELETE n
-                    """,
+                    as_literal_query(
+                        f"""
+                        MATCH (n:`{self._label}`)
+                        {where_clause}
+                        SET n.embedding = NULL
+                        DETACH DELETE n
+                        """
+                    ),
                     **params,
                 )
             ).consume()
@@ -323,7 +334,7 @@ class MemgraphVectorStorage(BaseVectorStorage):
             driver = await get_driver()
             async with driver.session(database=get_database()) as session:
                 try:
-                    await (await session.run(f"DROP VECTOR INDEX {self._index_name}")).consume()
+                    await (await session.run(as_literal_query(f"DROP VECTOR INDEX {self._index_name}"))).consume()
                 except Exception as e:
                     logger.debug(f"[{self.workspace}] Dropping vector index {self._index_name} skipped: {e}")
             self._index_ready = False
