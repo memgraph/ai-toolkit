@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -8,10 +9,13 @@ pytest.importorskip("agent_context_graph", reason="agent-context-graph not insta
 from agent_context_graph.events import ToolEndEvent, ToolStartEvent
 from skills_graph.connector import SkillGraphConnector
 
+if TYPE_CHECKING:
+    from skills_graph import SkillGraph
+
 
 def _connector():
     graph = SimpleNamespace(record_skill_usage=MagicMock())
-    return SkillGraphConnector(graph), graph
+    return SkillGraphConnector(cast("SkillGraph", graph)), graph
 
 
 def test_mcp_tool_name_is_treated_as_skill_tool():
