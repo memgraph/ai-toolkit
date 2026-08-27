@@ -168,6 +168,54 @@ async def test_retrieval_records_the_queries_it_ran(populated: ReadOnlyGraph):
     assert result.queries and "MATCH (s:Session)" in result.queries[0]
 
 
+async def test_prose_before_the_first_query_does_not_end_the_loop(populated: ReadOnlyGraph):
+    """Observed at scale: 4 of 20 questions issued ZERO queries. The model
+    opened with prose, the loop read that as "I have enough", and answered from
+    an empty context -- one of them a question whose answer was sitting in the
+    graph untouched.
+
+    A reply with no query means "done" only once something has actually been
+    retrieved. Before that it means the model needs asking again.
+    """
+
+    class ChattyLLM:
+        def __init__(self):
+            self.calls = 0
+
+        async def complete(self, prompt: str) -> str:
+            self.calls += 1
+            if self.calls == 1:
+                return "Sure! Let me look that up for you."
+            if self.calls == 2:
+                return "MATCH (a:Action) RETURN a.properties AS props"
+            return "A beagle."
+
+    result = await retrieve("What breed is the dog?", graph=populated, llm=ChattyLLM())
+
+    assert result.queries, "the loop gave up before issuing a single query"
+    assert any("beagle" in row for row in result.retrieval_context)
+
+
+async def test_prose_after_retrieving_does_end_the_loop(populated: ReadOnlyGraph):
+    """The other half of the same rule: once rows are in hand, a reply without a
+    query is the model saying it has enough, and spending more steps on it would
+    inflate the payload the efficiency metric counts."""
+
+    class DoneAfterOne:
+        def __init__(self):
+            self.calls = 0
+
+        async def complete(self, prompt: str) -> str:
+            self.calls += 1
+            if self.calls == 1:
+                return "MATCH (a:Action) RETURN a.properties AS props"
+            return "I have enough now."
+
+    result = await retrieve("What breed is the dog?", graph=populated, llm=DoneAfterOne())
+
+    assert len(result.queries) == 1
+
+
 async def test_a_bad_query_is_reported_not_raised(populated: ReadOnlyGraph):
     """One malformed query should cost that question its answer, not abort the
     whole batch mid-run."""

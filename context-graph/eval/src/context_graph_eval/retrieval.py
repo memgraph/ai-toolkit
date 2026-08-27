@@ -261,10 +261,18 @@ async def retrieve(
     errors: list[str] = []
 
     for _ in range(max_steps):
-        reply = await llm.complete(_query_prompt(question, schema, seen, errors))
+        reply = await llm.complete(_query_prompt(question, schema, seen, errors, insist=not seen))
         cypher = _extract_cypher(reply)
         if cypher is None:
-            break
+            # A reply with no query means "I have enough" -- but only once
+            # something has actually been retrieved. Breaking unconditionally
+            # meant an opening line of prose ended the loop before it began:
+            # measured at scale, 4 of 20 questions issued zero queries and
+            # answered from an empty context, one of them a question whose
+            # answer was sitting in the graph untouched.
+            if seen:
+                break
+            continue
 
         queries.append(cypher)
         try:
@@ -303,11 +311,17 @@ def _render(row: dict[str, Any]) -> str:
     return " | ".join(f"{key}={value}" for key, value in row.items())
 
 
-def _query_prompt(question: str, schema: str, seen: list[str], errors: list[str]) -> str:
+def _query_prompt(question: str, schema: str, seen: list[str], errors: list[str], *, insist: bool = False) -> str:
     parts = [
         "You are answering a question using only a Memgraph graph database.",
         "Write ONE read-only Cypher query to gather what you still need.",
-        "Return only the query. Reply with prose instead if you already have enough.",
+        (
+            # Nothing retrieved yet, so there is nothing to answer from and no
+            # legitimate reason to reply in prose.
+            "Reply with the query and NOTHING else -- no preamble, no explanation."
+            if insist
+            else "Return only the query. Reply with prose instead if you already have enough."
+        ),
         "",
         f"Graph schema:\n{schema}",
         "",
