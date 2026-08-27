@@ -11,8 +11,10 @@ import re
 
 from context_graph_eval.convert.longmemeval import DEFAULT_REVISION
 from context_graph_eval.goldslice import (
+    GOLD_SLICE_FACT,
     GOLD_SLICE_PROMPT,
     evidence_is_nested,
+    evidence_is_planted,
     gold_slice_goldens,
 )
 
@@ -73,6 +75,23 @@ def test_the_prompt_forces_delegation_to_exactly_one_subagent():
 
     assert "task tool" in lowered
     assert "exactly one" in lowered
+
+
+def test_an_unplanted_fixture_is_detected(eval_graph: ActionsGraph):
+    """The gold slice's fixture is planted by a real harness session, not
+    injected like Tier 1's. Scoring the question without having driven that
+    session measures a fact the graph never contained and reports a guaranteed
+    zero as a recall failure -- so the run refuses instead."""
+    assert evidence_is_planted(eval_graph) is False
+
+
+def test_a_planted_fixture_is_detected(eval_graph: ActionsGraph):
+    eval_graph.create_session(Session(session_id="s-planted"))
+    eval_graph.record_action(
+        Message(session_id="s-planted", role=MessageRole.ASSISTANT, content=f"the revision is {GOLD_SLICE_FACT}")
+    )
+
+    assert evidence_is_planted(eval_graph) is True
 
 
 def test_evidence_only_in_a_top_level_action_is_not_nested(eval_graph: ActionsGraph):

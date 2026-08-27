@@ -93,6 +93,22 @@ def gold_slice_goldens() -> list[Golden]:
     ]
 
 
+def evidence_is_planted(graph: "ActionsGraph", fact: str = GOLD_SLICE_FACT) -> bool:
+    """Whether the gold-slice fact is anywhere in the graph at all.
+
+    Checked before a gold-slice question is scored. Its fixture is planted by a
+    real harness session, not injected like Tier 1's -- so running the question
+    without having driven that session scores a fact the graph never contained,
+    and reports a guaranteed zero as though it were a recall failure. A
+    fixture that was never laid down is not a measurement.
+    """
+    rows = graph._db.query(
+        "MATCH (a:Action) WHERE a.properties CONTAINS $fact RETURN count(a) AS n",
+        {"fact": fact},
+    )
+    return bool(rows and rows[0]["n"] > 0)
+
+
 def evidence_is_nested(graph: "ActionsGraph", session_id: str, fact: str) -> bool:
     """Whether ``fact`` appears in an Action owned by an Agent, not the session.
 

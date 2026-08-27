@@ -53,6 +53,18 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--revision", default=DEFAULT_REVISION, help="pinned upstream revision")
     run.add_argument("--limit", type=int, default=20, help="how many questions to run")
     run.add_argument(
+        "--corpus",
+        type=Path,
+        default=Path("context-graph/eval/corpus/tier1-longmemeval.jsonl"),
+        help="the COMMITTED corpus to run. Read rather than re-derived, so two runs being "
+        "compared provably answer the same questions (#302).",
+    )
+    run.add_argument(
+        "--gold-slice",
+        action="store_true",
+        help="also run Tier 2's gold-slice questions, scored separately from Tier 1 (#303).",
+    )
+    run.add_argument(
         "--memgraph-url",
         default="bolt://localhost:7689",
         help="the DEDICATED eval instance. It is wiped before each batch -- never point this at a "
@@ -137,7 +149,8 @@ def _run(args) -> int:
     from actions_graph import ActionsGraph
     from memgraph_toolbox.api.memgraph import Memgraph
 
-    from .convert.longmemeval import build_corpus as build_goldens
+    from .corpus import read_corpus
+    from .goldslice import evidence_is_planted, gold_slice_goldens
     from .reconcile import _resolve_llm_credentials
     from .retrieval import DeepEvalLLM
     from .runner import RunPlan, check_offline, run_batch
@@ -145,16 +158,37 @@ def _run(args) -> int:
     check_offline()
     _resolve_llm_credentials()
 
-    with tempfile.TemporaryDirectory() as workdir:
-        raw = fetch(args.variant, args.revision, dest=Path(workdir) / "upstream.json")
-        records = load_raw(raw)
+    # Read the COMMITTED corpus rather than re-deriving it. This is the whole
+    # point of #302 putting it in git: two runs being compared must provably be
+    # answering the same questions, and re-converting upstream each time proves
+    # nothing -- a change in sampling, conversion, or upstream would silently
+    # alter the question set between a baseline and its candidate.
+    if not args.corpus.exists():
+        print(
+            f"no corpus at {args.corpus}. Build one first:\n"
+            f"  context-graph-eval build-corpus --limit {args.limit} --out {args.corpus}",
+            file=sys.stderr,
+        )
+        return 1
+    goldens = read_corpus(args.corpus)
 
-    goldens = build_goldens(records, limit=args.limit)
-    chosen = {g.name for g in goldens}
-    # Only the sampled questions' haystacks get injected: injecting the whole
-    # upstream file would reconcile thousands of sessions nobody asks about.
-    used_records = [r for r in records if r["question_id"] in chosen]
-    print(f"running {len(goldens)} questions from longmemeval-{args.variant} @ {args.revision[:12]}")
+    if args.gold_slice:
+        # Tier 2. Scored apart from Tier 1 (#303), and the only questions that
+        # exercise the capture layer at all.
+        goldens += gold_slice_goldens()
+
+    # The haystack is NOT committed alongside the corpus: at 20 questions it is
+    # ~9.5MB of reshaped upstream text, which is what #302 rejected vendoring.
+    # Its immutability comes from the pinned revision instead of from git.
+    with tempfile.TemporaryDirectory() as workdir:
+        records = load_raw(fetch(args.variant, args.revision, dest=Path(workdir) / "upstream.json"))
+
+    wanted = {g.name for g in goldens}
+    used_records = [r for r in records if r["question_id"] in wanted]
+    print(
+        f"running {len(goldens)} questions from {args.corpus} "
+        f"(fixtures: longmemeval-{args.variant} @ {args.revision[:12]})"
+    )
 
     db = Memgraph(url=args.memgraph_url, username="", password="")
     graph = ActionsGraph(memgraph=db)
@@ -163,6 +197,19 @@ def _run(args) -> int:
     agent = _build_model(args.agent_model, anthropic=False)
     if agent is None:
         print("no agent model configured: set --agent-model or an OPENAI_API_KEY", file=sys.stderr)
+        return 1
+
+    if args.gold_slice and not evidence_is_planted(graph):
+        # Refuse rather than report a guaranteed zero. The gold slice's fixture
+        # is planted by a real harness session (#307), and that driver is not
+        # built yet -- so scoring the question here measures a fact the graph
+        # never contained and reports it as a recall failure.
+        print(
+            "--gold-slice: the fixture is not in the graph. It is planted by a real "
+            "Claude Code session, and that driver is not built yet (#307), so scoring "
+            "this question now would report a guaranteed zero as a recall failure.",
+            file=sys.stderr,
+        )
         return 1
 
     report = asyncio.run(
@@ -265,6 +312,8 @@ def _build_model(model_id: str | None, *, anthropic: bool):
 
 
 def _print_report(report, *, judged: bool) -> None:
+    from .scoring import gate_and_rank
+
     if report.reconciled or report.reconcile_failures:
         print(f"reconciled {report.reconciled} sessions ({report.reconcile_failures} failed)")
 
@@ -295,6 +344,15 @@ def _print_report(report, *, judged: bool) -> None:
                 print(f"  payload       median {payloads[len(payloads) // 2]} tokens returned (UNGATED)")
         if summary.abstention_total:
             print(f"  abstention    {summary.abstention_correct}/{summary.abstention_total} correct")
+
+        # Gate-then-rank made visible (#309): only questions that cleared
+        # coverage are ranked, cheapest payload first. Showing the extremes is
+        # what makes an efficiency regression actionable -- a median tells you
+        # something moved, these tell you where to look.
+        ranked = gate_and_rank([s for s in report.scored if s.tier == tier])
+        if len(ranked) > 1:
+            print(f"  cheapest      {ranked[0].name} ({ranked[0].efficiency_tokens:,} tokens)")
+            print(f"  costliest     {ranked[-1].name} ({ranked[-1].efficiency_tokens:,} tokens)")
 
 
 if __name__ == "__main__":
