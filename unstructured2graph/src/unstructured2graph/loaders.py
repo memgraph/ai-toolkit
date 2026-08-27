@@ -3,6 +3,7 @@ import logging
 import os
 import statistics
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -108,7 +109,7 @@ def parse_text(
 
 
 def make_chunks(
-    sources: list[str | Path],
+    sources: Sequence[str | Path],
     partition_kwargs: dict[str, Any] | None = None,
 ) -> list[ChunkedDocument]:
     """
@@ -335,7 +336,7 @@ async def from_texts(
 
 
 async def from_unstructured(
-    sources: list[str | Path],
+    sources: Sequence[str | Path],
     memgraph: Memgraph,
     lightrag_wrapper: MemgraphLightRAGWrapper | None = None,
     only_chunks: bool = False,
