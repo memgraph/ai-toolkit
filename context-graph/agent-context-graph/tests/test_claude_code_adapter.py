@@ -9,7 +9,16 @@ from agent_context_graph.adapters.claude_code import (
     load_payload,
     response_for_payload,
 )
-from agent_context_graph.events import Event, EventType
+from agent_context_graph.events import (
+    AgentEndEvent,
+    AgentStartEvent,
+    Event,
+    EventType,
+    MessageEvent,
+    SessionStartEvent,
+    ToolEndEvent,
+    ToolStartEvent,
+)
 from agent_context_graph.protocols import GraphConnector
 
 
@@ -37,6 +46,7 @@ def test_session_start_payload_emits_session_start_event():
     )
 
     event = rec.events[0]
+    assert isinstance(event, SessionStartEvent)
     assert event.event_type == EventType.SESSION_START
     assert event.source_sdk == "claude-code"
     assert event.session_id == "s1"
@@ -59,6 +69,7 @@ def test_user_prompt_payload_emits_message_event():
     )
 
     event = rec.events[0]
+    assert isinstance(event, MessageEvent)
     assert event.event_type == EventType.MESSAGE
     assert event.role == "user"
     assert event.content == "Use the cypher skill"
@@ -91,9 +102,12 @@ def test_tool_payloads_emit_tool_events():
     )
 
     assert [event.event_type for event in rec.events] == [EventType.TOOL_START, EventType.TOOL_END]
-    assert rec.events[0].tool_name == "Read"
-    assert rec.events[0].tool_input == {"file_path": "/skills/cypher/SKILL.md"}
-    assert rec.events[1].result == "skill body"
+    tool_start, tool_end = rec.events
+    assert isinstance(tool_start, ToolStartEvent)
+    assert isinstance(tool_end, ToolEndEvent)
+    assert tool_start.tool_name == "Read"
+    assert tool_start.tool_input == {"file_path": "/skills/cypher/SKILL.md"}
+    assert tool_end.result == "skill body"
 
 
 def test_failed_tool_payload_emits_error_tool_end():
@@ -114,6 +128,7 @@ def test_failed_tool_payload_emits_error_tool_end():
     )
 
     event = rec.events[0]
+    assert isinstance(event, ToolEndEvent)
     assert event.event_type == EventType.TOOL_END
     assert event.is_error
     assert event.error_message == "Command exited with non-zero status code 1"
@@ -146,8 +161,11 @@ def test_tool_payloads_inside_subagent_carry_agent_name():
         }
     )
 
-    assert rec.events[0].agent_name == "agent-1"
-    assert rec.events[1].agent_name == "agent-1"
+    tool_start, tool_end = rec.events
+    assert isinstance(tool_start, ToolStartEvent)
+    assert isinstance(tool_end, ToolEndEvent)
+    assert tool_start.agent_name == "agent-1"
+    assert tool_end.agent_name == "agent-1"
 
 
 def test_subagent_payloads_emit_agent_events():
@@ -175,8 +193,11 @@ def test_subagent_payloads_emit_agent_events():
     )
 
     assert [event.event_type for event in rec.events] == [EventType.AGENT_START, EventType.AGENT_END]
-    assert rec.events[0].agent_name == "agent-1"
-    assert rec.events[1].output == "Done"
+    agent_start, agent_end = rec.events
+    assert isinstance(agent_start, AgentStartEvent)
+    assert isinstance(agent_end, AgentEndEvent)
+    assert agent_start.agent_name == "agent-1"
+    assert agent_end.output == "Done"
 
 
 def test_stop_payload_emits_session_end_and_json_response():
