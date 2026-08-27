@@ -111,7 +111,10 @@ class CoherenceEmbeddingsBasedMetric(BaseMetric):
             Array of embeddings with shape (n_sentences, embedding_dim)
         """
         # TODO(gitbuda): This should use the utils.embeddings because GPU could be used.
-        return self.model.encode(sentences)
+        # convert_to_numpy is already the model's default; pinning it explicitly picks the
+        # np.ndarray-returning overload instead of leaving overload resolution to fall
+        # through to a Tensor-returning one.
+        return self.model.encode(sentences, convert_to_numpy=True)
 
     def _compute_cosine_similarity(self, embeddings: np.ndarray) -> list[float]:
         """Compute cosine similarity between consecutive embeddings.
@@ -221,7 +224,9 @@ class CoherenceEmbeddingsBasedMetric(BaseMetric):
         Returns:
             True if score meets threshold, False otherwise
         """
-        return self.success
+        # self.success is bool | None (None until measure() has run); treat "never measured"
+        # as "not successful" rather than lying about the return type or leaking None.
+        return self.success or False
 
     @property
     def __name__(self) -> str:

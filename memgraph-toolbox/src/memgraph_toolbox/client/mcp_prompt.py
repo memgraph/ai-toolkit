@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+from typing import cast
 
 try:
     from litellm import acompletion, experimental_mcp_client
@@ -113,10 +114,13 @@ async def prompt_with_tools(
                     result = await session.call_tool(name=tc["function"]["name"], arguments=arguments)
                     if hasattr(result, "content") and result.content:
                         if isinstance(result.content, list):
-                            content_text = []
+                            content_text: list[str] = []
                             for content_item in result.content:
                                 if hasattr(content_item, "text"):
-                                    content_text.append(content_item.text)
+                                    # hasattr narrows to an attribute typed `object`; of the
+                                    # mcp ContentBlock union members only TextContent has
+                                    # `.text`, and it's declared `str` there.
+                                    content_text.append(cast("str", content_item.text))
                                 elif isinstance(content_item, str):
                                     content_text.append(content_item)
                                 else:

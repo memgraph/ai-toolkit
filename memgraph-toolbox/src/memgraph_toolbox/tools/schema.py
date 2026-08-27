@@ -33,7 +33,7 @@ class NodeSchemaTool(BaseTool):
         )
         self.db = db
 
-    def call(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+    def call(self, arguments: dict[str, Any]) -> dict[str, Any] | list[dict[str, Any]]:
         try:
             node_labels = arguments["node_labels"]
             schema = _get_schema(self.db)
@@ -96,7 +96,7 @@ class RelationshipSchemaTool(BaseTool):
         )
         self.db = db
 
-    def call(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+    def call(self, arguments: dict[str, Any]) -> dict[str, Any] | list[dict[str, Any]]:
         try:
             edge_type = arguments["relationship_type"]
             start_node_labels = arguments["start_node_labels"]
@@ -138,7 +138,7 @@ class EnumSchemaTool(BaseTool):
         )
         self.db = db
 
-    def call(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+    def call(self, arguments: dict[str, Any]) -> dict[str, Any] | list[dict[str, Any]]:
         try:
             enum_name = arguments["enum_name"]
             schema = _get_schema(self.db)

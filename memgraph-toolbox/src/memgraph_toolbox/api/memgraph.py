@@ -1,6 +1,6 @@
 import os
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 from neo4j import AsyncGraphDatabase, GraphDatabase
 
@@ -160,8 +160,12 @@ class Memgraph:
         if params is None:
             params = {}
         try:
+            # neo4j's driver stubs require query_: LiteralString | Query, a hint aimed at
+            # discouraging unparameterized query construction. This is a generic passthrough
+            # executor that legitimately accepts caller-built Cypher text (injection is
+            # already guarded by `params`), which a `str` can never satisfy statically.
             records, _, _ = self.driver.execute_query(
-                query,
+                cast("Any", query),
                 parameters_=params,
                 database_=self.database,
             )
@@ -172,7 +176,7 @@ class Memgraph:
 
         # fallback to allow implicit transactions
         with self.driver.session(database=self.database) as session:
-            return serialize_records(session.run(query, params))
+            return serialize_records(session.run(cast("Any", query), params))
 
     def close(self) -> None:
         """
@@ -258,8 +262,12 @@ class AsyncMemgraph:
         if params is None:
             params = {}
         try:
+            # See the matching comment in Memgraph.query: query_ is typed LiteralString |
+            # Query in the driver stubs, but this is a generic passthrough executor that
+            # legitimately accepts caller-built Cypher text -- a `str` can never satisfy
+            # LiteralString statically, regardless of how it was validated at runtime.
             records, _, _ = await self.driver.execute_query(
-                query,
+                cast("Any", query),
                 parameters_=params,
                 database_=self.database,
             )
@@ -270,7 +278,7 @@ class AsyncMemgraph:
 
         # fallback to allow implicit transactions
         async with self.driver.session(database=self.database) as session:
-            result = await session.run(query, params)
+            result = await session.run(cast("Any", query), params)
             records = [record async for record in result]
             return serialize_records(records)
 
