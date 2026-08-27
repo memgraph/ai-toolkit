@@ -7,7 +7,14 @@ to support post-migration validation.
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    # Imported directly (rather than referenced as `neo4j.Driver`) so its
+    # type is precise even though the `neo4j` name itself is inferred as
+    # `<module 'neo4j'> | None` below to model the optional-import fallback.
+    from neo4j import Driver
+    from typing_extensions import LiteralString
 
 try:
     import neo4j
@@ -15,7 +22,12 @@ except ImportError:
     neo4j = None
 
 try:
-    import mgclient
+    # mgclient (the native Memgraph client) is a genuinely optional driver:
+    # unlike neo4j/psycopg2/mysql-connector below, it is never declared as a
+    # dependency of this package at all, so ty has no stub to resolve it
+    # against -- there is no fix short of adding a real dependency, which is
+    # out of scope for a types-only pass.
+    import mgclient  # ty: ignore[unresolved-import]
 except ImportError:
     mgclient = None
 
@@ -49,9 +61,12 @@ class MemgraphAdapter:
             config: Connection configuration
         """
         self.config = config
-        self.connection = None
-        self.driver = None
-        self._connection_type = None
+        # mgclient's connection type is unresolvable (see the import above),
+        # so this is genuinely Any; neo4j is a real dependency (declared in
+        # pyproject.toml) so its Driver type is precise.
+        self.connection: Any = None
+        self.driver: Driver | None = None
+        self._connection_type: str | None = None
 
     def connect(self) -> bool:
         """
@@ -78,15 +93,20 @@ class MemgraphAdapter:
     def _try_mgclient_connection(self) -> bool:
         """Try to connect using mgclient."""
         try:
-            self.connection = mgclient.connect(
+            # Only reached when connect() has already checked `mgclient` is
+            # truthy, an invariant this private method's own signature can't
+            # express since the check lives in the caller.
+            mg = cast("Any", mgclient)
+            connection = mg.connect(
                 host=self.config.host,
                 port=self.config.port,
                 username=self.config.username,
                 password=self.config.password,
-                sslmode=mgclient.SSLMode.REQUIRE if self.config.use_ssl else mgclient.SSLMode.DISABLE,
+                sslmode=mg.SSLMode.REQUIRE if self.config.use_ssl else mg.SSLMode.DISABLE,
             )
+            self.connection = connection
             # Test the connection
-            cursor = self.connection.cursor()
+            cursor = connection.cursor()
             cursor.execute("RETURN 1")
             cursor.fetchall()
             return True
@@ -97,13 +117,17 @@ class MemgraphAdapter:
     def _try_neo4j_connection(self) -> bool:
         """Try to connect using neo4j driver."""
         try:
+            # Only reached when connect() has already checked `neo4j` is
+            # truthy; see the comment on _try_mgclient_connection above.
+            nx = cast("Any", neo4j)
             uri = f"{'bolt+s' if self.config.use_ssl else 'bolt'}://{self.config.host}:{self.config.port}"
-            self.driver = neo4j.GraphDatabase.driver(
+            driver = nx.GraphDatabase.driver(
                 uri,
                 auth=(self.config.username, self.config.password) if self.config.username else None,
             )
+            self.driver = driver
             # Test the connection
-            with self.driver.session() as session:
+            with driver.session() as session:
                 session.run("RETURN 1")
             return True
         except Exception as e:
@@ -138,8 +162,16 @@ class MemgraphAdapter:
 
     def _execute_neo4j_query(self, query: str) -> list[tuple]:
         """Execute query using neo4j driver."""
-        with self.driver.session() as session:
-            result = session.run(query)
+        # execute_query() (the only caller) already checked _connection_type
+        # == "neo4j" before dispatching here, which is only ever set right
+        # after a successful self.driver assignment in _try_neo4j_connection.
+        driver = cast("Driver", self.driver)
+        with driver.session() as session:
+            # Cypher text is built dynamically at runtime, so it can never be
+            # a `LiteralString` in the sense neo4j's typed API wants; that
+            # constraint exists to steer callers away from string-building
+            # untrusted input, which isn't how queries are built here.
+            result = session.run(cast("LiteralString", query))
             return [tuple(record.values()) for record in result]
 
     def get_schema_info(self) -> list[tuple]:

@@ -59,9 +59,6 @@ LOG_LEVEL_CHOICES = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"]
 
 PROVIDER_CHOICES = ["openai", "anthropic", "gemini"]
 
-# Sentinel returned by edit_mapping_interactive to signal a reset
-_RESET = object()
-
 
 def _lower_env(name: str) -> Optional[str]:
     value = os.getenv(name)
@@ -723,11 +720,13 @@ def edit_mapping_interactive(
     mapping: Dict[str, Any],
     llm: Any,
     mapping_path: str,
-) -> Dict[str, Any]:
+) -> Optional[Dict[str, Any]]:
     """
     Interactive loop: let the user edit a mapping via natural language.
 
-    Uses HyGM's operation parsing and application under the hood.
+    Uses HyGM's operation parsing and application under the hood. Returns
+    None (rather than a real mapping dict) to signal that the caller should
+    discard the mapping and regenerate it from the source database.
     """
     from core.hygm import HyGM, GraphModelingStrategy, ModelingMode
 
@@ -789,7 +788,7 @@ def edit_mapping_interactive(
                         print_mapping_summary(mapping)
                     _print_editor_banner()
                 elif cmd == "reset":
-                    return _RESET
+                    return None
                 else:
                     print(f"Unknown command: {user_input}")
                 continue
@@ -890,7 +889,7 @@ def generate_mapping(
 
     while True:
         result = edit_mapping_interactive(mapping, agent.llm, mapping_path)
-        if result is not _RESET:
+        if result is not None:
             break
         print("\n🔄 Resetting mapping — regenerating from source database...\n")
         mapping = _generate_fresh_mapping(agent, source_db_config)

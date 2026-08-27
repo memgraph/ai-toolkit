@@ -202,8 +202,13 @@ class MemgraphDataValidator(BaseValidator):
         Returns:
             Structured schema information
         """
-        nodes = {}
-        relationships = {}
+        # Declared up front as dict[str, Any] so the checker treats each entry
+        # as a plain mapping (supporting .update()) rather than inferring a
+        # narrow literal shape from the first assignment below, whose "labels"
+        # value (list | Unknown) and "properties" value (dict) would otherwise
+        # get unioned together as the dict's value type.
+        nodes: dict[Any, dict[str, Any]] = {}
+        relationships: dict[Any, dict[str, Any]] = {}
         indexes = []
         constraints = []
 

@@ -6,12 +6,13 @@ Supports multiple providers: OpenAI, Anthropic, Gemini via LangChain.
 """
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from langchain_core.language_models import BaseChatModel
 
 if TYPE_CHECKING:
     from core.hygm.models.graph_models import GraphModel
+    from core.hygm.models.llm_models import LLMGraphModel
 
 try:
     from .base import BaseModelingStrategy
@@ -117,12 +118,17 @@ class LLMStrategy(BaseModelingStrategy):
 
             # Generate the structured output using LangChain's with_structured_output
             structured_llm = self.llm_client.with_structured_output(LLMGraphModel)
-            llm_model = structured_llm.invoke(
+            raw_llm_model = structured_llm.invoke(
                 [
                     {"role": "system", "content": system_message},
                     {"role": "user", "content": prompt},
                 ]
             )
+            # with_structured_output()'s return type is dict[str, Any] | BaseModel
+            # to cover both the dict-schema and pydantic-schema call shapes; we
+            # always pass a pydantic BaseModel class (LLMGraphModel) above, so at
+            # runtime this is always an LLMGraphModel instance.
+            llm_model = cast("LLMGraphModel", raw_llm_model)
 
             logger.info(
                 "LLM generated %d nodes and %d relationships",
