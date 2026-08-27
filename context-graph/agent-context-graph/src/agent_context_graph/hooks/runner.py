@@ -13,7 +13,7 @@ import argparse
 import json
 import os
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from agent_context_graph.link import AgentLink
 
@@ -179,7 +179,17 @@ def _add_actions_graph_connector(link: AgentLink, memgraph_env: dict[str, str] |
     link.add_connector(ActionsGraphConnector(graph))
 
 
-def _memgraph_kwargs(memgraph_env: dict[str, str] | None) -> dict[str, str]:
+# A closed key set (never `memgraph`) so `Component(**kwargs)` below can't be
+# read as colliding with that parameter's `Memgraph | None` type, unlike a
+# plain `dict[str, str]`.
+class _MemgraphKwargs(TypedDict, total=False):
+    url: str
+    username: str
+    password: str
+    database: str
+
+
+def _memgraph_kwargs(memgraph_env: dict[str, str] | None) -> _MemgraphKwargs:
     """Convert resolved memgraph env dict to kwargs for graph component constructors."""
     if memgraph_env is None:
         return {}
