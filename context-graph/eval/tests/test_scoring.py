@@ -10,9 +10,11 @@ from context_graph_eval.retrieval import Retrieved
 from context_graph_eval.scoring import (
     Scored,
     aggregate,
+    build_metrics,
     efficiency_tokens,
     gate_and_rank,
 )
+from deepeval.models import DeepEvalBaseLLM
 
 
 def _scored(name, *, tier=1, covered=True, tokens=100, abstention=False):
@@ -24,6 +26,54 @@ def _scored(name, *, tier=1, covered=True, tokens=100, abstention=False):
         efficiency_tokens=tokens,
         abstention=abstention,
     )
+
+
+class _StubJudge(DeepEvalBaseLLM):
+    """A judge that is never called.
+
+    These tests are about which metrics get *built*, not about running them.
+    Passing ``judge=None`` makes deepeval fall back to an OpenAI model and
+    demand a key at construction time, which would make a pure composition test
+    require credentials.
+    """
+
+    def __init__(self):
+        super().__init__(model_name="stub")
+
+    def load_model(self):
+        return self
+
+    def get_model_name(self):
+        return "stub"
+
+    def generate(self, *args, **kwargs):
+        raise AssertionError("the stub judge should never be called")
+
+    async def a_generate(self, *args, **kwargs):
+        raise AssertionError("the stub judge should never be called")
+
+
+def test_an_ordinary_question_is_scored_on_retrieval_and_answer():
+    names = [type(m).__name__ for m in build_metrics(_StubJudge(), abstention=False)]
+
+    assert "ContextualRecallMetric" in names
+    assert "GEval" in names
+
+
+def test_an_abstention_question_is_not_scored_on_contextual_recall():
+    """ContextualRecall asks whether the retrieved context supports the expected
+    output. For an abstention question the correct retrieved context is EMPTY,
+    so the metric scores ~0 by construction -- and because coverage takes the
+    weakest metric, it made every abstention question unpassable no matter how
+    well the agent behaved.
+
+    Measured before this fix: abstention scored 0/8, while the agent had
+    correctly answered "not in memory" on at least four of them.
+    """
+    names = [type(m).__name__ for m in build_metrics(_StubJudge(), abstention=True)]
+
+    assert "ContextualRecallMetric" not in names
+    assert "GEval" in names
 
 
 def test_efficiency_counts_the_payload_handed_back():

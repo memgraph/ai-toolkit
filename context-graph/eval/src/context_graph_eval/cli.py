@@ -201,15 +201,52 @@ def _run(args) -> int:
     return 0
 
 
+#: Default judge. Dated rather than a moving alias, per #304: a judge that
+#: changes underneath you silently invalidates every prior baseline, which is
+#: the same reason the corpus revision is pinned.
+DEFAULT_JUDGE_MODEL = "claude-sonnet-4-5-20250929"
+
+
+def _clear_deepeval_anthropic_secret() -> None:
+    """Make deepeval's Anthropic client usable at all.
+
+    ``AnthropicModel._build_client`` resolves
+    ``settings.ANTHROPIC_API_KEY or self._anthropic_api_key``. The settings
+    value is a pydantic ``SecretStr``, which is truthy and therefore always
+    wins that ``or`` -- and httpx then refuses it outright ("Header value must
+    be str or bytes, not SecretStr") before a single request is made. Passing
+    the key explicitly cannot help while settings still holds one.
+
+    Clearing the environment variable is not sufficient: settings are cached at
+    first access, and merely importing another deepeval model earlier in the
+    process is enough to populate them. The cached object has to be corrected
+    directly.
+
+    This is load-bearing rather than cosmetic: #304 chose Anthropic as the
+    judge precisely so it would not share the OpenAI-backed pipeline's blind
+    spots, and `eval-run.yaml` supplies ANTHROPIC_API_KEY as an environment
+    variable -- so without this the CI eval job fails before scoring anything.
+    """
+    try:
+        from deepeval.config.settings import get_settings
+
+        get_settings().ANTHROPIC_API_KEY = None
+    except Exception:
+        pass
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+
+
 def _build_model(model_id: str | None, *, anthropic: bool):
     """Instantiate a deepeval model, or None when nothing is configured."""
     try:
         if anthropic:
-            if not (model_id or os.environ.get("ANTHROPIC_API_KEY")):
+            key = os.environ.get("ANTHROPIC_API_KEY")
+            if not key:
                 return None
             from deepeval.models import AnthropicModel
 
-            return AnthropicModel(model=model_id) if model_id else AnthropicModel()
+            _clear_deepeval_anthropic_secret()
+            return AnthropicModel(model=model_id or DEFAULT_JUDGE_MODEL, _anthropic_api_key=key)
         if not (model_id or os.environ.get("OPENAI_API_KEY")):
             return None
         from deepeval.models import GPTModel

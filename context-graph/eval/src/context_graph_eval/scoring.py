@@ -123,7 +123,7 @@ def aggregate(scored: list[Scored]) -> RunReport:
     return RunReport(by_tier=by_tier)
 
 
-def build_metrics(judge: Any | None = None) -> list[Any]:
+def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list[Any]:
     """The judged half of the rubric: a deliberately minimal pair (#304).
 
     ``ContextualRecallMetric`` scores retrieval-side coverage -- its required
@@ -136,12 +136,24 @@ def build_metrics(judge: Any | None = None) -> list[Any]:
     exist mainly for the no-ground-truth case, and every extra metric is another
     judge call per question, multiplied again by re-running per schema
     candidate.
+
+    **Abstention questions drop ContextualRecall entirely.** That metric asks
+    whether the retrieved context supports the expected output -- but for a
+    question whose correct answer is "that isn't in memory", the correct
+    retrieved context is *empty*. It therefore scores near zero by
+    construction, and since coverage takes the weakest metric, it made every
+    abstention question unpassable however well the agent behaved. Measured
+    before this fix: abstention scored 0/8 while the agent had correctly
+    declined on at least four. Only the rubric, which knows to require a
+    refusal, applies to these.
     """
     from deepeval.metrics import ContextualRecallMetric, GEval
     from deepeval.test_case import LLMTestCaseParams
 
-    return [
-        ContextualRecallMetric(threshold=DEFAULT_COVERAGE_THRESHOLD, model=judge),
+    metrics: list[Any] = []
+    if not abstention:
+        metrics.append(ContextualRecallMetric(threshold=DEFAULT_COVERAGE_THRESHOLD, model=judge))
+    metrics.append(
         GEval(
             name="Coverage",
             criteria=(
@@ -157,8 +169,9 @@ def build_metrics(judge: Any | None = None) -> list[Any]:
             ],
             threshold=DEFAULT_COVERAGE_THRESHOLD,
             model=judge,
-        ),
-    ]
+        )
+    )
+    return metrics
 
 
 def to_test_case(golden: "Golden", retrieved: "Retrieved") -> Any:

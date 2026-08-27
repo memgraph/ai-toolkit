@@ -111,13 +111,18 @@ async def reconcile_batch(
 
     _resolve_llm_credentials()
 
+    owns_wrapper = lightrag_wrapper is None
+
     if memgraph_url:
         # Set, not defaulted: this is what LightRAG's stores actually follow.
         os.environ["MEMGRAPH_URL"] = memgraph_url
         os.environ.setdefault("MEMGRAPH_USER", "")
         os.environ.setdefault("MEMGRAPH_PASSWORD", "")
         os.environ.setdefault("MEMGRAPH_DATABASE", "memgraph")
-    elif not os.environ.get("MEMGRAPH_URL"):
+    elif owns_wrapper and not os.environ.get("MEMGRAPH_URL"):
+        # Only when we build the wrapper ourselves. A caller supplying one has
+        # already decided where its stores point, and demanding the variable
+        # anyway would refuse to run a batch that needs no LightRAG at all.
         raise ValueError(
             "reconcile_batch needs memgraph_url (or MEMGRAPH_URL in the environment): "
             "LightRAG's storage backends read the environment rather than the client "
@@ -128,7 +133,6 @@ async def reconcile_batch(
     graph = SessionsGraph(memgraph=db)
     graph.setup()
 
-    owns_wrapper = lightrag_wrapper is None
     if owns_wrapper:
         from lightrag_memgraph import MemgraphLightRAGWrapper
 

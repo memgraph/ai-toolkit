@@ -192,3 +192,6 @@ cython_debug/
 /enterprise-context/sic-agent/sic-scrapper/output/*
 unstructured2graph/docs/adr/
 unstructured2graph/CONTEXT.md
+
+# deepeval writes run caches and telemetry here; build artifacts, not source.
+.deepeval/

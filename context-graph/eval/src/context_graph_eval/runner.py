@@ -169,18 +169,35 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
 def _judge(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -> dict[str, float]:
     """Score answer quality with deepeval, returning coverage per question.
 
+    Abstention and ordinary questions are judged in **separate passes**, because
+    they need different metrics: ContextualRecall is structurally inapplicable
+    to a question whose correct retrieved context is empty (see
+    ``scoring.build_metrics``). Scoring them together made every abstention
+    question unpassable.
+
     deepeval's ``evaluate`` is synchronous and drives its own event loop, so it
     runs after all pipeline work rather than inside it.
     """
+    paired = list(zip(goldens, retrieved, strict=True))
+    coverage: dict[str, float] = {}
+    for abstention in (False, True):
+        group = [(g, r) for g, r in paired if bool((g.additional_metadata or {}).get("abstention")) is abstention]
+        if group:
+            coverage.update(_judge_group(group, plan, abstention=abstention))
+    return coverage
+
+
+def _judge_group(group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, abstention: bool) -> dict[str, float]:
     from deepeval import evaluate
     from deepeval.evaluate.configs import AsyncConfig, DisplayConfig, ErrorConfig
 
     from .scoring import build_metrics, to_test_case
 
-    cases = [to_test_case(g, r) for g, r in zip(goldens, retrieved, strict=True)]
+    goldens = [g for g, _ in group]
+    cases = [to_test_case(g, r) for g, r in group]
     result = evaluate(
         test_cases=cases,
-        metrics=build_metrics(plan.judge),
+        metrics=build_metrics(plan.judge, abstention=abstention),
         async_config=AsyncConfig(max_concurrent=plan.max_concurrent),
         display_config=DisplayConfig(print_results=False, show_indicator=False),
         # One question the judge cannot score should not abandon the batch --
