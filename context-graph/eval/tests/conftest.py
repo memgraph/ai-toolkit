@@ -32,6 +32,17 @@ def eval_graph():
     graph = ActionsGraph(memgraph=db)
     with contextlib.suppress(Exception):
         graph.setup()  # constraints may already exist
-    graph.clear()
+
+    # Deliberately not ActionsGraph.clear(), which removes only
+    # Session|Agent|Action|Tool and leaves Chunk, Entity, Episode and Memory
+    # standing. The reconciliation tests create exactly those, so clear() alone
+    # let a test's distilled memory survive into the next one -- the same leak
+    # inject._wipe exists to prevent, reintroduced here in the fixture.
+    _wipe(graph)
     yield graph
-    graph.clear()
+    _wipe(graph)
+
+
+def _wipe(graph) -> None:
+    """Empty the eval instance. Safe only because it is dedicated to eval."""
+    graph._db.query("MATCH (n) DETACH DELETE n")

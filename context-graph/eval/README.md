@@ -172,7 +172,7 @@ it in would make staging a batch cost as much as scoring one.
 ```python
 from context_graph_eval.reconcile import reconcile_batch
 
-result = await reconcile_batch(db, limit=50)   # bounded chunks
+result = await reconcile_batch(db, limit=50)  # bounded chunks
 ```
 
 Partial failure is reported rather than raised: a score only means something if
@@ -195,9 +195,9 @@ score nobody has seen.
 from context_graph_eval.retrieval import DeepEvalLLM, ReadOnlyGraph, retrieve
 
 result = await retrieve(question, graph=ReadOnlyGraph(db), llm=DeepEvalLLM(model))
-result.retrieval_context   # rows the graph returned -> scored, and token-counted
-result.queries             # what it actually asked -> makes a score diagnosable
-result.errors              # failed queries, recorded rather than raised
+result.retrieval_context  # rows the graph returned -> scored, and token-counted
+result.queries  # what it actually asked -> makes a score diagnosable
+result.errors  # failed queries, recorded rather than raised
 ```
 
 Writes are refused outright. Retrieval must not be able to alter the graph it is
@@ -230,11 +230,11 @@ from context_graph_eval.scoring import aggregate, build_metrics, to_test_case
 
 report = aggregate(scored)
 report.by_tier[1].coverage_rate
-report.by_tier[1].median_efficiency_tokens   # median, not mean: one pathological
-                                             # payload shouldn't move the number
-                                             # compared across schema versions
-report.by_tier[1].abstention_correct         # reported apart -- here a confident
-                                             # answer is the failure
+report.by_tier[1].median_efficiency_tokens  # median, not mean: one pathological
+# payload shouldn't move the number
+# compared across schema versions
+report.by_tier[1].abstention_correct  # reported apart -- here a confident
+# answer is the failure
 ```
 
 `RunReport` has **no** blended headline field, by design. A single number across

@@ -103,6 +103,12 @@ def compare(baseline: SavedRun, candidate: SavedRun, noise_floor_pp: float | Non
     _require_same(baseline.meta, candidate.meta, "corpus_variant", "corpus")
     _require_same(baseline.meta, candidate.meta, "judge_model", "judge")
     _require_same(baseline.meta, candidate.meta, "tokenizer", "tokenizer")
+    # Question count too: coverage is reported as a rate, so a 20-question
+    # baseline and a 60-question candidate produce comparable-looking
+    # percentages over different corpora. That is the same "measures the
+    # sampling change as though it were the change under test" failure the
+    # other three refusals exist to prevent.
+    _require_same(baseline.meta, candidate.meta, "questions", "corpus size")
 
     tiers: dict[int, TierComparison] = {}
     for tier in sorted({s.tier for s in baseline.scored} | {s.tier for s in candidate.scored}):

@@ -80,6 +80,18 @@ def test_runs_judged_by_different_models_are_refused():
         compare(baseline, candidate)
 
 
+def test_runs_over_different_numbers_of_questions_are_refused():
+    """Coverage is reported as a rate, so a 20-question baseline and a
+    60-question candidate yield comparable-looking percentages over different
+    corpora -- the sampling change measured as though it were the change under
+    test."""
+    baseline = _run(_meta(questions=20), [_scored("q1")])
+    candidate = _run(_meta(questions=60), [_scored("q1")])
+
+    with pytest.raises(ValueError, match="corpus size"):
+        compare(baseline, candidate)
+
+
 def test_runs_measured_with_different_tokenizers_are_refused():
     """A tokenizer change silently shifts every efficiency number."""
     baseline = _run(_meta(tokenizer="cl100k_base"), [_scored("q1")])

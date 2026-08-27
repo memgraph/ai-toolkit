@@ -108,8 +108,12 @@ class ReadOnlyGraph:
 
 
 def is_write_query(cypher: str) -> bool:
-    upper = cypher.upper()
-    return any(re.search(pattern, upper) for pattern in _WRITE_PATTERNS)
+    # Case-insensitive matching rather than upper-casing the query first. That
+    # earlier form silently disabled any pattern containing lowercase letters:
+    # the apoc rule could never fire against an upper-cased string, so
+    # `CALL apoc.refactor.rename.label(...)` passed the guard -- `refactor` is
+    # matched by no other pattern.
+    return any(re.search(pattern, cypher, re.IGNORECASE) for pattern in _WRITE_PATTERNS)
 
 
 def graph_schema(graph: ReadOnlyGraph) -> str:

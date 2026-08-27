@@ -65,6 +65,12 @@ def test_a_read_query_returns_rows(populated: ReadOnlyGraph):
         "MATCH (s:Session) SET s.tampered = true",
         "MATCH (s:Session) DETACH DELETE s",
         "MERGE (n:Sneaky {id: 1})",
+        # Lower-case, and matched by the apoc rule alone -- 'refactor' appears
+        # in no other pattern. The guard used to upper-case the query before
+        # matching, which disabled every pattern containing lowercase letters
+        # and let this through.
+        'CALL apoc.refactor.rename.label("A", "B")',
+        "create (n:Sneaky) return n",
     ],
 )
 def test_writes_are_refused(populated: ReadOnlyGraph, cypher: str):
@@ -329,9 +335,14 @@ async def test_a_real_model_can_find_an_injected_fact(populated: ReadOnlyGraph):
     """#300's actual premise: given only schema and read-only Cypher, can a real
     model reach an injected fact?
 
-    Asserts a majority of three attempts rather than all three: this is a real
-    model, and treating it as deterministic would make the test flaky rather
-    than make the model reliable.
+    Asserts it succeeds at least once in three, not a majority and not always.
+
+    That bound is deliberately weak, and the history of it is the point. An
+    earlier version asserted a majority on the strength of a single 6/6
+    measurement; a later run of the same question scored 1/3. One favourable
+    sample was read as a settled improvement -- the exact mistake this whole
+    eval exists to make harder. The honest claim the evidence supports is that
+    the baseline *can* reach the fact, not that it reliably does.
 
     History, because the number moved a long way and the reason is the
     interesting part. Originally this failed outright -- the model invented an
@@ -356,5 +367,5 @@ async def test_a_real_model_can_find_an_injected_fact(populated: ReadOnlyGraph):
     ]
     hits = [a for a in attempts if "beagle" in a.answer.lower()]
 
-    assert len(hits) >= 2, f"the baseline reached the fact {len(hits)}/3 times: {[a.answer for a in attempts]}"
+    assert hits, f"the baseline reached the fact {len(hits)}/3 times: {[a.answer for a in attempts]}"
     assert all(a.queries for a in attempts)
