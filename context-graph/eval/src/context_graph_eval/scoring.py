@@ -77,19 +77,33 @@ def efficiency_tokens(retrieved: "Retrieved", tokenizer: str = DEFAULT_TOKENIZER
     """Tokens handed back to answer the question (#309).
 
     Counts the retrieval payload, not the agent's own consumption: for the same
-    answer quality, returning less is better. Falls back to whitespace words if
-    no tokenizer library is installed, so the metric still works -- a fallback
-    that changes the units, hence the pinned default.
+    answer quality, returning less is better.
+
+    Raises rather than falling back if the tokenizer is unavailable. There used
+    to be a whitespace-splitting fallback, which was worse than useless: it
+    produced numbers roughly a third smaller while the run still recorded the
+    pinned tokenizer's name, so two runs counted in different units compared
+    cleanly and ``compare()`` -- which checks that recorded name -- saw a match.
+    An efficiency figure that quietly changes units is more dangerous than one
+    that fails, so ``tiktoken`` is a declared dependency and its absence is an
+    error.
     """
     payload = "\n".join(retrieved.retrieval_context)
     if not payload:
         return 0
-    try:
-        import tiktoken
+    return len(_encoding(tokenizer).encode(payload))
 
-        return len(tiktoken.get_encoding(tokenizer).encode(payload))
-    except Exception:
-        return len(payload.split())
+
+def tokenizer_in_use(tokenizer: str = DEFAULT_TOKENIZER) -> str:
+    """The tokenizer name to record on a run, verified to actually load."""
+    _encoding(tokenizer)
+    return tokenizer
+
+
+def _encoding(tokenizer: str = DEFAULT_TOKENIZER):
+    import tiktoken
+
+    return tiktoken.get_encoding(tokenizer)
 
 
 def gate_and_rank(scored: list[Scored]) -> list[Scored]:

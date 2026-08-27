@@ -1151,6 +1151,7 @@ version = "0.1.0"
 source = { editable = "context-graph/eval" }
 dependencies = [
     { name = "deepeval" },
+    { name = "tiktoken" },
 ]
 
 [package.optional-dependencies]
@@ -1175,6 +1176,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
     { name = "sessions-graph", marker = "extra == 'pipeline'", editable = "context-graph/sessions-graph" },
+    { name = "tiktoken", specifier = ">=0.7.0" },
     { name = "unstructured2graph", marker = "extra == 'pipeline'", editable = "unstructured2graph" },
 ]
 provides-extras = ["pipeline", "test"]

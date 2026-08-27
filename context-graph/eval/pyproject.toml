@@ -13,6 +13,10 @@ classifiers = [
 ]
 dependencies = [
     "deepeval>=3.5.2",
+    # Declared explicitly rather than relied on transitively: the efficiency
+    # metric counts tokens with it, and losing it would silently change the
+    # units every efficiency number is reported in.
+    "tiktoken>=0.7.0",
 ]
 
 [project.optional-dependencies]

@@ -8,11 +8,13 @@ coverage gate, and how tiers are kept apart.
 
 from context_graph_eval.retrieval import Retrieved
 from context_graph_eval.scoring import (
+    DEFAULT_TOKENIZER,
     Scored,
     aggregate,
     build_metrics,
     efficiency_tokens,
     gate_and_rank,
+    tokenizer_in_use,
 )
 from deepeval.models import DeepEvalBaseLLM
 
@@ -74,6 +76,14 @@ def test_an_abstention_question_is_not_scored_on_contextual_recall():
 
     assert "ContextualRecallMetric" not in names
     assert "GEval" in names
+
+
+def test_the_recorded_tokenizer_is_the_one_actually_used():
+    """A run records what it measured with, so two runs counted in different
+    units cannot compare cleanly. Reporting the configured name while silently
+    word-splitting would defeat compare()'s tokenizer check, which reads that
+    name and would see a match."""
+    assert tokenizer_in_use() == DEFAULT_TOKENIZER
 
 
 def test_efficiency_counts_the_payload_handed_back():

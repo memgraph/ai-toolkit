@@ -178,7 +178,7 @@ def _run(args) -> int:
 
     if args.save:
         from .report import RunMeta, SavedRun, save_run
-        from .scoring import DEFAULT_TOKENIZER
+        from .scoring import tokenizer_in_use
 
         saved = save_run(
             SavedRun(
@@ -189,7 +189,10 @@ def _run(args) -> int:
                     # Recorded even when absent: a comparison must refuse to
                     # measure an unjudged run against a judged one.
                     judge_model=args.judge_model or "none",
-                    tokenizer=DEFAULT_TOKENIZER,
+                    # What was actually used, not what was configured -- a run
+                    # counted in fallback units must not compare cleanly
+                    # against one counted in real tokens.
+                    tokenizer=tokenizer_in_use(),
                     questions=len(goldens),
                     changed=args.changed,
                 ),
@@ -217,10 +220,15 @@ def _clear_deepeval_anthropic_secret() -> None:
     be str or bytes, not SecretStr") before a single request is made. Passing
     the key explicitly cannot help while settings still holds one.
 
-    Clearing the environment variable is not sufficient: settings are cached at
-    first access, and merely importing another deepeval model earlier in the
-    process is enough to populate them. The cached object has to be corrected
-    directly.
+    Settings are cached at first access, and merely constructing another
+    deepeval model earlier in the process populates them, so the cached object
+    has to be corrected directly.
+
+    The environment variable is deliberately left alone. Clearing it as well
+    looked like harmless belt-and-braces and was actively wrong: the key would
+    then be gone for every later caller, so a second ``_build_model`` returned
+    None and the judge silently disappeared mid-process -- a run reporting "not
+    judged" instead of failing.
 
     This is load-bearing rather than cosmetic: #304 chose Anthropic as the
     judge precisely so it would not share the OpenAI-backed pipeline's blind
@@ -233,7 +241,6 @@ def _clear_deepeval_anthropic_secret() -> None:
         get_settings().ANTHROPIC_API_KEY = None
     except Exception:
         pass
-    os.environ.pop("ANTHROPIC_API_KEY", None)
 
 
 def _build_model(model_id: str | None, *, anthropic: bool):
