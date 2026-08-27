@@ -112,6 +112,23 @@ own real Claude Code session — see `./scripts/dev-memgraph.sh --help`.
   `pyproject.toml` — add your package's import name there if you add a new
   workspace member.
 
+## Type checking
+
+This repo standardizes on [`ty`](https://docs.astral.sh/ty/) (Astral's type
+checker — same vendor as `uv`/`ruff`), not `mypy` or `pyright`. **Not yet
+enforced in CI** — tracked in
+[#313](https://github.com/memgraph/ai-toolkit/issues/313); annotate as you
+touch code in the meantime rather than waiting for enforcement to land.
+`ty` needs a package's own installed dependencies to resolve imports (like
+`pytest`, unlike `ruff`), so check one package at a time:
+```bash
+uvx ty check <package>/src --python .venv
+```
+`integrations/lightrag-memgraph/pyproject.toml` still carries a dormant,
+never-wired-in `mypy` dev dependency and `[tool.mypy]` block predating this
+decision — don't treat it as a second standard; it's slated for removal in
+#313.
+
 ## Testing policy: prefer real Memgraph over mocks
 
 A cross-cutting rule for the Context Graph family and unstructured2graph,
