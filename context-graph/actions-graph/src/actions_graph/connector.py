@@ -8,7 +8,7 @@ Agent Context Graph only routes normalized runtime events.
 from __future__ import annotations
 
 import hashlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from agent_context_graph.events import (
     AgentEndEvent,
@@ -153,7 +153,11 @@ class ActionsGraphConnector(GraphConnector):
         self._ensure_session(event)
         self._graph.end_agent(
             event.agent_name,
-            last_assistant_message=self._content(event.output),
+            # AgentEndEvent.output is Any at the Event Protocol boundary, but every
+            # real adapter (openai.py, claude.py, claude_code.py) only ever sets it
+            # to a str or leaves it None -- never the list-of-content-blocks shape
+            # _content() also handles for ToolResult.content.
+            last_assistant_message=cast("str | None", self._content(event.output)),
             metadata=self._metadata(event),
         )
 
