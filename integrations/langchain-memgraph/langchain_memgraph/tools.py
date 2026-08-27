@@ -1,6 +1,6 @@
 """Memgraph tools."""
 
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.callbacks import (
     CallbackManagerForToolRun,
@@ -37,8 +37,13 @@ class _QueryMemgraphToolInput(BaseModel):
 class RunQueryTool(BaseMemgraphTool, BaseTool):
     """Tool for querying Memgraph."""
 
-    name: str = CypherTool(db=None).get_name()
-    description: str = CypherTool(db=None).get_description()
+    # These toolbox tool classes are instantiated with a placeholder db purely to read
+    # their static name/description as Pydantic field defaults; get_name()/get_description()
+    # never touch self.db, so a real Memgraph connection isn't needed here (one is passed
+    # in _run below, where the db is actually used). cast(..., None) documents that gap for
+    # the type checker without requiring a live connection just to build the class.
+    name: str = CypherTool(db=cast("Memgraph", None)).get_name()
+    description: str = CypherTool(db=cast("Memgraph", None)).get_description()
     args_schema: type[BaseModel] = _QueryMemgraphToolInput
 
     def _run(
@@ -58,8 +63,8 @@ class _SearchSchemaToolInput(BaseModel):
 class RunSearchSchemaTool(BaseMemgraphTool, BaseTool):
     """Tool for searching the graph schema by a regex pattern."""
 
-    name: str = SearchSchemaTool(db=None).get_name()
-    description: str = SearchSchemaTool(db=None).get_description()
+    name: str = SearchSchemaTool(db=cast("Memgraph", None)).get_name()
+    description: str = SearchSchemaTool(db=cast("Memgraph", None)).get_description()
     args_schema: type[BaseModel] = _SearchSchemaToolInput
 
     def _run(
@@ -77,15 +82,15 @@ class _NodeSchemaToolInput(BaseModel):
 class RunNodeSchemaTool(BaseMemgraphTool, BaseTool):
     """Tool for getting the full schema definition of a node."""
 
-    name: str = NodeSchemaTool(db=None).get_name()
-    description: str = NodeSchemaTool(db=None).get_description()
+    name: str = NodeSchemaTool(db=cast("Memgraph", None)).get_name()
+    description: str = NodeSchemaTool(db=cast("Memgraph", None)).get_description()
     args_schema: type[BaseModel] = _NodeSchemaToolInput
 
     def _run(
         self,
         node_labels: list[str],
         run_manager: CallbackManagerForToolRun | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any] | list[dict[str, Any]]:
         return NodeSchemaTool(db=self.db).call({"node_labels": node_labels})
 
 
@@ -98,8 +103,8 @@ class _RelationshipSchemaToolInput(BaseModel):
 class RunRelationshipSchemaTool(BaseMemgraphTool, BaseTool):
     """Tool for getting the full schema definition of a relationship."""
 
-    name: str = RelationshipSchemaTool(db=None).get_name()
-    description: str = RelationshipSchemaTool(db=None).get_description()
+    name: str = RelationshipSchemaTool(db=cast("Memgraph", None)).get_name()
+    description: str = RelationshipSchemaTool(db=cast("Memgraph", None)).get_description()
     args_schema: type[BaseModel] = _RelationshipSchemaToolInput
 
     def _run(
@@ -108,7 +113,7 @@ class RunRelationshipSchemaTool(BaseMemgraphTool, BaseTool):
         start_node_labels: list[str],
         end_node_labels: list[str],
         run_manager: CallbackManagerForToolRun | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any] | list[dict[str, Any]]:
         return RelationshipSchemaTool(db=self.db).call(
             {
                 "relationship_type": relationship_type,
@@ -125,13 +130,13 @@ class _EnumSchemaToolInput(BaseModel):
 class RunEnumSchemaTool(BaseMemgraphTool, BaseTool):
     """Tool for getting the schema definition of an enum."""
 
-    name: str = EnumSchemaTool(db=None).get_name()
-    description: str = EnumSchemaTool(db=None).get_description()
+    name: str = EnumSchemaTool(db=cast("Memgraph", None)).get_name()
+    description: str = EnumSchemaTool(db=cast("Memgraph", None)).get_description()
     args_schema: type[BaseModel] = _EnumSchemaToolInput
 
     def _run(
         self,
         enum_name: str,
         run_manager: CallbackManagerForToolRun | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any] | list[dict[str, Any]]:
         return EnumSchemaTool(db=self.db).call({"enum_name": enum_name})
