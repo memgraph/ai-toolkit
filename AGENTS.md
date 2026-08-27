@@ -1,8 +1,8 @@
 # AGENTS.md
 
-Guidance for coding agents working in `memgraph/ai-toolkit`. This file is
-tracked in git — update it in place as things change, in the same PR as the
-change that made it stale where practical.
+Guidance for coding agents working in `memgraph/ai-toolkit`. Keep it in sync
+with the codebase — update it in the same PR as the change that makes part
+of it stale.
 
 ## What this repo is
 
@@ -38,6 +38,15 @@ Memgraph graph.
 
 Everything joins on a shared, idempotently-`MERGE`d `(:Session {session_id})`
 node; only `sessions-graph` owns `(:User)` and `HAD_SESSION`.
+
+Substantial design work in this family is tracked as GitHub issues labeled
+`wayfinder:map` (title `Map: ...`), broken into `wayfinder:grilling` /
+`wayfinder:research` / `wayfinder:prototype` / `wayfinder:task` child issues,
+using this repo's `/grilling`, `/domain-modeling`, and `/research` skills.
+Check open maps before starting non-trivial work here:
+```bash
+gh issue list --label wayfinder:map --state open
+```
 
 ## Environment & setup
 
@@ -136,63 +145,6 @@ environment variables at runtime — non-interactive hook subprocesses don't
 source shell profiles, so an env-var-only path would silently work in your
 interactive shell and silently fail in the hook. Keep that boundary when
 touching `agent-context-graph`'s hook/config code.
-
-## Local-only design docs — read before non-trivial Context Graph work
-
-This repo keeps several living design documents **gitignored and
-local-only** (unlike this file): `context-graph/CONTEXT-MAP.md`, each
-component's own `context-graph/*/CONTEXT.md`, `unstructured2graph/CONTEXT.md`,
-and per-package `docs/adr/*.md` files. They aren't in git, so a fresh clone
-or a fresh worktree won't have them — check whether your checkout already
-has them on disk (they accumulate over time as design work happens) before
-assuming they don't exist. If you resolve a real ambiguity while working in
-this family, update the relevant one in place.
-
-They hold the actual domain model and are more precise than this summary;
-the essentials, if you don't have them locally:
-
-- **Collection Tier vs. Memory Tier**: raw, ephemeral, hook-time data
-  (`actions-graph`'s `(:Action)`/`(:Agent)` nodes; the raw text other
-  components draw from) is Collection Tier — never call it memory. Memory
-  Tier is the distilled output: semantic (entities/`(:Chunk)`, via
-  `sessions-graph` reconciliation), episodic (`(:Episode)`, same
-  reconciliation pass), procedural (a planned `(:Procedure)`, mined —
-  not yet implemented), and explicit semantic assertions (`(:Memory)`,
-  written directly via `sessions-graph`'s API, not distilled).
-- **`Skill` is spec-locked**: a `(:Skill)` node means an Agent Skills
-  specification skill, full stop. A mined behavioral pattern is a
-  `(:Procedure)`, a deliberately separate node type/namespace — never a
-  "candidate Skill". Promotion from `Procedure` to `Skill` is explicit,
-  not-yet-built future work.
-- **`actions-graph`'s mission is observability, not memory** — even though
-  its data feeds memory elsewhere (`sessions-graph`, later a procedural
-  miner). Don't add memory-shaped behavior to `actions-graph` itself.
-- **`(:Session)` is a shared, ownerless coordination point** — any component
-  may `MERGE` it independently; only `sessions-graph` owns `(:User)` and
-  `HAD_SESSION`.
-- **`(:Agent)`** is a subagent's whole lifecycle as one node (not a pair of
-  flat Actions); `(:Action)-[:SPAWNED]->(:Agent)` links the spawning tool
-  call when a temporal-inference rule resolves it unambiguously — never
-  assume a field carries this directly, no real harness provides one.
-- Model only what real harness hook/SDK payloads actually provide (verified
-  against primary docs, or against a live session via
-  `dev-memgraph.sh test-graph-model`), never an aspirational field nobody
-  populates — this is why `Session.parent_session_id`/`FORKED_FROM` were
-  deleted outright (no harness ever populates a parent/previous session id)
-  and why `(:Action)-[:PARENT_OF]->(:Action)` was narrowed to only
-  `ToolResult`/error → its `ToolCall`: its old "nested actions" meaning
-  (subagent nesting) wasn't real either, and moved to the dedicated
-  `(:Agent)`/`SPAWNED` mechanism instead.
-
-**Planning workflow** for substantial Context Graph design work: tracked as
-GitHub issues labeled `wayfinder:map` (title `Map: ...`), broken into
-`wayfinder:grilling` / `wayfinder:research` / `wayfinder:prototype` /
-`wayfinder:task` child issues, using this repo's `/grilling`,
-`/domain-modeling`, and `/research` skills. Check open maps before starting
-non-trivial work in this area:
-```bash
-gh issue list --label wayfinder:map --state open
-```
 
 ## Releases
 
