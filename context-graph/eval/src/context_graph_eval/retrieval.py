@@ -380,23 +380,17 @@ def _query_prompt(question: str, schema: str, seen: list[str], errors: list[str]
             "and nothing else. Otherwise return only the next query."
         ),
         "",
-        # Both learned from watching a real model fail against this graph.
+        # States a fact about the environment the agent is querying -- it was
+        # otherwise reaching for Neo4j functions this database does not have.
+        # Deliberately NOT accompanied by search strategy: #300 defers retrieval
+        # v2 to be shaped by where this baseline actually fails, and advice on
+        # HOW to search is that design happening early and unmeasured. Guidance
+        # to prefer broad single terms and to add LIMITs lived here briefly and
+        # was reverted for exactly that reason; what it was hiding is recorded
+        # on #300.
         "This is Memgraph, not Neo4j: APOC is NOT available, so JSON-valued "
         "properties cannot be parsed in Cypher. Match substrings inside them "
         "with CONTAINS instead.",
-        # The illustration is deliberately drawn from a domain no corpus
-        # question touches. An earlier version used the same words as a test
-        # question's answer, which put that answer into the prompt -- the agent
-        # could then "retrieve" what it had just been told, exactly the leak the
-        # schema description is careful to avoid.
-        "Stored wording rarely matches the question's wording, so prefer ONE broad "
-        "term over several ANDed together: someone asking about a vehicle may have "
-        "written 'motorcycle', and CONTAINS 'vehicle' would then find nothing.",
-        # The counterweight to the line above. Broadening the match is what made
-        # queries land at all, and also what made payloads explode; a LIMIT keeps
-        # the first from paying for the second.
-        "Always add a LIMIT (50 or fewer). Everything returned counts against a "
-        "payload budget, and rows past the cap are dropped rather than shown.",
         "",
         f"Graph schema:\n{schema}",
         "",
