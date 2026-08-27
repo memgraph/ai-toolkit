@@ -13,8 +13,45 @@ import contextlib
 import os
 
 import pytest
+from context_graph_eval.reconcile import _resolve_llm_credentials
 
 EVAL_MEMGRAPH_URL = os.environ.get("EVAL_MEMGRAPH_URL", "bolt://localhost:7689")
+
+
+# Resolved from context-graph's config file before deciding to skip, so a
+# contributor whose key lives in config.toml (ADR 0002) rather than the
+# environment still runs these instead of silently skipping them.
+_resolve_llm_credentials()
+
+requires_openai_key = pytest.mark.skipif(
+    not os.environ.get("OPENAI_API_KEY"),
+    reason="no OPENAI_API_KEY in env or context-graph config",
+)
+
+
+class ScriptedLLM:
+    """An LLM that replies with a fixed script, one entry per call.
+
+    Replaces seven near-identical stubs that each counted calls and returned
+    "cypher, then prose". The shape was always the same; only the script
+    differed, so the script is the parameter.
+
+    The last entry repeats once exhausted -- the loop asks once more for a final
+    answer after it stops querying, and a test should not have to pad for that.
+    """
+
+    def __init__(self, *replies: str):
+        self.replies = list(replies)
+        self.prompts: list[str] = []
+
+    async def complete(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        index = min(len(self.prompts) - 1, len(self.replies) - 1)
+        return self.replies[index]
+
+    @property
+    def calls(self) -> int:
+        return len(self.prompts)
 
 
 @pytest.fixture

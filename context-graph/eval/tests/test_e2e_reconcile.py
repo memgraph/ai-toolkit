@@ -7,30 +7,18 @@ picked up, what happens when none are pending) run without a key, so a
 contributor without one still gets meaningful coverage.
 """
 
-import os
-
-import pytest
-
 # Resolve from context-graph's config file before deciding to skip, so a
 # contributor whose key lives in config.toml (ADR 0002) rather than the
 # environment still runs these instead of silently skipping them.
-from conftest import EVAL_MEMGRAPH_URL
+from conftest import EVAL_MEMGRAPH_URL, requires_openai_key
 from context_graph_eval.convert.longmemeval import SessionFixture, Turn
 from context_graph_eval.inject import PENDING, inject_batch
 from context_graph_eval.reconcile import (
-    _resolve_llm_credentials,
     pending_sessions,
     reconcile_batch,
 )
 
 from actions_graph import ActionsGraph
-
-_resolve_llm_credentials()
-
-requires_openai_key = pytest.mark.skipif(
-    not os.environ.get("OPENAI_API_KEY"),
-    reason="no OPENAI_API_KEY in env or context-graph config",
-)
 
 
 def _fixture(session_id: str) -> SessionFixture:

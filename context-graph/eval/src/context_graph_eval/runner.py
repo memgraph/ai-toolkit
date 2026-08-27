@@ -151,7 +151,11 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
     scored: list[Scored] = []
     for golden, result in zip(goldens, retrieved, strict=True):
         metadata = golden.additional_metadata or {}
-        coverage = judged.get(golden.name, 0.0)
+        metric_scores = judged.get(golden.name, {})
+        # The weakest metric gates: passing one check while failing another is
+        # not a pass. The individual scores are kept alongside so a failure can
+        # still be attributed to retrieval or to the answer.
+        coverage = min(metric_scores.values()) if metric_scores else 0.0
         scored.append(
             Scored(
                 name=golden.name or golden.input,
@@ -161,13 +165,14 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
                 efficiency_tokens=efficiency_tokens(result),
                 abstention=bool(metadata.get("abstention")),
                 answer=result.answer,
+                metric_scores=metric_scores,
             )
         )
     return scored
 
 
-def _judge(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -> dict[str, float]:
-    """Score answer quality with deepeval, returning coverage per question.
+def _judge(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -> dict[str, dict[str, float]]:
+    """Score answer quality with deepeval, returning per-metric scores per question.
 
     Abstention and ordinary questions are judged in **separate passes**, because
     they need different metrics: ContextualRecall is structurally inapplicable
@@ -179,15 +184,17 @@ def _judge(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
     runs after all pipeline work rather than inside it.
     """
     paired = list(zip(goldens, retrieved, strict=True))
-    coverage: dict[str, float] = {}
+    judged: dict[str, dict[str, float]] = {}
     for abstention in (False, True):
         group = [(g, r) for g, r in paired if bool((g.additional_metadata or {}).get("abstention")) is abstention]
         if group:
-            coverage.update(_judge_group(group, plan, abstention=abstention))
-    return coverage
+            judged.update(_judge_group(group, plan, abstention=abstention))
+    return judged
 
 
-def _judge_group(group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, abstention: bool) -> dict[str, float]:
+def _judge_group(
+    group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, abstention: bool
+) -> dict[str, dict[str, float]]:
     from deepeval import evaluate
     from deepeval.evaluate.configs import AsyncConfig, DisplayConfig, ErrorConfig
 
@@ -205,10 +212,11 @@ def _judge_group(group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, abst
         error_config=ErrorConfig(ignore_errors=True),
     )
 
-    coverage: dict[str, float] = {}
+    judged: dict[str, dict[str, float]] = {}
     for golden, test_result in zip(goldens, result.test_results, strict=False):
-        scores = [m.score for m in (test_result.metrics_data or []) if m.score is not None]
-        # The weakest metric decides: coverage is a gate, so passing one check
-        # while failing another is not a pass.
-        coverage[golden.name] = min(scores) if scores else 0.0
-    return coverage
+        # Kept per metric, not collapsed. The weakest still decides the gate --
+        # passing one check while failing another is not a pass -- but which
+        # one failed is what tells you whether retrieval or the answer was at
+        # fault, and #304 pointed out that attribution is free here.
+        judged[golden.name] = {m.name: m.score for m in (test_result.metrics_data or []) if m.score is not None}
+    return judged

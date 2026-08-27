@@ -88,6 +88,12 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--label", default="run", help="name for this run in a later comparison")
     run.add_argument("--changed", default="", help="what this run changed, shown in the comparison report")
 
+    cal = subcommands.add_parser(
+        "calibrate",
+        help="derive a noise floor by running the same questions repeatedly (#304)",
+    )
+    cal.add_argument("runs", type=Path, nargs="+", help="two or more saved runs of the SAME questions")
+
     cmp_ = subcommands.add_parser("compare", help="compare two saved runs and print the report")
     cmp_.add_argument("baseline", type=Path)
     cmp_.add_argument("candidate", type=Path)
@@ -108,7 +114,34 @@ def main(argv: list[str] | None = None) -> int:
         return _run(args)
     if args.command == "compare":
         return _compare(args)
+    if args.command == "calibrate":
+        return _calibrate(args)
     return 1
+
+
+def _calibrate(args) -> int:
+    from .calibrate import describe
+    from .report import load_run
+
+    runs = [load_run(path) for path in args.runs]
+
+    # Same questions, or the spread measures the corpus rather than the judge.
+    question_sets = {tuple(sorted(s.name for s in run.scored)) for run in runs}
+    if len(question_sets) > 1:
+        print(
+            "refusing to calibrate: these runs cover different questions, so their "
+            "spread would measure the corpus change rather than judge variance.",
+            file=sys.stderr,
+        )
+        return 1
+
+    rates = [sum(1 for s in run.scored if s.covered) / len(run.scored) for run in runs if run.scored]
+    try:
+        print(describe(rates))
+    except ValueError as exc:
+        print(f"refusing to calibrate: {exc}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def _compare(args) -> int:
@@ -311,6 +344,17 @@ def _build_model(model_id: str | None, *, anthropic: bool):
         return None
 
 
+def _print_attribution(failures) -> None:
+    """Say which metric was the weakest link across the failures."""
+    blamed: dict[str, int] = {}
+    for row in failures:
+        if row.metric_scores:
+            worst = min(row.metric_scores, key=lambda name: row.metric_scores[name])
+            blamed[worst] = blamed.get(worst, 0) + 1
+    for metric, count in sorted(blamed.items(), key=lambda kv: -kv[1]):
+        print(f"  failed on     {metric}: {count}")
+
+
 def _print_report(report, *, judged: bool) -> None:
     from .scoring import gate_and_rank
 
@@ -353,6 +397,13 @@ def _print_report(report, *, judged: bool) -> None:
         if len(ranked) > 1:
             print(f"  cheapest      {ranked[0].name} ({ranked[0].efficiency_tokens:,} tokens)")
             print(f"  costliest     {ranked[-1].name} ({ranked[-1].efficiency_tokens:,} tokens)")
+
+        # Which stage failed, not just how many. ContextualRecall scores
+        # retrieval and the rubric scores the answer, so a run failing mostly on
+        # the former is a retrieval problem and on the latter an answering one --
+        # different work. #304 noted this attribution is free; collapsing to a
+        # single coverage number was discarding it.
+        _print_attribution([s for s in report.scored if s.tier == tier and not s.covered])
 
 
 if __name__ == "__main__":

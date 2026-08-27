@@ -47,7 +47,13 @@ class Scored:
     efficiency_tokens: int
     abstention: bool = False
     answer: str = ""
-    reason: str = ""
+    #: Per-metric scores behind ``coverage``. Kept because ``coverage`` is
+    #: min() of them, which gates correctly but discards which stage failed --
+    #: ContextualRecall scores retrieval, the GEval rubric scores the answer.
+    #: #304 noted that attribution "falls out for nothing"; collapsing to one
+    #: number was throwing it away. Absent for abstention questions, which are
+    #: judged on the rubric alone.
+    metric_scores: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

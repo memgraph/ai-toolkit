@@ -5,12 +5,10 @@ writes its own Cypher, with no ranking, templates, or vector search. Those are
 deferred until this baseline's failures say what they should be.
 """
 
-import os
-
 import pytest
+from conftest import ScriptedLLM, requires_openai_key
 from context_graph_eval.convert.longmemeval import SessionFixture, Turn
 from context_graph_eval.inject import inject_batch
-from context_graph_eval.reconcile import _resolve_llm_credentials
 from context_graph_eval.retrieval import (
     MAX_PAYLOAD_TOKENS,
     DeepEvalLLM,
@@ -22,13 +20,6 @@ from context_graph_eval.retrieval import (
 from context_graph_eval.scoring import efficiency_tokens
 
 from actions_graph import ActionsGraph
-
-_resolve_llm_credentials()
-
-requires_openai_key = pytest.mark.skipif(
-    not os.environ.get("OPENAI_API_KEY"),
-    reason="no OPENAI_API_KEY in env or context-graph config",
-)
 
 
 def _fixture(session_id: str, content: str) -> SessionFixture:
@@ -139,19 +130,14 @@ async def test_retrieval_returns_the_context_it_actually_saw(populated: ReadOnly
     (#309), so it must be what came back from the graph -- not the model's
     prose about it."""
 
-    class StubLLM:
-        def __init__(self):
-            self.calls = 0
+    # Turn text lives inside the Action's JSON `properties` string, not a
+    # `content` property -- see the note in this module.
+    llm = ScriptedLLM(
+        "```cypher\nMATCH (a:Action) RETURN a.properties AS props ORDER BY props\n```",
+        "A beagle.",
+    )
 
-        async def complete(self, prompt: str) -> str:
-            self.calls += 1
-            if self.calls == 1:
-                # Turn text lives inside the Action's JSON `properties` string,
-                # not a `content` property -- see the note in this module.
-                return "```cypher\nMATCH (a:Action) RETURN a.properties AS props ORDER BY props\n```"
-            return "A beagle."
-
-    result = await retrieve("What breed is the dog?", graph=populated, llm=StubLLM())
+    result = await retrieve("What breed is the dog?", graph=populated, llm=llm)
 
     assert any("beagle" in row for row in result.retrieval_context)
     assert result.answer == "A beagle."
@@ -161,17 +147,9 @@ async def test_retrieval_records_the_queries_it_ran(populated: ReadOnlyGraph):
     """A score is not diagnosable without knowing what retrieval actually
     asked for."""
 
-    class StubLLM:
-        def __init__(self):
-            self.calls = 0
+    llm = ScriptedLLM("MATCH (s:Session) RETURN s.session_id AS id", "done")
 
-        async def complete(self, prompt: str) -> str:
-            self.calls += 1
-            if self.calls == 1:
-                return "MATCH (s:Session) RETURN s.session_id AS id"
-            return "done"
-
-    result = await retrieve("anything?", graph=populated, llm=StubLLM())
+    result = await retrieve("anything?", graph=populated, llm=llm)
 
     assert result.queries and "MATCH (s:Session)" in result.queries[0]
 
@@ -186,19 +164,13 @@ async def test_prose_before_the_first_query_does_not_end_the_loop(populated: Rea
     retrieved. Before that it means the model needs asking again.
     """
 
-    class ChattyLLM:
-        def __init__(self):
-            self.calls = 0
+    llm = ScriptedLLM(
+        "Sure! Let me look that up for you.",
+        "MATCH (a:Action) RETURN a.properties AS props",
+        "A beagle.",
+    )
 
-        async def complete(self, prompt: str) -> str:
-            self.calls += 1
-            if self.calls == 1:
-                return "Sure! Let me look that up for you."
-            if self.calls == 2:
-                return "MATCH (a:Action) RETURN a.properties AS props"
-            return "A beagle."
-
-    result = await retrieve("What breed is the dog?", graph=populated, llm=ChattyLLM())
+    result = await retrieve("What breed is the dog?", graph=populated, llm=llm)
 
     assert result.queries, "the loop gave up before issuing a single query"
     assert any("beagle" in row for row in result.retrieval_context)
@@ -214,25 +186,16 @@ def overflowing(eval_graph: ActionsGraph):
     return ReadOnlyGraph(eval_graph._db)
 
 
-class _Firehose:
-    """Asks for everything, twice over, then stops."""
-
-    def __init__(self):
-        self.calls = 0
-
-    async def complete(self, prompt: str) -> str:
-        self.calls += 1
-        if self.calls == 1:
-            return "MATCH (a:Action), (b:Action) RETURN a.properties AS x, b.properties AS y"
-        return "STOP"
-
-
 async def test_an_enormous_result_set_is_capped(overflowing: ReadOnlyGraph):
     """Measured at scale: median payload rose to ~19k tokens and one question
     returned 1,067,650. Efficiency is a scored axis (#309), and an unbounded
     payload also risks exhausting the judge's context window and costs real
     money per question."""
-    result = await retrieve("anything?", graph=overflowing, llm=_Firehose())
+    result = await retrieve(
+        "anything?",
+        graph=overflowing,
+        llm=ScriptedLLM("MATCH (a:Action), (b:Action) RETURN a.properties AS x, b.properties AS y", "STOP"),
+    )
 
     assert efficiency_tokens(result) <= MAX_PAYLOAD_TOKENS
 
@@ -241,23 +204,19 @@ async def test_a_capped_payload_tells_the_agent_it_was_truncated(overflowing: Re
     """Truncating silently would cost coverage for a reason nothing records --
     the agent would believe it had seen everything its query matched, and stop
     looking."""
-    result = await retrieve("anything?", graph=overflowing, llm=_Firehose())
+    result = await retrieve(
+        "anything?",
+        graph=overflowing,
+        llm=ScriptedLLM("MATCH (a:Action), (b:Action) RETURN a.properties AS x, b.properties AS y", "STOP"),
+    )
 
     assert any("dropped" in e.lower() for e in result.errors)
 
 
 async def test_a_small_result_set_is_untouched(populated: ReadOnlyGraph):
-    class Modest:
-        def __init__(self):
-            self.calls = 0
+    llm = ScriptedLLM("MATCH (a:Action) RETURN a.properties AS props", "STOP")
 
-        async def complete(self, prompt: str) -> str:
-            self.calls += 1
-            if self.calls == 1:
-                return "MATCH (a:Action) RETURN a.properties AS props"
-            return "STOP"
-
-    result = await retrieve("anything?", graph=populated, llm=Modest())
+    result = await retrieve("anything?", graph=populated, llm=llm)
 
     assert result.retrieval_context
     assert not any("dropped" in e.lower() for e in result.errors)
@@ -269,19 +228,7 @@ async def test_the_agent_is_offered_a_named_way_to_stop(populated: ReadOnlyGraph
     queries: it spent the whole step budget every run, long after the answer was
     in hand, and each extra query enlarges the payload efficiency counts."""
 
-    class Capturing:
-        def __init__(self):
-            self.prompts = []
-            self.calls = 0
-
-        async def complete(self, prompt: str) -> str:
-            self.prompts.append(prompt)
-            self.calls += 1
-            if self.calls == 1:
-                return "MATCH (a:Action) RETURN a.properties AS props"
-            return "STOP"
-
-    llm = Capturing()
+    llm = ScriptedLLM("MATCH (a:Action) RETURN a.properties AS props", "STOP")
     await retrieve("What breed is the dog?", graph=populated, llm=llm)
 
     # The second prompt is the one issued with rows already retrieved.
@@ -293,17 +240,9 @@ async def test_prose_after_retrieving_does_end_the_loop(populated: ReadOnlyGraph
     query is the model saying it has enough, and spending more steps on it would
     inflate the payload the efficiency metric counts."""
 
-    class DoneAfterOne:
-        def __init__(self):
-            self.calls = 0
+    llm = ScriptedLLM("MATCH (a:Action) RETURN a.properties AS props", "I have enough now.")
 
-        async def complete(self, prompt: str) -> str:
-            self.calls += 1
-            if self.calls == 1:
-                return "MATCH (a:Action) RETURN a.properties AS props"
-            return "I have enough now."
-
-    result = await retrieve("What breed is the dog?", graph=populated, llm=DoneAfterOne())
+    result = await retrieve("What breed is the dog?", graph=populated, llm=llm)
 
     assert len(result.queries) == 1
 
@@ -312,20 +251,11 @@ async def test_a_bad_query_is_reported_not_raised(populated: ReadOnlyGraph):
     """One malformed query should cost that question its answer, not abort the
     whole batch mid-run."""
 
-    class StubLLM:
-        def __init__(self):
-            self.calls = 0
+    # Reads as a query (has MATCH/RETURN) so it is executed, but is not valid
+    # Cypher -- the case that must be caught, not the model replying in prose.
+    llm = ScriptedLLM("MATCH (((( RETURN nonsense", "no answer")
 
-        async def complete(self, prompt: str) -> str:
-            self.calls += 1
-            if self.calls == 1:
-                # Reads as a query (has MATCH/RETURN) so it is executed, but is
-                # not valid Cypher -- the case that must be caught, not the
-                # model simply replying in prose.
-                return "MATCH (((( RETURN nonsense"
-            return "no answer"
-
-    result = await retrieve("anything?", graph=populated, llm=StubLLM())
+    result = await retrieve("anything?", graph=populated, llm=llm)
 
     assert result.errors
 
