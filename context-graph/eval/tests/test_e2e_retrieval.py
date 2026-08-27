@@ -12,12 +12,14 @@ from context_graph_eval.convert.longmemeval import SessionFixture, Turn
 from context_graph_eval.inject import inject_batch
 from context_graph_eval.reconcile import _resolve_llm_credentials
 from context_graph_eval.retrieval import (
+    MAX_PAYLOAD_TOKENS,
     DeepEvalLLM,
     ReadOnlyGraph,
     WriteRefusedError,
     graph_schema,
     retrieve,
 )
+from context_graph_eval.scoring import efficiency_tokens
 
 from actions_graph import ActionsGraph
 
@@ -194,6 +196,65 @@ async def test_prose_before_the_first_query_does_not_end_the_loop(populated: Rea
 
     assert result.queries, "the loop gave up before issuing a single query"
     assert any("beagle" in row for row in result.retrieval_context)
+
+
+@pytest.fixture
+def overflowing(eval_graph: ActionsGraph):
+    """A graph whose Cartesian product comfortably exceeds the payload cap."""
+    inject_batch(
+        [_fixture(f"s{i}", f"session {i} discussing an unremarkable topic at length") for i in range(40)],
+        graph=eval_graph,
+    )
+    return ReadOnlyGraph(eval_graph._db)
+
+
+class _Firehose:
+    """Asks for everything, twice over, then stops."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def complete(self, prompt: str) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            return "MATCH (a:Action), (b:Action) RETURN a.properties AS x, b.properties AS y"
+        return "STOP"
+
+
+async def test_an_enormous_result_set_is_capped(overflowing: ReadOnlyGraph):
+    """Measured at scale: median payload rose to ~19k tokens and one question
+    returned 1,067,650. Efficiency is a scored axis (#309), and an unbounded
+    payload also risks exhausting the judge's context window and costs real
+    money per question."""
+    result = await retrieve("anything?", graph=overflowing, llm=_Firehose())
+
+    assert efficiency_tokens(result) <= MAX_PAYLOAD_TOKENS
+
+
+async def test_a_capped_payload_tells_the_agent_it_was_truncated(overflowing: ReadOnlyGraph):
+    """Truncating silently would cost coverage for a reason nothing records --
+    the agent would believe it had seen everything its query matched, and stop
+    looking."""
+    result = await retrieve("anything?", graph=overflowing, llm=_Firehose())
+
+    assert any("dropped" in e.lower() for e in result.errors)
+
+
+async def test_a_small_result_set_is_untouched(populated: ReadOnlyGraph):
+    class Modest:
+        def __init__(self):
+            self.calls = 0
+
+        async def complete(self, prompt: str) -> str:
+            self.calls += 1
+            if self.calls == 1:
+                return "MATCH (a:Action) RETURN a.properties AS props"
+            return "STOP"
+
+    result = await retrieve("anything?", graph=populated, llm=Modest())
+
+    assert result.retrieval_context
+    assert not any("dropped" in e.lower() for e in result.errors)
 
 
 async def test_the_agent_is_offered_a_named_way_to_stop(populated: ReadOnlyGraph):

@@ -40,6 +40,24 @@ _CYPHER_FENCE = re.compile(r"```(?:cypher)?\s*(.+?)```", re.DOTALL | re.IGNORECA
 #: indefinitely could buy coverage with an unbounded payload.
 DEFAULT_MAX_STEPS = 4
 
+#: Ceiling on the payload handed back for one question.
+#:
+#: Efficiency is a scored axis (#309), so an unbounded payload is not merely
+#: untidy -- and it is not hypothetical: measured at scale, the median payload
+#: reached ~19k tokens and one question returned 1,067,650. Beyond the score, a
+#: payload that size risks exhausting the judge's context window and costs real
+#: money per question.
+#:
+#: Set above the observed median rather than below it: the job here is to clip
+#: the pathological tail, not to squeeze the typical case, which belongs to
+#: retrieval v2 and should be driven by measurement rather than a guess.
+MAX_PAYLOAD_TOKENS = 20_000
+
+#: Conservative characters-per-token ratio for the cheap size estimate in
+#: :func:`_fit_payload`. English averages nearer 4; under-estimating keeps the
+#: real payload below the cap rather than just around it.
+_CHARS_PER_TOKEN = 3
+
 
 class WriteRefusedError(RuntimeError):
     """Raised when retrieval attempts to modify the graph under test."""
@@ -281,6 +299,16 @@ async def retrieve(
             errors.append(f"{cypher}: {exc}")
             continue
 
+        rendered, dropped = _fit_payload(seen, rows)
+        if dropped:
+            # Recorded, never silent. Truncating without telling the agent
+            # would cost coverage for a reason nothing captures -- it would
+            # believe it had seen everything its query matched, and stop.
+            errors.append(
+                f"{cypher}: matched too much -- {dropped} rows dropped at the "
+                f"{MAX_PAYLOAD_TOKENS}-token payload cap. Narrow the query or add LIMIT."
+            )
+
         if not rows:
             # A query that is valid Cypher but matches nothing used to be
             # invisible: the loop recorded errors only, so the agent saw no
@@ -291,7 +319,7 @@ async def retrieve(
             # not in memory. Reporting the empty result is what lets it revise.
             errors.append(f"{cypher}: returned 0 rows")
             continue
-        seen.extend(_render(row) for row in rows)
+        seen.extend(rendered)
 
     answer = await llm.complete(_answer_prompt(question, seen))
     return Retrieved(answer=answer.strip(), retrieval_context=seen, queries=queries, errors=errors)
@@ -309,6 +337,25 @@ def _extract_cypher(reply: str) -> str | None:
 
 def _render(row: dict[str, Any]) -> str:
     return " | ".join(f"{key}={value}" for key, value in row.items())
+
+
+def _fit_payload(seen: list[str], rows: list[dict[str, Any]]) -> tuple[list[str], int]:
+    """Rows that fit under the payload cap, and how many were dropped.
+
+    Counted in characters rather than tokens: this runs on every row of every
+    query, and an approximation that never under-estimates is worth more here
+    than an exact count. ``_CHARS_PER_TOKEN`` is deliberately conservative, so
+    the real token payload lands under the cap rather than near it.
+    """
+    budget = MAX_PAYLOAD_TOKENS * _CHARS_PER_TOKEN - sum(len(row) for row in seen)
+    fitted: list[str] = []
+    for index, row in enumerate(rows):
+        rendered = _render(row)
+        if len(rendered) > budget:
+            return fitted, len(rows) - index
+        budget -= len(rendered)
+        fitted.append(rendered)
+    return fitted, 0
 
 
 def _query_prompt(question: str, schema: str, seen: list[str], errors: list[str], *, insist: bool = False) -> str:
@@ -341,6 +388,11 @@ def _query_prompt(question: str, schema: str, seen: list[str], errors: list[str]
         "Stored wording rarely matches the question's wording, so prefer ONE broad "
         "term over several ANDed together: someone asking about a vehicle may have "
         "written 'motorcycle', and CONTAINS 'vehicle' would then find nothing.",
+        # The counterweight to the line above. Broadening the match is what made
+        # queries land at all, and also what made payloads explode; a LIMIT keeps
+        # the first from paying for the second.
+        "Always add a LIMIT (50 or fewer). Everything returned counts against a "
+        "payload budget, and rows past the cap are dropped rather than shown.",
         "",
         f"Graph schema:\n{schema}",
         "",
