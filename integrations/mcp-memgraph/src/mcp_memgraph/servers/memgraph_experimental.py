@@ -9,7 +9,7 @@ This server provides autonomous adapting GraphRAG capabilities that:
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from fastmcp import Context, FastMCP
 from starlette.responses import JSONResponse
@@ -248,7 +248,10 @@ Reason: Vector search operation
         if isinstance(response, str):
             response_text = response.strip()
         elif hasattr(response, "text"):
-            response_text = response.text.strip()
+            # SamplingResult.text is `str | None`; a missing text block is left to
+            # raise here (as before this was type-annotated) and be caught by the
+            # except clauses below, which already handle a failed/absent response.
+            response_text = cast("str", response.text).strip()
         else:
             # Try to get content from response object
             response_text = str(response).strip()
@@ -378,7 +381,10 @@ Respond with ONLY the Cypher query, no explanation or markdown.
         if isinstance(response, str):
             query_text = response.strip()
         elif hasattr(response, "text"):
-            query_text = response.text.strip()
+            # SamplingResult.text is `str | None`; a missing text block is left to
+            # raise here (as before this was type-annotated) and be caught by the
+            # except clause below, which falls back to a manually generated query.
+            query_text = cast("str", response.text).strip()
         else:
             query_text = str(response).strip()
 
