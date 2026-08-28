@@ -53,7 +53,11 @@ async def test_a_run_scores_every_question_in_the_corpus(eval_graph: ActionsGrap
         plan=RunPlan(reconcile=False, judge=None),
     )
 
-    assert report.by_tier[1].questions == 2
+    # No judge, so nothing is scored: the questions ran but produced no
+    # coverage measurement, which is reported as unscored rather than as two
+    # failures.
+    assert report.by_tier[1].unscored == 2
+    assert report.by_tier[1].questions == 0
 
 
 async def test_fixtures_are_injected_before_retrieval_runs(eval_graph: ActionsGraph):
@@ -156,7 +160,7 @@ async def test_a_question_whose_retrieval_fails_is_still_reported(eval_graph: Ac
         plan=RunPlan(reconcile=False, judge=None),
     )
 
-    assert report.by_tier[1].questions == 1
+    assert report.by_tier[1].unscored == 1
     assert report.by_tier[1].covered == 0
 
 

@@ -19,7 +19,7 @@ from context_graph_eval.scoring import (
 from deepeval.models import DeepEvalBaseLLM
 
 
-def _scored(name, *, tier=1, covered=True, tokens=100, abstention=False):
+def _scored(name, *, tier=1, covered=True, tokens=100, abstention=False, metric_scores=None):
     return Scored(
         name=name,
         tier=tier,
@@ -27,6 +27,9 @@ def _scored(name, *, tier=1, covered=True, tokens=100, abstention=False):
         covered=covered,
         efficiency_tokens=tokens,
         abstention=abstention,
+        # Non-empty by default: a Scored with no metric scores means the judge
+        # could not score it, which is a different thing from scoring zero.
+        metric_scores=metric_scores if metric_scores is not None else {"Coverage": 1.0 if covered else 0.0},
     )
 
 
@@ -84,6 +87,34 @@ def test_the_recorded_tokenizer_is_the_one_actually_used():
     word-splitting would defeat compare()'s tokenizer check, which reads that
     name and would see a match."""
     assert tokenizer_in_use() == DEFAULT_TOKENIZER
+
+
+def test_a_question_the_judge_could_not_score_is_not_counted_as_a_failure():
+    """Observed live: the judge's provider ran out of credit, every metric
+    errored, and the run reported "coverage 0/2 (0%)" -- an outage presented as
+    a measurement. "Could not be scored" and "scored zero" must not collapse
+    into the same number."""
+    report = aggregate(
+        [
+            _scored("judged", covered=True, metric_scores={"Coverage": 1.0}),
+            Scored(name="unjudged", tier=1, coverage=0.0, covered=False, efficiency_tokens=10),
+        ]
+    )
+
+    assert report.by_tier[1].unscored == 1
+    # One question was judged and it passed. The unscoreable one is excluded
+    # rather than dragging the rate to 50%.
+    assert report.by_tier[1].questions == 1
+    assert report.by_tier[1].coverage_rate == 1.0
+
+
+def test_a_fully_unscoreable_tier_reports_no_rate():
+    """Better to say nothing than to report 0%."""
+    report = aggregate([Scored(name="q", tier=1, coverage=0.0, covered=False, efficiency_tokens=0)])
+
+    assert report.by_tier[1].unscored == 1
+    assert report.by_tier[1].questions == 0
+    assert report.by_tier[1].coverage_rate is None
 
 
 def test_efficiency_counts_the_payload_handed_back():

@@ -80,6 +80,7 @@ async def reconcile_batch(
     memgraph_url: str | None = None,
     working_dir: str = DEFAULT_WORKING_DIR,
     lightrag_wrapper: Any = None,
+    progress: bool = True,
 ) -> Reconciled:
     """Reconcile pending sessions in the eval graph.
 
@@ -142,7 +143,7 @@ async def reconcile_batch(
     reconciled = 0
     errors: list[str] = []
     try:
-        for session_id in session_ids:
+        for index, session_id in enumerate(session_ids, start=1):
             summary = await graph.reconcile_session(
                 session_id,
                 lightrag_wrapper=lightrag_wrapper,
@@ -152,6 +153,14 @@ async def reconcile_batch(
                 reconciled += 1
             else:
                 errors.append(f"{session_id}: {summary.error}")
+
+            # Printed per session, because this loop is sequential and each
+            # session costs two LLM calls -- so a modest batch runs for many
+            # minutes. Silent until done is indistinguishable from hung, which
+            # is how two runs were abandoned without knowing whether they were
+            # progressing.
+            if progress:
+                print(f"  reconciled {index}/{len(session_ids)} ({reconciled} ok, {len(errors)} failed)", flush=True)
     finally:
         if owns_wrapper:
             finalize = getattr(lightrag_wrapper, "finalize", None)

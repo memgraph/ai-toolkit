@@ -308,6 +308,13 @@ def _run(args) -> int:
         return 1
     goldens = read_corpus(args.corpus)
 
+    # Honoured here, not at corpus-build time. When `run` switched to reading
+    # the committed corpus, nothing consumed --limit any more, so it was
+    # silently ignored: a run asked to do 2 questions quietly did all 20, and
+    # a "minimal" check turned out to be 40 sessions of reconciliation.
+    if args.limit is not None:
+        goldens = goldens[: args.limit]
+
     if args.gold_slice:
         # Tier 2. Scored apart from Tier 1 (#303), and the only questions that
         # exercise the capture layer at all.
@@ -476,9 +483,18 @@ def _print_report(report, *, judged: bool) -> None:
     # Printed per tier, never blended: a single cross-tier number would let an
     # organizational-recall regression hide behind a personal-memory gain (#303).
     for tier, summary in sorted(report.by_tier.items()):
-        print(f"\nTier {tier}: {summary.questions} questions")
+        print(f"\nTier {tier}: {summary.questions} questions scored")
+        if summary.unscored and judged:
+            # Only alarming when a judge WAS configured: then unscored means it
+            # errored, and folding that into the rate would report an outage as
+            # a real 0%. Without a judge, unscored is simply expected.
+            print(f"  UNSCORED      {summary.unscored} question(s) -- the judge errored on them.")
+            print("                Not counted as failures. Check judge credentials/credit.")
         if judged:
-            print(f"  coverage      {summary.covered}/{summary.questions} ({summary.coverage_rate:.0%})")
+            if summary.coverage_rate is not None:
+                print(f"  coverage      {summary.covered}/{summary.questions} ({summary.coverage_rate:.0%})")
+            else:
+                print("  coverage      n/a -- nothing in this tier could be scored")
             median = summary.median_efficiency_tokens
             print(
                 f"  efficiency    median {median} tokens returned (over questions that cleared coverage)"

@@ -60,12 +60,20 @@ class Scored:
 class TierReport:
     """Aggregate for one tier. Deliberately per-tier -- there is no overall."""
 
+    #: Questions the judge actually scored. Excludes unscoreable ones, so the
+    #: rate below is over what was measured rather than what was attempted.
     questions: int
     covered: int
-    coverage_rate: float
+    #: None when nothing in the tier could be scored. Deliberately not 0.0:
+    #: observed live, the judge's provider ran out of credit, every metric
+    #: errored, and the run reported "coverage 0/2 (0%)" -- an outage presented
+    #: as a measurement.
+    coverage_rate: float | None
     median_efficiency_tokens: int | None
     abstention_total: int = 0
     abstention_correct: int = 0
+    #: Questions with no metric scores at all. A judge failure, not a low score.
+    unscored: int = 0
 
 
 @dataclass(frozen=True)
@@ -127,13 +135,19 @@ def aggregate(scored: list[Scored]) -> RunReport:
     """Summarise a run, per tier."""
     by_tier: dict[int, TierReport] = {}
     for tier in sorted({s.tier for s in scored}):
-        rows = [s for s in scored if s.tier == tier]
+        all_rows = [s for s in scored if s.tier == tier]
+        # A row with no metric scores was never judged -- the judge errored, or
+        # none ran. Counting it as a failure turns an outage into a reported
+        # score, so it is excluded from the rate and surfaced separately.
+        rows = [s for s in all_rows if s.metric_scores]
+        unscored = len(all_rows) - len(rows)
         covered = [s for s in rows if s.covered]
         abstentions = [s for s in rows if s.abstention]
         by_tier[tier] = TierReport(
+            unscored=unscored,
             questions=len(rows),
             covered=len(covered),
-            coverage_rate=len(covered) / len(rows) if rows else 0.0,
+            coverage_rate=(len(covered) / len(rows) if rows else None),
             # Median, not mean: one pathological payload should not drag the
             # number that gets compared across schema versions.
             median_efficiency_tokens=(int(median([s.efficiency_tokens for s in covered])) if covered else None),
