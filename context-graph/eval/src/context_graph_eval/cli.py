@@ -279,6 +279,28 @@ def _build_corpus(args) -> int:
     return 0
 
 
+def select_goldens(corpus: list, *, limit: int | None, gold_slice: bool) -> list:
+    """Which questions this run will actually ask.
+
+    Its own function because a run's question set is the one thing every number
+    downstream is relative to, and getting it silently wrong is expensive:
+    ``--limit`` was ignored for a while after ``run`` switched to reading the
+    committed corpus, so a run asked for 2 questions quietly did all 20 -- a
+    "minimal" check that turned out to be 40 sessions of reconciliation, killed
+    twice before anyone knew why.
+
+    The gold slice is appended rather than counted against ``--limit``: it is
+    Tier 2 (#303), scored apart, so letting a Tier 1 limit trim it would drop
+    the only questions that exercise the capture layer.
+    """
+    selected = corpus[:limit] if limit is not None else list(corpus)
+    if gold_slice:
+        from .goldslice import gold_slice_goldens
+
+        selected += gold_slice_goldens()
+    return selected
+
+
 def _run(args) -> int:
     import asyncio
 
@@ -286,7 +308,7 @@ def _run(args) -> int:
     from memgraph_toolbox.api.memgraph import Memgraph
 
     from .corpus import read_corpus
-    from .goldslice import evidence_is_planted, gold_slice_goldens
+    from .goldslice import evidence_is_planted
     from .reconcile import _resolve_llm_credentials
     from .retrieval import DeepEvalLLM
     from .runner import RunPlan, check_offline, run_batch
@@ -306,19 +328,7 @@ def _run(args) -> int:
             file=sys.stderr,
         )
         return 1
-    goldens = read_corpus(args.corpus)
-
-    # Honoured here, not at corpus-build time. When `run` switched to reading
-    # the committed corpus, nothing consumed --limit any more, so it was
-    # silently ignored: a run asked to do 2 questions quietly did all 20, and
-    # a "minimal" check turned out to be 40 sessions of reconciliation.
-    if args.limit is not None:
-        goldens = goldens[: args.limit]
-
-    if args.gold_slice:
-        # Tier 2. Scored apart from Tier 1 (#303), and the only questions that
-        # exercise the capture layer at all.
-        goldens += gold_slice_goldens()
+    goldens = select_goldens(read_corpus(args.corpus), limit=args.limit, gold_slice=args.gold_slice)
 
     # The haystack is NOT committed alongside the corpus: at 20 questions it is
     # ~9.5MB of reshaped upstream text, which is what #302 rejected vendoring.

@@ -6,7 +6,7 @@ test the printer at its seam by capturing stdout, rather than reaching into the
 branch structure.
 """
 
-from context_graph_eval.cli import _print_report
+from context_graph_eval.cli import _print_report, select_goldens
 from context_graph_eval.runner import BatchReport
 from context_graph_eval.scoring import Scored, aggregate
 
@@ -24,6 +24,27 @@ def _scored(name, *, covered=True, tokens=100, judged=True):
         efficiency_tokens=tokens,
         metric_scores={"Coverage": 1.0 if covered else 0.0} if judged else {},
     )
+
+
+def test_a_limited_run_asks_only_that_many_questions():
+    """--limit was ignored for a while after `run` switched to reading the
+    committed corpus, so a run asked for 2 questions quietly did all 20. Each
+    question costs sessions of reconciliation at ~2 LLM calls apiece, so the
+    overrun was expensive and invisible."""
+    assert select_goldens(list("abcdefgh"), limit=2, gold_slice=False) == ["a", "b"]
+
+
+def test_an_unlimited_run_asks_the_whole_corpus():
+    assert select_goldens(list("abc"), limit=None, gold_slice=False) == ["a", "b", "c"]
+
+
+def test_the_gold_slice_is_not_trimmed_by_a_tier_1_limit():
+    """The gold slice is Tier 2 (#303), scored apart, and the only question that
+    exercises the capture layer -- so a Tier 1 limit must not drop it."""
+    selected = select_goldens(list("abcdefgh"), limit=1, gold_slice=True)
+
+    assert selected[:1] == ["a"]
+    assert len(selected) > 1
 
 
 def test_a_judged_run_reports_both_coverage_and_efficiency(capsys):
