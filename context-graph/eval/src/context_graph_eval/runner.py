@@ -51,6 +51,18 @@ class RunPlan:
     reconcile_limit: int | None = None
     max_concurrent: int = 4
     coverage_threshold: float = DEFAULT_COVERAGE_THRESHOLD
+    #: Trim each question's haystack. Reconciliation cost scales with sessions
+    #: while coverage needs questions, and upstream couples them ~47:1. Any
+    #: score measured with this set is an UPPER BOUND: fewer distractors make
+    #: retrieval easier, so it is not comparable to a full-haystack run.
+    max_sessions_per_question: int | None = None
+    #: Which Memgraph reconciliation writes to. Not optional in practice:
+    #: LightRAG's storage backends resolve their connection from the
+    #: environment rather than the client passed in, so without this
+    #: reconciliation either refuses to start or writes to whatever
+    #: MEMGRAPH_URL happens to name -- a different graph than the one being
+    #: evaluated, silently.
+    memgraph_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -95,12 +107,16 @@ async def run_batch(
     plan = plan or RunPlan()
     check_offline()
 
-    fixtures = [fixture for record in records for fixture in to_session_fixtures(record)]
+    fixtures = [
+        fixture
+        for record in records
+        for fixture in to_session_fixtures(record, max_sessions=plan.max_sessions_per_question)
+    ]
     inject_batch(fixtures, graph=graph)
 
     reconciled = failures = 0
     if plan.reconcile:
-        outcome = await reconcile_batch(graph._db, limit=plan.reconcile_limit)
+        outcome = await reconcile_batch(graph._db, limit=plan.reconcile_limit, memgraph_url=plan.memgraph_url)
         reconciled, failures = outcome.reconciled, outcome.failed
 
     read_only = ReadOnlyGraph(graph._db)

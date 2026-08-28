@@ -138,6 +138,47 @@ def test_a_fixture_carries_its_session_date_and_turns():
     ]
 
 
+def test_subsampling_always_keeps_evidence_sessions():
+    """Dropping an evidence session makes its question unanswerable for a reason
+    that has nothing to do with recall -- the fact would simply not be in the
+    graph, and the miss would be indistinguishable from a real failure."""
+    record = _record()
+    record["haystack_session_ids"] = ["answer_1"] + [f"d{i}" for i in range(20)]
+    record["haystack_dates"] = ["2023/05/20 (Sat) 14:03"] * 21
+    record["haystack_sessions"] = [[{"role": "user", "content": "x", "has_answer": True}]] + [
+        [{"role": "user", "content": f"distractor {i}"}] for i in range(20)
+    ]
+
+    fixtures = to_session_fixtures(record, max_sessions=3)
+
+    assert any(f.holds_evidence for f in fixtures)
+    assert len(fixtures) == 3
+
+
+def test_subsampling_is_deterministic():
+    """The subsample is part of what a run measured, so two runs of the same
+    corpus must inject the same graph or their scores are not comparable."""
+    record = _record()
+    record["haystack_session_ids"] = ["answer_1"] + [f"d{i}" for i in range(20)]
+    record["haystack_dates"] = ["2023/05/20 (Sat) 14:03"] * 21
+    record["haystack_sessions"] = [[{"role": "user", "content": "x", "has_answer": True}]] + [
+        [{"role": "user", "content": f"distractor {i}"}] for i in range(20)
+    ]
+
+    first = [f.session_id for f in to_session_fixtures(record, max_sessions=4)]
+    second = [f.session_id for f in to_session_fixtures(record, max_sessions=4)]
+
+    assert first == second
+
+
+def test_no_subsampling_by_default():
+    """The full haystack is the honest difficulty; a smaller one flatters
+    retrieval, so shrinking it has to be asked for explicitly."""
+    fixtures = to_session_fixtures(_record())
+
+    assert len(fixtures) == 2
+
+
 def test_distractor_sessions_are_kept_not_filtered_out():
     """Distractors are the point: they are what make retrieval precision mean
     anything. A haystack of only evidence would score near-perfectly by

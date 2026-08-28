@@ -96,6 +96,38 @@ async def test_a_run_reports_which_questions_it_scored(eval_graph: ActionsGraph)
     assert {s.name for s in report.scored} == {"q1", "q2"}
 
 
+async def test_reconciliation_is_told_which_graph_to_write_to(eval_graph: ActionsGraph):
+    """LightRAG's storage backends resolve their connection from the environment
+    rather than the client passed in, so a run that does not plumb the URL
+    through either refuses to start or distils into whatever MEMGRAPH_URL
+    happens to name -- a different graph than the one being evaluated, with
+    nothing to indicate it."""
+    captured = {}
+
+    async def _fake_reconcile(db, *, limit=None, memgraph_url=None, **kwargs):
+        from context_graph_eval.reconcile import Reconciled
+
+        captured["memgraph_url"] = memgraph_url
+        return Reconciled(reconciled=0, failed=0)
+
+    import context_graph_eval.runner as runner_module
+
+    original = runner_module.reconcile_batch
+    runner_module.reconcile_batch = _fake_reconcile
+    try:
+        await run_batch(
+            [],
+            records=[],
+            graph=eval_graph,
+            llm=_StubLLM(),
+            plan=RunPlan(reconcile=True, judge=None, memgraph_url="bolt://localhost:7689"),
+        )
+    finally:
+        runner_module.reconcile_batch = original
+
+    assert captured["memgraph_url"] == "bolt://localhost:7689"
+
+
 async def test_an_empty_corpus_runs_without_error(eval_graph: ActionsGraph):
     report = await run_batch(
         [],

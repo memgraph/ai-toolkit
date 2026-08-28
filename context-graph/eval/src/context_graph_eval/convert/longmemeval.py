@@ -201,12 +201,22 @@ class Turn:
     content: str
 
 
-def to_session_fixtures(record: dict) -> list[SessionFixture]:
+def to_session_fixtures(record: dict, max_sessions: int | None = None) -> list[SessionFixture]:
     """Convert a record's haystack into injectable session fixtures.
 
     Distractor sessions are kept deliberately. They are what give retrieval
     precision -- and so the payload-size efficiency metric -- something to
     measure; a haystack of evidence alone would score well by construction.
+
+    ``max_sessions`` trims the haystack, evidence first. It exists because
+    reconciliation cost scales with *sessions* while coverage needs *questions*,
+    and upstream couples them at roughly 47:1 -- so a full-pipeline run at an
+    affordable session count would otherwise be reduced to two questions, at
+    which point one flip is 50pp and coverage says nothing.
+
+    Trimming makes retrieval easier, so any score measured this way is an upper
+    bound and is not comparable to a full-haystack run. Off by default: the full
+    haystack is the honest difficulty, and flattering it must be asked for.
 
     Session ids are kept verbatim. Upstream draws distractors from a shared pool
     and reuses them across questions -- 3,942 of 23,867 haystack ids in the real
@@ -218,7 +228,7 @@ def to_session_fixtures(record: dict) -> list[SessionFixture]:
     injection instead (see ``inject.inject_batch``).
     """
     evidence_ids = set(record["answer_session_ids"])
-    return [
+    fixtures = [
         SessionFixture(
             session_id=session_id,
             date=date,
@@ -235,6 +245,19 @@ def to_session_fixtures(record: dict) -> list[SessionFixture]:
             strict=True,
         )
     ]
+
+    if max_sessions is None or len(fixtures) <= max_sessions:
+        return fixtures
+
+    # Evidence first, then distractors in upstream order. Dropping an evidence
+    # session would make the question unanswerable for a reason unrelated to
+    # recall, and the resulting miss would be indistinguishable from a real
+    # failure. Upstream order rather than a random sample keeps the choice
+    # deterministic: the subsample is part of what a run measured, so two runs
+    # of the same corpus must inject the same graph.
+    evidence = [fixture for fixture in fixtures if fixture.holds_evidence]
+    distractors = [fixture for fixture in fixtures if not fixture.holds_evidence]
+    return (evidence + distractors)[:max_sessions]
 
 
 def _format_turn(turn: dict) -> str:

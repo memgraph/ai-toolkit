@@ -84,6 +84,15 @@ def main(argv: list[str] | None = None) -> int:
         "and report efficiency only.",
     )
     run.add_argument("--agent-model", default=None, help="model id for the retrieval agent")
+    run.add_argument(
+        "--max-sessions-per-question",
+        type=int,
+        default=None,
+        help="trim each question's haystack, keeping evidence. Reconciliation cost scales with "
+        "sessions while coverage needs questions, and upstream couples them ~47:1. A score "
+        "measured with this set is an UPPER BOUND -- fewer distractors make retrieval easier -- "
+        "and is NOT comparable to a full-haystack run.",
+    )
     run.add_argument("--save", type=Path, default=None, help="persist this run so it can be compared later")
     run.add_argument("--label", default="run", help="name for this run in a later comparison")
     run.add_argument("--changed", default="", help="what this run changed, shown in the comparison report")
@@ -345,7 +354,12 @@ def _run(args) -> int:
             records=used_records,
             graph=graph,
             llm=DeepEvalLLM(agent),
-            plan=RunPlan(reconcile=not args.skip_reconcile, judge=judge),
+            plan=RunPlan(
+                reconcile=not args.skip_reconcile,
+                judge=judge,
+                max_sessions_per_question=args.max_sessions_per_question,
+                memgraph_url=args.memgraph_url,
+            ),
         )
     )
     _print_report(report, judged=judge is not None)
