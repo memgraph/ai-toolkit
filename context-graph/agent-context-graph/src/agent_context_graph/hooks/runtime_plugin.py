@@ -13,10 +13,7 @@ No changes to agent-context-graph itself are needed to add a new runtime.
 from __future__ import annotations
 
 from importlib import metadata
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from typing import Any, Protocol, runtime_checkable
 
 _ENTRY_POINT_GROUP = "agent_context_graph.runtimes"
 
@@ -30,14 +27,23 @@ class RuntimeCLIPlugin(Protocol):
     should use ``getattr(plugin, "init", None)`` rather than assume it exists.
     """
 
-    name: str
-    adapter_class: type[Any]
+    # Both read-only: a plain mutable attribute here would require every
+    # plugin's own fields to be writable with these exact types (invariance),
+    # rejecting real plugins that are frozen dataclasses (name) or declare a
+    # narrower adapter_class (type[RuntimeAdapter] instead of type[Any]).
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def adapter_class(self) -> type[Any]: ...
 
     def response_for_payload(self, payload: dict[str, Any]) -> dict[str, Any] | None: ...
 
     def build_hooks_config(self, command: str, *, timeout: int = 30) -> dict[str, Any]: ...
 
-    def init(self, project_dir: Path, connectors: list[str], **kwargs: Any) -> None: ...
+    # Deliberately not a protocol member beyond this point: `init` is optional
+    # (see class docstring) and accessed via `getattr(plugin, "init", None)`,
+    # never through a RuntimeCLIPlugin-typed reference.
 
 
 class UnknownRuntimeError(KeyError):

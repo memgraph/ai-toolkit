@@ -17,7 +17,7 @@ class GraphStore(Protocol):
         """Return the schema of the Graph database"""
         ...
 
-    def query(self, query: str, params: dict = None) -> list[dict[str, Any]]:
+    def query(self, query: str, params: dict | None = None) -> list[dict[str, Any]]:
         """Query the graph."""
         ...
 

@@ -38,7 +38,7 @@ def test_codex_plugin_exposes_full_protocol():
     assert plugin.adapter_class is CodexHooksAdapter
     assert plugin.response_for_payload({"hook_event_name": "Stop"}) == {"continue": True}
     assert "SessionStart" in plugin.build_hooks_config("some-command")
-    assert callable(plugin.init)
+    assert callable(getattr(plugin, "init", None))
 
 
 def test_claude_code_plugin_has_no_init():

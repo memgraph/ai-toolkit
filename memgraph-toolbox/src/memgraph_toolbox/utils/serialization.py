@@ -2,6 +2,7 @@
 Serialization utilities for Neo4j date/time types.
 """
 
+from collections.abc import Iterable
 from typing import Any
 
 from neo4j.graph import Node, Path, Relationship
@@ -145,11 +146,15 @@ def serialize_value(value: Any) -> Any:
     return serialize_neo4j_types(value)
 
 
-def serialize_records(records: list[Any]) -> list[dict]:
+def serialize_records(records: Iterable[Any]) -> list[dict]:
     """Serialize raw neo4j records into type-preserving rows (one dict per row).
 
     Each row keeps its ``RETURN`` column names; each value is serialized with
     :func:`serialize_value`, so nodes/edges/paths retain their identity instead
     of collapsing to bare property maps.
+
+    Accepts anything iterable of records (a plain ``list``, or a neo4j
+    ``Result``/``AsyncResult`` consumed lazily) -- the body only ever iterates
+    once and calls ``.items()`` per record, it never needs list operations.
     """
     return [{key: serialize_value(value) for key, value in record.items()} for record in records]

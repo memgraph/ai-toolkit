@@ -53,7 +53,7 @@ class MemgraphDataValidator(BaseValidator):
         return self.validate_post_migration(expected_model)
 
     def validate_post_migration(
-        self, expected_model: GraphModel, expected_data_counts: dict[str, int] = None
+        self, expected_model: GraphModel, expected_data_counts: dict[str, int] | None = None
     ) -> ValidationResult:
         """
         Validate the migrated schema and data against expected model.
@@ -202,8 +202,13 @@ class MemgraphDataValidator(BaseValidator):
         Returns:
             Structured schema information
         """
-        nodes = {}
-        relationships = {}
+        # Declared up front as dict[str, Any] so the checker treats each entry
+        # as a plain mapping (supporting .update()) rather than inferring a
+        # narrow literal shape from the first assignment below, whose "labels"
+        # value (list | Unknown) and "properties" value (dict) would otherwise
+        # get unioned together as the dict's value type.
+        nodes: dict[Any, dict[str, Any]] = {}
+        relationships: dict[Any, dict[str, Any]] = {}
         indexes = []
         constraints = []
 
@@ -863,7 +868,7 @@ class MemgraphDataValidator(BaseValidator):
         self,
         expected: dict[str, Any],
         actual: dict[str, Any],
-        expected_data_counts: dict[str, int] = None,
+        expected_data_counts: dict[str, int] | None = None,
     ):
         """Update validation metrics using the base ValidationMetrics."""
         # Update basic counts
@@ -922,7 +927,7 @@ class MemgraphDataValidator(BaseValidator):
 def validate_memgraph_data(
     expected_model: GraphModel,
     memgraph_connection,
-    expected_data_counts: dict[str, int] = None,
+    expected_data_counts: dict[str, int] | None = None,
     detailed_report: bool = True,
 ) -> ValidationResult:
     """

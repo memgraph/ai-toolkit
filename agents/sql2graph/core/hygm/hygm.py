@@ -38,7 +38,7 @@ try:
         summarize_relationship as meta_summarize_relationship,
     )
 except ImportError:
-    from core.utils.meta_graph import (  # type: ignore
+    from core.utils.meta_graph import (
         node_key as meta_node_key,
         summarize_node as meta_summarize_node,
         relationship_key as meta_relationship_key,

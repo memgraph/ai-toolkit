@@ -31,7 +31,7 @@ from .memgraph import (
 from .ontology import DEFAULT_ONTOLOGY, DEFAULT_ONTOLOGY_PATH, EntityType, Ontology, load_ontology
 
 try:
-    __version__ = metadata.version(__package__)
+    __version__ = metadata.version(__package__ or __name__)
 except metadata.PackageNotFoundError:
     # Case where package metadata is not available.
     __version__ = ""

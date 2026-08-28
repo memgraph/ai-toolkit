@@ -4,7 +4,9 @@ from getpass import getpass
 import pytest
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
-from langgraph.prebuilt import create_react_agent
+from langgraph.prebuilt import (
+    create_react_agent,  # ty: ignore[deprecated] -- migration to langchain.agents.create_agent is a separate, behavior-affecting change
+)
 
 from langchain_memgraph import MemgraphToolkit
 from memgraph_toolbox.api.memgraph import Memgraph
@@ -42,7 +44,7 @@ def memgraph_agent():
     db = Memgraph(url=url, username=username, password=password)
     toolkit = MemgraphToolkit(db=db, llm=llm)
 
-    agent_executor = create_react_agent(
+    agent_executor = create_react_agent(  # ty: ignore[deprecated] -- see import comment above
         llm,
         toolkit.get_tools(),
         prompt="You will get a cypher query, try to execute it on the Memgraph database.",

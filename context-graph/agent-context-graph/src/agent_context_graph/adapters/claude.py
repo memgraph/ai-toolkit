@@ -29,7 +29,7 @@ Usage::
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from agent_context_graph.events import (
     AgentEndEvent,
@@ -105,15 +105,19 @@ class ClaudeAdapter(RuntimeAdapter):
                     self.hooks = hooks or []
                     self.timeout = timeout
 
+        # Our hook callbacks return a permissive dict[str, Any] rather than the
+        # SDK's precise AsyncHookJSONOutput/SyncHookJSONOutput shapes, matching
+        # the try/except HookMatcher shim above: this module treats the SDK as
+        # optional/duck-typed rather than taking a hard type dependency on it.
         return {
-            "PreToolUse": [HookMatcher(hooks=[self._pre_tool_use])],
-            "PostToolUse": [HookMatcher(hooks=[self._post_tool_use])],
-            "PostToolUseFailure": [HookMatcher(hooks=[self._post_tool_use_failure])],
-            "UserPromptSubmit": [HookMatcher(hooks=[self._user_prompt_submit])],
-            "SubagentStart": [HookMatcher(hooks=[self._subagent_start])],
-            "SubagentStop": [HookMatcher(hooks=[self._subagent_stop])],
-            "Notification": [HookMatcher(hooks=[self._notification])],
-            "Stop": [HookMatcher(hooks=[self._stop])],
+            "PreToolUse": [HookMatcher(hooks=[cast("Any", self._pre_tool_use)])],
+            "PostToolUse": [HookMatcher(hooks=[cast("Any", self._post_tool_use)])],
+            "PostToolUseFailure": [HookMatcher(hooks=[cast("Any", self._post_tool_use_failure)])],
+            "UserPromptSubmit": [HookMatcher(hooks=[cast("Any", self._user_prompt_submit)])],
+            "SubagentStart": [HookMatcher(hooks=[cast("Any", self._subagent_start)])],
+            "SubagentStop": [HookMatcher(hooks=[cast("Any", self._subagent_stop)])],
+            "Notification": [HookMatcher(hooks=[cast("Any", self._notification)])],
+            "Stop": [HookMatcher(hooks=[cast("Any", self._stop)])],
         }
 
     # ------------------------------------------------------------------

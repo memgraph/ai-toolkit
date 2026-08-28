@@ -35,6 +35,7 @@ from lightrag.utils import EmbeddingFunc
 
 from lightrag_memgraph import MemgraphLightRAGWrapper
 from lightrag_memgraph._connection import (
+    as_literal_query,
     close_driver,
     get_database,
     get_driver,
@@ -493,7 +494,8 @@ async def test_vector_query_logs_and_excludes_stale_candidates(
         # DETACH DELETE leaves a stale entry in the native vector index.
         driver = await get_driver()
         async with driver.session(database=get_database()) as session:
-            await (await session.run(f"MATCH (n:`{store._label}` {{id: 'v-cat'}}) DETACH DELETE n")).consume()
+            query = as_literal_query(f"MATCH (n:`{store._label}` {{id: 'v-cat'}}) DETACH DELETE n")
+            await (await session.run(query)).consume()
 
         # lightrag's logger has propagate=False, so caplog.at_level (which only
         # relies on root-logger propagation) never sees its records; attach the
@@ -612,9 +614,11 @@ async def test_wrapper_defaults_embedding_func_to_working_memgraph_sentence_embe
         # underlying callable, unwrapping the EmbeddingFunc nesting), so identity
         # doesn't survive the round trip -- the declared model/dim and, most
         # importantly, actual behaviour do.
-        assert rag.embedding_func.model_name == memgraph_sentence_embed.model_name
-        assert rag.embedding_func.embedding_dim == DEFAULT_EMBEDDING_DIM
-        vectors = await rag.embedding_func(["hello world", "graph databases are fast"])
+        embedding_func = rag.embedding_func
+        assert embedding_func is not None
+        assert embedding_func.model_name == memgraph_sentence_embed.model_name
+        assert embedding_func.embedding_dim == DEFAULT_EMBEDDING_DIM
+        vectors = await embedding_func(["hello world", "graph databases are fast"])
         assert vectors.shape == (2, DEFAULT_EMBEDDING_DIM)
     finally:
         if wrapper.rag is not None:

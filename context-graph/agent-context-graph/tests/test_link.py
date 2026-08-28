@@ -100,9 +100,11 @@ class TestClaudeAdapter:
         )
 
         assert len(rec.events) == 1
-        assert rec.events[0].event_type == EventType.SESSION_START
-        assert rec.events[0].session_id == "s-test"
-        assert rec.events[0].model == "claude-sonnet-4-20250514"
+        event = rec.events[0]
+        assert isinstance(event, SessionStartEvent)
+        assert event.event_type == EventType.SESSION_START
+        assert event.session_id == "s-test"
+        assert event.model == "claude-sonnet-4-20250514"
 
     def test_no_auto_session(self):
         link = AgentLink()
@@ -152,6 +154,7 @@ class TestClaudeAdapter:
 
         assert len(rec.events) == 1
         e = rec.events[0]
+        assert isinstance(e, ToolStartEvent)
         assert e.event_type == EventType.TOOL_START
         assert e.tool_name == "Read"
         assert e.tool_use_id == "tu-1"
@@ -175,6 +178,7 @@ class TestClaudeAdapter:
 
         assert len(rec.events) == 1
         e = rec.events[0]
+        assert isinstance(e, ToolEndEvent)
         assert e.event_type == EventType.TOOL_END
         assert e.result == "file contents"
 
@@ -191,6 +195,7 @@ class TestClaudeAdapter:
 
         assert len(rec.events) == 1
         e = rec.events[0]
+        assert isinstance(e, MessageEvent)
         assert e.event_type == EventType.MESSAGE
         assert e.role == "user"
         assert e.content == "Hello!"

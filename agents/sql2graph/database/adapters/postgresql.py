@@ -8,8 +8,16 @@ try:
     import psycopg2.extras  # type: ignore[import-not-found]
     from psycopg2 import sql  # type: ignore[import-not-found]
 except ImportError as import_error:  # pragma: no cover - optional dependency
-    psycopg2 = None  # type: ignore[assignment]
-    sql = None  # type: ignore[assignment]
+    # psycopg2-binary is actually a hard dependency of this package (see
+    # pyproject.toml), so this branch is a defensive fallback that's never
+    # exercised by a correct install; every call site below already guards
+    # with `if psycopg2 is None: raise ImportError(...)` before use. ty
+    # infers psycopg2's declared type as the concrete module from the try
+    # branch above, so re-binding it to None here is flagged even though
+    # it's the same None-fallback shape used throughout this file's sibling
+    # adapters.
+    psycopg2 = None  # ty: ignore[invalid-assignment]
+    sql = None
     _PSYCOPG2_IMPORT_ERROR = import_error
 else:
     _PSYCOPG2_IMPORT_ERROR = None

@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from actions_graph.models import Action
 
     from .models import Memory
@@ -147,8 +149,8 @@ async def summarize_session_texts(lightrag_wrapper: Any, texts: list[str]) -> st
 
 
 def build_reconciliation_sources(
-    actions: list[Action],
-    memories: list[Memory],
+    actions: Sequence[Action],
+    memories: Sequence[Memory],
 ) -> list[ReconciliationSource]:
     """Build the ordered list of reconcilable text sources for a session.
 

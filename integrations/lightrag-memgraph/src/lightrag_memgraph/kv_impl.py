@@ -11,13 +11,14 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from typing import Any, final
+from typing import Any, cast, final
 
 from lightrag.base import BaseKVStorage
 from lightrag.utils import logger
 
 from ._connection import (
     MemgraphCrudMixin,
+    as_literal_query,
     close_driver,
     create_index,
     get_database,
@@ -66,7 +67,7 @@ class MemgraphKVStorage(MemgraphCrudMixin, BaseKVStorage):
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             result = await session.run(
-                f"MATCH (n:`{self._label}` {{id: $id}}) RETURN n.data AS data",
+                as_literal_query(f"MATCH (n:`{self._label}` {{id: $id}}) RETURN n.data AS data"),
                 id=id,
             )
             record = await result.single()
@@ -80,11 +81,13 @@ class MemgraphKVStorage(MemgraphCrudMixin, BaseKVStorage):
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             result = await session.run(
-                f"""
-                UNWIND $ids AS target_id
-                OPTIONAL MATCH (n:`{self._label}` {{id: target_id}})
-                RETURN target_id AS id, n.data AS data
-                """,
+                as_literal_query(
+                    f"""
+                    UNWIND $ids AS target_id
+                    OPTIONAL MATCH (n:`{self._label}` {{id: target_id}})
+                    RETURN target_id AS id, n.data AS data
+                    """
+                ),
                 ids=list(ids),
             )
             found: dict[str, str] = {}
@@ -92,7 +95,10 @@ class MemgraphKVStorage(MemgraphCrudMixin, BaseKVStorage):
                 if record["data"] is not None:
                     found[record["id"]] = record["data"]
             await result.consume()
-        return [self._decode(i, found.get(i)) for i in ids]
+        # LightRAG's own BaseKVStorage.get_by_ids declares -> list[dict[str, Any]], but its
+        # reference JsonKVStorage impl (and this one, to match) legitimately puts None in the
+        # slot of any id that doesn't exist -- the upstream annotation itself is imprecise.
+        return cast("list[dict[str, Any]]", [self._decode(i, found.get(i)) for i in ids])
 
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
         if not data:
@@ -126,13 +132,15 @@ class MemgraphKVStorage(MemgraphCrudMixin, BaseKVStorage):
         async with driver.session(database=get_database()) as session:
             await (
                 await session.run(
-                    f"""
-                    UNWIND $entries AS e
-                    MERGE (n:`{self._label}` {{id: e.id}})
-                    ON CREATE SET n.data = e.new_data, n.created_at = e.ts
-                    ON MATCH SET n.data = e.update_data
-                    SET n.updated_at = e.ts
-                    """,
+                    as_literal_query(
+                        f"""
+                        UNWIND $entries AS e
+                        MERGE (n:`{self._label}` {{id: e.id}})
+                        ON CREATE SET n.data = e.new_data, n.created_at = e.ts
+                        ON MATCH SET n.data = e.update_data
+                        SET n.updated_at = e.ts
+                        """
+                    ),
                     entries=entries,
                 )
             ).consume()

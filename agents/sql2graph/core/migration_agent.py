@@ -467,7 +467,11 @@ class SQLToMemgraphAgent:
 
     def _build_workflow(self) -> StateGraph:
         """Build the LangGraph workflow with clear separation of concerns."""
-        workflow = StateGraph(MigrationState)
+        # ty limitation: a plain TypedDict doesn't structurally satisfy
+        # langgraph's StateLike protocol bound (verified with a minimal
+        # TypedDict + StateGraph repro outside this codebase) even though it's
+        # exactly the documented, supported way to declare LangGraph state.
+        workflow = StateGraph(MigrationState)  # ty: ignore[invalid-argument-type]
 
         # Add nodes - refactored for better modularity
         workflow.add_node(
@@ -1166,10 +1170,13 @@ MERGE (from)-[:{rel_name}]->(to);"""
                 if table_name in table_counts:
                     expected_nodes += table_counts[table_name]
 
-            # Create expected data counts for the validator
-            expected_data_counts = {
+            # Create expected data counts for the validator. `_update_metrics`
+            # only ever reads the "nodes"/"relationships" keys (both int), so
+            # this is declared/built as dict[str, int] -- `selected_tables`
+            # was never read by the validator and has been dropped rather than
+            # widening the type to accommodate a value nothing consumes.
+            expected_data_counts: dict[str, int] = {
                 "nodes": expected_nodes,
-                "selected_tables": selected_tables,
             }
 
             # Run validation using existing connection and data counts

@@ -61,6 +61,10 @@ class ValidationMetrics:
     constraints_covered: int = 0
     constraints_total: int = 0
     coverage_percentage: float = 0.0
+    data_nodes_expected: int = 0
+    data_nodes_actual: int = 0
+    data_relationships_expected: int = 0
+    data_relationships_actual: int = 0
 
     def calculate_coverage(self):
         """Calculate overall coverage percentage."""

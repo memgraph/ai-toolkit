@@ -49,8 +49,7 @@ _RECONCILE_DEFAULTS = {
 TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
 FALSY_VALUES = frozenset({"0", "false", "no", "off"})
 
-_sentinel = object()
-_cached_config: object = _sentinel
+_cached_config: HookConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -74,8 +73,8 @@ def load_config() -> HookConfig:
     Caches the result for the lifetime of the process.
     """
     global _cached_config
-    if _cached_config is not _sentinel:
-        return _cached_config  # type: ignore[return-value]
+    if _cached_config is not None:
+        return _cached_config
 
     config = _read_config_file()
     _cached_config = config
@@ -204,7 +203,7 @@ def write_config(
     _CONFIG_FILE.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600
 
     # Invalidate cache.
-    _cached_config = _sentinel
+    _cached_config = None
     return _CONFIG_FILE
 
 
@@ -249,7 +248,7 @@ def write_full_config(
     _CONFIG_FILE.write_text(content, encoding="utf-8")
     _CONFIG_FILE.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600
 
-    _cached_config = _sentinel
+    _cached_config = None
     return _CONFIG_FILE
 
 
@@ -375,4 +374,4 @@ def _string_or_none(value: Any) -> str | None:
 def _reset_cache() -> None:
     """Reset the module cache (for testing)."""
     global _cached_config
-    _cached_config = _sentinel
+    _cached_config = None

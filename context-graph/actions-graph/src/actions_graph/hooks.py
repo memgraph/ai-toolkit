@@ -19,7 +19,7 @@ Usage:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .models import (
     ActionStatus,
@@ -443,17 +443,20 @@ def create_tracking_hooks(
     # Create tracker
     tracker = ActionTracker(graph, session_id, **tracker_kwargs)
 
-    # Build hooks dictionary
+    # Build hooks dictionary. Our hook callbacks return a permissive dict[str, Any]
+    # rather than the SDK's precise AsyncHookJSONOutput/SyncHookJSONOutput shapes,
+    # matching the try/except HookMatcher shim above: this module treats the SDK
+    # as optional/duck-typed rather than taking a hard type dependency on it.
     return {
-        "PreToolUse": [HookMatcher(hooks=[tracker.pre_tool_use])],
-        "PostToolUse": [HookMatcher(hooks=[tracker.post_tool_use])],
-        "PostToolUseFailure": [HookMatcher(hooks=[tracker.post_tool_use_failure])],
-        "UserPromptSubmit": [HookMatcher(hooks=[tracker.user_prompt_submit])],
-        "SubagentStart": [HookMatcher(hooks=[tracker.subagent_start])],
-        "SubagentStop": [HookMatcher(hooks=[tracker.subagent_stop])],
-        "PermissionRequest": [HookMatcher(hooks=[tracker.permission_request])],
-        "Notification": [HookMatcher(hooks=[tracker.notification])],
-        "Stop": [HookMatcher(hooks=[tracker.stop])],
+        "PreToolUse": [HookMatcher(hooks=[cast("Any", tracker.pre_tool_use)])],
+        "PostToolUse": [HookMatcher(hooks=[cast("Any", tracker.post_tool_use)])],
+        "PostToolUseFailure": [HookMatcher(hooks=[cast("Any", tracker.post_tool_use_failure)])],
+        "UserPromptSubmit": [HookMatcher(hooks=[cast("Any", tracker.user_prompt_submit)])],
+        "SubagentStart": [HookMatcher(hooks=[cast("Any", tracker.subagent_start)])],
+        "SubagentStop": [HookMatcher(hooks=[cast("Any", tracker.subagent_stop)])],
+        "PermissionRequest": [HookMatcher(hooks=[cast("Any", tracker.permission_request)])],
+        "Notification": [HookMatcher(hooks=[cast("Any", tracker.notification)])],
+        "Stop": [HookMatcher(hooks=[cast("Any", tracker.stop)])],
     }
 
 

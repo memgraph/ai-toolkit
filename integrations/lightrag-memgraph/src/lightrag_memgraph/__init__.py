@@ -25,7 +25,7 @@ def _patch_anthropic() -> None:
         import os
         from collections.abc import AsyncIterator
         from importlib.metadata import version as get_version
-        from typing import Any
+        from typing import Any, cast
 
         import lightrag.llm.anthropic as _mod
         from anthropic import (
@@ -121,8 +121,14 @@ def _patch_anthropic() -> None:
                 parts.append(content)
             return "".join(parts)
 
-        _wrapped._lightrag_memgraph_patched = True  # type: ignore[attr-defined]
-        _mod.anthropic_complete_if_cache = _wrapped
+        # _wrapped is a plain function object; cast(..., x) is the identity function at runtime,
+        # so this sets/reads the real attribute -- it's just how we spell "let me stash a marker
+        # attribute on a function" past a type checker that doesn't model dynamic attributes on
+        # function objects. Likewise, _wrapped's signature (no image_inputs=) is intentionally
+        # narrower than anthropic_complete_if_cache's -- it's real dynamic monkey-patching of a
+        # third-party module attribute, not something a structural type can express.
+        cast("Any", _wrapped)._lightrag_memgraph_patched = True
+        _mod.anthropic_complete_if_cache = cast("Any", _wrapped)
     except Exception:
         pass
 

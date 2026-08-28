@@ -1,12 +1,15 @@
 import logging
 from hashlib import md5
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from langchain_core.utils import get_from_dict_or_env
 
 from langchain_memgraph.graphs.graph_document import GraphDocument, Node, Relationship
 from langchain_memgraph.graphs.graph_store import GraphStore
 from memgraph_toolbox.api.memgraph import Memgraph
+
+if TYPE_CHECKING:
+    from langchain_core.documents import Document
 
 logger = logging.getLogger(__name__)
 
@@ -352,7 +355,12 @@ class MemgraphLangChain(GraphStore, Memgraph):
 
         except (Neo4jError, ValueError) as e:
             logger.info("SHOW SCHEMA INFO query failed or returned no data; falling back: %s", e)
-            if e.code == "Memgraph.ClientError.MemgraphError.MemgraphError" and "SchemaInfo disabled" in e.message:
+            # Only Neo4jError carries .code/.message; this check is written for that shape
+            # (a bare ValueError here, e.g. from ast.literal_eval, never matches the code below).
+            neo4j_error = cast("Neo4jError", e)
+            if neo4j_error.code == "Memgraph.ClientError.MemgraphError.MemgraphError" and "SchemaInfo disabled" in (
+                neo4j_error.message or ""
+            ):
                 logger.info(
                     "Schema generation with SHOW SCHEMA INFO query failed. "
                     "Set --schema-info-enabled=true to use SHOW SCHEMA INFO query. "
@@ -399,10 +407,13 @@ class MemgraphLangChain(GraphStore, Memgraph):
 
         for document in graph_documents:
             if include_source:
-                if not document.source.metadata.get("id"):
-                    document.source.metadata["id"] = md5(document.source.page_content.encode("utf-8")).hexdigest()
+                # source is only None when a GraphDocument is built without one; callers
+                # that pass include_source=True are expected to supply a source document.
+                source = cast("Document", document.source)
+                if not source.metadata.get("id"):
+                    source.metadata["id"] = md5(source.page_content.encode("utf-8")).hexdigest()
 
-                self.query(INCLUDE_DOCS_QUERY, {"document": document.source.__dict__})
+                self.query(INCLUDE_DOCS_QUERY, {"document": source.__dict__})
 
             self.query(
                 NODE_IMPORT_QUERY,

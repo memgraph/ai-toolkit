@@ -32,8 +32,10 @@ def run_basic_migration():
         # Setup and validate environment
         source_db_config, memgraph_config = setup_and_validate_environment()
 
-        # Create migration agent in automatic mode (non-interactive)
-        agent = SQLToMemgraphAgent(interactive_graph_modeling=False)
+        # Create migration agent in automatic mode (non-interactive). This is
+        # already the default (ModelingMode.AUTOMATIC); `interactive_graph_
+        # modeling` was a stale kwarg that no longer exists on __init__.
+        agent = SQLToMemgraphAgent()
 
         # Run migration
         print("Starting automatic migration...")
