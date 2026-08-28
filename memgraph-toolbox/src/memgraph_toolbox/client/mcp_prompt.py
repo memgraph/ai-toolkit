@@ -30,7 +30,6 @@ async def prompt_with_tools(
     First there is a tool selection phase where the LLM is asked to select the tools to use.
     Second there is a response phase where the LLM is asked to generate a response.
     """
-    # Configure MCP server connection.
     if response_system_messages is None:
         response_system_messages = []
     if tool_selection_system_messages is None:
@@ -49,18 +48,17 @@ async def prompt_with_tools(
             ],
             env={
                 "MEMGRAPH_URL": os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687"),
-                # NOTE: If you want to control where uv pulls the dependencies from inject UV_PYTHON or VIRTUAL_ENV.
+                # Set UV_PYTHON or VIRTUAL_ENV when the MCP subprocess must use a specific environment.
             },
         )
     else:
         server_params = mcp_server_params
 
-    # Establish MCP server connection.
     async with stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
         await session.initialize()
         # https://docs.litellm.ai/docs/mcp#litellm-python-sdk-mcp-bridge
         tools = await experimental_mcp_client.load_mcp_tools(
-            # NOTE: format="openai" works with everything tested, "mcp" does NOT work.
+            # LiteLLM's OpenAI format is required for the tool-call shape consumed below.
             session=session,
             format="openai",
         )
@@ -70,7 +68,6 @@ async def prompt_with_tools(
         )
         logger.info(f"{len(tools)} MCP tools loaded")
 
-        # Tool selection by an LLM.
         messages = [*tool_selection_system_messages, {"role": "user", "content": prompt}]
         resp = await acompletion(
             model=tool_selection_model_name,
@@ -78,7 +75,6 @@ async def prompt_with_tools(
             tools=tools,
         )
         msg = resp["choices"][0]["message"]
-        # Tool calls by the MCP server.
         tool_calls = msg.get("tool_calls", [])
         if not tool_calls:
             logger.info("LLM Response: %s", msg.get("content", ""))
@@ -90,7 +86,7 @@ async def prompt_with_tools(
                     tc["function"]["name"],
                     tc["function"].get("description", "No description"),
                 )
-            # Ensure all tool call IDs are within OpenAI's 40-character limit
+            # OpenAI limits tool-call IDs to 40 characters.
             for tc in tool_calls:
                 if len(tc["id"]) > 40:
                     logger.warning(
@@ -117,9 +113,7 @@ async def prompt_with_tools(
                             content_text: list[str] = []
                             for content_item in result.content:
                                 if hasattr(content_item, "text"):
-                                    # hasattr narrows to an attribute typed `object`; of the
-                                    # mcp ContentBlock union members only TextContent has
-                                    # `.text`, and it's declared `str` there.
+                                    # Only TextContent exposes `.text`; other content blocks are serialized below.
                                     content_text.append(cast("str", content_item.text))
                                 elif isinstance(content_item, str):
                                     content_text.append(content_item)
@@ -152,7 +146,6 @@ async def prompt_with_tools(
                         tool_error,
                     )
 
-            # Generating the final response using LLM.
             messages = messages + response_system_messages
             final_resp = await acompletion(
                 model=response_model_name,
@@ -181,7 +174,6 @@ async def __async_context():
 
 
 if __name__ == "__main__":
-    # NOTE: Chaning how mcp-memgraph logs from here is not easy because the
-    # server is started in another process.
+    # The MCP server runs in a separate process, so configure its client-side logger here.
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     asyncio.run(__async_context())

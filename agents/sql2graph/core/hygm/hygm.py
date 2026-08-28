@@ -1,4 +1,4 @@
-# flake8: noqa
+# flake8: noqa — standalone agent module adjusts sys.path and supports two import contexts.
 """
 Main HyGM (Hypothetical Graph Modeling) class.
 
