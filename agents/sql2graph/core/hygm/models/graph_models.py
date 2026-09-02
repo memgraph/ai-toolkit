@@ -6,7 +6,7 @@ These models represent the graph structure and provide schema format conversion.
 
 import datetime
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 # Import from within the same package
@@ -20,8 +20,10 @@ try:
         RelationshipSource,
     )
 except ImportError:
-    # Fallback for when imported from different contexts
-    from sources import (
+    # Fallback for when imported from different contexts (matches the
+    # core.hygm.models.X fallback style used by every other dual-context
+    # import in this package; a bare `sources` is never on sys.path).
+    from core.hygm.models.sources import (
         ConstraintSource,
         EnumSource,
         IndexSource,
@@ -31,6 +33,18 @@ except ImportError:
     )
 
 
+def _default_string_types() -> list[dict[str, Any]]:
+    return [{"type": "String", "count": 1, "examples": [""]}]
+
+
+def _default_gid_example() -> list[dict[str, Any]]:
+    return [{"gid": 0}]
+
+
+def _default_single_empty_example() -> list[dict[str, Any]]:
+    return [{}]
+
+
 @dataclass
 class GraphProperty:
     """Represents a property with full schema format details."""
@@ -38,12 +52,8 @@ class GraphProperty:
     key: str
     count: int = 1
     filling_factor: float = 100.0
-    types: list[dict[str, Any]] = None
+    types: list[dict[str, Any]] = field(default_factory=_default_string_types)
     source: PropertySource | None = None
-
-    def __post_init__(self):
-        if self.types is None:
-            self.types = [{"type": "String", "count": 1, "examples": [""]}]
 
 
 @dataclass
@@ -52,15 +62,9 @@ class GraphNode:
 
     labels: list[str]  # Node labels
     count: int = 1
-    properties: list[GraphProperty] = None
-    examples: list[dict[str, Any]] = None
+    properties: list[GraphProperty] = field(default_factory=list)
+    examples: list[dict[str, Any]] = field(default_factory=_default_gid_example)
     source: NodeSource | None = None
-
-    def __post_init__(self):
-        if self.properties is None:
-            self.properties = []
-        if self.examples is None:
-            self.examples = [{"gid": 0}]
 
     @property
     def primary_label(self) -> str:
@@ -76,16 +80,10 @@ class GraphRelationship:
     start_node_labels: list[str]
     end_node_labels: list[str]
     count: int = 1
-    properties: list[GraphProperty] = None
-    examples: list[dict[str, Any]] = None
+    properties: list[GraphProperty] = field(default_factory=list)
+    examples: list[dict[str, Any]] = field(default_factory=_default_single_empty_example)
     source: RelationshipSource | None = None
     directionality: str = "directed"
-
-    def __post_init__(self):
-        if self.properties is None:
-            self.properties = []
-        if self.examples is None:
-            self.examples = [{}]
 
 
 @dataclass
@@ -94,17 +92,11 @@ class GraphIndex:
 
     labels: list[str] | None = None  # For node indexes
     edge_type: str | None = None  # For edge indexes
-    properties: list[str] = None
+    properties: list[str] = field(default_factory=list)
     count: int = 0
-    examples: list[dict[str, Any]] = None
+    examples: list[dict[str, Any]] = field(default_factory=_default_single_empty_example)
     type: str = "label+property"  # Index type
     source: IndexSource | None = None
-
-    def __post_init__(self):
-        if self.properties is None:
-            self.properties = []
-        if self.examples is None:
-            self.examples = [{}]
 
 
 @dataclass
@@ -114,13 +106,9 @@ class GraphConstraint:
     type: str  # "unique", "existence", "data_type"
     labels: list[str] | None = None  # For node constraints
     edge_type: str | None = None  # For edge constraints
-    properties: list[str] = None
+    properties: list[str] = field(default_factory=list)
     data_type: str | None = None
     source: ConstraintSource | None = None
-
-    def __post_init__(self):
-        if self.properties is None:
-            self.properties = []
 
 
 @dataclass
@@ -138,23 +126,11 @@ class GraphModel:
 
     nodes: list[GraphNode]
     edges: list[GraphRelationship]
-    node_indexes: list[GraphIndex] = None
-    edge_indexes: list[GraphIndex] = None
-    node_constraints: list[GraphConstraint] = None
-    edge_constraints: list[GraphConstraint] = None
-    enums: list[GraphEnum] = None
-
-    def __post_init__(self):
-        if self.node_indexes is None:
-            self.node_indexes = []
-        if self.edge_indexes is None:
-            self.edge_indexes = []
-        if self.node_constraints is None:
-            self.node_constraints = []
-        if self.edge_constraints is None:
-            self.edge_constraints = []
-        if self.enums is None:
-            self.enums = []
+    node_indexes: list[GraphIndex] = field(default_factory=list)
+    edge_indexes: list[GraphIndex] = field(default_factory=list)
+    node_constraints: list[GraphConstraint] = field(default_factory=list)
+    edge_constraints: list[GraphConstraint] = field(default_factory=list)
+    enums: list[GraphEnum] = field(default_factory=list)
 
     @classmethod
     def from_schema_format(cls, schema_dict: dict[str, Any]) -> "GraphModel":

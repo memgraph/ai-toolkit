@@ -291,6 +291,7 @@ class TestAgentOperations:
 
         graph.end_agent("agent-1", last_assistant_message="Found it")
         ended = graph.get_agent("agent-1")
+        assert ended is not None
         assert ended.status == ActionStatus.COMPLETED
         assert ended.last_assistant_message == "Found it"
 

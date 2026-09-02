@@ -5,7 +5,7 @@ This module provides MySQL-specific implementation of the DatabaseAnalyzer inter
 """
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import mysql.connector
 
@@ -16,6 +16,15 @@ from ..analyzer import (
 )
 
 logger = logging.getLogger(__name__)
+
+# mysql-connector-python types cursor.fetchall()/.fetchone() broadly as
+# Union[RowType, Dict[str, RowItemType]] (RowItemType itself a large union of
+# every column value type MySQL can produce), because a single cursor()
+# method's return type has to cover both its tuple- and dict-returning
+# cursor subclasses. Every cursor in this file is created with no arguments
+# (never `dictionary=True`) except in get_table_data(), so at runtime these
+# always return plain tuples of column values.
+_Row = tuple[Any, ...]
 
 
 class MySQLAnalyzer(DatabaseAnalyzer):
@@ -68,7 +77,7 @@ class MySQLAnalyzer(DatabaseAnalyzer):
 
         cursor = self.connection.cursor()
         cursor.execute("SHOW TABLES")
-        tables = [table[0] for table in cursor.fetchall()]
+        tables = [table[0] for table in cast("list[_Row]", cursor.fetchall())]
         cursor.close()
         return tables
 
@@ -81,7 +90,7 @@ class MySQLAnalyzer(DatabaseAnalyzer):
         cursor.execute(f"DESCRIBE {table_name}")
 
         columns = []
-        for row in cursor.fetchall():
+        for row in cast("list[_Row]", cursor.fetchall()):
             field_name = row[0]
             data_type = row[1]
             is_nullable = row[2] == "YES"
@@ -181,7 +190,7 @@ class MySQLAnalyzer(DatabaseAnalyzer):
         cursor.execute(query, (self.connection_config["database"], table_name))
 
         foreign_keys = []
-        for row in cursor.fetchall():
+        for row in cast("list[_Row]", cursor.fetchall()):
             foreign_keys.append(
                 ForeignKeyInfo(
                     column_name=row[0],
@@ -204,7 +213,10 @@ class MySQLAnalyzer(DatabaseAnalyzer):
             query += f" LIMIT {limit}"
 
         cursor.execute(query)
-        data = cursor.fetchall()
+        # dictionary=True above selects a dict-returning cursor subclass at
+        # runtime; the stub's cursor() factory isn't overloaded on that
+        # literal bool, so it can't narrow fetchall()'s return type for us.
+        data = cast("list[dict[str, Any]]", cursor.fetchall())
         cursor.close()
         return data
 
@@ -215,7 +227,8 @@ class MySQLAnalyzer(DatabaseAnalyzer):
 
         cursor = self.connection.cursor()
         cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
-        count = cursor.fetchone()[0]
+        # SELECT COUNT(*) always yields exactly one row.
+        count = cast("_Row", cursor.fetchone())[0]
         cursor.close()
         return count
 
@@ -232,7 +245,7 @@ class MySQLAnalyzer(DatabaseAnalyzer):
         AND TABLE_NAME = %s
         """
         cursor.execute(query, (self.connection_config["database"], table_name))
-        result = cursor.fetchone()
+        result = cast("_Row | None", cursor.fetchone())
         cursor.close()
 
         if result:
@@ -252,7 +265,7 @@ class MySQLAnalyzer(DatabaseAnalyzer):
         AND TABLE_TYPE = 'BASE TABLE'
         """
         cursor.execute(query, (self.connection_config["database"],))
-        tables = [table[0] for table in cursor.fetchall()]
+        tables = [table[0] for table in cast("list[_Row]", cursor.fetchall())]
         cursor.close()
         return tables
 
@@ -283,8 +296,12 @@ class MySQLAnalyzer(DatabaseAnalyzer):
         """
         cursor.execute(query, (self.connection_config["database"], table_name))
 
-        indexes = {}
-        for row in cursor.fetchall():
+        # Declared as dict[str, Any] up front so the checker treats each
+        # entry as a plain mapping (supporting .append() on "columns") rather
+        # than widening the value type from the heterogeneous dict literal
+        # assigned below (str/bool/list all mixed into one inferred union).
+        indexes: dict[Any, dict[str, Any]] = {}
+        for row in cast("list[_Row]", cursor.fetchall()):
             index_name = row[0]
             column_name = row[1]
             is_unique = row[2] == 0

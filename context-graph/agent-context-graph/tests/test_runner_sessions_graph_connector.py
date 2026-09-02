@@ -43,9 +43,9 @@ def fake_sessions_graph(monkeypatch):
             constructed["auto_reconcile"] = auto_reconcile
 
     fake_core = ModuleType("sessions_graph")
-    fake_core.SessionsGraph = _SessionsGraph
+    fake_core.SessionsGraph = _SessionsGraph  # ty: ignore[unresolved-attribute] -- fake module double, no static attrs
     fake_connector = ModuleType("sessions_graph.connector")
-    fake_connector.SessionsGraphConnector = _SessionsGraphConnector
+    fake_connector.SessionsGraphConnector = _SessionsGraphConnector  # ty: ignore[unresolved-attribute]
 
     monkeypatch.setitem(sys.modules, "sessions_graph", fake_core)
     monkeypatch.setitem(sys.modules, "sessions_graph.connector", fake_connector)

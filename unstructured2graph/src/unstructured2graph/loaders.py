@@ -3,9 +3,10 @@ import logging
 import os
 import statistics
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from unstructured.chunking.title import chunk_by_title
 from unstructured.partition.auto import partition
@@ -43,7 +44,7 @@ class ChunkedDocument:
 def parse_source(
     source: str | Path,
     partition_kwargs: dict[str, Any] | None = None,
-) -> list[str]:
+) -> list[Chunk]:
     """
     Parse a source file or URL using the unstructured library. The unstructured
     library supports many types of data sources and various parsing options.
@@ -108,7 +109,7 @@ def parse_text(
 
 
 def make_chunks(
-    sources: list[str | Path],
+    sources: Sequence[str | Path],
     partition_kwargs: dict[str, Any] | None = None,
 ) -> list[ChunkedDocument]:
     """
@@ -155,7 +156,9 @@ def _resolve_entity_workspace(
     if only_chunks or entity_workspace is not None:
         return entity_workspace
     try:
-        return lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
+        # only_chunks is False here, so callers (from_texts/from_unstructured)
+        # have already raised ValueError if lightrag_wrapper were None.
+        return cast("MemgraphLightRAGWrapper", lightrag_wrapper).get_lightrag().chunk_entity_relation_graph.workspace
     except Exception as e:
         logger.warning(f"Could not auto-derive LightRAG entity workspace, falling back to 'base': {e}")
         return "base"
@@ -232,14 +235,20 @@ async def _ingest_chunks(
             link_nodes_in_order(memgraph, "Chunk", "hash", relationships, "NEXT")
 
     if not only_chunks:
+        # Both casts are safe here per this function's documented precondition:
+        # callers already raised ValueError for a None lightrag_wrapper, and
+        # already resolved entity_workspace (see _resolve_entity_workspace)
+        # before calling _ingest_chunks with only_chunks=False.
+        wrapper = cast("MemgraphLightRAGWrapper", lightrag_wrapper)
+        resolved_workspace = cast("str", entity_workspace)
         for chunk in chunks:
-            await lightrag_wrapper.ainsert(input=chunk.text, file_paths=[chunk.hash])
-        connect_chunks_to_entities(memgraph, "Chunk", entity_workspace)
+            await wrapper.ainsert(input=chunk.text, file_paths=[chunk.hash])
+        connect_chunks_to_entities(memgraph, "Chunk", resolved_workspace)
         if enforce_ontology:
             ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
-            promote_entity_types_to_labels(memgraph, entity_workspace, ontology)
+            promote_entity_types_to_labels(memgraph, resolved_workspace, ontology)
         elif promote_labels:
-            promote_all_entity_types_to_labels(memgraph, entity_workspace)
+            promote_all_entity_types_to_labels(memgraph, resolved_workspace)
 
     return chunks
 
@@ -327,7 +336,7 @@ async def from_texts(
 
 
 async def from_unstructured(
-    sources: list[str | Path],
+    sources: Sequence[str | Path],
     memgraph: Memgraph,
     lightrag_wrapper: MemgraphLightRAGWrapper | None = None,
     only_chunks: bool = False,

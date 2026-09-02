@@ -4,7 +4,14 @@ import io
 
 from agent_context_graph import AgentLink
 from agent_context_graph.adapters.codex import CodexHooksAdapter, build_hooks_config, load_payload, response_for_payload
-from agent_context_graph.events import Event, EventType
+from agent_context_graph.events import (
+    Event,
+    EventType,
+    MessageEvent,
+    SessionStartEvent,
+    ToolEndEvent,
+    ToolStartEvent,
+)
 from agent_context_graph.protocols import GraphConnector
 
 
@@ -34,6 +41,7 @@ def test_session_start_payload_emits_session_start_event():
 
     assert len(rec.events) == 1
     event = rec.events[0]
+    assert isinstance(event, SessionStartEvent)
     assert event.event_type == EventType.SESSION_START
     assert event.source_sdk == "codex"
     assert event.session_id == "s1"
@@ -58,6 +66,7 @@ def test_user_prompt_payload_emits_message_event():
     )
 
     event = rec.events[0]
+    assert isinstance(event, MessageEvent)
     assert event.event_type == EventType.MESSAGE
     assert event.role == "user"
     assert event.content == "Use the cypher skill"
@@ -90,9 +99,12 @@ def test_tool_payloads_emit_tool_events():
     )
 
     assert [event.event_type for event in rec.events] == [EventType.TOOL_START, EventType.TOOL_END]
-    assert rec.events[0].tool_name == "mcp__skills__get_skill"
-    assert rec.events[0].tool_input == {"name": "cypher-basics"}
-    assert rec.events[1].result == "skill body"
+    tool_start, tool_end = rec.events
+    assert isinstance(tool_start, ToolStartEvent)
+    assert isinstance(tool_end, ToolEndEvent)
+    assert tool_start.tool_name == "mcp__skills__get_skill"
+    assert tool_start.tool_input == {"name": "cypher-basics"}
+    assert tool_end.result == "skill body"
 
 
 def test_post_tool_use_error_result_marks_error():
@@ -111,6 +123,7 @@ def test_post_tool_use_error_result_marks_error():
     )
 
     event = rec.events[0]
+    assert isinstance(event, ToolEndEvent)
     assert event.event_type == EventType.TOOL_END
     assert event.is_error
     assert event.error_message == "nope"

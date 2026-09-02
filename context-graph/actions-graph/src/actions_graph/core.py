@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, TypedDict
 
 from memgraph_toolbox.api.memgraph import Memgraph
 
@@ -45,6 +45,23 @@ from .models import (
     ToolCall,
     ToolResult,
 )
+
+
+class _BaseActionKwargs(TypedDict):
+    """Shape of the fields ``_row_to_action`` shares across every ``Action`` subclass.
+
+    A closed key set (deliberately never ``action_type``) so splatting it into
+    ``ToolCall(**base_kwargs, ...)`` etc. can't be misread as supplying that
+    subclass-specific parameter, unlike a plain ``dict[str, <inferred union>]``.
+    """
+
+    action_id: str
+    session_id: str
+    timestamp: str
+    status: ActionStatus
+    duration_ms: int | None
+    parent_action_id: str | None
+    metadata: dict[str, Any]
 
 
 class ActionsGraph:
@@ -600,7 +617,7 @@ class ActionsGraph:
         props = self._action_to_props(action)
 
         # Promoted fields: first-class node properties for graph traversal
-        _tool_name: str | None = props.get("tool_name") or (action.tool_name if hasattr(action, "tool_name") else None)
+        _tool_name: str | None = props.get("tool_name") or getattr(action, "tool_name", None)
         _is_error: bool = bool(props.get("is_error", False))
         _is_mcp: bool = bool(props.get("is_mcp", False))
 
@@ -1175,7 +1192,7 @@ class ActionsGraph:
         props = json.loads(row["properties"]) if row.get("properties") else {}
         metadata = json.loads(row["metadata"]) if row.get("metadata") else {}
 
-        base_kwargs = {
+        base_kwargs: _BaseActionKwargs = {
             "action_id": row["action_id"],
             "session_id": row.get("session_id") or "",
             "timestamp": row["timestamp"],

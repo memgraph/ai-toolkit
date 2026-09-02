@@ -10,7 +10,7 @@ import socket
 import subprocess
 import sys
 from importlib import metadata
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -149,7 +149,10 @@ def _config(argv: list[str]) -> int:
                 return 2
             write_value = parse_bool_flag(normalized)
 
-        write_config(**{_CONFIG_KEYS[key]: write_value})
+        # The key/value pairing is only known at runtime (bool iff key is in
+        # _BOOL_KEYS, str otherwise); write_config's own parameters are precisely
+        # typed per key, so the checker can't verify this dynamic dispatch itself.
+        write_config(**cast("dict[str, Any]", {_CONFIG_KEYS[key]: write_value}))
         if key in _SECRET_KEYS:
             display_value = "***"
         elif key in _BOOL_KEYS:
@@ -372,7 +375,7 @@ def _doctor(argv: list[str]) -> int:
     checks.append(_check_runtime(args.runtime, connectors))
 
     ok = all(check["ok"] for check in checks)
-    payload = {"ok": ok, "checks": checks}
+    payload: _DoctorPayload = {"ok": ok, "checks": checks}
     if args.json:
         print(json.dumps(payload, indent=2))
     else:
@@ -380,7 +383,18 @@ def _doctor(argv: list[str]) -> int:
     return 0 if ok else 1
 
 
-def _check_config() -> dict[str, object]:
+class _CheckResult(TypedDict):
+    name: str
+    ok: bool
+    detail: str
+
+
+class _DoctorPayload(TypedDict):
+    ok: bool
+    checks: list[_CheckResult]
+
+
+def _check_config() -> _CheckResult:
     from agent_context_graph.adapters._identity import config_file_path, load_config
 
     path = config_file_path()
@@ -410,7 +424,7 @@ def _check_config() -> dict[str, object]:
     return {"name": "config", "ok": ok, "detail": f"{path} — {'; '.join(parts)}"}
 
 
-def _check_memgraph() -> dict[str, object]:
+def _check_memgraph() -> _CheckResult:
     from agent_context_graph.adapters._identity import resolve_memgraph_env
 
     env = resolve_memgraph_env()
@@ -434,18 +448,18 @@ def _check_memgraph() -> dict[str, object]:
             driver.close()
 
 
-def _check_cli() -> dict[str, object]:
+def _check_cli() -> _CheckResult:
     path = shutil.which("agent-context-graph") or sys.argv[0]
     return {"name": "agent-context-graph executable", "ok": bool(path), "detail": path or "not found"}
 
 
-def _check_package(package_name: str) -> dict[str, object]:
+def _check_package(package_name: str) -> _CheckResult:
     version = _package_version(package_name)
     ok = version != "unknown"
     return {"name": package_name, "ok": ok, "detail": version if ok else "not installed"}
 
 
-def _check_connector(connector_name: str) -> dict[str, object]:
+def _check_connector(connector_name: str) -> _CheckResult:
     normalized = connector_name.strip().replace("-", "_")
     if normalized == "skills_graph":
         try:
@@ -512,7 +526,7 @@ def _check_connector(connector_name: str) -> dict[str, object]:
         return {"name": f"connector:{connector_name}", "ok": False, "detail": "unsupported connector"}
 
 
-def _check_runtime(runtime: str, connectors: list[str]) -> dict[str, object]:
+def _check_runtime(runtime: str, connectors: list[str]) -> _CheckResult:
     try:
         from agent_context_graph.hooks.runner import create_link
         from agent_context_graph.hooks.runtime_plugin import get_runtime_plugin
@@ -526,7 +540,7 @@ def _check_runtime(runtime: str, connectors: list[str]) -> dict[str, object]:
         return {"name": f"runtime:{runtime}", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
 
 
-def _print_doctor(payload: dict[str, object]) -> None:
+def _print_doctor(payload: _DoctorPayload) -> None:
     for check in payload["checks"]:
         status = "OK" if check["ok"] else "FAIL"
         print(f"{status} {check['name']}: {check['detail']}")

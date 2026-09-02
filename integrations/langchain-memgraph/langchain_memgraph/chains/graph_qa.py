@@ -208,7 +208,11 @@ class MemgraphQAChain(Chain):
         qa_llm = qa_llm or llm
         if use_function_response:
             try:
-                qa_llm.bind_tools({})  # type: ignore[union-attr]
+                # bind_tools isn't declared on BaseLanguageModel (only chat-model subclasses
+                # have it) and qa_llm's real value is guaranteed non-None by the "not qa_llm
+                # and not llm" check above; this is a duck-typed capability probe -- an LLM
+                # that doesn't support it raises NotImplementedError/AttributeError, caught below.
+                qa_llm.bind_tools({})  # ty: ignore[unresolved-attribute]
                 response_prompt = ChatPromptTemplate.from_messages(
                     [
                         SystemMessage(content=function_response_system),
@@ -279,11 +283,11 @@ class MemgraphQAChain(Chain):
             intermediate_steps.append({"context": context})
             if self.use_function_response:
                 function_response = get_function_response(question, context)
-                result = self.qa_chain.invoke(  # type: ignore
+                result = self.qa_chain.invoke(
                     {"question": question, "function_response": function_response},
                 )
             else:
-                result = self.qa_chain.invoke(  # type: ignore
+                result = self.qa_chain.invoke(
                     {"question": question, "context": context},
                     callbacks=callbacks,
                 )

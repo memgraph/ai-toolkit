@@ -374,7 +374,7 @@ def test_init_codex_uses_memgraph_env_only_for_setup_schema(tmp_path, monkeypatc
             captured["database"] = os.environ.get("MEMGRAPH_DATABASE")
 
     fake_skills_graph = ModuleType("skills_graph")
-    fake_skills_graph.SkillGraph = _SkillGraph
+    fake_skills_graph.SkillGraph = _SkillGraph  # ty: ignore[unresolved-attribute] -- fake module double, no static attrs
     monkeypatch.setitem(sys.modules, "skills_graph", fake_skills_graph)
 
     assert (
@@ -421,7 +421,7 @@ def test_init_codex_sets_up_actions_graph_schema(tmp_path, monkeypatch):
             captured["database"] = os.environ.get("MEMGRAPH_DATABASE")
 
     fake_actions_graph = ModuleType("actions_graph")
-    fake_actions_graph.ActionsGraph = _ActionsGraph
+    fake_actions_graph.ActionsGraph = _ActionsGraph  # ty: ignore[unresolved-attribute] -- fake module double, no static attrs
     monkeypatch.setitem(sys.modules, "actions_graph", fake_actions_graph)
 
     assert (

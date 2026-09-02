@@ -17,7 +17,7 @@ class BaseTool(ABC):
         self.input_schema = input_schema
 
     @abstractmethod
-    def call(self, arguments: dict[str, Any]) -> list[Any]:
+    def call(self, arguments: dict[str, Any]) -> list[Any] | dict[str, Any]:
         """
         Execute the tool with the provided arguments.
 
@@ -25,7 +25,9 @@ class BaseTool(ABC):
             arguments (dict): A dictionary of arguments as defined by the input schema.
 
         Returns:
-            List containing one or more output values.
+            Either a list containing one or more output values, or -- for tools whose
+            "found" result is naturally a single object (e.g. schema lookups) -- a bare
+            dict.
         """
         pass
 

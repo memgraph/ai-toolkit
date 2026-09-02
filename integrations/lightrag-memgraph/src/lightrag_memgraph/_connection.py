@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from lightrag.utils import logger
 
@@ -21,6 +21,7 @@ from memgraph_toolbox.api.memgraph import AsyncMemgraph, memgraph_env
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver, AsyncSession
+    from typing_extensions import LiteralString
 
 # Keyed by event-loop id so tests spinning up a fresh loop per test don't
 # reuse a driver bound to a closed loop.
@@ -71,6 +72,19 @@ def sanitize_index_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]", "_", value)
 
 
+def as_literal_query(text: str) -> LiteralString:
+    """Assert that a dynamically-built Cypher string is safe to pass to ``AsyncSession.run``.
+
+    neo4j types ``run(query=...)`` as ``LiteralString | Query`` to steer callers away from
+    interpolating untrusted input into query text -- ``LiteralString`` can only be produced
+    from literal syntax, so the type checker can't see that a runtime f-string is safe. Every
+    query built in this package only interpolates our own backtick-escaped identifiers
+    (``sanitize_label``/``sanitize_index_name``) or passes values as bound parameters (``$id``
+    etc.), never raw external input concatenated into query text, so the cast is safe here.
+    """
+    return cast("LiteralString", text)
+
+
 def resolve_workspace(workspace: str | None) -> str:
     """Resolve the effective workspace for a storage instance.
 
@@ -84,7 +98,7 @@ def resolve_workspace(workspace: str | None) -> str:
 async def create_index(session: AsyncSession, *, label: str, prop: str, workspace: str) -> None:
     """CREATE INDEX on :`label`(prop), swallowing "already exists" (Memgraph has no IF NOT EXISTS)."""
     try:
-        await (await session.run(f"CREATE INDEX ON :`{label}`({prop})")).consume()
+        await (await session.run(as_literal_query(f"CREATE INDEX ON :`{label}`({prop})"))).consume()
     except Exception as e:  # index may already exist, which is not an error
         logger.warning(f"[{workspace}] Index creation on :`{label}`({prop}) may have failed or already exists: {e}")
 
@@ -106,7 +120,7 @@ class MemgraphCrudMixin:
     async def is_empty(self) -> bool:
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
-            result = await session.run(f"MATCH (n:`{self._label}`) RETURN n LIMIT 1")
+            result = await session.run(as_literal_query(f"MATCH (n:`{self._label}`) RETURN n LIMIT 1"))
             record = await result.single()
             await result.consume()
             return record is None
@@ -118,13 +132,15 @@ class MemgraphCrudMixin:
         driver = await get_driver()
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             result = await session.run(
-                f"""
-                UNWIND $keys AS k
-                OPTIONAL MATCH (n:`{self._label}` {{id: k}})
-                WITH k, n
-                WHERE n IS NULL
-                RETURN k
-                """,
+                as_literal_query(
+                    f"""
+                    UNWIND $keys AS k
+                    OPTIONAL MATCH (n:`{self._label}` {{id: k}})
+                    WITH k, n
+                    WHERE n IS NULL
+                    RETURN k
+                    """
+                ),
                 keys=list(keys),
             )
             missing = {record["k"] async for record in result}
@@ -138,11 +154,13 @@ class MemgraphCrudMixin:
         async with driver.session(database=get_database()) as session:
             await (
                 await session.run(
-                    f"""
-                    UNWIND $ids AS target_id
-                    MATCH (n:`{self._label}` {{id: target_id}})
-                    DETACH DELETE n
-                    """,
+                    as_literal_query(
+                        f"""
+                        UNWIND $ids AS target_id
+                        MATCH (n:`{self._label}` {{id: target_id}})
+                        DETACH DELETE n
+                        """
+                    ),
                     ids=list(ids),
                 )
             ).consume()
@@ -151,7 +169,7 @@ class MemgraphCrudMixin:
         try:
             driver = await get_driver()
             async with driver.session(database=get_database()) as session:
-                await (await session.run(f"MATCH (n:`{self._label}`) DETACH DELETE n")).consume()
+                await (await session.run(as_literal_query(f"MATCH (n:`{self._label}`) DETACH DELETE n"))).consume()
             logger.info(f"[{self.workspace}] Dropped Memgraph storage for {self.namespace}")
             return {"status": "success", "message": "data dropped"}
         except Exception as e:

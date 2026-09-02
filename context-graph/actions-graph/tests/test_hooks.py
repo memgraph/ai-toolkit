@@ -1,6 +1,7 @@
 """Tests for standalone Claude SDK action hooks."""
 
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -16,6 +17,9 @@ from actions_graph.models import (
     ToolCall,
     ToolResult,
 )
+
+if TYPE_CHECKING:
+    from actions_graph import ActionsGraph
 
 
 class FakeActionsGraph:
@@ -56,7 +60,7 @@ class FakeActionsGraph:
 @pytest.mark.asyncio
 async def test_tool_hooks_record_call_result_and_failure():
     graph = FakeActionsGraph()
-    tracker = ActionTracker(graph, "session-1")
+    tracker = ActionTracker(cast("ActionsGraph", graph), "session-1")
 
     await tracker.pre_tool_use(
         {"tool_name": "Read", "tool_input": {"file_path": "a.py"}, "tool_use_id": "tool-1"},
@@ -86,7 +90,7 @@ async def test_tool_hooks_record_call_result_and_failure():
 @pytest.mark.asyncio
 async def test_message_subagent_permission_notification_and_stop_hooks():
     graph = FakeActionsGraph()
-    tracker = ActionTracker(graph, "session-1")
+    tracker = ActionTracker(cast("ActionsGraph", graph), "session-1")
 
     await tracker.user_prompt_submit({"prompt": "hello", "cwd": "/repo"}, None, {})
     await tracker.subagent_start({"agent_id": "agent-1", "agent_type": "reviewer"}, None, {})
@@ -114,7 +118,7 @@ async def test_message_subagent_permission_notification_and_stop_hooks():
 @pytest.mark.asyncio
 async def test_tool_call_inside_subagent_links_to_agent_container():
     graph = FakeActionsGraph()
-    tracker = ActionTracker(graph, "session-1")
+    tracker = ActionTracker(cast("ActionsGraph", graph), "session-1")
 
     await tracker.subagent_start({"agent_id": "agent-1", "agent_type": "reviewer"}, None, {})
     await tracker.pre_tool_use(
@@ -136,7 +140,7 @@ async def test_tool_call_inside_subagent_links_to_agent_container():
 def test_create_tracking_hooks_creates_session_and_hook_map():
     graph = FakeActionsGraph()
 
-    hooks = create_tracking_hooks(graph, "session-1", session_kwargs={})
+    hooks = create_tracking_hooks(cast("ActionsGraph", graph), "session-1", session_kwargs={})
 
     assert graph.sessions[0].session_id == "session-1"
     assert set(hooks) == {
@@ -154,7 +158,7 @@ def test_create_tracking_hooks_creates_session_and_hook_map():
 
 def test_message_handler_records_assistant_result_and_rate_limit():
     graph = FakeActionsGraph()
-    handler = create_message_handler(graph, "session-1")
+    handler = create_message_handler(cast("ActionsGraph", graph), "session-1")
 
     handler(
         SimpleNamespace(

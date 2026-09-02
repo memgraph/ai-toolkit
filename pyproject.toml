@@ -56,6 +56,15 @@ members = [
     "context-graph/eval",
 ]
 
+[tool.ty.environment]
+python-version = "3.10"
+
+[tool.ty.src]
+# Notebook cells reference variables from earlier cells -- same reasoning as
+# the ruff F821 per-file-ignore for *.ipynb below; a static checker can't
+# model notebook cell execution order.
+exclude = ["**/*.ipynb"]
+
 [tool.ruff]
 target-version = "py310"
 line-length = 120
@@ -80,7 +89,6 @@ ignore = [
     "N812",    # lowercase imported as non-lowercase — allows aliasing conventions like `import x as X`
     "N815",    # mixed-case variable in class scope — graph/DB field names follow external conventions
     "RUF001",  # ambiguous unicode character in string — false positives on intentional unicode content
-    "RUF013",  # implicit Optional — affects public API signatures, defer to a dedicated typing cleanup
 ]
 
 [tool.ruff.lint.isort]

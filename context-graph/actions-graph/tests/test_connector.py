@@ -1,5 +1,7 @@
 """Tests for ActionsGraphConnector."""
 
+from typing import TYPE_CHECKING, cast
+
 from actions_graph.connector import ActionsGraphConnector
 from actions_graph.models import ActionStatus, Agent, ErrorEvent, Message, Session, ToolCall, ToolResult
 from agent_context_graph.events import (
@@ -12,6 +14,9 @@ from agent_context_graph.events import (
     ToolEndEvent,
     ToolStartEvent,
 )
+
+if TYPE_CHECKING:
+    from actions_graph import ActionsGraph
 
 
 class FakeActionsGraph:
@@ -57,7 +62,7 @@ class FakeActionsGraph:
 
 def test_records_session_start():
     graph = FakeActionsGraph()
-    connector = ActionsGraphConnector(graph)
+    connector = ActionsGraphConnector(cast("ActionsGraph", graph))
 
     connector.on_event(
         SessionStartEvent(
@@ -77,7 +82,7 @@ def test_records_session_start():
 
 def test_records_tool_start_as_tool_call_action():
     graph = FakeActionsGraph()
-    connector = ActionsGraphConnector(graph)
+    connector = ActionsGraphConnector(cast("ActionsGraph", graph))
 
     connector.on_event(
         ToolStartEvent(
@@ -103,7 +108,7 @@ def test_records_tool_start_as_tool_call_action():
 
 def test_records_tool_end_as_tool_result_with_stable_parent_id():
     graph = FakeActionsGraph()
-    connector = ActionsGraphConnector(graph)
+    connector = ActionsGraphConnector(cast("ActionsGraph", graph))
 
     connector.on_event(
         ToolStartEvent(
@@ -133,7 +138,7 @@ def test_records_tool_end_as_tool_result_with_stable_parent_id():
 
 def test_records_tool_error_as_failed_tool_result():
     graph = FakeActionsGraph()
-    connector = ActionsGraphConnector(graph)
+    connector = ActionsGraphConnector(cast("ActionsGraph", graph))
 
     connector.on_event(
         ToolEndEvent(
@@ -155,7 +160,7 @@ def test_records_tool_error_as_failed_tool_result():
 
 def test_records_message_and_error_events():
     graph = FakeActionsGraph()
-    connector = ActionsGraphConnector(graph)
+    connector = ActionsGraphConnector(cast("ActionsGraph", graph))
 
     connector.on_event(
         MessageEvent(
@@ -186,7 +191,7 @@ def test_records_message_and_error_events():
 
 def test_records_agent_start_as_agent_node_not_action():
     graph = FakeActionsGraph()
-    connector = ActionsGraphConnector(graph)
+    connector = ActionsGraphConnector(cast("ActionsGraph", graph))
 
     connector.on_event(
         AgentStartEvent(
@@ -209,7 +214,7 @@ def test_records_agent_start_as_agent_node_not_action():
 
 def test_records_agent_end_updates_same_agent_node():
     graph = FakeActionsGraph()
-    connector = ActionsGraphConnector(graph)
+    connector = ActionsGraphConnector(cast("ActionsGraph", graph))
 
     connector.on_event(
         AgentStartEvent(
@@ -236,7 +241,7 @@ def test_records_agent_end_updates_same_agent_node():
 
 def test_records_session_end():
     graph = FakeActionsGraph()
-    connector = ActionsGraphConnector(graph)
+    connector = ActionsGraphConnector(cast("ActionsGraph", graph))
 
     connector.on_event(
         SessionEndEvent(

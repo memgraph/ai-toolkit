@@ -63,11 +63,11 @@ async def test_mcp_client():
     client = MCPClient()
     try:
         await client.connect_to_server(server_script_path)
+        assert client.session is not None, "Session should be initialized"
         response = await client.session.list_tools()
         tools = response.tools
         print("\nConnected to server with tools:", [tool.name for tool in tools])
 
-        assert client.session is not None, "Session should be initialized"
         assert client.stdio is not None, "Stdio transport should be initialized"
         assert client.write is not None, "Write transport should be initialized"
 
@@ -255,6 +255,7 @@ async def test_tools_and_resources():
     client = MCPClient()
     try:
         await client.connect_to_server(server_script_path)
+        assert client.session is not None, "Session should be initialized"
 
         # TODO(@antejavor): Add this dynamically.
         expected_tools = [

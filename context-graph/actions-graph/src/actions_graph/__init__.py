@@ -54,7 +54,7 @@ from .models import (
 )
 
 try:
-    __version__ = metadata.version(__package__)
+    __version__ = metadata.version(__package__ or __name__)
 except metadata.PackageNotFoundError:
     # Case where package metadata is not available.
     __version__ = ""
