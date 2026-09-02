@@ -12,6 +12,8 @@ from context_graph_eval.convert.longmemeval import (
     DEFAULT_REVISION,
     build_corpus,
     download_url,
+    fetch,
+    haystack_path,
 )
 
 
@@ -162,3 +164,106 @@ def test_sampling_spreads_across_question_types():
     types = {g.additional_metadata["question_type"] for g in goldens}
 
     assert types == {"single-session-user", "temporal-reasoning"}
+
+
+# --- Download robustness ---
+#
+# The happy path is still not unit-tested (mocking a 277MB HTTP body would only
+# test the mock), but truncation detection, atomicity and caching are this
+# module's own logic and each has a concrete failure mode behind it.
+
+
+class _FakeResponse:
+    def __init__(self, body: bytes, *, declared_length: int | None = None):
+        self._body = body
+        self._offset = 0
+        length = len(body) if declared_length is None else declared_length
+        self.headers = {"Content-Length": str(length)}
+
+    def read(self, size=-1):
+        chunk = self._body[self._offset :] if size < 0 else self._body[self._offset : self._offset + size]
+        self._offset += len(chunk)
+        return chunk
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def test_a_truncated_download_is_refused_rather_than_used_as_the_haystack(tmp_path):
+    """The failure mode this exists for: a short body that does NOT raise would
+    previously be written and handed to the run as evidence. Questions would
+    score as recall misses because their sessions were never in the file, and
+    nothing would report why.
+
+    Observed live in the raising form -- a read of the 's' variant stopped at
+    32MB of 277MB.
+    """
+    dest = tmp_path / "upstream.json"
+
+    def short_body(url):
+        return _FakeResponse(b"only-the-first-part", declared_length=999_999)
+
+    with pytest.raises(OSError, match="truncated"):
+        fetch("s", dest=dest, attempts=1, opener=short_body)
+
+
+def test_a_failed_download_leaves_no_file_behind(tmp_path):
+    """dest existing has to mean dest is complete -- that invariant is what lets
+    the cache check be a bare exists() with no sidecar metadata. A partial left
+    in place would be silently adopted by the next run."""
+    dest = tmp_path / "upstream.json"
+
+    def short_body(url):
+        return _FakeResponse(b"partial", declared_length=999_999)
+
+    with pytest.raises(OSError):
+        fetch("s", dest=dest, attempts=1, opener=short_body)
+
+    assert not dest.exists()
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_download_is_retried_before_giving_up(tmp_path):
+    """A single flaky transfer should not end a run that is otherwise ready to
+    go: the first end-to-end attempt died on exactly one truncated read."""
+    dest = tmp_path / "upstream.json"
+    attempts = []
+
+    def flaky(url):
+        attempts.append(url)
+        if len(attempts) < 3:
+            return _FakeResponse(b"nope", declared_length=999_999)
+        return _FakeResponse(b'[{"ok": true}]')
+
+    fetch("s", dest=dest, attempts=3, opener=flaky)
+
+    assert len(attempts) == 3
+    assert dest.read_bytes() == b'[{"ok": true}]'
+
+
+def test_an_already_cached_haystack_is_not_downloaded_again(tmp_path):
+    """Both call sites used to fetch into a TemporaryDirectory, so every run
+    re-downloaded ~277MB -- expensive to iterate against, and it put a large
+    flaky transfer in front of every run."""
+    dest = tmp_path / "upstream.json"
+    dest.write_bytes(b'[{"cached": true}]')
+
+    def explode(url):
+        raise AssertionError("should not download when a complete file is cached")
+
+    assert fetch("s", dest=dest, opener=explode) == dest
+
+
+def test_the_cache_path_is_keyed_by_variant_and_revision(tmp_path):
+    """Two revisions must not share a file: the pinned revision is what makes
+    two runs comparable, so silently reusing another revision's haystack would
+    invalidate the comparison the corpus exists to support."""
+    one = haystack_path("s", "aaaaaaaaaaaaaaaa", cache_dir=tmp_path)
+    two = haystack_path("s", "bbbbbbbbbbbbbbbb", cache_dir=tmp_path)
+    other_variant = haystack_path("m", "aaaaaaaaaaaaaaaa", cache_dir=tmp_path)
+
+    assert one != two
+    assert one != other_variant

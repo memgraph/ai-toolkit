@@ -7,11 +7,13 @@ converted rather than authored. See docs/research/2026-08-memory-benchmarks.md.
 
 import itertools
 import json
+import os
 import urllib.request
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from deepeval.dataset import Golden
 
@@ -56,16 +58,85 @@ def download_url(variant: str = "s", revision: str = DEFAULT_REVISION) -> str:
     return f"https://huggingface.co/datasets/{_REPO}/resolve/{revision}/{_VARIANT_FILES[variant]}"
 
 
-def fetch(variant: str = "s", revision: str = DEFAULT_REVISION, *, dest: Path) -> Path:
-    """Download a pinned LongMemEval variant to ``dest``.
+#: Chunk size for streaming the haystack to disk. The 's' variant is ~277MB,
+#: which is not something to hold in memory in one buffer.
+_CHUNK_BYTES = 1 << 20
+
+#: How many times to re-attempt a truncated or failed download.
+_DOWNLOAD_ATTEMPTS = 3
+
+
+def haystack_path(variant: str = "s", revision: str = DEFAULT_REVISION, *, cache_dir: Path | None = None) -> Path:
+    """Where a pinned variant is cached between runs.
+
+    Keyed by variant *and* revision, which is safe to treat as immutable: the
+    revision is a pinned commit sha (that is the whole point of #302), so the
+    bytes behind a given key never change.
+
+    Cached because both call sites used to download into a TemporaryDirectory,
+    so every single run re-fetched ~277MB. That made iterating on retrieval or
+    scoring absurdly expensive and, worse, put a large flaky network transfer in
+    front of every run -- which is exactly how the first end-to-end attempt
+    died.
+    """
+    root = cache_dir or Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "context-graph-eval"
+    return Path(root) / f"longmemeval-{variant}-{revision[:12]}.json"
+
+
+def fetch(
+    variant: str = "s",
+    revision: str = DEFAULT_REVISION,
+    *,
+    dest: Path,
+    attempts: int = _DOWNLOAD_ATTEMPTS,
+    opener: Any = None,
+) -> Path:
+    """Download a pinned LongMemEval variant to ``dest``, or reuse it if cached.
 
     Only the *converted* output is committed, never this file -- see #302.
+
+    Written to a ``.part`` file and renamed only once the whole body has
+    arrived, so ``dest`` existing always means ``dest`` is complete. That is
+    what makes the cache check a single ``exists()`` with no sidecar metadata,
+    and it is why a partial transfer can never be silently adopted as the
+    haystack.
+
+    The truncation check matters more than it looks. Observed live: a read of
+    the 's' variant stopped at 32MB of 277MB. That one raised, but the same
+    short-body failure that *doesn't* raise would previously have written a
+    truncated file and handed it to the run as evidence -- questions would score
+    as recall misses because their sessions were never in the file, and nothing
+    anywhere would say so.
     """
     dest = Path(dest)
+    if dest.exists() and dest.stat().st_size > 0:
+        return dest
+
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(download_url(variant, revision)) as response:
-        dest.write_bytes(response.read())
-    return dest
+    partial = dest.with_name(dest.name + ".part")
+    url = download_url(variant, revision)
+    open_url = opener or urllib.request.urlopen
+
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            with open_url(url) as response:
+                expected = response.headers.get("Content-Length") if hasattr(response, "headers") else None
+                written = 0
+                with partial.open("wb") as handle:
+                    while chunk := response.read(_CHUNK_BYTES):
+                        handle.write(chunk)
+                        written += len(chunk)
+            if expected is not None and written != int(expected):
+                raise OSError(f"truncated download: got {written} bytes, expected {expected}")
+            partial.replace(dest)
+            return dest
+        except Exception as error:  # retried below; re-raised if the last attempt
+            last_error = error
+            partial.unlink(missing_ok=True)
+            if attempt == attempts:
+                break
+    raise OSError(f"could not download {url} after {attempts} attempts: {last_error}") from last_error
 
 
 def build_corpus(records: Iterable[dict], limit: int | None = None) -> list[Golden]:
@@ -208,7 +279,8 @@ def to_session_fixtures(record: dict, max_sessions: int | None = None) -> list[S
     precision -- and so the payload-size efficiency metric -- something to
     measure; a haystack of evidence alone would score well by construction.
 
-    ``max_sessions`` trims the haystack, evidence first. It exists because
+    ``max_sessions`` trims the haystack's *distractors*; evidence is always
+    kept, even where that means exceeding the cap. It exists because
     reconciliation cost scales with *sessions* while coverage needs *questions*,
     and upstream couples them at roughly 47:1 -- so a full-pipeline run at an
     affordable session count would otherwise be reduced to two questions, at
@@ -249,15 +321,28 @@ def to_session_fixtures(record: dict, max_sessions: int | None = None) -> list[S
     if max_sessions is None or len(fixtures) <= max_sessions:
         return fixtures
 
-    # Evidence first, then distractors in upstream order. Dropping an evidence
-    # session would make the question unanswerable for a reason unrelated to
-    # recall, and the resulting miss would be indistinguishable from a real
-    # failure. Upstream order rather than a random sample keeps the choice
-    # deterministic: the subsample is part of what a run measured, so two runs
-    # of the same corpus must inject the same graph.
+    # Evidence is mandatory; the cap governs distractors only. Ordering evidence
+    # first makes it *preferred*, not *preserved* -- when the cap is smaller
+    # than the evidence set, a trailing slice cuts into the evidence itself.
+    #
+    # Measured live on question 6a1eabeb, a knowledge-update question whose two
+    # evidence sessions hold the old value (27:12) and the updated one (25:50).
+    # At max_sessions=1 only the first was injected, so the expected answer was
+    # never in the graph: it scored 0 as a recall failure while being
+    # unanswerable by construction -- the harness-created floor this branch
+    # exists to avoid.
+    #
+    # So the cap is exceeded rather than honoured when evidence demands it. A
+    # session count slightly over budget is a cost problem; an unanswerable
+    # question is a corrupt measurement.
+    #
+    # Distractors stay in upstream order rather than sampled: the subsample is
+    # part of what a run measured, so two runs of the same corpus must inject
+    # the same graph.
     evidence = [fixture for fixture in fixtures if fixture.holds_evidence]
     distractors = [fixture for fixture in fixtures if not fixture.holds_evidence]
-    return (evidence + distractors)[:max_sessions]
+    room = max(0, max_sessions - len(evidence))
+    return evidence + distractors[:room]
 
 
 def _format_turn(turn: dict) -> str:

@@ -8,10 +8,9 @@ and is not committed -- only the converted corpus is (see #302).
 import argparse
 import os
 import sys
-import tempfile
 from pathlib import Path
 
-from .convert.longmemeval import DEFAULT_REVISION, build_corpus, fetch, load_raw
+from .convert.longmemeval import DEFAULT_REVISION, build_corpus, fetch, haystack_path, load_raw
 from .corpus import write_corpus
 
 
@@ -88,10 +87,11 @@ def main(argv: list[str] | None = None) -> int:
         "--max-sessions-per-question",
         type=int,
         default=None,
-        help="trim each question's haystack, keeping evidence. Reconciliation cost scales with "
-        "sessions while coverage needs questions, and upstream couples them ~47:1. A score "
-        "measured with this set is an UPPER BOUND -- fewer distractors make retrieval easier -- "
-        "and is NOT comparable to a full-haystack run.",
+        help="trim each question's DISTRACTOR sessions. Reconciliation cost scales with "
+        "sessions while coverage needs questions, and upstream couples them ~47:1. Evidence "
+        "sessions are always kept, so a question with more evidence than this cap exceeds it "
+        "rather than becoming unanswerable. A score measured this way is an UPPER BOUND -- "
+        "fewer distractors make retrieval easier -- and is NOT comparable to a full-haystack run.",
     )
     run.add_argument("--save", type=Path, default=None, help="persist this run so it can be compared later")
     run.add_argument("--label", default="run", help="name for this run in a later comparison")
@@ -268,14 +268,13 @@ def _compare(args) -> int:
 
 
 def _build_corpus(args) -> int:
-    with tempfile.TemporaryDirectory() as workdir:
-        raw = fetch(args.variant, args.revision, dest=Path(workdir) / "upstream.json")
-        records = load_raw(raw)
-        print(f"fetched {len(records)} records from longmemeval-{args.variant} @ {args.revision[:12]}")
+    raw = fetch(args.variant, args.revision, dest=haystack_path(args.variant, args.revision))
+    records = load_raw(raw)
+    print(f"fetched {len(records)} records from longmemeval-{args.variant} @ {args.revision[:12]}")
 
-        goldens = build_corpus(records, limit=args.limit)
-        written = write_corpus(goldens, args.out)
-        print(f"wrote {written} goldens to {args.out}")
+    goldens = build_corpus(records, limit=args.limit)
+    written = write_corpus(goldens, args.out)
+    print(f"wrote {written} goldens to {args.out}")
     return 0
 
 
@@ -333,8 +332,11 @@ def _run(args) -> int:
     # The haystack is NOT committed alongside the corpus: at 20 questions it is
     # ~9.5MB of reshaped upstream text, which is what #302 rejected vendoring.
     # Its immutability comes from the pinned revision instead of from git.
-    with tempfile.TemporaryDirectory() as workdir:
-        records = load_raw(fetch(args.variant, args.revision, dest=Path(workdir) / "upstream.json"))
+    # Cached across runs rather than fetched into a temp dir. The haystack is
+    # ~277MB, so re-downloading it per run made iterating on retrieval or
+    # scoring painfully slow and put a large flaky transfer in front of every
+    # run -- which is what killed the first end-to-end attempt.
+    records = load_raw(fetch(args.variant, args.revision, dest=haystack_path(args.variant, args.revision)))
 
     wanted = {g.name for g in goldens}
     used_records = [r for r in records if r["question_id"] in wanted]

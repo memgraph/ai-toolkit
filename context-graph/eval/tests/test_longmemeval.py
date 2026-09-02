@@ -194,3 +194,64 @@ def test_evidence_sessions_are_marked_as_such():
     answer_session, _ = to_session_fixtures(_record())
 
     assert answer_session.holds_evidence is True
+
+
+def test_the_session_cap_never_trims_evidence():
+    """Ordering evidence first makes it preferred, not preserved: when the cap
+    is smaller than the evidence set, the slice cuts into the evidence itself.
+
+    Measured live on question 6a1eabeb, a knowledge-update question whose two
+    evidence sessions hold the old value (27:12) and the updated one (25:50).
+    With --max-sessions-per-question 1 only the first was injected, so the
+    expected answer was never in the graph -- and the question scored 0/1 as a
+    recall failure while being unanswerable by construction. Exactly the harness
+    -created floor the docstring says this branch exists to avoid.
+
+    The cap governs distractors; evidence is mandatory, so exceeding the cap is
+    correct where the alternative is an unscoreable question.
+    """
+    record = {
+        "question_id": "q1",
+        "question_type": "knowledge-update",
+        "question": "What was my best time?",
+        "answer": "25:50",
+        "question_date": "2023/06/25 (Sun) 13:22",
+        "haystack_session_ids": ["distract-1", "evidence-old", "distract-2", "evidence-new"],
+        "haystack_dates": ["2023/05/01 (Mon) 10:00"] * 4,
+        "haystack_sessions": [
+            [{"role": "user", "content": "unrelated chatter"}],
+            [{"role": "user", "content": "my best time is 27:12", "has_answer": True}],
+            [{"role": "user", "content": "more chatter"}],
+            [{"role": "user", "content": "my best time is now 25:50", "has_answer": True}],
+        ],
+        "answer_session_ids": ["evidence-old", "evidence-new"],
+    }
+
+    fixtures = to_session_fixtures(record, max_sessions=1)
+    kept = {f.session_id for f in fixtures}
+
+    assert kept == {"evidence-old", "evidence-new"}
+
+
+def test_the_session_cap_still_trims_distractors():
+    """The cap has to keep doing its job -- reconciliation cost scales with
+    sessions, which is the whole reason it exists."""
+    record = {
+        "question_id": "q1",
+        "question_type": "single-session-user",
+        "question": "What breed?",
+        "answer": "beagle",
+        "question_date": "2023/06/25 (Sun) 13:22",
+        "haystack_session_ids": ["evidence", "d1", "d2", "d3", "d4"],
+        "haystack_dates": ["2023/05/01 (Mon) 10:00"] * 5,
+        "haystack_sessions": [
+            [{"role": "user", "content": "a beagle", "has_answer": True}],
+            *[[{"role": "user", "content": f"chatter {i}"}] for i in range(4)],
+        ],
+        "answer_session_ids": ["evidence"],
+    }
+
+    fixtures = to_session_fixtures(record, max_sessions=3)
+
+    assert len(fixtures) == 3
+    assert any(f.holds_evidence for f in fixtures)
