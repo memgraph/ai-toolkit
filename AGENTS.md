@@ -111,6 +111,28 @@ own real Claude Code session — see `./scripts/dev-memgraph.sh --help`.
 - `isort`'s `known-first-party` list is maintained by hand in
   `pyproject.toml` — add your package's import name there if you add a new
   workspace member.
+- Prefer expressive names, small functions, and clear control flow over
+  explanatory comments.
+- Comments should explain intent, invariants, external constraints, or
+  non-obvious tradeoffs. Do not use comments to narrate obvious operations or
+  restate the code.
+- Public modules, classes, functions, and methods need docstrings describing
+  behavior, parameters, return values, and raised exceptions where relevant.
+  Use the existing concise style unless a package establishes a more detailed
+  convention; do not copy documentation templates containing placeholder text.
+- Keep comments and docstrings synchronized with the implementation. Remove
+  commented-out code and stale notes when the related code changes.
+- TODOs must describe the missing behavior and include an issue reference:
+  `TODO(#123): ...`. Use a normal code comment for a temporary local note,
+  not an owner-only TODO.
+- Every `noqa`, `type: ignore`, and `pragma: no cover` suppression must be
+  narrow and include a specific reason. Prefer fixing the underlying issue or
+  narrowing the suppression over adding a broad file-level exemption. The
+  standalone `agents/sql2graph` entry points are a documented legacy exception
+  while that package's import layout is migrated.
+- Comments around Cypher/SQL must document security boundaries, parameterization
+  decisions, transaction semantics, or graph-model invariants when those facts
+  are not clear from the code. Never interpolate untrusted values into queries.
 
 ## Type checking
 

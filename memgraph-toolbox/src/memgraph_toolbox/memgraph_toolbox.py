@@ -1,7 +1,5 @@
 from .api.memgraph import Memgraph
 from .api.toolbox import BaseToolbox
-
-# Import all tool classes
 from .tools.cypher import CypherTool
 from .tools.schema import EnumSchemaTool, NodeSchemaTool, RelationshipSchemaTool, SearchSchemaTool
 

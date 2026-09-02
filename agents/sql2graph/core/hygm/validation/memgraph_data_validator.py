@@ -542,21 +542,8 @@ class MemgraphDataValidator(BaseValidator):
                     recommendation="Check property mapping in migration script",
                 )
 
-            # TODO: Re-enable property type mismatch validation once type
-            # mapping is stabilized
-            # Check for type mismatches
-            # for prop, expected_type in expected_props.items():
-            #     if prop in actual_props:
-            #         actual_type = actual_props[prop]
-            #         if not self._types_compatible(expected_type, actual_type):
-            #             self.add_issue(
-            #                 ValidationSeverity.WARNING,
-            #                 ValidationCategory.SCHEMA_MISMATCH,
-            #                 f"Property '{prop}' type mismatch on node {list(labels)}",
-            #                 expected=expected_type,
-            #                 actual=actual_type,
-            #                 recommendation="Verify data transformation logic",
-            #             )
+            # Property type checks remain disabled until SQL-to-graph type mapping
+            # is stable enough to distinguish conversion from validation errors.
 
     def _validate_relationships(self, expected: dict[str, Any], actual: dict[str, Any]):
         """Validate relationship types and properties."""

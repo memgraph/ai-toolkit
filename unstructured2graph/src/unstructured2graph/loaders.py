@@ -379,8 +379,7 @@ async def from_unstructured(
     if not only_chunks and lightrag_wrapper is None:
         raise ValueError("lightrag_wrapper is required when only_chunks=False")
 
-    # TODO(gitbuda): Implement batching on the Cypher side as well under memgraph.compute_embeddings
-    # NOTE: LightRAG uses { source_id: "chunk-ID..." } to reference its chunks.
+    # LightRAG uses `{source_id: "chunk-ID..."}` to reference its chunks.
     create_unique_constraint(memgraph, "Chunk", "hash")
     resolved_entity_workspace = _resolve_entity_workspace(lightrag_wrapper, entity_workspace, only_chunks)
     chunked_documents = make_chunks(sources, partition_kwargs=partition_kwargs)

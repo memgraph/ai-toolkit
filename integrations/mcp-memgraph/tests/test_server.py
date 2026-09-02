@@ -257,7 +257,7 @@ async def test_tools_and_resources():
         await client.connect_to_server(server_script_path)
         assert client.session is not None, "Session should be initialized"
 
-        # TODO(@antejavor): Add this dynamically.
+        # Keep the public tool contract explicit so additions require a test update.
         expected_tools = [
             "run_cypher_query",
             "search_schema",
