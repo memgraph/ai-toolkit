@@ -59,8 +59,49 @@ MAX_PAYLOAD_TOKENS = 20_000
 _CHARS_PER_TOKEN = 3
 
 
-class WriteRefusedError(RuntimeError):
+class QueryRefusedError(RuntimeError):
+    """Raised when retrieval attempts a query it is not allowed to run."""
+
+
+class WriteRefusedError(QueryRefusedError):
     """Raised when retrieval attempts to modify the graph under test."""
+
+
+class InternalLabelRefusedError(QueryRefusedError):
+    """Raised when retrieval reaches into LightRAG's own storage (#321)."""
+
+
+#: LightRAG's storage backends persist their bookkeeping into the same Memgraph
+#: graph as the domain model -- KV stores, vector stores, doc status, and an LLM
+#: response cache. Eleven such labels appeared after reconciling two sessions.
+#:
+#: They are refused rather than merely hidden because the response cache holds
+#: the *answers*: `LightRAGKV_base_llm_response_cache` was found containing the
+#: expected output of corpus question 6a1eabeb. An agent querying it scores
+#: coverage while exercising none of the graph model -- a false pass, where
+#: every other harness bug here produced a false zero. A pass gets believed.
+#:
+#: Matched by prefix, and deliberately NOT including LightRAG's `base` label:
+#: that one is stamped on the extracted entities themselves (309 of them in a
+#: two-session run, mixed with Concept, Person, Event and the rest), so
+#: refusing it would block most of the memory tier.
+_INTERNAL_LABEL_PREFIX = "LightRAG"
+
+#: Label positions in Cypher: a colon, optional whitespace, an optional
+#: backtick, then the name. Matches labels and relationship types, and not map
+#: keys (`{name: 'x'}` puts the identifier BEFORE the colon) -- so a property
+#: value like 'database' cannot be mistaken for a label.
+_LABEL_IN_CYPHER = re.compile(r":\s*`?([A-Za-z_][A-Za-z_0-9]*)`?")
+
+
+def is_internal_label(label: str) -> bool:
+    """Whether a label belongs to LightRAG's storage rather than the model."""
+    return label.startswith(_INTERNAL_LABEL_PREFIX)
+
+
+def internal_labels_in(cypher: str) -> set[str]:
+    """Internal storage labels a query references, if any."""
+    return {label for label in _LABEL_IN_CYPHER.findall(cypher) if is_internal_label(label)}
 
 
 class LLM(Protocol):
@@ -104,6 +145,14 @@ class ReadOnlyGraph:
     def query(self, cypher: str) -> list[dict[str, Any]]:
         if is_write_query(cypher):
             raise WriteRefusedError(f"retrieval may not write to the graph under test: {cypher!r}")
+        internal = internal_labels_in(cypher)
+        if internal:
+            raise InternalLabelRefusedError(
+                f"retrieval may not query internal storage {sorted(internal)}: these hold "
+                "LightRAG's own bookkeeping, including a cache of LLM responses that contains "
+                "the answers. Query the model instead (Session, Action, Chunk, Episode, and the "
+                "entity labels)."
+            )
         return self._db.query(cypher)
 
 
@@ -136,7 +185,10 @@ def graph_schema(graph: ReadOnlyGraph) -> str:
     if detailed:
         return detailed
 
-    labels = graph.query("MATCH (n) UNWIND labels(n) AS label RETURN DISTINCT label ORDER BY label")
+    labels = graph.query(
+        "MATCH (n) UNWIND labels(n) AS label WITH DISTINCT label "
+        f"WHERE NOT label STARTS WITH '{_INTERNAL_LABEL_PREFIX}' RETURN label ORDER BY label"
+    )
     rel_types = graph.query("MATCH ()-[r]->() RETURN DISTINCT type(r) AS type ORDER BY type")
     return "\n".join(
         [
@@ -195,7 +247,14 @@ def _label_sets(graph: ReadOnlyGraph) -> list[list[str]]:
     one thing with one property set, and splitting it would suggest two.
     """
     # Sorted in Python: Memgraph refuses ORDER BY on a list value.
-    rows = graph.query(f"MATCH (n) WITH labels(n) AS labels RETURN DISTINCT labels LIMIT {_MAX_LABELS}")
+    # Filtered in the query, not afterwards: the LIMIT is a budget, and with
+    # eleven storage labels present they displaced real domain label sets out of
+    # the schema entirely.
+    rows = graph.query(
+        "MATCH (n) WITH labels(n) AS labels "
+        f"WHERE none(l IN labels WHERE l STARTS WITH '{_INTERNAL_LABEL_PREFIX}') "
+        f"RETURN DISTINCT labels LIMIT {_MAX_LABELS}"
+    )
     return sorted((row["labels"] for row in rows if row["labels"]), key=lambda labels: sorted(labels))
 
 

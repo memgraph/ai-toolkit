@@ -12,6 +12,7 @@ from context_graph_eval.inject import inject_batch
 from context_graph_eval.retrieval import (
     MAX_PAYLOAD_TOKENS,
     DeepEvalLLM,
+    QueryRefusedError,
     ReadOnlyGraph,
     WriteRefusedError,
     graph_schema,
@@ -299,3 +300,79 @@ async def test_a_real_model_can_find_an_injected_fact(populated: ReadOnlyGraph):
 
     assert hits, f"the baseline reached the fact {len(hits)}/3 times: {[a.answer for a in attempts]}"
     assert all(a.queries for a in attempts)
+
+
+# --- LightRAG's storage must not be part of the query surface (#321) ---
+
+
+@pytest.fixture
+def with_lightrag_storage(populated: ReadOnlyGraph):
+    """Adds the storage nodes LightRAG persists into the same graph.
+
+    Not a hypothetical shape: reconciling two sessions produced eleven such
+    labels alongside the domain model, all of them queryable.
+    """
+    populated._db.query(
+        "CREATE (:LightRAGKV_base_llm_response_cache {id: 'cache-1', data: 'the personal best time is 25:50'})"
+    )
+    populated._db.query("CREATE (:LightRAGVector_base_entities {id: 'vec-1', content: 'beagle'})")
+    populated._db.query("CREATE (:LightRAGDocStatus_base {id: 'doc-1', status: 'processed'})")
+    return populated
+
+
+def test_the_llm_response_cache_cannot_be_read(with_lightrag_storage: ReadOnlyGraph):
+    """The extraction LLM's cache sits in the graph under test and contains the
+    answers. An agent querying it reads the expected output straight out of the
+    cache without exercising the graph model at all -- scoring coverage while
+    measuring nothing.
+
+    Every other harness bug so far manufactured a false ZERO. This one
+    manufactures a false PASS, which is worse: a zero gets investigated, a pass
+    gets believed.
+    """
+    with pytest.raises(QueryRefusedError, match="internal storage"):
+        with_lightrag_storage.query("MATCH (n:LightRAGKV_base_llm_response_cache) RETURN n.data AS data")
+
+
+@pytest.mark.parametrize(
+    "cypher",
+    [
+        "MATCH (n:LightRAGVector_base_entities) RETURN n",
+        "MATCH (n:LightRAGDocStatus_base) RETURN n",
+        "MATCH (n:`LightRAGKV_base_text_chunks`) RETURN n",
+        "MATCH (a:Action)--(n:LightRAGVector_base_chunks) RETURN n",
+    ],
+)
+def test_every_internal_store_is_refused(with_lightrag_storage: ReadOnlyGraph, cypher: str):
+    with pytest.raises(QueryRefusedError):
+        with_lightrag_storage.query(cypher)
+
+
+def test_the_schema_does_not_advertise_internal_stores(with_lightrag_storage: ReadOnlyGraph):
+    """Beyond the leak, these cost real budget: the rendered schema was 12,739
+    characters with roughly a third of it storage internals, spent out of the
+    agent's payload before it issues a single query -- and #309 scores payload
+    size."""
+    schema = graph_schema(with_lightrag_storage)
+
+    assert "LightRAG" not in schema
+
+
+def test_domain_entities_carrying_lightrags_base_label_stay_queryable(populated: ReadOnlyGraph):
+    """`base` is NOT storage -- LightRAG stamps it on the extracted entities
+    themselves, 309 of them in a two-session run, mixed in with Concept, Person,
+    Event and the rest. Guarding on it would refuse most of the memory tier,
+    which is the half of the graph retrieval most needs."""
+    populated._db.query("CREATE (:base:Concept {entity_id: 'Personal Best Time', description: 'a running time'})")
+
+    rows = populated.query("MATCH (n:base:Concept) RETURN n.entity_id AS id")
+
+    assert [r["id"] for r in rows] == ["Personal Best Time"]
+
+
+def test_the_schema_still_describes_domain_entities(populated: ReadOnlyGraph):
+    populated._db.query("CREATE (:base:Concept {entity_id: 'Personal Best Time', description: 'a running time'})")
+
+    schema = graph_schema(populated)
+
+    assert "Concept" in schema
