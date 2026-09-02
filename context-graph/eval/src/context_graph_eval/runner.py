@@ -107,6 +107,16 @@ async def run_batch(
     plan = plan or RunPlan()
     check_offline()
 
+    # Every score, report row, and comparison in a run is keyed by question
+    # name, so a nameless golden is unattributable: its scores would collide
+    # with every other nameless one under a single key, and the questions it
+    # displaced would report as unscored. Checked here rather than at scoring
+    # time because by then the run has already paid for injection, distillation
+    # and retrieval.
+    unnamed = [i for i, g in enumerate(goldens) if not g.name]
+    if unnamed:
+        raise ValueError(f"every golden must carry a name to be scored; goldens at {unnamed} have none")
+
     fixtures = [
         fixture
         for record in records
@@ -234,5 +244,8 @@ def _judge_group(
         # passing one check while failing another is not a pass -- but which
         # one failed is what tells you whether retrieval or the answer was at
         # fault, and #304 pointed out that attribution is free here.
+        # run_batch has already rejected nameless goldens; asserted rather than
+        # re-checked so the type narrows and the invariant stays stated once.
+        assert golden.name is not None
         judged[golden.name] = {m.name: m.score for m in (test_result.metrics_data or []) if m.score is not None}
     return judged

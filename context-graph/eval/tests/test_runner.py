@@ -174,3 +174,22 @@ def test_a_run_refuses_to_upload_to_a_third_party(monkeypatch):
 
     with pytest.raises(RuntimeError, match="CONFIDENT_API_KEY"):
         check_offline()
+
+
+async def test_a_nameless_golden_is_rejected_before_the_run_spends_anything(eval_graph: ActionsGraph):
+    """Every score, report row, and comparison is keyed by question name, so a
+    nameless golden is unattributable -- its scores collide with every other
+    nameless one under one key. Rejected up front rather than at scoring time,
+    because by then the run has paid for injection, distillation and
+    retrieval."""
+    golden = to_golden(_record("q1"))
+    golden.name = None
+
+    with pytest.raises(ValueError, match="name"):
+        await run_batch(
+            [golden],
+            records=[_record("q1")],
+            graph=eval_graph,
+            llm=_StubLLM(),
+            plan=RunPlan(reconcile=False, judge=None),
+        )
