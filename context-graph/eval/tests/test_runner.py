@@ -193,3 +193,59 @@ async def test_a_nameless_golden_is_rejected_before_the_run_spends_anything(eval
             llm=_StubLLM(),
             plan=RunPlan(reconcile=False, judge=None),
         )
+
+
+async def test_reusing_the_graph_does_not_wipe_what_is_already_there(eval_graph: ActionsGraph):
+    """--skip-reconcile documents itself as reusing an already-reconciled graph,
+    but injection wipes unconditionally, so it wiped the distilled graph and
+    re-injected raw sessions -- leaving no memory tier and silently measuring
+    retrieval against the collection tier alone (#322)."""
+    from context_graph_eval.convert.longmemeval import to_session_fixtures
+    from context_graph_eval.inject import inject_batch
+
+    inject_batch(to_session_fixtures(_record("q1")), graph=eval_graph)
+    eval_graph._db.query("MATCH (s:Session) SET s.reconciliation_status = 'completed'")
+    eval_graph._db.query("CREATE (:Chunk {text: 'distilled memory that must survive'})")
+
+    await run_batch(
+        [to_golden(_record("q1"))],
+        records=[_record("q1")],
+        graph=eval_graph,
+        llm=_StubLLM(),
+        plan=RunPlan(reconcile=False, reuse_graph=True, judge=None),
+    )
+
+    surviving = eval_graph._db.query("MATCH (c:Chunk) RETURN count(c) AS c")[0]["c"]
+    assert surviving == 1
+
+
+async def test_reusing_an_empty_graph_is_refused(eval_graph: ActionsGraph):
+    """Otherwise every question scores as a recall miss and the run reports it
+    as an ordinary result -- the manufactured-zero shape again."""
+    with pytest.raises(ValueError, match="not in it"):
+        await run_batch(
+            [to_golden(_record("q1"))],
+            records=[_record("q1")],
+            graph=eval_graph,
+            llm=_StubLLM(),
+            plan=RunPlan(reconcile=False, reuse_graph=True, judge=None),
+        )
+
+
+async def test_reusing_an_undistilled_graph_is_refused(eval_graph: ActionsGraph):
+    """Sessions present but pending means injection ran without distillation:
+    no Chunk, Episode or entity to retrieve, only the raw collection tier --
+    a different system from the one under test, scored as if it were not."""
+    from context_graph_eval.convert.longmemeval import to_session_fixtures
+    from context_graph_eval.inject import inject_batch
+
+    inject_batch(to_session_fixtures(_record("q1")), graph=eval_graph)
+
+    with pytest.raises(ValueError, match="pending"):
+        await run_batch(
+            [to_golden(_record("q1"))],
+            records=[_record("q1")],
+            graph=eval_graph,
+            llm=_StubLLM(),
+            plan=RunPlan(reconcile=False, reuse_graph=True, judge=None),
+        )

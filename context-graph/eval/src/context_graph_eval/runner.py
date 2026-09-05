@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from .convert.longmemeval import to_session_fixtures
-from .inject import inject_batch
+from .inject import PENDING, inject_batch
 from .reconcile import reconcile_batch
 from .retrieval import ReadOnlyGraph, Retrieved, retrieve
 from .scoring import (
@@ -47,6 +47,11 @@ class RunPlan:
     """
 
     reconcile: bool = True
+    #: Reuse whatever is already in the graph instead of wiping and re-injecting.
+    #: Without this, skipping reconciliation does not save anything: injection
+    #: wipes first, so the run would re-inject raw sessions with no memory tier
+    #: and silently measure retrieval against the collection tier alone (#322).
+    reuse_graph: bool = False
     judge: Any | None = None
     reconcile_limit: int | None = None
     max_concurrent: int = 4
@@ -73,6 +78,48 @@ class BatchReport:
     scored: list[Scored] = field(default_factory=list)
     reconciled: int = 0
     reconcile_failures: int = 0
+
+
+def _require_reconciled(fixtures: list, *, graph: "ActionsGraph") -> None:
+    """Refuse to reuse a graph that cannot answer the questions about to be run.
+
+    Reuse exists to skip the dominant cost (#322), but it hands the run a graph
+    nobody just built, so the two ways it can be wrong are both silent. Either
+    would score every affected question as a recall miss and report it as an
+    ordinary result -- the same manufactured-zero shape as abstention questions
+    judged on ContextualRecall, or a judge outage rendered as 0%.
+
+    Missing sessions: the graph holds a different batch, or none.
+
+    Present but unreconciled: injection ran without distillation, so there is no
+    Chunk, Episode or entity to retrieve -- only the raw collection tier, which
+    is a different system from the one under test.
+    """
+    wanted = {fixture.session_id for fixture in fixtures}
+    if not wanted:
+        return
+
+    rows = graph._db.query(
+        "MATCH (s:Session) WHERE s.session_id IN $ids "
+        "RETURN s.session_id AS session_id, s.reconciliation_status AS status",
+        {"ids": sorted(wanted)},
+    )
+    found = {row["session_id"]: row["status"] for row in rows}
+
+    missing = sorted(wanted - set(found))
+    if missing:
+        raise ValueError(
+            f"cannot reuse the graph: {len(missing)} of {len(wanted)} sessions this run needs are "
+            f"not in it (e.g. {missing[:3]}). Run once without --skip-reconcile first."
+        )
+
+    pending = sorted(sid for sid, status in found.items() if status == PENDING)
+    if pending:
+        raise ValueError(
+            f"cannot reuse the graph: {len(pending)} of {len(wanted)} sessions are still pending "
+            f"reconciliation (e.g. {pending[:3]}), so there is no distilled memory to retrieve "
+            "from -- only the raw collection tier. Run once without --skip-reconcile first."
+        )
 
 
 def check_offline() -> None:
@@ -122,7 +169,10 @@ async def run_batch(
         for record in records
         for fixture in to_session_fixtures(record, max_sessions=plan.max_sessions_per_question)
     ]
-    inject_batch(fixtures, graph=graph)
+    if plan.reuse_graph:
+        _require_reconciled(fixtures, graph=graph)
+    else:
+        inject_batch(fixtures, graph=graph)
 
     reconciled = failures = 0
     if plan.reconcile:

@@ -72,8 +72,11 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument(
         "--skip-reconcile",
         action="store_true",
-        help="reuse an already-reconciled graph. Reconciliation dominates run cost, so iterating "
-        "on retrieval or scoring should not pay for it again.",
+        help="reuse the already-reconciled graph as-is: no wipe, no re-injection, no distillation. "
+        "Reconciliation dominates run cost, so iterating on retrieval or scoring should not pay "
+        "for it again. Refuses if the graph does not already hold this run's sessions, distilled "
+        "-- reusing the wrong graph would score every question as a miss and report it as a "
+        "result (#322).",
     )
     run.add_argument(
         "--judge-model",
@@ -375,6 +378,7 @@ def _run(args) -> int:
             llm=DeepEvalLLM(agent),
             plan=RunPlan(
                 reconcile=not args.skip_reconcile,
+                reuse_graph=args.skip_reconcile,
                 judge=judge,
                 max_sessions_per_question=args.max_sessions_per_question,
                 memgraph_url=args.memgraph_url,
