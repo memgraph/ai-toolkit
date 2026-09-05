@@ -292,7 +292,7 @@ def test_top_level_cli_setup_aliases_codex_init(tmp_path, monkeypatch):
 
     assert top_level_main(["setup", "codex", "--project-dir", str(tmp_path)]) == 0
 
-    assert (tmp_path / ".codex" / "config.toml").read_text() == "[features]\ncodex_hooks = true\n"
+    assert (tmp_path / ".codex" / "config.toml").read_text() == "[features]\nhooks = true\n"
 
 
 def test_generic_cli_requires_runtime(capsys):
@@ -318,7 +318,7 @@ def test_init_codex_writes_private_config(tmp_path, capsys):
         == 0
     )
 
-    assert (tmp_path / ".codex" / "config.toml").read_text() == "[features]\ncodex_hooks = true\n"
+    assert (tmp_path / ".codex" / "config.toml").read_text() == "[features]\nhooks = true\n"
     hooks = json.loads((tmp_path / ".codex" / "hooks.json").read_text())
     command = hooks["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
     assert command == "/venv/bin/agent-context-graph hook run codex --connector skills-graph"
@@ -477,4 +477,4 @@ def test_init_codex_force_overwrites(tmp_path):
 
     assert main(["init", "codex", "--project-dir", str(tmp_path), "--force"]) == 0
 
-    assert (codex_dir / "config.toml").read_text() == "[features]\ncodex_hooks = true\n"
+    assert (codex_dir / "config.toml").read_text() == "[features]\nhooks = true\n"
