@@ -1,0 +1,52 @@
+[project]
+name = "context-graph-eval"
+version = "0.1.0"
+description = "Evaluation loop for the Context Graph family: corpus conversion, retrieval scoring, and reporting"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "deepeval>=3.5.2",
+    # Declared explicitly rather than relied on transitively: the efficiency
+    # metric counts tokens with it, and losing it would silently change the
+    # units every efficiency number is reported in.
+    "tiktoken>=0.7.0",
+]
+
+[project.optional-dependencies]
+pipeline = [
+    "sessions-graph>=0.5.0",
+    "actions-graph>=0.1.1",
+    "unstructured2graph>=0.6.0",
+    "lightrag-memgraph>=0.3.1",
+    # Only for resolving LLM credentials from context-graph's config file
+    # (ADR 0002), so eval runs standalone without exported env vars.
+    "agent-context-graph>=0.1.4",
+]
+test = [
+    "pytest>=9.0.3",
+    "pytest-asyncio>=0.24.0",
+]
+
+[project.scripts]
+context-graph-eval = "context_graph_eval.cli:main"
+
+[tool.uv.sources]
+sessions-graph = { workspace = true }
+actions-graph = { workspace = true }
+unstructured2graph = { workspace = true }
+lightrag-memgraph = { workspace = true }
+agent-context-graph = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

@@ -1,0 +1,117 @@
+"""Load a batch of session fixtures into the eval database.
+
+Injection stages content only. It does not distil anything -- reconciliation is
+a separate, LLM-backed pass the runner triggers afterwards, exactly as it would
+run over a real harness session.
+
+Isolation is per **batch**, not per question: a batch-wide graph is what gives
+retrieval distractors to get wrong, and without distractors both precision and
+the payload-size efficiency metric would score well by construction.
+
+The eval instance is cleared before each batch so every run starts from known,
+fixed state -- otherwise a question could be answered from a previous run's
+sessions rather than this batch's fixtures, and two runs would not be
+comparable. Clearing is safe only because the instance is dedicated to eval;
+this must never point at a shared or development database.
+"""
+
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - import-time typing only
+    from actions_graph import ActionsGraph
+
+    from .convert.longmemeval import SessionFixture
+
+#: Marks the Session as awaiting distillation. Reconciliation sweeps for this.
+PENDING = "pending"
+
+
+@dataclass(frozen=True)
+class Written:
+    """What a batch injection wrote."""
+
+    sessions: int
+    turns: int
+
+
+def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph") -> Written:
+    """Clear the eval graph, then load ``fixtures`` into it.
+
+    Fixtures are deduplicated by ``session_id``. Upstream reuses distractor
+    sessions across questions, and a repeated id carries identical content --
+    verified across the whole dataset -- so a repeat is the *same* session, not
+    a new one. Writing it per occurrence would append its turns again on every
+    reuse, duplicating content in the graph and paying to reconcile each copy
+    (about 4,600 redundant LLM-backed reconciliations over a full run).
+
+    Returns counts of what was written, so a caller can assert the batch landed
+    rather than inferring it from the absence of an exception.
+    """
+    from actions_graph import MessageRole, Session
+
+    fixtures = list(fixtures)
+
+    # Validated before clearing: a blank session_id would collapse distinct
+    # fixtures onto one node, silently merging sessions and destroying the
+    # haystack. Failing first also avoids wiping the graph for a batch that was
+    # never going to load.
+    for fixture in fixtures:
+        if not fixture.session_id:
+            raise ValueError(f"fixture has no session_id: {fixture!r}")
+
+    deduped: dict[str, SessionFixture] = {}
+    for fixture in fixtures:
+        deduped.setdefault(fixture.session_id, fixture)
+
+    _wipe(graph)
+
+    turns = 0
+    for fixture in deduped.values():
+        graph.ensure_session(
+            Session(
+                session_id=fixture.session_id,
+                started_at=fixture.date,
+                # Deliberately not written: SessionFixture.holds_evidence. That
+                # is corpus-side bookkeeping, and putting it in the graph would
+                # hand retrieval the answer's location -- telling the thing
+                # under test where to look.
+                metadata={"origin": "eval-fixture"},
+            )
+        )
+        for turn in fixture.turns:
+            graph.record_message(
+                session_id=fixture.session_id,
+                role=MessageRole(turn.role),
+                content=turn.content,
+            )
+            turns += 1
+
+        _mark_pending(graph, fixture.session_id)
+
+    return Written(sessions=len(deduped), turns=turns)
+
+
+def _wipe(graph: "ActionsGraph") -> None:
+    """Delete everything in the eval graph.
+
+    Deliberately not ``ActionsGraph.clear()``, which only removes
+    ``Session|Agent|Action|Tool``. That leaves ``Chunk``, ``Entity``,
+    ``Episode`` and ``Memory`` standing -- precisely what reconciliation
+    produces. Relying on it would let the previous batch's *distilled memory*
+    survive, so a question could be answered from the last run instead of this
+    batch's fixtures: the leak #309 exists to prevent, and it would inflate
+    scores invisibly.
+
+    Deleting the whole graph is only safe because the eval instance is
+    dedicated. **This must never point at a shared or development database.**
+    """
+    graph._db.query("MATCH (n) DETACH DELETE n")
+
+
+def _mark_pending(graph: "ActionsGraph", session_id: str) -> None:
+    graph._db.query(
+        "MATCH (s:Session {session_id: $session_id}) SET s.reconciliation_status = $status",
+        {"session_id": session_id, "status": PENDING},
+    )
