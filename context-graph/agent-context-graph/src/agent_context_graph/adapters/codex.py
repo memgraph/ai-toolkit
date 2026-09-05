@@ -218,7 +218,7 @@ def init(project_dir: Path, connectors: list[str], **kwargs: Any) -> None:
         hook_command = shlex.join(command_parts)
 
     codex_dir.mkdir(parents=True, exist_ok=True)
-    config_path.write_text("[features]\ncodex_hooks = true\n", encoding="utf-8")
+    config_path.write_text("[features]\nhooks = true\n", encoding="utf-8")
     hooks_path.write_text(
         json.dumps({"hooks": build_hooks_config(hook_command, timeout=timeout)}, indent=2) + "\n",
         encoding="utf-8",
