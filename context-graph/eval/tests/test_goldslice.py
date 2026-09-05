@@ -9,6 +9,7 @@ reconciliation would stop seeing it with no error at all.
 
 import re
 
+from conftest import golden_meta
 from context_graph_eval.convert.longmemeval import DEFAULT_REVISION
 from context_graph_eval.goldslice import (
     GOLD_SLICE_FACT,
@@ -31,7 +32,7 @@ def test_the_question_is_tier_two():
     """It is authored, not adopted, so it is scored apart from Tier 1 (#303)."""
     (golden,) = gold_slice_goldens()
 
-    assert golden.additional_metadata["tier"] == 2
+    assert golden_meta(golden)["tier"] == 2
 
 
 def test_the_golden_carries_its_own_planting_prompt():
@@ -40,7 +41,7 @@ def test_the_golden_carries_its_own_planting_prompt():
     drifts."""
     (golden,) = gold_slice_goldens()
 
-    assert golden.additional_metadata["session_prompt"] == GOLD_SLICE_PROMPT
+    assert golden_meta(golden)["session_prompt"] == GOLD_SLICE_PROMPT
 
 
 def test_the_expected_answer_tracks_the_pinned_revision():
@@ -48,8 +49,10 @@ def test_the_expected_answer_tracks_the_pinned_revision():
     updating this answer, the gold slice would fail for a bookkeeping reason and
     look like a recall regression."""
     (golden,) = gold_slice_goldens()
+    expected = golden.expected_output
+    assert expected is not None
 
-    assert DEFAULT_REVISION.startswith(golden.expected_output)
+    assert DEFAULT_REVISION.startswith(expected)
 
 
 def test_the_prompt_never_states_the_fact_itself():
@@ -57,8 +60,10 @@ def test_the_prompt_never_states_the_fact_itself():
     the answer, the fact would land in a top-level Action too, and recall would
     succeed even with nesting completely broken."""
     (golden,) = gold_slice_goldens()
+    expected = golden.expected_output
+    assert expected is not None
 
-    assert golden.expected_output not in GOLD_SLICE_PROMPT
+    assert expected not in GOLD_SLICE_PROMPT
     assert DEFAULT_REVISION not in GOLD_SLICE_PROMPT
 
 

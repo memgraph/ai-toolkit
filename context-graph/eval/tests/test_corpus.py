@@ -7,12 +7,16 @@ dropping ``additional_metadata`` (which carries the tier), ``name`` and
 "|"-delimited string.
 """
 
+from typing import Any
+
 from context_graph_eval.corpus import read_corpus, write_corpus
 from deepeval.dataset import Golden
 
 
 def _golden(**overrides):
-    fields = {
+    # Annotated because this is a kwargs bag: without it the literal infers
+    # dict[str, str | int] and every str-typed parameter rejects the int.
+    fields: dict[str, Any] = {
         "input": "What breed is the dog I adopted?",
         "expected_output": "A beagle.",
         "context": ["user: I adopted a beagle named Max"],

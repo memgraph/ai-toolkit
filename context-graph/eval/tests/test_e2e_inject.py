@@ -13,6 +13,7 @@ from context_graph_eval.convert.longmemeval import SessionFixture, Turn
 from context_graph_eval.inject import inject_batch
 
 from actions_graph import ActionsGraph
+from actions_graph.models import Message
 
 
 def _fixture(session_id: str, *, holds_evidence: bool = False) -> SessionFixture:
@@ -39,7 +40,9 @@ def test_turns_land_as_actions_under_their_session(eval_graph: ActionsGraph):
 
     actions = eval_graph.get_session_actions("s1")
 
-    assert [a.content for a in actions] == [
+    messages = [a for a in actions if isinstance(a, Message)]
+    assert len(messages) == len(actions)
+    assert [m.content for m in messages] == [
         "a user turn in s1",
         "an assistant reply in s1",
     ]
@@ -67,7 +70,9 @@ def test_a_session_shared_by_two_questions_is_written_once(eval_graph: ActionsGr
     inject_batch([shared, _fixture("unique"), shared], graph=eval_graph)
 
     actions = eval_graph.get_session_actions("shared")
-    assert [a.content for a in actions] == [
+    messages = [a for a in actions if isinstance(a, Message)]
+    assert len(messages) == len(actions)
+    assert [m.content for m in messages] == [
         "a user turn in shared",
         "an assistant reply in shared",
     ]

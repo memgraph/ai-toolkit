@@ -6,6 +6,8 @@ rather than judge noise. #304 provides the noise floor via repeat-and-compare
 calibration.
 """
 
+from typing import Any
+
 import pytest
 from context_graph_eval.report import (
     RunMeta,
@@ -20,7 +22,9 @@ from context_graph_eval.scoring import Scored
 
 
 def _meta(**overrides) -> RunMeta:
-    fields = {
+    # Annotated because this is a kwargs bag: without it the literal infers
+    # dict[str, str | int] and every str-typed parameter rejects the int.
+    fields: dict[str, Any] = {
         "label": "baseline",
         "corpus_revision": "98d7416c24c7",
         "corpus_variant": "s",

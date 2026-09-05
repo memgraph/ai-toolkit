@@ -7,6 +7,7 @@ docs/research/2026-08-memory-benchmarks.md.
 
 import re
 
+from conftest import golden_meta
 from context_graph_eval.convert.longmemeval import to_golden, to_session_fixtures
 
 
@@ -69,8 +70,8 @@ def test_golden_is_traceable_to_its_upstream_record():
 def test_golden_carries_the_tier_and_question_type_it_is_scored_under():
     golden = to_golden(_record())
 
-    assert golden.additional_metadata["tier"] == 1
-    assert golden.additional_metadata["question_type"] == "single-session-user"
+    assert golden_meta(golden)["tier"] == 1
+    assert golden_meta(golden)["question_type"] == "single-session-user"
 
 
 def test_abstention_questions_are_marked_so_they_can_be_scored_apart():
@@ -81,19 +82,19 @@ def test_abstention_questions_are_marked_so_they_can_be_scored_apart():
     "abstention", despite the upstream README listing it as a type."""
     golden = to_golden(_record(question_id="gpt4_1a2b3c_abs"))
 
-    assert golden.additional_metadata["abstention"] is True
+    assert golden_meta(golden)["abstention"] is True
 
 
 def test_an_abstention_question_keeps_its_original_question_type():
     golden = to_golden(_record(question_id="gpt4_1a2b3c_abs", question_type="temporal-reasoning"))
 
-    assert golden.additional_metadata["question_type"] == "temporal-reasoning"
+    assert golden_meta(golden)["question_type"] == "temporal-reasoning"
 
 
 def test_ordinary_questions_are_not_marked_as_abstention():
     golden = to_golden(_record())
 
-    assert golden.additional_metadata["abstention"] is False
+    assert golden_meta(golden)["abstention"] is False
 
 
 def test_every_haystack_session_becomes_an_injectable_fixture():

@@ -83,3 +83,15 @@ def eval_graph():
 def _wipe(graph) -> None:
     """Empty the eval instance. Safe only because it is dedicated to eval."""
     graph._db.query("MATCH (n) DETACH DELETE n")
+
+
+def golden_meta(golden) -> dict:
+    """A Golden's ``additional_metadata``, asserted present.
+
+    deepeval types the field ``dict | None``, so every read of it is a type
+    error even though the corpus writer always populates it. Asserting once
+    here narrows it for the caller and keeps the absence a test failure rather
+    than a silent ``None`` subscript.
+    """
+    assert golden.additional_metadata is not None
+    return golden.additional_metadata

@@ -8,6 +8,7 @@ records survive into a committed corpus.
 import collections
 
 import pytest
+from conftest import golden_meta
 from context_graph_eval.convert.longmemeval import (
     DEFAULT_REVISION,
     build_corpus,
@@ -39,7 +40,7 @@ def test_sampling_roughly_preserves_upstream_proportions():
         records += [_record(f"{question_type}-{i}_abs", question_type) for i in range(5)]
 
     goldens = build_corpus(records, limit=60)
-    abstention = sum(1 for g in goldens if g.additional_metadata["abstention"])
+    abstention = sum(1 for g in goldens if golden_meta(g)["abstention"])
 
     # Upstream is 30/500 = 6%, so ~4 of 60. The floor lifts that a little; 40%
     # is not "a little".
@@ -58,7 +59,7 @@ def test_equally_sized_strata_get_equal_shares():
         records += [_record(f"{question_type}-{i}_abs", question_type) for i in range(5)]
 
     goldens = build_corpus(records, limit=60)
-    counts = collections.Counter(g.additional_metadata["question_type"] for g in goldens)
+    counts = collections.Counter(golden_meta(g)["question_type"] for g in goldens)
 
     assert abs(counts["alpha-type"] - counts["beta-type"]) <= 1
 
@@ -70,7 +71,7 @@ def test_a_rare_stratum_still_survives_a_small_sample():
     records += [_record(f"rare{i}", "single-session-preference") for i in range(5)]
 
     goldens = build_corpus(records, limit=20)
-    rare = [g for g in goldens if g.additional_metadata["question_type"] == "single-session-preference"]
+    rare = [g for g in goldens if golden_meta(g)["question_type"] == "single-session-preference"]
 
     assert rare
 
@@ -86,8 +87,8 @@ def test_sampling_reaches_abstention_questions():
 
     goldens = build_corpus(records, limit=10)
 
-    assert any(g.additional_metadata["abstention"] for g in goldens)
-    assert any(not g.additional_metadata["abstention"] for g in goldens)
+    assert any(golden_meta(g)["abstention"] for g in goldens)
+    assert any(not golden_meta(g)["abstention"] for g in goldens)
 
 
 def _record(question_id: str, question_type: str = "single-session-user"):
@@ -161,7 +162,7 @@ def test_sampling_spreads_across_question_types():
     records += [_record(f"b{i}", "temporal-reasoning") for i in range(10)]
 
     goldens = build_corpus(records, limit=10)
-    types = {g.additional_metadata["question_type"] for g in goldens}
+    types = {golden_meta(g)["question_type"] for g in goldens}
 
     assert types == {"single-session-user", "temporal-reasoning"}
 
