@@ -7,7 +7,6 @@ except ImportError as e:
     ) from e
 
 
-# NOTE: HF_TOKEN has to be set in the environment variables.
 def get_sentence_transformer_model(
     name: str = "all-MiniLM-L6-v2",
     device: str | None = None,
@@ -26,7 +25,6 @@ def get_sentence_transformer_model(
         SentenceTransformer model. Always returns the underlying model, not DataParallel
         wrapper because then it's possible to use the whole SentenceTransformer API.
     """
-    # Auto-detect device if not specified
     if device is None:
         if torch.cuda.is_available():
             device = "cuda"
@@ -35,13 +33,11 @@ def get_sentence_transformer_model(
         else:
             device = "cpu"
     model = SentenceTransformer(name, device=device)
-    # Wrap with DataParallel if requested and CUDA is available
     if use_data_parallel and torch.cuda.is_available():
         if gpu_ids is None:
             gpu_ids = list(range(torch.cuda.device_count()))
-        # Create DataParallel wrapper but return the underlying model
         parallel_model = torch.nn.DataParallel(model, device_ids=gpu_ids)
-        # Return the underlying model to avoid DataParallel wrapper issues
+        # Keep the public API as SentenceTransformer rather than exposing the wrapper.
         return parallel_model.module
     return model
 
@@ -57,13 +53,11 @@ if __name__ == "__main__":
     print(f"  MPS: {hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()}")
     print("  CPU: True (always available)")
 
-    # Example usage
     print("\nExample usage:")
     model = get_sentence_transformer_model()
     print(f"Model device: {get_model_device(model)}")
     print(f"Model type: {type(model).__name__}")
 
-    # Example of using the model directly (no wrapper needed)
     print("\nDirect usage example:")
     sample_texts = ["Hello world", "Graph databases are fast"]
     print(f"Sample texts: {sample_texts}")
@@ -73,7 +67,6 @@ if __name__ == "__main__":
     print("  - model.encode(texts, normalize_embeddings=True)")
     print("  - model.encode(texts, show_progress_bar=True)")
 
-    # Test with DataParallel (if multiple GPUs available)
     if torch.cuda.is_available() and torch.cuda.device_count() > 1:
         print("\nTesting DataParallel:")
         parallel_model = get_sentence_transformer_model(use_data_parallel=True)

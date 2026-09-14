@@ -1,4 +1,4 @@
-# flake8: noqa
+# flake8: noqa — standalone agent adjusts sys.path before importing local modules.
 """
 SQL Database to Graph Migration Agent
 

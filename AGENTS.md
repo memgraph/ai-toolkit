@@ -111,23 +111,48 @@ own real Claude Code session — see `./scripts/dev-memgraph.sh --help`.
 - `isort`'s `known-first-party` list is maintained by hand in
   `pyproject.toml` — add your package's import name there if you add a new
   workspace member.
+- Prefer expressive names, small functions, and clear control flow over
+  explanatory comments.
+- Comments should explain intent, invariants, external constraints, or
+  non-obvious tradeoffs. Do not use comments to narrate obvious operations or
+  restate the code.
+- Public modules, classes, functions, and methods need docstrings describing
+  behavior, parameters, return values, and raised exceptions where relevant.
+  Use the existing concise style unless a package establishes a more detailed
+  convention; do not copy documentation templates containing placeholder text.
+- Keep comments and docstrings synchronized with the implementation. Remove
+  commented-out code and stale notes when the related code changes.
+- TODOs must describe the missing behavior and include an issue reference:
+  `TODO(#123): ...`. Use a normal code comment for a temporary local note,
+  not an owner-only TODO.
+- Every `noqa`, `type: ignore`, and `pragma: no cover` suppression must be
+  narrow and include a specific reason. Prefer fixing the underlying issue or
+  narrowing the suppression over adding a broad file-level exemption. The
+  standalone `agents/sql2graph` entry points are a documented legacy exception
+  while that package's import layout is migrated.
+- Comments around Cypher/SQL must document security boundaries, parameterization
+  decisions, transaction semantics, or graph-model invariants when those facts
+  are not clear from the code. Never interpolate untrusted values into queries.
 
 ## Type checking
 
 This repo standardizes on [`ty`](https://docs.astral.sh/ty/) (Astral's type
-checker — same vendor as `uv`/`ruff`), not `mypy` or `pyright`. **Not yet
-enforced in CI** — tracked in
-[#313](https://github.com/memgraph/ai-toolkit/issues/313); annotate as you
-touch code in the meantime rather than waiting for enforcement to land.
-`ty` needs a package's own installed dependencies to resolve imports (like
-`pytest`, unlike `ruff`), so check one package at a time:
+checker — same vendor as `uv`/`ruff`), not `mypy` or `pyright`. **Enforced in
+CI**, blocking: `.github/workflows/lint.yaml`'s `typecheck` job. `ty` resolves
+imports through installed packages (unlike `ruff`, which is purely
+syntactic), and cross-package imports span the whole workspace (e.g.
+`agent-context-graph` optionally imports `skills-graph`/`actions-graph`/
+`sessions-graph`), so CI syncs the full workspace before checking:
+```bash
+uv sync --all-packages --all-extras
+ty check .
+```
+For a quick local check of just what you touched, without a full sync, you
+can still point `ty` at one package's own venv — but expect spurious
+unresolved-import diagnostics for anything that imports across packages:
 ```bash
 uvx ty check <package>/src --python .venv
 ```
-`integrations/lightrag-memgraph/pyproject.toml` still carries a dormant,
-never-wired-in `mypy` dev dependency and `[tool.mypy]` block predating this
-decision — don't treat it as a second standard; it's slated for removal in
-#313.
 
 ## Testing policy: prefer real Memgraph over mocks
 

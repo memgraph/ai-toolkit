@@ -2,11 +2,13 @@
 
 Memgraph MCP Server is a lightweight server implementation of the Model Context Protocol (MCP) designed to connect Memgraph with LLMs and different clients.
 
-## 🔧Tools
+## 🔧 Tools
 
-The Memgraph MCP Server exposes the following tools over MCP. Each tool runs a Memgraph‐toolbox operation and returns a list of records (dictionaries).
+The default `server` implementation exposes the following seven tools over MCP.
+(`memgraph-experimental` — see [Multi-Server Architecture](#multi-server-architecture) —
+exposes a different, smaller set, documented there.)
 
-### run_query(query: str)
+### run_cypher_query(query: str)
 
 Run any arbitrary Cypher query against the connected Memgraph database. Returns
 one row per result, with each value in a **type-preserving** form: nodes,
@@ -49,86 +51,65 @@ Parameters:
 
 - `query`: A valid Cypher query string.
 
-### get_configuration()
+### search_schema(pattern: str)
 
-Fetch the current Memgraph configuration settings.
-Equivalent to running `SHOW CONFIGURATION`.
+Search the entire graph schema (node labels, relationship types, and enums) by
+a case-insensitive regex pattern, matching against labels, types,
+descriptions, and property keys/descriptions. Use this to find relevant parts
+of the graph model before writing a query.
 
-### get_index()
-
-Retrieve information about existing indexes.
-Equivalent to running `SHOW INDEX INFO`.
-
-### get_constraint()
-
-Retrieve information about existing constraints.
-Equivalent to running `SHOW CONSTRAINT INFO`.
-
-### get_schema()
-
-Fetch the graph schema (labels, relationships, property keys).
-Equivalent to running `SHOW SCHEMA INFO`.
-
-### get_storage()
-
-Retrieve storage usage metrics for nodes, relationships, and properties.
-Equivalent to running `SHOW STORAGE INFO`.
-
-### get_triggers()
-
-List all database triggers.
-Equivalent to running `SHOW TRIGGERS`.
-
-### get_procedures()
-
-List all available Memgraph procedures (query modules).
-Returns information about all available procedures including MAGE algorithms and custom query modules. Each procedure includes its name, signature, and whether it performs write operations.
-Use this to discover available graph algorithms and utility functions before executing them.
-Equivalent to running `CALL mg.procedures() YIELD *`.
-
-### get_betweenness_centrality()
-
-Compute betweenness centrality on the entire graph.
-Uses `BetweennessCentralityTool` under the hood.
-
-### get_page_rank()
-
-Compute PageRank scores for all nodes.
-Uses `PageRankTool` under the hood.
-
-### get_node_neighborhood(node_id: str, max_distance: int = 1, limit: int = 100)
-
-Find nodes within a specified distance from a given node.
 Parameters:
 
-- `node_id`: The ID of the starting node to find neighborhood around
-- `max_distance`: Maximum distance (hops) to search from the starting node. Default is 1
-- `limit`: Maximum number of nodes to return. Default is 100
+- `pattern`: A regex pattern to search for, e.g. `"person"` or `"pay.*ment"`.
 
-Uses `NodeNeighborhoodTool` under the hood.
+### get_node_schema(node_labels: list[str])
 
-### search_node_vectors(index_name: str, query_vector: List[float], limit: int = 10)
+Get the full schema definition of a node by its labels — properties, indexes,
+constraints, and every relationship where this node appears.
 
-Perform vector similarity search on nodes in Memgraph using cosine similarity.
 Parameters:
 
-- `index_name`: Name of the index to use for the vector search
-- `query_vector`: Query vector to search for similarity
-- `limit`: Number of similar nodes to return. Default is 10
+- `node_labels`: The labels of the node to get the details of.
 
-Uses `NodeVectorSearchTool` under the hood.
+### get_relationship_schema(relationship_type: str, start_node_labels: list[str], end_node_labels: list[str])
 
-### list_databases() — _auth-only_
+Get the full schema definition of a relationship by its type and the labels of
+the nodes it connects — properties and indexes.
 
-Available only when `MCP_AUTH_ENABLED=true`. Returns the databases the calling
-user is authorized to access (the intersection of their JWT `tenants` claim and
-the server's `MCP_TENANT_CATALOG`). The currently-active database is flagged.
+Parameters:
 
-### use_database(name: str) — _auth-only_
+- `relationship_type`: The type of the relationship to get the details of.
+- `start_node_labels`: The labels of the relationship's start node.
+- `end_node_labels`: The labels of the relationship's end node.
 
-Available only when `MCP_AUTH_ENABLED=true`. Switches the active database for
-the current MCP session. The new name must be in the caller's allowed set —
+### get_enum_schema(enum_name: str)
+
+Get the schema definition of an enum by its name — the enum's name and its
+values.
+
+Parameters:
+
+- `enum_name`: The name of the enum to get the details of.
+
+### list_databases()
+
+List the databases this session can access; the currently-active one is
+flagged. This tool always exists (it isn't gated behind auth): with
+`MCP_AUTH_ENABLED=false` (the default) there is exactly one database and it's
+always current; with auth enabled it returns the intersection of the caller's
+JWT `tenants` claim and the server's `MCP_TENANT_CATALOG` — see
+[Multi-tenant Authentication](#-multi-tenant-authentication-optional).
+
+### use_database(name: str)
+
+Switch the active database for the current MCP session. With auth disabled
+this always errors — there's only one database to switch to. With auth
+enabled, `name` must be one of the databases the caller's token authorizes;
 the tool cannot expand authorization beyond what the JWT grants.
+
+Parameters:
+
+- `name`: The database to switch to.
 
 ## 🐳 Run Memgraph MCP server with Docker
 
@@ -153,10 +134,10 @@ docker pull memgraph/mcp-memgraph:latest
 
 #### 1. Streamable HTTP mode (recommended for most users)
 
-To connect to local Memgraph containers, by default the MCP server will be available at `http://localhost:8000/mcp/`:
+To connect to local Memgraph containers, publish port 8000 and the MCP server will be available at `http://localhost:8000/mcp/`:
 
 ```bash
-docker run --rm memgraph/mcp-memgraph:latest
+docker run --rm -p 8000:8000 memgraph/mcp-memgraph:latest
 ```
 
 #### 2. Stdio mode (for integration with MCP stdio clients)
@@ -186,15 +167,14 @@ docker run --rm \
 
 ### Environment Variables
 
-The following environment variables can be used to configure the Memgraph MCP Server, whether running with Docker or directly (e.g., with `uv` or `python`).
+The following environment variables can be used to configure the Memgraph MCP Server, whether running with Docker or directly (e.g., with `uv` or `python`). Where noted, the published Docker image sets its own default via `ENV` in the [`Dockerfile`](./Dockerfile) — running the plain Python entry point (`uv run mcp-memgraph`) gets the bare default instead.
 
 #### Memgraph Connection
 
-- `MEMGRAPH_URL`: The Bolt URL of the Memgraph instance to connect to. Default: `bolt://host.docker.internal:7687`
-  - The default value allows you to connect to a Memgraph instance running on your host machine from within the Docker container.
-- `MEMGRAPH_USER`: The username for authentication. Default: `memgraph`
-- `MEMGRAPH_PASSWORD`: The password for authentication. Default: empty
-- `MEMGRAPH_DATABASE`: The database name to connect to. Default: `memgraph`
+- `MEMGRAPH_URL`: The Bolt URL of the Memgraph instance to connect to. Default: `bolt://localhost:7687`; the **Docker image defaults to `bolt://host.docker.internal:7687`** instead, so it can reach a Memgraph instance running on your host machine from within the container.
+- `MEMGRAPH_USER`: The username for authentication. Default: empty.
+- `MEMGRAPH_PASSWORD`: The password for authentication. Default: empty.
+- `MEMGRAPH_DATABASE`: The database name to connect to. Default: `memgraph`.
 
 #### Server Configuration
 
@@ -202,11 +182,15 @@ The following environment variables can be used to configure the Memgraph MCP Se
   - `server`: Production-ready server with all stable Memgraph tools
   - `memgraph-experimental`: Experimental server with adaptive query optimization and autonomous index management
     - **Note**: Read-only mode is not supported on this server as it requires write access to create indexes
-- `MCP_TRANSPORT`: The transport protocol to use. Options: `streamable-http` (default), `stdio`
+- `MCP_TRANSPORT`: The transport protocol to use. Options: `stdio` (default), `streamable-http`; the **Docker image defaults to `streamable-http`** instead.
+- `MCP_HOST`: Bind host for `streamable-http` transport. Default: `127.0.0.1`; the **Docker image defaults to `0.0.0.0`** instead, so the server is reachable from outside the container.
+- `MCP_PORT`: Bind port for `streamable-http` transport. Default: `8000`.
 - `MCP_READ_ONLY`: Enable read-only mode to prevent write operations (CREATE, MERGE, DELETE, SET, DROP, REMOVE). Options: `true` (default), `false`
   - When set to `true`, all write queries will be blocked with an error message
   - Set to `false` to allow write operations on the database
   - **Only applies to the default `server`** - the `memgraph-experimental` server ignores this setting
+- `MCP_LOG_FILE`: Path to a log file. Default: unset (file logging disabled; logs still go to stderr).
+- `MCP_LOG_LEVEL`: Logging level — `DEBUG`, `INFO`, `WARNING`, or `ERROR`. Default: `INFO`.
 
 You can set these environment variables in your shell, in your Docker run command, or in your deployment environment.
 
@@ -311,8 +295,16 @@ A complete Keycloak example (single-pod, dev-mode) is available in the
 
 The MCP server supports multiple server implementations that can be selected via the `MCP_SERVER` environment variable:
 
-- **`server`** (default): Production server with all stable tools (run_query, get_schema, get_configuration, etc.)
-- **`memgraph-experimental`**: Experimental server with **autonomous GraphRAG capabilities** using FastMCP's native sampling and elicitation:
+- **`server`** (default): the seven stable tools documented in [🔧 Tools](#-tools) above (`run_cypher_query`, `search_schema`, `get_node_schema`, `get_relationship_schema`, `get_enum_schema`, `list_databases`, `use_database`).
+- **`memgraph-experimental`**: experimental server with **autonomous GraphRAG capabilities** using FastMCP's native sampling and elicitation to check for (and offer to create) indexes a query would benefit from. **Note**: read-only mode is not supported here, since creating indexes requires write access.
+
+#### memgraph-experimental tools
+
+- **`query_tool(query)`** — Execute a Cypher query; uses sampling to check whether beneficial indexes are missing and, if so, uses elicitation to ask whether to create them.
+- **`analyze_query(query)`** — Analyze a query's index requirements via sampling, without executing it.
+- **`create_index(label, property, index_type="label+property")`** — Create a `vector`, `text`, or `label+property` index.
+- **`get_index_info()`** — List all indexes (`SHOW INDEX INFO`).
+- **`get_schema_info()`** — Get labels and relationship types (`SHOW SCHEMA INFO`).
 
 To use the experimental Memgraph server:
 
@@ -418,7 +410,7 @@ following content:
 ```
 {
     "mcpServers": {
-      "mpc-memgraph": {
+      "mcp-memgraph": {
         "command": "uv",
         "args": [
             "run",

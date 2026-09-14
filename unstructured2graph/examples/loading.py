@@ -14,7 +14,7 @@ LIGHTRAG_DIR = os.path.join(SCRIPT_DIR, "..", "lightrag_storage.out")
 
 
 async def from_unstructured_with_prep():
-    # Delete & create LightRAG working directory.
+    # Recreate the working directory so this example starts from a clean state.
     lightrag_log_file = os.path.join(LIGHTRAG_DIR, "lightrag.log")
     if os.path.exists(lightrag_log_file):
         os.remove(lightrag_log_file)
@@ -23,8 +23,7 @@ async def from_unstructured_with_prep():
     if not os.path.exists(LIGHTRAG_DIR):
         os.mkdir(LIGHTRAG_DIR)
 
-    # Cleanup Memgraph database. (from_unstructured creates the Chunk.hash
-    # uniqueness constraint itself, so no manual index step is needed here.)
+    # from_unstructured creates the Chunk.hash uniqueness constraint itself.
     memgraph = Memgraph(user_agent="unstructured2graph")
     memgraph.query("MATCH (n) DETACH DELETE n;")
 

@@ -110,7 +110,7 @@ class CoherenceEmbeddingsBasedMetric(BaseMetric):
         Returns:
             Array of embeddings with shape (n_sentences, embedding_dim)
         """
-        # TODO(gitbuda): This should use the utils.embeddings because GPU could be used.
+        # Keep this local model call until the shared embedding utility supports this metric's API.
         # convert_to_numpy is already the model's default; pinning it explicitly picks the
         # np.ndarray-returning overload instead of leaving overload resolution to fall
         # through to a Tensor-returning one.

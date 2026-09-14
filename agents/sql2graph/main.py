@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# flake8: noqa
+# flake8: noqa — standalone entry point adjusts sys.path before importing local modules.
 """
 SQL Database to Graph Migration Agent - Main Entry Point
 
