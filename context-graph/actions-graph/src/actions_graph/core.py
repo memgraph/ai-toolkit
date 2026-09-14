@@ -96,6 +96,21 @@ class ActionsGraph:
     # Schema setup
     # ------------------------------------------------------------------
 
+    @property
+    def db(self) -> Memgraph:
+        """The Memgraph client this graph reads and writes through.
+
+        Exposed because callers legitimately need Cypher this class does not
+        wrap -- the eval harness counts nodes, wipes between batches, and runs
+        an agent's own generated queries -- and the alternative was every one of
+        them reaching into ``_db``, which is a private attribute promising
+        nothing about its lifetime or type.
+
+        Read as: this class owns the connection, and hands it out rather than
+        hiding it badly.
+        """
+        return self._db
+
     def setup(self) -> None:
         """Create constraints and indexes required for action storage."""
         # Session constraints and indexes

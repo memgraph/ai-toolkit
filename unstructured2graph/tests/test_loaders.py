@@ -401,3 +401,37 @@ def test_chunking_of_different_sources():
     assert all(isinstance(chunk, Chunk) for document in chunked_documents for chunk in document.chunks)
     assert all(isinstance(chunk.text, str) for document in chunked_documents for chunk in document.chunks)
     assert all(isinstance(chunk.hash, str) for document in chunked_documents for chunk in document.chunks)
+
+
+class TestChunkSizing:
+    """Chunk sizing has to be reachable by the caller (#327, #328).
+
+    `chunk_by_title` was called with no arguments, so its ~500-character cap
+    applied to everything and no caller could influence it even knowingly.
+    Feeding it conversation turns, that split each turn into ~3.6 fragments:
+    measured on 39 sessions, 468 reconcilable actions became 1,677 LightRAG
+    documents, each costing two LLM calls.
+    """
+
+    def test_a_caller_can_keep_a_long_text_whole(self):
+        text = "user: " + ("I have been tracking my running times carefully. " * 40)
+
+        whole = parse_text(text, chunk_kwargs={"max_characters": 8000})
+
+        assert len(whole) == 1
+
+    def test_the_default_still_chunks(self):
+        """Unchanged for existing callers: documents may legitimately want the
+        small-chunk behaviour, so this does not move the default."""
+        text = "I have been tracking my running times carefully. " * 40
+
+        assert len(parse_text(text)) > 1
+
+    def test_chunk_sizing_is_independent_of_partition_options(self):
+        """partition_kwargs reaches partition_text; chunk_kwargs reaches
+        chunk_by_title. Conflating them is what left chunking unreachable."""
+        text = "user: " + ("A sentence about a personal best time of 25:50. " * 40)
+
+        chunks = parse_text(text, partition_kwargs={}, chunk_kwargs={"max_characters": 8000})
+
+        assert len(chunks) == 1

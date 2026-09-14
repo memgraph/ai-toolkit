@@ -126,10 +126,12 @@ class TestSessionsGraphConnector:
         pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
         from agent_context_graph.adapters import _identity
 
-        config_dir = tmp_path / "context-graph"
-        config_file = config_dir / "config.toml"
-        monkeypatch.setattr(_identity, "_CONFIG_DIR", config_dir)
-        monkeypatch.setattr(_identity, "_CONFIG_FILE", config_file)
+        # The supported override (ADR 0003), not module privates: those were
+        # removed when the config path became a lookup, and monkeypatching a
+        # missing attribute raises -- while silencing that with raising=False
+        # would point these tests at the real host config, which is exactly
+        # what this fixture exists to prevent.
+        monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "context-graph" / "config.toml"))
         _identity._reset_cache()
         yield _identity
         _identity._reset_cache()
@@ -260,10 +262,12 @@ class TestReconciliationEnv:
         pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
         from agent_context_graph.adapters import _identity
 
-        config_dir = tmp_path / "context-graph"
-        config_file = config_dir / "config.toml"
-        monkeypatch.setattr(_identity, "_CONFIG_DIR", config_dir)
-        monkeypatch.setattr(_identity, "_CONFIG_FILE", config_file)
+        # The supported override (ADR 0003), not module privates: those were
+        # removed when the config path became a lookup, and monkeypatching a
+        # missing attribute raises -- while silencing that with raising=False
+        # would point these tests at the real host config, which is exactly
+        # what this fixture exists to prevent.
+        monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "context-graph" / "config.toml"))
         _identity._reset_cache()
         yield _identity
         _identity._reset_cache()

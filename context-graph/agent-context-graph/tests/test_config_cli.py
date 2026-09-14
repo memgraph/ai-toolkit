@@ -16,9 +16,10 @@ def _reset_cache():
 @pytest.fixture()
 def config_dir(monkeypatch, tmp_path):
     config_dir = tmp_path / "context-graph"
-    config_file = config_dir / "config.toml"
-    monkeypatch.setattr(_identity, "_CONFIG_DIR", config_dir)
-    monkeypatch.setattr(_identity, "_CONFIG_FILE", config_file)
+    # Uses the supported override (ADR 0003) rather than monkeypatching module
+    # privates, so these tests exercise the same path a real isolated session
+    # takes instead of a shape only tests can produce.
+    monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(config_dir / "config.toml"))
     return config_dir
 
 

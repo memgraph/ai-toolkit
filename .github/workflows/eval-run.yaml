@@ -1,0 +1,103 @@
+name: Run the context-graph eval loop (manual)
+
+# Manual-trigger only, deliberately not on push/pull_request -- the same
+# reasoning as test-live-graph-model.yaml, for three separate reasons:
+#
+#  1. Cost. Reconciliation is roughly two LLM calls per session, and a
+#     20-question batch injects ~900 sessions. Per-PR is untenable.
+#  2. Non-determinism. Judged scores vary run to run; #304 addresses that with
+#     repeat-and-compare calibration, not a pass/fail gate. Gating on a noisy
+#     metric produces flaky CI that teaches people to ignore it.
+#  3. It would contradict a decision already made. #299 chose human-gated
+#     promotion: eval produces a comparison report a person reads. A CI gate on
+#     the score is automatic promotion wearing a different hat.
+#
+# The fast, deterministic, LLM-free half of this package's tests DOES run on
+# every PR -- see the test-context-graph-eval job in tests.yaml.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "How many questions to run"
+        required: false
+        default: "20"
+      judge_model:
+        description: "Anthropic model id for the judge (blank = skip judging, report payload size only)"
+        required: false
+        default: ""
+      skip_reconcile:
+        description: "Reuse an already-reconciled graph (cheap, but only valid if one exists)"
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  eval-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Start the dedicated eval Memgraph
+        run: |
+          # A dedicated instance, wiped before each batch. Per-batch *databases*
+          # were the original plan (#309) but that is multi-tenancy and needs an
+          # Enterprise licence; a dedicated instance gives the same
+          # known-fixed-state guarantee on a community licence.
+          #
+          # --schema-info-enabled is required: retrieval's schema description
+          # goes through memgraph-toolbox's SearchSchemaTool, which refuses
+          # without it, and the agent would silently fall back to bare labels.
+          docker run -d -p 7689:7687 --name eval-memgraph memgraph/memgraph-mage:latest --schema-info-enabled=True --telemetry-enabled=false
+
+      - name: Wait for Memgraph to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if (echo > /dev/tcp/localhost/7689) 2>/dev/null; then
+              echo "Memgraph is accepting Bolt connections"
+              exit 0
+            fi
+            echo "Waiting for Memgraph (attempt $i)..."
+            sleep 2
+          done
+          echo "Memgraph did not become ready in time" >&2
+          docker logs eval-memgraph || true
+          exit 1
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Sync workspace environment
+        run: uv sync --package context-graph-eval --extra pipeline
+
+      - name: Run the eval batch
+        env:
+          MEMGRAPH_URL: bolt://localhost:7689
+          MEMGRAPH_USER: ""
+          MEMGRAPH_PASSWORD: ""
+          MEMGRAPH_DATABASE: memgraph
+          # The retrieval agent runs on OpenAI; the judge runs on Anthropic.
+          # #304 keeps them on different providers deliberately, so the judge
+          # does not share the extraction pipeline's blind spots and flatter it
+          # exactly where it is weakest.
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          uv run --package context-graph-eval context-graph-eval run \
+            --limit "${{ inputs.limit }}" \
+            --memgraph-url bolt://localhost:7689 \
+            ${{ inputs.judge_model && format('--judge-model {0}', inputs.judge_model) || '' }} \
+            ${{ inputs.skip_reconcile && '--skip-reconcile' || '' }} \
+            | tee eval-report.txt
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: eval-report.txt

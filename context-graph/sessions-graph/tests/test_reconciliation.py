@@ -44,7 +44,7 @@ from unstructured2graph import Chunk
 class TestExtractReconcilableText:
     def test_message_with_string_content(self):
         action = Message(session_id="s-1", role=MessageRole.ASSISTANT, content="Hello there")
-        assert extract_reconcilable_text(action) == "Hello there"
+        assert extract_reconcilable_text(action) == "assistant: Hello there"
 
     def test_message_with_content_blocks_joins_text(self):
         action = Message(
@@ -52,7 +52,7 @@ class TestExtractReconcilableText:
             role=MessageRole.ASSISTANT,
             content=[{"type": "text", "text": "Part one"}, {"type": "text", "text": "Part two"}],
         )
-        assert extract_reconcilable_text(action) == "Part one\nPart two"
+        assert extract_reconcilable_text(action) == "assistant: Part one\nPart two"
 
     def test_tool_call_stringifies_tool_input(self):
         action = ToolCall(session_id="s-1", tool_name="Read", tool_input={"file_path": "/tmp/x.py"})
@@ -100,8 +100,8 @@ class TestBuildReconciliationSources:
         sources = build_reconciliation_sources(actions, memories)
 
         assert len(sources) == 3
-        assert sources[0] == ReconciliationSource(kind="action", node_id=actions[0].action_id, text="Question")
-        assert sources[1] == ReconciliationSource(kind="action", node_id=actions[1].action_id, text="Answer")
+        assert sources[0] == ReconciliationSource(kind="action", node_id=actions[0].action_id, text="user: Question")
+        assert sources[1] == ReconciliationSource(kind="action", node_id=actions[1].action_id, text="assistant: Answer")
         assert sources[2] == ReconciliationSource(kind="memory", node_id="m-1", text="User prefers concise answers")
 
     def test_skips_actions_with_no_reconcilable_text(self):
@@ -246,11 +246,14 @@ async def test_reconcile_session_dedupes_identical_text_before_calling_lightrag(
     from actions_graph import Session
 
     actions_graph.create_session(Session(session_id="s-1"))
+    # Same speaker twice: genuinely the same source text, so it should collapse.
+    # A user line and an assistant line with identical words are NOT the same
+    # source -- that case is covered in TestSpeakerAttribution (#328).
     actions_graph.record_message(session_id="s-1", role=MessageRole.USER, content="Same question")
-    actions_graph.record_message(session_id="s-1", role=MessageRole.ASSISTANT, content="Same question")
+    actions_graph.record_message(session_id="s-1", role=MessageRole.USER, content="Same question")
     lightrag_wrapper = _fake_lightrag_wrapper()
 
-    fake_chunk = Chunk(text="Same question", hash=content_hash("Same question"))
+    fake_chunk = Chunk(text="user: Same question", hash=content_hash("user: Same question"))
     with patch("unstructured2graph.from_texts", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_texts:
         summary = await graph.reconcile_session("s-1", lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
 
@@ -258,7 +261,7 @@ async def test_reconcile_session_dedupes_identical_text_before_calling_lightrag(
     assert summary.texts_deduped == 1
     mock_from_texts.assert_awaited_once()
     called_texts = mock_from_texts.call_args.args[0]
-    assert called_texts == ["Same question"]
+    assert called_texts == ["user: Same question"]
 
 
 @pytest.mark.asyncio
@@ -316,3 +319,68 @@ def test_get_memories_for_session_maps_rows():
     result = g.get_memories_for_session("s-1")
     assert len(result) == 1
     assert result[0].content == "Prefers Python"
+
+
+class TestSpeakerAttribution:
+    """Who said something is part of what was said (#328).
+
+    Measured on 39 reconciled sessions before this: 0% of 400 sampled chunks
+    carried any role marker, and the extractor produced 3,185 entities from
+    assistant turns against 229 from user turns -- 13.9:1, with no overlap. The
+    sample was dominated by products the assistant had recommended (Todoist,
+    Trello, Asana), not by anything the user asserted.
+
+    An extractor that cannot tell an assertion from a suggestion cannot weight
+    them differently, and a memory tier built from that is mostly the model's
+    own output reflected back.
+    """
+
+    def test_a_user_message_is_attributed_to_the_user(self):
+        action = Message(session_id="s1", role=MessageRole.USER, content="I adopted a beagle named Max")
+
+        assert extract_reconcilable_text(action) == "user: I adopted a beagle named Max"
+
+    def test_an_assistant_message_is_attributed_to_the_assistant(self):
+        action = Message(session_id="s1", role=MessageRole.ASSISTANT, content="Congratulations on the new dog!")
+
+        assert extract_reconcilable_text(action) == "assistant: Congratulations on the new dog!"
+
+    def test_two_speakers_saying_the_same_words_stay_distinct(self):
+        """Reconciliation dedupes by content hash. Without the speaker in the
+        text, a user's assertion and an assistant's echo of it collapse into one
+        source, and whichever is written first silently wins."""
+        said = "The deployment target is staging"
+        user = extract_reconcilable_text(Message(session_id="s1", role=MessageRole.USER, content=said))
+        assistant = extract_reconcilable_text(Message(session_id="s1", role=MessageRole.ASSISTANT, content=said))
+
+        assert user != assistant
+
+    def test_tool_results_are_not_given_a_speaker(self):
+        """Only conversation turns have a speaker. A tool result is output, and
+        labelling it as one would assert something untrue."""
+        action = ToolResult(session_id="s1", content="exit code 0")
+
+        assert extract_reconcilable_text(action) == "exit code 0"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_session_keeps_a_turn_whole(graph, actions_graph):
+    """A turn is the unit worth extracting from, and the default ~500-char cap
+    cut it into roughly 3.6 fragments -- measured, 468 reconcilable actions
+    became 1,677 LightRAG documents at two LLM calls each (#327).
+
+    Splitting mid-utterance also hands the extractor a fragment with no
+    surrounding context, which is the judgement relationship typing needs
+    (#127)."""
+    from actions_graph import Session
+
+    actions_graph.create_session(Session(session_id="s-1"))
+    actions_graph.record_message(session_id="s-1", role=MessageRole.USER, content="A long turn. " * 80)
+    lightrag_wrapper = _fake_lightrag_wrapper()
+
+    fake_chunk = Chunk(text="whole", hash=content_hash("whole"))
+    with patch("unstructured2graph.from_texts", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_texts:
+        await graph.reconcile_session("s-1", lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
+
+    chunk_kwargs = mock_from_texts.call_args.kwargs["chunk_kwargs"]
+    assert chunk_kwargs["max_characters"] >= MAX_RECONCILABLE_CHARS

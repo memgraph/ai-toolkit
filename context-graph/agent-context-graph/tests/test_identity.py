@@ -17,9 +17,10 @@ def _reset_cache():
 def config_dir(monkeypatch, tmp_path):
     """Point config at a temp directory."""
     config_dir = tmp_path / "context-graph"
-    config_file = config_dir / "config.toml"
-    monkeypatch.setattr(_identity, "_CONFIG_DIR", config_dir)
-    monkeypatch.setattr(_identity, "_CONFIG_FILE", config_file)
+    # Uses the supported override (ADR 0003) rather than monkeypatching module
+    # privates, so these tests exercise the same path a real isolated session
+    # takes instead of a shape only tests can produce.
+    monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(config_dir / "config.toml"))
     return config_dir
 
 
@@ -234,7 +235,7 @@ def test_load_config_caches(config_dir):
     _identity.write_config(user_id="cached")
     config1 = _identity.load_config()
     # Modify file behind the cache's back.
-    _identity._CONFIG_FILE.write_text('[identity]\nuser_id = "changed"\n')
+    _identity.config_file().write_text('[identity]\nuser_id = "changed"\n')
     config2 = _identity.load_config()
     # Should still return cached value.
     assert config1.user_id == config2.user_id == "cached"

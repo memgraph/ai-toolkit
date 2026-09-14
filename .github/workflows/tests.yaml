@@ -14,6 +14,7 @@ on:
       - "context-graph/actions-graph/**"
       - "context-graph/agent-context-graph/**"
       - "context-graph/sessions-graph/**"
+      - "context-graph/eval/**"
       - ".github/workflows/tests.yaml"
   pull_request:
     paths:
@@ -26,6 +27,7 @@ on:
       - "context-graph/actions-graph/**"
       - "context-graph/agent-context-graph/**"
       - "context-graph/sessions-graph/**"
+      - "context-graph/eval/**"
       - ".github/workflows/tests.yaml"
 
 jobs:
@@ -41,6 +43,7 @@ jobs:
       skills-graph: ${{ steps.filter.outputs.skills-graph }}
       actions-graph: ${{ steps.filter.outputs.actions-graph }}
       sessions-graph: ${{ steps.filter.outputs.sessions-graph }}
+      context-graph-eval: ${{ steps.filter.outputs.context-graph-eval }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -87,6 +90,12 @@ jobs:
               - 'context-graph/actions-graph/**'
               - 'context-graph/agent-context-graph/**'
               - 'unstructured2graph/**'
+              - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
+            context-graph-eval:
+              - 'context-graph/eval/**'
+              - 'context-graph/actions-graph/**'
+              - 'context-graph/sessions-graph/**'
               - 'memgraph-toolbox/**'
               - '.github/workflows/tests.yaml'
 
@@ -464,3 +473,62 @@ jobs:
           MEMGRAPH_DATABASE: memgraph
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: uv run --package sessions-graph --extra test --extra reconciliation --extra agent-context-graph pytest tests/ -v
+
+  test-context-graph-eval:
+    needs: changes
+    if: ${{ needs.changes.outputs.context-graph-eval == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Start Memgraph container
+        run: |
+          # --schema-info-enabled is required, not cosmetic: retrieval's schema
+          # description goes through memgraph-toolbox's SearchSchemaTool -- the
+          # same implementation the MCP server's search_schema wraps -- which
+          # refuses outright without it. Without the flag the agent silently
+          # falls back to bare label names, testing a different code path.
+          docker run -d -p 7689:7687 --name eval-memgraph memgraph/memgraph-mage:latest --schema-info-enabled=True --telemetry-enabled=false
+
+      - name: Wait for Memgraph to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if (echo > /dev/tcp/localhost/7689) 2>/dev/null; then
+              echo "Memgraph is accepting Bolt connections"
+              exit 0
+            fi
+            echo "Waiting for Memgraph (attempt $i)..."
+            sleep 2
+          done
+          echo "Memgraph did not become ready in time" >&2
+          docker logs eval-memgraph || true
+          exit 1
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      # No LLM key is provided here, deliberately. The LLM-backed tests (real
+      # reconciliation, real retrieval, judging) skip themselves without one,
+      # so this job stays fast, free and deterministic on every PR.
+      #
+      # Running them per-PR would be prohibitive -- reconciliation alone is
+      # roughly two LLM calls per session, and a 20-question batch injects
+      # ~900 sessions -- and their scores are non-deterministic, which #304
+      # handles with repeat-and-compare calibration rather than a pass/fail
+      # gate. A CI gate on a judged score would also quietly become the
+      # automatic promotion that #299 explicitly ruled out in favour of a
+      # human reading a comparison report. Those run on manual dispatch
+      # instead; see eval-run.yaml.
+      - name: Run tests
+        env:
+          EVAL_MEMGRAPH_URL: bolt://localhost:7689
+        run: uv run --package context-graph-eval --extra test --extra pipeline pytest context-graph/eval/tests -v -c context-graph/eval/pyproject.toml

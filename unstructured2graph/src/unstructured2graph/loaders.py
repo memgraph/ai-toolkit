@@ -77,6 +77,7 @@ def parse_source(
 def parse_text(
     text: str,
     partition_kwargs: dict[str, Any] | None = None,
+    chunk_kwargs: dict[str, Any] | None = None,
 ) -> list[Chunk]:
     """
     Parse raw in-memory text (not a file or URL) into chunks.
@@ -89,6 +90,17 @@ def parse_text(
         text: Raw text to chunk.
         partition_kwargs: Additional keyword arguments to pass to unstructured's
             partition_text function.
+        chunk_kwargs: Additional keyword arguments to pass to chunk_by_title,
+            notably ``max_characters``. Separate from partition_kwargs because
+            they reach different functions -- conflating them is why chunk
+            sizing was unreachable at all: chunk_by_title was called bare, so
+            its ~500-character cap applied to every caller with no way to
+            influence it. Feeding it conversation turns, that split each turn
+            into roughly 3.6 fragments, each costing two LLM calls downstream
+            (#327).
+
+            Left empty by default: documents may legitimately want small
+            chunks, so this exposes the choice rather than making it.
     Returns:
         List of text chunks. Empty/whitespace-only input returns an empty list.
     """
@@ -96,9 +108,10 @@ def parse_text(
         return []
 
     partition_kwargs = partition_kwargs or {}
+    chunk_kwargs = chunk_kwargs or {}
     try:
         elements = partition_text(text=text, **partition_kwargs)
-        chunks = chunk_by_title(elements)
+        chunks = chunk_by_title(elements, **chunk_kwargs)
         return [
             Chunk(text=str(chunk), hash=hashlib.sha256(str(chunk).encode()).hexdigest())
             for chunk in chunks
@@ -262,6 +275,7 @@ async def from_texts(
     promote_labels: bool = False,
     enforce_ontology: bool = False,
     ontology_path: str | Path | None = None,
+    chunk_kwargs: dict[str, Any] | None = None,
 ) -> list[list[Chunk]]:
     """
     Ingest raw in-memory strings (not files or URLs) into Memgraph.
@@ -315,7 +329,7 @@ async def from_texts(
     create_unique_constraint(memgraph, "Chunk", "hash")
     resolved_entity_workspace = _resolve_entity_workspace(lightrag_wrapper, entity_workspace, only_chunks)
 
-    grouped_chunks = [parse_text(text) for text in texts]
+    grouped_chunks = [parse_text(text, chunk_kwargs=chunk_kwargs) for text in texts]
     flat_chunks = [chunk for group in grouped_chunks for chunk in group]
     if not flat_chunks:
         logger.warning("No chunks produced from provided texts")

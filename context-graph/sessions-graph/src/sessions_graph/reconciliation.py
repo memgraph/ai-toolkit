@@ -61,7 +61,23 @@ def extract_reconcilable_text(action: Action) -> str | None:
     """
     from actions_graph.models import Message, ToolCall, ToolResult
 
-    if isinstance(action, (Message, ToolResult)):
+    if isinstance(action, Message):
+        # Prefixed with the speaker, because who asserted something is part of
+        # what was asserted. Without it the extractor sees undifferentiated
+        # prose and cannot tell a fact the user stated from a suggestion the
+        # assistant generated -- measured across 39 sessions, that produced
+        # 3,185 entities from assistant turns against 229 from user turns, with
+        # no overlap, and the result was dominated by products the assistant had
+        # recommended rather than anything about the user (#328).
+        #
+        # It also keeps the content-hash dedupe honest: the same sentence from
+        # each side is two different facts, and collapsing them let whichever
+        # was written first stand for both.
+        body = _content_to_text(action.content)
+        text = f"{action.role.value}: {body}" if body and body.strip() else body
+    elif isinstance(action, ToolResult):
+        # No speaker: a tool result is output, not an utterance, and labelling
+        # it as one would assert something untrue.
         text = _content_to_text(action.content)
     elif isinstance(action, ToolCall):
         try:

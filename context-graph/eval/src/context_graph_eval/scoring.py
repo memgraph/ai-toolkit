@@ -1,0 +1,281 @@
+"""Score retrieval results against their Goldens, and aggregate a run.
+
+The rubric splits by mechanism (#304): the LLM judges *quality* -- did retrieval
+surface the facts the answer needed -- while plain code counts *cost*. Asking a
+model to grade a number you can count adds variance to the headline for no
+information, and makes an efficiency regression arguable rather than factual.
+
+Coverage is a hard gate and efficiency ranks within it (#309). Efficiency alone
+is trivially gamed by returning nothing, and a weighted composite would let a
+retrieval change trade real coverage for token savings while the headline stayed
+flat -- exactly the regression this exists to catch.
+
+Tiers are aggregated separately and never blended (#303): Tier 1 is adopted from
+upstream and asks whether recall works mechanically; Tier 2 is authored and asks
+whether it works for what is actually being built. One averaged number would let
+an organizational-recall regression hide behind a personal-memory gain.
+"""
+
+from dataclasses import dataclass, field, replace
+from statistics import median
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # pragma: no cover - import-time typing only
+    from deepeval.dataset import Golden
+
+    from .retrieval import Retrieved
+
+#: Coverage at or above this counts as cleared. deepeval metrics express the
+#: same idea through their own ``threshold``; kept explicit here so the gate is
+#: visible rather than buried in metric configuration.
+DEFAULT_COVERAGE_THRESHOLD = 0.7
+
+#: Tokenizer for the efficiency count. Pinned for the same reason #304 pins the
+#: judge model: a tokenizer change silently shifts every efficiency number, and
+#: two runs measured differently are not comparable.
+DEFAULT_TOKENIZER = "cl100k_base"
+
+
+@dataclass(frozen=True)
+class Scored:
+    """One question's outcome."""
+
+    name: str
+    tier: int
+    coverage: float
+    covered: bool
+    efficiency_tokens: int
+    abstention: bool = False
+    answer: str = ""
+    #: Per-metric scores behind ``coverage``. Kept because ``coverage`` is
+    #: min() of them, which gates correctly but discards which stage failed --
+    #: ContextualRecall scores retrieval, the GEval rubric scores the answer.
+    #: #304 noted that attribution "falls out for nothing"; collapsing to one
+    #: number was throwing it away. Absent for abstention questions, which are
+    #: judged on the rubric alone.
+    metric_scores: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class TierReport:
+    """Aggregate for one tier. Deliberately per-tier -- there is no overall."""
+
+    #: Questions the judge actually scored. Excludes unscoreable ones, so the
+    #: rate below is over what was measured rather than what was attempted.
+    questions: int
+    covered: int
+    #: None when nothing in the tier could be scored. Deliberately not 0.0:
+    #: observed live, the judge's provider ran out of credit, every metric
+    #: errored, and the run reported "coverage 0/2 (0%)" -- an outage presented
+    #: as a measurement.
+    coverage_rate: float | None
+    median_efficiency_tokens: int | None
+    abstention_total: int = 0
+    abstention_correct: int = 0
+    #: Questions with no metric scores at all. A judge failure, not a low score.
+    unscored: int = 0
+
+
+@dataclass(frozen=True)
+class RunReport:
+    """A whole run, kept split by tier.
+
+    There is intentionally no blended headline field: a single number across
+    tiers is the thing #303 ruled out.
+    """
+
+    by_tier: dict[int, TierReport] = field(default_factory=dict)
+
+
+def efficiency_tokens(retrieved: "Retrieved", tokenizer: str = DEFAULT_TOKENIZER) -> int:
+    """Tokens handed back to answer the question (#309).
+
+    Counts the retrieval payload, not the agent's own consumption: for the same
+    answer quality, returning less is better.
+
+    Raises rather than falling back if the tokenizer is unavailable. There used
+    to be a whitespace-splitting fallback, which was worse than useless: it
+    produced numbers roughly a third smaller while the run still recorded the
+    pinned tokenizer's name, so two runs counted in different units compared
+    cleanly and ``compare()`` -- which checks that recorded name -- saw a match.
+    An efficiency figure that quietly changes units is more dangerous than one
+    that fails, so ``tiktoken`` is a declared dependency and its absence is an
+    error.
+    """
+    payload = "\n".join(retrieved.retrieval_context)
+    if not payload:
+        return 0
+    return len(_encoding(tokenizer).encode(payload))
+
+
+def tokenizer_in_use(tokenizer: str = DEFAULT_TOKENIZER) -> str:
+    """The tokenizer name to record on a run, verified to actually load."""
+    _encoding(tokenizer)
+    return tokenizer
+
+
+def _encoding(tokenizer: str = DEFAULT_TOKENIZER):
+    import tiktoken
+
+    return tiktoken.get_encoding(tokenizer)
+
+
+def gate_and_rank(scored: list[Scored]) -> list[Scored]:
+    """Questions that cleared coverage, cheapest payload first.
+
+    Anything that failed coverage is dropped rather than ranked: it has no
+    meaningful efficiency, and letting a zero-token failure top the ranking is
+    precisely the gaming this guards against.
+    """
+    passed = [s for s in scored if s.covered]
+    return sorted(passed, key=lambda s: (s.efficiency_tokens, s.name))
+
+
+def aggregate(scored: list[Scored]) -> RunReport:
+    """Summarise a run, per tier."""
+    by_tier: dict[int, TierReport] = {}
+    for tier in sorted({s.tier for s in scored}):
+        all_rows = [s for s in scored if s.tier == tier]
+        # A row with no metric scores was never judged -- the judge errored, or
+        # none ran. Counting it as a failure turns an outage into a reported
+        # score, so it is excluded from the rate and surfaced separately.
+        rows = [s for s in all_rows if s.metric_scores]
+        unscored = len(all_rows) - len(rows)
+        covered = [s for s in rows if s.covered]
+        abstentions = [s for s in rows if s.abstention]
+        by_tier[tier] = TierReport(
+            unscored=unscored,
+            questions=len(rows),
+            covered=len(covered),
+            coverage_rate=(len(covered) / len(rows) if rows else None),
+            # Median, not mean: one pathological payload should not drag the
+            # number that gets compared across schema versions.
+            median_efficiency_tokens=(int(median([s.efficiency_tokens for s in covered])) if covered else None),
+            abstention_total=len(abstentions),
+            abstention_correct=sum(1 for s in abstentions if s.covered),
+        )
+    return RunReport(by_tier=by_tier)
+
+
+def enforce_retrieval_floor(scored: list[Scored], *, retrieved_tokens: dict[str, int]) -> list[Scored]:
+    """Fail any question that was answered without retrieving anything.
+
+    A question whose retrieval payload was empty told the graph nothing and
+    learned nothing from it, so whatever the judge made of the answer, it is not
+    evidence of recall.
+
+    The judge cannot catch this on its own. ``ContextualRecallMetric`` asks
+    whether the retrieved context supports the expected output, and an empty
+    context satisfies that vacuously -- observed live in a calibration run:
+    ``gpt4_59149c77``, a temporal-reasoning question whose expected answer is
+    "7 days", retrieved zero tokens, replied "not in memory", and scored 1.0 on
+    both metrics. A perfect pass for consulting nothing.
+
+    That inflates coverage, which is the direction nobody audits: a zero gets
+    investigated, a pass gets believed.
+
+    Abstention questions are exempt, and must be. For those the correct answer
+    really is "not in memory", so an empty payload is right rather than
+    degenerate -- applying the floor to them would make them unpassable by
+    construction, which is a bug this rubric has already had once.
+    """
+    floored: list[Scored] = []
+    for row in scored:
+        if row.abstention or retrieved_tokens.get(row.name, 0) > 0:
+            floored.append(row)
+            continue
+        floored.append(replace(row, coverage=0.0, covered=False))
+    return floored
+
+
+def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list[Any]:
+    """The judged half of the rubric: a deliberately minimal pair (#304).
+
+    ``ContextualRecallMetric`` scores retrieval-side coverage -- its required
+    params are exactly the Golden fields #302 locked -- and one ``GEval`` rubric
+    scores the answer itself, since no built-in asks whether ``actual_output``
+    contains every fact in ``expected_output``, which is the real question when
+    an answer key exists.
+
+    ``Faithfulness`` and ``AnswerRelevancy`` are deliberately omitted: both
+    exist mainly for the no-ground-truth case, and every extra metric is another
+    judge call per question, multiplied again by re-running per schema
+    candidate.
+
+    **Abstention questions drop ContextualRecall entirely.** That metric asks
+    whether the retrieved context supports the expected output -- but for a
+    question whose correct answer is "that isn't in memory", the correct
+    retrieved context is *empty*. It therefore scores near zero by
+    construction, and since coverage takes the weakest metric, it made every
+    abstention question unpassable however well the agent behaved. Measured
+    before this fix: abstention scored 0/8 while the agent had correctly
+    declined on at least four. Only the rubric, which knows to require a
+    refusal, applies to these.
+    """
+    from deepeval.metrics import ContextualRecallMetric, GEval
+    from deepeval.test_case import LLMTestCaseParams
+
+    metrics: list[Any] = []
+    if abstention:
+        # Its own rubric, because these questions measure a different thing.
+        # Upstream pairs the refusal with a contrastive fact -- "You mentioned
+        # your cat Luna but not your hamster" -- so the Coverage rubric below,
+        # which demands every fact in the expected output, marked a correct
+        # "not in memory" down for omitting the near-miss detail. Measured: the
+        # agent declined on 5/8, 3/8 and 5/8 across three runs and scored 0/8
+        # every time, landing at 0.3-0.6 against a 0.7 gate.
+        #
+        # What abstention is for is not fabricating an answer, so that is what
+        # is scored. Naming the near-miss is a finer-grained skill and would be
+        # its own metric, not a silent precondition of this one.
+        return [
+            GEval(
+                name="Abstention",
+                criteria=(
+                    "The expected output states that the information is not in memory. "
+                    "Did the actual output decline to answer, rather than inventing one? "
+                    "A refusal, a statement that the information is absent, or a correct "
+                    "zero count all pass. A confident specific answer is a failure. "
+                    "Naming what the user did mention instead is a bonus, not a requirement."
+                ),
+                evaluation_params=[
+                    LLMTestCaseParams.INPUT,
+                    LLMTestCaseParams.ACTUAL_OUTPUT,
+                    LLMTestCaseParams.EXPECTED_OUTPUT,
+                ],
+                threshold=DEFAULT_COVERAGE_THRESHOLD,
+                model=judge,
+            )
+        ]
+
+    metrics.append(ContextualRecallMetric(threshold=DEFAULT_COVERAGE_THRESHOLD, model=judge))
+    metrics.append(
+        GEval(
+            name="Coverage",
+            criteria=(
+                "Does the actual output contain every fact present in the expected output? "
+                "Extra detail is acceptable. A missing fact is a failure."
+            ),
+            evaluation_params=[
+                LLMTestCaseParams.INPUT,
+                LLMTestCaseParams.ACTUAL_OUTPUT,
+                LLMTestCaseParams.EXPECTED_OUTPUT,
+            ],
+            threshold=DEFAULT_COVERAGE_THRESHOLD,
+            model=judge,
+        )
+    )
+    return metrics
+
+
+def to_test_case(golden: "Golden", retrieved: "Retrieved") -> Any:
+    """Pair a Golden with what retrieval produced, for the judge."""
+    from deepeval.test_case import LLMTestCase
+
+    return LLMTestCase(
+        input=golden.input,
+        actual_output=retrieved.answer,
+        expected_output=golden.expected_output,
+        retrieval_context=retrieved.retrieval_context or None,
+        context=golden.context,
+    )
