@@ -58,6 +58,39 @@ def _resolve_llm_credentials() -> None:
             os.environ.setdefault(key, value)
 
 
+#: LightRAG's own default (8) re-triggers a paid merge-summary call on *every*
+#: later chunk that touches an entity/relation once it has crossed 8 raw
+#: mentions -- confirmed by reading operate.py's merge path: the description
+#: list handed to the merge is rebuilt from all historical per-chunk mentions
+#: (capped at max_source_ids_per_relation/entity, default 200) on every merge
+#: event, not just the first. In a batch-wide eval workspace shared across
+#: thousands of sessions, any recurring entity (the user's own name, a
+#: recurring topic) keeps re-paying this cost for the rest of the run. Raised
+#: well past what most entities in a single eval batch will realistically
+#: reach, so the (already-existing, always-on) LLM merge only fires for the
+#: genuinely hot few -- at the cost of a plain concatenation instead of an
+#: LLM-written summary for the entities below this line.
+_EVAL_FORCE_LLM_SUMMARY_ON_MERGE = "30"
+
+
+def _resolve_reconciliation_tuning() -> None:
+    """Set eval-scoped LightRAG cost knobs, without touching anyone else's default.
+
+    LightRAG reads ``FORCE_LLM_SUMMARY_ON_MERGE`` once, as a dataclass field
+    default evaluated when ``lightrag.lightrag`` is first imported -- so this
+    must run before that happens (reconciliation's own ``unstructured2graph``/
+    ``lightrag`` imports are lazy, deferred until reconciliation actually
+    starts, so calling this from ``run``'s setup is early enough).
+
+    ``setdefault`` only: an operator's own exported value, or production
+    sessions-graph reconciliation (which never sets this at all and keeps
+    LightRAG's default of 8), are both left alone.
+    """
+    import os
+
+    os.environ.setdefault("FORCE_LLM_SUMMARY_ON_MERGE", _EVAL_FORCE_LLM_SUMMARY_ON_MERGE)
+
+
 def pending_sessions(db: "Memgraph", limit: int | None = None) -> list[str]:
     """Session ids awaiting reconciliation, oldest first.
 

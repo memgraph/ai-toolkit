@@ -186,6 +186,23 @@ before the chunk sizing was fixed. Reconciliation is ~97% of all LLM calls in a
 run, which is why `--skip-reconcile` exists and why repeat runs are minutes
 rather than hours.
 
+That 46-per-session figure was measured on only 39 sessions, and is likely a
+**floor**, not a flat rate, at batch scale. LightRAG re-summarizes an
+entity/relation's description via a paid LLM call once it has accumulated
+`force_llm_summary_on_merge` (default 8) raw mentions — and confirmed by
+reading its merge path, that description list is rebuilt from *all* historical
+mentions (capped at `max_source_ids_per_relation`/`_entity`, default 200) on
+every merge event, not just the first. Since an eval batch reconciles many
+sessions against one **shared** workspace (deliberately, for retrieval
+distractors), any entity that recurs across sessions — a name, a repeated
+topic — keeps re-paying this cost on every later session that mentions it
+again, for the rest of the run. `context_graph_eval.reconcile` raises this
+eval-only threshold to 30 (`_resolve_reconciliation_tuning`, `setdefault`-only
+so it never touches production `sessions-graph` reconciliation or an
+operator's own exported value) — fewer entities in a single batch realistically
+cross 30 mentions, at the cost of a plain concatenation instead of an
+LLM-written summary for the ones that don't.
+
 It is a separate step from injection because it is LLM-backed and slow; folding
 it in would make staging a batch cost as much as scoring one.
 
