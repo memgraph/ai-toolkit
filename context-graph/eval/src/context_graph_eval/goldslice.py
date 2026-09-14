@@ -94,6 +94,23 @@ def gold_slice_goldens() -> list[Golden]:
     ]
 
 
+def _fact_appears_in(graph: "ActionsGraph", match: str, **params) -> bool:
+    """Whether ``match`` -- a Cypher path binding ``a`` -- reaches the fact.
+
+    The three predicates below differ only in which path they walk, so the
+    query shape lives here once. Each one still reads as its own question,
+    because *which* path matters: whether the fact exists at all, whether it
+    sits at top level, and whether it sits under an Agent are three different
+    verdicts about the same graph, and collapsing them into one parameterised
+    predicate would hide that.
+    """
+    rows = graph.db.query(
+        f"{match} WHERE a.properties CONTAINS $fact RETURN count(a) AS n",
+        params,
+    )
+    return bool(rows and rows[0]["n"] > 0)
+
+
 def evidence_is_planted(graph: "ActionsGraph", fact: str = GOLD_SLICE_FACT) -> bool:
     """Whether the gold-slice fact is anywhere in the graph at all.
 
@@ -103,11 +120,7 @@ def evidence_is_planted(graph: "ActionsGraph", fact: str = GOLD_SLICE_FACT) -> b
     and reports a guaranteed zero as though it were a recall failure. A
     fixture that was never laid down is not a measurement.
     """
-    rows = graph._db.query(
-        "MATCH (a:Action) WHERE a.properties CONTAINS $fact RETURN count(a) AS n",
-        {"fact": fact},
-    )
-    return bool(rows and rows[0]["n"] > 0)
+    return _fact_appears_in(graph, "MATCH (a:Action)", fact=fact)
 
 
 def evidence_is_top_level(graph: "ActionsGraph", session_id: str, fact: str = GOLD_SLICE_FACT) -> bool:
@@ -124,15 +137,12 @@ def evidence_is_top_level(graph: "ActionsGraph", session_id: str, fact: str = GO
     to confirm without quoting the value, and this check enforces it: a run that
     leaks anyway is void rather than misleading.
     """
-    rows = graph._db.query(
-        """
-        MATCH (:Session {session_id: $sid})-[:HAS_ACTION]->(a:Action)
-        WHERE a.properties CONTAINS $fact
-        RETURN count(a) AS n
-        """,
-        {"sid": session_id, "fact": fact},
+    return _fact_appears_in(
+        graph,
+        "MATCH (:Session {session_id: $sid})-[:HAS_ACTION]->(a:Action)",
+        sid=session_id,
+        fact=fact,
     )
-    return bool(rows and rows[0]["n"] > 0)
 
 
 def evidence_is_nested(graph: "ActionsGraph", session_id: str, fact: str) -> bool:
@@ -143,12 +153,9 @@ def evidence_is_nested(graph: "ActionsGraph", session_id: str, fact: str) -> boo
     and the question silently stops testing nesting -- a false pass that looks
     exactly like a real one.
     """
-    rows = graph._db.query(
-        """
-        MATCH (:Session {session_id: $sid})-[:HAS_AGENT]->(:Agent)-[:HAS_ACTION]->(a:Action)
-        WHERE a.properties CONTAINS $fact
-        RETURN count(a) AS nested
-        """,
-        {"sid": session_id, "fact": fact},
+    return _fact_appears_in(
+        graph,
+        "MATCH (:Session {session_id: $sid})-[:HAS_AGENT]->(:Agent)-[:HAS_ACTION]->(a:Action)",
+        sid=session_id,
+        fact=fact,
     )
-    return bool(rows and rows[0]["nested"] > 0)

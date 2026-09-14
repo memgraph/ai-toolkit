@@ -142,6 +142,20 @@ class ReadOnlyGraph:
     def __init__(self, db: "Memgraph"):
         self._db = db
 
+    @property
+    def db(self) -> "Memgraph":
+        """The underlying client, for callers needing the toolbox's own tools.
+
+        Public for the same reason ``ActionsGraph.db`` is: ``graph_schema`` has
+        to hand a real client to ``SearchSchemaTool``, and reaching into ``_db``
+        to do it is the same borrowed-internals smell one level down.
+
+        Note this deliberately bypasses :meth:`query`'s guards, so it is for
+        introspection the tools perform themselves -- not a back door for
+        retrieval, which must stay on the guarded path.
+        """
+        return self._db
+
     def query(self, cypher: str) -> list[dict[str, Any]]:
         if is_write_query(cypher):
             raise WriteRefusedError(f"retrieval may not write to the graph under test: {cypher!r}")
@@ -217,7 +231,7 @@ def _detailed_schema(graph: ReadOnlyGraph) -> str | None:
     try:
         from memgraph_toolbox.tools.schema import SearchSchemaTool
 
-        rows = SearchSchemaTool(db=graph._db).call({"pattern": ".*"})
+        rows = SearchSchemaTool(db=graph.db).call({"pattern": ".*"})
     except Exception:
         return None
 

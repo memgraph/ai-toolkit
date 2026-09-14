@@ -100,7 +100,7 @@ def _require_reconciled(fixtures: list, *, graph: "ActionsGraph") -> None:
     if not wanted:
         return
 
-    rows = graph._db.query(
+    rows = graph.db.query(
         "MATCH (s:Session) WHERE s.session_id IN $ids "
         "RETURN s.session_id AS session_id, s.reconciliation_status AS status",
         {"ids": sorted(wanted)},
@@ -177,10 +177,10 @@ async def run_batch(
 
     reconciled = failures = 0
     if plan.reconcile:
-        outcome = await reconcile_batch(graph._db, limit=plan.reconcile_limit, memgraph_url=plan.memgraph_url)
+        outcome = await reconcile_batch(graph.db, limit=plan.reconcile_limit, memgraph_url=plan.memgraph_url)
         reconciled, failures = outcome.reconciled, outcome.failed
 
-    read_only = ReadOnlyGraph(graph._db)
+    read_only = ReadOnlyGraph(graph.db)
     retrieved = await _retrieve_all(goldens, read_only, llm, plan.max_concurrent)
 
     scored = _score(goldens, retrieved, plan)

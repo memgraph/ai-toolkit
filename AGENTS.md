@@ -189,11 +189,21 @@ belong in commit bodies or PR descriptions, not inline in *code comments* —
 that was tried and explicitly reverted.
 
 Credentials note: hook subprocesses (Claude Code/Codex) resolve Memgraph and
-LLM config **only** from `~/.config/context-graph/config.toml`, never from
-environment variables at runtime — non-interactive hook subprocesses don't
-source shell profiles, so an env-var-only path would silently work in your
-interactive shell and silently fail in the hook. Keep that boundary when
+LLM config **values** — URLs, keys, flags — **only** from the config file,
+never from environment variables at runtime. Non-interactive hook subprocesses
+don't source shell profiles, so an env-var-only path would silently work in
+your interactive shell and silently fail in the hook. Keep that boundary when
 touching `agent-context-graph`'s hook/config code.
+
+One env var is read at hook runtime, and it is not an exception to the rule
+above so much as a different question: `CONTEXT_GRAPH_CONFIG` selects **which
+file** to read, never what is in it (ADR 0003). The failure mode the rule
+guards against is ambient environment drifting out of step with the config
+file; this is the opposite — a parent process hands the path down explicitly
+to a subprocess it spawns, so nothing is ambient and nothing can drift. It
+exists because the config file is otherwise a single global: pointing one
+session's hooks at a different Memgraph would silently redirect every other
+session on the machine. Config *values* stay file-only.
 
 ## Releases
 

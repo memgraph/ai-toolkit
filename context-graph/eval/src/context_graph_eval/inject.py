@@ -107,11 +107,11 @@ def _wipe(graph: "ActionsGraph") -> None:
     Deleting the whole graph is only safe because the eval instance is
     dedicated. **This must never point at a shared or development database.**
     """
-    graph._db.query("MATCH (n) DETACH DELETE n")
+    graph.db.query("MATCH (n) DETACH DELETE n")
 
 
 def _mark_pending(graph: "ActionsGraph", session_id: str) -> None:
-    graph._db.query(
+    graph.db.query(
         "MATCH (s:Session {session_id: $session_id}) SET s.reconciliation_status = $status",
         {"session_id": session_id, "status": PENDING},
     )
