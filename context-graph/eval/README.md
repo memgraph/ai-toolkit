@@ -12,7 +12,7 @@ this README only summarises what the code does.
 
 | | Tier 1 — adopted | Tier 2 — authored |
 |---|---|---|
-| Source | LongMemEval v1 + V2, converted | written for this project |
+| Source | LongMemEval v1 (`s` / `m` variants), converted | written for this project |
 | Asks | does recall work *mechanically*? | does it work for *what we are building*? |
 | Role | regression net | what promotion decisions hang on |
 
@@ -58,8 +58,14 @@ job: retrieving before injection would query an empty graph and score every
 question a miss, while scoring before reconciliation would score raw turns
 rather than emerged memory — the thing actually under test.
 
-`--skip-reconcile` reuses an already-reconciled graph. Reconciliation dominates
-run cost, so iterating on retrieval or scoring shouldn't pay for it twice.
+`--skip-reconcile` reuses the already-reconciled graph as-is: no wipe, no
+re-injection, no distillation. Reconciliation dominates run cost, so iterating
+on retrieval or scoring shouldn't pay for it twice.
+
+It **refuses** rather than trusting what it finds — if the graph does not hold
+this run's sessions, or holds them still pending distillation, it stops. Both
+cases are silent otherwise, and both end in every question scoring as a recall
+miss that gets reported as an ordinary result.
 
 The runner **refuses to start** if `CONFIDENT_API_KEY` is set: deepeval uploads
 a test run whenever a Confident AI key is present, and eval results stay local
@@ -144,27 +150,40 @@ Three constraints shape the planting prompt, and each is load-bearing:
 model declines to delegate, the fact lands top-level and recall succeeds
 trivially — a false pass indistinguishable from a real one.
 
-### Still to build: the live-session driver
+### Driving the session
 
-The corpus item and nesting check are done and tested. What remains is the
-runner that drives the session.
+```bash
+context-graph-eval gold-slice --memgraph-url bolt://localhost:7689
+```
 
-It cannot simply set `MEMGRAPH_URL`: per ADR 0002 hook subprocesses resolve
-configuration **only** from `~/.config/context-graph/config.toml`, and env vars
-are not consulted at hook runtime. So the driver has to back up, rewrite, and
-restore that file — pointing at the eval instance — exactly as
-`scripts/dev-memgraph.sh hooks-local` already does for the dev instance. Reuse
-that machinery rather than reimplementing it; it also carries several hard-won
-details (`Task` vs `Agent` naming, `hook run` needing explicit `--connector`
-flags, `uv run --package` to avoid PATH shadowing).
+Pointing hooks at the eval instance is the whole difficulty. Config *values*
+come only from the config file (ADR 0002), so the driver cannot just export
+`MEMGRAPH_URL`. Backing up and rewriting the user's real config would work but
+is hostile: that file is a single global, so a crash mid-run leaves their normal
+sessions pointed at the eval instance.
+
+Instead the driver writes a throwaway config and names it with
+`CONTEXT_GRAPH_CONFIG` (ADR 0003) in the environment of the subprocess it
+spawns. Nothing ambient is set and the user's own config is never touched.
+
+The session is **real and billed**, so the run prints its transcript whether or
+not it succeeded: a zero exit means the CLI did not crash, not that the model
+delegated or that hooks recorded anything, and finding out otherwise costs
+another session.
 
 ## Reconciliation
 
 Injection stages raw turns; **reconciliation** is what turns them into memory —
-the same pass a real harness session gets: one LLM call extracting entities into
-`Chunk`s (semantic) and a second producing the session's `Episode` (episodic).
-Retrieval is therefore scored against the genuine emerged graph, not a shortcut
-built for eval.
+the same pass a real harness session gets, producing `Chunk`s and entities
+(semantic) plus the session's `Episode` (episodic). Retrieval is therefore
+scored against the genuine emerged graph, not a shortcut built for eval.
+
+It is far more expensive than "a call or two per session". Measured on 39
+sessions: extraction runs per chunk, in two passes each (an initial extraction
+and a gleaning pass), which came to **~46 LLM calls per session** — and ~89
+before the chunk sizing was fixed. Reconciliation is ~97% of all LLM calls in a
+run, which is why `--skip-reconcile` exists and why repeat runs are minutes
+rather than hours.
 
 It is a separate step from injection because it is LLM-backed and slow; folding
 it in would make staging a batch cost as much as scoring one.
@@ -202,7 +221,13 @@ result.errors  # failed queries, recorded rather than raised
 
 Writes are refused outright. Retrieval must not be able to alter the graph it is
 scored against — the same reasoning that keeps the corpus in git rather than in
-Memgraph. The step budget is bounded for a related reason: retrieval cost is
+Memgraph.
+
+**LightRAG's own storage labels are refused too.** It persists its KV, vector,
+doc-status and *LLM response cache* into the same graph, and that cache contains
+the answers — an agent querying it scores coverage having exercised none of the
+graph model. Refused rather than merely hidden from the schema, since hiding a
+label does not stop an agent guessing it. The step budget is bounded for a related reason: retrieval cost is
 itself scored, so an agent allowed to query indefinitely could buy coverage with
 an unbounded payload.
 
@@ -224,6 +249,19 @@ count adds variance for no information.
 
 Coverage is a **hard gate**; efficiency only ranks questions that cleared it.
 Otherwise the metric is trivially gamed by returning nothing.
+
+Three refinements, each added because it caught a wrong number:
+
+- **A question answered from an empty retrieval cannot pass.** `ContextualRecall`
+  over an empty context is vacuously satisfied, so "not in memory" scored 1.0 on
+  a question whose answer was "7 days". Abstention questions are exempt — for
+  those an empty payload is correct.
+- **Abstention is judged on refusing**, not on reciting the near-miss fact
+  upstream pairs with it ("you mentioned your cat Luna but not your hamster").
+  Scored on the shared coverage rubric it was unpassable: the agent declined
+  correctly 5/8 and scored 0/8.
+- **A question the judge could not score is reported `unscored`, never as 0%.**
+  A judge outage once printed a confident `coverage 0/2 (0%)`.
 
 ```python
 from context_graph_eval.scoring import aggregate, build_metrics, to_test_case
@@ -271,10 +309,13 @@ eval-agent traces out of the graph under test. `SessionFixture.holds_evidence`
 is corpus-side bookkeeping and is deliberately never written to the graph:
 storing it would tell retrieval where the answer lives.
 
-Session ids are namespaced per question (`<question_id>--<session_id>`) because
-upstream reuses distractor sessions across questions — 3,942 of 23,867 haystack
-ids in the real dataset are duplicates, which would otherwise MERGE different
-questions' sessions onto one node.
+Session ids are kept **verbatim**. Upstream reuses distractor sessions across
+questions — 3,942 of 23,867 haystack ids in the real dataset repeat — but *zero*
+of those repeats carry differing content, so a repeated id genuinely is the same
+session. Letting it become one node matches how a real organizational graph
+would hold it; namespacing per question would store byte-identical copies and
+pay to reconcile each. The duplicate-turns hazard that implies is handled by
+deduplicating at injection instead.
 
 ## Building the Tier 1 corpus
 
@@ -295,6 +336,33 @@ and proportional to upstream with a small floor per stratum, so that:
 - the aggregate score reflects the real distribution rather than over-weighting
   rare categories;
 - no category rounds to zero and vanishes silently.
+
+> **The third property currently defeats the second at small sizes.** There are
+> 10 populated strata and the floor is 2, so at `--limit 20` the floor consumes
+> the entire budget: every stratum gets exactly 2 regardless of its real size,
+> and proportionality is gone. The committed 20-question corpus is 40%
+> abstention against upstream's 6% — a 6.7x over-weighting that moves the
+> headline by ~16pp. Raise the size or lower the floor before quoting a score
+> as representative.
+
+## Known limitations
+
+The loop reliably finds problems; it cannot yet **rank** two versions.
+
+- **The passing set is unstable.** Three repeats against an identical graph, at
+  `temperature=0` throughout, gave `0 of 6` questions passing in all three, with
+  two runs' passing sets entirely disjoint. The coverage rate looked steady
+  (15%, 10%, 15%) while the questions beneath it churned completely.
+- **The noise floor is most of the signal** — ±5pp against a ~13% mean.
+- **The memory tier is ~14:1 assistant-sourced.** Assistant turns contain far
+  more nameable things than user turns, so entity extraction is dominated by
+  what the model said rather than what the user did. The eval questions all ask
+  about user facts.
+- **Tier 2 has one question.**
+
+`calibrate` reports set stability alongside the floor, and `compare` refuses to
+report an efficiency delta when the two runs share no passing question — both
+exist because the aggregate alone hid these.
 
 The `oracle` variant is refused: it ships evidence sessions only, so retrieval
 faces no distractors and both precision and payload-size efficiency would score
