@@ -195,3 +195,54 @@ def test_the_rendered_report_says_when_the_noise_floor_is_unknown():
     text = render(compare(baseline, candidate, noise_floor_pp=None))
 
     assert "not calibrated" in text.lower()
+
+
+# --- Efficiency has to be measured on the same questions (#309) ---
+
+
+def test_efficiency_is_compared_only_on_questions_both_runs_passed():
+    """Efficiency's median is taken over the questions that cleared coverage,
+    and that set changes between runs. Measured across three identical
+    calibration runs, the passing sets were {0a995998, 6a1eabeb, gpt4_f49edff3},
+    {8a2466db, gpt4_59149c77} and {0a995998, 7161e7e2, gpt4_f49edff3} -- the
+    first two entirely disjoint -- and the median swung 1,113 -> 10,256 -> 164
+    tokens.
+
+    That looked like a 62x change in retrieval cost. It was a median over two
+    or three different questions each time. Comparing those numbers compares
+    nothing.
+    """
+    baseline = _run(_meta(), [_scored("q1", covered=True, tokens=100), _scored("q2", covered=False, tokens=50)])
+    candidate = _run(
+        _meta(label="candidate"), [_scored("q1", covered=False, tokens=100), _scored("q2", covered=True, tokens=9000)]
+    )
+
+    result = compare(baseline, candidate)
+    tier = result.tiers[1]
+
+    # Disjoint passing sets: there is no question both runs measured, so there
+    # is no efficiency comparison to make.
+    assert tier.baseline_efficiency is None
+    assert tier.candidate_efficiency is None
+
+
+def test_efficiency_uses_the_shared_passing_set_when_there_is_one():
+    baseline = _run(_meta(), [_scored("q1", covered=True, tokens=100), _scored("q2", covered=True, tokens=8000)])
+    candidate = _run(
+        _meta(label="candidate"), [_scored("q1", covered=True, tokens=250), _scored("q2", covered=False, tokens=10)]
+    )
+
+    tier = compare(baseline, candidate).tiers[1]
+
+    # Only q1 cleared coverage in both, so only q1's payload is comparable.
+    assert tier.baseline_efficiency == 100
+    assert tier.candidate_efficiency == 250
+
+
+def test_a_report_says_when_efficiency_could_not_be_compared(capsys):
+    baseline = _run(_meta(questions=1), [_scored("q1", covered=True, tokens=100)])
+    candidate = _run(_meta(label="candidate", questions=1), [_scored("q1", covered=False, tokens=100)])
+
+    print(render(compare(baseline, candidate)))
+
+    assert "no question cleared coverage in both runs" in capsys.readouterr().out

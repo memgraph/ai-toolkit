@@ -226,7 +226,7 @@ def _gold_slice(args) -> int:
 
 
 def _calibrate(args) -> int:
-    from .calibrate import describe
+    from .calibrate import describe, describe_stability
     from .report import load_run
 
     runs = [load_run(path) for path in args.runs]
@@ -244,6 +244,11 @@ def _calibrate(args) -> int:
     rates = [sum(1 for s in run.scored if s.covered) / len(run.scored) for run in runs if run.scored]
     try:
         print(describe(rates))
+        # Printed with the floor, never instead of it: a tight floor over an
+        # unstable passing set is the misleading case, and only this line makes
+        # it visible.
+        print()
+        print(describe_stability([{s.name for s in run.scored if s.covered} for run in runs]))
     except ValueError as exc:
         print(f"refusing to calibrate: {exc}", file=sys.stderr)
         return 1

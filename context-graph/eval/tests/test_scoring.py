@@ -13,6 +13,7 @@ from context_graph_eval.scoring import (
     aggregate,
     build_metrics,
     efficiency_tokens,
+    enforce_retrieval_floor,
     gate_and_rank,
     tokenizer_in_use,
 )
@@ -216,3 +217,48 @@ def test_a_tier_with_no_passing_question_has_no_median():
     report = aggregate([_scored("failed", covered=False)])
 
     assert report.by_tier[1].median_efficiency_tokens is None
+
+
+# --- Empty retrieval must not pass (#309's degenerate case, seen live) ---
+
+
+def test_a_question_answered_from_nothing_cannot_pass():
+    """Observed in calibration run 2: gpt4_59149c77, a temporal-reasoning
+    question whose expected answer is "7 days", retrieved ZERO tokens, answered
+    "not in memory", and scored Contextual Recall 1.0 and Coverage [GEval] 1.0
+    -- a perfect pass.
+
+    ContextualRecall over an empty context is vacuously satisfied, and the
+    rubric let a refusal stand in for a fact. Coverage measured on a question
+    the graph was never consulted for is not a measurement of recall, and it
+    inflates the headline in the one direction nobody checks.
+    """
+    scored = enforce_retrieval_floor(
+        [_scored("q1", covered=True, metric_scores={"Contextual Recall": 1.0, "Coverage [GEval]": 1.0})],
+        retrieved_tokens={"q1": 0},
+    )
+
+    assert scored[0].covered is False
+    assert scored[0].coverage == 0.0
+
+
+def test_an_abstention_question_may_legitimately_retrieve_nothing():
+    """For these the correct answer IS "not in memory", so an empty payload is
+    the right behaviour rather than the degenerate case -- applying the floor
+    here would make them unpassable, which is the bug this loop already fixed
+    once."""
+    scored = enforce_retrieval_floor(
+        [_scored("q1", covered=True, abstention=True, metric_scores={"Coverage": 1.0})],
+        retrieved_tokens={"q1": 0},
+    )
+
+    assert scored[0].covered is True
+
+
+def test_a_question_that_retrieved_something_is_left_alone():
+    scored = enforce_retrieval_floor(
+        [_scored("q1", covered=True, metric_scores={"Coverage": 1.0})],
+        retrieved_tokens={"q1": 250},
+    )
+
+    assert scored[0].covered is True

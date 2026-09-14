@@ -26,6 +26,7 @@ from .scoring import (
     Scored,
     aggregate,
     efficiency_tokens,
+    enforce_retrieval_floor,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
@@ -244,7 +245,13 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
                 metric_scores=metric_scores,
             )
         )
-    return scored
+    # Applied after judging, not before: the per-metric scores are kept as the
+    # judge reported them so attribution still shows what it thought, while the
+    # gate stops an empty payload from counting as recall.
+    return enforce_retrieval_floor(
+        scored,
+        retrieved_tokens={s.name: s.efficiency_tokens for s in scored},
+    )
 
 
 def _judge(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -> dict[str, dict[str, float]]:

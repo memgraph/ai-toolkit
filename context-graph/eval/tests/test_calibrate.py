@@ -7,7 +7,7 @@ comparison report refuses to call any delta real -- so this is what turns
 """
 
 import pytest
-from context_graph_eval.calibrate import noise_floor_pp
+from context_graph_eval.calibrate import describe_stability, noise_floor_pp
 
 
 def test_identical_runs_have_no_noise():
@@ -31,3 +31,32 @@ def test_a_single_run_cannot_establish_a_floor():
 def test_an_empty_calibration_is_refused():
     with pytest.raises(ValueError, match="at least"):
         noise_floor_pp([])
+
+
+# --- Efficiency needs its own stability report (#309) ---
+
+
+def test_calibration_reports_which_questions_pass_consistently():
+    """The coverage floor can look tight while the underlying set churns
+    completely. Measured across three identical runs: rates 15%, 10%, 15% --
+    a +/-5pp floor -- yet ZERO questions passed in all three, and the first two
+    runs' passing sets were entirely disjoint.
+
+    A floor on the aggregate is technically correct and materially misleading
+    if nobody is told the set beneath it is unstable."""
+    summary = describe_stability(
+        [
+            {"a", "b", "c"},
+            {"d", "e"},
+            {"a", "f", "c"},
+        ]
+    )
+
+    assert "0 of 6" in summary
+    assert "never passes twice" in summary or "unstable" in summary.lower()
+
+
+def test_a_stable_pass_set_is_reported_as_such():
+    summary = describe_stability([{"a", "b"}, {"a", "b"}, {"a", "b"}])
+
+    assert "2 of 2" in summary

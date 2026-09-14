@@ -16,7 +16,7 @@ whether it works for what is actually being built. One averaged number would let
 an organizational-recall regression hide behind a personal-memory gain.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from statistics import median
 from typing import TYPE_CHECKING, Any
 
@@ -155,6 +155,37 @@ def aggregate(scored: list[Scored]) -> RunReport:
             abstention_correct=sum(1 for s in abstentions if s.covered),
         )
     return RunReport(by_tier=by_tier)
+
+
+def enforce_retrieval_floor(scored: list[Scored], *, retrieved_tokens: dict[str, int]) -> list[Scored]:
+    """Fail any question that was answered without retrieving anything.
+
+    A question whose retrieval payload was empty told the graph nothing and
+    learned nothing from it, so whatever the judge made of the answer, it is not
+    evidence of recall.
+
+    The judge cannot catch this on its own. ``ContextualRecallMetric`` asks
+    whether the retrieved context supports the expected output, and an empty
+    context satisfies that vacuously -- observed live in a calibration run:
+    ``gpt4_59149c77``, a temporal-reasoning question whose expected answer is
+    "7 days", retrieved zero tokens, replied "not in memory", and scored 1.0 on
+    both metrics. A perfect pass for consulting nothing.
+
+    That inflates coverage, which is the direction nobody audits: a zero gets
+    investigated, a pass gets believed.
+
+    Abstention questions are exempt, and must be. For those the correct answer
+    really is "not in memory", so an empty payload is right rather than
+    degenerate -- applying the floor to them would make them unpassable by
+    construction, which is a bug this rubric has already had once.
+    """
+    floored: list[Scored] = []
+    for row in scored:
+        if row.abstention or retrieved_tokens.get(row.name, 0) > 0:
+            floored.append(row)
+            continue
+        floored.append(replace(row, coverage=0.0, covered=False))
+    return floored
 
 
 def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list[Any]:

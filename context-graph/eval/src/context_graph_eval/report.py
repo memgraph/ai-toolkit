@@ -141,6 +141,10 @@ def _compare_tier(
     before = {s.name: s for s in baseline if s.tier == tier}
     after = {s.name: s for s in candidate if s.tier == tier}
     shared = before.keys() & after.keys()
+    # Efficiency is only meaningful where both runs actually cleared the gate on
+    # the SAME question: #309 defines it as the payload behind a passing answer,
+    # so a question only one run passed has no counterpart to compare against.
+    shared_passing = sorted(n for n in shared if before[n].covered and after[n].covered)
 
     baseline_covered = sum(1 for s in before.values() if s.covered)
     candidate_covered = sum(1 for s in after.values() if s.covered)
@@ -156,8 +160,12 @@ def _compare_tier(
         questions=questions,
         coverage_delta_pp=delta_pp,
         coverage_is_real=is_real,
-        baseline_efficiency=_median_efficiency(before.values()),
-        candidate_efficiency=_median_efficiency(after.values()),
+        # Over the questions BOTH runs passed, not each run's own passing set.
+        # Those sets differ, so the old form compared medians taken over
+        # different -- sometimes disjoint -- samples and reported the difference
+        # as a change in retrieval cost.
+        baseline_efficiency=_median_efficiency(before[n] for n in shared_passing),
+        candidate_efficiency=_median_efficiency(after[n] for n in shared_passing),
         # Named, not just counted: a rate tells a human something moved, but
         # only the names tell them where to look.
         regressions=sorted(n for n in shared if before[n].covered and not after[n].covered),
@@ -216,6 +224,12 @@ def render(comparison: Comparison) -> str:
             f"  efficiency med   {_fmt(t.baseline_efficiency):>7} {_fmt(t.candidate_efficiency):>7}"
             f"{_efficiency_delta(t):>10}"
         )
+        if t.baseline_efficiency is None:
+            # Said out loud rather than left as a bare "n/a": the number is
+            # absent because the runs share no passing question, which is itself
+            # the finding -- at low coverage there is nothing to compare, and a
+            # reader who does not know that reads the blank as "unchanged".
+            lines.append("                   (no question cleared coverage in both runs -- nothing comparable)")
         if t.regressions:
             lines.append(f"  regressions      {', '.join(t.regressions)}")
         if t.improvements:

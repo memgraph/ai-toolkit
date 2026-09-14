@@ -44,3 +44,38 @@ def describe(coverage_rates: list[float]) -> str:
         f"{len(coverage_rates)} runs: {rates} (mean {mean(coverage_rates):.0%})\n"
         f"noise floor: +/-{floor:.0f}pp -- pass this to `compare --noise-floor {floor:.0f}`"
     )
+
+
+def describe_stability(passing_sets: list[set[str]]) -> str:
+    """How stable the *set* of passing questions is across repeated runs.
+
+    The coverage floor alone can flatter a run badly. Measured across three
+    identical repeats: rates of 15%, 10% and 15% gave a +/-5pp floor, while
+    **zero** questions passed in all three and the first two runs' passing sets
+    were entirely disjoint. The aggregate looked steady because the same *count*
+    kept passing, not the same questions.
+
+    That distinction decides what a delta can mean. If no question passes
+    reliably, a coverage change between two runs is resampling, and an
+    efficiency median -- taken over whichever questions happened to pass -- is
+    not measuring a fixed quantity at all.
+    """
+    if len(passing_sets) < MIN_RUNS:
+        raise ValueError(f"stability needs at least {MIN_RUNS} runs; got {len(passing_sets)}")
+
+    always = set.intersection(*passing_sets)
+    ever = set.union(*passing_sets)
+    if not ever:
+        return "no question passed in any run -- nothing to compare."
+
+    line = f"stable passes: {len(always)} of {len(ever)} questions that passed at least once"
+    if not always:
+        return (
+            f"{line}\n"
+            "  UNSTABLE: no question passes in every run, so the passing set is resampled each "
+            "time. Coverage deltas below the floor are noise, and the efficiency median is taken "
+            "over a different sample per run -- do not compare it."
+        )
+    if len(always) < len(ever) / 2:
+        return f"{line}\n  unstable: most passes never repeat; treat efficiency comparisons with care."
+    return line
