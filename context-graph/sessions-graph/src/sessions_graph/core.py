@@ -24,6 +24,7 @@ from memgraph_toolbox.api.memgraph import Memgraph
 
 from .models import Memory, validate_content, validate_memory_id, validate_user_id
 from .reconciliation import (
+    MAX_RECONCILABLE_CHARS,
     NODE_LABELS,
     ReconciliationSource,
     ReconciliationSummary,
@@ -368,6 +369,16 @@ class SessionsGraph:
                     promote_labels=promote_labels,
                     enforce_ontology=enforce_ontology,
                     ontology_path=ontology_path,
+                    # One turn, one chunk. The default cap is ~500 characters,
+                    # which split each turn into ~3.6 fragments -- measured, 468
+                    # reconcilable actions became 1,677 LightRAG documents at two
+                    # LLM calls each (#327). A conversation turn is already the
+                    # unit worth extracting from, and cutting it mid-utterance
+                    # hands the extractor a fragment with no surrounding context.
+                    #
+                    # MAX_RECONCILABLE_CHARS is the right bound because a source
+                    # is already truncated to it, so nothing can exceed it.
+                    chunk_kwargs={"max_characters": MAX_RECONCILABLE_CHARS},
                 )
                 chunks_by_text_hash = dict(zip(unique_texts.keys(), grouped_chunks, strict=True))
                 self._link_chunks_to_sources(sources, chunks_by_text_hash)

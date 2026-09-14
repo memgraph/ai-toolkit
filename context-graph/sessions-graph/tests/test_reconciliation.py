@@ -361,3 +361,26 @@ class TestSpeakerAttribution:
         action = ToolResult(session_id="s1", content="exit code 0")
 
         assert extract_reconcilable_text(action) == "exit code 0"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_session_keeps_a_turn_whole(graph, actions_graph):
+    """A turn is the unit worth extracting from, and the default ~500-char cap
+    cut it into roughly 3.6 fragments -- measured, 468 reconcilable actions
+    became 1,677 LightRAG documents at two LLM calls each (#327).
+
+    Splitting mid-utterance also hands the extractor a fragment with no
+    surrounding context, which is the judgement relationship typing needs
+    (#127)."""
+    from actions_graph import Session
+
+    actions_graph.create_session(Session(session_id="s-1"))
+    actions_graph.record_message(session_id="s-1", role=MessageRole.USER, content="A long turn. " * 80)
+    lightrag_wrapper = _fake_lightrag_wrapper()
+
+    fake_chunk = Chunk(text="whole", hash=content_hash("whole"))
+    with patch("unstructured2graph.from_texts", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_texts:
+        await graph.reconcile_session("s-1", lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
+
+    chunk_kwargs = mock_from_texts.call_args.kwargs["chunk_kwargs"]
+    assert chunk_kwargs["max_characters"] >= MAX_RECONCILABLE_CHARS
