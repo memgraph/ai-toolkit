@@ -26,7 +26,7 @@ dependencies = [
     "lightrag-memgraph>=0.3.0",
     "memgraph-toolbox>=0.1.11",
     "pyyaml>=6.0",
-    "nltk<3.10",
+    "nltk<3.11",
 ]
 [project.optional-dependencies]
 all-docs = [
