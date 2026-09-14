@@ -3864,7 +3864,7 @@ cli = [
 
 [[package]]
 name = "mcp-memgraph"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "integrations/mcp-memgraph" }
 dependencies = [
     { name = "fastmcp" },
