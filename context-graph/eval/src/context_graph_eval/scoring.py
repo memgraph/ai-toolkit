@@ -216,16 +216,45 @@ def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list
     from deepeval.test_case import LLMTestCaseParams
 
     metrics: list[Any] = []
-    if not abstention:
-        metrics.append(ContextualRecallMetric(threshold=DEFAULT_COVERAGE_THRESHOLD, model=judge))
+    if abstention:
+        # Its own rubric, because these questions measure a different thing.
+        # Upstream pairs the refusal with a contrastive fact -- "You mentioned
+        # your cat Luna but not your hamster" -- so the Coverage rubric below,
+        # which demands every fact in the expected output, marked a correct
+        # "not in memory" down for omitting the near-miss detail. Measured: the
+        # agent declined on 5/8, 3/8 and 5/8 across three runs and scored 0/8
+        # every time, landing at 0.3-0.6 against a 0.7 gate.
+        #
+        # What abstention is for is not fabricating an answer, so that is what
+        # is scored. Naming the near-miss is a finer-grained skill and would be
+        # its own metric, not a silent precondition of this one.
+        return [
+            GEval(
+                name="Abstention",
+                criteria=(
+                    "The expected output states that the information is not in memory. "
+                    "Did the actual output decline to answer, rather than inventing one? "
+                    "A refusal, a statement that the information is absent, or a correct "
+                    "zero count all pass. A confident specific answer is a failure. "
+                    "Naming what the user did mention instead is a bonus, not a requirement."
+                ),
+                evaluation_params=[
+                    LLMTestCaseParams.INPUT,
+                    LLMTestCaseParams.ACTUAL_OUTPUT,
+                    LLMTestCaseParams.EXPECTED_OUTPUT,
+                ],
+                threshold=DEFAULT_COVERAGE_THRESHOLD,
+                model=judge,
+            )
+        ]
+
+    metrics.append(ContextualRecallMetric(threshold=DEFAULT_COVERAGE_THRESHOLD, model=judge))
     metrics.append(
         GEval(
             name="Coverage",
             criteria=(
                 "Does the actual output contain every fact present in the expected output? "
-                "Extra detail is acceptable. A missing fact is a failure. "
-                "If the expected output says the information is not in memory, then the actual "
-                "output must decline to answer -- a confident answer is a failure."
+                "Extra detail is acceptable. A missing fact is a failure."
             ),
             evaluation_params=[
                 LLMTestCaseParams.INPUT,

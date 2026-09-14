@@ -262,3 +262,30 @@ def test_a_question_that_retrieved_something_is_left_alone():
     )
 
     assert scored[0].covered is True
+
+
+def test_abstention_is_judged_on_refusing_not_on_reciting_the_near_miss():
+    """Measured across three runs: the agent declined on 5/8, 3/8 and 5/8
+    abstention questions, and scored 0/8 every time.
+
+    The cause is upstream's expected outputs, which pair the refusal with a
+    contrastive fact -- "You mentioned your cat Luna but not your hamster",
+    "You mentioned trying Korean restaurants but not Italian restaurants". The
+    shared Coverage rubric asks whether the answer contains every fact in the
+    expected output, so a correct "not in memory" was marked down for omitting
+    the near-miss detail: partial credit of 0.3-0.6, under the 0.7 gate, every
+    time.
+
+    That also contradicted the rubric's own stated criterion, which said a
+    refusal was what these questions required.
+
+    Abstention exists to measure not fabricating an answer, so that is what it
+    scores.
+    """
+    (metric,) = build_metrics(_StubJudge(), abstention=True)
+
+    assert metric.name == "Abstention"
+    criteria = metric.criteria.lower()
+    assert "decline" in criteria or "refus" in criteria
+    # The failure mode being fixed: demanding the expected output's facts back.
+    assert "every fact" not in criteria
