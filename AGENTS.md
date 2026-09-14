@@ -184,9 +184,27 @@ silently drift from the real shape as that package evolves.
 
 Subject line is `<package>: <imperative, lowercase summary> (#PR)`, e.g.
 `sessions-graph: reconcile_session() now writes episodic Session.summary`.
-Cross-cutting family changes use `context-graph: ...`. Issue/ticket numbers
-belong in commit bodies or PR descriptions, not inline in *code comments* —
-that was tried and explicitly reverted.
+Cross-cutting family changes use `context-graph: ...`.
+
+**Issue numbers in code comments.** The provenance of a *change* — which PR
+made it, which bug it closed — belongs in the commit body or PR description,
+never in a code comment. That was tried and explicitly reverted: the code
+outlives the ticket, and "fixes #123" in a comment ages into a dangling
+pointer that tells a later reader nothing about the code in front of them.
+
+The exception is a pointer to a **decision or evidence the code implements**,
+which is a design reference like an ADR, not provenance. `# Coverage
+hard-gates, efficiency ranks within it (#309)` is citing the ticket where that
+was decided; `# added in #309` is not.
+
+The test: *would a reader who knows nothing about this code's history need
+that pointer to judge whether the code should still exist?* A guard is the
+clearest case — it looks arbitrary until you can find what it caught, and
+without the citation the cheapest way to evaluate it is to delete it and see
+what breaks.
+
+Keep them sparse and attached to the reasoning, not sprinkled. A comment whose
+content is a number has failed the test on its own terms.
 
 Credentials note: hook subprocesses (Claude Code/Codex) resolve Memgraph and
 LLM config **values** — URLs, keys, flags — **only** from the config file,
