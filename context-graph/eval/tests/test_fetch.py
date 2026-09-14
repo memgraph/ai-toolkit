@@ -91,6 +91,34 @@ def test_sampling_reaches_abstention_questions():
     assert any(not golden_meta(g)["abstention"] for g in goldens)
 
 
+def test_a_prefix_of_the_corpus_stays_proportional():
+    """``run --limit`` (#302) takes a plain prefix of the committed corpus, not
+    a re-derived sample. Round-robin order alone would put one record per
+    stratum in each pass, so the first 20 rows of a 100-question corpus would
+    be ~2-per-stratum regardless of the real quotas -- the exact floor-uniform
+    distortion this module exists to avoid, just moved one layer later."""
+    types = {
+        "multi-session": 128,
+        "temporal-reasoning": 128,
+        "knowledge-update": 73,
+        "single-session-user": 65,
+        "single-session-assistant": 51,
+        "single-session-preference": 25,
+    }
+    records = []
+    for question_type, count in types.items():
+        records += [_record(f"{question_type}-{i}", question_type) for i in range(count)]
+        records += [_record(f"{question_type}-{i}_abs", question_type) for i in range(5)]
+
+    goldens = build_corpus(records, limit=100)
+    prefix_abstention = sum(1 for g in goldens[:20] if golden_meta(g)["abstention"])
+
+    # Upstream abstention is 30/500 = 6%, so ~1 of 20. Round-robin order alone
+    # would give exactly 2 per stratum -> 20% here; a shuffled prefix should
+    # land far closer to the real rate.
+    assert prefix_abstention <= 4
+
+
 def _record(question_id: str, question_type: str = "single-session-user"):
     return {
         "question_id": question_id,

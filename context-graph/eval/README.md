@@ -42,7 +42,7 @@ docker run -d --name ai-toolkit-eval-memgraph -p 7689:7687 \
     memgraph/memgraph-mage:latest --schema-info-enabled=true
 
 uv run --package context-graph-eval context-graph-eval run \
-    --limit 20 --judge-model claude-sonnet-4-5-20250929
+    --limit 100 --judge-model claude-sonnet-4-5-20250929
 ```
 
 The runner owns the **pipeline** loop; deepeval owns the **scoring** loop
@@ -77,9 +77,9 @@ Promotion is human-gated (#299), so the report's job is not to decide — it is
 to make the decision *makeable*.
 
 ```bash
-context-graph-eval run --limit 20 --save runs/baseline.json --label baseline
+context-graph-eval run --limit 100 --save runs/baseline.json --label baseline
 # ...change something...
-context-graph-eval run --limit 20 --save runs/candidate.json --label candidate \
+context-graph-eval run --limit 100 --save runs/candidate.json --label candidate \
     --changed "decay rule v3 (7-day window -> usage-based)"
 
 context-graph-eval compare runs/baseline.json runs/candidate.json --noise-floor 4
@@ -113,10 +113,11 @@ coverage is the gate (#309), and a cheaper answer missing facts is not a better
 one. Efficiency alone never declares an improvement, since "coverage held"
 cannot be established inside the noise floor.
 
-> Sizing caveat: at 20 questions one question is 5pp, so *any* single flip
-> clears a ±4pp floor. Coverage granularity is coarser than a plausible noise
-> floor at small corpus sizes — scale the corpus before trusting small coverage
-> deltas.
+> Sizing caveat: at 100 questions one question is 1pp, down from 5pp at the
+> original 20-question corpus. That is closer to a plausible noise floor but
+> not below it (#304's own repeat-and-compare found a ±5pp floor on 6
+> questions) — still confirm calibration on the current corpus size before
+> trusting a small coverage delta.
 
 ## The gold slice
 
@@ -131,7 +132,7 @@ all; #308 found no benchmark covers either.
 
 The first carrier is a fact that exists **only inside a subagent**, because:
 
-- top-level recall is already covered by Tier 1's 20 questions, and
+- top-level recall is already covered by Tier 1's 100 questions, and
 - the nested carrier has a demonstrated silent-failure mode. #281 found
   `get_session_actions()` does a single-hop `HAS_ACTION` match, so once subagent
   activity moved under `(:Agent)`, reconciliation would stop seeing it — no
@@ -321,7 +322,7 @@ deduplicating at injection instead.
 
 ```bash
 uv run --package context-graph-eval context-graph-eval build-corpus \
-    --limit 60 --out context-graph/eval/corpus/tier1-longmemeval.jsonl
+    --limit 100 --out context-graph/eval/corpus/tier1-longmemeval.jsonl
 ```
 
 Fetches a **pinned** LongMemEval revision, converts it, and writes the JSONL
@@ -337,13 +338,27 @@ and proportional to upstream with a small floor per stratum, so that:
   rare categories;
 - no category rounds to zero and vanishes silently.
 
-> **The third property currently defeats the second at small sizes.** There are
-> 10 populated strata and the floor is 2, so at `--limit 20` the floor consumes
-> the entire budget: every stratum gets exactly 2 regardless of its real size,
-> and proportionality is gone. The committed 20-question corpus is 40%
-> abstention against upstream's 6% — a 6.7x over-weighting that moves the
-> headline by ~16pp. Raise the size or lower the floor before quoting a score
-> as representative.
+> **The floor dominates at small sizes.** There are 10 populated strata and the
+> floor is 2, so anything at or below `--limit 20` gets exactly 2 per stratum
+> regardless of real size — proportionality is gone entirely. That is what the
+> originally committed 20-question corpus did: 40% abstention against
+> upstream's 6%, a 6.7x over-weighting that moved the headline by ~16pp. The
+> corpus is now built at `--limit 100`, where the floor only mildly nudges the
+> three smallest strata (true share ~1.2%) and overall abstention lands at 8%.
+>
+> **A prefix of the corpus is also sampled from, not just the whole file.**
+> `run --limit N` (below) reads the committed corpus and takes `corpus[:N]`
+> (#302) rather than re-deriving a fresh stratified sample — it must, so that
+> two runs being compared provably ask the same questions. But the round-robin
+> order `build_corpus` used to emit put one record per stratum in every pass,
+> so *any* prefix reproduced the exact same floor-uniform distortion one layer
+> later — a `run --limit 20` against a proportional 100-question corpus would
+> silently exercise the old skewed 20 again. `build_corpus` now shuffles with a
+> fixed seed before returning (still byte-identical across regenerations), so a
+> prefix is an unbiased sample instead of a systematically biased one. Prefixes
+> well below the full corpus size still carry more sampling noise than the
+> aggregate — treat a `run --limit` below the committed size as a cheap smoke
+> check, not a representative score.
 
 ## Known limitations
 
