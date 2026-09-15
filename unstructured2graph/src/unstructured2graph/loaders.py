@@ -349,6 +349,92 @@ async def from_texts(
     return grouped_chunks
 
 
+async def enqueue_texts(
+    texts: list[str],
+    memgraph: Memgraph,
+    lightrag_wrapper: MemgraphLightRAGWrapper,
+    *,
+    chunk_kwargs: dict[str, Any] | None = None,
+) -> list[list[Chunk]]:
+    """Chunk texts and create their Chunk nodes, staging them in LightRAG's
+    document queue WITHOUT triggering processing.
+
+    ``from_texts`` calls ``lightrag_wrapper.ainsert()`` per chunk, which
+    enqueues *and* immediately processes -- so a caller inserting one
+    document at a time (e.g. one session) never gives LightRAG's own
+    ``MAX_PARALLEL_INSERT``-sized worker pool more than one document to run
+    concurrently over. ``apipeline_process_enqueue_documents`` also holds a
+    workspace-level "busy" lock: a second concurrent caller doesn't run its
+    own processing pass in parallel, it just sets a pending flag and
+    returns having done no work. Real parallelism needs many documents
+    enqueued *before* processing starts.
+
+    Call this once per group of texts you want processed together (e.g. many
+    sessions in a batch), then :func:`process_enqueued_and_finalize` exactly
+    once to trigger LightRAG's processing pass and the post-processing steps
+    (``connect_chunks_to_entities``, label promotion) this function skips.
+
+    Returns one list of Chunks per input text, same contract as
+    :func:`from_texts`.
+    """
+    create_unique_constraint(memgraph, "Chunk", "hash")
+
+    grouped_chunks = [parse_text(text, chunk_kwargs=chunk_kwargs) for text in texts]
+    flat_chunks = [chunk for group in grouped_chunks for chunk in group]
+    if not flat_chunks:
+        logger.warning("No chunks produced from provided texts")
+        return grouped_chunks
+
+    memgraph_node_props = [{"hash": chunk.hash, "text": chunk.text} for chunk in flat_chunks]
+    create_nodes_from_list(memgraph, memgraph_node_props, "Chunk", 100, merge_key="hash")
+
+    # Mirrors LightRAG's own ainsert(): resolve_chunk_options() the same way,
+    # so an enqueue_texts + process_enqueued_and_finalize pair behaves
+    # identically to N individual ainsert() calls, parallelism aside.
+    from lightrag.parser.routing import resolve_chunk_options
+
+    rag = lightrag_wrapper.get_lightrag()
+    chunk_opts = resolve_chunk_options(rag.addon_params, split_by_character=None, split_by_character_only=False)
+    await rag.apipeline_enqueue_documents(
+        input=[chunk.text for chunk in flat_chunks],
+        file_paths=[chunk.hash for chunk in flat_chunks],
+        chunk_options=chunk_opts,
+    )
+    return grouped_chunks
+
+
+async def process_enqueued_and_finalize(
+    memgraph: Memgraph,
+    lightrag_wrapper: MemgraphLightRAGWrapper,
+    *,
+    entity_workspace: str | None = None,
+    promote_labels: bool = False,
+    enforce_ontology: bool = False,
+    ontology_path: str | Path | None = None,
+) -> None:
+    """Trigger LightRAG's one processing pass over everything staged by prior
+    :func:`enqueue_texts` calls, then run the post-processing steps those
+    calls deferred.
+
+    ``connect_chunks_to_entities`` and label promotion are workspace-wide
+    operations (a MERGE over every matching node under the label), so running
+    them once here after the whole batch -- rather than once per chunk, as
+    ``_ingest_chunks`` does today -- is strictly more correct as well as
+    cheaper: today's per-chunk repetition is redundant work, not a
+    correctness requirement.
+    """
+    resolved_entity_workspace = (
+        entity_workspace or lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
+    )
+    await lightrag_wrapper.get_lightrag().apipeline_process_enqueue_documents()
+    connect_chunks_to_entities(memgraph, "Chunk", resolved_entity_workspace)
+    if enforce_ontology:
+        ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
+        promote_entity_types_to_labels(memgraph, resolved_entity_workspace, ontology)
+    elif promote_labels:
+        promote_all_entity_types_to_labels(memgraph, resolved_entity_workspace)
+
+
 async def from_unstructured(
     sources: Sequence[str | Path],
     memgraph: Memgraph,

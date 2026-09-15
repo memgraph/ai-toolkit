@@ -355,6 +355,172 @@ async def test_reconcile_session_failure_marks_failed_and_returns_error(graph, a
     assert "LLM down" in summary.error
 
 
+@pytest.mark.asyncio
+async def test_reconcile_sessions_batch_enqueues_and_processes_once_for_the_whole_group(graph, actions_graph):
+    """The whole point: one enqueue_texts call and one
+    process_enqueued_and_finalize call for N sessions, not N of each --
+    that's what gives LightRAG's worker pool more than one document to
+    parallelize over."""
+    from actions_graph import Session
+
+    for sid in ("s-1", "s-2", "s-3"):
+        actions_graph.create_session(Session(session_id=sid))
+        actions_graph.record_message(session_id=sid, role=MessageRole.USER, content=f"content for {sid}")
+    lightrag_wrapper = _fake_lightrag_wrapper()
+
+    fake_chunks = [[Chunk(text=f"content for s-{i + 1}", hash=f"h{i + 1}")] for i in range(3)]
+    with (
+        patch("unstructured2graph.enqueue_texts", new=AsyncMock(return_value=fake_chunks)) as mock_enqueue,
+        patch("unstructured2graph.process_enqueued_and_finalize", new=AsyncMock()) as mock_process,
+    ):
+        summaries = await graph.reconcile_sessions_batch(
+            ["s-1", "s-2", "s-3"], lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph
+        )
+
+    mock_enqueue.assert_awaited_once()
+    assert len(mock_enqueue.call_args.args[0]) == 3
+    mock_process.assert_awaited_once()
+    assert [s.status for s in summaries] == ["completed", "completed", "completed"]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_sessions_batch_returns_results_in_input_order(graph, actions_graph):
+    """Finalize is fanned out concurrently, so completion order is not
+    guaranteed -- the returned list must still match session_ids order."""
+    from actions_graph import Session
+
+    for sid in ("s-a", "s-b", "s-c"):
+        actions_graph.create_session(Session(session_id=sid))
+        actions_graph.record_message(session_id=sid, role=MessageRole.USER, content=f"content {sid}")
+    lightrag_wrapper = _fake_lightrag_wrapper()
+    fake_chunks = [[Chunk(text="c", hash=f"h{i}")] for i in range(3)]
+
+    with (
+        patch("unstructured2graph.enqueue_texts", new=AsyncMock(return_value=fake_chunks)),
+        patch("unstructured2graph.process_enqueued_and_finalize", new=AsyncMock()),
+    ):
+        summaries = await graph.reconcile_sessions_batch(
+            ["s-a", "s-b", "s-c"], lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph
+        )
+
+    assert [s.session_id for s in summaries] == ["s-a", "s-b", "s-c"]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_sessions_batch_links_chunks_per_session_from_shared_batch(graph, actions_graph, memgraph):
+    """Each session must link to its OWN group's chunk, not another
+    session's -- the shared batch call must not blur per-session
+    provenance."""
+    from actions_graph import Session
+
+    actions_graph.create_session(Session(session_id="s-1"))
+    actions_graph.record_message(session_id="s-1", role=MessageRole.USER, content="about s-1")
+    actions_graph.create_session(Session(session_id="s-2"))
+    actions_graph.record_message(session_id="s-2", role=MessageRole.USER, content="about s-2")
+    lightrag_wrapper = _fake_lightrag_wrapper()
+
+    chunk_1 = Chunk(text="about s-1", hash="hash-for-s1")
+    chunk_2 = Chunk(text="about s-2", hash="hash-for-s2")
+    with (
+        patch("unstructured2graph.enqueue_texts", new=AsyncMock(return_value=[[chunk_1], [chunk_2]])),
+        patch("unstructured2graph.process_enqueued_and_finalize", new=AsyncMock()),
+    ):
+        await graph.reconcile_sessions_batch(
+            ["s-1", "s-2"], lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph
+        )
+
+    rows = memgraph.query(
+        "MATCH (:Session {session_id: $sid})-[:HAS_ACTION]->(:Action)-[:HAS_CHUNK]->(c:Chunk) RETURN c.hash AS hash",
+        params={"sid": "s-1"},
+    )
+    assert [r["hash"] for r in rows] == ["hash-for-s1"]
+
+    rows = memgraph.query(
+        "MATCH (:Session {session_id: $sid})-[:HAS_ACTION]->(:Action)-[:HAS_CHUNK]->(c:Chunk) RETURN c.hash AS hash",
+        params={"sid": "s-2"},
+    )
+    assert [r["hash"] for r in rows] == ["hash-for-s2"]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_sessions_batch_sessions_with_no_content_never_touch_lightrag(graph, actions_graph):
+    """A session with no reconcilable text must complete without being
+    counted in the shared batch -- an empty text would just waste a slot."""
+    from actions_graph import Session
+
+    actions_graph.create_session(Session(session_id="s-empty"))
+    actions_graph.create_session(Session(session_id="s-has-content"))
+    actions_graph.record_message(session_id="s-has-content", role=MessageRole.USER, content="real content")
+    lightrag_wrapper = _fake_lightrag_wrapper()
+
+    with (
+        patch(
+            "unstructured2graph.enqueue_texts", new=AsyncMock(return_value=[[Chunk(text="x", hash="h1")]])
+        ) as mock_enqueue,
+        patch("unstructured2graph.process_enqueued_and_finalize", new=AsyncMock()),
+    ):
+        summaries = await graph.reconcile_sessions_batch(
+            ["s-empty", "s-has-content"], lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph
+        )
+
+    assert mock_enqueue.call_args.args[0] == ["user: real content"]
+    by_id = {s.session_id: s for s in summaries}
+    assert by_id["s-empty"].status == "completed"
+    assert by_id["s-empty"].texts_deduped == 0
+    assert by_id["s-has-content"].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_sessions_batch_shared_pass_failure_marks_every_session_failed(graph, actions_graph):
+    """Documented, coarser-than-reconcile_session behaviour: a failure in the
+    shared processing pass fails every session in that call, since there is
+    no per-document result to attribute it to (yet)."""
+    from actions_graph import Session
+
+    for sid in ("s-1", "s-2"):
+        actions_graph.create_session(Session(session_id=sid))
+        actions_graph.record_message(session_id=sid, role=MessageRole.USER, content=f"content {sid}")
+    lightrag_wrapper = _fake_lightrag_wrapper()
+
+    with patch("unstructured2graph.enqueue_texts", new=AsyncMock(side_effect=RuntimeError("LLM down"))):
+        summaries = await graph.reconcile_sessions_batch(
+            ["s-1", "s-2"], lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph
+        )
+
+    assert all(s.status == "failed" for s in summaries)
+    assert all("LLM down" in s.error for s in summaries)
+
+
+@pytest.mark.asyncio
+async def test_reconcile_sessions_batch_one_finalize_failure_does_not_fail_the_rest(graph, actions_graph):
+    """Unlike the shared pass, finalize has no cross-session state -- one
+    session's episode-summary call failing must not cost its siblings
+    their result."""
+    from actions_graph import Session
+
+    for sid in ("s-1", "s-2"):
+        actions_graph.create_session(Session(session_id=sid))
+        actions_graph.record_message(session_id=sid, role=MessageRole.USER, content=f"content {sid}")
+
+    lightrag_wrapper = MagicMock()
+    lightrag_wrapper.get_lightrag.return_value.llm_model_func = AsyncMock(
+        side_effect=[RuntimeError("summary failed for s-1"), "ok summary for s-2"]
+    )
+    fake_chunks = [[Chunk(text="c", hash="h1")], [Chunk(text="c", hash="h2")]]
+
+    with (
+        patch("unstructured2graph.enqueue_texts", new=AsyncMock(return_value=fake_chunks)),
+        patch("unstructured2graph.process_enqueued_and_finalize", new=AsyncMock()),
+    ):
+        summaries = await graph.reconcile_sessions_batch(
+            ["s-1", "s-2"], lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph
+        )
+
+    by_id = {s.session_id: s for s in summaries}
+    assert by_id["s-1"].status == "failed"
+    assert by_id["s-2"].status == "completed"
+
+
 def test_get_pending_reconciliation_sessions_maps_rows():
     db = _stub_db()
     db.query.return_value = [{"session_id": "s-1"}, {"session_id": "s-2"}]
