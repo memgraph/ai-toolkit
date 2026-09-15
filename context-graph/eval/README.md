@@ -113,11 +113,10 @@ coverage is the gate (#309), and a cheaper answer missing facts is not a better
 one. Efficiency alone never declares an improvement, since "coverage held"
 cannot be established inside the noise floor.
 
-> Sizing caveat: at 100 questions one question is 1pp, down from 5pp at the
-> original 20-question corpus. That is closer to a plausible noise floor but
-> not below it (#304's own repeat-and-compare found a ±5pp floor on 6
-> questions) — still confirm calibration on the current corpus size before
-> trusting a small coverage delta.
+> Sizing caveat: at 100 questions, one question = 1pp, down from 5pp at the
+> old 20-question corpus. Closer to a plausible noise floor, not below it
+> (#304's repeat-and-compare found ±5pp on 6 questions) — confirm calibration
+> on the current corpus size before trusting a small coverage delta.
 
 ## The gold slice
 
@@ -186,43 +185,36 @@ before the chunk sizing was fixed. Reconciliation is ~97% of all LLM calls in a
 run, which is why `--skip-reconcile` exists and why repeat runs are minutes
 rather than hours.
 
-That 46-per-session figure was measured on only 39 sessions, and is likely a
-**floor**, not a flat rate, at batch scale. LightRAG re-summarizes an
-entity/relation's description via a paid LLM call once it has accumulated
-`force_llm_summary_on_merge` (default 8) raw mentions — and confirmed by
-reading its merge path, that description list is rebuilt from *all* historical
-mentions (capped at `max_source_ids_per_relation`/`_entity`, default 200) on
-every merge event, not just the first. Since an eval batch reconciles many
-sessions against one **shared** workspace (deliberately, for retrieval
-distractors), any entity that recurs across sessions — a name, a repeated
-topic — keeps re-paying this cost on every later session that mentions it
-again, for the rest of the run. `context_graph_eval.reconcile` raises this
-eval-only threshold to 30 (`_resolve_reconciliation_tuning`, `setdefault`-only
-so it never touches production `sessions-graph` reconciliation or an
-operator's own exported value) — fewer entities in a single batch realistically
-cross 30 mentions, at the cost of a plain concatenation instead of an
-LLM-written summary for the ones that don't.
+46/session was measured on only 39 sessions — likely a **floor**, not a flat
+rate, at batch scale. LightRAG pays for an LLM merge-summary call once an
+entity/relation hits `force_llm_summary_on_merge` (default 8) raw mentions.
+Confirmed by reading the merge path: that description list rebuilds from
+*all* historical mentions (capped at `max_source_ids_per_relation`/`_entity`,
+default 200) every merge, not just the first. Eval batch = one **shared**
+workspace across sessions (needed for retrieval distractors), so a recurring
+entity — a name, a repeat topic — re-pays this cost on every later session
+that mentions it again. `context_graph_eval.reconcile` raises the eval-only
+threshold to 30 (`_resolve_reconciliation_tuning`, `setdefault`-only — never
+touches production `sessions-graph` or an operator's own value). Trade: plain
+concatenation instead of an LLM summary for entities that stay under 30.
 
-### Extraction granularity: session-batching and the embedding ceiling
+### Extraction granularity: session-batching + the embedding ceiling
 
 `sessions-graph` reconciles a whole session as one document, not one per turn
-(map #297) — a turn was previously extracted in total isolation from every
-other turn in the same session, hiding cross-turn facts (coreference, a fact
-stated in one turn and referenced in another) in addition to costing one
-LightRAG document per turn. The real extraction granularity is then decided by
-whatever re-chunks the combined text smallest, not by the number of turns.
+(map #297). Before: each turn extracted isolated from the rest of the
+session — hid cross-turn facts (coreference, a fact stated in one turn and
+referenced later) and cost one LightRAG document per turn. Real extraction
+granularity = whatever re-chunks the combined text smallest, not turn count.
 
-That turned out not to be LightRAG's own `CHUNK_SIZE` (1200 tokens): LightRAG
-re-splits any chunk down to the embedding model's `max_token_size` *before*
-embedding, and extraction runs on those re-split pieces. `lightrag-memgraph`'s
-default embedder (Memgraph's local `all-MiniLM-L6-v2`, chosen to avoid any
-external cost) has `max_token_size=256` — close to this corpus's average turn
-size (~245 tokens), leaving little room for session-batching to consolidate
-anything. `context_graph_eval.reconcile._eval_embedding_func` swaps in
-`BAAI/bge-m3` (also local, via the same Memgraph `embeddings` module —
-confirmed directly against a running instance: dimension 1024, max sequence
-length 8192) for eval batches specifically, raising the effective ceiling
-above all but the largest sessions in the corpus.
+Not LightRAG's own `CHUNK_SIZE` (1200 tokens): LightRAG re-splits any chunk
+down to the embedder's `max_token_size` *before* embedding, and extraction
+runs on the re-split pieces. `lightrag-memgraph`'s default embedder
+(Memgraph's local `all-MiniLM-L6-v2`, picked for zero external cost) has
+`max_token_size=256` — near this corpus's ~245-token average turn, leaving
+little room to consolidate. `context_graph_eval.reconcile._eval_embedding_func`
+swaps in `BAAI/bge-m3` (still local, same Memgraph `embeddings` module —
+confirmed against a live instance: dim 1024, max seq length 8192) for eval
+batches, raising the ceiling above all but the largest sessions in the corpus.
 
 Measured on the same 5 real sessions at each step:
 
@@ -232,16 +224,16 @@ Measured on the same 5 real sessions at each step:
 | Session-batched, 256-token ceiling | 70 | 14.0 |
 | Session-batched, bge-m3 (8192-token ceiling) | **18** | **3.6** |
 
-A **5.9x** reduction end to end, at zero quality trade-off (bge-m3 is a
-strict step up from all-MiniLM, not a cheaper/weaker substitute) — unlike the
-merge-threshold change above, which does trade quality for cost.
+**5.9x** reduction end to end, zero quality trade-off (bge-m3 is a strict
+upgrade over all-MiniLM, not a cheaper substitute) — unlike the
+merge-threshold change above, which trades quality for cost.
 
-Swapping embedding models mid-project needs care: lightrag-memgraph's vector
-storage creates its Memgraph vector index once and treats a second `CREATE
-VECTOR INDEX` as "already exists" regardless of *why* creation failed —
-dimension mismatch included. `inject.py`'s `_wipe()` now drops every existing
-vector index before a batch starts, not just the graph's nodes, so a batch
-that changes embedding model is exactly as safe as one that doesn't.
+Caveat swapping embedders mid-project: lightrag-memgraph's vector storage
+creates its Memgraph vector index once, and treats a second `CREATE VECTOR
+INDEX` as "already exists" no matter *why* creation failed — dimension
+mismatch included. `inject.py`'s `_wipe()` now drops every existing vector
+index before a batch, not just the graph's nodes, so a batch that changes
+embedding model is as safe as one that doesn't.
 
 It is a separate step from injection because it is LLM-backed and slow; folding
 it in would make staging a batch cost as much as scoring one.
@@ -395,27 +387,25 @@ and proportional to upstream with a small floor per stratum, so that:
   rare categories;
 - no category rounds to zero and vanishes silently.
 
-> **The floor dominates at small sizes.** There are 10 populated strata and the
-> floor is 2, so anything at or below `--limit 20` gets exactly 2 per stratum
-> regardless of real size — proportionality is gone entirely. That is what the
-> originally committed 20-question corpus did: 40% abstention against
-> upstream's 6%, a 6.7x over-weighting that moved the headline by ~16pp. The
-> corpus is now built at `--limit 100`, where the floor only mildly nudges the
-> three smallest strata (true share ~1.2%) and overall abstention lands at 8%.
+> **Floor dominates at small sizes.** 10 populated strata, floor=2, so
+> anything at or below `--limit 20` gets exactly 2 per stratum regardless of
+> real size — proportionality gone. That's what the old 20-question corpus
+> did: 40% abstention vs upstream's 6%, a 6.7x over-weight that moved the
+> headline ~16pp. Corpus now built at `--limit 100` — floor only mildly nudges
+> the 3 smallest strata (true share ~1.2%), abstention lands at 8%.
 >
-> **A prefix of the corpus is also sampled from, not just the whole file.**
-> `run --limit N` (below) reads the committed corpus and takes `corpus[:N]`
-> (#302) rather than re-deriving a fresh stratified sample — it must, so that
-> two runs being compared provably ask the same questions. But the round-robin
-> order `build_corpus` used to emit put one record per stratum in every pass,
-> so *any* prefix reproduced the exact same floor-uniform distortion one layer
-> later — a `run --limit 20` against a proportional 100-question corpus would
-> silently exercise the old skewed 20 again. `build_corpus` now shuffles with a
-> fixed seed before returning (still byte-identical across regenerations), so a
-> prefix is an unbiased sample instead of a systematically biased one. Prefixes
-> well below the full corpus size still carry more sampling noise than the
-> aggregate — treat a `run --limit` below the committed size as a cheap smoke
-> check, not a representative score.
+> **A prefix of the corpus is also sampled, not just the whole file.** `run
+> --limit N` (below) reads the committed corpus and takes `corpus[:N]` (#302)
+> instead of re-deriving a fresh sample — must, so two compared runs provably
+> ask the same questions. But `build_corpus`'s old round-robin order put one
+> record per stratum each pass, so *any* prefix reproduced the same
+> floor-uniform distortion one layer later — `run --limit 20` against a
+> proportional 100-question corpus would silently re-run the old skewed 20.
+> `build_corpus` now shuffles with a fixed seed before returning (still
+> byte-identical across regens), so a prefix is an unbiased sample, not a
+> systematic bias. A prefix well below the full corpus size still carries more
+> sampling noise than the aggregate — treat `run --limit` below the committed
+> size as a cheap smoke check, not a representative score.
 
 ## Known limitations
 
