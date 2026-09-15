@@ -35,10 +35,11 @@ uv run --package unstructured2graph python evals/extraction_quality.py --backend
 ```
 
 `lightrag` needs `OPENAI_API_KEY` (or another configured LLM); `gliner2`
-needs `pip install unstructured2graph[gliner2]`. Either backend is skipped
-with a clear message, not a hard failure, if its dependency is missing --
-mirrors the package's own `test_e2e_lightrag.py`/`test_e2e_gliner2.py`
-opt-in-and-skip convention.
+needs `pip install 'gliner2[local]>=2.0.0'` installed manually (not a
+`pyproject.toml` extra -- see `gliner2_backend.py`'s module docstring for
+why). Either backend is skipped with a clear message, not a hard failure,
+if its dependency is missing -- mirrors the package's own
+`test_e2e_lightrag.py`/`test_e2e_gliner2.py` opt-in-and-skip convention.
 
 `main()` auto-loads a `.env` file if `python-dotenv` is installed (it's in
 the `test` extra: `pip install -e ".[test]"`) -- a bare `load_dotenv()` call,
