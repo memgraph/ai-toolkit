@@ -449,6 +449,20 @@ def print_report(results: dict[str, list[BackendReport]]) -> None:
 
 
 def main() -> None:
+    try:
+        from dotenv import load_dotenv
+
+        # Bare call: python-dotenv's own find_dotenv() searches upward from
+        # cwd, so this picks up the repo-root .env (OPENAI_API_KEY etc.)
+        # whether this script is run from unstructured2graph/ or the repo
+        # root -- same bare-call convention integrations/langchain-memgraph
+        # and integrations/mcp-memgraph already use in their own tests.
+        # Soft dependency (unstructured2graph[test]): running without it
+        # installed just means OPENAI_API_KEY has to be exported manually.
+        load_dotenv()
+    except ImportError:
+        pass
+
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--memgraph-url", default=DEFAULT_MEMGRAPH_URL)
     parser.add_argument("--backend", choices=["lightrag", "gliner2", "both"], default="both")
