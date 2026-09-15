@@ -1,7 +1,7 @@
 import logging
 import re
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from lightrag_memgraph import DEFAULT_EMBEDDING_DIM
 from memgraph_toolbox.api.memgraph import Memgraph
@@ -161,6 +161,45 @@ def promote_all_entity_types_to_labels(memgraph: Memgraph, workspace_label: str)
             """,
             params={"entity_type": entity_type},
         )
+
+
+def upsert_typed_relationships(
+    memgraph: Memgraph,
+    node_label: str,
+    match_key: str,
+    relationships_by_type: dict[str, list[dict[str, Any]]],
+) -> None:
+    """
+    Upsert relationships of possibly many distinct Cypher relationship types
+    between nodes already present under `node_label`, matched by `match_key`.
+
+    Cypher can't parameterize a relationship type, so this runs one
+    UNWIND+MERGE query per key in `relationships_by_type`. Each key is
+    validated against the same safe-identifier pattern used for label
+    promotion (see `_VALID_LABEL_PATTERN`) before being f-string-interpolated
+    into a query, since it comes from extracted data rather than a literal.
+
+    Args:
+        relationships_by_type: relation label -> list of
+            {"from": <match_key value>, "to": <match_key value>, **extra edge properties}.
+    """
+    for relation_type, relationships in relationships_by_type.items():
+        if not relationships:
+            continue
+        if not _VALID_LABEL_PATTERN.match(relation_type):
+            raise ValueError(
+                f"Invalid relation type {relation_type!r}: must be a valid identifier "
+                "(letters, digits, underscore, not starting with a digit) since it's used "
+                "directly as a Memgraph relationship type"
+            )
+        set_keys = [key for key in relationships[0] if key not in ("from", "to")]
+        set_clause = f" SET {', '.join(f'r.{key} = rel.{key}' for key in set_keys)}" if set_keys else ""
+        query = f"""
+        UNWIND $relationships AS rel
+        MATCH (a:{node_label} {{{match_key}: rel.from}}), (b:{node_label} {{{match_key}: rel.to}})
+        MERGE (a)-[r:{relation_type}]->(b){set_clause}
+        """
+        memgraph.query(query, params={"relationships": relationships})
 
 
 def link_nodes_in_order(

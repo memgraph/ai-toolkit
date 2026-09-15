@@ -7,7 +7,7 @@ import sources as SOURCES
 
 from lightrag_memgraph import MemgraphLightRAGWrapper
 from memgraph_toolbox.api.memgraph import Memgraph
-from unstructured2graph import from_unstructured
+from unstructured2graph import LightRAGBackend, from_unstructured
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 LIGHTRAG_DIR = os.path.join(SCRIPT_DIR, "..", "lightrag_storage.out")
@@ -33,7 +33,7 @@ async def from_unstructured_with_prep():
     await from_unstructured(
         SOURCES.MEMGRAPH_DOCS_GITHUB_LATEST_RAW,
         memgraph,
-        lightrag_wrapper,
+        LightRAGBackend(lightrag_wrapper),
         only_chunks=False,
         link_chunks=True,
         enforce_ontology=True,  # promote entity_type to real labels (:Person, :Organization, ...)

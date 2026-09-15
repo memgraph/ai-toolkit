@@ -345,7 +345,7 @@ class SessionsGraph:
             actions_graph = _ActionsGraph(self._db)
 
         try:
-            from unstructured2graph import from_texts
+            from unstructured2graph import LightRAGBackend, from_texts
         except ImportError as exc:
             msg = "unstructured2graph is required for reconcile_session; install sessions-graph[reconciliation]"
             raise ImportError(msg) from exc
@@ -364,7 +364,7 @@ class SessionsGraph:
                 grouped_chunks = await from_texts(
                     list(unique_texts.values()),
                     memgraph=self._db,
-                    lightrag_wrapper=lightrag_wrapper,
+                    extraction_backend=LightRAGBackend(lightrag_wrapper),
                     entity_workspace=entity_workspace,
                     promote_labels=promote_labels,
                     enforce_ontology=enforce_ontology,

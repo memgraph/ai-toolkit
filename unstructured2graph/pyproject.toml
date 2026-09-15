@@ -32,6 +32,9 @@ dependencies = [
 all-docs = [
     "unstructured[all-docs]>=0.18.18",
 ]
+gliner2 = [
+    "gliner2[local]>=2.0.0",
+]
 test = [
     "pytest>=9.0.3",
     "pytest-asyncio>=0.21.0",
