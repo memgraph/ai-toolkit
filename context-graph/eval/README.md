@@ -42,7 +42,7 @@ docker run -d --name ai-toolkit-eval-memgraph -p 7689:7687 \
     memgraph/memgraph-mage:latest --schema-info-enabled=true
 
 uv run --package context-graph-eval context-graph-eval run \
-    --limit 20 --judge-model claude-sonnet-4-5-20250929
+    --limit 100 --judge-model claude-sonnet-4-5-20250929
 ```
 
 The runner owns the **pipeline** loop; deepeval owns the **scoring** loop
@@ -77,9 +77,9 @@ Promotion is human-gated (#299), so the report's job is not to decide — it is
 to make the decision *makeable*.
 
 ```bash
-context-graph-eval run --limit 20 --save runs/baseline.json --label baseline
+context-graph-eval run --limit 100 --save runs/baseline.json --label baseline
 # ...change something...
-context-graph-eval run --limit 20 --save runs/candidate.json --label candidate \
+context-graph-eval run --limit 100 --save runs/candidate.json --label candidate \
     --changed "decay rule v3 (7-day window -> usage-based)"
 
 context-graph-eval compare runs/baseline.json runs/candidate.json --noise-floor 4
@@ -113,10 +113,10 @@ coverage is the gate (#309), and a cheaper answer missing facts is not a better
 one. Efficiency alone never declares an improvement, since "coverage held"
 cannot be established inside the noise floor.
 
-> Sizing caveat: at 20 questions one question is 5pp, so *any* single flip
-> clears a ±4pp floor. Coverage granularity is coarser than a plausible noise
-> floor at small corpus sizes — scale the corpus before trusting small coverage
-> deltas.
+> Sizing caveat: at 100 questions, one question = 1pp, down from 5pp at the
+> old 20-question corpus. Closer to a plausible noise floor, not below it
+> (#304's repeat-and-compare found ±5pp on 6 questions) — confirm calibration
+> on the current corpus size before trusting a small coverage delta.
 
 ## The gold slice
 
@@ -131,7 +131,7 @@ all; #308 found no benchmark covers either.
 
 The first carrier is a fact that exists **only inside a subagent**, because:
 
-- top-level recall is already covered by Tier 1's 20 questions, and
+- top-level recall is already covered by Tier 1's 100 questions, and
 - the nested carrier has a demonstrated silent-failure mode. #281 found
   `get_session_actions()` does a single-hop `HAS_ACTION` match, so once subagent
   activity moved under `(:Agent)`, reconciliation would stop seeing it — no
@@ -184,6 +184,56 @@ and a gleaning pass), which came to **~46 LLM calls per session** — and ~89
 before the chunk sizing was fixed. Reconciliation is ~97% of all LLM calls in a
 run, which is why `--skip-reconcile` exists and why repeat runs are minutes
 rather than hours.
+
+46/session was measured on only 39 sessions — likely a **floor**, not a flat
+rate, at batch scale. LightRAG pays for an LLM merge-summary call once an
+entity/relation hits `force_llm_summary_on_merge` (default 8) raw mentions.
+Confirmed by reading the merge path: that description list rebuilds from
+*all* historical mentions (capped at `max_source_ids_per_relation`/`_entity`,
+default 200) every merge, not just the first. Eval batch = one **shared**
+workspace across sessions (needed for retrieval distractors), so a recurring
+entity — a name, a repeat topic — re-pays this cost on every later session
+that mentions it again. `context_graph_eval.reconcile` raises the eval-only
+threshold to 30 (`_resolve_reconciliation_tuning`, `setdefault`-only — never
+touches production `sessions-graph` or an operator's own value). Trade: plain
+concatenation instead of an LLM summary for entities that stay under 30.
+
+### Extraction granularity: session-batching + the embedding ceiling
+
+`sessions-graph` reconciles a whole session as one document, not one per turn
+(map #297). Before: each turn extracted isolated from the rest of the
+session — hid cross-turn facts (coreference, a fact stated in one turn and
+referenced later) and cost one LightRAG document per turn. Real extraction
+granularity = whatever re-chunks the combined text smallest, not turn count.
+
+Not LightRAG's own `CHUNK_SIZE` (1200 tokens): LightRAG re-splits any chunk
+down to the embedder's `max_token_size` *before* embedding, and extraction
+runs on the re-split pieces. `lightrag-memgraph`'s default embedder
+(Memgraph's local `all-MiniLM-L6-v2`, picked for zero external cost) has
+`max_token_size=256` — near this corpus's ~245-token average turn, leaving
+little room to consolidate. `context_graph_eval.reconcile._eval_embedding_func`
+swaps in `BAAI/bge-m3` (still local, same Memgraph `embeddings` module —
+confirmed against a live instance: dim 1024, max seq length 8192) for eval
+batches, raising the ceiling above all but the largest sessions in the corpus.
+
+Measured on the same 5 real sessions at each step:
+
+| | extraction+gleaning calls | calls/session |
+|---|---|---|
+| Per-turn (original) | 106 | 21.2 |
+| Session-batched, 256-token ceiling | 70 | 14.0 |
+| Session-batched, bge-m3 (8192-token ceiling) | **18** | **3.6** |
+
+**5.9x** reduction end to end, zero quality trade-off (bge-m3 is a strict
+upgrade over all-MiniLM, not a cheaper substitute) — unlike the
+merge-threshold change above, which trades quality for cost.
+
+Caveat swapping embedders mid-project: lightrag-memgraph's vector storage
+creates its Memgraph vector index once, and treats a second `CREATE VECTOR
+INDEX` as "already exists" no matter *why* creation failed — dimension
+mismatch included. `inject.py`'s `_wipe()` now drops every existing vector
+index before a batch, not just the graph's nodes, so a batch that changes
+embedding model is as safe as one that doesn't.
 
 It is a separate step from injection because it is LLM-backed and slow; folding
 it in would make staging a batch cost as much as scoring one.
@@ -321,7 +371,7 @@ deduplicating at injection instead.
 
 ```bash
 uv run --package context-graph-eval context-graph-eval build-corpus \
-    --limit 60 --out context-graph/eval/corpus/tier1-longmemeval.jsonl
+    --limit 100 --out context-graph/eval/corpus/tier1-longmemeval.jsonl
 ```
 
 Fetches a **pinned** LongMemEval revision, converts it, and writes the JSONL
@@ -337,13 +387,25 @@ and proportional to upstream with a small floor per stratum, so that:
   rare categories;
 - no category rounds to zero and vanishes silently.
 
-> **The third property currently defeats the second at small sizes.** There are
-> 10 populated strata and the floor is 2, so at `--limit 20` the floor consumes
-> the entire budget: every stratum gets exactly 2 regardless of its real size,
-> and proportionality is gone. The committed 20-question corpus is 40%
-> abstention against upstream's 6% — a 6.7x over-weighting that moves the
-> headline by ~16pp. Raise the size or lower the floor before quoting a score
-> as representative.
+> **Floor dominates at small sizes.** 10 populated strata, floor=2, so
+> anything at or below `--limit 20` gets exactly 2 per stratum regardless of
+> real size — proportionality gone. That's what the old 20-question corpus
+> did: 40% abstention vs upstream's 6%, a 6.7x over-weight that moved the
+> headline ~16pp. Corpus now built at `--limit 100` — floor only mildly nudges
+> the 3 smallest strata (true share ~1.2%), abstention lands at 8%.
+>
+> **A prefix of the corpus is also sampled, not just the whole file.** `run
+> --limit N` (below) reads the committed corpus and takes `corpus[:N]` (#302)
+> instead of re-deriving a fresh sample — must, so two compared runs provably
+> ask the same questions. But `build_corpus`'s old round-robin order put one
+> record per stratum each pass, so *any* prefix reproduced the same
+> floor-uniform distortion one layer later — `run --limit 20` against a
+> proportional 100-question corpus would silently re-run the old skewed 20.
+> `build_corpus` now shuffles with a fixed seed before returning (still
+> byte-identical across regens), so a prefix is an unbiased sample, not a
+> systematic bias. A prefix well below the full corpus size still carries more
+> sampling noise than the aggregate — treat `run --limit` below the committed
+> size as a cheap smoke check, not a representative score.
 
 ## Known limitations
 
