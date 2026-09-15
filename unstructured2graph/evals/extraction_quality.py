@@ -31,6 +31,7 @@ import logging
 import os
 import statistics
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,7 @@ from memgraph_toolbox.api.memgraph import Memgraph
 from unstructured2graph import DEFAULT_ONTOLOGY, Ontology, RelationType, from_texts
 from unstructured2graph.extraction_backend import ExtractionBackend, LightRAGBackend
 from unstructured2graph.gliner2_backend import _normalize_text
+from unstructured2graph.memgraph import _require_valid_identifier
 
 SCRIPT_DIR = Path(__file__).parent
 DEFAULT_CORPUS_PATH = SCRIPT_DIR / "gold_corpus.jsonl"
@@ -89,12 +91,42 @@ EVAL_ONTOLOGY = Ontology(
 
 @dataclass(frozen=True)
 class GoldEntity:
+    """One gold entity span. `text` is scored as a normalized set member
+    (see _entity_agnostic_set/_entity_sensitive_set below), never by its
+    character offset -- gold_corpus.jsonl also carries `start`/`end` for
+    each entity, but those exist only so build_gold_corpus.py can assert
+    the text occurs verbatim in the chunk; this eval never reads them back.
+    Matching by normalized text instead of offset is deliberate (see
+    README.md's "Reading the report" section): LightRAG's LLM-normalized
+    entity text doesn't reliably char-align with the source span the way
+    GLiNER2's does, so offset matching would penalize LightRAG for a
+    difference that has nothing to do with extraction quality. The
+    consequence: two distinct gold mentions of the same normalized text
+    within one chunk collapse into a single scored element (a set, not a
+    multiset) -- this measures unique-normalized-entity-text coverage per
+    chunk, not exhaustive mention-level recall.
+
+    Attributes:
+        text: The gold entity's literal text, as it appears in the chunk.
+        type: Ontology entity-type label (e.g. "Person").
+    """
+
     text: str
     type: str
 
 
 @dataclass(frozen=True)
 class GoldRelation:
+    """One gold relation triple, matched the same way GoldEntity's text is:
+    by normalized text, not by span or by reference to a specific
+    GoldEntity -- see GoldEntity's docstring for why.
+
+    Attributes:
+        type: Ontology relation-type label (e.g. "works_for").
+        head: The relation's subject, as literal text.
+        tail: The relation's object, as literal text.
+    """
+
     type: str
     head: str
     tail: str
@@ -102,6 +134,18 @@ class GoldRelation:
 
 @dataclass(frozen=True)
 class GoldRecord:
+    """One gold-labeled chunk from gold_corpus.jsonl.
+
+    Attributes:
+        chunk_id: Stable id from build_gold_corpus.py (e.g. "lme-03", "auth-02").
+        source: Provenance -- "longmemeval" (sampled real text) or "authored"
+            (written for this eval). See build_gold_corpus.py's module docstring.
+        text: The chunk's literal text, fed to from_texts() unmodified.
+        entities: Gold entities for this chunk.
+        relations: Gold relations for this chunk (empty for most --
+            see build_gold_corpus.py for why relation coverage is limited).
+    """
+
     chunk_id: str
     source: str
     text: str
@@ -110,6 +154,7 @@ class GoldRecord:
 
 
 def load_gold_corpus(path: Path = DEFAULT_CORPUS_PATH) -> list[GoldRecord]:
+    """Parse gold_corpus.jsonl (one GoldRecord per line) in file order."""
     records = []
     with path.open(encoding="utf-8") as f:
         for line in f:
@@ -143,14 +188,22 @@ def _normalize_type(entity_type: str) -> str:
 @dataclass
 class LLMCallCounters:
     calls: int = 0
-    #: Approximate, via tiktoken's cl100k_base over prompt/completion text --
-    #: LightRAG's llm_model_func implementations return a plain string, not a
-    #: response object with native usage stats, so exact provider-billed
-    #: token counts aren't available without swapping in a different
-    #: llm_model_func. Reuses the same tokenizer context-graph-eval's own
-    #: efficiency metric is pinned to (scoring.DEFAULT_TOKENIZER).
+    #: Approximate, via tiktoken's cl100k_base over prompt/system/history/
+    #: completion text -- LightRAG's llm_model_func implementations return a
+    #: plain string, not a response object with native usage stats, so exact
+    #: provider-billed token counts aren't available without swapping in a
+    #: different llm_model_func. Reuses the same tokenizer context-graph-eval's
+    #: own efficiency metric is pinned to (scoring.DEFAULT_TOKENIZER).
     prompt_tokens: int = 0
     completion_tokens: int = 0
+
+
+def _history_message_text(message: Any) -> str:
+    """LightRAG's history_messages entries are typically {"role": ..., "content": ...}
+    dicts; fall back to str() for anything else rather than skipping it silently."""
+    if isinstance(message, dict):
+        return str(message.get("content", ""))
+    return str(message)
 
 
 def _counting_llm_wrapper(llm_func: Any, counters: LLMCallCounters) -> Any:
@@ -163,6 +216,11 @@ def _counting_llm_wrapper(llm_func: Any, counters: LLMCallCounters) -> Any:
         counters.prompt_tokens += len(encoding.encode(prompt or ""))
         if system_prompt:
             counters.prompt_tokens += len(encoding.encode(system_prompt))
+        # history_messages is real provider-billed input too -- LightRAG's
+        # gleaning/merge calls pass prior conversation turns through it, so
+        # omitting it here understated every such call's token/USD cost.
+        for message in history_messages or []:
+            counters.prompt_tokens += len(encoding.encode(_history_message_text(message)))
         result = await llm_func(prompt, system_prompt=system_prompt, history_messages=history_messages or [], **kwargs)
         counters.completion_tokens += len(encoding.encode(result if isinstance(result, str) else str(result)))
         return result
@@ -176,7 +234,16 @@ def _counting_llm_wrapper(llm_func: Any, counters: LLMCallCounters) -> Any:
 
 
 def _read_entities(memgraph: Memgraph, workspace: str, chunk_hash: str, text_property: str) -> list[tuple[str, str]]:
-    """(text, entity_type) pairs written under this chunk's file_path."""
+    """(text, entity_type) pairs written under this chunk's file_path.
+
+    Raises:
+        ValueError: if workspace or text_property isn't a valid Cypher
+            identifier -- both are f-string-interpolated below, and workspace
+            in particular is an ExtractionBackend's caller-configured
+            workspace_label, not a compile-time literal.
+    """
+    _require_valid_identifier(workspace, "workspace")
+    _require_valid_identifier(text_property, "text_property")
     rows = memgraph.query(
         f"MATCH (n:{workspace}) WHERE n.file_path = $hash RETURN n.{text_property} AS text, "
         "n.entity_type AS entity_type",
@@ -189,7 +256,12 @@ def _read_ontology_conformance(memgraph: Memgraph, workspace: str, chunk_hash: s
     """(conformant_count, nonconformant_count) among this chunk's entities,
     per enforce_ontology's ontology_conformant flag -- a free bonus signal
     from running with enforce_ontology=True, not something scored against
-    gold."""
+    gold.
+
+    Raises:
+        ValueError: if workspace isn't a valid Cypher identifier.
+    """
+    _require_valid_identifier(workspace, "workspace")
     rows = memgraph.query(
         f"MATCH (n:{workspace}) WHERE n.file_path = $hash RETURN n.ontology_conformant AS conformant",
         params={"hash": chunk_hash},
@@ -205,9 +277,18 @@ def _read_relations(
     this chunk. Only meaningful for a backend whose ontology declared
     relation_types -- LightRAG writes generic :DIRECTED edges with no typed
     label to match against, so callers pass relation_types=() for it and get
-    back an empty list rather than a meaningless comparison."""
+    back an empty list rather than a meaningless comparison.
+
+    Raises:
+        ValueError: if workspace, text_property, or any of relation_types
+            isn't a valid Cypher identifier.
+    """
     if not relation_types:
         return []
+    _require_valid_identifier(workspace, "workspace")
+    _require_valid_identifier(text_property, "text_property")
+    for relation_type in relation_types:
+        _require_valid_identifier(relation_type, "relation type")
     rows = memgraph.query(
         f"""
         MATCH (a:{workspace})-[r]->(b:{workspace})
@@ -226,50 +307,93 @@ def _read_relations(
 
 @dataclass
 class PRF1:
+    """Accumulates precision/recall/F1 over repeated set-vs-set comparisons
+    (one `add()` call per chunk), via true/false positive/negative counts
+    rather than per-chunk P/R/F1 averaged afterward -- micro-averaging, so a
+    chunk with more gold entities counts proportionally more, not the same
+    as a chunk with one.
+    """
+
     tp: int = 0
     fp: int = 0
     fn: int = 0
 
     def add(self, gold: set, predicted: set) -> None:
+        """Accumulate one chunk's set comparison into the running totals."""
         self.tp += len(gold & predicted)
         self.fp += len(predicted - gold)
         self.fn += len(gold - predicted)
 
     @property
     def precision(self) -> float | None:
+        """None when nothing was predicted at all (undefined, not 0.0)."""
         return self.tp / (self.tp + self.fp) if (self.tp + self.fp) else None
 
     @property
     def recall(self) -> float | None:
+        """None when gold has nothing to find at all (undefined, not 0.0)."""
         return self.tp / (self.tp + self.fn) if (self.tp + self.fn) else None
 
     @property
     def f1(self) -> float | None:
+        """None only when precision or recall is itself None (nothing to
+        score). A real, computed 0.0 for either must still produce F1 = 0.0,
+        not None -- `if not p or not r` treated a genuine zero the same as
+        "undefined", silently reporting a real "found nothing right" result
+        as `n/a` in the printed table."""
         p, r = self.precision, self.recall
-        if not p or not r:
+        if p is None or r is None:
             return None
+        if p + r == 0:
+            return 0.0
         return 2 * p * r / (p + r)
 
 
 @dataclass
 class BackendReport:
+    """One backend run's scoring + cost/latency summary, accumulated by
+    run_backend() across every chunk in the gold corpus.
+
+    Attributes:
+        backend_name: "lightrag" or "gliner2".
+        entity_type_agnostic: Entity P/R/F1 by normalized text only, type ignored.
+        entity_type_sensitive: Entity P/R/F1 by normalized text AND type.
+        relation_scoring: Relation P/R/F1, or None if this backend has no
+            relation vocabulary at all (LightRAG) -- distinct from a PRF1
+            with all-zero counts, which would mean "had a vocabulary but
+            found nothing."
+        latencies_seconds: Wall-clock seconds per chunk's aingest_chunk() call.
+        ontology_conformant / ontology_nonconformant: Count of entities whose
+            entity_type did/didn't match default_ontology.yaml's vocabulary
+            (enforce_ontology's own signal, not scored against gold).
+        llm_calls / llm_prompt_tokens / llm_completion_tokens: None for a
+            backend with no LLM calls at all (GLiNER2); otherwise LightRAG's
+            approximate call/token counts (see LLMCallCounters).
+        llm_model: Which MODEL_PRICING_PER_1M_TOKENS key prices this run's
+            cost -- None when there's no LLM cost to price.
+    """
+
     backend_name: str
     entity_type_agnostic: PRF1 = field(default_factory=PRF1)
     entity_type_sensitive: PRF1 = field(default_factory=PRF1)
-    relation_scoring: PRF1 | None = None  # None when this backend has no relation vocabulary at all
+    relation_scoring: PRF1 | None = None
     latencies_seconds: list[float] = field(default_factory=list)
     ontology_conformant: int = 0
     ontology_nonconformant: int = 0
     llm_calls: int | None = None
     llm_prompt_tokens: int | None = None
     llm_completion_tokens: int | None = None
-    llm_model: str | None = None  # which MODEL_PRICING_PER_1M_TOKENS key priced this run
+    llm_model: str | None = None
 
     def latency_summary(self) -> tuple[float, float]:
+        """(median, mean) wall-clock seconds per chunk."""
         return (statistics.median(self.latencies_seconds), statistics.mean(self.latencies_seconds))
 
     @property
     def estimated_cost_usd(self) -> float | None:
+        """None when there's no LLM cost to estimate at all (llm_calls is
+        None) or the model has no entry in MODEL_PRICING_PER_1M_TOKENS --
+        see estimated_cost_usd()'s own None-vs-0.0 contract."""
         if self.llm_calls is None or self.llm_model is None:
             return None
         return estimated_cost_usd(self.llm_prompt_tokens or 0, self.llm_completion_tokens or 0, self.llm_model)
@@ -292,43 +416,143 @@ def _relation_set(relations: list[tuple[str, str, str]]) -> set[tuple[str, str, 
 
 
 # ------------------------------------------------------------------
-# Runner
+# Backend configuration
 # ------------------------------------------------------------------
 
 
-async def _build_lightrag_backend(counters: LLMCallCounters) -> LightRAGBackend:
+@dataclass(frozen=True)
+class BackendSpec:
+    """Everything run_backend() and print_report() need to know about a
+    backend TYPE (as opposed to one particular built instance): its name,
+    which node property holds the literal extracted text ("entity_id" for
+    LightRAG -- see LightRAG's own upsert_node() convention -- vs "text" for
+    GLiNER2), its relation-type vocabulary (empty for a backend with none),
+    and which LLM model (if any) prices its cost. These used to travel
+    run_backend()'s call chain as four separate, loosely related parameters;
+    bundling them here is what let LightRAGBackend's and GLiNER2Backend's
+    repeat loops in run() collapse into one shared _run_repeated() instead
+    of two near-identical copies.
+
+    Attributes:
+        name: "lightrag" or "gliner2".
+        text_property: Node property holding the literal extracted entity text.
+        relation_types: This backend's relation-type vocabulary, or () if none.
+        llm_model: MODEL_PRICING_PER_1M_TOKENS key for this backend's LLM
+            cost, or None if it makes no LLM calls at all.
+    """
+
+    name: str
+    text_property: str
+    relation_types: tuple[str, ...] = ()
+    llm_model: str | None = None
+
+
+LIGHTRAG_SPEC = BackendSpec(
+    name="lightrag",
+    text_property="entity_id",
+    relation_types=(),  # LightRAG has no relation_types concept -- see README
+    llm_model=DEFAULT_LIGHTRAG_MODEL,
+)
+GLINER2_SPEC = BackendSpec(
+    name="gliner2", text_property="text", relation_types=tuple(t.label for t in EVAL_ONTOLOGY.relation_types)
+)
+
+
+# ------------------------------------------------------------------
+# Runner
+# ------------------------------------------------------------------
+
+#: Builds one fresh (backend, llm_counters) pair. llm_counters is None for a
+#: backend with no LLM cost to track (GLiNER2). Async so LightRAG's
+#: OPENAI_API_KEY-dependent MemgraphLightRAGWrapper.initialize() and
+#: GLiNER2's model-loading stay lazy until actually needed.
+BackendBuilder = Callable[[], Awaitable[tuple[ExtractionBackend, LLMCallCounters | None]]]
+
+
+async def _build_lightrag() -> tuple[LightRAGBackend, LLMCallCounters]:
+    """Fresh MemgraphLightRAGWrapper + LightRAGBackend + LLMCallCounters
+    every call -- unlike GLiNER2's reused-instance builder, LightRAG is
+    rebuilt (and its counters reset) for each repeat so per-run cost/latency
+    numbers aren't cumulative across repeats, and so its shared process-
+    global state gets a clean afinalize()/reinit cycle (see
+    MemgraphLightRAGWrapper.afinalize()'s own docstring)."""
     from lightrag.llm.openai import gpt_4o_mini_complete
 
     from lightrag_memgraph import MemgraphLightRAGWrapper
 
+    counters = LLMCallCounters()
     wrapper = MemgraphLightRAGWrapper(log_level="WARNING")
     await wrapper.initialize(
         working_dir="./lightrag_storage.extraction_quality_eval",
         llm_model_func=_counting_llm_wrapper(gpt_4o_mini_complete, counters),
         addon_params=EVAL_ONTOLOGY.addon_params(),
     )
-    return LightRAGBackend(wrapper)
+    return LightRAGBackend(wrapper), counters
 
 
-def _build_gliner2_backend(model_name: str):
+def _reuse_gliner2_builder(gliner2_model: str) -> BackendBuilder:
+    """Returns a builder that loads the GLiNER2 model once and hands back
+    the same instance on every call -- unlike LightRAG, GLiNER2 is a fixed
+    local model with no per-run state to reset, and reloading it per repeat
+    would just re-pay an expensive, pointless model load."""
     from unstructured2graph.gliner2_backend import GLiNER2Backend
 
-    return GLiNER2Backend(model_name=model_name, ontology=EVAL_ONTOLOGY)
+    backend = GLiNER2Backend(model_name=gliner2_model, ontology=EVAL_ONTOLOGY)
+
+    async def build() -> tuple[GLiNER2Backend, None]:
+        return backend, None
+
+    return build
+
+
+def _pin_memgraph_env(memgraph_url: str) -> None:
+    """Force every consumer of Memgraph connection env vars -- this eval's
+    own memgraph_toolbox client (reads MEMGRAPH_URL) AND LightRAG's
+    separately-read storage backends (read MEMGRAPH_URI/MEMGRAPH_USERNAME,
+    per lightrag_memgraph.core) -- onto the same instance.
+
+    lightrag_memgraph.core's own _bridge_lightrag_env_names() mirrors
+    MEMGRAPH_URL onto MEMGRAPH_URI, but only when MEMGRAPH_URI isn't already
+    set. An ambient MEMGRAPH_URI left over from something else on this
+    machine would silently win over --memgraph-url under that conditional
+    bridge, so LightRAG would write into a different -- possibly shared --
+    database than the one this eval reads back from and wipes. Setting both
+    unconditionally here, before any backend is built, closes that gap
+    rather than relying on the bridge's fallback behavior.
+    """
+    os.environ["MEMGRAPH_URL"] = memgraph_url
+    os.environ["MEMGRAPH_URI"] = memgraph_url
+    os.environ.setdefault("MEMGRAPH_USER", "")
+    os.environ.setdefault("MEMGRAPH_USERNAME", "")
+    os.environ.setdefault("MEMGRAPH_PASSWORD", "")
 
 
 async def run_backend(
-    backend_name: str,
+    spec: BackendSpec,
     backend: ExtractionBackend,
     memgraph: Memgraph,
     gold: list[GoldRecord],
     *,
-    text_property: str,
-    relation_types: tuple[str, ...],
     llm_counters: LLMCallCounters | None = None,
-    llm_model: str | None = None,
 ) -> BackendReport:
+    """Run one already-built backend instance over the whole gold corpus
+    once: wipes `memgraph`, ingests every chunk via from_texts(), reads back
+    what got written, and scores it against gold.
+
+    Args:
+        spec: Static config for this backend type (see BackendSpec).
+        backend: The backend instance to run.
+        memgraph: Wiped at the start of this call -- must be a dedicated eval
+            instance (see this module's docstring), never shared.
+        gold: The corpus to ingest and score against.
+        llm_counters: If given, folded into the returned report's
+            llm_calls/llm_prompt_tokens/llm_completion_tokens.
+
+    Returns:
+        A BackendReport summarizing this one run.
+    """
     memgraph.query("MATCH (n) DETACH DELETE n")
-    report = BackendReport(backend_name=backend_name)
+    report = BackendReport(backend_name=spec.name)
     workspace = backend.workspace_label
 
     for record in gold:
@@ -337,7 +561,7 @@ async def run_backend(
         report.latencies_seconds.append(time.perf_counter() - started)
 
         chunk_hash = grouped[0][0].hash
-        predicted_entities = _read_entities(memgraph, workspace, chunk_hash, text_property)
+        predicted_entities = _read_entities(memgraph, workspace, chunk_hash, spec.text_property)
         conformant, nonconformant = _read_ontology_conformance(memgraph, workspace, chunk_hash)
         report.ontology_conformant += conformant
         report.ontology_nonconformant += nonconformant
@@ -351,8 +575,10 @@ async def run_backend(
             _entity_sensitive_set(predicted_entities),
         )
 
-        if relation_types:
-            predicted_relations = _read_relations(memgraph, workspace, chunk_hash, text_property, relation_types)
+        if spec.relation_types:
+            predicted_relations = _read_relations(
+                memgraph, workspace, chunk_hash, spec.text_property, spec.relation_types
+            )
             if report.relation_scoring is None:
                 report.relation_scoring = PRF1()
             report.relation_scoring.add(
@@ -364,9 +590,54 @@ async def run_backend(
         report.llm_calls = llm_counters.calls
         report.llm_prompt_tokens = llm_counters.prompt_tokens
         report.llm_completion_tokens = llm_counters.completion_tokens
-        report.llm_model = llm_model
+        report.llm_model = spec.llm_model
 
     return report
+
+
+async def _run_repeated(
+    spec: BackendSpec,
+    build: BackendBuilder,
+    memgraph: Memgraph,
+    gold: list[GoldRecord],
+    *,
+    repeat: int,
+    finalize: Callable[[Any], Awaitable[None]] | None = None,
+) -> list[BackendReport]:
+    """Run one backend `repeat` times, collecting one BackendReport per run.
+
+    Shared by both backends in run() -- the only difference between them is
+    how to build (and optionally finalize) an instance, threaded through
+    `build`/`finalize` rather than duplicating this loop once per backend.
+
+    Args:
+        spec: Static config for this backend type.
+        build: Builds one fresh (backend, llm_counters) pair -- called once
+            per repeat, so a backend that wants a fresh instance per run
+            (LightRAG) and one that wants to reuse a single instance
+            (GLiNER2, via _reuse_gliner2_builder) both fit this same loop.
+        memgraph: Passed through to run_backend() each iteration.
+        gold: The corpus each run scores against.
+        repeat: How many times to run.
+        finalize: If given, awaited on the built backend after each run
+            (e.g. LightRAGBackend.afinalize, to reset LightRAG's shared
+            process-global state between repeats). Typed loosely (Any, not
+            ExtractionBackend) since this is inherently backend-specific --
+            afinalize() isn't part of the ExtractionBackend protocol at all
+            (GLiNER2Backend has no equivalent), so a caller only ever pairs
+            this with a `build` that returns a matching concrete type.
+
+    Returns:
+        One BackendReport per repeat, in run order.
+    """
+    reports = []
+    for i in range(repeat):
+        backend, llm_counters = await build()
+        reports.append(await run_backend(spec, backend, memgraph, gold, llm_counters=llm_counters))
+        if finalize is not None:
+            await finalize(backend)
+        print(f"  {spec.name} run {i + 1}/{repeat} done")
+    return reports
 
 
 async def run(
@@ -377,7 +648,12 @@ async def run(
     gliner2_model: str,
     repeat: int,
 ) -> dict[str, list[BackendReport]]:
-    os.environ["MEMGRAPH_URL"] = memgraph_url
+    """Run the requested backends over the gold corpus and return their
+    reports, keyed by backend name. A backend whose dependency is missing
+    (OPENAI_API_KEY for lightrag, `gliner2` installed for gliner2) is
+    skipped with a printed message and simply absent from the result,
+    rather than raising."""
+    _pin_memgraph_env(memgraph_url)
     gold = load_gold_corpus(corpus_path)
     memgraph = Memgraph(user_agent="unstructured2graph-extraction-eval")
 
@@ -387,46 +663,22 @@ async def run(
         if not os.environ.get("OPENAI_API_KEY"):
             print("Skipping lightrag: OPENAI_API_KEY not set.")
         else:
-            reports = []
-            for i in range(repeat):
-                counters = LLMCallCounters()
-                wrapper_backend = await _build_lightrag_backend(counters)
-                reports.append(
-                    await run_backend(
-                        "lightrag",
-                        wrapper_backend,
-                        memgraph,
-                        gold,
-                        text_property="entity_id",
-                        relation_types=(),  # LightRAG has no relation_types concept -- see README
-                        llm_counters=counters,
-                        llm_model=DEFAULT_LIGHTRAG_MODEL,
-                    )
-                )
-                await wrapper_backend.wrapper.afinalize()
-                print(f"  lightrag run {i + 1}/{repeat} done")
-            results["lightrag"] = reports
+            results["lightrag"] = await _run_repeated(
+                LIGHTRAG_SPEC,
+                _build_lightrag,
+                memgraph,
+                gold,
+                repeat=repeat,
+                finalize=lambda backend: backend.afinalize(),
+            )
 
     if "gliner2" in backends:
         try:
-            gliner2_backend = _build_gliner2_backend(gliner2_model)
+            build_gliner2 = _reuse_gliner2_builder(gliner2_model)
         except ImportError as e:
             print(f"Skipping gliner2: {e}")
         else:
-            reports = []
-            for i in range(repeat):
-                reports.append(
-                    await run_backend(
-                        "gliner2",
-                        gliner2_backend,
-                        memgraph,
-                        gold,
-                        text_property="text",
-                        relation_types=tuple(t.label for t in EVAL_ONTOLOGY.relation_types),
-                    )
-                )
-                print(f"  gliner2 run {i + 1}/{repeat} done")
-            results["gliner2"] = reports
+            results["gliner2"] = await _run_repeated(GLINER2_SPEC, build_gliner2, memgraph, gold, repeat=repeat)
 
     memgraph.close()
     return results
@@ -450,6 +702,9 @@ def _fmt_cost(cost: float | None, llm_calls: int | None) -> str:
 
 
 def print_report(results: dict[str, list[BackendReport]]) -> None:
+    """Print a plain table of every BackendReport in `results` (as returned
+    by run()), plus fixed caveats about how to read it. No automatic
+    verdict, by design -- see the caveats themselves."""
     print()
     print(
         f"{'backend':<10} {'run':>4} {'ent P':>8} {'ent R':>8} {'ent F1':>8}   "
@@ -485,6 +740,10 @@ def print_report(results: dict[str, list[BackendReport]]) -> None:
                     f"({'unpriced -- add it to MODEL_PRICING_PER_1M_TOKENS' if r.estimated_cost_usd is None else 'approximate, point-in-time pricing'})"
                 )
     print()
+    print("Entity/relation P/R/F1 are unique-normalized-text set matches per chunk, not span-position matches")
+    print(
+        "(see GoldEntity's docstring) -- repeated identical mentions within one chunk count once, not per-occurrence."
+    )
     print("No automatic verdict -- read the numbers, don't let this pick for you.")
     print("relation columns are only meaningful for backends with a relation vocabulary (gliner2 here).")
     print(
