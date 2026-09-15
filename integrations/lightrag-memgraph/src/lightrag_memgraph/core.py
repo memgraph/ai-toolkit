@@ -101,6 +101,20 @@ class MemgraphLightRAGWrapper:
             raise RuntimeError("LightRAG not initialized. Call initialize() first.")
         return self.rag
 
+    @property
+    def workspace(self) -> str:
+        """The Memgraph label LightRAG writes every extracted entity under.
+
+        Exposed directly (rather than making callers reach through
+        get_lightrag().chunk_entity_relation_graph) since it's the one piece
+        of LightRAG's internal state consumers outside this package actually
+        need -- e.g. unstructured2graph's LightRAGBackend.workspace_label.
+
+        Raises:
+            RuntimeError: if initialize() hasn't been called yet.
+        """
+        return self.get_lightrag().chunk_entity_relation_graph.workspace
+
     # https://github.com/HKUDS/LightRAG/blob/main/lightrag/lightrag.py
     async def ainsert(self, **kwargs) -> None:
         """

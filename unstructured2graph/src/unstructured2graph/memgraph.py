@@ -1,7 +1,7 @@
 import logging
 import re
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from lightrag_memgraph import DEFAULT_EMBEDDING_DIM
 from memgraph_toolbox.api.memgraph import Memgraph
@@ -15,6 +15,20 @@ logger = logging.getLogger(__name__)
 # (SET n:{label}), so it's restricted to safe identifier characters.
 _VALID_LABEL_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _LABEL_WORD_SPLIT_PATTERN = re.compile(r"[^A-Za-z0-9]+")
+
+
+def _require_valid_identifier(value: str, role: str) -> None:
+    """Raise ValueError unless `value` is safe to f-string-interpolate into
+    Cypher as a label, relationship type, property key, or variable name --
+    Cypher can parameterize values but not these, so any of them built from
+    caller-supplied or extracted data (not a compile-time literal) must be
+    checked before use. `role` names what was being validated, for a
+    diagnosable error message (e.g. "node_label", "relation type")."""
+    if not _VALID_LABEL_PATTERN.match(value):
+        raise ValueError(
+            f"Invalid {role} {value!r}: must be a valid identifier (letters, digits, "
+            "underscore, not starting with a digit) to use directly in a Cypher query"
+        )
 
 
 def _entity_type_to_label(entity_type: str) -> str | None:
@@ -161,6 +175,54 @@ def promote_all_entity_types_to_labels(memgraph: Memgraph, workspace_label: str)
             """,
             params={"entity_type": entity_type},
         )
+
+
+def upsert_typed_relationships(
+    memgraph: Memgraph,
+    node_label: str,
+    match_key: str,
+    relationships_by_type: dict[str, list[dict[str, Any]]],
+) -> None:
+    """
+    Upsert relationships of possibly many distinct Cypher relationship types
+    between nodes already present under `node_label`, matched by `match_key`.
+
+    Cypher can parameterize values but not labels, relationship types,
+    property keys, or variable names -- so `node_label`, `match_key`, every
+    key in `relationships_by_type`, and every extra edge-property key found
+    on a relationship dict are all f-string-interpolated into the generated
+    query, and are therefore each validated (see `_require_valid_identifier`)
+    before use. This matters because none of them are guaranteed to be
+    compile-time literals at the call site -- `node_label` in particular is
+    commonly an ExtractionBackend's caller-configured `workspace_label`.
+
+    Args:
+        node_label: Memgraph label both relationship endpoints are matched under.
+        match_key: Node property used to look up each endpoint (e.g. "entity_id").
+        relationships_by_type: relation label -> list of
+            {"from": <match_key value>, "to": <match_key value>, **extra edge properties}.
+
+    Raises:
+        ValueError: if `node_label`, `match_key`, a relation type, or an edge
+            property key isn't a valid Cypher identifier.
+    """
+    _require_valid_identifier(node_label, "node_label")
+    _require_valid_identifier(match_key, "match_key")
+
+    for relation_type, relationships in relationships_by_type.items():
+        if not relationships:
+            continue
+        _require_valid_identifier(relation_type, "relation type")
+        set_keys = [key for key in relationships[0] if key not in ("from", "to")]
+        for key in set_keys:
+            _require_valid_identifier(key, "edge property key")
+        set_clause = f" SET {', '.join(f'r.{key} = rel.{key}' for key in set_keys)}" if set_keys else ""
+        query = f"""
+        UNWIND $relationships AS rel
+        MATCH (a:{node_label} {{{match_key}: rel.from}}), (b:{node_label} {{{match_key}: rel.to}})
+        MERGE (a)-[r:{relation_type}]->(b){set_clause}
+        """
+        memgraph.query(query, params={"relationships": relationships})
 
 
 def link_nodes_in_order(
