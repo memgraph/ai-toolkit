@@ -16,6 +16,7 @@ Relationships:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -443,6 +444,207 @@ class SessionsGraph:
                 texts_deduped=len(unique_texts),
                 error=str(e),
             )
+
+    async def reconcile_sessions_batch(
+        self,
+        session_ids: list[str],
+        *,
+        lightrag_wrapper: Any,
+        actions_graph: ActionsGraph | None = None,
+        entity_workspace: str | None = None,
+        promote_labels: bool = False,
+        enforce_ontology: bool = False,
+        ontology_path: str | Path | None = None,
+        summary_concurrency: int = 4,
+    ) -> list[ReconciliationSummary]:
+        """Reconcile many sessions as ONE LightRAG processing pass, not one per session.
+
+        ``reconcile_session`` calls ``unstructured2graph.from_texts``, which
+        calls LightRAG's ``ainsert`` -- enqueue *and* immediately process, in
+        one call. Looping that per session (as callers of ``reconcile_session``
+        must) never gives LightRAG's own worker pool (``MAX_PARALLEL_INSERT``
+        documents at once, gated by the separate ``MAX_ASYNC_LLM`` LLM-call
+        semaphore) more than one document to actually parallelize over.
+        Worse, ``apipeline_process_enqueue_documents`` holds a workspace-level
+        "busy" lock: a second concurrent caller doesn't run its own pass in
+        parallel, it just sets a pending flag and returns having done no
+        work -- so wrapping ``reconcile_session`` calls in ``asyncio.gather``
+        would not parallelize anything either.
+
+        This stages every session's combined document first
+        (``unstructured2graph.enqueue_texts``), then triggers LightRAG's
+        processing pass exactly once (``process_enqueued_and_finalize``) for
+        the whole group, so its worker pool has something real to
+        parallelize. Per-session bookkeeping that has no shared-state
+        contention -- the episode-summary LLM call, HAS_CHUNK linking,
+        ``reconciliation_status`` -- happens after, fanned out with its own
+        bounded concurrency (``summary_concurrency``); it doesn't go through
+        LightRAG's pipeline at all, so the "busy" lock above doesn't apply to
+        it.
+
+        Known limitation: if the shared processing pass itself raises, every
+        session in this call is marked failed with the same error -- coarser
+        than ``reconcile_session``'s per-session isolation. LightRAG's own
+        ``doc_status`` store tracks PROCESSED/FAILED per document even within
+        one pass, which a future version could read back to recover
+        per-session granularity; this does not do that yet.
+
+        Args:
+            session_ids: Sessions to reconcile together as one batch. Choosing
+                how many to group here is the caller's call: LightRAG's own
+                concurrency knobs bound how many actually run at once
+                regardless of batch size, but a very large batch delays any
+                progress signal until the whole group finishes.
+            summary_concurrency: Bound on concurrent episode-summary LLM
+                calls during finalize. Independent of LightRAG's own
+                ``MAX_ASYNC_LLM``, since this call never enters its pipeline.
+
+        See ``reconcile_session`` for the remaining arguments.
+
+        Returns:
+            One :class:`ReconciliationSummary` per input session_id, in the
+            same order as ``session_ids``.
+        """
+        if actions_graph is None:
+            try:
+                from actions_graph import ActionsGraph as _ActionsGraph
+            except ImportError as exc:
+                msg = "actions-graph is required for reconcile_sessions_batch; install sessions-graph[reconciliation]"
+                raise ImportError(msg) from exc
+            actions_graph = _ActionsGraph(self._db)
+
+        try:
+            from unstructured2graph import enqueue_texts, process_enqueued_and_finalize
+        except ImportError as exc:
+            msg = "unstructured2graph is required for reconcile_sessions_batch; install sessions-graph[reconciliation]"
+            raise ImportError(msg) from exc
+
+        prepared: list[tuple[str, list[ReconciliationSource], dict[str, str]]] = []
+        for session_id in session_ids:
+            actions = actions_graph.get_session_actions(session_id)
+            memories = self.get_memories_for_session(session_id)
+            sources = build_reconciliation_sources(actions, memories)
+            unique_texts: dict[str, str] = {}
+            for source in sources:
+                unique_texts.setdefault(content_hash(source.text), source.text)
+            prepared.append((session_id, sources, unique_texts))
+
+        results: dict[str, ReconciliationSummary] = {}
+        reconciled_at = datetime.now(timezone.utc).isoformat()
+
+        # Sessions with nothing to reconcile complete immediately -- same as
+        # reconcile_session's own empty-content branch -- and must not be
+        # included in the shared enqueue below (an empty text would just
+        # waste a slot in the batch).
+        to_enqueue = [(sid, sources, ut) for sid, sources, ut in prepared if ut]
+        for session_id, sources, unique_texts in prepared:
+            if unique_texts:
+                continue
+            self._db.query(
+                """
+                MATCH (s:Session {session_id: $session_id})
+                SET s.reconciliation_status = 'completed', s.reconciled_at = $reconciled_at
+                """,
+                params={"session_id": session_id, "reconciled_at": reconciled_at},
+            )
+            results[session_id] = ReconciliationSummary(
+                session_id=session_id, status="completed", texts_considered=len(sources), texts_deduped=0
+            )
+
+        if not to_enqueue:
+            return [results[sid] for sid in session_ids]
+
+        combined_texts = ["\n\n".join(unique_texts.values()) for _, _, unique_texts in to_enqueue]
+
+        try:
+            grouped_chunks = await enqueue_texts(
+                combined_texts,
+                memgraph=self._db,
+                lightrag_wrapper=lightrag_wrapper,
+                chunk_kwargs={"max_characters": MAX_SESSION_BATCH_CHARS},
+            )
+            await process_enqueued_and_finalize(
+                memgraph=self._db,
+                lightrag_wrapper=lightrag_wrapper,
+                entity_workspace=entity_workspace,
+                promote_labels=promote_labels,
+                enforce_ontology=enforce_ontology,
+                ontology_path=ontology_path,
+            )
+        except Exception as e:
+            error = str(e)
+            for session_id, sources, unique_texts in to_enqueue:
+                self._db.query(
+                    """
+                    MATCH (s:Session {session_id: $session_id})
+                    SET s.reconciliation_status = 'failed', s.reconciliation_error = $error
+                    """,
+                    params={"session_id": session_id, "error": error},
+                )
+                results[session_id] = ReconciliationSummary(
+                    session_id=session_id,
+                    status="failed",
+                    texts_considered=len(sources),
+                    texts_deduped=len(unique_texts),
+                    error=error,
+                )
+            return [results[sid] for sid in session_ids]
+
+        semaphore = asyncio.Semaphore(summary_concurrency)
+
+        async def _finalize_one(
+            index: int, session_id: str, sources: list[ReconciliationSource], unique_texts: dict[str, str]
+        ) -> None:
+            try:
+                session_chunks = grouped_chunks[index] if index < len(grouped_chunks) else []
+                self._link_chunks_to_sources(sources, session_chunks)
+                async with semaphore:
+                    summary_text = await summarize_session_texts(lightrag_wrapper, list(unique_texts.values()))
+                self._db.query(
+                    """
+                    MATCH (s:Session {session_id: $session_id})
+                    SET s.reconciliation_status = 'completed', s.reconciled_at = $reconciled_at
+                    """,
+                    params={"session_id": session_id, "reconciled_at": reconciled_at},
+                )
+                if summary_text:
+                    self._db.query(
+                        """
+                        MATCH (s:Session {session_id: $session_id})
+                        MERGE (s)-[:HAS_EPISODE]->(e:Episode)
+                        SET e.summary = $summary, e.summarized_at = $summarized_at
+                        """,
+                        params={"session_id": session_id, "summary": summary_text, "summarized_at": reconciled_at},
+                    )
+                results[session_id] = ReconciliationSummary(
+                    session_id=session_id,
+                    status="completed",
+                    texts_considered=len(sources),
+                    texts_deduped=len(unique_texts),
+                    summary_written=summary_text is not None,
+                )
+            except Exception as e:
+                # Isolated per session, unlike the shared pass above: nothing
+                # here touches another session's state, so one failure must
+                # not cost the rest of the batch its result.
+                self._db.query(
+                    """
+                    MATCH (s:Session {session_id: $session_id})
+                    SET s.reconciliation_status = 'failed', s.reconciliation_error = $error
+                    """,
+                    params={"session_id": session_id, "error": str(e)},
+                )
+                results[session_id] = ReconciliationSummary(
+                    session_id=session_id,
+                    status="failed",
+                    texts_considered=len(sources),
+                    texts_deduped=len(unique_texts),
+                    error=str(e),
+                )
+
+        await asyncio.gather(*(_finalize_one(i, sid, sources, ut) for i, (sid, sources, ut) in enumerate(to_enqueue)))
+
+        return [results[sid] for sid in session_ids]
 
     def get_pending_reconciliation_sessions(self, *, limit: int = 100) -> list[str]:
         """Return session_ids marked ``reconciliation_status = 'pending'``."""

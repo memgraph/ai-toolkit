@@ -9,11 +9,13 @@ import pytest
 from unstructured2graph import (
     Chunk,
     ChunkedDocument,
+    enqueue_texts,
     from_texts,
     from_unstructured,
     make_chunks,
     parse_source,
     parse_text,
+    process_enqueued_and_finalize,
 )
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -380,6 +382,97 @@ async def test_from_texts_preserves_grouping_for_empty_texts():
     assert grouped[1] == []
     assert len(grouped[2]) == 1
     assert grouped[2][0].text == "actual content"
+
+
+def _wrapper_for_enqueue(workspace="base"):
+    """A lightrag_wrapper stub whose get_lightrag() supports the
+    enqueue/process split, not just ainsert()."""
+    wrapper = MagicMock()
+    rag = wrapper.get_lightrag.return_value
+    rag.chunk_entity_relation_graph.workspace = workspace
+    rag.addon_params = {}
+    rag.apipeline_enqueue_documents = AsyncMock()
+    rag.apipeline_process_enqueue_documents = AsyncMock()
+    return wrapper
+
+
+@pytest.mark.asyncio
+async def test_enqueue_texts_stages_without_calling_ainsert():
+    """The whole point: enqueue_texts must not trigger processing itself --
+    that's what makes staging many callers' documents before anyone
+    processes possible."""
+    memgraph = MagicMock()
+    lightrag_wrapper = _wrapper_for_enqueue()
+
+    grouped = await enqueue_texts(["Alice works on the graph engine."], memgraph, lightrag_wrapper)
+
+    assert len(grouped) == 1
+    assert len(grouped[0]) == 1
+    lightrag_wrapper.get_lightrag.return_value.apipeline_enqueue_documents.assert_awaited_once()
+    lightrag_wrapper.get_lightrag.return_value.apipeline_process_enqueue_documents.assert_not_awaited()
+    lightrag_wrapper.ainsert.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_enqueue_texts_enqueues_every_chunk_in_one_call():
+    """One apipeline_enqueue_documents call across all input texts' chunks --
+    not one call per text -- is what lets LightRAG's worker pool see more
+    than one document at a time."""
+    memgraph = MagicMock()
+    lightrag_wrapper = _wrapper_for_enqueue()
+
+    await enqueue_texts(["first session's text", "second session's text"], memgraph, lightrag_wrapper)
+
+    rag = lightrag_wrapper.get_lightrag.return_value
+    rag.apipeline_enqueue_documents.assert_awaited_once()
+    call_kwargs = rag.apipeline_enqueue_documents.call_args.kwargs
+    assert len(call_kwargs["input"]) == 2
+    assert len(call_kwargs["file_paths"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_enqueue_texts_preserves_grouping_for_empty_texts():
+    memgraph = MagicMock()
+    lightrag_wrapper = _wrapper_for_enqueue()
+
+    grouped = await enqueue_texts(["", "actual content"], memgraph, lightrag_wrapper)
+
+    assert grouped[0] == []
+    assert len(grouped[1]) == 1
+
+
+@pytest.mark.asyncio
+async def test_process_enqueued_and_finalize_triggers_processing_and_connects_chunks():
+    memgraph = MagicMock()
+    lightrag_wrapper = _wrapper_for_enqueue()
+
+    with patch("unstructured2graph.loaders.connect_chunks_to_entities") as mock_connect:
+        await process_enqueued_and_finalize(memgraph, lightrag_wrapper)
+
+    lightrag_wrapper.get_lightrag.return_value.apipeline_process_enqueue_documents.assert_awaited_once()
+    mock_connect.assert_called_once_with(memgraph, "Chunk", "base")
+
+
+@pytest.mark.asyncio
+async def test_process_enqueued_and_finalize_defaults_to_no_ontology_enforcement():
+    memgraph = MagicMock()
+    lightrag_wrapper = _wrapper_for_enqueue()
+
+    with patch("unstructured2graph.loaders.promote_entity_types_to_labels") as mock_promote:
+        await process_enqueued_and_finalize(memgraph, lightrag_wrapper)
+
+    mock_promote.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_enqueued_and_finalize_enforce_ontology_true_promotes_labels():
+    memgraph = MagicMock()
+    lightrag_wrapper = _wrapper_for_enqueue()
+
+    with patch("unstructured2graph.loaders.promote_entity_types_to_labels") as mock_promote:
+        await process_enqueued_and_finalize(memgraph, lightrag_wrapper, enforce_ontology=True)
+
+    mock_promote.assert_called_once()
 
 
 @pytest.mark.skip(reason="Requires sample-data files and network access - run locally with full deps")
