@@ -20,7 +20,7 @@ on:
       limit:
         description: "How many questions to run"
         required: false
-        default: "20"
+        default: "100"
       judge_model:
         description: "Anthropic model id for the judge (blank = skip judging, report payload size only)"
         required: false
