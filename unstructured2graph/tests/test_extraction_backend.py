@@ -35,3 +35,14 @@ async def test_aingest_chunk_delegates_to_wrapper_ainsert():
     await backend.aingest_chunk(MagicMock(), chunk)
 
     wrapper.ainsert.assert_awaited_once_with(input=chunk.text, file_paths=[chunk.hash])
+
+
+@pytest.mark.asyncio
+async def test_afinalize_delegates_to_wrapper_afinalize():
+    wrapper = MagicMock()
+    wrapper.afinalize = AsyncMock()
+    backend = LightRAGBackend(wrapper)
+
+    await backend.afinalize()
+
+    wrapper.afinalize.assert_awaited_once_with()

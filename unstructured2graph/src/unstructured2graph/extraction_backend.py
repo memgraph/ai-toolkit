@@ -66,3 +66,15 @@ class LightRAGBackend:
 
     async def aingest_chunk(self, memgraph: Memgraph, chunk: "Chunk") -> None:
         await self.wrapper.ainsert(input=chunk.text, file_paths=[chunk.hash])
+
+    async def afinalize(self) -> None:
+        """Finalize the underlying MemgraphLightRAGWrapper.
+
+        Not part of the ExtractionBackend protocol -- GLiNER2Backend has no
+        persistent resources needing an equivalent teardown, so this isn't a
+        general contract every backend must implement. Exposed here so
+        callers that do need to finalize a LightRAGBackend (e.g. between
+        repeated runs in the same process) can call it directly instead of
+        reaching through `.wrapper` into MemgraphLightRAGWrapper themselves.
+        """
+        await self.wrapper.afinalize()
