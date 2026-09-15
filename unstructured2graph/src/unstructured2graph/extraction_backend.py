@@ -59,7 +59,7 @@ class LightRAGBackend:
     @property
     def workspace_label(self) -> str:
         try:
-            return self.wrapper.get_lightrag().chunk_entity_relation_graph.workspace
+            return self.wrapper.workspace
         except Exception as e:
             logger.warning(f"Could not auto-derive LightRAG entity workspace, falling back to 'base': {e}")
             return "base"

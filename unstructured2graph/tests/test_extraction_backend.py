@@ -1,6 +1,6 @@
 """Unit tests for LightRAGBackend, the ExtractionBackend adapter over MemgraphLightRAGWrapper."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import pytest
 
@@ -9,7 +9,7 @@ from unstructured2graph import Chunk, LightRAGBackend
 
 def test_workspace_label_auto_derived_from_lightrag():
     wrapper = MagicMock()
-    wrapper.get_lightrag.return_value.chunk_entity_relation_graph.workspace = "tenant-42"
+    wrapper.workspace = "tenant-42"
 
     backend = LightRAGBackend(wrapper)
 
@@ -18,7 +18,7 @@ def test_workspace_label_auto_derived_from_lightrag():
 
 def test_workspace_label_falls_back_to_base_when_lightrag_not_initialized():
     wrapper = MagicMock()
-    wrapper.get_lightrag.side_effect = RuntimeError("not initialized")
+    type(wrapper).workspace = PropertyMock(side_effect=RuntimeError("not initialized"))
 
     backend = LightRAGBackend(wrapper)
 

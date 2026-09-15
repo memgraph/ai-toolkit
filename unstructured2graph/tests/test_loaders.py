@@ -99,7 +99,7 @@ def test_partition_kwargs_passed_through(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_entity_workspace_explicit_override_wins():
+async def test_entity_workspace_explicit_override_matching_backend_is_accepted():
     memgraph = MagicMock()
     extraction_backend = _backend_with_workspace("auto-derived")
 
@@ -108,10 +108,26 @@ async def test_entity_workspace_explicit_override_wins():
         patch("unstructured2graph.loaders.connect_chunks_to_entities") as mock_connect,
     ):
         await from_unstructured(
-            ["fake.txt"], memgraph, extraction_backend, only_chunks=False, entity_workspace="explicit"
+            ["fake.txt"], memgraph, extraction_backend, only_chunks=False, entity_workspace="auto-derived"
         )
 
-    mock_connect.assert_called_once_with(memgraph, "Chunk", "explicit")
+    mock_connect.assert_called_once_with(memgraph, "Chunk", "auto-derived")
+
+
+@pytest.mark.asyncio
+async def test_entity_workspace_explicit_override_mismatch_raises():
+    """A mismatched override would otherwise silently make connect_chunks_to_entities()
+    scan the wrong label and find nothing -- must fail loudly instead."""
+    memgraph = MagicMock()
+    extraction_backend = _backend_with_workspace("auto-derived")
+
+    with (
+        patch("unstructured2graph.loaders.make_chunks", return_value=[_fake_document()]),
+        pytest.raises(ValueError, match="does not match"),
+    ):
+        await from_unstructured(
+            ["fake.txt"], memgraph, extraction_backend, only_chunks=False, entity_workspace="explicit"
+        )
 
 
 @pytest.mark.asyncio

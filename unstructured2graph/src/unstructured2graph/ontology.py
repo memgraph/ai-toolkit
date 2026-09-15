@@ -17,12 +17,32 @@ _VALID_LABEL_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 @dataclass(frozen=True)
 class EntityType:
+    """One entry in an Ontology's entity vocabulary.
+
+    Attributes:
+        label: The Memgraph label / extraction-schema key this entity type
+            promotes to. Must be a valid Cypher identifier -- load_ontology()
+            validates this against _VALID_LABEL_PATTERN before constructing
+            one; don't build EntityType directly with an unvalidated label.
+        description: Human-readable guidance for what this type covers,
+            surfaced to callers via Ontology.entity_types_guidance() (steers
+            LightRAG's extraction prompt) and used directly as a GLiNER2Backend
+            schema description.
+    """
+
     label: str
     description: str
 
 
 @dataclass(frozen=True)
 class RelationType:
+    """One entry in an Ontology's relation vocabulary -- the Entity Type
+    counterpart for relationships. See EntityType for the field contract;
+    the only difference is that `label` becomes a Cypher relationship type
+    (e.g. `:works_for`) rather than a node label, and there is no LightRAG
+    consumer for relation types at all (see Ontology's own docstring).
+    """
+
     label: str
     description: str
 

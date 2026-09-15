@@ -20,23 +20,42 @@ ENTITY_AND_RELATION_ONTOLOGY = Ontology(
 )
 
 
+class _FakeSchema:
+    """Mirrors the real gliner2 schema builder's chainable .entities()/
+    .relations(), recording what was passed so tests can assert on it."""
+
+    def __init__(self):
+        self.entity_schema = None
+        self.relation_schema = None
+
+    def entities(self, schema):
+        self.entity_schema = schema
+        return self
+
+    def relations(self, schema):
+        self.relation_schema = schema
+        return self
+
+
 class _FakeModel:
     """Records every call so tests can assert on what schema was passed, and
-    returns whatever canned result the test configured."""
+    returns whatever canned result the test configured -- merged into the
+    single {"entities": ..., "relation_extraction": ...} shape the real
+    model.extract() returns from one combined call (gliner2_backend.py's
+    _extract_sync no longer calls extract_entities()/extract_relations()
+    separately)."""
 
     def __init__(self, entities_result=None, relations_result=None):
-        self.entities_result = entities_result or {"entities": {}}
-        self.relations_result = relations_result or {"relation_extraction": {}}
-        self.entity_calls: list[tuple[str, dict]] = []
-        self.relation_calls: list[tuple[str, dict]] = []
+        self.result: dict = dict(entities_result or {"entities": {}})
+        self.result.update(relations_result or {})
+        self.extract_calls: list[tuple[str, _FakeSchema]] = []
 
-    def extract_entities(self, text, schema, **kwargs):
-        self.entity_calls.append((text, schema))
-        return self.entities_result
+    def create_schema(self):
+        return _FakeSchema()
 
-    def extract_relations(self, text, schema, **kwargs):
-        self.relation_calls.append((text, schema))
-        return self.relations_result
+    def extract(self, text, schema, **kwargs):
+        self.extract_calls.append((text, schema))
+        return self.result
 
 
 def test_entity_schema_built_from_ontology():
@@ -51,6 +70,12 @@ def test_workspace_label_defaults_and_is_configurable():
     model = _FakeModel()
     assert GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=model).workspace_label == "gliner2"
     assert GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=model, workspace="custom").workspace_label == "custom"
+
+
+def test_invalid_workspace_raises():
+    model = _FakeModel()
+    with pytest.raises(ValueError, match="Invalid workspace"):
+        GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=model, workspace="not a valid label!")
 
 
 def test_normalize_text_collapses_whitespace_and_case():
@@ -69,15 +94,35 @@ def test_entity_id_is_deterministic_and_scoped_to_chunk_and_type():
 
 
 @pytest.mark.asyncio
-async def test_entity_only_ontology_never_calls_extract_relations():
+async def test_entity_only_ontology_never_requests_relations_schema():
     model = _FakeModel(entities_result={"entities": {"person": [{"text": "Alice", "start": 0, "end": 5}]}})
     backend = GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=model)
 
     with patch("unstructured2graph.gliner2_backend.create_nodes_from_list") as mock_create_nodes:
         await backend.aingest_chunk(MagicMock(), Chunk(text="Alice works here.", hash="h1"))
 
-    assert model.relation_calls == []
+    assert len(model.extract_calls) == 1
+    _text, schema = model.extract_calls[0]
+    assert schema.entity_schema == {"person": "A human"}
+    assert schema.relation_schema is None
     mock_create_nodes.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_entity_and_relation_ontology_requests_combined_schema_in_one_call():
+    """The whole point of the joint pass: one model.extract() call carries
+    both schemas, not two separate extract_entities()/extract_relations()
+    calls."""
+    model = _FakeModel()
+    backend = GLiNER2Backend(ontology=ENTITY_AND_RELATION_ONTOLOGY, model=model)
+
+    with patch("unstructured2graph.gliner2_backend.create_nodes_from_list"):
+        await backend.aingest_chunk(MagicMock(), Chunk(text="Alice works at Acme Corp.", hash="h1"))
+
+    assert len(model.extract_calls) == 1
+    _text, schema = model.extract_calls[0]
+    assert schema.entity_schema == {"person": "A human", "company": "A business"}
+    assert schema.relation_schema == {"works_for": "Employment relationship"}
 
 
 @pytest.mark.asyncio
