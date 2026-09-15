@@ -203,6 +203,46 @@ operator's own exported value) — fewer entities in a single batch realisticall
 cross 30 mentions, at the cost of a plain concatenation instead of an
 LLM-written summary for the ones that don't.
 
+### Extraction granularity: session-batching and the embedding ceiling
+
+`sessions-graph` reconciles a whole session as one document, not one per turn
+(map #297) — a turn was previously extracted in total isolation from every
+other turn in the same session, hiding cross-turn facts (coreference, a fact
+stated in one turn and referenced in another) in addition to costing one
+LightRAG document per turn. The real extraction granularity is then decided by
+whatever re-chunks the combined text smallest, not by the number of turns.
+
+That turned out not to be LightRAG's own `CHUNK_SIZE` (1200 tokens): LightRAG
+re-splits any chunk down to the embedding model's `max_token_size` *before*
+embedding, and extraction runs on those re-split pieces. `lightrag-memgraph`'s
+default embedder (Memgraph's local `all-MiniLM-L6-v2`, chosen to avoid any
+external cost) has `max_token_size=256` — close to this corpus's average turn
+size (~245 tokens), leaving little room for session-batching to consolidate
+anything. `context_graph_eval.reconcile._eval_embedding_func` swaps in
+`BAAI/bge-m3` (also local, via the same Memgraph `embeddings` module —
+confirmed directly against a running instance: dimension 1024, max sequence
+length 8192) for eval batches specifically, raising the effective ceiling
+above all but the largest sessions in the corpus.
+
+Measured on the same 5 real sessions at each step:
+
+| | extraction+gleaning calls | calls/session |
+|---|---|---|
+| Per-turn (original) | 106 | 21.2 |
+| Session-batched, 256-token ceiling | 70 | 14.0 |
+| Session-batched, bge-m3 (8192-token ceiling) | **18** | **3.6** |
+
+A **5.9x** reduction end to end, at zero quality trade-off (bge-m3 is a
+strict step up from all-MiniLM, not a cheaper/weaker substitute) — unlike the
+merge-threshold change above, which does trade quality for cost.
+
+Swapping embedding models mid-project needs care: lightrag-memgraph's vector
+storage creates its Memgraph vector index once and treats a second `CREATE
+VECTOR INDEX` as "already exists" regardless of *why* creation failed —
+dimension mismatch included. `inject.py`'s `_wipe()` now drops every existing
+vector index before a batch starts, not just the graph's nodes, so a batch
+that changes embedding model is exactly as safe as one that doesn't.
+
 It is a separate step from injection because it is LLM-backed and slow; folding
 it in would make staging a batch cost as much as scoring one.
 

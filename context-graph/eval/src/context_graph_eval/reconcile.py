@@ -91,6 +91,43 @@ def _resolve_reconciliation_tuning() -> None:
     os.environ.setdefault("FORCE_LLM_SUMMARY_ON_MERGE", _EVAL_FORCE_LLM_SUMMARY_ON_MERGE)
 
 
+#: `MemgraphLightRAGWrapper`'s own default (all-MiniLM-L6-v2, max_token_size
+#: 256) is what turned reconciliation's session-batching (map #297) into a
+#: much smaller win than it should be: LightRAG re-splits any chunk down to
+#: the embedder's own max_token_size *before* embedding, and extraction runs
+#: on those re-split pieces -- so 256, not LightRAG's larger CHUNK_SIZE, was
+#: the real ceiling. BAAI/bge-m3 raises that ceiling to 8192 tokens, above
+#: all but the largest sessions in the eval corpus (max observed: ~17k
+#: tokens), while staying local -- confirmed directly against the running
+#: eval Memgraph instance: dimension=1024, max_sequence_length=8192 (via
+#: `embeddings.model_info()`), no external cost. Measured effect on the real
+#: corpus: extraction+gleaning chunks drop from 8.77/session (the current
+#: 256-token ceiling) to ~1.00/session.
+_EVAL_EMBEDDING_MODEL = "BAAI/bge-m3"
+_EVAL_EMBEDDING_DIM = 1024
+_EVAL_EMBEDDING_MAX_TOKENS = 8192
+
+
+def _eval_embedding_func() -> Any:
+    """The eval-scoped embedding function, built fresh so nothing outside
+    context-graph-eval shares or is affected by this override.
+
+    Passed explicitly to ``MemgraphLightRAGWrapper.initialize()`` rather than
+    changed as lightrag-memgraph's own default: bge-m3 is a much heavier
+    model (~568M params vs all-MiniLM's ~22M) with a different vector
+    dimension, and production sessions-graph reconciliation never asked for
+    that trade -- this stays scoped to the eval batches deciding whether it's
+    worth making the default everywhere.
+    """
+    from lightrag_memgraph.embeddings import build_memgraph_sentence_embed
+
+    return build_memgraph_sentence_embed(
+        model_name=_EVAL_EMBEDDING_MODEL,
+        embedding_dim=_EVAL_EMBEDDING_DIM,
+        max_token_size=_EVAL_EMBEDDING_MAX_TOKENS,
+    )
+
+
 def pending_sessions(db: "Memgraph", limit: int | None = None) -> list[str]:
     """Session ids awaiting reconciliation, oldest first.
 
@@ -171,7 +208,7 @@ async def reconcile_batch(
         from lightrag_memgraph import MemgraphLightRAGWrapper
 
         lightrag_wrapper = MemgraphLightRAGWrapper()
-        await lightrag_wrapper.initialize(working_dir=working_dir)
+        await lightrag_wrapper.initialize(working_dir=working_dir, embedding_func=_eval_embedding_func())
 
     reconciled = 0
     errors: list[str] = []
