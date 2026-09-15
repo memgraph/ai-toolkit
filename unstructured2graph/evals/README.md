@@ -106,11 +106,15 @@ at face value.
 - **`ontology_conformant`** -- a free bonus signal from running with
   `enforce_ontology=True`: what fraction of extracted entities matched
   `default_ontology.yaml`'s vocabulary at all, independent of gold.
-- **`calls` / `tokens`** -- LightRAG only. Token counts are *approximate*
-  (tiktoken's `cl100k_base` over prompt/completion text, not provider-billed
-  usage -- LightRAG's `llm_model_func` returns a plain string, not a response
-  object with native usage stats). GLiNER2 makes zero LLM calls -- "free and
-  offline" is itself the headline, not something to compute.
+- **`calls` / `cost`** -- LightRAG only (`n/a` for GLiNER2 -- zero LLM calls,
+  not merely "$0", is itself the headline). The per-row detail line under each
+  backend prints the prompt/completion token split and which model priced it.
+  Both token counts and dollar cost are *approximate*: tiktoken's `cl100k_base`
+  over prompt/completion text (LightRAG's `llm_model_func` returns a plain
+  string, not a response object with native usage stats), times a pinned,
+  point-in-time price per model in `MODEL_PRICING_PER_1M_TOKENS` -- not
+  provider-billed usage. A model missing from that table reports `unpriced`,
+  never a silent `$0`.
 
 No automatic verdict, on purpose -- this tool's job is to make the comparison
 legible, not decide for anyone (mirrors `context-graph-eval`'s "promotion is
