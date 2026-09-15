@@ -9849,6 +9849,7 @@ all-docs = [
 test = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "python-dotenv" },
 ]
 
 [package.metadata]
@@ -9858,6 +9859,7 @@ requires-dist = [
     { name = "nltk", specifier = "<3.11" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.21.0" },
+    { name = "python-dotenv", marker = "extra == 'test'", specifier = ">=1.0.1" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "unstructured", specifier = ">=0.18.18" },
     { name = "unstructured", extras = ["all-docs"], marker = "extra == 'all-docs'", specifier = ">=0.18.18" },
