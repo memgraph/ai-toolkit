@@ -316,12 +316,16 @@ def _run(args) -> int:
 
     from .corpus import read_corpus
     from .goldslice import evidence_is_planted
-    from .reconcile import _resolve_llm_credentials
+    from .reconcile import _resolve_llm_credentials, _resolve_reconciliation_tuning
     from .retrieval import DeepEvalLLM
     from .runner import RunPlan, check_offline, run_batch
 
     check_offline()
     _resolve_llm_credentials()
+    # Must run before reconciliation's lazy unstructured2graph/lightrag import:
+    # LightRAG reads FORCE_LLM_SUMMARY_ON_MERGE once, as a dataclass default
+    # baked in when lightrag.lightrag is first imported.
+    _resolve_reconciliation_tuning()
 
     # Read the COMMITTED corpus rather than re-deriving it. This is the whole
     # point of #302 putting it in git: two runs being compared must provably be

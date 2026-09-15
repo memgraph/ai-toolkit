@@ -139,3 +139,21 @@ def test_a_fixture_without_a_session_id_is_refused(eval_graph: ActionsGraph, bad
     distinct sessions and destroying the haystack."""
     with pytest.raises(ValueError, match="session_id"):
         inject_batch([_fixture("ok"), _fixture(bad_id)], graph=eval_graph)
+
+
+def test_a_stale_vector_index_does_not_survive_a_wipe(eval_graph: ActionsGraph):
+    """lightrag-memgraph's vector storage creates its index once and treats a
+    second CREATE VECTOR INDEX as "already exists" no matter why creation
+    failed -- dimension mismatch included. A batch that changes embedding
+    model would otherwise inherit a previous batch's index at the wrong
+    dimension. Deleting nodes alone (the pre-fix behaviour) leaves the index
+    definition standing; wipe must drop it too."""
+    eval_graph._db.query(
+        "CREATE VECTOR INDEX stale_test_index ON :StaleTestLabel(embedding) "
+        'WITH CONFIG {"dimension": 384, "capacity": 1000, "metric": "cos"}'
+    )
+
+    inject_batch([_fixture("s1")], graph=eval_graph)
+
+    names = {row["index_name"] for row in eval_graph._db.query("SHOW VECTOR INDEX INFO")}
+    assert "stale_test_index" not in names

@@ -24,7 +24,7 @@ from memgraph_toolbox.api.memgraph import Memgraph
 
 from .models import Memory, validate_content, validate_memory_id, validate_user_id
 from .reconciliation import (
-    MAX_RECONCILABLE_CHARS,
+    MAX_SESSION_BATCH_CHARS,
     NODE_LABELS,
     ReconciliationSource,
     ReconciliationSummary,
@@ -361,27 +361,44 @@ class SessionsGraph:
         try:
             summary_text: str | None = None
             if unique_texts:
+                # The whole session's deduped texts as ONE document, not one
+                # per turn. A turn is still never split mid-utterance (that's
+                # what #327 fixed, and MAX_SESSION_BATCH_CHARS stays well
+                # above MAX_RECONCILABLE_CHARS so a turn's own truncation
+                # bound is always the tighter one) -- but today each turn was
+                # also extracted in total isolation from every other turn in
+                # the same session, one independent LightRAG document (and
+                # therefore two LLM calls) each. That undercounts the real
+                # unit worth extracting from: a session's entities and
+                # relations often span turns (coreference, a fact stated in
+                # one turn and referenced in another), invisible to an
+                # extractor that never sees more than one turn at a time.
+                #
+                # Batched, LightRAG's own chunking decides the real extraction
+                # granularity from actual content size instead of forcing
+                # per-turn calls regardless of size. The real ceiling on that
+                # granularity turned out to be the local embedder's
+                # max_token_size (256, all-MiniLM-L6-v2's trained sequence
+                # length -- LightRAG re-splits any chunk down to that before
+                # embedding, and extraction runs on the re-split pieces), not
+                # LightRAG's own larger CHUNK_SIZE default. Since an average
+                # turn here is already ~245 tokens, close to that 256 ceiling,
+                # the win is real but modest -- measured on 5 real sessions,
+                # 106 -> 70 extraction+gleaning calls (1.51x), not the 4x+ a
+                # naive CHUNK_SIZE=1200 assumption would predict.
+                combined_text = "\n\n".join(unique_texts.values())
                 grouped_chunks = await from_texts(
-                    list(unique_texts.values()),
+                    [combined_text],
                     memgraph=self._db,
                     lightrag_wrapper=lightrag_wrapper,
                     entity_workspace=entity_workspace,
                     promote_labels=promote_labels,
                     enforce_ontology=enforce_ontology,
                     ontology_path=ontology_path,
-                    # One turn, one chunk. The default cap is ~500 characters,
-                    # which split each turn into ~3.6 fragments -- measured, 468
-                    # reconcilable actions became 1,677 LightRAG documents at two
-                    # LLM calls each (#327). A conversation turn is already the
-                    # unit worth extracting from, and cutting it mid-utterance
-                    # hands the extractor a fragment with no surrounding context.
-                    #
-                    # MAX_RECONCILABLE_CHARS is the right bound because a source
-                    # is already truncated to it, so nothing can exceed it.
-                    chunk_kwargs={"max_characters": MAX_RECONCILABLE_CHARS},
+                    chunk_kwargs={"max_characters": MAX_SESSION_BATCH_CHARS},
                 )
-                chunks_by_text_hash = dict(zip(unique_texts.keys(), grouped_chunks, strict=True))
-                self._link_chunks_to_sources(sources, chunks_by_text_hash)
+                session_chunks = grouped_chunks[0] if grouped_chunks else []
+                self._link_chunks_to_sources(sources, session_chunks)
                 summary_text = await summarize_session_texts(lightrag_wrapper, list(unique_texts.values()))
 
             reconciled_at = datetime.now(timezone.utc).isoformat()
@@ -443,19 +460,23 @@ class SessionsGraph:
     def _link_chunks_to_sources(
         self,
         sources: list[ReconciliationSource],
-        chunks_by_text_hash: dict[str, list[Any]],
+        chunks: list[Any],
     ) -> None:
-        """Wire (:Action|:Memory)-[:HAS_CHUNK]->(:Chunk) for each source.
+        """Wire (:Action|:Memory)-[:HAS_CHUNK]->(:Chunk) for every source.
 
-        Looks up each source's actual output Chunks via from_texts()'s grouped
-        return value (keyed by the source text's hash) rather than
-        recomputing a hash from the original text — a text long enough to be
-        split by parse_text() produces multiple Chunks with hashes that don't
-        match a hash of the whole original text, so the grouping is load-bearing.
+        Every source in the session links to every chunk the session's one
+        combined document produced. In the overwhelmingly common case that is
+        exact, not an approximation: MAX_SESSION_BATCH_CHARS keeps the whole
+        session as a single chunk, which genuinely does contain every
+        source's text verbatim. Only a session large enough to make
+        unstructured2graph split the combined document into more than one
+        chunk trades that precision for a session-level (rather than
+        per-source) provenance signal -- a source may link to a chunk its own
+        text isn't actually inside, but never to another session's chunk.
         """
         rows_by_kind: dict[str, list[dict[str, str]]] = {kind: [] for kind in NODE_LABELS}
         for source in sources:
-            for chunk in chunks_by_text_hash.get(content_hash(source.text), []):
+            for chunk in chunks:
                 rows_by_kind[source.kind].append({"node_id": source.node_id, "hash": chunk.hash})
 
         for kind, rows in rows_by_kind.items():

@@ -8,6 +8,7 @@ converted rather than authored. See docs/research/2026-08-memory-benchmarks.md.
 import itertools
 import json
 import os
+import random
 import urllib.request
 from collections import defaultdict
 from collections.abc import Iterable
@@ -160,6 +161,16 @@ def build_corpus(records: Iterable[dict], limit: int | None = None) -> list[Gold
 
     *With a floor* so a rare stratum cannot round to zero at small limits and
     vanish silently.
+
+    *Shuffled with a fixed seed before returning*, because ``run --limit`` (a
+    separate, later slice -- see #302) takes a plain prefix of the *committed*
+    corpus. Without this, that prefix reproduces exactly the floor-uniform
+    distortion this function exists to avoid: round-robin order puts one record
+    per stratum in each pass, so the first N rows of a 100-question corpus are
+    ~2-per-stratum regardless of the real quotas, the same way ``--limit 20``
+    on the raw upstream data used to be. Shuffling with a fixed seed keeps the
+    file byte-identical across regenerations (still no spurious diff) while
+    making any prefix an unbiased sample instead of a systematically biased one.
     """
     records = list(records)
     if limit is None or limit >= len(records):
@@ -175,7 +186,14 @@ def build_corpus(records: Iterable[dict], limit: int | None = None) -> list[Gold
     # stays balanced rather than front-loading whichever stratum sorts first.
     taken = [strata[key][: quotas[key]] for key in sorted(strata)]
     sampled = [record for group in itertools.zip_longest(*taken) for record in group if record is not None]
-    return [to_golden(record) for record in sampled[:limit]]
+    sampled = sampled[:limit]
+    random.Random(_SHUFFLE_SEED).shuffle(sampled)
+    return [to_golden(record) for record in sampled]
+
+
+#: Fixed so a regenerated corpus is byte-identical (no spurious diff) rather
+#: than reshuffled every build.
+_SHUFFLE_SEED = 297
 
 
 def _quotas(sizes: dict[tuple[str, bool], int], limit: int, floor: int = 2) -> dict[tuple[str, bool], int]:

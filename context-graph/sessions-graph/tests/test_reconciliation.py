@@ -25,6 +25,7 @@ pytest.importorskip("unstructured2graph", reason="unstructured2graph not install
 from sessions_graph.models import Memory
 from sessions_graph.reconciliation import (
     MAX_RECONCILABLE_CHARS,
+    MAX_SESSION_BATCH_CHARS,
     ReconciliationSource,
     build_reconciliation_sources,
     build_session_summary_prompt,
@@ -262,6 +263,65 @@ async def test_reconcile_session_dedupes_identical_text_before_calling_lightrag(
     mock_from_texts.assert_awaited_once()
     called_texts = mock_from_texts.call_args.args[0]
     assert called_texts == ["user: Same question"]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_session_joins_distinct_turns_into_one_document(graph, actions_graph):
+    """A session's turns are extracted together, not one independent LightRAG
+    document per turn -- each turn was previously invisible to every other
+    turn's extraction call, hiding cross-turn facts (coreference, a fact
+    stated in one turn and referenced in another). from_texts should see one
+    combined document per session, not one entry per turn."""
+    from actions_graph import Session
+
+    actions_graph.create_session(Session(session_id="s-1"))
+    actions_graph.record_message(session_id="s-1", role=MessageRole.USER, content="Alice joined the graph team.")
+    actions_graph.record_message(
+        session_id="s-1", role=MessageRole.ASSISTANT, content="Noted, she'll need repo access."
+    )
+    lightrag_wrapper = _fake_lightrag_wrapper()
+
+    fake_chunk = Chunk(text="combined", hash=content_hash("combined"))
+    with patch("unstructured2graph.from_texts", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_texts:
+        await graph.reconcile_session("s-1", lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
+
+    called_texts = mock_from_texts.call_args.args[0]
+    assert len(called_texts) == 1
+    assert "user: Alice joined the graph team." in called_texts[0]
+    assert "assistant: Noted, she'll need repo access." in called_texts[0]
+
+    chunk_kwargs = mock_from_texts.call_args.kwargs["chunk_kwargs"]
+    assert chunk_kwargs["max_characters"] == MAX_SESSION_BATCH_CHARS
+
+
+@pytest.mark.asyncio
+async def test_reconcile_session_links_every_source_to_the_shared_session_chunk(graph, actions_graph, memgraph):
+    """Every source in the session -- including one whose exact-duplicate text
+    was deduped away before ever reaching from_texts -- must still get its own
+    HAS_CHUNK edge to whatever chunk(s) the session's one combined document
+    produced. Provenance is source-level even though extraction is now
+    session-level."""
+    from actions_graph import Session
+
+    actions_graph.create_session(Session(session_id="s-1"))
+    actions_graph.record_message(session_id="s-1", role=MessageRole.USER, content="Same question")
+    actions_graph.record_message(session_id="s-1", role=MessageRole.USER, content="Same question")
+    actions_graph.record_message(session_id="s-1", role=MessageRole.ASSISTANT, content="A different reply.")
+    lightrag_wrapper = _fake_lightrag_wrapper()
+
+    fake_chunk = Chunk(text="combined", hash=content_hash("combined"))
+    with patch("unstructured2graph.from_texts", new=AsyncMock(return_value=[[fake_chunk]])):
+        await graph.reconcile_session("s-1", lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
+
+    rows = memgraph.query(
+        """
+        MATCH (:Session {session_id: $session_id})-[:HAS_ACTION]->(a:Action)-[:HAS_CHUNK]->(c:Chunk {hash: $hash})
+        RETURN count(a) AS count
+        """,
+        params={"session_id": "s-1", "hash": fake_chunk.hash},
+    )
+    # All 3 recorded actions, not just the 2 distinct texts that survived dedup.
+    assert rows[0]["count"] == 3
 
 
 @pytest.mark.asyncio

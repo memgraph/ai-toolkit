@@ -32,6 +32,18 @@ logger = logging.getLogger(__name__)
 # warning rather than billed in full to an LLM.
 MAX_RECONCILABLE_CHARS = 8000
 
+# A whole session's deduped texts are joined into one document (see
+# reconcile_session) and handed to unstructured2graph as a single chunk, up to
+# this cap. It is a safety valve against a pathological session (hundreds of
+# turns), not a normal operating constraint: LightRAG's own token-based
+# chunker re-splits whatever it receives with no length limit of its own
+# (confirmed against its source -- the default chunker is an unbounded
+# sliding window, `range(0, len(tokens), chunk_token_size -
+# chunk_overlap_token_size)`, that only ever produces more windows for longer
+# input). Sized well above any observed real session (the LongMemEval eval
+# corpus's largest session is ~68,500 chars) so this practically never binds.
+MAX_SESSION_BATCH_CHARS = 200_000
+
 
 def content_hash(text: str) -> str:
     """Same hashing convention unstructured2graph uses for Chunk.hash."""
@@ -170,9 +182,9 @@ def build_reconciliation_sources(
 ) -> list[ReconciliationSource]:
     """Build the ordered list of reconcilable text sources for a session.
 
-    Order matters: it lines up 1:1 with the ``texts`` list passed to
-    ``unstructured2graph.from_texts``, whose grouped return value is zipped
-    back against this list by index to link Chunks to their source node.
+    Order matters: it is the order sources get joined into the one combined
+    document ``reconcile_session`` sends to ``unstructured2graph.from_texts``,
+    so the extractor sees the conversation in the order it actually happened.
     """
     sources: list[ReconciliationSource] = []
     for action in actions:
