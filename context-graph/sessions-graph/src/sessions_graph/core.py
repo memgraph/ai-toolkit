@@ -489,6 +489,23 @@ class SessionsGraph:
         one pass, which a future version could read back to recover
         per-session granularity; this does not do that yet.
 
+        Measured against a real, dedicated eval instance (MAX_PARALLEL_INSERT
+        and MAX_ASYNC_LLM both raised to 16, gpt-4o-mini extraction, local
+        bge-m3 embeddings), 20 real sessions, one call each way: 458s / 86
+        extraction+gleaning calls sequentially (``reconcile_session`` x20)
+        versus 201s / 42 calls as one batch here -- 2.28x faster and 2.05x
+        fewer calls on identical content. The call-count drop is larger than
+        parallelism alone would predict; a same-run inspection of Memgraph's
+        ``LightRAGKV_base_text_chunks`` showed 43 chunk nodes (matching the
+        sequential run's chunk count exactly) against only 21 fresh
+        extraction calls, suggesting LightRAG's own response cache caught
+        duplicate chunk content *within* the batch -- something a
+        one-document-at-a-time ``ainsert`` cannot do, since only one document
+        is ever visible to the cache check at a time. Plausible given
+        upstream's real distractor-session reuse, but not independently
+        confirmed; a genuinely clean test (two runs, cache disabled) would
+        settle whether this generalizes or was a property of this sample.
+
         Args:
             session_ids: Sessions to reconcile together as one batch. Choosing
                 how many to group here is the caller's call: LightRAG's own
