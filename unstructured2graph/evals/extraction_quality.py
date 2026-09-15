@@ -45,6 +45,26 @@ DEFAULT_MEMGRAPH_URL = "bolt://localhost:7691"  # distinct from context-graph-ev
 
 logger = logging.getLogger(__name__)
 
+#: USD per 1M tokens, (input, output) -- OpenAI's published list price at the
+#: time this was written. Point-in-time, not fetched live: check current
+#: pricing before trusting this for a real budget decision, and update here
+#: if LightRAG's default llm_model_func (gpt_4o_mini_complete) ever changes.
+MODEL_PRICING_PER_1M_TOKENS: dict[str, tuple[float, float]] = {
+    "gpt-4o-mini": (0.15, 0.60),
+}
+DEFAULT_LIGHTRAG_MODEL = "gpt-4o-mini"  # LightRAG's own default llm_model_func
+
+
+def estimated_cost_usd(prompt_tokens: int, completion_tokens: int, model: str) -> float | None:
+    """None (not 0.0) when the model isn't in MODEL_PRICING_PER_1M_TOKENS --
+    an unpriced model should read as "unknown", not "free"."""
+    pricing = MODEL_PRICING_PER_1M_TOKENS.get(model)
+    if pricing is None:
+        return None
+    input_price, output_price = pricing
+    return (prompt_tokens / 1_000_000) * input_price + (completion_tokens / 1_000_000) * output_price
+
+
 #: Same entity vocabulary as DEFAULT_ONTOLOGY (the one real callers get by
 #: default) plus a small relation vocabulary this eval needs to exercise
 #: relation scoring at all -- see build_gold_corpus.py's module docstring for
@@ -242,9 +262,16 @@ class BackendReport:
     llm_calls: int | None = None
     llm_prompt_tokens: int | None = None
     llm_completion_tokens: int | None = None
+    llm_model: str | None = None  # which MODEL_PRICING_PER_1M_TOKENS key priced this run
 
     def latency_summary(self) -> tuple[float, float]:
         return (statistics.median(self.latencies_seconds), statistics.mean(self.latencies_seconds))
+
+    @property
+    def estimated_cost_usd(self) -> float | None:
+        if self.llm_calls is None or self.llm_model is None:
+            return None
+        return estimated_cost_usd(self.llm_prompt_tokens or 0, self.llm_completion_tokens or 0, self.llm_model)
 
 
 def _entity_agnostic_set(entities: list[tuple[str, str]]) -> set[str]:
@@ -297,6 +324,7 @@ async def run_backend(
     text_property: str,
     relation_types: tuple[str, ...],
     llm_counters: LLMCallCounters | None = None,
+    llm_model: str | None = None,
 ) -> BackendReport:
     memgraph.query("MATCH (n) DETACH DELETE n")
     report = BackendReport(backend_name=backend_name)
@@ -335,6 +363,7 @@ async def run_backend(
         report.llm_calls = llm_counters.calls
         report.llm_prompt_tokens = llm_counters.prompt_tokens
         report.llm_completion_tokens = llm_counters.completion_tokens
+        report.llm_model = llm_model
 
     return report
 
@@ -370,6 +399,7 @@ async def run(
                         text_property="entity_id",
                         relation_types=(),  # LightRAG has no relation_types concept -- see README
                         llm_counters=counters,
+                        llm_model=DEFAULT_LIGHTRAG_MODEL,
                     )
                 )
                 await wrapper_backend.wrapper.afinalize()
@@ -410,20 +440,25 @@ def _fmt_pct(value: float | None) -> str:
     return f"{value * 100:.1f}%" if value is not None else "n/a"
 
 
+def _fmt_cost(cost: float | None, llm_calls: int | None) -> str:
+    if llm_calls is None:
+        return "n/a"  # not an LLM-backed backend at all -- not the same as "$0"
+    if cost is None:
+        return "unpriced"  # LLM-backed, but MODEL_PRICING_PER_1M_TOKENS has no entry for this model
+    return f"${cost:.4f}"
+
+
 def print_report(results: dict[str, list[BackendReport]]) -> None:
     print()
     print(
         f"{'backend':<10} {'run':>4} {'ent P':>8} {'ent R':>8} {'ent F1':>8}   "
         f"{'typed P':>8} {'typed R':>8} {'typed F1':>8}   {'rel P':>8} {'rel R':>8} {'rel F1':>8}   "
-        f"{'latency med/s':>14} {'calls':>7} {'tokens':>9}"
+        f"{'latency med/s':>14} {'calls':>7} {'cost':>10}"
     )
     for backend_name, reports in results.items():
         for i, r in enumerate(reports, start=1):
             median_latency, _mean_latency = r.latency_summary()
             rel = r.relation_scoring
-            tokens = (
-                f"{(r.llm_prompt_tokens or 0) + (r.llm_completion_tokens or 0)}" if r.llm_calls is not None else "n/a"
-            )
             print(
                 f"{backend_name:<10} {i:>4} "
                 f"{_fmt_pct(r.entity_type_agnostic.precision):>8} {_fmt_pct(r.entity_type_agnostic.recall):>8} "
@@ -433,7 +468,8 @@ def print_report(results: dict[str, list[BackendReport]]) -> None:
                 f"{_fmt_pct(rel.precision if rel else None):>8} {_fmt_pct(rel.recall if rel else None):>8} "
                 f"{_fmt_pct(rel.f1 if rel else None):>8}   "
                 f"{median_latency:>14.2f} "
-                f"{r.llm_calls if r.llm_calls is not None else 'n/a':>7} {tokens:>9}"
+                f"{r.llm_calls if r.llm_calls is not None else 'n/a':>7} "
+                f"{_fmt_cost(r.estimated_cost_usd, r.llm_calls):>10}"
             )
             if r.ontology_conformant + r.ontology_nonconformant:
                 total = r.ontology_conformant + r.ontology_nonconformant
@@ -441,9 +477,18 @@ def print_report(results: dict[str, list[BackendReport]]) -> None:
                     f"{'':<10} {'':>4} ontology_conformant: {r.ontology_conformant}/{total} "
                     f"({_fmt_pct(r.ontology_conformant / total)})"
                 )
+            if r.llm_calls is not None:
+                print(
+                    f"{'':<10} {'':>4} tokens: {r.llm_prompt_tokens or 0} prompt + "
+                    f"{r.llm_completion_tokens or 0} completion, model={r.llm_model} "
+                    f"({'unpriced -- add it to MODEL_PRICING_PER_1M_TOKENS' if r.estimated_cost_usd is None else 'approximate, point-in-time pricing'})"
+                )
     print()
     print("No automatic verdict -- read the numbers, don't let this pick for you.")
     print("relation columns are only meaningful for backends with a relation vocabulary (gliner2 here).")
+    print(
+        "cost is a point-in-time estimate (see MODEL_PRICING_PER_1M_TOKENS) from approximate token counts, not billed usage."
+    )
     if any(len(reports) > 1 for reports in results.values()):
         print("Multiple runs shown per backend -- compare their spread before trusting any single number.")
 
