@@ -26,10 +26,14 @@ For full document support (PDF, DOCX, etc.):
 pip install -e ".[all-docs]"
 ```
 
-For the local, LLM-free GLiNER2 extraction backend:
+For the local, LLM-free GLiNER2 extraction backend, install `gliner2` manually
+(deliberately *not* a `pyproject.toml` extra of this package -- `gliner2[local]`
+hard-pins `transformers<5`, which conflicts with this monorepo's workspace-wide
+`transformers>=5.0.0rc3` security floor; see `gliner2_backend.py`'s module
+docstring for the full reasoning):
 
 ```bash
-pip install -e ".[gliner2]"
+pip install 'gliner2[local]>=2.0.0'
 ```
 
 ## Choosing an extraction backend
@@ -196,7 +200,7 @@ await from_unstructured(..., enforce_ontology=True, ontology_path="my_ontology.y
 
 - `ExtractionBackend` — the protocol both backends below satisfy; `workspace_label` (the Memgraph label entities are written under) and `async aingest_chunk(memgraph, chunk)`
 - `LightRAGBackend(wrapper)` — wraps an initialized `MemgraphLightRAGWrapper`
-- `unstructured2graph.gliner2_backend.GLiNER2Backend(model_name=..., ontology=None, workspace="gliner2", model=None, entity_confidence_threshold=None, relation_confidence_threshold=None)` — local GLiNER2 model; requires the `gliner2` extra, not exported from the top-level package
+- `unstructured2graph.gliner2_backend.GLiNER2Backend(model_name=..., ontology=None, workspace="gliner2", model=None, entity_confidence_threshold=None, relation_confidence_threshold=None)` — local GLiNER2 model; requires `gliner2` installed manually (see Installation above), not exported from the top-level package
 
 ### Ontology
 

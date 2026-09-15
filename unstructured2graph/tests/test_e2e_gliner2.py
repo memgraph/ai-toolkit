@@ -3,8 +3,15 @@
 Requires:
 - A live Memgraph reachable at MEMGRAPH_URL (see conftest.py's `memgraph`
   fixture) -- skips if unreachable.
-- The optional `gliner2` dependency (`pip install unstructured2graph[gliner2]`)
-  -- skips if not installed, so the default test suite never needs it.
+- `gliner2` installed manually (`pip install 'gliner2[local]>=2.0.0'`, see
+  gliner2_backend.py's module docstring for why it's not a pyproject.toml
+  extra) -- skips if not installed.
+
+This is a deliberate, **permanent** CI skip, not a coverage gap to eventually
+close: gliner2[local] hard-pins transformers<5, which conflicts with this
+workspace's transformers>=5.0.0rc3 security floor (CVE-2026-1839), so CI
+never installs it and never will while that conflict stands. Run this test
+locally after installing gliner2 yourself to actually exercise it.
 
 Unlike test_e2e_lightrag.py, no API key is needed: GLiNER2 runs entirely
 locally. The first run downloads the model checkpoint from Hugging Face, so

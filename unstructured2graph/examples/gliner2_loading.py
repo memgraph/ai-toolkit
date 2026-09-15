@@ -13,8 +13,9 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 async def from_unstructured_with_gliner2():
     """Same ingestion as loading.py, but with a local, LLM-free extraction
-    backend -- no OPENAI_API_KEY needed. Requires the optional `gliner2`
-    dependency: pip install -e ".[gliner2]".
+    backend -- no OPENAI_API_KEY needed. Requires `gliner2` installed
+    manually (not a pyproject.toml extra -- see gliner2_backend.py's module
+    docstring): pip install 'gliner2[local]>=2.0.0'.
     """
     memgraph = Memgraph(user_agent="unstructured2graph")
     memgraph.query("MATCH (n) DETACH DELETE n;")

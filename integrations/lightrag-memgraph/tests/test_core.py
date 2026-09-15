@@ -9,7 +9,7 @@ runs an insert/query).
 from __future__ import annotations
 
 import os
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
@@ -168,3 +168,18 @@ async def test_afinalize_resets_shared_data_even_if_finalize_storages_raises():
         await wrapper.afinalize()
 
     mock_finalize_share_data.assert_called_once()
+
+
+def test_workspace_reads_chunk_entity_relation_graph_workspace():
+    wrapper = MemgraphLightRAGWrapper()
+    wrapper.rag = MagicMock()
+    wrapper.rag.chunk_entity_relation_graph.workspace = "tenant-42"
+
+    assert wrapper.workspace == "tenant-42"
+
+
+def test_workspace_raises_before_initialize():
+    wrapper = MemgraphLightRAGWrapper()
+
+    with pytest.raises(RuntimeError, match="not initialized"):
+        _ = wrapper.workspace

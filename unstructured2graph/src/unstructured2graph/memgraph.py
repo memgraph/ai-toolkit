@@ -17,6 +17,20 @@ _VALID_LABEL_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _LABEL_WORD_SPLIT_PATTERN = re.compile(r"[^A-Za-z0-9]+")
 
 
+def _require_valid_identifier(value: str, role: str) -> None:
+    """Raise ValueError unless `value` is safe to f-string-interpolate into
+    Cypher as a label, relationship type, property key, or variable name --
+    Cypher can parameterize values but not these, so any of them built from
+    caller-supplied or extracted data (not a compile-time literal) must be
+    checked before use. `role` names what was being validated, for a
+    diagnosable error message (e.g. "node_label", "relation type")."""
+    if not _VALID_LABEL_PATTERN.match(value):
+        raise ValueError(
+            f"Invalid {role} {value!r}: must be a valid identifier (letters, digits, "
+            "underscore, not starting with a digit) to use directly in a Cypher query"
+        )
+
+
 def _entity_type_to_label(entity_type: str) -> str | None:
     """
     Convert a raw entity_type value (e.g. "natural object") into a
@@ -173,26 +187,35 @@ def upsert_typed_relationships(
     Upsert relationships of possibly many distinct Cypher relationship types
     between nodes already present under `node_label`, matched by `match_key`.
 
-    Cypher can't parameterize a relationship type, so this runs one
-    UNWIND+MERGE query per key in `relationships_by_type`. Each key is
-    validated against the same safe-identifier pattern used for label
-    promotion (see `_VALID_LABEL_PATTERN`) before being f-string-interpolated
-    into a query, since it comes from extracted data rather than a literal.
+    Cypher can parameterize values but not labels, relationship types,
+    property keys, or variable names -- so `node_label`, `match_key`, every
+    key in `relationships_by_type`, and every extra edge-property key found
+    on a relationship dict are all f-string-interpolated into the generated
+    query, and are therefore each validated (see `_require_valid_identifier`)
+    before use. This matters because none of them are guaranteed to be
+    compile-time literals at the call site -- `node_label` in particular is
+    commonly an ExtractionBackend's caller-configured `workspace_label`.
 
     Args:
+        node_label: Memgraph label both relationship endpoints are matched under.
+        match_key: Node property used to look up each endpoint (e.g. "entity_id").
         relationships_by_type: relation label -> list of
             {"from": <match_key value>, "to": <match_key value>, **extra edge properties}.
+
+    Raises:
+        ValueError: if `node_label`, `match_key`, a relation type, or an edge
+            property key isn't a valid Cypher identifier.
     """
+    _require_valid_identifier(node_label, "node_label")
+    _require_valid_identifier(match_key, "match_key")
+
     for relation_type, relationships in relationships_by_type.items():
         if not relationships:
             continue
-        if not _VALID_LABEL_PATTERN.match(relation_type):
-            raise ValueError(
-                f"Invalid relation type {relation_type!r}: must be a valid identifier "
-                "(letters, digits, underscore, not starting with a digit) since it's used "
-                "directly as a Memgraph relationship type"
-            )
+        _require_valid_identifier(relation_type, "relation type")
         set_keys = [key for key in relationships[0] if key not in ("from", "to")]
+        for key in set_keys:
+            _require_valid_identifier(key, "edge property key")
         set_clause = f" SET {', '.join(f'r.{key} = rel.{key}' for key in set_keys)}" if set_keys else ""
         query = f"""
         UNWIND $relationships AS rel

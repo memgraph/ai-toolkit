@@ -27,6 +27,7 @@ from unstructured2graph import (
     link_nodes_in_order,
     promote_all_entity_types_to_labels,
     promote_entity_types_to_labels,
+    upsert_typed_relationships,
 )
 
 
@@ -112,6 +113,39 @@ def test_connect_chunks_to_entities_creates_mentioned_in(memgraph):
 
     rows = memgraph.query("MATCH (e:base)-[:MENTIONED_IN]->(c:Chunk) RETURN e.name AS name, c.hash AS hash")
     assert rows == [{"name": "Alice", "hash": "h1"}]
+
+
+def test_upsert_typed_relationships_creates_distinct_edge_types(memgraph):
+    memgraph.query("CREATE (:gliner2 {entity_id: 'e1'}), (:gliner2 {entity_id: 'e2'}), (:gliner2 {entity_id: 'e3'})")
+
+    upsert_typed_relationships(
+        memgraph,
+        "gliner2",
+        "entity_id",
+        {
+            "works_for": [{"from": "e1", "to": "e2"}],
+            "located_in": [{"from": "e2", "to": "e3"}],
+        },
+    )
+
+    rows = memgraph.query(
+        "MATCH (a:gliner2)-[r]->(b:gliner2) RETURN a.entity_id AS from_id, type(r) AS rel, b.entity_id AS to_id "
+        "ORDER BY from_id"
+    )
+    assert [(r["from_id"], r["rel"], r["to_id"]) for r in rows] == [
+        ("e1", "works_for", "e2"),
+        ("e2", "located_in", "e3"),
+    ]
+
+
+def test_upsert_typed_relationships_is_idempotent_via_merge(memgraph):
+    memgraph.query("CREATE (:gliner2 {entity_id: 'e1'}), (:gliner2 {entity_id: 'e2'})")
+
+    for _ in range(2):
+        upsert_typed_relationships(memgraph, "gliner2", "entity_id", {"works_for": [{"from": "e1", "to": "e2"}]})
+
+    rows = memgraph.query("MATCH (:gliner2)-[r:works_for]->(:gliner2) RETURN count(r) AS count")
+    assert rows[0]["count"] == 1
 
 
 def test_vector_search_index_and_compute_embeddings(memgraph):

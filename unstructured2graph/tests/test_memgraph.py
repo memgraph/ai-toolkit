@@ -10,11 +10,14 @@ a real database rather than a plausible-looking query string.
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from lightrag_memgraph import DEFAULT_EMBEDDING_DIM
 from unstructured2graph.memgraph import (
     _entity_type_to_label,
     create_unique_constraint,
     create_vector_search_index,
+    upsert_typed_relationships,
 )
 
 
@@ -70,3 +73,54 @@ def test_entity_type_to_label_returns_none_for_unsalvageable_values():
 
 def test_entity_type_to_label_returns_none_when_result_starts_with_digit():
     assert _entity_type_to_label("3d model") is None
+
+
+def test_upsert_typed_relationships_rejects_invalid_node_label():
+    memgraph = MagicMock()
+
+    with pytest.raises(ValueError, match="node_label"):
+        upsert_typed_relationships(memgraph, "not a label!", "entity_id", {"works_for": [{"from": "a", "to": "b"}]})
+
+    memgraph.query.assert_not_called()
+
+
+def test_upsert_typed_relationships_rejects_invalid_match_key():
+    memgraph = MagicMock()
+
+    with pytest.raises(ValueError, match="match_key"):
+        upsert_typed_relationships(memgraph, "gliner2", "not a key!", {"works_for": [{"from": "a", "to": "b"}]})
+
+    memgraph.query.assert_not_called()
+
+
+def test_upsert_typed_relationships_rejects_invalid_relation_type():
+    memgraph = MagicMock()
+
+    with pytest.raises(ValueError, match="relation type"):
+        upsert_typed_relationships(memgraph, "gliner2", "entity_id", {"not a type!": [{"from": "a", "to": "b"}]})
+
+    memgraph.query.assert_not_called()
+
+
+def test_upsert_typed_relationships_rejects_invalid_edge_property_key():
+    memgraph = MagicMock()
+
+    with pytest.raises(ValueError, match="edge property key"):
+        upsert_typed_relationships(
+            memgraph,
+            "gliner2",
+            "entity_id",
+            {"works_for": [{"from": "a", "to": "b", "not a key!": "value"}]},
+        )
+
+    memgraph.query.assert_not_called()
+
+
+def test_upsert_typed_relationships_skips_relation_type_with_no_relationships():
+    """An empty list for a relation type must not run a query at all --
+    including not validating that (irrelevant, since nothing to write) type."""
+    memgraph = MagicMock()
+
+    upsert_typed_relationships(memgraph, "gliner2", "entity_id", {"not a type either!": []})
+
+    memgraph.query.assert_not_called()

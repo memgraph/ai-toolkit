@@ -166,7 +166,27 @@ def _resolve_entity_workspace(
     entity_workspace: str | None,
     only_chunks: bool,
 ) -> str | None:
-    if only_chunks or entity_workspace is not None:
+    """
+    Raises:
+        ValueError: if entity_workspace is explicitly given and doesn't match
+            extraction_backend.workspace_label. The backend writes entities
+            under its own workspace_label regardless of this override, so a
+            mismatch would otherwise silently make connect_chunks_to_entities()
+            and label promotion scan the wrong label and find nothing --
+            failing loudly here is strictly better than that silent no-op.
+    """
+    if only_chunks:
+        return entity_workspace
+    if entity_workspace is not None:
+        # only_chunks is False here, so callers (from_texts/from_unstructured)
+        # have already raised ValueError if extraction_backend were None.
+        backend_workspace = cast("ExtractionBackend", extraction_backend).workspace_label
+        if entity_workspace != backend_workspace:
+            raise ValueError(
+                f"entity_workspace={entity_workspace!r} does not match "
+                f"extraction_backend.workspace_label={backend_workspace!r}. Pass entity_workspace="
+                "None (the default) to auto-derive it from the backend instead of overriding it."
+            )
         return entity_workspace
     # only_chunks is False here, so callers (from_texts/from_unstructured)
     # have already raised ValueError if extraction_backend were None.
