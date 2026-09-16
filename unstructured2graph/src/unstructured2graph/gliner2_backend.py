@@ -111,6 +111,8 @@ class GLiNER2Backend:
         model: Any | None = None,
         entity_confidence_threshold: float | None = None,
         relation_confidence_threshold: float | None = None,
+        chunk_size: int = 384,
+        chunk_overlap: int = 64,
     ) -> None:
         """
         Args:
@@ -130,7 +132,7 @@ class GLiNER2Backend:
                 (letters, digits, underscore, not starting with a digit).
             model: Pre-loaded GLiNER2 extractor (e.g. an AutoExtractor
                 instance), or a test fake exposing the same
-                create_schema()/extract() methods. Bypasses loading
+                create_schema()/extract_long() methods. Bypasses loading
                 `model_name` and importing `gliner2` entirely -- the only
                 supported way to use this class without the `gliner2`
                 package installed.
@@ -140,6 +142,13 @@ class GLiNER2Backend:
                 head/tail confidence falls below this (relations carry no
                 confidence of their own -- see _extract_sync). None (default)
                 keeps everything the model returns.
+            chunk_size: Word-window size `model.extract_long()` scans `text`
+                with (see _extract_sync for why extract() alone isn't used).
+                GLiNER2's own default.
+            chunk_overlap: Overlap, in words, between consecutive windows --
+                gives an entity/relation spanning a window boundary a chance
+                to fall fully inside at least one window. GLiNER2's own
+                default.
 
         Raises:
             ValueError: if `workspace` isn't a valid Cypher identifier.
@@ -177,6 +186,8 @@ class GLiNER2Backend:
         self._workspace = workspace
         self.entity_confidence_threshold = entity_confidence_threshold
         self.relation_confidence_threshold = relation_confidence_threshold
+        self._chunk_size = chunk_size
+        self._chunk_overlap = chunk_overlap
 
     @property
     def workspace_label(self) -> str:
@@ -188,15 +199,29 @@ class GLiNER2Backend:
         unlike LightRAG's network-bound LLM call) -- run via asyncio.to_thread
         from aingest_chunk() so it doesn't block the event loop.
 
-        One combined `model.extract()` call covers both entities and
-        relations in the same forward pass: `model.create_schema().entities(
+        One combined `model.extract_long()` call covers both entities and
+        relations in the same pass: `model.create_schema().entities(
         self._entity_schema)`, `.relations(self._relation_schema)` when
-        relations are configured, then `model.extract(text, schema,
+        relations are configured, then `model.extract_long(text, schema,
+        chunk_size=self._chunk_size, chunk_overlap=self._chunk_overlap,
         include_spans=True, include_confidence=True)`. Confirmed against
         gliner2==2.0.0 that this returns `{"entities": {...},
         "relation_extraction": {...}}` -- the same per-key shape
         extract_entities()/extract_relations() each return individually,
         just merged into one result.
+
+        `extract_long()`, not the plain single-pass `extract()`: GLiNER2 is
+        an encoder-only span/boundary classifier with a fixed effective
+        context, and a session's combined text (one document per session,
+        not per turn) routinely exceeds it. Past that point `extract()`
+        both slows down and silently drops most entities, with no error --
+        confirmed on a real 16k-char session: `extract()` took 16.0s and
+        found 18 entities, `extract_long()` (this method, chunk_size=384,
+        chunk_overlap=64 -- GLiNER2's own defaults) took 4.3s and found 249.
+        `extract_long()` windows `text` into overlapping word chunks and
+        merges results back into text-global coordinates itself, so this
+        method's own span-based entity/relation matching below is unaffected
+        either way (see #336).
 
         This used to be two independent calls (extract_entities() then
         extract_relations()). A relation's head/tail span only ever carries
@@ -228,7 +253,14 @@ class GLiNER2Backend:
         schema = self.model.create_schema().entities(self._entity_schema)
         if self._relation_schema:
             schema = schema.relations(self._relation_schema)
-        raw = self.model.extract(text, schema, include_spans=True, include_confidence=True)
+        raw = self.model.extract_long(
+            text,
+            schema,
+            chunk_size=self._chunk_size,
+            chunk_overlap=self._chunk_overlap,
+            include_spans=True,
+            include_confidence=True,
+        )
 
         entities: list[ExtractedEntity] = []
         for entity_type, spans in raw.get("entities", {}).items():
