@@ -188,11 +188,10 @@ Codex) enforce a timeout on hook commands. Instead:
   every hook invocation via `resolve_auto_reconcile()` — no shell/session
   restart quirks, since hook subprocesses don't reliably inherit shell
   profile environment variables. Direct SDK integrations that construct
-  `SessionsGraphConnector` themselves can instead pass
-  `SessionsGraphConnector(graph, auto_reconcile=True)`, or set
-  `SESSIONS_GRAPH_AUTO_RECONCILE=1` in the environment the connector is
-  constructed in (a fallback, only consulted when `auto_reconcile` isn't
-  passed explicitly). This is fire-and-forget — if the process dies before
+  `SessionsGraphConnector` themselves must instead pass
+  `SessionsGraphConnector(graph, auto_reconcile=True)` explicitly — per ADR
+  0002 (config-file-only-hook-resolution), no ambient environment variable
+  is consulted here. This is fire-and-forget — if the process dies before
   finishing (machine sleep, crash), the session stays `pending` and
   `sessions-graph reconcile --pending` is the reliable backfill.
 

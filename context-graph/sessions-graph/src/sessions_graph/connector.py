@@ -49,21 +49,6 @@ logger = logging.getLogger(__name__)
 
 _SUPPORTED_EVENTS = {EventType.SESSION_START, EventType.SESSION_END}
 
-#: Read at connector construction time when auto_reconcile isn't passed explicitly.
-#: As of agent_context_graph 0.2.1, agent_context_graph.hooks.runner._add_sessions_graph_connector
-#: resolves the persistent ``reconcile.auto_reconcile`` config-file setting
-#: (agent_context_graph.adapters._identity.resolve_auto_reconcile(), set via
-#: ``agent-context-graph config set reconcile.auto_reconcile true``) and passes
-#: that straight through -- an explicit True/False from the config file takes
-#: priority, but resolve_auto_reconcile() returns None when never configured,
-#: in which case this env var is still consulted below. SDK integrations that
-#: construct SessionsGraphConnector directly rely solely on this env var.
-_AUTO_RECONCILE_ENV_VAR = "SESSIONS_GRAPH_AUTO_RECONCILE"
-
-
-def _env_flag(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
-
 
 class SessionsGraphConnector(GraphConnector):
     """Receives Agent Context Graph session events for memory provenance.
@@ -86,16 +71,19 @@ class SessionsGraphConnector(GraphConnector):
         auto_reconcile: Whether to spawn a detached reconciliation process on
             SESSION_END. Hook-based runtimes pass this explicitly, resolved
             from the persistent ``reconcile.auto_reconcile`` config-file
-            setting. Defaults to the ``SESSIONS_GRAPH_AUTO_RECONCILE`` env var
-            (truthy: "1"/"true"/"yes"/"on") when not given explicitly. Off by
-            default given LightRAG entity extraction's LLM cost.
+            setting. Defaults to ``False`` (off) when not given explicitly --
+            given LightRAG entity extraction's LLM cost, and per ADR 0002
+            (config-file-only-hook-resolution): no ambient environment
+            variable is consulted here. A caller constructing
+            ``SessionsGraphConnector`` directly (not through the hook config
+            layer) must pass ``auto_reconcile=True`` explicitly to enable it.
     """
 
-    def __init__(self, graph: SessionsGraph, *, auto_reconcile: bool | None = None) -> None:
+    def __init__(self, graph: SessionsGraph, *, auto_reconcile: bool = False) -> None:
         self._graph = graph
         self._active_user_id: str | None = None
         self._active_session_id: str | None = None
-        self._auto_reconcile = auto_reconcile if auto_reconcile is not None else _env_flag(_AUTO_RECONCILE_ENV_VAR)
+        self._auto_reconcile = auto_reconcile
 
     # ------------------------------------------------------------------
     # GraphConnector interface

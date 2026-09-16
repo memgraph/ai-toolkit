@@ -1,0 +1,5 @@
+# Coordinate the ontology via a shared config file path, not an in-memory object
+
+LightRAG's extraction-time type steering (`addon_params`) and `unstructured2graph`'s Memgraph-side label promotion are two independent call sites, often in different code — the caller constructs and initializes `MemgraphLightRAGWrapper` before `unstructured2graph.from_texts()`/`from_unstructured()` ever runs, sometimes in a different function entirely. Passing a pre-built `Ontology` object to both risks silent drift: two independently-constructed objects can diverge with nothing to catch it. Instead, both call sites reference the same config file *path*; `from_texts()`/`from_unstructured()` load and parse it internally rather than accepting a pre-built object. Divergence is now "did you type the same path in both places" — a much smaller, more visible mistake than object inequality.
+
+**Considered**: a shared `Ontology` object constructed once and passed to both call sites — rejected because construction happens in different code, sometimes different processes, with no structural guarantee they stay in sync.
