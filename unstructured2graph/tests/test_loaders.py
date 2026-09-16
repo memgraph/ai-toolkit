@@ -25,11 +25,14 @@ def _fake_document():
     return ChunkedDocument(chunks=[Chunk(text="a", hash="h1")], source="fake.txt")
 
 
-def _lightrag_wrapper_with_workspace(workspace):
-    wrapper = MagicMock()
-    wrapper.ainsert = AsyncMock()
-    wrapper.get_lightrag.return_value.chunk_entity_relation_graph.workspace = workspace
-    return wrapper
+def _backend_with_workspace(workspace):
+    """A fake ExtractionBackend -- duck-typed (loaders.py never isinstance-checks
+    the extraction_backend argument), exposing just workspace_label and
+    aingest_chunk() the way LightRAGBackend/GLiNER2Backend do."""
+    backend = MagicMock()
+    backend.workspace_label = workspace
+    backend.aingest_chunk = AsyncMock()
+    return backend
 
 
 def test_parse_source_with_simple_text(tmp_path):
@@ -98,49 +101,52 @@ def test_partition_kwargs_passed_through(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_entity_workspace_explicit_override_wins():
+async def test_entity_workspace_explicit_override_matching_backend_is_accepted():
     memgraph = MagicMock()
-    lightrag_wrapper = _lightrag_wrapper_with_workspace("auto-derived")
+    extraction_backend = _backend_with_workspace("auto-derived")
 
     with (
         patch("unstructured2graph.loaders.make_chunks", return_value=[_fake_document()]),
         patch("unstructured2graph.loaders.connect_chunks_to_entities") as mock_connect,
     ):
         await from_unstructured(
-            ["fake.txt"], memgraph, lightrag_wrapper, only_chunks=False, entity_workspace="explicit"
+            ["fake.txt"], memgraph, extraction_backend, only_chunks=False, entity_workspace="auto-derived"
         )
 
-    mock_connect.assert_called_once_with(memgraph, "Chunk", "explicit")
+    mock_connect.assert_called_once_with(memgraph, "Chunk", "auto-derived")
 
 
 @pytest.mark.asyncio
-async def test_entity_workspace_auto_derived_from_lightrag_wrapper():
+async def test_entity_workspace_explicit_override_mismatch_raises():
+    """A mismatched override would otherwise silently make connect_chunks_to_entities()
+    scan the wrong label and find nothing -- must fail loudly instead."""
     memgraph = MagicMock()
-    lightrag_wrapper = _lightrag_wrapper_with_workspace("tenant-42")
+    extraction_backend = _backend_with_workspace("auto-derived")
+
+    with (
+        patch("unstructured2graph.loaders.make_chunks", return_value=[_fake_document()]),
+        pytest.raises(ValueError, match="does not match"),
+    ):
+        await from_unstructured(
+            ["fake.txt"], memgraph, extraction_backend, only_chunks=False, entity_workspace="explicit"
+        )
+
+
+@pytest.mark.asyncio
+async def test_entity_workspace_auto_derived_from_backend():
+    """_resolve_entity_workspace() just reads extraction_backend.workspace_label --
+    whatever a backend derives it from (LightRAG's resolved workspace, a fixed
+    string, ...) is that backend's own concern."""
+    memgraph = MagicMock()
+    extraction_backend = _backend_with_workspace("tenant-42")
 
     with (
         patch("unstructured2graph.loaders.make_chunks", return_value=[_fake_document()]),
         patch("unstructured2graph.loaders.connect_chunks_to_entities") as mock_connect,
     ):
-        await from_unstructured(["fake.txt"], memgraph, lightrag_wrapper, only_chunks=False)
+        await from_unstructured(["fake.txt"], memgraph, extraction_backend, only_chunks=False)
 
     mock_connect.assert_called_once_with(memgraph, "Chunk", "tenant-42")
-
-
-@pytest.mark.asyncio
-async def test_entity_workspace_falls_back_to_base_when_auto_derive_fails():
-    memgraph = MagicMock()
-    lightrag_wrapper = MagicMock()
-    lightrag_wrapper.ainsert = AsyncMock()
-    lightrag_wrapper.get_lightrag.side_effect = RuntimeError("not initialized")
-
-    with (
-        patch("unstructured2graph.loaders.make_chunks", return_value=[_fake_document()]),
-        patch("unstructured2graph.loaders.connect_chunks_to_entities") as mock_connect,
-    ):
-        await from_unstructured(["fake.txt"], memgraph, lightrag_wrapper, only_chunks=False)
-
-    mock_connect.assert_called_once_with(memgraph, "Chunk", "base")
 
 
 @pytest.mark.asyncio
@@ -148,7 +154,7 @@ async def test_connect_chunks_to_entities_called_once_per_document():
     """connect_chunks_to_entities is a full graph scan; it must run once per
     document, not once per chunk."""
     memgraph = MagicMock()
-    lightrag_wrapper = _lightrag_wrapper_with_workspace("base")
+    extraction_backend = _backend_with_workspace("base")
     fake_document = ChunkedDocument(
         chunks=[Chunk(text="a", hash="h1"), Chunk(text="b", hash="h2"), Chunk(text="c", hash="h3")],
         source="fake.txt",
@@ -158,29 +164,29 @@ async def test_connect_chunks_to_entities_called_once_per_document():
         patch("unstructured2graph.loaders.make_chunks", return_value=[fake_document]),
         patch("unstructured2graph.loaders.connect_chunks_to_entities") as mock_connect,
     ):
-        await from_unstructured(["fake.txt"], memgraph, lightrag_wrapper, only_chunks=False)
+        await from_unstructured(["fake.txt"], memgraph, extraction_backend, only_chunks=False)
 
-    assert lightrag_wrapper.ainsert.await_count == 3
+    assert extraction_backend.aingest_chunk.await_count == 3
     mock_connect.assert_called_once_with(memgraph, "Chunk", "base")
 
 
 @pytest.mark.asyncio
-async def test_from_unstructured_requires_lightrag_wrapper_when_not_only_chunks():
-    """lightrag_wrapper=None should raise a clear error unless only_chunks=True."""
+async def test_from_unstructured_requires_extraction_backend_when_not_only_chunks():
+    """extraction_backend=None should raise a clear error unless only_chunks=True."""
     memgraph = MagicMock()
 
-    with pytest.raises(ValueError, match="lightrag_wrapper"):
-        await from_unstructured(["irrelevant.txt"], memgraph, lightrag_wrapper=None, only_chunks=False)
+    with pytest.raises(ValueError, match="extraction_backend"):
+        await from_unstructured(["irrelevant.txt"], memgraph, extraction_backend=None, only_chunks=False)
 
 
 @pytest.mark.asyncio
-async def test_from_unstructured_only_chunks_works_without_lightrag_wrapper(tmp_path):
-    """only_chunks=True should not require a lightrag_wrapper at all."""
+async def test_from_unstructured_only_chunks_works_without_extraction_backend(tmp_path):
+    """only_chunks=True should not require an extraction_backend at all."""
     test_file = tmp_path / "test.txt"
     test_file.write_text("Some content for chunk-only ingestion.")
     memgraph = MagicMock()
 
-    await from_unstructured([str(test_file)], memgraph, lightrag_wrapper=None, only_chunks=True)
+    await from_unstructured([str(test_file)], memgraph, extraction_backend=None, only_chunks=True)
 
     assert memgraph.query.called
 
@@ -256,7 +262,7 @@ def test_parse_text_splits_by_content_size_regardless_of_total_length():
 
 
 @pytest.mark.asyncio
-async def test_from_texts_only_chunks_creates_chunk_nodes_without_lightrag():
+async def test_from_texts_only_chunks_creates_chunk_nodes_without_extraction():
     memgraph = MagicMock()
 
     grouped = await from_texts(["First memory.", "Second memory."], memgraph, only_chunks=True)
@@ -266,36 +272,36 @@ async def test_from_texts_only_chunks_creates_chunk_nodes_without_lightrag():
 
 
 @pytest.mark.asyncio
-async def test_from_texts_requires_lightrag_wrapper_when_not_only_chunks():
+async def test_from_texts_requires_extraction_backend_when_not_only_chunks():
     memgraph = MagicMock()
 
-    with pytest.raises(ValueError, match="lightrag_wrapper"):
-        await from_texts(["some text"], memgraph, lightrag_wrapper=None, only_chunks=False)
+    with pytest.raises(ValueError, match="extraction_backend"):
+        await from_texts(["some text"], memgraph, extraction_backend=None, only_chunks=False)
 
 
 @pytest.mark.asyncio
 async def test_from_texts_runs_entity_extraction_and_connects_chunks():
     memgraph = MagicMock()
-    lightrag_wrapper = _lightrag_wrapper_with_workspace("base")
+    extraction_backend = _backend_with_workspace("base")
 
     with patch("unstructured2graph.loaders.connect_chunks_to_entities") as mock_connect:
-        grouped = await from_texts(["Alice works on the graph engine."], memgraph, lightrag_wrapper)
+        grouped = await from_texts(["Alice works on the graph engine."], memgraph, extraction_backend)
 
     assert len(grouped) == 1
     assert len(grouped[0]) == 1
-    lightrag_wrapper.ainsert.assert_awaited_once()
+    extraction_backend.aingest_chunk.assert_awaited_once()
     mock_connect.assert_called_once_with(memgraph, "Chunk", "base")
 
 
 @pytest.mark.asyncio
 async def test_from_texts_defaults_to_no_ontology_enforcement():
     """enforce_ontology defaults to False -- entities are left exactly as
-    LightRAG wrote them, no label promotion queries at all."""
+    the extraction backend wrote them, no label promotion queries at all."""
     memgraph = MagicMock()
-    lightrag_wrapper = _lightrag_wrapper_with_workspace("base")
+    extraction_backend = _backend_with_workspace("base")
 
     with patch("unstructured2graph.loaders.promote_entity_types_to_labels") as mock_promote:
-        await from_texts(["Alice works on the graph engine."], memgraph, lightrag_wrapper)
+        await from_texts(["Alice works on the graph engine."], memgraph, extraction_backend)
 
     mock_promote.assert_not_called()
 
@@ -303,10 +309,10 @@ async def test_from_texts_defaults_to_no_ontology_enforcement():
 @pytest.mark.asyncio
 async def test_from_texts_enforce_ontology_true_promotes_labels():
     memgraph = MagicMock()
-    lightrag_wrapper = _lightrag_wrapper_with_workspace("base")
+    extraction_backend = _backend_with_workspace("base")
 
     with patch("unstructured2graph.loaders.promote_entity_types_to_labels") as mock_promote:
-        await from_texts(["Alice works on the graph engine."], memgraph, lightrag_wrapper, enforce_ontology=True)
+        await from_texts(["Alice works on the graph engine."], memgraph, extraction_backend, enforce_ontology=True)
 
     mock_promote.assert_called_once()
     assert mock_promote.call_args[0][1] == "base"
@@ -315,13 +321,13 @@ async def test_from_texts_enforce_ontology_true_promotes_labels():
 @pytest.mark.asyncio
 async def test_from_texts_ontology_path_without_enforce_ontology_is_ignored(caplog):
     memgraph = MagicMock()
-    lightrag_wrapper = _lightrag_wrapper_with_workspace("base")
+    extraction_backend = _backend_with_workspace("base")
 
     with patch("unstructured2graph.loaders.promote_entity_types_to_labels") as mock_promote:
         await from_texts(
             ["Alice works on the graph engine."],
             memgraph,
-            lightrag_wrapper,
+            extraction_backend,
             ontology_path="/some/custom/ontology.yaml",
         )
 
@@ -334,13 +340,13 @@ async def test_from_texts_promote_labels_true_promotes_without_ontology_gate():
     """promote_labels is a separate, weaker concern from enforce_ontology --
     it must call the unrestricted promotion path, not the ontology-gated one."""
     memgraph = MagicMock()
-    lightrag_wrapper = _lightrag_wrapper_with_workspace("base")
+    extraction_backend = _backend_with_workspace("base")
 
     with (
         patch("unstructured2graph.loaders.promote_all_entity_types_to_labels") as mock_promote_all,
         patch("unstructured2graph.loaders.promote_entity_types_to_labels") as mock_promote_gated,
     ):
-        await from_texts(["Alice works on the graph engine."], memgraph, lightrag_wrapper, promote_labels=True)
+        await from_texts(["Alice works on the graph engine."], memgraph, extraction_backend, promote_labels=True)
 
     mock_promote_all.assert_called_once_with(memgraph, "base")
     mock_promote_gated.assert_not_called()
@@ -351,7 +357,7 @@ async def test_from_texts_enforce_ontology_takes_precedence_over_promote_labels(
     """When both are set, enforce_ontology (the stricter, gated mode) wins --
     promote_labels doesn't also run the unrestricted path on top."""
     memgraph = MagicMock()
-    lightrag_wrapper = _lightrag_wrapper_with_workspace("base")
+    extraction_backend = _backend_with_workspace("base")
 
     with (
         patch("unstructured2graph.loaders.promote_all_entity_types_to_labels") as mock_promote_all,
@@ -360,7 +366,7 @@ async def test_from_texts_enforce_ontology_takes_precedence_over_promote_labels(
         await from_texts(
             ["Alice works on the graph engine."],
             memgraph,
-            lightrag_wrapper,
+            extraction_backend,
             promote_labels=True,
             enforce_ontology=True,
         )

@@ -79,7 +79,7 @@ Transform PDFs, URLs, and documents into queryable knowledge graphs:
 import asyncio
 from memgraph_toolbox.api.memgraph import Memgraph
 from lightrag_memgraph import MemgraphLightRAGWrapper
-from unstructured2graph import from_unstructured
+from unstructured2graph import LightRAGBackend, from_unstructured
 
 
 async def main():
@@ -92,7 +92,7 @@ async def main():
     await from_unstructured(
         sources=["https://example.com/doc.pdf", "./local_file.md"],
         memgraph=memgraph,
-        lightrag_wrapper=lightrag,
+        extraction_backend=LightRAGBackend(lightrag),
         link_chunks=True,
         enforce_ontology=True,  # promote entity_type to real labels (:Person, :Organization, ...)
     )

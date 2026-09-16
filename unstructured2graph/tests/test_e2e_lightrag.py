@@ -24,7 +24,7 @@ import pytest
 import pytest_asyncio
 
 from lightrag_memgraph import MemgraphLightRAGWrapper
-from unstructured2graph import from_texts
+from unstructured2graph import LightRAGBackend, from_texts
 
 requires_openai_key = pytest.mark.skipif(
     not os.environ.get("OPENAI_API_KEY"),
@@ -46,13 +46,18 @@ async def lightrag_wrapper(memgraph, tmp_path):
     await wrapper.afinalize()
 
 
+@pytest.fixture
+def extraction_backend(lightrag_wrapper):
+    return LightRAGBackend(lightrag_wrapper)
+
+
 @requires_openai_key
 @pytest.mark.asyncio
-async def test_from_texts_extracts_real_entity_and_links_mentioned_in(memgraph, lightrag_wrapper):
+async def test_from_texts_extracts_real_entity_and_links_mentioned_in(memgraph, lightrag_wrapper, extraction_backend):
     grouped = await from_texts(
         ["Alice Johnson works at Acme Corp on the graph database engine."],
         memgraph,
-        lightrag_wrapper,
+        extraction_backend,
     )
 
     assert len(grouped) == 1
@@ -65,14 +70,14 @@ async def test_from_texts_extracts_real_entity_and_links_mentioned_in(memgraph, 
 
 @requires_openai_key
 @pytest.mark.asyncio
-async def test_from_texts_does_not_promote_labels_unless_enforced(memgraph, lightrag_wrapper):
+async def test_from_texts_does_not_promote_labels_unless_enforced(memgraph, lightrag_wrapper, extraction_backend):
     """enforce_ontology defaults to False -- entities are left exactly as
     LightRAG wrote them, no real label and no ontology_conformant property
     at all, even against a real extraction."""
     await from_texts(
         ["Alice Johnson works at Acme Corp on the graph database engine."],
         memgraph,
-        lightrag_wrapper,
+        extraction_backend,
     )
 
     workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
@@ -85,7 +90,9 @@ async def test_from_texts_does_not_promote_labels_unless_enforced(memgraph, ligh
 
 @requires_openai_key
 @pytest.mark.asyncio
-async def test_from_texts_promote_labels_true_promotes_without_ontology_gate(memgraph, lightrag_wrapper):
+async def test_from_texts_promote_labels_true_promotes_without_ontology_gate(
+    memgraph, lightrag_wrapper, extraction_backend
+):
     """promote_labels=True promotes entity_type to a real label with no
     fixed vocabulary -- unlike enforce_ontology=True, nothing gets flagged
     ontology_conformant, since there's no ontology to be non-conformant
@@ -93,7 +100,7 @@ async def test_from_texts_promote_labels_true_promotes_without_ontology_gate(mem
     await from_texts(
         ["Alice Johnson works at Acme Corp on the graph database engine."],
         memgraph,
-        lightrag_wrapper,
+        extraction_backend,
         promote_labels=True,
     )
 
@@ -107,14 +114,14 @@ async def test_from_texts_promote_labels_true_promotes_without_ontology_gate(mem
 
 @requires_openai_key
 @pytest.mark.asyncio
-async def test_from_texts_promotes_entity_type_to_label_when_enforced(memgraph, lightrag_wrapper):
+async def test_from_texts_promotes_entity_type_to_label_when_enforced(memgraph, lightrag_wrapper, extraction_backend):
     """With enforce_ontology=True and no ontology_path, DEFAULT_ONTOLOGY_PATH
     is applied automatically to get real Memgraph labels alongside the
     LightRAG workspace label."""
     await from_texts(
         ["Alice Johnson works at Acme Corp on the graph database engine."],
         memgraph,
-        lightrag_wrapper,
+        extraction_backend,
         enforce_ontology=True,
     )
 
@@ -125,7 +132,9 @@ async def test_from_texts_promotes_entity_type_to_label_when_enforced(memgraph, 
 
 @requires_openai_key
 @pytest.mark.asyncio
-async def test_from_texts_flags_entities_outside_a_custom_ontology(memgraph, lightrag_wrapper, tmp_path):
+async def test_from_texts_flags_entities_outside_a_custom_ontology(
+    memgraph, lightrag_wrapper, extraction_backend, tmp_path
+):
     """A narrow, project-specific ontology (here: only Location) still keeps
     every extracted entity and its raw entity_type -- entities outside it
     just don't get a real label, and are flagged ontology_conformant=false
@@ -142,7 +151,7 @@ async def test_from_texts_flags_entities_outside_a_custom_ontology(memgraph, lig
     await from_texts(
         ["Alice Johnson works at Acme Corp on the graph database engine."],
         memgraph,
-        lightrag_wrapper,
+        extraction_backend,
         enforce_ontology=True,
         ontology_path=str(ontology_file),
     )
