@@ -201,8 +201,19 @@ async def reconcile_batch(
     at once. LightRAG's own concurrency knobs (raised together in
     ``_resolve_reconciliation_tuning``) bound how many sessions in a call
     actually run at once regardless of this number -- it mainly trades
-    progress-reporting granularity against per-call overhead.
+    progress-reporting granularity against per-call overhead. Must be at
+    least 1: ``range(0, N, sessions_per_call)`` with a negative step is
+    simply empty (silently reporting "nothing to do" while sessions sit
+    pending, never touched), and with 0 it raises ``ValueError`` from deep
+    inside ``range()`` rather than from an obviously-relevant validation.
+
+    Raises:
+        ValueError: if ``sessions_per_call`` is less than 1 -- checked up
+            front, before querying for pending sessions at all.
     """
+    if sessions_per_call < 1:
+        raise ValueError(f"sessions_per_call must be >= 1, got {sessions_per_call}")
+
     import os
 
     from sessions_graph import SessionsGraph

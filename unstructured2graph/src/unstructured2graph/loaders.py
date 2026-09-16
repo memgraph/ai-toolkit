@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import os
@@ -374,8 +375,25 @@ async def enqueue_texts(
     once to trigger LightRAG's processing pass and the post-processing steps
     (``connect_chunks_to_entities``, label promotion) this function skips.
 
-    Returns one list of Chunks per input text, same contract as
-    :func:`from_texts`.
+    Args:
+        texts: Raw strings to chunk and stage. Empty/whitespace-only entries
+            produce no chunks and are not enqueued, matching :func:`from_texts`.
+        memgraph: Memgraph instance the Chunk nodes are written to.
+        lightrag_wrapper: An initialised ``MemgraphLightRAGWrapper``. Required
+            (unlike :func:`from_texts`, this function has no ``only_chunks``
+            mode -- staging for LightRAG is the whole point).
+        chunk_kwargs: Forwarded to :func:`parse_text` (notably ``max_characters``).
+
+    Returns:
+        One list of Chunks per input text, in input order -- same grouping
+        contract as :func:`from_texts`, so a caller can trace an output Chunk
+        back to the text that produced it. Pass the flattened result to
+        :func:`process_enqueued_and_finalize` to verify and finalize it.
+
+    Raises:
+        Nothing beyond what ``memgraph`` / ``lightrag_wrapper`` themselves
+        raise (e.g. a Memgraph connection error, or LightRAG's own
+        enqueue-time validation).
     """
     create_unique_constraint(memgraph, "Chunk", "hash")
 
@@ -388,6 +406,18 @@ async def enqueue_texts(
     memgraph_node_props = [{"hash": chunk.hash, "text": chunk.text} for chunk in flat_chunks]
     create_nodes_from_list(memgraph, memgraph_node_props, "Chunk", 100, merge_key="hash")
 
+    # Deduped by content hash before enqueueing, not left to LightRAG:
+    # apipeline_enqueue_documents *rejects* a batch with duplicate ids
+    # outright ("IDs must be unique", confirmed against the real API, not
+    # assumed) rather than collapsing them. Two chunks with byte-identical
+    # text legitimately are the same document -- same reasoning
+    # sessions-graph already uses for repeated session ids -- so dedup here,
+    # first occurrence wins, same as create_nodes_from_list's merge_key
+    # already treats them upstream.
+    unique_chunks: dict[str, Chunk] = {}
+    for chunk in flat_chunks:
+        unique_chunks.setdefault(chunk.hash, chunk)
+
     # Mirrors LightRAG's own ainsert(): resolve_chunk_options() the same way,
     # so an enqueue_texts + process_enqueued_and_finalize pair behaves
     # identically to N individual ainsert() calls, parallelism aside.
@@ -396,8 +426,13 @@ async def enqueue_texts(
     rag = lightrag_wrapper.get_lightrag()
     chunk_opts = resolve_chunk_options(rag.addon_params, split_by_character=None, split_by_character_only=False)
     await rag.apipeline_enqueue_documents(
-        input=[chunk.text for chunk in flat_chunks],
-        file_paths=[chunk.hash for chunk in flat_chunks],
+        input=[chunk.text for chunk in unique_chunks.values()],
+        # Explicit, not auto-generated: process_enqueued_and_finalize looks
+        # documents back up by exactly this id to verify they actually
+        # finished (see its docstring for why the call returning is not
+        # proof of that).
+        ids=list(unique_chunks.keys()),
+        file_paths=list(unique_chunks.keys()),
         chunk_options=chunk_opts,
     )
     return grouped_chunks
@@ -406,33 +441,115 @@ async def enqueue_texts(
 async def process_enqueued_and_finalize(
     memgraph: Memgraph,
     lightrag_wrapper: MemgraphLightRAGWrapper,
+    chunks: list[Chunk],
     *,
     entity_workspace: str | None = None,
     promote_labels: bool = False,
     enforce_ontology: bool = False,
     ontology_path: str | Path | None = None,
-) -> None:
-    """Trigger LightRAG's one processing pass over everything staged by prior
+    max_attempts: int = 60,
+    poll_interval: float = 2.0,
+) -> dict[str, dict[str, Any]]:
+    """Trigger LightRAG's processing pass over everything staged by prior
     :func:`enqueue_texts` calls, then run the post-processing steps those
     calls deferred.
+
+    ``apipeline_process_enqueue_documents`` returning is not proof the work
+    happened: it holds a workspace-level "busy" lock, and a concurrent caller
+    that finds it already held just sets a pending flag and returns having
+    done no work at all (confirmed by reading its source). Trusting a bare
+    return would mark sessions completed while their documents are still
+    queued. This instead verifies, by id, that every one of ``chunks``
+    reached a *terminal* status (PROCESSED or FAILED) in LightRAG's own
+    ``doc_status`` store -- retrying the processing call if not, since the
+    other owner finishing will pick up what this call enqueued (LightRAG's
+    own "process additional documents due to pending request" handoff) --
+    and returns each one's final record so a caller can tell which
+    *specific* documents actually succeeded rather than assuming the whole
+    batch did because nothing raised.
 
     ``connect_chunks_to_entities`` and label promotion are workspace-wide
     operations (a MERGE over every matching node under the label), so running
     them once here after the whole batch -- rather than once per chunk, as
     ``_ingest_chunks`` does today -- is strictly more correct as well as
     cheaper: today's per-chunk repetition is redundant work, not a
-    correctness requirement.
+    correctness requirement. They run regardless of per-document outcome:
+    a failed document simply contributed no entities for the MERGE to find.
+
+    Args:
+        memgraph: Memgraph instance ``chunks`` were written to (by a prior
+            :func:`enqueue_texts` call).
+        lightrag_wrapper: The same initialised wrapper ``enqueue_texts`` used.
+        chunks: Every chunk staged by the ``enqueue_texts`` call(s) this pass
+            should cover -- used only to verify final status by id, never
+            re-chunked or re-enqueued. An empty list is a no-op.
+        entity_workspace: Node label LightRAG entities were written under. If
+            None (default), auto-derived from ``lightrag_wrapper``, falling
+            back to ``"base"`` if that fails (see :func:`_resolve_entity_workspace`).
+        promote_labels: Passed through to the label-promotion step; see
+            :func:`from_texts` for the full semantics.
+        enforce_ontology: Passed through to the label-promotion step; takes
+            precedence over ``promote_labels``. See :func:`from_texts`.
+        ontology_path: Only consulted when ``enforce_ontology=True``.
+        max_attempts: How many times to retry ``apipeline_process_enqueue_documents``
+            while any chunk is still not in a terminal status. Bounds the
+            wait for a concurrent owner to finish rather than looping forever.
+        poll_interval: Seconds to wait between retries.
+
+    Returns:
+        Each chunk's hash mapped to its final ``doc_status`` record (at least
+        a ``"status"`` key; a failed document also carries ``"error_msg"``).
+        Callers must inspect this to know which sessions/chunks actually
+        succeeded -- a session whose chunk is not ``"processed"`` here did
+        not reconcile, whatever this function's own return looked like.
+
+    Raises:
+        RuntimeError: if one or more chunks are still not in a terminal
+            status after ``max_attempts`` retries -- a real stall (a stuck
+            worker, not just another owner mid-pass), surfaced rather than
+            reported as silent success.
     """
-    resolved_entity_workspace = (
-        entity_workspace or lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
+    if not chunks:
+        return {}
+
+    from lightrag.base import DocStatus
+
+    # only_chunks=False here, same precondition _ingest_chunks documents:
+    # _resolve_entity_workspace always returns a real str in this mode
+    # (auto-derive, or "base" on failure), never the raw None default.
+    resolved_entity_workspace = cast(
+        "str", _resolve_entity_workspace(lightrag_wrapper, entity_workspace, only_chunks=False)
     )
-    await lightrag_wrapper.get_lightrag().apipeline_process_enqueue_documents()
+    rag = lightrag_wrapper.get_lightrag()
+    ids = [chunk.hash for chunk in chunks]
+    unique_ids = set(ids)
+    terminal = {DocStatus.PROCESSED.value, DocStatus.FAILED.value}
+
+    statuses: dict[str, dict[str, Any]] = {}
+    for attempt in range(max_attempts):
+        await rag.apipeline_process_enqueue_documents()
+        records = await rag.doc_status.get_by_ids(ids)
+        statuses = {doc_id: record for doc_id, record in zip(ids, records, strict=True) if record is not None}
+        if len(statuses) == len(unique_ids) and all(record.get("status") in terminal for record in statuses.values()):
+            break
+        if attempt < max_attempts - 1:
+            await asyncio.sleep(poll_interval)
+    else:
+        pending = sorted(doc_id for doc_id in unique_ids if statuses.get(doc_id, {}).get("status") not in terminal)
+        raise RuntimeError(
+            f"{len(pending)} of {len(unique_ids)} documents never reached a terminal status "
+            f"after {max_attempts} attempts (waited {max_attempts * poll_interval:.0f}s total): "
+            f"{pending[:5]}{'...' if len(pending) > 5 else ''}. A concurrent owner may be stalled."
+        )
+
     connect_chunks_to_entities(memgraph, "Chunk", resolved_entity_workspace)
     if enforce_ontology:
         ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
         promote_entity_types_to_labels(memgraph, resolved_entity_workspace, ontology)
     elif promote_labels:
         promote_all_entity_types_to_labels(memgraph, resolved_entity_workspace)
+
+    return statuses
 
 
 async def from_unstructured(
