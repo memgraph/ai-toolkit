@@ -6,7 +6,14 @@ test the printer at its seam by capturing stdout, rather than reaching into the
 branch structure.
 """
 
-from context_graph_eval.cli import _print_report, select_goldens
+from context_graph_eval.cli import (
+    DEFAULT_JUDGE_MODEL,
+    _build_model,
+    _parse_model_spec,
+    _print_report,
+    _resolved_spec,
+    select_goldens,
+)
 from context_graph_eval.runner import BatchReport
 from context_graph_eval.scoring import Scored, aggregate
 
@@ -78,3 +85,45 @@ def test_a_run_without_a_judge_does_not_cry_outage(capsys):
     out = capsys.readouterr().out
     assert "UNSCORED" not in out
     assert "not judged" in out
+
+
+# --- Provider-qualified model specs (#329) ---
+
+
+def test_a_provider_qualified_spec_overrides_the_default_provider():
+    assert _parse_model_spec("openai:gpt-4o", default_provider="anthropic") == ("openai", "gpt-4o")
+
+
+def test_a_bare_model_id_keeps_the_default_provider():
+    """Pre-#329 --judge-model/--agent-model values had no provider prefix --
+    they must keep meaning what they meant."""
+    assert _parse_model_spec("claude-opus-4-1", default_provider="anthropic") == ("anthropic", "claude-opus-4-1")
+
+
+def test_omitting_the_flag_keeps_the_default_provider_with_no_model_id():
+    assert _parse_model_spec(None, default_provider="openai") == ("openai", None)
+
+
+def test_resolved_spec_reports_the_actual_fallback_model():
+    """RunMeta must reflect what ran, not what was typed -- omitting a model
+    id still resolves to a concrete model per-provider."""
+    assert _resolved_spec("anthropic", None) == f"anthropic:{DEFAULT_JUDGE_MODEL}"
+    assert _resolved_spec("openai", None) == "openai:default"
+    assert _resolved_spec("openai", "gpt-4o") == "openai:gpt-4o"
+
+
+def test_an_unknown_provider_is_refused_not_guessed(capsys):
+    assert _build_model("azure", "gpt-4o") is None
+    assert "unknown model provider" in capsys.readouterr().err
+
+
+def test_no_model_is_built_without_a_matching_api_key(monkeypatch):
+    """A judge/agent silently disappearing when its key is absent is existing,
+    relied-on behaviour (an unjudged run is a valid efficiency-only run) --
+    this just must still hold now that the provider is resolved from a table
+    instead of a hardcoded branch."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    assert _build_model("anthropic", None) is None
+    assert _build_model("openai", None) is None
