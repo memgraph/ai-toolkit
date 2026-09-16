@@ -13,6 +13,7 @@ from unstructured.chunking.title import chunk_by_title
 from unstructured.partition.auto import partition
 from unstructured.partition.text import partition_text
 
+from lightrag_memgraph import MemgraphLightRAGWrapper
 from memgraph_toolbox.api.memgraph import Memgraph
 
 from .extraction_backend import ExtractionBackend
@@ -503,7 +504,7 @@ async def process_enqueued_and_finalize(
             re-chunked or re-enqueued. An empty list is a no-op.
         entity_workspace: Node label LightRAG entities were written under. If
             None (default), auto-derived from ``lightrag_wrapper``, falling
-            back to ``"base"`` if that fails (see :func:`_resolve_entity_workspace`).
+            back to ``"base"`` if that fails.
         promote_labels: Passed through to the label-promotion step; see
             :func:`from_texts` for the full semantics.
         enforce_ontology: Passed through to the label-promotion step; takes
@@ -532,13 +533,20 @@ async def process_enqueued_and_finalize(
 
     from lightrag.base import DocStatus
 
-    # only_chunks=False here, same precondition _ingest_chunks documents:
-    # _resolve_entity_workspace always returns a real str in this mode
-    # (auto-derive, or "base" on failure), never the raw None default.
-    resolved_entity_workspace = cast(
-        "str", _resolve_entity_workspace(lightrag_wrapper, entity_workspace, only_chunks=False)
-    )
     rag = lightrag_wrapper.get_lightrag()
+    # Resolved here rather than via _resolve_entity_workspace: that helper
+    # is typed against the generic ExtractionBackend Protocol, which has no
+    # enqueue/process API -- this function is inherently LightRAG-specific
+    # (it drives LightRAG's own document queue directly), so it resolves
+    # the workspace straight off the wrapper it already has.
+    if entity_workspace is not None:
+        resolved_entity_workspace = entity_workspace
+    else:
+        try:
+            resolved_entity_workspace = rag.chunk_entity_relation_graph.workspace
+        except Exception as e:
+            logger.warning(f"Could not auto-derive LightRAG entity workspace, falling back to 'base': {e}")
+            resolved_entity_workspace = "base"
     ids = [chunk.hash for chunk in chunks]
     unique_ids = set(ids)
     terminal = {DocStatus.PROCESSED.value, DocStatus.FAILED.value}
