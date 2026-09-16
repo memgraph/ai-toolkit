@@ -9,11 +9,13 @@ import pytest
 from unstructured2graph import (
     Chunk,
     ChunkedDocument,
+    enqueue_texts,
     from_texts,
     from_unstructured,
     make_chunks,
     parse_source,
     parse_text,
+    process_enqueued_and_finalize,
 )
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -386,6 +388,113 @@ async def test_from_texts_preserves_grouping_for_empty_texts():
     assert grouped[1] == []
     assert len(grouped[2]) == 1
     assert grouped[2][0].text == "actual content"
+
+
+# These stay mocked deliberately narrow: the enqueue/process integration
+# itself -- does the real LightRAG API accept our calls, does a per-document
+# failure actually get reported -- is covered against a real LightRAG
+# instance in test_enqueue_process.py (a MagicMock standing in for the whole
+# wrapper proved nothing about that contract, and hid a real defect). What's
+# left here is our own logic that doesn't depend on LightRAG's behavior at
+# all: grouping, kwargs passthrough, and exactly-one-call batching.
+
+
+def _wrapper_for_enqueue(workspace="base"):
+    """A lightrag_wrapper stub whose get_lightrag() supports the
+    enqueue/process split. doc_status.get_by_ids reports every requested id
+    as already `processed`, so process_enqueued_and_finalize's real
+    verify-by-id retry loop is satisfied on its first attempt -- these tests
+    are about kwargs/call-shape, not about exercising that loop."""
+    wrapper = MagicMock()
+    rag = wrapper.get_lightrag.return_value
+    rag.chunk_entity_relation_graph.workspace = workspace
+    rag.addon_params = {}
+    rag.apipeline_enqueue_documents = AsyncMock()
+    rag.apipeline_process_enqueue_documents = AsyncMock()
+    rag.doc_status.get_by_ids = AsyncMock(side_effect=lambda ids: [{"status": "processed"} for _ in ids])
+    return wrapper
+
+
+@pytest.mark.asyncio
+async def test_enqueue_texts_enqueues_every_chunk_in_one_call():
+    """One apipeline_enqueue_documents call across all input texts' chunks --
+    not one call per text -- is what lets LightRAG's worker pool see more
+    than one document at a time."""
+    memgraph = MagicMock()
+    lightrag_wrapper = _wrapper_for_enqueue()
+
+    await enqueue_texts(["first session's text", "second session's text"], memgraph, lightrag_wrapper)
+
+    rag = lightrag_wrapper.get_lightrag.return_value
+    rag.apipeline_enqueue_documents.assert_awaited_once()
+    call_kwargs = rag.apipeline_enqueue_documents.call_args.kwargs
+    assert len(call_kwargs["input"]) == 2
+    assert len(call_kwargs["ids"]) == 2
+    assert len(call_kwargs["file_paths"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_enqueue_texts_preserves_grouping_for_empty_texts():
+    memgraph = MagicMock()
+    lightrag_wrapper = _wrapper_for_enqueue()
+
+    grouped = await enqueue_texts(["", "actual content"], memgraph, lightrag_wrapper)
+
+    assert grouped[0] == []
+    assert len(grouped[1]) == 1
+
+
+@pytest.mark.asyncio
+async def test_process_enqueued_and_finalize_defaults_to_no_ontology_enforcement():
+    memgraph = MagicMock()
+    lightrag_wrapper = _wrapper_for_enqueue()
+    chunk = Chunk(text="x", hash="h1")
+
+    with patch("unstructured2graph.loaders.promote_entity_types_to_labels") as mock_promote:
+        await process_enqueued_and_finalize(memgraph, lightrag_wrapper, [chunk])
+
+    mock_promote.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_enqueued_and_finalize_enforce_ontology_true_promotes_labels():
+    memgraph = MagicMock()
+    lightrag_wrapper = _wrapper_for_enqueue()
+    chunk = Chunk(text="x", hash="h1")
+
+    with patch("unstructured2graph.loaders.promote_entity_types_to_labels") as mock_promote:
+        await process_enqueued_and_finalize(memgraph, lightrag_wrapper, [chunk], enforce_ontology=True)
+
+    mock_promote.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_process_enqueued_and_finalize_empty_chunks_is_a_no_op():
+    memgraph = MagicMock()
+    lightrag_wrapper = _wrapper_for_enqueue()
+
+    result = await process_enqueued_and_finalize(memgraph, lightrag_wrapper, [])
+
+    assert result == {}
+    lightrag_wrapper.get_lightrag.return_value.apipeline_process_enqueue_documents.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_process_enqueued_and_finalize_raises_after_max_attempts_if_never_terminal():
+    """Our own retry-exhaustion bookkeeping, not LightRAG's API: a document
+    stuck in a non-terminal status (e.g. a genuinely stalled concurrent
+    owner) must surface as an error, not silent success. Small max_attempts/
+    poll_interval keep this fast -- it is exercising our loop's exit
+    condition, not waiting out a real timeout."""
+    memgraph = MagicMock()
+    lightrag_wrapper = _wrapper_for_enqueue()
+    lightrag_wrapper.get_lightrag.return_value.doc_status.get_by_ids = AsyncMock(
+        side_effect=lambda ids: [{"status": "processing"} for _ in ids]
+    )
+    chunk = Chunk(text="x", hash="h1")
+
+    with pytest.raises(RuntimeError, match="never reached a terminal status"):
+        await process_enqueued_and_finalize(memgraph, lightrag_wrapper, [chunk], max_attempts=2, poll_interval=0.01)
 
 
 @pytest.mark.skip(reason="Requires sample-data files and network access - run locally with full deps")

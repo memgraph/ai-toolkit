@@ -72,23 +72,44 @@ def _resolve_llm_credentials() -> None:
 #: LLM-written summary for the entities below this line.
 _EVAL_FORCE_LLM_SUMMARY_ON_MERGE = "30"
 
+#: LightRAG's own defaults (MAX_PARALLEL_INSERT=3, MAX_ASYNC_LLM=4) size a
+#: worker pool for a caller giving it many documents to process at once --
+#: irrelevant while reconcile_session enqueued and processed one session at
+#: a time (map #322: the pool only ever saw one document, so raising these
+#: alone would do nothing). Now that reconcile_sessions_batch stages many
+#: sessions before triggering one processing pass, both need raising
+#: *together*, matched to each other: MAX_ASYNC_LLM is a global semaphore
+#: wrapping the LLM call itself (confirmed in lightrag/utils.py's
+#: priority_limit_async_func_call), shared across every worker regardless of
+#: MAX_PARALLEL_INSERT -- raising one without the other just adds workers
+#: competing for the same LLM-call slots, or LLM-call headroom no worker
+#: pool is large enough to use. 16 is a starting point, not a measured
+#: figure -- tune to the account's real rate-limit tier for gpt-4o-mini.
+_EVAL_MAX_PARALLEL_INSERT = "16"
+_EVAL_MAX_ASYNC_LLM = "16"
+
 
 def _resolve_reconciliation_tuning() -> None:
-    """Set eval-scoped LightRAG cost knobs, without touching anyone else's default.
+    """Set eval-scoped LightRAG cost/concurrency knobs, without touching
+    anyone else's default.
 
-    LightRAG reads ``FORCE_LLM_SUMMARY_ON_MERGE`` once, as a dataclass field
-    default evaluated when ``lightrag.lightrag`` is first imported -- so this
-    must run before that happens (reconciliation's own ``unstructured2graph``/
-    ``lightrag`` imports are lazy, deferred until reconciliation actually
-    starts, so calling this from ``run``'s setup is early enough).
+    LightRAG reads ``FORCE_LLM_SUMMARY_ON_MERGE``, ``MAX_PARALLEL_INSERT``
+    and ``MAX_ASYNC_LLM`` once each, as dataclass field defaults evaluated
+    when ``lightrag.lightrag`` is first imported -- so this must run before
+    that happens (reconciliation's own ``unstructured2graph``/``lightrag``
+    imports are lazy, deferred until reconciliation actually starts, so
+    calling this from ``run``'s setup, or from ``reconcile_batch`` itself,
+    is early enough).
 
     ``setdefault`` only: an operator's own exported value, or production
-    sessions-graph reconciliation (which never sets this at all and keeps
-    LightRAG's default of 8), are both left alone.
+    sessions-graph reconciliation (which never sets any of these and keeps
+    LightRAG's own defaults), are both left alone.
     """
     import os
 
     os.environ.setdefault("FORCE_LLM_SUMMARY_ON_MERGE", _EVAL_FORCE_LLM_SUMMARY_ON_MERGE)
+    os.environ.setdefault("MAX_PARALLEL_INSERT", _EVAL_MAX_PARALLEL_INSERT)
+    os.environ.setdefault("MAX_ASYNC_LLM", _EVAL_MAX_ASYNC_LLM)
 
 
 #: `MemgraphLightRAGWrapper`'s own default (all-MiniLM-L6-v2, max_token_size
@@ -151,6 +172,7 @@ async def reconcile_batch(
     working_dir: str = DEFAULT_WORKING_DIR,
     lightrag_wrapper: Any = None,
     progress: bool = True,
+    sessions_per_call: int = 20,
 ) -> Reconciled:
     """Reconcile pending sessions in the eval graph.
 
@@ -171,7 +193,27 @@ async def reconcile_batch(
     development instance, an eval batch would distil straight into it: the exact
     pollution #309's dedicated-instance decision exists to prevent, with nothing
     to indicate it happened.
+
+    ``sessions_per_call`` groups pending sessions into calls to
+    ``SessionsGraph.reconcile_sessions_batch`` (map #322) rather than
+    reconciling one session at a time: LightRAG's own worker pool only has
+    something to parallelize over when it is handed more than one document
+    at once. LightRAG's own concurrency knobs (raised together in
+    ``_resolve_reconciliation_tuning``) bound how many sessions in a call
+    actually run at once regardless of this number -- it mainly trades
+    progress-reporting granularity against per-call overhead. Must be at
+    least 1: ``range(0, N, sessions_per_call)`` with a negative step is
+    simply empty (silently reporting "nothing to do" while sessions sit
+    pending, never touched), and with 0 it raises ``ValueError`` from deep
+    inside ``range()`` rather than from an obviously-relevant validation.
+
+    Raises:
+        ValueError: if ``sessions_per_call`` is less than 1 -- checked up
+            front, before querying for pending sessions at all.
     """
+    if sessions_per_call < 1:
+        raise ValueError(f"sessions_per_call must be >= 1, got {sessions_per_call}")
+
     import os
 
     from sessions_graph import SessionsGraph
@@ -181,6 +223,7 @@ async def reconcile_batch(
         return Reconciled(reconciled=0, failed=0)
 
     _resolve_llm_credentials()
+    _resolve_reconciliation_tuning()
 
     owns_wrapper = lightrag_wrapper is None
 
@@ -213,24 +256,27 @@ async def reconcile_batch(
     reconciled = 0
     errors: list[str] = []
     try:
-        for index, session_id in enumerate(session_ids, start=1):
-            summary = await graph.reconcile_session(
-                session_id,
+        for start in range(0, len(session_ids), sessions_per_call):
+            chunk = session_ids[start : start + sessions_per_call]
+            summaries = await graph.reconcile_sessions_batch(
+                chunk,
                 lightrag_wrapper=lightrag_wrapper,
                 enforce_ontology=True,
             )
-            if summary.status == "completed":
-                reconciled += 1
-            else:
-                errors.append(f"{session_id}: {summary.error}")
+            for summary in summaries:
+                if summary.status == "completed":
+                    reconciled += 1
+                else:
+                    errors.append(f"{summary.session_id}: {summary.error}")
 
-            # Printed per session, because this loop is sequential and each
-            # session costs two LLM calls -- so a modest batch runs for many
+            # Printed per chunk, not per session: this loop still runs
+            # sequentially call-to-call, so a big batch runs for many
             # minutes. Silent until done is indistinguishable from hung, which
             # is how two runs were abandoned without knowing whether they were
             # progressing.
             if progress:
-                print(f"  reconciled {index}/{len(session_ids)} ({reconciled} ok, {len(errors)} failed)", flush=True)
+                done = start + len(chunk)
+                print(f"  reconciled {done}/{len(session_ids)} ({reconciled} ok, {len(errors)} failed)", flush=True)
     finally:
         if owns_wrapper:
             finalize = getattr(lightrag_wrapper, "finalize", None)

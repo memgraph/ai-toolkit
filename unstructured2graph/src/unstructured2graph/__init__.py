@@ -14,11 +14,13 @@ from .extraction_backend import ExtractionBackend, LightRAGBackend
 from .loaders import (
     Chunk,
     ChunkedDocument,
+    enqueue_texts,
     from_texts,
     from_unstructured,
     make_chunks,
     parse_source,
     parse_text,
+    process_enqueued_and_finalize,
 )
 from .memgraph import (
     compute_embeddings,
@@ -67,6 +69,7 @@ __all__ = [
     "create_property_index",
     "create_unique_constraint",
     "create_vector_search_index",
+    "enqueue_texts",
     "from_texts",
     "from_unstructured",
     "link_nodes_in_order",
@@ -74,6 +77,7 @@ __all__ = [
     "make_chunks",
     "parse_source",
     "parse_text",
+    "process_enqueued_and_finalize",
     "promote_all_entity_types_to_labels",
     "promote_entity_types_to_labels",
     "upsert_typed_relationships",

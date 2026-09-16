@@ -1,12 +1,14 @@
-"""Tests for reconcile.py's environment-tuning helpers.
+"""Tests for reconcile.py's environment-tuning helpers and reconcile_batch's
+own validation.
 
-Not e2e: these don't touch Memgraph or an LLM, only the env-var contract
-LightRAG reads its cost knobs from.
+Not e2e: these don't touch Memgraph or an LLM.
 """
 
 import os
+from unittest.mock import MagicMock
 
-from context_graph_eval.reconcile import _resolve_reconciliation_tuning
+import pytest
+from context_graph_eval.reconcile import _resolve_reconciliation_tuning, reconcile_batch
 
 
 def test_sets_a_looser_merge_threshold_when_unset(monkeypatch):
@@ -33,3 +35,21 @@ def test_never_overrides_an_operators_own_value(monkeypatch):
     _resolve_reconciliation_tuning()
 
     assert os.environ["FORCE_LLM_SUMMARY_ON_MERGE"] == "8"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_batch_rejects_non_positive_sessions_per_call():
+    """range(0, N, sessions_per_call) with a negative step is silently
+    empty (reports "nothing to do" while sessions sit pending, untouched)
+    and with 0 raises ValueError from deep inside range() -- neither is an
+    obviously-relevant error. Must be validated up front, before even
+    querying for pending sessions."""
+    db = MagicMock()
+
+    with pytest.raises(ValueError, match="sessions_per_call"):
+        await reconcile_batch(db, sessions_per_call=0)
+
+    with pytest.raises(ValueError, match="sessions_per_call"):
+        await reconcile_batch(db, sessions_per_call=-5)
+
+    db.query.assert_not_called()
