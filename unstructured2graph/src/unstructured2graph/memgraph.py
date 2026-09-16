@@ -265,6 +265,37 @@ def create_unique_constraint(memgraph: Memgraph, label: str, property: str):
         logger.warning(f"Error creating uniqueness constraint on :{label}({property}): {e}")
 
 
+def create_entity_type_constraint(memgraph: Memgraph, label: str):
+    """
+    Idempotently ensure every :label node has an entity_type property typed
+    as a string -- the weak Memgraph-level backstop referenced by
+    unstructured2graph's own ADR 0002 (enforce-ontology-in-application-code),
+    alongside promote_entity_types_to_labels()'s real application-code
+    enforcement. Memgraph has no value-membership constraint (no
+    `ASSERT n.prop IN [...]`), so this can only catch a missing or
+    wrong-typed entity_type, never an out-of-vocabulary one.
+
+    Two constraints, each in its own try/except -- unlike
+    create_unique_constraint's uniqueness constraint, a repeated identical
+    `IS TYPED STRING` constraint raises ("already exists") rather than
+    silently no-op'ing, verified live against a real Memgraph instance. The
+    existence constraint (`ASSERT EXISTS`) is idempotent on repeat; kept in
+    its own try/except anyway for symmetry and so one failing never blocks
+    the other from being attempted.
+    """
+    try:
+        memgraph.query(f"CREATE CONSTRAINT ON (n:{label}) ASSERT EXISTS (n.entity_type);")
+        logger.info(f"Ensured entity_type existence constraint on :{label}")
+    except Exception as e:
+        logger.warning(f"Error creating entity_type existence constraint on :{label}: {e}")
+
+    try:
+        memgraph.query(f"CREATE CONSTRAINT ON (n:{label}) ASSERT n.entity_type IS TYPED STRING;")
+        logger.info(f"Ensured entity_type typed-string constraint on :{label}")
+    except Exception as e:
+        logger.warning(f"Error creating entity_type typed-string constraint on :{label}: {e}")
+
+
 def create_label_index(memgraph: Memgraph, label: str):
     """
     Create a label index for efficient node lookups by label.

@@ -25,6 +25,7 @@ from .loaders import (
 from .memgraph import (
     compute_embeddings,
     connect_chunks_to_entities,
+    create_entity_type_constraint,
     create_label_index,
     create_nodes_from_list,
     create_property_index,
@@ -64,6 +65,7 @@ __all__ = [
     "__version__",
     "compute_embeddings",
     "connect_chunks_to_entities",
+    "create_entity_type_constraint",
     "create_label_index",
     "create_nodes_from_list",
     "create_property_index",

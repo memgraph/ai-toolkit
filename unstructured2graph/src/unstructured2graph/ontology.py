@@ -60,6 +60,11 @@ class Ontology:
     Load one from a config file with load_ontology() rather than
     constructing directly, so every consumer of a given ontology_path sees
     the same vocabulary.
+
+    Note on naming: "enforce_ontology" (the flag callers pass to gate label
+    promotion against this vocabulary) never rejects or filters an entity --
+    see ADR 0004 (never-reject-entities-for-ontology-non-conformance). A
+    non-conforming entity is always kept, stamped ontology_conformant=false.
     """
 
     entity_types: tuple[EntityType, ...]
