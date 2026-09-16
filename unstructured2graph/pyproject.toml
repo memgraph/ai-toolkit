@@ -32,6 +32,13 @@ dependencies = [
 all-docs = [
     "unstructured[all-docs]>=0.18.18",
 ]
+# gliner2 is deliberately NOT declared here as an extra -- gliner2[local]
+# hard-pins transformers<5, which conflicts with the workspace-wide
+# transformers>=5.0.0rc3 security floor in the root pyproject.toml (see its
+# constraint-dependencies comment). Declaring it as an extra would force
+# uv's workspace-wide lock to satisfy both constraints simultaneously, which
+# is impossible -- so it's a manual `pip install 'gliner2[local]>=2.0.0'` in
+# your own environment instead. See gliner2_backend.py's module docstring.
 test = [
     "pytest>=9.0.3",
     "pytest-asyncio>=0.21.0",

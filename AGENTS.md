@@ -21,7 +21,7 @@ Memgraph graph.
 | `integrations/langchain-memgraph/` | LangChain graph store, QA chain, toolkit. |
 | `integrations/mcp-memgraph/` | MCP server exposing Memgraph to LLMs. |
 | `integrations/lightrag-memgraph/` | LightRAG storage backends (KV/vector/doc-status/graph) on Memgraph. |
-| `unstructured2graph/` | Chunks unstructured input (files/URLs/text) and hands chunks to LightRAG for entity extraction. Outside the Context Graph family but shares its testing conventions. |
+| `unstructured2graph/` | Chunks unstructured input (files/URLs/text) and runs entity/relation extraction through a pluggable `ExtractionBackend` (`LightRAGBackend` by default; `GLiNER2Backend` for local, LLM-free extraction, manual-install only -- see its module docstring). Outside the Context Graph family but shares its testing conventions. |
 | `agents/sql2graph/` | MySQL/Postgres → Memgraph migration agent. Has its own `uv.lock`/`.python-version`; run it with `cd agents/sql2graph && uv run main.py`. |
 | `context-graph/` | The Context Graph family — see below. |
 | `scripts/dev-memgraph.sh` | Local dev lifecycle: exploration Memgraph + isolated test Memgraph for the context-graph family and unstructured2graph. |

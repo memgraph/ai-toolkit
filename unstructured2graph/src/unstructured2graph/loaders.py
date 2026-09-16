@@ -12,9 +12,9 @@ from unstructured.chunking.title import chunk_by_title
 from unstructured.partition.auto import partition
 from unstructured.partition.text import partition_text
 
-from lightrag_memgraph import MemgraphLightRAGWrapper
 from memgraph_toolbox.api.memgraph import Memgraph
 
+from .extraction_backend import ExtractionBackend
 from .memgraph import (
     connect_chunks_to_entities,
     create_nodes_from_list,
@@ -162,25 +162,41 @@ def make_chunks(
 
 
 def _resolve_entity_workspace(
-    lightrag_wrapper: MemgraphLightRAGWrapper | None,
+    extraction_backend: ExtractionBackend | None,
     entity_workspace: str | None,
     only_chunks: bool,
 ) -> str | None:
-    if only_chunks or entity_workspace is not None:
+    """
+    Raises:
+        ValueError: if entity_workspace is explicitly given and doesn't match
+            extraction_backend.workspace_label. The backend writes entities
+            under its own workspace_label regardless of this override, so a
+            mismatch would otherwise silently make connect_chunks_to_entities()
+            and label promotion scan the wrong label and find nothing --
+            failing loudly here is strictly better than that silent no-op.
+    """
+    if only_chunks:
         return entity_workspace
-    try:
+    if entity_workspace is not None:
         # only_chunks is False here, so callers (from_texts/from_unstructured)
-        # have already raised ValueError if lightrag_wrapper were None.
-        return cast("MemgraphLightRAGWrapper", lightrag_wrapper).get_lightrag().chunk_entity_relation_graph.workspace
-    except Exception as e:
-        logger.warning(f"Could not auto-derive LightRAG entity workspace, falling back to 'base': {e}")
-        return "base"
+        # have already raised ValueError if extraction_backend were None.
+        backend_workspace = cast("ExtractionBackend", extraction_backend).workspace_label
+        if entity_workspace != backend_workspace:
+            raise ValueError(
+                f"entity_workspace={entity_workspace!r} does not match "
+                f"extraction_backend.workspace_label={backend_workspace!r}. Pass entity_workspace="
+                "None (the default) to auto-derive it from the backend instead of overriding it."
+            )
+        return entity_workspace
+    # only_chunks is False here, so callers (from_texts/from_unstructured)
+    # have already raised ValueError if extraction_backend were None.
+    return cast("ExtractionBackend", extraction_backend).workspace_label
 
 
 async def _ingest_chunks(
     chunks: list[Chunk],
     memgraph: Memgraph,
-    lightrag_wrapper: MemgraphLightRAGWrapper | None = None,
+    extraction_backend: ExtractionBackend | None = None,
     only_chunks: bool = False,
     link_chunks: bool = False,
     entity_workspace: str | None = None,
@@ -190,9 +206,9 @@ async def _ingest_chunks(
 ) -> list[Chunk]:
     """
     Ingest an already-produced flat list of chunks into Memgraph: upsert Chunk
-    nodes, optionally chain them with NEXT, and (unless only_chunks) run
-    LightRAG entity extraction, connect the resulting entities back to their
-    chunks via MENTIONED_IN, and promote entity_type to a real label per
+    nodes, optionally chain them with NEXT, and (unless only_chunks) run the
+    extraction backend, connect the resulting entities back to their chunks
+    via MENTIONED_IN, and promote entity_type to a real label per
     promote_labels/enforce_ontology.
 
     Internal helper shared by from_unstructured() and from_texts(). Not
@@ -207,10 +223,11 @@ async def _ingest_chunks(
     Args:
         chunks: Chunks to upsert (e.g. from parse_source/parse_text).
         memgraph: Memgraph instance for database operations.
-        lightrag_wrapper: MemgraphLightRAGWrapper instance. Required unless only_chunks=True.
-        only_chunks: If True, only create chunk nodes without LightRAG processing.
+        extraction_backend: An ExtractionBackend (e.g. LightRAGBackend,
+            GLiNER2Backend). Required unless only_chunks=True.
+        only_chunks: If True, only create chunk nodes without running extraction.
         link_chunks: If True, link chunks in order with NEXT relationship.
-        entity_workspace: Node label LightRAG entities were written under.
+        entity_workspace: Node label the extraction backend's entities were written under.
         promote_labels: If True, promote every entity_type to a real Memgraph label,
             with no fixed vocabulary -- no ontology_conformant flagging, since there's
             no ontology to be non-conformant relative to. Ignored if enforce_ontology
@@ -219,7 +236,7 @@ async def _ingest_chunks(
             ontology_path's vocabulary (or DEFAULT_ONTOLOGY_PATH), and flag anything
             outside it as ontology_conformant=false. Takes precedence over
             promote_labels. If both are False (default), entities are left exactly as
-            LightRAG wrote them -- no label promotion at all.
+            the extraction backend wrote them -- no label promotion at all.
         ontology_path: Path to an ontology YAML config file. Only consulted when
             enforce_ontology=True; defaults to DEFAULT_ONTOLOGY_PATH.
     Returns:
@@ -229,8 +246,8 @@ async def _ingest_chunks(
         logger.warning("No chunks provided to _ingest_chunks")
         return chunks
 
-    if not only_chunks and lightrag_wrapper is None:
-        raise ValueError("lightrag_wrapper is required when only_chunks=False")
+    if not only_chunks and extraction_backend is None:
+        raise ValueError("extraction_backend is required when only_chunks=False")
 
     if ontology_path and not enforce_ontology:
         logger.warning("ontology_path was provided but enforce_ontology=False; ignoring ontology_path")
@@ -249,13 +266,13 @@ async def _ingest_chunks(
 
     if not only_chunks:
         # Both casts are safe here per this function's documented precondition:
-        # callers already raised ValueError for a None lightrag_wrapper, and
+        # callers already raised ValueError for a None extraction_backend, and
         # already resolved entity_workspace (see _resolve_entity_workspace)
         # before calling _ingest_chunks with only_chunks=False.
-        wrapper = cast("MemgraphLightRAGWrapper", lightrag_wrapper)
+        backend = cast("ExtractionBackend", extraction_backend)
         resolved_workspace = cast("str", entity_workspace)
         for chunk in chunks:
-            await wrapper.ainsert(input=chunk.text, file_paths=[chunk.hash])
+            await backend.aingest_chunk(memgraph, chunk)
         connect_chunks_to_entities(memgraph, "Chunk", resolved_workspace)
         if enforce_ontology:
             ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
@@ -269,7 +286,7 @@ async def _ingest_chunks(
 async def from_texts(
     texts: list[str],
     memgraph: Memgraph,
-    lightrag_wrapper: MemgraphLightRAGWrapper | None = None,
+    extraction_backend: ExtractionBackend | None = None,
     only_chunks: bool = False,
     entity_workspace: str | None = None,
     promote_labels: bool = False,
@@ -281,18 +298,19 @@ async def from_texts(
     Ingest raw in-memory strings (not files or URLs) into Memgraph.
 
     Each text is chunked with parse_text() and the results are fed through the
-    same Chunk-node + LightRAG entity-extraction pipeline as from_unstructured().
-    Unlike from_unstructured(), texts are treated as independent units rather
-    than a single sequential document, so there is no NEXT chunk linking.
+    same Chunk-node + extraction pipeline as from_unstructured(). Unlike
+    from_unstructured(), texts are treated as independent units rather than a
+    single sequential document, so there is no NEXT chunk linking.
 
     Args:
         texts: Raw strings to ingest. Empty/whitespace-only entries produce no chunks.
         memgraph: Memgraph instance for database operations.
-        lightrag_wrapper: MemgraphLightRAGWrapper instance. Required unless only_chunks=True.
-        only_chunks: If True, only create chunk nodes without LightRAG processing.
-        entity_workspace: Node label LightRAG entities were written under. If None
-            (default), auto-derived from lightrag_wrapper's resolved LightRAG
-            workspace, falling back to "base" if that fails.
+        extraction_backend: An ExtractionBackend (e.g. LightRAGBackend,
+            GLiNER2Backend). Required unless only_chunks=True.
+        only_chunks: If True, only create chunk nodes without running extraction.
+        entity_workspace: Node label the extraction backend's entities were written
+            under. If None (default), auto-derived from extraction_backend's
+            workspace_label.
         promote_labels: Label promotion and ontology enforcement are separate concerns.
             If True, every entity_type gets promoted to a real Memgraph label (e.g.
             entity_type="person" -> :Person), with no fixed vocabulary restricting
@@ -323,11 +341,11 @@ async def from_texts(
         recomputing a hash from the original text only works while that text
         is short enough for parse_text() to keep it as a single Chunk.
     """
-    if not only_chunks and lightrag_wrapper is None:
-        raise ValueError("lightrag_wrapper is required when only_chunks=False")
+    if not only_chunks and extraction_backend is None:
+        raise ValueError("extraction_backend is required when only_chunks=False")
 
     create_unique_constraint(memgraph, "Chunk", "hash")
-    resolved_entity_workspace = _resolve_entity_workspace(lightrag_wrapper, entity_workspace, only_chunks)
+    resolved_entity_workspace = _resolve_entity_workspace(extraction_backend, entity_workspace, only_chunks)
 
     grouped_chunks = [parse_text(text, chunk_kwargs=chunk_kwargs) for text in texts]
     flat_chunks = [chunk for group in grouped_chunks for chunk in group]
@@ -338,7 +356,7 @@ async def from_texts(
     await _ingest_chunks(
         flat_chunks,
         memgraph,
-        lightrag_wrapper=lightrag_wrapper,
+        extraction_backend=extraction_backend,
         only_chunks=only_chunks,
         link_chunks=False,
         entity_workspace=resolved_entity_workspace,
@@ -352,7 +370,7 @@ async def from_texts(
 async def from_unstructured(
     sources: Sequence[str | Path],
     memgraph: Memgraph,
-    lightrag_wrapper: MemgraphLightRAGWrapper | None = None,
+    extraction_backend: ExtractionBackend | None = None,
     only_chunks: bool = False,
     link_chunks: bool = False,
     entity_workspace: str | None = None,
@@ -362,17 +380,18 @@ async def from_unstructured(
     ontology_path: str | Path | None = None,
 ) -> list[list[Chunk]]:
     """
-    Process unstructured sources and ingest them into Memgraph using LightRAG.
+    Process unstructured sources and ingest them into Memgraph using an
+    extraction backend (e.g. LightRAGBackend, GLiNER2Backend).
     Args:
         sources: List of file paths or URLs to process
         memgraph: Memgraph instance for database operations
-        lightrag_wrapper: MemgraphLightRAGWrapper instance (requires lightrag-memgraph).
-            Required unless only_chunks=True, since it's only used for entity extraction.
-        only_chunks: If True, only create chunk nodes without LightRAG processing
+        extraction_backend: An ExtractionBackend. Required unless only_chunks=True,
+            since it's only used for entity extraction.
+        only_chunks: If True, only create chunk nodes without running extraction
         link_chunks: If True, link chunks in order with NEXT relationship
-        entity_workspace: Node label LightRAG entities were written under. If None
-            (default), auto-derived from lightrag_wrapper's resolved LightRAG
-            workspace, falling back to "base" if that fails.
+        entity_workspace: Node label the extraction backend's entities were written
+            under. If None (default), auto-derived from extraction_backend's
+            workspace_label.
         partition_kwargs: Additional keyword arguments to pass to unstructured's
             partition function (e.g., strategy, languages, pdf_infer_table_structure,
             ocr_languages, headers, ssl_verify, etc.)
@@ -390,12 +409,12 @@ async def from_unstructured(
         grouped-return contract as from_texts(). A source that produced no
         chunks contributes an empty group.
     """
-    if not only_chunks and lightrag_wrapper is None:
-        raise ValueError("lightrag_wrapper is required when only_chunks=False")
+    if not only_chunks and extraction_backend is None:
+        raise ValueError("extraction_backend is required when only_chunks=False")
 
     # LightRAG uses `{source_id: "chunk-ID..."}` to reference its chunks.
     create_unique_constraint(memgraph, "Chunk", "hash")
-    resolved_entity_workspace = _resolve_entity_workspace(lightrag_wrapper, entity_workspace, only_chunks)
+    resolved_entity_workspace = _resolve_entity_workspace(extraction_backend, entity_workspace, only_chunks)
     chunked_documents = make_chunks(sources, partition_kwargs=partition_kwargs)
     total_chunks = sum(len(document.chunks) for document in chunked_documents)
     start_time = time.time()
@@ -411,7 +430,7 @@ async def from_unstructured(
         await _ingest_chunks(
             document.chunks,
             memgraph,
-            lightrag_wrapper=lightrag_wrapper,
+            extraction_backend=extraction_backend,
             only_chunks=only_chunks,
             link_chunks=link_chunks,
             entity_workspace=resolved_entity_workspace,
