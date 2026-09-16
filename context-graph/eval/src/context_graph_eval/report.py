@@ -42,6 +42,16 @@ class RunMeta:
     tokenizer: str
     questions: int
     changed: str = ""
+    #: 'provider:model_id' actually used for retrieval, e.g. 'openai:gpt-4o'.
+    #: Answers depend on this model too, so compare() pins it for the same
+    #: reason it already pins judge_model -- previously untracked (#329).
+    agent_model: str = ""
+    #: True when judge_model and agent_model resolved to the same provider.
+    #: #304's cross-provider independence does not hold for such a run -- a
+    #: legitimate experiment (#329, #324's model-vs-rubric diagnosis needs
+    #: it), just never a silent one. Defaults to False for runs saved before
+    #: this field existed, which were always cross-provider by construction.
+    same_provider: bool = False
 
 
 @dataclass(frozen=True)
@@ -102,6 +112,10 @@ def compare(baseline: SavedRun, candidate: SavedRun, noise_floor_pp: float | Non
     _require_same(baseline.meta, candidate.meta, "corpus_revision", "corpus")
     _require_same(baseline.meta, candidate.meta, "corpus_variant", "corpus")
     _require_same(baseline.meta, candidate.meta, "judge_model", "judge")
+    # Answers depend on the agent model too (#329) -- previously untracked, so
+    # this comparison silently ran across two agent models with nothing to
+    # say so, the same failure mode the other refusals here exist to prevent.
+    _require_same(baseline.meta, candidate.meta, "agent_model", "agent model")
     _require_same(baseline.meta, candidate.meta, "tokenizer", "tokenizer")
     # Question count too: coverage is reported as a rate, so a 20-question
     # baseline and a 60-question candidate produce comparable-looking
@@ -201,10 +215,16 @@ def render(comparison: Comparison) -> str:
     lines = [
         f"context-graph eval - {meta.label} vs {comparison.baseline.label}",
         f"corpus longmemeval-{meta.corpus_variant}@{meta.corpus_revision} ({meta.questions}q)",
-        f"judge {meta.judge_model} - tok {meta.tokenizer}",
+        f"judge {meta.judge_model} | agent {meta.agent_model} - tok {meta.tokenizer}",
         "",
         f"VERDICT  {comparison.verdict.value}",
     ]
+
+    if meta.same_provider:
+        lines.append(
+            "  WARNING: judge and agent share a provider -- #304's cross-provider "
+            "independence does not hold for this run."
+        )
 
     if comparison.noise_floor_pp is None:
         lines.append("  noise floor NOT CALIBRATED - no delta can be called real.")
