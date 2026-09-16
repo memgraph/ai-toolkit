@@ -69,6 +69,9 @@ class RunPlan:
     #: MEMGRAPH_URL happens to name -- a different graph than the one being
     #: evaluated, silently.
     memgraph_url: str | None = None
+    #: "lightrag" (default) or "gliner2" -- see reconcile.EXTRACTION_BACKENDS
+    #: and reconcile_batch's docstring for what each implies.
+    extraction_backend: str = "lightrag"
 
 
 @dataclass(frozen=True)
@@ -177,7 +180,12 @@ async def run_batch(
 
     reconciled = failures = 0
     if plan.reconcile:
-        outcome = await reconcile_batch(graph.db, limit=plan.reconcile_limit, memgraph_url=plan.memgraph_url)
+        outcome = await reconcile_batch(
+            graph.db,
+            limit=plan.reconcile_limit,
+            memgraph_url=plan.memgraph_url,
+            extraction_backend=plan.extraction_backend,
+        )
         reconciled, failures = outcome.reconciled, outcome.failed
 
     read_only = ReadOnlyGraph(graph.db)

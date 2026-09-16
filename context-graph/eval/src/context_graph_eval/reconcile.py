@@ -164,6 +164,16 @@ def pending_sessions(db: "Memgraph", limit: int | None = None) -> list[str]:
     return [row["session_id"] for row in db.query(query, {"status": PENDING})]
 
 
+#: Extraction backends reconcile_batch knows how to build. "lightrag" is the
+#: default, LLM-based backend every prior eval run has used; "gliner2" is the
+#: local, LLM-free alternative (unstructured2graph.gliner2_backend). A closed
+#: set rather than an arbitrary ExtractionBackend instance, unlike #329's
+#: judge/agent model resolution: the two backends need different reconciling
+#: strategies below (batch/queue vs one-at-a-time), not just a different
+#: object handed to the same call.
+EXTRACTION_BACKENDS = ("lightrag", "gliner2")
+
+
 async def reconcile_batch(
     db: "Memgraph",
     *,
@@ -171,6 +181,7 @@ async def reconcile_batch(
     memgraph_url: str | None = None,
     working_dir: str = DEFAULT_WORKING_DIR,
     lightrag_wrapper: Any = None,
+    extraction_backend: str = "lightrag",
     progress: bool = True,
     sessions_per_call: int = 20,
 ) -> Reconciled:
@@ -206,13 +217,30 @@ async def reconcile_batch(
     simply empty (silently reporting "nothing to do" while sessions sit
     pending, never touched), and with 0 it raises ``ValueError`` from deep
     inside ``range()`` rather than from an obviously-relevant validation.
+    Ignored when ``extraction_backend="gliner2"`` -- see below.
+
+    ``extraction_backend`` picks what actually extracts entities: ``"lightrag"``
+    (default) or ``"gliner2"`` (local, LLM-free -- see
+    ``unstructured2graph.gliner2_backend.GLiNER2Backend``). Either way, a
+    ``MemgraphLightRAGWrapper`` is still constructed: narrative summarization
+    (``SessionsGraph.reconcile_session``'s Episode) is a generative task
+    GLiNER2 cannot do at all, so it always runs through the LightRAG wrapper's
+    own LLM regardless of which backend extracts entities. "gliner2" sessions
+    reconcile one at a time via ``reconcile_session`` rather than through
+    ``reconcile_sessions_batch``: map #322's batch/queue pipeline exists to
+    give LightRAG's own worker pool more than one document at a time, which
+    is meaningless for a backend with no shared busy-lock or worker pool to
+    fan out over in the first place.
 
     Raises:
-        ValueError: if ``sessions_per_call`` is less than 1 -- checked up
-            front, before querying for pending sessions at all.
+        ValueError: if ``sessions_per_call`` is less than 1, or
+            ``extraction_backend`` is not one of :data:`EXTRACTION_BACKENDS` --
+            both checked up front, before querying for pending sessions at all.
     """
     if sessions_per_call < 1:
         raise ValueError(f"sessions_per_call must be >= 1, got {sessions_per_call}")
+    if extraction_backend not in EXTRACTION_BACKENDS:
+        raise ValueError(f"extraction_backend must be one of {EXTRACTION_BACKENDS}, got {extraction_backend!r}")
 
     import os
 
@@ -253,30 +281,60 @@ async def reconcile_batch(
         lightrag_wrapper = MemgraphLightRAGWrapper()
         await lightrag_wrapper.initialize(working_dir=working_dir, embedding_func=_eval_embedding_func())
 
+    gliner2_backend = None
+    if extraction_backend == "gliner2":
+        from unstructured2graph.gliner2_backend import GLiNER2Backend
+
+        gliner2_backend = GLiNER2Backend()
+
     reconciled = 0
     errors: list[str] = []
     try:
-        for start in range(0, len(session_ids), sessions_per_call):
-            chunk = session_ids[start : start + sessions_per_call]
-            summaries = await graph.reconcile_sessions_batch(
-                chunk,
-                lightrag_wrapper=lightrag_wrapper,
-                enforce_ontology=True,
-            )
-            for summary in summaries:
+        if gliner2_backend is not None:
+            # One session at a time (see docstring): there is no batch/queue
+            # pipeline to fan out over for a backend with no shared busy-lock,
+            # unlike the LightRAG branch below.
+            for index, session_id in enumerate(session_ids, start=1):
+                summary = await graph.reconcile_session(
+                    session_id,
+                    lightrag_wrapper=lightrag_wrapper,
+                    extraction_backend=gliner2_backend,
+                    enforce_ontology=True,
+                )
                 if summary.status == "completed":
                     reconciled += 1
                 else:
                     errors.append(f"{summary.session_id}: {summary.error}")
+                if progress:
+                    print(
+                        f"  reconciled {index}/{len(session_ids)} ({reconciled} ok, {len(errors)} failed)",
+                        flush=True,
+                    )
+        else:
+            for start in range(0, len(session_ids), sessions_per_call):
+                chunk = session_ids[start : start + sessions_per_call]
+                summaries = await graph.reconcile_sessions_batch(
+                    chunk,
+                    lightrag_wrapper=lightrag_wrapper,
+                    enforce_ontology=True,
+                )
+                for summary in summaries:
+                    if summary.status == "completed":
+                        reconciled += 1
+                    else:
+                        errors.append(f"{summary.session_id}: {summary.error}")
 
-            # Printed per chunk, not per session: this loop still runs
-            # sequentially call-to-call, so a big batch runs for many
-            # minutes. Silent until done is indistinguishable from hung, which
-            # is how two runs were abandoned without knowing whether they were
-            # progressing.
-            if progress:
-                done = start + len(chunk)
-                print(f"  reconciled {done}/{len(session_ids)} ({reconciled} ok, {len(errors)} failed)", flush=True)
+                # Printed per chunk, not per session: this loop still runs
+                # sequentially call-to-call, so a big batch runs for many
+                # minutes. Silent until done is indistinguishable from hung,
+                # which is how two runs were abandoned without knowing
+                # whether they were progressing.
+                if progress:
+                    done = start + len(chunk)
+                    print(
+                        f"  reconciled {done}/{len(session_ids)} ({reconciled} ok, {len(errors)} failed)",
+                        flush=True,
+                    )
     finally:
         if owns_wrapper:
             finalize = getattr(lightrag_wrapper, "finalize", None)

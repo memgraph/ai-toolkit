@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .convert.longmemeval import DEFAULT_REVISION, build_corpus, fetch, haystack_path, load_raw
 from .corpus import write_corpus
+from .reconcile import EXTRACTION_BACKENDS
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -93,6 +94,16 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="'provider:model_id' for the retrieval agent, e.g. 'openai:gpt-4o'. A bare model id "
         "keeps the default provider (openai).",
+    )
+    run.add_argument(
+        "--extraction-backend",
+        choices=EXTRACTION_BACKENDS,
+        default="lightrag",
+        help="what reconciliation uses to extract entities: 'lightrag' (default, LLM-based) or "
+        "'gliner2' (local, LLM-free -- requires 'pip install gliner2[local]>=2.0.0' manually, see "
+        "unstructured2graph.gliner2_backend's module docstring). Narrative summarization always "
+        "runs via a LightRAG wrapper's own LLM regardless of this choice -- GLiNER2 has no "
+        "generative capability -- so an LLM key is still needed either way.",
     )
     run.add_argument(
         "--max-sessions-per-question",
@@ -413,6 +424,7 @@ def _run(args) -> int:
                 judge=judge,
                 max_sessions_per_question=args.max_sessions_per_question,
                 memgraph_url=args.memgraph_url,
+                extraction_backend=args.extraction_backend,
             ),
         )
     )
@@ -445,6 +457,12 @@ def _run(args) -> int:
                     tokenizer=tokenizer_in_use(),
                     questions=len(goldens),
                     changed=args.changed,
+                    # A LightRAG-built and a GLiNER2-built graph are different
+                    # systems under test (different entities, no cross-chunk
+                    # coreference for GLiNER2, a different workspace label) --
+                    # compare() below refuses across them for the same reason
+                    # it refuses across judges or tokenizers.
+                    extraction_backend=args.extraction_backend,
                 ),
                 scored=report.scored,
             ),

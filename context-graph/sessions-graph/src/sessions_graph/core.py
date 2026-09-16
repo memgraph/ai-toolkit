@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from actions_graph import ActionsGraph
+    from unstructured2graph import ExtractionBackend
 
 _FULLTEXT_INDEX = "memory_content_index"
 
@@ -360,6 +361,7 @@ class SessionsGraph:
         session_id: str,
         *,
         lightrag_wrapper: Any,
+        extraction_backend: ExtractionBackend | None = None,
         actions_graph: ActionsGraph | None = None,
         entity_workspace: str | None = None,
         promote_labels: bool = False,
@@ -394,7 +396,17 @@ class SessionsGraph:
 
         Args:
             session_id: Session to reconcile.
-            lightrag_wrapper: An initialised ``MemgraphLightRAGWrapper``.
+            lightrag_wrapper: An initialised ``MemgraphLightRAGWrapper``. Always
+                required, even when ``extraction_backend`` overrides entity
+                extraction to a different backend: the narrative summary above
+                is always produced via this wrapper's own LLM
+                (``summarize_session_texts``), since summarization is a
+                generative task no non-LLM backend (e.g. GLiNER2) can do.
+            extraction_backend: Overrides what runs entity extraction, for a
+                backend other than LightRAG (e.g. ``GLiNER2Backend``).
+                Defaults to ``LightRAGBackend(lightrag_wrapper)`` -- the
+                original, only behavior before this parameter existed -- so
+                every existing caller is unaffected.
             actions_graph: An ``ActionsGraph`` instance sharing this graph's
                 Memgraph connection. Constructed automatically if omitted.
             entity_workspace: Passed through to ``unstructured2graph.from_texts``.
@@ -469,7 +481,7 @@ class SessionsGraph:
                 grouped_chunks = await from_texts(
                     [prepared.combined_text],
                     memgraph=self._db,
-                    extraction_backend=LightRAGBackend(lightrag_wrapper),
+                    extraction_backend=extraction_backend or LightRAGBackend(lightrag_wrapper),
                     entity_workspace=entity_workspace,
                     promote_labels=promote_labels,
                     enforce_ontology=enforce_ontology,

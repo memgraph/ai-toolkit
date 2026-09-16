@@ -201,6 +201,36 @@ async def test_reconcile_session_success_marks_completed_and_links_chunks(graph,
 
 
 @pytest.mark.asyncio
+async def test_reconcile_session_extraction_backend_override_replaces_the_lightrag_default(graph, actions_graph):
+    """A non-LightRAG backend (e.g. GLiNER2Backend) must reach from_texts as-is,
+    not get wrapped in LightRAGBackend(lightrag_wrapper) -- the default that
+    applies only when extraction_backend is omitted."""
+    from actions_graph import Session
+
+    actions_graph.create_session(Session(session_id="s-1"))
+    actions_graph.record_message(
+        session_id="s-1", role=MessageRole.ASSISTANT, content="Alice works on the graph engine."
+    )
+    lightrag_wrapper = _fake_lightrag_wrapper()
+    fake_backend = MagicMock()
+
+    fake_chunk = Chunk(text="Alice works on the graph engine.", hash=content_hash("Alice works on the graph engine."))
+    with patch("unstructured2graph.from_texts", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_texts:
+        summary = await graph.reconcile_session(
+            "s-1",
+            lightrag_wrapper=lightrag_wrapper,
+            extraction_backend=fake_backend,
+            actions_graph=actions_graph,
+        )
+
+    assert summary.status == "completed"
+    assert mock_from_texts.call_args.kwargs["extraction_backend"] is fake_backend
+    # Narrative summarization still runs via lightrag_wrapper's own LLM --
+    # entity extraction and summarization are decoupled, not both replaced.
+    lightrag_wrapper.get_lightrag.return_value.llm_model_func.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_reconcile_session_writes_episode_from_dedicated_llm_call(graph, memgraph, actions_graph):
     from actions_graph import Session
 

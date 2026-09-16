@@ -95,6 +95,17 @@ def test_runs_using_different_agent_models_are_refused():
         compare(baseline, candidate)
 
 
+def test_runs_using_different_extraction_backends_are_refused():
+    """A LightRAG-built and a GLiNER2-built graph are different systems under
+    test -- comparing across them would measure the backend swap as though it
+    were the retrieval/schema change under test."""
+    baseline = _run(_meta(extraction_backend="lightrag"), [_scored("q1")])
+    candidate = _run(_meta(extraction_backend="gliner2"), [_scored("q1")])
+
+    with pytest.raises(ValueError, match="extraction backend"):
+        compare(baseline, candidate)
+
+
 def test_runs_over_different_numbers_of_questions_are_refused():
     """Coverage is reported as a rate, so a 20-question baseline and a
     60-question candidate yield comparable-looking percentages over different

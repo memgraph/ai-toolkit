@@ -5,7 +5,8 @@ Not e2e: these don't touch Memgraph or an LLM.
 """
 
 import os
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from context_graph_eval.reconcile import _resolve_reconciliation_tuning, reconcile_batch
@@ -53,3 +54,73 @@ async def test_reconcile_batch_rejects_non_positive_sessions_per_call():
         await reconcile_batch(db, sessions_per_call=-5)
 
     db.query.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_batch_rejects_an_unknown_extraction_backend():
+    db = MagicMock()
+
+    with pytest.raises(ValueError, match="extraction_backend"):
+        await reconcile_batch(db, extraction_backend="anthropic")
+
+    db.query.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_batch_gliner2_mode_reconciles_one_session_at_a_time():
+    """No batch/queue pipeline exists for a backend with no shared busy-lock
+    to fan out over -- gliner2 mode must go through reconcile_session, not
+    reconcile_sessions_batch (map #322's pipeline is LightRAG-specific)."""
+    db = MagicMock()
+    db.query.return_value = [{"session_id": "s-1"}, {"session_id": "s-2"}]
+    lightrag_wrapper = MagicMock()
+    fake_backend = MagicMock()
+
+    fake_graph = MagicMock()
+    fake_graph.reconcile_session = AsyncMock(
+        side_effect=lambda session_id, **_: SimpleNamespace(session_id=session_id, status="completed", error=None)
+    )
+    fake_graph.reconcile_sessions_batch = AsyncMock()
+
+    with (
+        patch("sessions_graph.SessionsGraph", return_value=fake_graph),
+        patch("unstructured2graph.gliner2_backend.GLiNER2Backend", return_value=fake_backend),
+    ):
+        outcome = await reconcile_batch(
+            db,
+            memgraph_url="bolt://fake:7687",
+            lightrag_wrapper=lightrag_wrapper,
+            extraction_backend="gliner2",
+            progress=False,
+        )
+
+    assert outcome.reconciled == 2
+    assert fake_graph.reconcile_session.await_count == 2
+    fake_graph.reconcile_session.assert_any_await(
+        "s-1", lightrag_wrapper=lightrag_wrapper, extraction_backend=fake_backend, enforce_ontology=True
+    )
+    fake_graph.reconcile_sessions_batch.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_batch_lightrag_mode_still_uses_the_batch_pipeline():
+    """Regression guard alongside the gliner2 test above: the default path
+    must be untouched by extraction_backend's introduction."""
+    db = MagicMock()
+    db.query.return_value = [{"session_id": "s-1"}]
+    lightrag_wrapper = MagicMock()
+
+    fake_graph = MagicMock()
+    fake_graph.reconcile_sessions_batch = AsyncMock(
+        return_value=[SimpleNamespace(session_id="s-1", status="completed", error=None)]
+    )
+    fake_graph.reconcile_session = AsyncMock()
+
+    with patch("sessions_graph.SessionsGraph", return_value=fake_graph):
+        outcome = await reconcile_batch(
+            db, memgraph_url="bolt://fake:7687", lightrag_wrapper=lightrag_wrapper, progress=False
+        )
+
+    assert outcome.reconciled == 1
+    fake_graph.reconcile_sessions_batch.assert_awaited_once()
+    fake_graph.reconcile_session.assert_not_called()
