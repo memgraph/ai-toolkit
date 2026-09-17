@@ -245,7 +245,7 @@ def _gold_slice(args) -> int:
 
 
 def _calibrate(args) -> int:
-    from .calibrate import describe, describe_stability
+    from .calibrate import describe, describe_per_question_rates, describe_stability, per_question_pass_rate
     from .report import load_run
 
     runs = [load_run(path) for path in args.runs]
@@ -261,13 +261,20 @@ def _calibrate(args) -> int:
         return 1
 
     rates = [sum(1 for s in run.scored if s.covered) / len(run.scored) for run in runs if run.scored]
+    passing_sets = [{s.name for s in run.scored if s.covered} for run in runs]
+    all_names = {s.name for run in runs for s in run.scored}
     try:
         print(describe(rates))
         # Printed with the floor, never instead of it: a tight floor over an
         # unstable passing set is the misleading case, and only this line makes
         # it visible.
         print()
-        print(describe_stability([{s.name for s in run.scored if s.covered} for run in runs]))
+        print(describe_stability(passing_sets))
+        # Names which specific questions are flaky, rather than only the
+        # aggregate count above -- #324: a coverage flip on one of these is
+        # noise the judge would have produced anyway, not a regression.
+        print()
+        print(describe_per_question_rates(per_question_pass_rate(passing_sets, all_names)))
     except ValueError as exc:
         print(f"refusing to calibrate: {exc}", file=sys.stderr)
         return 1

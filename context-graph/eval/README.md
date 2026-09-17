@@ -430,7 +430,14 @@ The loop reliably finds problems; it cannot yet **rank** two versions.
 - **The passing set is unstable.** Three repeats against an identical graph, at
   `temperature=0` throughout, gave `0 of 6` questions passing in all three, with
   two runs' passing sets entirely disjoint. The coverage rate looked steady
-  (15%, 10%, 15%) while the questions beneath it churned completely.
+  (15%, 10%, 15%) while the questions beneath it churned completely. Root
+  cause, confirmed directly (#324): not the judge -- a fixed test case scored
+  by the same judge repeatedly is perfectly stable -- but the retrieval
+  agent's own Cypher-query generation, which is not deterministic even at
+  `temperature=0` (a documented limitation of hosted LLM APIs). That changes
+  `retrieval_context`'s content and literal rendering run to run against the
+  exact same frozen graph, which flips `ContextualRecallMetric` even when the
+  final answer text never changes.
 - **The noise floor is most of the signal** — ±5pp against a ~13% mean.
 - **The memory tier is ~14:1 assistant-sourced.** Assistant turns contain far
   more nameable things than user turns, so entity extraction is dominated by
@@ -438,9 +445,12 @@ The loop reliably finds problems; it cannot yet **rank** two versions.
   about user facts.
 - **Tier 2 has one question.**
 
-`calibrate` reports set stability alongside the floor, and `compare` refuses to
-report an efficiency delta when the two runs share no passing question — both
-exist because the aggregate alone hid these.
+`calibrate` reports set stability alongside the floor, and now each
+question's own pass rate across the repeats -- naming the specific flaky
+ones, since the aggregate ratio alone cannot tell a question that always
+fails from one that passes half the time. `compare` refuses to report an
+efficiency delta when the two runs share no passing question. All three
+exist because the aggregate alone hid what was actually happening.
 
 The `oracle` variant is refused: it ships evidence sessions only, so retrieval
 faces no distractors and both precision and payload-size efficiency would score
