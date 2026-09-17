@@ -12,7 +12,7 @@ scoring one.
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
     from memgraph_toolbox.api.memgraph import Memgraph
@@ -191,8 +191,24 @@ def pending_sessions(db: "Memgraph", limit: int | None = None) -> list[str]:
 #: set rather than an arbitrary ExtractionBackend instance, unlike #329's
 #: judge/agent model resolution: the two backends need different reconciling
 #: strategies below (batch/queue vs one-at-a-time), not just a different
-#: object handed to the same call.
-EXTRACTION_BACKENDS = ("lightrag", "gliner2")
+#: object handed to the same call. A Literal, not a bare str, so a typo in a
+#: RunPlan/RunMeta construction is a type error rather than a runtime
+#: ValueError three calls later.
+ExtractionBackendName = Literal["lightrag", "gliner2"]
+EXTRACTION_BACKENDS: tuple[ExtractionBackendName, ...] = ("lightrag", "gliner2")
+
+#: The extraction-backend class name SessionsGraph._write_completed persists
+#: on each Session node it successfully extracts entities for (see
+#: sessions_graph.core.reconcile_session/reconcile_sessions_batch), keyed by
+#: this module's own short name. Ground truth for
+#: context_graph_eval.runner._require_reconciled to check a --skip-reconcile
+#: reuse against -- added after a real bug where reusing a LightRAG-built
+#: graph with --extraction-backend gliner2 recorded "gliner2" in RunMeta
+#: despite every entity in the graph coming from LightRAG.
+BACKEND_CLASS_NAMES: dict[ExtractionBackendName, str] = {
+    "lightrag": "LightRAGBackend",
+    "gliner2": "GLiNER2Backend",
+}
 
 
 async def reconcile_batch(
@@ -202,7 +218,7 @@ async def reconcile_batch(
     memgraph_url: str | None = None,
     working_dir: str = DEFAULT_WORKING_DIR,
     lightrag_wrapper: Any = None,
-    extraction_backend: str = "lightrag",
+    extraction_backend: ExtractionBackendName = "lightrag",
     progress: bool = True,
     sessions_per_call: int = 20,
 ) -> Reconciled:
@@ -310,6 +326,23 @@ async def reconcile_batch(
 
     reconciled = 0
     errors: list[str] = []
+
+    def _tally(summaries: list) -> None:
+        """Shared result accounting for both branches below -- only how they
+        call reconcile (one session vs one shared batch call) differs."""
+        nonlocal reconciled
+        for summary in summaries:
+            if summary.status == "completed":
+                reconciled += 1
+            else:
+                errors.append(f"{summary.session_id}: {summary.error}")
+
+    def _report(done: int) -> None:
+        # Silent until done is indistinguishable from hung, which is how two
+        # runs were abandoned without knowing whether they were progressing.
+        if progress:
+            print(f"  reconciled {done}/{len(session_ids)} ({reconciled} ok, {len(errors)} failed)", flush=True)
+
     try:
         if gliner2_backend is not None:
             # One session at a time (see docstring): there is no batch/queue
@@ -322,15 +355,8 @@ async def reconcile_batch(
                     extraction_backend=gliner2_backend,
                     enforce_ontology=True,
                 )
-                if summary.status == "completed":
-                    reconciled += 1
-                else:
-                    errors.append(f"{summary.session_id}: {summary.error}")
-                if progress:
-                    print(
-                        f"  reconciled {index}/{len(session_ids)} ({reconciled} ok, {len(errors)} failed)",
-                        flush=True,
-                    )
+                _tally([summary])
+                _report(index)
         else:
             for start in range(0, len(session_ids), sessions_per_call):
                 chunk = session_ids[start : start + sessions_per_call]
@@ -339,23 +365,11 @@ async def reconcile_batch(
                     lightrag_wrapper=lightrag_wrapper,
                     enforce_ontology=True,
                 )
-                for summary in summaries:
-                    if summary.status == "completed":
-                        reconciled += 1
-                    else:
-                        errors.append(f"{summary.session_id}: {summary.error}")
-
-                # Printed per chunk, not per session: this loop still runs
+                _tally(summaries)
+                # Reported per chunk, not per session: this loop still runs
                 # sequentially call-to-call, so a big batch runs for many
-                # minutes. Silent until done is indistinguishable from hung,
-                # which is how two runs were abandoned without knowing
-                # whether they were progressing.
-                if progress:
-                    done = start + len(chunk)
-                    print(
-                        f"  reconciled {done}/{len(session_ids)} ({reconciled} ok, {len(errors)} failed)",
-                        flush=True,
-                    )
+                # minutes.
+                _report(start + len(chunk))
     finally:
         if owns_wrapper:
             finalize = getattr(lightrag_wrapper, "finalize", None)

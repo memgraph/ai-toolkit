@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from .convert.longmemeval import to_session_fixtures
 from .inject import PENDING, inject_batch
-from .reconcile import reconcile_batch
+from .reconcile import BACKEND_CLASS_NAMES, ExtractionBackendName, reconcile_batch
 from .retrieval import ReadOnlyGraph, Retrieved, retrieve
 from .scoring import (
     DEFAULT_COVERAGE_THRESHOLD,
@@ -71,7 +71,7 @@ class RunPlan:
     memgraph_url: str | None = None
     #: "lightrag" (default) or "gliner2" -- see reconcile.EXTRACTION_BACKENDS
     #: and reconcile_batch's docstring for what each implies.
-    extraction_backend: str = "lightrag"
+    extraction_backend: ExtractionBackendName = "lightrag"
 
 
 @dataclass(frozen=True)
@@ -84,12 +84,12 @@ class BatchReport:
     reconcile_failures: int = 0
 
 
-def _require_reconciled(fixtures: list, *, graph: "ActionsGraph") -> None:
+def _require_reconciled(fixtures: list, *, graph: "ActionsGraph", extraction_backend: ExtractionBackendName) -> None:
     """Refuse to reuse a graph that cannot answer the questions about to be run.
 
     Reuse exists to skip the dominant cost (#322), but it hands the run a graph
-    nobody just built, so the two ways it can be wrong are both silent. Either
-    would score every affected question as a recall miss and report it as an
+    nobody just built, so the ways it can be wrong are all silent. Each would
+    score every affected question as a recall miss and report it as an
     ordinary result -- the same manufactured-zero shape as abstention questions
     judged on ContextualRecall, or a judge outage rendered as 0%.
 
@@ -98,6 +98,15 @@ def _require_reconciled(fixtures: list, *, graph: "ActionsGraph") -> None:
     Present but unreconciled: injection ran without distillation, so there is no
     Chunk, Episode or entity to retrieve -- only the raw collection tier, which
     is a different system from the one under test.
+
+    Reconciled by a different backend: ``extraction_backend`` names what this
+    run is *claiming* built the graph (recorded on ``RunMeta`` so ``compare()``
+    can refuse across a mismatch), but ``--skip-reconcile`` never actually
+    builds anything -- without this check the claim was trusted, not verified.
+    A LightRAG-built graph reused with ``--extraction-backend gliner2`` would
+    silently save "gliner2" in ``RunMeta`` despite every entity in the graph
+    coming from LightRAG, letting two runs that used the same real backend
+    compare as a mismatch, or two that didn't compare as identical.
     """
     wanted = {fixture.session_id for fixture in fixtures}
     if not wanted:
@@ -105,10 +114,11 @@ def _require_reconciled(fixtures: list, *, graph: "ActionsGraph") -> None:
 
     rows = graph.db.query(
         "MATCH (s:Session) WHERE s.session_id IN $ids "
-        "RETURN s.session_id AS session_id, s.reconciliation_status AS status",
+        "RETURN s.session_id AS session_id, s.reconciliation_status AS status, "
+        "s.extraction_backend AS extraction_backend",
         {"ids": sorted(wanted)},
     )
-    found = {row["session_id"]: row["status"] for row in rows}
+    found = {row["session_id"]: row for row in rows}
 
     missing = sorted(wanted - set(found))
     if missing:
@@ -117,12 +127,31 @@ def _require_reconciled(fixtures: list, *, graph: "ActionsGraph") -> None:
             f"not in it (e.g. {missing[:3]}). Run once without --skip-reconcile first."
         )
 
-    pending = sorted(sid for sid, status in found.items() if status == PENDING)
+    pending = sorted(sid for sid, row in found.items() if row["status"] == PENDING)
     if pending:
         raise ValueError(
             f"cannot reuse the graph: {len(pending)} of {len(wanted)} sessions are still pending "
             f"reconciliation (e.g. {pending[:3]}), so there is no distilled memory to retrieve "
             "from -- only the raw collection tier. Run once without --skip-reconcile first."
+        )
+
+    # None (no reconcilable content, or a graph built before this property
+    # existed) is not attributable to any backend -- excluded rather than
+    # treated as a mismatch, the same reasoning enforce_retrieval_floor's
+    # abstention exemption and aggregate()'s unscored rows already use
+    # elsewhere in this package for "not applicable" vs. "wrong".
+    expected_label = BACKEND_CLASS_NAMES[extraction_backend]
+    mismatched = sorted(
+        sid
+        for sid, row in found.items()
+        if row["extraction_backend"] is not None and row["extraction_backend"] != expected_label
+    )
+    if mismatched:
+        raise ValueError(
+            f"cannot reuse the graph: {len(mismatched)} of {len(wanted)} sessions were reconciled with a "
+            f"different extraction backend than --extraction-backend={extraction_backend!r} claims "
+            f"(e.g. {mismatched[:3]}). Run once without --skip-reconcile to rebuild the graph with this "
+            "backend, or pass the backend that actually built it."
         )
 
 
@@ -174,7 +203,7 @@ async def run_batch(
         for fixture in to_session_fixtures(record, max_sessions=plan.max_sessions_per_question)
     ]
     if plan.reuse_graph:
-        _require_reconciled(fixtures, graph=graph)
+        _require_reconciled(fixtures, graph=graph, extraction_backend=plan.extraction_backend)
     else:
         inject_batch(fixtures, graph=graph)
 

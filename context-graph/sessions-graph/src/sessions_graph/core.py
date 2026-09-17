@@ -318,19 +318,35 @@ class SessionsGraph:
             unique_texts.setdefault(content_hash(source.text), source.text)
         return _PreparedSession(session_id=session_id, sources=sources, unique_texts=unique_texts)
 
-    def _write_completed(self, session_id: str, *, summary_text: str | None) -> str:
+    def _write_completed(
+        self, session_id: str, *, summary_text: str | None, extraction_backend: str | None = None
+    ) -> str:
         """Mark *session_id* completed and, if a narrative summary was
         produced, MERGE its Episode -- both stamped with the SAME timestamp,
         computed here at actual completion time (not earlier, e.g. when a
         batch started), so ``reconciled_at``/``summarized_at`` reflect when
-        this specific session actually finished. Returns that timestamp."""
+        this specific session actually finished. Returns that timestamp.
+
+        ``extraction_backend`` records which backend's class
+        (``type(backend).__name__``, e.g. ``"LightRAGBackend"``,
+        ``"GLiNER2Backend"``) actually extracted this session's entities --
+        ``None`` when nothing was extracted (no reconcilable content), which
+        is a real, distinct state from "extracted by an unknown backend", not
+        an omission. This is the ground truth a caller comparing runs across
+        a reused graph needs to check before trusting which backend actually
+        built it -- see ``context_graph_eval.runner._require_reconciled``,
+        added after a real bug where ``--skip-reconcile
+        --extraction-backend gliner2`` against a LightRAG-built graph
+        recorded ``gliner2`` in ``RunMeta`` despite every entity in the graph
+        coming from LightRAG."""
         reconciled_at = datetime.now(timezone.utc).isoformat()
         self._db.query(
             """
             MATCH (s:Session {session_id: $session_id})
-            SET s.reconciliation_status = 'completed', s.reconciled_at = $reconciled_at
+            SET s.reconciliation_status = 'completed', s.reconciled_at = $reconciled_at,
+                s.extraction_backend = $extraction_backend
             """,
-            params={"session_id": session_id, "reconciled_at": reconciled_at},
+            params={"session_id": session_id, "reconciled_at": reconciled_at, "extraction_backend": extraction_backend},
         )
         if summary_text:
             # MERGE on the (Session)-[:HAS_EPISODE]->(Episode) pattern (not just CREATE)
@@ -373,9 +389,11 @@ class SessionsGraph:
         Pulls all reconcilable Message/ToolCall/ToolResult text recorded for
         *session_id* in Actions Graph, plus this session's Memories, dedupes
         by content hash, and runs the result through unstructured2graph's
-        chunk + LightRAG entity-extraction pipeline. Resulting Chunk nodes are
-        linked back to their source Action/Memory node via ``HAS_CHUNK`` so
-        entities trace back to the session that produced them.
+        chunk + entity-extraction pipeline -- LightRAG by default, or
+        whatever ``extraction_backend`` overrides it to (e.g. GLiNER2).
+        Resulting Chunk nodes are linked back to their source Action/Memory
+        node via ``HAS_CHUNK`` so entities trace back to the session that
+        produced them.
 
         This same pass also produces the session's episodic memory: an
         ``(:Episode {summary, summarized_at})`` node linked from the session
@@ -452,6 +470,7 @@ class SessionsGraph:
 
         try:
             summary_text: str | None = None
+            used_backend: str | None = None
             if prepared.unique_texts:
                 # The whole session's deduped texts as ONE document, not one
                 # per turn. A turn is still never split mid-utterance (that's
@@ -478,21 +497,23 @@ class SessionsGraph:
                 # the win is real but modest -- measured on 5 real sessions,
                 # 106 -> 70 extraction+gleaning calls (1.51x), not the 4x+ a
                 # naive CHUNK_SIZE=1200 assumption would predict.
+                backend = extraction_backend or LightRAGBackend(lightrag_wrapper)
                 grouped_chunks = await from_texts(
                     [prepared.combined_text],
                     memgraph=self._db,
-                    extraction_backend=extraction_backend or LightRAGBackend(lightrag_wrapper),
+                    extraction_backend=backend,
                     entity_workspace=entity_workspace,
                     promote_labels=promote_labels,
                     enforce_ontology=enforce_ontology,
                     ontology_path=ontology_path,
                     chunk_kwargs={"max_characters": MAX_SESSION_BATCH_CHARS},
                 )
+                used_backend = type(backend).__name__
                 session_chunks = grouped_chunks[0] if grouped_chunks else []
                 self._link_chunks_to_sources(prepared.sources, session_chunks)
                 summary_text = await summarize_session_texts(lightrag_wrapper, list(prepared.unique_texts.values()))
 
-            self._write_completed(session_id, summary_text=summary_text)
+            self._write_completed(session_id, summary_text=summary_text, extraction_backend=used_backend)
             return ReconciliationSummary(
                 session_id=session_id,
                 status="completed",
@@ -629,7 +650,7 @@ class SessionsGraph:
         for p in prepared:
             if p.unique_texts:
                 continue
-            self._write_completed(p.session_id, summary_text=None)
+            self._write_completed(p.session_id, summary_text=None, extraction_backend=None)
             results[p.session_id] = ReconciliationSummary(
                 session_id=p.session_id, status="completed", texts_considered=len(p.sources), texts_deduped=0
             )
@@ -703,7 +724,13 @@ class SessionsGraph:
                     summary_text = await summarize_session_texts(
                         lightrag_wrapper, list(prepared_session.unique_texts.values())
                     )
-                self._write_completed(prepared_session.session_id, summary_text=summary_text)
+                # Literal, not type(...).__name__: this whole method only ever
+                # drives LightRAG's enqueue/process pipeline (map #322), so
+                # there is no backend instance here to introspect -- unlike
+                # reconcile_session, which accepts an arbitrary one.
+                self._write_completed(
+                    prepared_session.session_id, summary_text=summary_text, extraction_backend="LightRAGBackend"
+                )
                 results[prepared_session.session_id] = ReconciliationSummary(
                     session_id=prepared_session.session_id,
                     status="completed",

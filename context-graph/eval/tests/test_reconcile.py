@@ -1,15 +1,15 @@
-"""Tests for reconcile.py's environment-tuning helpers and reconcile_batch's
-own validation.
-
-Not e2e: these don't touch Memgraph or an LLM.
+"""Tests for reconcile.py's environment-tuning helpers, reconcile_batch's own
+validation, and (real Memgraph, stubbed/faked LLM boundary, no OPENAI_API_KEY
+needed) which reconciliation strategy each extraction_backend drives.
 """
 
 import os
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import cast
+from unittest.mock import MagicMock, patch
 
 import pytest
-from context_graph_eval.reconcile import _resolve_reconciliation_tuning, reconcile_batch
+from conftest import EVAL_MEMGRAPH_URL
+from context_graph_eval.reconcile import ExtractionBackendName, _resolve_reconciliation_tuning, reconcile_batch
 
 
 def test_sets_a_looser_merge_threshold_when_unset(monkeypatch):
@@ -84,69 +84,142 @@ async def test_reconcile_batch_rejects_non_positive_sessions_per_call():
 
 @pytest.mark.asyncio
 async def test_reconcile_batch_rejects_an_unknown_extraction_backend():
+    """The Literal type catches this at the call sites we control; this
+    guards the runtime path for a value that reached here anyway (a stale
+    saved value, an env var, anything outside static analysis) -- hence the
+    explicit cast, not a type error, to construct that value here."""
     db = MagicMock()
 
     with pytest.raises(ValueError, match="extraction_backend"):
-        await reconcile_batch(db, extraction_backend="anthropic")
+        await reconcile_batch(db, extraction_backend=cast("ExtractionBackendName", "anthropic"))
 
     db.query.assert_not_called()
 
 
+# --- Real SessionsGraph/ActionsGraph/Memgraph below (testing policy: prefer
+# a real instance of another package's class over a hand-rolled fake -- a
+# fake SessionsGraph proved nothing about whether reconcile_batch actually
+# drives the real batch pipeline, or the real per-session one, correctly).
+# Only the LLM boundary is stubbed (free, deterministic, unstructured2graph's
+# own established pattern) and GLiNER2's underlying model is faked via the
+# class's own documented no-gliner2-install escape hatch -- neither needs
+# OPENAI_API_KEY or a real `gliner2` install.
+
+
+async def _stub_no_entities(prompt, system_prompt=None, history_messages=None, **kwargs):
+    """A minimal, valid LightRAG extraction response meaning "nothing found"."""
+    return "<|COMPLETE|>"
+
+
+class _FakeGLiNER2Schema:
+    """Mirrors gliner2's real chainable schema builder -- see
+    unstructured2graph/tests/test_gliner2_backend.py's own _FakeSchema, which
+    established this as GLiNER2Backend's supported way to run without the
+    real `gliner2` package."""
+
+    def entities(self, schema):
+        return self
+
+    def relations(self, schema):
+        return self
+
+
+class _FakeGLiNER2Model:
+    def create_schema(self):
+        return _FakeGLiNER2Schema()
+
+    def extract_long(self, text, schema, **kwargs):
+        return {"entities": {}}
+
+
+def _one_session_fixture(session_id: str):
+    from context_graph_eval.convert.longmemeval import SessionFixture, Turn
+
+    return SessionFixture(
+        session_id=session_id,
+        date="2023/05/20 (Sat) 14:03",
+        turns=[Turn(role="user", content=f"I adopted a beagle named Max, in {session_id}")],
+        holds_evidence=True,
+    )
+
+
+def _session_row(eval_graph, session_id: str) -> dict:
+    rows = eval_graph._db.query(
+        "MATCH (s:Session {session_id: $id}) RETURN s.reconciliation_status AS status, "
+        "s.extraction_backend AS extraction_backend",
+        {"id": session_id},
+    )
+    return rows[0]
+
+
 @pytest.mark.asyncio
-async def test_reconcile_batch_gliner2_mode_reconciles_one_session_at_a_time():
+async def test_reconcile_batch_gliner2_mode_reconciles_one_session_at_a_time(eval_graph, monkeypatch):
     """No batch/queue pipeline exists for a backend with no shared busy-lock
     to fan out over -- gliner2 mode must go through reconcile_session, not
     reconcile_sessions_batch (map #322's pipeline is LightRAG-specific)."""
-    db = MagicMock()
-    db.query.return_value = [{"session_id": "s-1"}, {"session_id": "s-2"}]
-    lightrag_wrapper = MagicMock()
-    fake_backend = MagicMock()
+    from context_graph_eval.inject import inject_batch
 
-    fake_graph = MagicMock()
-    fake_graph.reconcile_session = AsyncMock(
-        side_effect=lambda session_id, **_: SimpleNamespace(session_id=session_id, status="completed", error=None)
-    )
-    fake_graph.reconcile_sessions_batch = AsyncMock()
+    from lightrag_memgraph import MemgraphLightRAGWrapper
 
-    with (
-        patch("sessions_graph.SessionsGraph", return_value=fake_graph),
-        patch("unstructured2graph.gliner2_backend.GLiNER2Backend", return_value=fake_backend),
-    ):
-        outcome = await reconcile_batch(
-            db,
-            memgraph_url="bolt://fake:7687",
-            lightrag_wrapper=lightrag_wrapper,
-            extraction_backend="gliner2",
-            progress=False,
-        )
+    inject_batch([_one_session_fixture("s-1"), _one_session_fixture("s-2")], graph=eval_graph)
+
+    # LightRAG's Memgraph storage backend reads this at construction time,
+    # before reconcile_batch itself sets it -- needed regardless of
+    # extraction_backend, since the summarization LLM call still goes
+    # through this same wrapper either way.
+    monkeypatch.setenv("MEMGRAPH_URL", EVAL_MEMGRAPH_URL)
+    wrapper = MemgraphLightRAGWrapper()
+    await wrapper.initialize(working_dir="./lightrag_storage.test_reconcile_gliner2", llm_model_func=_stub_no_entities)
+
+    # Imported before patching: a lookup done *while* the patch is active
+    # would resolve to the mock itself, calling it recursively.
+    from unstructured2graph.gliner2_backend import GLiNER2Backend as RealGLiNER2Backend
+
+    def _fake_gliner2_backend():
+        return RealGLiNER2Backend(model=_FakeGLiNER2Model())
+
+    try:
+        with patch("unstructured2graph.gliner2_backend.GLiNER2Backend", side_effect=_fake_gliner2_backend):
+            outcome = await reconcile_batch(
+                eval_graph._db,
+                memgraph_url=EVAL_MEMGRAPH_URL,
+                lightrag_wrapper=wrapper,
+                extraction_backend="gliner2",
+                progress=False,
+            )
+    finally:
+        await wrapper.afinalize()
 
     assert outcome.reconciled == 2
-    assert fake_graph.reconcile_session.await_count == 2
-    fake_graph.reconcile_session.assert_any_await(
-        "s-1", lightrag_wrapper=lightrag_wrapper, extraction_backend=fake_backend, enforce_ontology=True
-    )
-    fake_graph.reconcile_sessions_batch.assert_not_called()
+    assert outcome.failed == 0
+    for session_id in ("s-1", "s-2"):
+        row = _session_row(eval_graph, session_id)
+        assert row["status"] == "completed"
+        assert row["extraction_backend"] == "GLiNER2Backend"
 
 
 @pytest.mark.asyncio
-async def test_reconcile_batch_lightrag_mode_still_uses_the_batch_pipeline():
+async def test_reconcile_batch_lightrag_mode_still_uses_the_batch_pipeline(eval_graph, monkeypatch):
     """Regression guard alongside the gliner2 test above: the default path
     must be untouched by extraction_backend's introduction."""
-    db = MagicMock()
-    db.query.return_value = [{"session_id": "s-1"}]
-    lightrag_wrapper = MagicMock()
+    from context_graph_eval.inject import inject_batch
 
-    fake_graph = MagicMock()
-    fake_graph.reconcile_sessions_batch = AsyncMock(
-        return_value=[SimpleNamespace(session_id="s-1", status="completed", error=None)]
-    )
-    fake_graph.reconcile_session = AsyncMock()
+    from lightrag_memgraph import MemgraphLightRAGWrapper
 
-    with patch("sessions_graph.SessionsGraph", return_value=fake_graph):
+    inject_batch([_one_session_fixture("s-1")], graph=eval_graph)
+
+    monkeypatch.setenv("MEMGRAPH_URL", EVAL_MEMGRAPH_URL)
+    wrapper = MemgraphLightRAGWrapper()
+    await wrapper.initialize(working_dir="./lightrag_storage.test_reconcile_lightrag", llm_model_func=_stub_no_entities)
+
+    try:
         outcome = await reconcile_batch(
-            db, memgraph_url="bolt://fake:7687", lightrag_wrapper=lightrag_wrapper, progress=False
+            eval_graph._db, memgraph_url=EVAL_MEMGRAPH_URL, lightrag_wrapper=wrapper, progress=False
         )
+    finally:
+        await wrapper.afinalize()
 
     assert outcome.reconciled == 1
-    fake_graph.reconcile_sessions_batch.assert_awaited_once()
-    fake_graph.reconcile_session.assert_not_called()
+    row = _session_row(eval_graph, "s-1")
+    assert row["status"] == "completed"
+    assert row["extraction_backend"] == "LightRAGBackend"
