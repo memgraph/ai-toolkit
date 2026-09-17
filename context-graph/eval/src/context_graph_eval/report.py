@@ -52,6 +52,11 @@ class RunMeta:
     #: it), just never a silent one. Defaults to False for runs saved before
     #: this field existed, which were always cross-provider by construction.
     same_provider: bool = False
+    #: "lightrag" or "gliner2" -- see reconcile.EXTRACTION_BACKENDS. Defaults
+    #: to "lightrag" for runs saved before this field existed, which is what
+    #: every one of them actually used (GLiNER2 wasn't reachable from this
+    #: CLI until this field was added).
+    extraction_backend: str = "lightrag"
 
 
 @dataclass(frozen=True)
@@ -116,6 +121,10 @@ def compare(baseline: SavedRun, candidate: SavedRun, noise_floor_pp: float | Non
     # this comparison silently ran across two agent models with nothing to
     # say so, the same failure mode the other refusals here exist to prevent.
     _require_same(baseline.meta, candidate.meta, "agent_model", "agent model")
+    # A LightRAG-built and a GLiNER2-built graph are different systems under
+    # test -- comparing across them would measure the backend swap as though
+    # it were the schema/retrieval change under test.
+    _require_same(baseline.meta, candidate.meta, "extraction_backend", "extraction backend")
     _require_same(baseline.meta, candidate.meta, "tokenizer", "tokenizer")
     # Question count too: coverage is reported as a rate, so a 20-question
     # baseline and a 60-question candidate produce comparable-looking
@@ -214,7 +223,8 @@ def render(comparison: Comparison) -> str:
     meta = comparison.candidate
     lines = [
         f"context-graph eval - {meta.label} vs {comparison.baseline.label}",
-        f"corpus longmemeval-{meta.corpus_variant}@{meta.corpus_revision} ({meta.questions}q)",
+        f"corpus longmemeval-{meta.corpus_variant}@{meta.corpus_revision} ({meta.questions}q) "
+        f"- extraction {meta.extraction_backend}",
         f"judge {meta.judge_model} | agent {meta.agent_model} - tok {meta.tokenizer}",
         "",
         f"VERDICT  {comparison.verdict.value}",

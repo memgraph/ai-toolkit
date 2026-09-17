@@ -12,7 +12,7 @@ scoring one.
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
     from memgraph_toolbox.api.memgraph import Memgraph
@@ -88,18 +88,37 @@ _EVAL_FORCE_LLM_SUMMARY_ON_MERGE = "30"
 _EVAL_MAX_PARALLEL_INSERT = "16"
 _EVAL_MAX_ASYNC_LLM = "16"
 
+#: LightRAG's embedding calls run through their OWN separate worker pool and
+#: concurrency limit (EMBEDDING_FUNC_MAX_ASYNC, LightRAG default 8) and their
+#: own timeout (EMBEDDING_TIMEOUT, LightRAG default 30s -> a 60s worker-kill,
+#: since the worker wraps it at 2x). Raising MAX_PARALLEL_INSERT above did
+#: nothing to fix this -- and made it worse: with up to 16 documents now
+#: in flight at once, up to 8 of them fire embedding calls concurrently, all
+#: against the SAME local CPU-bound bge-m3 model (#297/#331's eval-scoped
+#: embedder). A remote, rate-limited API scales with more concurrent
+#: requests; one shared local model on one CPU does not -- concurrent calls
+#: contend for the same resource instead of parallelizing, so throughput
+#: gets *worse*, not better, as concurrency rises. Measured live: 9 of 10
+#: sessions timed out here in one batch before these were tuned. Lowered
+#: rather than raised, unlike the LLM knobs above -- serializing embedding
+#: calls (2, not 8) is what a single local model can actually sustain, and
+#: the timeout is raised generously (120s) as headroom for however slow that
+#: serialized queue gets under this batch's real load, not a measured floor.
+_EVAL_EMBEDDING_FUNC_MAX_ASYNC = "2"
+_EVAL_EMBEDDING_TIMEOUT = "120"
+
 
 def _resolve_reconciliation_tuning() -> None:
     """Set eval-scoped LightRAG cost/concurrency knobs, without touching
     anyone else's default.
 
-    LightRAG reads ``FORCE_LLM_SUMMARY_ON_MERGE``, ``MAX_PARALLEL_INSERT``
-    and ``MAX_ASYNC_LLM`` once each, as dataclass field defaults evaluated
-    when ``lightrag.lightrag`` is first imported -- so this must run before
-    that happens (reconciliation's own ``unstructured2graph``/``lightrag``
-    imports are lazy, deferred until reconciliation actually starts, so
-    calling this from ``run``'s setup, or from ``reconcile_batch`` itself,
-    is early enough).
+    LightRAG reads ``FORCE_LLM_SUMMARY_ON_MERGE``, ``MAX_PARALLEL_INSERT``,
+    ``MAX_ASYNC_LLM``, ``EMBEDDING_FUNC_MAX_ASYNC`` and ``EMBEDDING_TIMEOUT``
+    once each, as dataclass field defaults evaluated when ``lightrag.lightrag``
+    is first imported -- so this must run before that happens (reconciliation's
+    own ``unstructured2graph``/``lightrag`` imports are lazy, deferred until
+    reconciliation actually starts, so calling this from ``run``'s setup, or
+    from ``reconcile_batch`` itself, is early enough).
 
     ``setdefault`` only: an operator's own exported value, or production
     sessions-graph reconciliation (which never sets any of these and keeps
@@ -110,6 +129,8 @@ def _resolve_reconciliation_tuning() -> None:
     os.environ.setdefault("FORCE_LLM_SUMMARY_ON_MERGE", _EVAL_FORCE_LLM_SUMMARY_ON_MERGE)
     os.environ.setdefault("MAX_PARALLEL_INSERT", _EVAL_MAX_PARALLEL_INSERT)
     os.environ.setdefault("MAX_ASYNC_LLM", _EVAL_MAX_ASYNC_LLM)
+    os.environ.setdefault("EMBEDDING_FUNC_MAX_ASYNC", _EVAL_EMBEDDING_FUNC_MAX_ASYNC)
+    os.environ.setdefault("EMBEDDING_TIMEOUT", _EVAL_EMBEDDING_TIMEOUT)
 
 
 #: `MemgraphLightRAGWrapper`'s own default (all-MiniLM-L6-v2, max_token_size
@@ -164,6 +185,32 @@ def pending_sessions(db: "Memgraph", limit: int | None = None) -> list[str]:
     return [row["session_id"] for row in db.query(query, {"status": PENDING})]
 
 
+#: Extraction backends reconcile_batch knows how to build. "lightrag" is the
+#: default, LLM-based backend every prior eval run has used; "gliner2" is the
+#: local, LLM-free alternative (unstructured2graph.gliner2_backend). A closed
+#: set rather than an arbitrary ExtractionBackend instance, unlike #329's
+#: judge/agent model resolution: the two backends need different reconciling
+#: strategies below (batch/queue vs one-at-a-time), not just a different
+#: object handed to the same call. A Literal, not a bare str, so a typo in a
+#: RunPlan/RunMeta construction is a type error rather than a runtime
+#: ValueError three calls later.
+ExtractionBackendName = Literal["lightrag", "gliner2"]
+EXTRACTION_BACKENDS: tuple[ExtractionBackendName, ...] = ("lightrag", "gliner2")
+
+#: The extraction-backend class name SessionsGraph._write_completed persists
+#: on each Session node it successfully extracts entities for (see
+#: sessions_graph.core.reconcile_session/reconcile_sessions_batch), keyed by
+#: this module's own short name. Ground truth for
+#: context_graph_eval.runner._require_reconciled to check a --skip-reconcile
+#: reuse against -- added after a real bug where reusing a LightRAG-built
+#: graph with --extraction-backend gliner2 recorded "gliner2" in RunMeta
+#: despite every entity in the graph coming from LightRAG.
+BACKEND_CLASS_NAMES: dict[ExtractionBackendName, str] = {
+    "lightrag": "LightRAGBackend",
+    "gliner2": "GLiNER2Backend",
+}
+
+
 async def reconcile_batch(
     db: "Memgraph",
     *,
@@ -171,6 +218,7 @@ async def reconcile_batch(
     memgraph_url: str | None = None,
     working_dir: str = DEFAULT_WORKING_DIR,
     lightrag_wrapper: Any = None,
+    extraction_backend: ExtractionBackendName = "lightrag",
     progress: bool = True,
     sessions_per_call: int = 20,
 ) -> Reconciled:
@@ -206,13 +254,30 @@ async def reconcile_batch(
     simply empty (silently reporting "nothing to do" while sessions sit
     pending, never touched), and with 0 it raises ``ValueError`` from deep
     inside ``range()`` rather than from an obviously-relevant validation.
+    Ignored when ``extraction_backend="gliner2"`` -- see below.
+
+    ``extraction_backend`` picks what actually extracts entities: ``"lightrag"``
+    (default) or ``"gliner2"`` (local, LLM-free -- see
+    ``unstructured2graph.gliner2_backend.GLiNER2Backend``). Either way, a
+    ``MemgraphLightRAGWrapper`` is still constructed: narrative summarization
+    (``SessionsGraph.reconcile_session``'s Episode) is a generative task
+    GLiNER2 cannot do at all, so it always runs through the LightRAG wrapper's
+    own LLM regardless of which backend extracts entities. "gliner2" sessions
+    reconcile one at a time via ``reconcile_session`` rather than through
+    ``reconcile_sessions_batch``: map #322's batch/queue pipeline exists to
+    give LightRAG's own worker pool more than one document at a time, which
+    is meaningless for a backend with no shared busy-lock or worker pool to
+    fan out over in the first place.
 
     Raises:
-        ValueError: if ``sessions_per_call`` is less than 1 -- checked up
-            front, before querying for pending sessions at all.
+        ValueError: if ``sessions_per_call`` is less than 1, or
+            ``extraction_backend`` is not one of :data:`EXTRACTION_BACKENDS` --
+            both checked up front, before querying for pending sessions at all.
     """
     if sessions_per_call < 1:
         raise ValueError(f"sessions_per_call must be >= 1, got {sessions_per_call}")
+    if extraction_backend not in EXTRACTION_BACKENDS:
+        raise ValueError(f"extraction_backend must be one of {EXTRACTION_BACKENDS}, got {extraction_backend!r}")
 
     import os
 
@@ -253,30 +318,58 @@ async def reconcile_batch(
         lightrag_wrapper = MemgraphLightRAGWrapper()
         await lightrag_wrapper.initialize(working_dir=working_dir, embedding_func=_eval_embedding_func())
 
+    gliner2_backend = None
+    if extraction_backend == "gliner2":
+        from unstructured2graph.gliner2_backend import GLiNER2Backend
+
+        gliner2_backend = GLiNER2Backend()
+
     reconciled = 0
     errors: list[str] = []
-    try:
-        for start in range(0, len(session_ids), sessions_per_call):
-            chunk = session_ids[start : start + sessions_per_call]
-            summaries = await graph.reconcile_sessions_batch(
-                chunk,
-                lightrag_wrapper=lightrag_wrapper,
-                enforce_ontology=True,
-            )
-            for summary in summaries:
-                if summary.status == "completed":
-                    reconciled += 1
-                else:
-                    errors.append(f"{summary.session_id}: {summary.error}")
 
-            # Printed per chunk, not per session: this loop still runs
-            # sequentially call-to-call, so a big batch runs for many
-            # minutes. Silent until done is indistinguishable from hung, which
-            # is how two runs were abandoned without knowing whether they were
-            # progressing.
-            if progress:
-                done = start + len(chunk)
-                print(f"  reconciled {done}/{len(session_ids)} ({reconciled} ok, {len(errors)} failed)", flush=True)
+    def _tally(summaries: list) -> None:
+        """Shared result accounting for both branches below -- only how they
+        call reconcile (one session vs one shared batch call) differs."""
+        nonlocal reconciled
+        for summary in summaries:
+            if summary.status == "completed":
+                reconciled += 1
+            else:
+                errors.append(f"{summary.session_id}: {summary.error}")
+
+    def _report(done: int) -> None:
+        # Silent until done is indistinguishable from hung, which is how two
+        # runs were abandoned without knowing whether they were progressing.
+        if progress:
+            print(f"  reconciled {done}/{len(session_ids)} ({reconciled} ok, {len(errors)} failed)", flush=True)
+
+    try:
+        if gliner2_backend is not None:
+            # One session at a time (see docstring): there is no batch/queue
+            # pipeline to fan out over for a backend with no shared busy-lock,
+            # unlike the LightRAG branch below.
+            for index, session_id in enumerate(session_ids, start=1):
+                summary = await graph.reconcile_session(
+                    session_id,
+                    lightrag_wrapper=lightrag_wrapper,
+                    extraction_backend=gliner2_backend,
+                    enforce_ontology=True,
+                )
+                _tally([summary])
+                _report(index)
+        else:
+            for start in range(0, len(session_ids), sessions_per_call):
+                chunk = session_ids[start : start + sessions_per_call]
+                summaries = await graph.reconcile_sessions_batch(
+                    chunk,
+                    lightrag_wrapper=lightrag_wrapper,
+                    enforce_ontology=True,
+                )
+                _tally(summaries)
+                # Reported per chunk, not per session: this loop still runs
+                # sequentially call-to-call, so a big batch runs for many
+                # minutes.
+                _report(start + len(chunk))
     finally:
         if owns_wrapper:
             finalize = getattr(lightrag_wrapper, "finalize", None)

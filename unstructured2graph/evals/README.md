@@ -11,10 +11,12 @@ repeat its runs too (`--repeat`) before trusting any delta between the two.
 
 This does **not** answer "does swapping the backend hurt real memory
 recall?" -- that needs the full `sessions-graph` reconcile → retrieve → score
-pipeline `context-graph-eval` already owns, which is not wired up to
-`GLiNER2Backend` (`sessions_graph.reconcile_session`'s `lightrag_wrapper`
-param is still LightRAG-specific). Deliberately deferred: see #330's PR
-description and the design note this eval's PR links.
+pipeline `context-graph-eval` owns. That pipeline *is* now wired up to
+`GLiNER2Backend` too (`context-graph-eval run --extraction-backend gliner2`,
+`sessions_graph.reconcile_session`'s `extraction_backend` param), so that
+question is answerable on real LongMemEval questions -- this eval remains the
+cheaper, judge-free way to iterate on extraction quality specifically,
+without paying for reconciliation + retrieval + a judge on every change.
 
 ## Running it
 
