@@ -38,6 +38,32 @@ def test_never_overrides_an_operators_own_value(monkeypatch):
     assert os.environ["FORCE_LLM_SUMMARY_ON_MERGE"] == "8"
 
 
+def test_lowers_embedding_concurrency_despite_raising_llm_concurrency(monkeypatch):
+    """Measured live: raising MAX_PARALLEL_INSERT/MAX_ASYNC_LLM for the
+    OpenAI-backed extraction LLM also puts more documents' embedding calls in
+    flight at once -- all against the SAME local, CPU-bound bge-m3 model
+    (#331), which doesn't parallelize like a rate-limited remote API does.
+    9 of 10 sessions timed out in one real batch before this was tuned down
+    and the timeout raised to compensate."""
+    monkeypatch.delenv("EMBEDDING_FUNC_MAX_ASYNC", raising=False)
+    monkeypatch.delenv("EMBEDDING_TIMEOUT", raising=False)
+
+    _resolve_reconciliation_tuning()
+
+    assert os.environ["EMBEDDING_FUNC_MAX_ASYNC"] == "2"
+    assert os.environ["EMBEDDING_TIMEOUT"] == "120"
+
+
+def test_embedding_tuning_also_never_overrides_an_operators_own_value(monkeypatch):
+    monkeypatch.setenv("EMBEDDING_FUNC_MAX_ASYNC", "8")
+    monkeypatch.setenv("EMBEDDING_TIMEOUT", "30")
+
+    _resolve_reconciliation_tuning()
+
+    assert os.environ["EMBEDDING_FUNC_MAX_ASYNC"] == "8"
+    assert os.environ["EMBEDDING_TIMEOUT"] == "30"
+
+
 @pytest.mark.asyncio
 async def test_reconcile_batch_rejects_non_positive_sessions_per_call():
     """range(0, N, sessions_per_call) with a negative step is silently

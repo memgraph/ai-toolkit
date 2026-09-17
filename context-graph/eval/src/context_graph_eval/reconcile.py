@@ -88,18 +88,37 @@ _EVAL_FORCE_LLM_SUMMARY_ON_MERGE = "30"
 _EVAL_MAX_PARALLEL_INSERT = "16"
 _EVAL_MAX_ASYNC_LLM = "16"
 
+#: LightRAG's embedding calls run through their OWN separate worker pool and
+#: concurrency limit (EMBEDDING_FUNC_MAX_ASYNC, LightRAG default 8) and their
+#: own timeout (EMBEDDING_TIMEOUT, LightRAG default 30s -> a 60s worker-kill,
+#: since the worker wraps it at 2x). Raising MAX_PARALLEL_INSERT above did
+#: nothing to fix this -- and made it worse: with up to 16 documents now
+#: in flight at once, up to 8 of them fire embedding calls concurrently, all
+#: against the SAME local CPU-bound bge-m3 model (#297/#331's eval-scoped
+#: embedder). A remote, rate-limited API scales with more concurrent
+#: requests; one shared local model on one CPU does not -- concurrent calls
+#: contend for the same resource instead of parallelizing, so throughput
+#: gets *worse*, not better, as concurrency rises. Measured live: 9 of 10
+#: sessions timed out here in one batch before these were tuned. Lowered
+#: rather than raised, unlike the LLM knobs above -- serializing embedding
+#: calls (2, not 8) is what a single local model can actually sustain, and
+#: the timeout is raised generously (120s) as headroom for however slow that
+#: serialized queue gets under this batch's real load, not a measured floor.
+_EVAL_EMBEDDING_FUNC_MAX_ASYNC = "2"
+_EVAL_EMBEDDING_TIMEOUT = "120"
+
 
 def _resolve_reconciliation_tuning() -> None:
     """Set eval-scoped LightRAG cost/concurrency knobs, without touching
     anyone else's default.
 
-    LightRAG reads ``FORCE_LLM_SUMMARY_ON_MERGE``, ``MAX_PARALLEL_INSERT``
-    and ``MAX_ASYNC_LLM`` once each, as dataclass field defaults evaluated
-    when ``lightrag.lightrag`` is first imported -- so this must run before
-    that happens (reconciliation's own ``unstructured2graph``/``lightrag``
-    imports are lazy, deferred until reconciliation actually starts, so
-    calling this from ``run``'s setup, or from ``reconcile_batch`` itself,
-    is early enough).
+    LightRAG reads ``FORCE_LLM_SUMMARY_ON_MERGE``, ``MAX_PARALLEL_INSERT``,
+    ``MAX_ASYNC_LLM``, ``EMBEDDING_FUNC_MAX_ASYNC`` and ``EMBEDDING_TIMEOUT``
+    once each, as dataclass field defaults evaluated when ``lightrag.lightrag``
+    is first imported -- so this must run before that happens (reconciliation's
+    own ``unstructured2graph``/``lightrag`` imports are lazy, deferred until
+    reconciliation actually starts, so calling this from ``run``'s setup, or
+    from ``reconcile_batch`` itself, is early enough).
 
     ``setdefault`` only: an operator's own exported value, or production
     sessions-graph reconciliation (which never sets any of these and keeps
@@ -110,6 +129,8 @@ def _resolve_reconciliation_tuning() -> None:
     os.environ.setdefault("FORCE_LLM_SUMMARY_ON_MERGE", _EVAL_FORCE_LLM_SUMMARY_ON_MERGE)
     os.environ.setdefault("MAX_PARALLEL_INSERT", _EVAL_MAX_PARALLEL_INSERT)
     os.environ.setdefault("MAX_ASYNC_LLM", _EVAL_MAX_ASYNC_LLM)
+    os.environ.setdefault("EMBEDDING_FUNC_MAX_ASYNC", _EVAL_EMBEDDING_FUNC_MAX_ASYNC)
+    os.environ.setdefault("EMBEDDING_TIMEOUT", _EVAL_EMBEDDING_TIMEOUT)
 
 
 #: `MemgraphLightRAGWrapper`'s own default (all-MiniLM-L6-v2, max_token_size
