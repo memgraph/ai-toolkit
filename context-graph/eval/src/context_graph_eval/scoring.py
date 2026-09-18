@@ -196,7 +196,7 @@ def bleu_score(expected_output: str | None, answer: str) -> float:
 def token_f1_score(expected_output: str | None, answer: str) -> float:
     """Token-level F1 between the retrieved answer and the expected output --
     precision and recall over shared tokens, the same formula LongMemEval's
-    own evaluation script and the blog above report as "F1 Score".
+    own evaluation script reports as "F1 Score".
 
     deepeval's ``Scorer`` ships ROUGE (summarization-oriented, weights
     matches differently) and BERTScore (needs its own model download) but
@@ -204,16 +204,21 @@ def token_f1_score(expected_output: str | None, answer: str) -> float:
     not a reimplementation of a metric deepeval already provides, since
     neither of deepeval's options is the same metric.
 
-    Case-insensitive, whitespace-tokenized, and counts token *multiplicity*
-    (``Counter`` intersection, not set intersection): "the the the" against
-    "the" should not score a perfect match on either precision or recall.
+    Tokenization is case-insensitive word characters only (``\\w+``), not
+    whitespace-splitting: "A beagle." against "A beagle" must not score a
+    partial match just because one has a trailing period glued onto its last
+    token -- an answer's punctuation is not a fact the judge cares about.
+    Counts token *multiplicity* (``Counter`` intersection, not set
+    intersection): "the the the" against "the" should not score a perfect
+    match on either precision or recall either.
     """
     if not answer or not expected_output:
         return 0.0
+    import re
     from collections import Counter
 
-    expected_tokens = expected_output.lower().split()
-    answer_tokens = answer.lower().split()
+    expected_tokens = re.findall(r"\w+", expected_output.lower())
+    answer_tokens = re.findall(r"\w+", answer.lower())
     if not expected_tokens or not answer_tokens:
         return 0.0
     overlap = sum((Counter(expected_tokens) & Counter(answer_tokens)).values())

@@ -197,6 +197,14 @@ def test_f1_is_zero_for_an_empty_answer():
     assert token_f1_score("Admon was assigned the day shift.", "") == 0.0
 
 
+def test_f1_ignores_punctuation_the_answer_key_happens_to_carry():
+    """Whitespace-splitting glued the expected output's trailing period onto
+    its last token, so "A beagle." against "A beagle" scored only 0.5 despite
+    being the same answer -- punctuation is not a fact the judge cares
+    about."""
+    assert token_f1_score("A beagle.", "A beagle") == 1.0
+
+
 def test_only_questions_that_cleared_coverage_are_ranked():
     """Coverage is a hard gate, not a weighted term (#309) -- otherwise a
     retrieval change could trade real coverage for token savings and still

@@ -92,7 +92,6 @@ async def test_bleu_f1_and_latency_are_scored_without_a_judge(eval_graph: Action
     )
 
     scored = report.scored[0]
-    # _AlwaysAnswersLLM answers "A beagle.", matching _record's expected_output exactly.
     assert scored.bleu > 0.9
     assert scored.f1 == 1.0
     assert scored.latency_seconds > 0.0
