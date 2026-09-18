@@ -254,6 +254,19 @@ async def _retrieve_all(
     return list(await asyncio.gather(*(one(golden) for golden in goldens)))
 
 
+@dataclass(frozen=True)
+class _Judged:
+    """One question's judge output: the gating scores, and why.
+
+    Kept as one unit rather than two parallel dicts so ``_judge``'s two-pass
+    ``dict.update`` (ordinary questions, then abstention) cannot update scores
+    for a question without also updating its reasons.
+    """
+
+    scores: dict[str, float] = field(default_factory=dict)
+    reasons: dict[str, str] = field(default_factory=dict)
+
+
 def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -> list[Scored]:
     """Turn retrieval results into per-question scores.
 
@@ -265,11 +278,11 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
     scored: list[Scored] = []
     for golden, result in zip(goldens, retrieved, strict=True):
         metadata = golden.additional_metadata or {}
-        metric_scores = judged.get(golden.name, {})
+        outcome = judged.get(golden.name, _Judged())
         # The weakest metric gates: passing one check while failing another is
         # not a pass. The individual scores are kept alongside so a failure can
         # still be attributed to retrieval or to the answer.
-        coverage = min(metric_scores.values()) if metric_scores else 0.0
+        coverage = min(outcome.scores.values()) if outcome.scores else 0.0
         scored.append(
             Scored(
                 name=golden.name or golden.input,
@@ -279,7 +292,8 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
                 efficiency_tokens=efficiency_tokens(result),
                 abstention=bool(metadata.get("abstention")),
                 answer=result.answer,
-                metric_scores=metric_scores,
+                metric_scores=outcome.scores,
+                metric_reasons=outcome.reasons,
             )
         )
     # Applied after judging, not before: the per-metric scores are kept as the
@@ -291,7 +305,7 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
     )
 
 
-def _judge(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -> dict[str, dict[str, float]]:
+def _judge(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -> dict[str, _Judged]:
     """Score answer quality with deepeval, returning per-metric scores per question.
 
     Abstention and ordinary questions are judged in **separate passes**, because
@@ -304,7 +318,7 @@ def _judge(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
     runs after all pipeline work rather than inside it.
     """
     paired = list(zip(goldens, retrieved, strict=True))
-    judged: dict[str, dict[str, float]] = {}
+    judged: dict[str, _Judged] = {}
     for abstention in (False, True):
         group = [(g, r) for g, r in paired if bool((g.additional_metadata or {}).get("abstention")) is abstention]
         if group:
@@ -312,9 +326,7 @@ def _judge(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
     return judged
 
 
-def _judge_group(
-    group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, abstention: bool
-) -> dict[str, dict[str, float]]:
+def _judge_group(group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, abstention: bool) -> dict[str, _Judged]:
     from deepeval import evaluate
     from deepeval.evaluate.configs import AsyncConfig, DisplayConfig, ErrorConfig
 
@@ -332,7 +344,7 @@ def _judge_group(
         error_config=ErrorConfig(ignore_errors=True),
     )
 
-    judged: dict[str, dict[str, float]] = {}
+    judged: dict[str, _Judged] = {}
     for golden, test_result in zip(goldens, result.test_results, strict=False):
         # Kept per metric, not collapsed. The weakest still decides the gate --
         # passing one check while failing another is not a pass -- but which
@@ -341,5 +353,16 @@ def _judge_group(
         # run_batch has already rejected nameless goldens; asserted rather than
         # re-checked so the type narrows and the invariant stays stated once.
         assert golden.name is not None
-        judged[golden.name] = {m.name: m.score for m in (test_result.metrics_data or []) if m.score is not None}
+        metrics = test_result.metrics_data or []
+        # deepeval already generates `reason` alongside every score -- for
+        # ContextualRecallMetric it is itself a synthesis of that metric's
+        # per-sentence supported/unsupported verdicts (see contextual_recall.py
+        # in deepeval) -- so keeping it costs no extra judge call. Previously
+        # discarded here, which meant a failed question said only "0.4" with no
+        # way to tell whether retrieval or the answer was at fault without
+        # rerunning by hand.
+        judged[golden.name] = _Judged(
+            scores={m.name: m.score for m in metrics if m.score is not None},
+            reasons={m.name: m.reason for m in metrics if m.reason},
+        )
     return judged

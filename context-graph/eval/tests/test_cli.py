@@ -22,7 +22,7 @@ def _report(scored: list[Scored]) -> BatchReport:
     return BatchReport(by_tier=aggregate(scored).by_tier, scored=scored)
 
 
-def _scored(name, *, covered=True, tokens=100, judged=True):
+def _scored(name, *, covered=True, tokens=100, judged=True, metric_reasons=None):
     return Scored(
         name=name,
         tier=1,
@@ -30,6 +30,7 @@ def _scored(name, *, covered=True, tokens=100, judged=True):
         covered=covered,
         efficiency_tokens=tokens,
         metric_scores={"Coverage": 1.0 if covered else 0.0} if judged else {},
+        metric_reasons=metric_reasons if metric_reasons is not None else {},
     )
 
 
@@ -74,6 +75,39 @@ def test_a_judge_outage_is_reported_as_unscored_not_as_zero(capsys):
     out = capsys.readouterr().out
     assert "UNSCORED      2 question(s)" in out
     assert "(0%)" not in out
+
+
+def test_a_failure_shows_the_judges_own_reason_not_just_a_count(capsys):
+    """A count says a metric failed N times; the reason says why -- retrieval
+    missed the fact, or the answer dropped it -- without rerunning the
+    question by hand to find out."""
+    _print_report(
+        _report(
+            [
+                _scored(
+                    "q1",
+                    covered=False,
+                    metric_reasons={"Coverage": "the answer named the dog but omitted the breed"},
+                )
+            ]
+        ),
+        judged=True,
+    )
+
+    out = capsys.readouterr().out
+    assert "failed on     Coverage: 1" in out
+    assert "e.g. q1: the answer named the dog but omitted the breed" in out
+
+
+def test_a_failure_with_no_reason_recorded_prints_no_example_line(capsys):
+    """A Scored built before this field existed, or one whose judge simply
+    didn't return a reason, must not print a blank or crash -- absence is
+    silent, not an empty "e.g." line."""
+    _print_report(_report([_scored("q1", covered=False)]), judged=True)
+
+    out = capsys.readouterr().out
+    assert "failed on     Coverage: 1" in out
+    assert "e.g." not in out
 
 
 def test_a_run_without_a_judge_does_not_cry_outage(capsys):
