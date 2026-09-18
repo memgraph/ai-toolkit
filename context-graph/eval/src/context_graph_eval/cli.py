@@ -597,14 +597,23 @@ def _build_model(provider: str, model_id: str | None):
 
 
 def _print_attribution(failures) -> None:
-    """Say which metric was the weakest link across the failures."""
-    blamed: dict[str, int] = {}
+    """Say which metric was the weakest link across the failures, and show one
+    example of why -- the judge's own reason for its worst-scoring question on
+    that metric, not just a count. The count says something moved; the reason
+    is what tells a reader whether it is a retrieval problem or an answering
+    one without rerunning the question by hand.
+    """
+    blamed: dict[str, list] = {}
     for row in failures:
         if row.metric_scores:
             worst = min(row.metric_scores, key=lambda name: row.metric_scores[name])
-            blamed[worst] = blamed.get(worst, 0) + 1
-    for metric, count in sorted(blamed.items(), key=lambda kv: -kv[1]):
-        print(f"  failed on     {metric}: {count}")
+            blamed.setdefault(worst, []).append(row)
+    for metric, rows in sorted(blamed.items(), key=lambda kv: -len(kv[1])):
+        print(f"  failed on     {metric}: {len(rows)}")
+        example = min(rows, key=lambda row: row.metric_scores[metric])
+        reason = example.metric_reasons.get(metric)
+        if reason:
+            print(f"                e.g. {example.name}: {reason}")
 
 
 def _print_report(report, *, judged: bool) -> None:
