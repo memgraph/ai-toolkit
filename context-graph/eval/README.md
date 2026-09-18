@@ -351,8 +351,8 @@ report.by_tier[1].median_efficiency_tokens  # median, not mean: one pathological
 # compared across schema versions
 report.by_tier[1].abstention_correct  # reported apart -- here a confident
 # answer is the failure
-report.by_tier[1].mean_bleu             # judge-free: populated even with no
-report.by_tier[1].mean_f1               # judge configured, unlike
+report.by_tier[1].mean_bleu  # judge-free: populated even with no
+report.by_tier[1].mean_f1  # judge configured, unlike
 report.by_tier[1].mean_latency_seconds  # coverage_rate/median_efficiency_tokens above
 ```
 
