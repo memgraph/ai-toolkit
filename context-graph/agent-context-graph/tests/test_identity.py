@@ -107,10 +107,10 @@ def test_write_config_preserves_llm_keys(config_dir):
 # --- resolve_auto_reconcile ---
 
 
-def test_auto_reconcile_is_none_when_never_configured(config_dir):
-    """None (not False) when never configured, so callers can fall back to the
-    SESSIONS_GRAPH_AUTO_RECONCILE env var instead of forcing it off (finding 1)."""
-    assert _identity.resolve_auto_reconcile() is None
+def test_auto_reconcile_is_false_when_never_configured(config_dir):
+    """False when never configured -- ADR 0002 leaves no ambient env var to
+    fall back to, so "never configured" collapses to the off default."""
+    assert _identity.resolve_auto_reconcile() is False
 
 
 def test_auto_reconcile_from_config_file(config_dir):

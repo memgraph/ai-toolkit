@@ -17,6 +17,7 @@ from unstructured2graph import (
     Ontology,
     compute_embeddings,
     connect_chunks_to_entities,
+    create_entity_type_constraint,
     create_label_index,
     create_nodes_from_list,
     create_property_index,
@@ -37,6 +38,32 @@ def test_create_unique_constraint_rejects_duplicates(memgraph):
     memgraph.query("CREATE (:Chunk {hash: 'h1', text: 'hello'})")
     with pytest.raises(Exception, match=r"(?i)constraint"):
         memgraph.query("CREATE (:Chunk {hash: 'h1', text: 'duplicate'})")
+
+
+def test_create_entity_type_constraint_rejects_missing_and_wrong_typed_values(memgraph):
+    # A dedicated label, not "gliner2" -- constraints are schema-global and
+    # outlive this test's own node wipe (conftest's memgraph fixture only
+    # DETACH DELETEs nodes/relationships, never constraints), so reusing a
+    # label other tests write entity_type-less nodes under would break them.
+    label = "EntityTypeConstraintProbe"
+    create_entity_type_constraint(memgraph, label)
+
+    with pytest.raises(Exception, match=r"(?i)constraint"):
+        memgraph.query(f"CREATE (:{label} {{entity_id: 'e1'}})")  # no entity_type at all
+    with pytest.raises(Exception, match=r"(?i)constraint"):
+        memgraph.query(f"CREATE (:{label} {{entity_id: 'e2', entity_type: 42}})")  # wrong type
+
+    memgraph.query(f"CREATE (:{label} {{entity_id: 'e3', entity_type: 'person'}})")  # conforms, must not raise
+
+
+def test_create_entity_type_constraint_is_idempotent_on_repeated_calls(memgraph):
+    """Unlike create_unique_constraint's uniqueness constraint, a repeated
+    identical `IS TYPED STRING` constraint DOES raise on a real Memgraph
+    (verified live) -- so, unlike that function's mocked idempotency test,
+    this one exercises the except-branch for real rather than simulating it."""
+    label = "EntityTypeConstraintProbeRepeat"
+    create_entity_type_constraint(memgraph, label)
+    create_entity_type_constraint(memgraph, label)  # must log a warning, not raise
 
 
 def test_create_label_and_property_index_do_not_raise(memgraph):
@@ -107,7 +134,10 @@ def test_link_nodes_in_order_creates_next_chain(memgraph):
 def test_connect_chunks_to_entities_creates_mentioned_in(memgraph):
     create_unique_constraint(memgraph, "Chunk", "hash")
     memgraph.query("CREATE (:Chunk {hash: 'h1', text: 'Alice works at Acme.'})")
-    memgraph.query("CREATE (:base {name: 'Alice', file_path: 'h1'})")
+    # entity_type included: real extraction backends always set it, and other
+    # tests may have already run create_entity_type_constraint(memgraph, "base")
+    # against this shared instance (constraints outlive this fixture's node wipe).
+    memgraph.query("CREATE (:base {name: 'Alice', file_path: 'h1', entity_type: 'person'})")
 
     connect_chunks_to_entities(memgraph, "Chunk", "base")
 
@@ -116,7 +146,14 @@ def test_connect_chunks_to_entities_creates_mentioned_in(memgraph):
 
 
 def test_upsert_typed_relationships_creates_distinct_edge_types(memgraph):
-    memgraph.query("CREATE (:gliner2 {entity_id: 'e1'}), (:gliner2 {entity_id: 'e2'}), (:gliner2 {entity_id: 'e3'})")
+    # entity_type included: real extraction backends always set it, and other
+    # tests may have already run create_entity_type_constraint(memgraph, "gliner2")
+    # against this shared instance (constraints outlive this fixture's node wipe).
+    memgraph.query(
+        "CREATE (:gliner2 {entity_id: 'e1', entity_type: 'person'}), "
+        "(:gliner2 {entity_id: 'e2', entity_type: 'company'}), "
+        "(:gliner2 {entity_id: 'e3', entity_type: 'place'})"
+    )
 
     upsert_typed_relationships(
         memgraph,
@@ -139,7 +176,10 @@ def test_upsert_typed_relationships_creates_distinct_edge_types(memgraph):
 
 
 def test_upsert_typed_relationships_is_idempotent_via_merge(memgraph):
-    memgraph.query("CREATE (:gliner2 {entity_id: 'e1'}), (:gliner2 {entity_id: 'e2'})")
+    memgraph.query(
+        "CREATE (:gliner2 {entity_id: 'e1', entity_type: 'person'}), "
+        "(:gliner2 {entity_id: 'e2', entity_type: 'company'})"
+    )
 
     for _ in range(2):
         upsert_typed_relationships(memgraph, "gliner2", "entity_id", {"works_for": [{"from": "e1", "to": "e2"}]})

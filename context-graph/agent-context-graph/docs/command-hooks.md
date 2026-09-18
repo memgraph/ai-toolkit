@@ -80,10 +80,12 @@ that does LLM-backed entity extraction via LightRAG, and needs an
 `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`) the same way it needs Memgraph
 credentials — resolved from this config file and injected into that
 subprocess's environment explicitly, not inherited from ambient shell env
-(see ADR 0003). `agent-context-graph bootstrap` captures
-`OPENAI_API_KEY`/`ANTHROPIC_API_KEY`/`SESSIONS_GRAPH_AUTO_RECONCILE` from its
-own environment into the config file automatically, the same way it already
-does for `MEMGRAPH_*`.
+(see ADR 0005). `agent-context-graph bootstrap` captures
+`OPENAI_API_KEY`/`ANTHROPIC_API_KEY` from its own environment into the config
+file automatically, the same way it already does for `MEMGRAPH_*`.
+`reconcile.auto_reconcile` is deliberately excluded from that automatic
+capture — unlike those keys, nobody has it exported for an unrelated reason,
+so it is only ever set via `config set reconcile.auto_reconcile true`.
 
 `reconcile.auto_reconcile` itself is read directly by
 `agent_context_graph.hooks.runner._add_sessions_graph_connector` on every hook

@@ -182,15 +182,9 @@ cython_debug/
 /.codex/
 /.claude/settings.local.json
 /docs/agents/
-/context-graph/CONTEXT-MAP.md
-/context-graph/*/CONTEXT.md
-/context-graph/docs/adr/
-/context-graph/*/docs/adr/
 
 # Project specific files
 /enterprise-context/sic-agent/sic-scrapper/output/*
-unstructured2graph/docs/adr/
-unstructured2graph/CONTEXT.md
 
 # deepeval writes run caches and telemetry here; build artifacts, not source.
 .deepeval/

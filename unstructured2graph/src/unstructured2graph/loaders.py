@@ -19,6 +19,7 @@ from memgraph_toolbox.api.memgraph import Memgraph
 from .extraction_backend import ExtractionBackend
 from .memgraph import (
     connect_chunks_to_entities,
+    create_entity_type_constraint,
     create_nodes_from_list,
     create_unique_constraint,
     link_nodes_in_order,
@@ -273,6 +274,7 @@ async def _ingest_chunks(
         # before calling _ingest_chunks with only_chunks=False.
         backend = cast("ExtractionBackend", extraction_backend)
         resolved_workspace = cast("str", entity_workspace)
+        create_entity_type_constraint(memgraph, resolved_workspace)
         for chunk in chunks:
             await backend.aingest_chunk(memgraph, chunk)
         connect_chunks_to_entities(memgraph, "Chunk", resolved_workspace)
@@ -568,6 +570,7 @@ async def process_enqueued_and_finalize(
             f"{pending[:5]}{'...' if len(pending) > 5 else ''}. A concurrent owner may be stalled."
         )
 
+    create_entity_type_constraint(memgraph, resolved_entity_workspace)
     connect_chunks_to_entities(memgraph, "Chunk", resolved_entity_workspace)
     if enforce_ontology:
         ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
