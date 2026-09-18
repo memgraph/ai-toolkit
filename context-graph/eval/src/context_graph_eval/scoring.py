@@ -17,7 +17,7 @@ an organizational-recall regression hide behind a personal-memory gain.
 """
 
 from dataclasses import dataclass, field, replace
-from statistics import median
+from statistics import mean, median
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
@@ -54,6 +54,16 @@ class Scored:
     #: number was throwing it away. Absent for abstention questions, which are
     #: judged on the rubric alone.
     metric_scores: dict[str, float] = field(default_factory=dict)
+    #: Deterministic, judge-free cross-checks against the answer key -- not
+    #: gated by coverage, unlike efficiency_tokens (#309's gate is specific
+    #: to that axis). Computed regardless of whether a judge ran, same
+    #: reasoning as efficiency_tokens: no LLM call needed for either.
+    bleu: float = 0.0
+    f1: float = 0.0
+    #: Wall-clock seconds retrieve() took for this question. 0.0 for a
+    #: question whose retrieval raised outright (runner._retrieve_all) --
+    #: there is no real duration to report for work that never finished.
+    latency_seconds: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -74,6 +84,15 @@ class TierReport:
     abstention_correct: int = 0
     #: Questions with no metric scores at all. A judge failure, not a low score.
     unscored: int = 0
+    #: Mean, not median: unlike efficiency_tokens (#309's gate, deliberately
+    #: robust to one pathological payload), these are the blog-comparison
+    #: metrics themselves -- a single outlier answer should show up in the
+    #: mean, not be shrugged off by a robust statistic. Over every scored
+    #: question, not just covered ones: BLEU/F1 are their own independent,
+    #: judge-free quality signal, not conditioned on our 0.7 coverage gate.
+    mean_bleu: float | None = None
+    mean_f1: float | None = None
+    mean_latency_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -106,6 +125,98 @@ def efficiency_tokens(retrieved: "Retrieved", tokenizer: str = DEFAULT_TOKENIZER
     if not payload:
         return 0
     return len(_encoding(tokenizer).encode(payload))
+
+
+#: word_tokenize (which Scorer.sentence_bleu_score calls) needs this data
+#: package on disk; nltk does not bundle it. Downloaded lazily, once per
+#: process, rather than assumed present -- a fresh CI runner or a
+#: contributor's first run has no reason to already have it, and deepeval's
+#: own import of nltk is guarded by a try/except that only prints on
+#: failure, so an absent download would otherwise surface as a LookupError
+#: raised deep inside nltk's tokenizer, not at an obvious call site.
+_nltk_tokenizer_data_ready = False
+
+
+def _ensure_nltk_tokenizer_data() -> None:
+    global _nltk_tokenizer_data_ready
+    if _nltk_tokenizer_data_ready:
+        return
+    import nltk
+
+    try:
+        nltk.data.find("tokenizers/punkt_tab")
+    except LookupError:
+        nltk.download("punkt_tab", quiet=True)
+    _nltk_tokenizer_data_ready = True
+
+
+def bleu_score(expected_output: str | None, answer: str) -> float:
+    """BLEU-1 similarity between the retrieved answer and the expected
+    output -- a standard NLP metric other memory-benchmark suites (LoCoMo,
+    LongMemEval, BEAM) also report, added so a run here is comparable on the
+    same axis.
+
+    Not reimplemented: this calls deepeval's own ``Scorer.sentence_bleu_score``
+    (nltk's n-gram BLEU under the hood, already a workspace dependency via
+    deepeval itself) rather than hand-rolling n-gram/brevity-penalty math
+    deepeval already ships correctly.
+
+    BLEU-1 (unigram overlap), not BLEU-4: an answer here is a sentence or
+    two, not a paragraph, so there usually is not enough text for 4-grams to
+    match at all -- BLEU-4 would floor near zero regardless of answer
+    quality and measure sentence length more than correctness.
+
+    Returns 0.0 for an empty answer or expected_output rather than raising:
+    an abstention question's correct answer can legitimately be a short
+    refusal, and a failed retrieval's answer can legitimately be empty --
+    both are real "no similarity" outcomes, not scoring errors.
+    """
+    if not answer or not expected_output:
+        return 0.0
+    import warnings
+
+    from deepeval.scorer import Scorer
+
+    _ensure_nltk_tokenizer_data()
+    with warnings.catch_warnings():
+        # nltk warns whenever the candidate has zero 2/3/4-gram matches, even
+        # though bleu1's weights=(1,0,0,0) never uses those orders in the
+        # returned score -- expected for a short answer (most of them here),
+        # not a real problem, and noisy enough over a whole run to bury
+        # anything that IS worth seeing in the output.
+        warnings.simplefilter("ignore", UserWarning)
+        return Scorer.sentence_bleu_score(references=expected_output, prediction=answer, bleu_type="bleu1")
+
+
+def token_f1_score(expected_output: str | None, answer: str) -> float:
+    """Token-level F1 between the retrieved answer and the expected output --
+    precision and recall over shared tokens, the same formula LongMemEval's
+    own evaluation script and the blog above report as "F1 Score".
+
+    deepeval's ``Scorer`` ships ROUGE (summarization-oriented, weights
+    matches differently) and BERTScore (needs its own model download) but
+    not this specific, simpler formula, so it is computed directly here --
+    not a reimplementation of a metric deepeval already provides, since
+    neither of deepeval's options is the same metric.
+
+    Case-insensitive, whitespace-tokenized, and counts token *multiplicity*
+    (``Counter`` intersection, not set intersection): "the the the" against
+    "the" should not score a perfect match on either precision or recall.
+    """
+    if not answer or not expected_output:
+        return 0.0
+    from collections import Counter
+
+    expected_tokens = expected_output.lower().split()
+    answer_tokens = answer.lower().split()
+    if not expected_tokens or not answer_tokens:
+        return 0.0
+    overlap = sum((Counter(expected_tokens) & Counter(answer_tokens)).values())
+    if overlap == 0:
+        return 0.0
+    precision = overlap / len(answer_tokens)
+    recall = overlap / len(expected_tokens)
+    return 2 * precision * recall / (precision + recall)
 
 
 def tokenizer_in_use(tokenizer: str = DEFAULT_TOKENIZER) -> str:
@@ -153,6 +264,9 @@ def aggregate(scored: list[Scored]) -> RunReport:
             median_efficiency_tokens=(int(median([s.efficiency_tokens for s in covered])) if covered else None),
             abstention_total=len(abstentions),
             abstention_correct=sum(1 for s in abstentions if s.covered),
+            mean_bleu=(mean(s.bleu for s in rows) if rows else None),
+            mean_f1=(mean(s.f1 for s in rows) if rows else None),
+            mean_latency_seconds=(mean(s.latency_seconds for s in rows) if rows else None),
         )
     return RunReport(by_tier=by_tier)
 

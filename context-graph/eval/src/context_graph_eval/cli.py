@@ -650,6 +650,17 @@ def _print_report(report, *, judged: bool) -> None:
         if summary.abstention_total:
             print(f"  abstention    {summary.abstention_correct}/{summary.abstention_total} correct")
 
+        # Deterministic, judge-free cross-checks (no LLM call, so printed
+        # regardless of whether a judge ran) -- standard NLP metrics other
+        # memory benchmarks also report, so a run here is comparable on more
+        # than just our own judged coverage.
+        if summary.mean_bleu is not None:
+            print(f"  bleu          mean {summary.mean_bleu:.2f}")
+        if summary.mean_f1 is not None:
+            print(f"  f1            mean {summary.mean_f1:.2f}")
+        if summary.mean_latency_seconds is not None:
+            print(f"  latency       mean {summary.mean_latency_seconds:.1f}s per question")
+
         # Gate-then-rank made visible (#309): only questions that cleared
         # coverage are ranked, cheapest payload first. Showing the extremes is
         # what makes an efficiency regression actionable -- a median tells you

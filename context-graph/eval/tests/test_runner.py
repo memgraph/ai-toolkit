@@ -60,6 +60,38 @@ async def test_a_run_scores_every_question_in_the_corpus(eval_graph: ActionsGrap
     assert report.by_tier[1].questions == 0
 
 
+class _AlwaysAnswersLLM:
+    """Answers every prompt (query round or final answer) the same way,
+    unlike _StubLLM's call-parity alternation -- needed here because that
+    alternation makes which text lands as the *final* answer depend on how
+    many query rounds happened first, which is not what this test is about."""
+
+    async def complete(self, prompt: str) -> str:
+        return "A beagle."
+
+
+async def test_bleu_f1_and_latency_are_scored_without_a_judge(eval_graph: ActionsGraph):
+    """Deterministic, judge-free: computed the same way efficiency_tokens
+    already is, regardless of whether a judge ran -- these live on Scored
+    itself, not gated behind aggregate()'s per-tier rollup, which excludes
+    unscored questions."""
+    goldens = [to_golden(_record("q1"))]
+
+    report = await run_batch(
+        goldens,
+        records=[_record("q1")],
+        graph=eval_graph,
+        llm=_AlwaysAnswersLLM(),
+        plan=RunPlan(reconcile=False, judge=None),
+    )
+
+    scored = report.scored[0]
+    # _AlwaysAnswersLLM answers "A beagle.", matching _record's expected_output exactly.
+    assert scored.bleu > 0.9
+    assert scored.f1 == 1.0
+    assert scored.latency_seconds > 0.0
+
+
 async def test_fixtures_are_injected_before_retrieval_runs(eval_graph: ActionsGraph):
     """Ordering is the runner's whole job: retrieving before injection would
     query an empty graph and score every question as a miss."""

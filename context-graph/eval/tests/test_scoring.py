@@ -11,16 +11,20 @@ from context_graph_eval.scoring import (
     DEFAULT_TOKENIZER,
     Scored,
     aggregate,
+    bleu_score,
     build_metrics,
     efficiency_tokens,
     enforce_retrieval_floor,
     gate_and_rank,
+    token_f1_score,
     tokenizer_in_use,
 )
 from deepeval.models import DeepEvalBaseLLM
 
 
-def _scored(name, *, tier=1, covered=True, tokens=100, abstention=False, metric_scores=None):
+def _scored(
+    name, *, tier=1, covered=True, tokens=100, abstention=False, metric_scores=None, bleu=0.0, f1=0.0, latency=0.0
+):
     return Scored(
         name=name,
         tier=tier,
@@ -31,6 +35,9 @@ def _scored(name, *, tier=1, covered=True, tokens=100, abstention=False, metric_
         # Non-empty by default: a Scored with no metric scores means the judge
         # could not score it, which is a different thing from scoring zero.
         metric_scores=metric_scores if metric_scores is not None else {"Coverage": 1.0 if covered else 0.0},
+        bleu=bleu,
+        f1=f1,
+        latency_seconds=latency,
     )
 
 
@@ -139,6 +146,56 @@ def test_returning_nothing_costs_nothing():
     assert efficiency_tokens(Retrieved(answer="", retrieval_context=[])) == 0
 
 
+# --- BLEU/F1: deterministic, judge-free cross-checks against the answer
+# key, computed the same way regardless of whether a judge ran. ---
+
+
+def test_bleu_scores_an_exact_match_as_perfect():
+    assert bleu_score("Admon was assigned the day shift.", "Admon was assigned the day shift.") == 1.0
+
+
+def test_bleu_scores_unrelated_text_near_zero():
+    assert bleu_score("Admon was assigned the day shift.", "Completely unrelated sentence about kayaking.") < 0.2
+
+
+def test_bleu_is_zero_for_an_empty_answer():
+    """An empty answer -- a failed or abstaining retrieval -- has zero token
+    overlap with any real expected output. Not an error: a real outcome."""
+    assert bleu_score("Admon was assigned the day shift.", "") == 0.0
+
+
+def test_bleu_is_zero_for_an_empty_expected_output():
+    assert bleu_score("", "Admon was assigned the day shift.") == 0.0
+
+
+def test_f1_scores_an_exact_match_as_perfect():
+    assert token_f1_score("Admon was assigned the day shift.", "Admon was assigned the day shift.") == 1.0
+
+
+def test_f1_rewards_partial_token_overlap():
+    """Half the expected tokens present, none extra: precision 1.0, recall
+    0.5, F1 the harmonic mean of the two -- not their average."""
+    f1 = token_f1_score("the day shift starts at eight am", "the day shift")
+
+    assert 0.0 < f1 < 1.0
+
+
+def test_f1_is_zero_for_no_overlap_at_all():
+    assert token_f1_score("Admon was assigned the day shift.", "Completely different words entirely.") == 0.0
+
+
+def test_f1_counts_token_multiplicity_not_just_membership():
+    """'the the the' against a single 'the' must not score a perfect match on
+    either side -- Counter intersection, not set intersection."""
+    f1 = token_f1_score("the cat sat", "the the the")
+
+    assert f1 < 1.0
+
+
+def test_f1_is_zero_for_an_empty_answer():
+    assert token_f1_score("Admon was assigned the day shift.", "") == 0.0
+
+
 def test_only_questions_that_cleared_coverage_are_ranked():
     """Coverage is a hard gate, not a weighted term (#309) -- otherwise a
     retrieval change could trade real coverage for token savings and still
@@ -191,6 +248,24 @@ def test_median_efficiency_uses_only_questions_that_passed():
     )
 
     assert report.by_tier[1].median_efficiency_tokens == 20
+
+
+def test_mean_bleu_f1_latency_include_every_scored_question_not_just_covered():
+    """Unlike efficiency's gate (#309, specific to that axis), BLEU/F1/latency
+    are their own independent, judge-free signal -- a failing question's
+    answer still has a real BLEU/F1/latency, and dropping it would hide
+    exactly the questions most worth looking at."""
+    report = aggregate(
+        [
+            _scored("passed", covered=True, bleu=1.0, f1=1.0, latency=2.0),
+            _scored("failed", covered=False, bleu=0.0, f1=0.0, latency=4.0),
+        ]
+    )
+
+    summary = report.by_tier[1]
+    assert summary.mean_bleu == 0.5
+    assert summary.mean_f1 == 0.5
+    assert summary.mean_latency_seconds == 3.0
 
 
 def test_abstention_questions_are_reported_apart():

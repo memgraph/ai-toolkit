@@ -25,8 +25,10 @@ from .scoring import (
     DEFAULT_COVERAGE_THRESHOLD,
     Scored,
     aggregate,
+    bleu_score,
     efficiency_tokens,
     enforce_retrieval_floor,
+    token_f1_score,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
@@ -257,8 +259,9 @@ async def _retrieve_all(
 def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -> list[Scored]:
     """Turn retrieval results into per-question scores.
 
-    Efficiency is computed regardless of whether a judge ran -- it is
-    deterministic (#304), so there is no reason to make it wait on an LLM.
+    Efficiency, BLEU, F1 and latency are all computed regardless of whether a
+    judge ran -- they are deterministic (#304), so there is no reason to make
+    any of them wait on an LLM.
     """
     judged = _judge(goldens, retrieved, plan) if plan.judge is not None else {}
 
@@ -280,6 +283,9 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
                 abstention=bool(metadata.get("abstention")),
                 answer=result.answer,
                 metric_scores=metric_scores,
+                bleu=bleu_score(golden.expected_output, result.answer),
+                f1=token_f1_score(golden.expected_output, result.answer),
+                latency_seconds=result.latency_seconds,
             )
         )
     # Applied after judging, not before: the per-metric scores are kept as the

@@ -17,6 +17,13 @@ dependencies = [
     # metric counts tokens with it, and losing it would silently change the
     # units every efficiency number is reported in.
     "tiktoken>=0.7.0",
+    # deepeval.scorer.Scorer.sentence_bleu_score (the BLEU metric) imports
+    # this itself, guarded by a try/except that only prints a message on
+    # failure rather than raising -- so a missing nltk surfaces as a
+    # confusing NameError deep inside deepeval's own code the first time
+    # BLEU actually runs, not at import time. Declared explicitly here so a
+    # missing nltk is a normal dependency-resolution error instead.
+    "nltk>=3.9.4",
 ]
 
 [project.optional-dependencies]
