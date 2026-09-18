@@ -248,3 +248,47 @@ async def test_reusing_an_undistilled_graph_is_refused(eval_graph: ActionsGraph)
             llm=_StubLLM(),
             plan=RunPlan(reconcile=False, reuse_graph=True, judge=None),
         )
+
+
+async def test_reusing_a_graph_built_by_a_different_backend_is_refused(eval_graph: ActionsGraph):
+    """--skip-reconcile never rebuilds anything, so extraction_backend is a
+    claim about what already happened, not something this run can make true.
+    Unverified, a LightRAG-built graph reused with --extraction-backend
+    gliner2 would record "gliner2" in RunMeta despite every entity in the
+    graph coming from LightRAG -- letting two runs that used the same real
+    backend compare as a mismatch, or two that didn't compare as identical."""
+    from context_graph_eval.convert.longmemeval import to_session_fixtures
+    from context_graph_eval.inject import inject_batch
+
+    inject_batch(to_session_fixtures(_record("q1")), graph=eval_graph)
+    eval_graph._db.query(
+        "MATCH (s:Session) SET s.reconciliation_status = 'completed', s.extraction_backend = 'LightRAGBackend'"
+    )
+
+    with pytest.raises(ValueError, match="different extraction backend"):
+        await run_batch(
+            [to_golden(_record("q1"))],
+            records=[_record("q1")],
+            graph=eval_graph,
+            llm=_StubLLM(),
+            plan=RunPlan(reconcile=False, reuse_graph=True, judge=None, extraction_backend="gliner2"),
+        )
+
+
+async def test_reusing_a_graph_with_no_recorded_backend_is_not_refused(eval_graph: ActionsGraph):
+    """None is a real, distinct state (no reconcilable content, or a graph
+    from before this property existed) -- not attributable to any backend,
+    so it must not be treated as a mismatch."""
+    from context_graph_eval.convert.longmemeval import to_session_fixtures
+    from context_graph_eval.inject import inject_batch
+
+    inject_batch(to_session_fixtures(_record("q1")), graph=eval_graph)
+    eval_graph._db.query("MATCH (s:Session) SET s.reconciliation_status = 'completed'")
+
+    await run_batch(
+        [to_golden(_record("q1"))],
+        records=[_record("q1")],
+        graph=eval_graph,
+        llm=_StubLLM(),
+        plan=RunPlan(reconcile=False, reuse_graph=True, judge=None, extraction_backend="gliner2"),
+    )

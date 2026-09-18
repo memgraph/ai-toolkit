@@ -131,8 +131,10 @@ The query string follows [Tantivy query syntax](https://docs.rs/tantivy/latest/t
 
 A session's Actions Graph content (Messages, ToolCalls, ToolResults) and
 Memories are mostly opaque text today. Session reconciliation runs that content
-through [unstructured2graph](../../unstructured2graph/)'s chunk + LightRAG
-entity-extraction pipeline, turning it into queryable graph entities linked
+through [unstructured2graph](../../unstructured2graph/)'s chunk + entity-extraction
+pipeline -- LightRAG by default, overridable to another `ExtractionBackend`
+(e.g. GLiNER2) via `reconcile_session(..., extraction_backend=...)` -- turning
+it into queryable graph entities linked
 back to the session that produced them — see
 [`CONTEXT.md`](./CONTEXT.md#language) for the **Session Reconciliation** /
 **Reconcilable Content** / **Reconciliation Status** terminology.
@@ -246,5 +248,5 @@ enabling `auto_reconcile` broadly.
 | `search_memories(user_id, query, *, limit=10)` | Full-text search over Memory content. |
 | `update_memory(memory_id, content)` | Replace the content of an existing Memory. Returns `None` if not found. |
 | `delete_memory(memory_id)` | Remove a Memory and all its relationships. |
-| `async reconcile_session(session_id, *, lightrag_wrapper, actions_graph=None, entity_workspace=None, promote_labels=False, enforce_ontology=False, ontology_path=None)` | Run session reconciliation for one session. `promote_labels`/`enforce_ontology`/`ontology_path` control entity-type label promotion (see above). Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
+| `async reconcile_session(session_id, *, lightrag_wrapper, extraction_backend=None, actions_graph=None, entity_workspace=None, promote_labels=False, enforce_ontology=False, ontology_path=None)` | Run session reconciliation for one session. `extraction_backend` overrides entity extraction to another `ExtractionBackend` (e.g. GLiNER2); `lightrag_wrapper` is always required regardless, since the narrative summary is always produced via its LLM. `promote_labels`/`enforce_ontology`/`ontology_path` control entity-type label promotion (see above). Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
 | `get_pending_reconciliation_sessions(*, limit=100)` | Return session IDs marked `reconciliation_status = 'pending'`. |

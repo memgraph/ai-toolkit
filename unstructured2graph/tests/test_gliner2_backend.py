@@ -41,9 +41,11 @@ class _FakeModel:
     """Records every call so tests can assert on what schema was passed, and
     returns whatever canned result the test configured -- merged into the
     single {"entities": ..., "relation_extraction": ...} shape the real
-    model.extract() returns from one combined call (gliner2_backend.py's
+    model.extract_long() returns from one combined call (gliner2_backend.py's
     _extract_sync no longer calls extract_entities()/extract_relations()
-    separately)."""
+    separately, and uses extract_long() rather than plain extract() -- see
+    #336: extract() silently undercounts entities on text longer than
+    GLiNER2's effective context)."""
 
     def __init__(self, entities_result=None, relations_result=None):
         self.result: dict = dict(entities_result or {"entities": {}})
@@ -53,7 +55,7 @@ class _FakeModel:
     def create_schema(self):
         return _FakeSchema()
 
-    def extract(self, text, schema, **kwargs):
+    def extract_long(self, text, schema, **kwargs):
         self.extract_calls.append((text, schema))
         return self.result
 
@@ -64,6 +66,40 @@ def test_entity_schema_built_from_ontology():
 
     assert backend._entity_schema == {"person": "A human"}
     assert backend._relation_schema == {}
+
+
+def test_chunk_size_and_overlap_default_and_are_configurable():
+    default_backend = GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=_FakeModel())
+    assert default_backend._chunk_size == 384
+    assert default_backend._chunk_overlap == 64
+
+    custom_backend = GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=_FakeModel(), chunk_size=128, chunk_overlap=32)
+    assert custom_backend._chunk_size == 128
+    assert custom_backend._chunk_overlap == 32
+
+
+@pytest.mark.asyncio
+async def test_extract_long_is_called_with_the_configured_chunk_size_and_overlap():
+    """Regression test for #336: _extract_sync must call extract_long(),
+    not extract() -- extract() silently undercounts entities on text longer
+    than GLiNER2's effective context, with no error to catch the regression
+    otherwise."""
+    model = MagicMock()
+    model.create_schema.return_value = _FakeSchema()
+    model.extract_long.return_value = {"entities": {}}
+    backend = GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=model, chunk_size=128, chunk_overlap=32)
+
+    with patch("unstructured2graph.gliner2_backend.create_nodes_from_list"):
+        await backend.aingest_chunk(MagicMock(), Chunk(text="Alice works here.", hash="h1"))
+
+    model.extract_long.assert_called_once()
+    model.extract.assert_not_called()
+    _text, _schema = model.extract_long.call_args.args
+    kwargs = model.extract_long.call_args.kwargs
+    assert kwargs["chunk_size"] == 128
+    assert kwargs["chunk_overlap"] == 32
+    assert kwargs["include_spans"] is True
+    assert kwargs["include_confidence"] is True
 
 
 def test_workspace_label_defaults_and_is_configurable():
@@ -110,9 +146,9 @@ async def test_entity_only_ontology_never_requests_relations_schema():
 
 @pytest.mark.asyncio
 async def test_entity_and_relation_ontology_requests_combined_schema_in_one_call():
-    """The whole point of the joint pass: one model.extract() call carries
-    both schemas, not two separate extract_entities()/extract_relations()
-    calls."""
+    """The whole point of the joint pass: one model.extract_long() call
+    carries both schemas, not two separate extract_entities()/
+    extract_relations() calls."""
     model = _FakeModel()
     backend = GLiNER2Backend(ontology=ENTITY_AND_RELATION_ONTOLOGY, model=model)
 

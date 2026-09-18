@@ -79,3 +79,46 @@ def describe_stability(passing_sets: list[set[str]]) -> str:
     if len(always) < len(ever) / 2:
         return f"{line}\n  unstable: most passes never repeat; treat efficiency comparisons with care."
     return line
+
+
+def per_question_pass_rate(passing_sets: list[set[str]], all_names: set[str]) -> dict[str, float]:
+    """Each question's own pass rate across repeats.
+
+    ``describe_stability`` answers "is this batch stable" with one aggregate
+    ratio; it cannot say which questions are the flaky ones, or distinguish a
+    question that always fails from one that passes half the time -- both
+    read as "not always" in the intersection/union it computes. #324: a
+    single run's ``covered`` is a coin flip for a question whose real
+    behaviour is "passes about half the time", and reporting only the coin
+    flip is what let a retrieval-nondeterminism-driven flip get read as a
+    coverage regression instead of the noise it was.
+
+    ``all_names`` (not just the union of ``passing_sets``) matters here in a
+    way it doesn't for ``describe_stability``: a question that never once
+    passed must still get a rate of 0.0, not be silently absent from the
+    result.
+    """
+    if len(passing_sets) < MIN_RUNS:
+        raise ValueError(f"per-question pass rates need at least {MIN_RUNS} runs; got {len(passing_sets)}")
+    n = len(passing_sets)
+    return {name: sum(1 for s in passing_sets if name in s) / n for name in all_names}
+
+
+def describe_per_question_rates(rates: dict[str, float]) -> str:
+    """Render each question's pass rate, isolating the flaky ones (neither
+    always nor never pass) as the concrete evidence behind an aggregate
+    instability verdict -- naming them, not just counting them, is what lets
+    someone go look at what's actually happening on that question."""
+    if not rates:
+        return "no questions scored."
+
+    always = sorted(name for name, rate in rates.items() if rate == 1.0)
+    never = sorted(name for name, rate in rates.items() if rate == 0.0)
+    flaky = sorted(((rate, name) for name, rate in rates.items() if 0 < rate < 1), reverse=True)
+
+    lines = [f"per-question pass rate ({len(rates)} questions, {len(flaky)} flaky):"]
+    if flaky:
+        lines.append("  flaky (neither always nor never passes):")
+        lines += [f"    {name}: {rate:.0%}" for rate, name in flaky]
+    lines.append(f"  always passes: {len(always)}  |  never passes: {len(never)}")
+    return "\n".join(lines)

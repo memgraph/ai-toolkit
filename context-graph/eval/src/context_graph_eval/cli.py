@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .convert.longmemeval import DEFAULT_REVISION, build_corpus, fetch, haystack_path, load_raw
 from .corpus import write_corpus
+from .reconcile import EXTRACTION_BACKENDS
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -81,11 +82,29 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument(
         "--judge-model",
         default=None,
-        help="Anthropic model id for the judge (#304 keeps the judge on a different provider from "
-        "the OpenAI-backed pipeline so their blind spots do not correlate). Omit to skip judging "
-        "and report efficiency only.",
+        help="'provider:model_id' for the judge, e.g. 'anthropic:claude-sonnet-4-5-20250929' or "
+        "'openai:gpt-4o'. A bare model id keeps the default provider (anthropic). #304 keeps the "
+        "judge on a different provider from the OpenAI-backed pipeline so their blind spots do not "
+        "correlate -- picking the same provider as --agent-model is a legitimate experiment (#329), "
+        "not a default, and is flagged loudly when it happens. Omit entirely to skip judging and "
+        "report efficiency only.",
     )
-    run.add_argument("--agent-model", default=None, help="model id for the retrieval agent")
+    run.add_argument(
+        "--agent-model",
+        default=None,
+        help="'provider:model_id' for the retrieval agent, e.g. 'openai:gpt-4o'. A bare model id "
+        "keeps the default provider (openai).",
+    )
+    run.add_argument(
+        "--extraction-backend",
+        choices=EXTRACTION_BACKENDS,
+        default="lightrag",
+        help="what reconciliation uses to extract entities: 'lightrag' (default, LLM-based) or "
+        "'gliner2' (local, LLM-free -- requires 'pip install gliner2[local]>=2.0.0' manually, see "
+        "unstructured2graph.gliner2_backend's module docstring). Narrative summarization always "
+        "runs via a LightRAG wrapper's own LLM regardless of this choice -- GLiNER2 has no "
+        "generative capability -- so an LLM key is still needed either way.",
+    )
     run.add_argument(
         "--max-sessions-per-question",
         type=int,
@@ -226,7 +245,7 @@ def _gold_slice(args) -> int:
 
 
 def _calibrate(args) -> int:
-    from .calibrate import describe, describe_stability
+    from .calibrate import describe, describe_per_question_rates, describe_stability, per_question_pass_rate
     from .report import load_run
 
     runs = [load_run(path) for path in args.runs]
@@ -242,13 +261,20 @@ def _calibrate(args) -> int:
         return 1
 
     rates = [sum(1 for s in run.scored if s.covered) / len(run.scored) for run in runs if run.scored]
+    passing_sets = [{s.name for s in run.scored if s.covered} for run in runs]
+    all_names = {s.name for run in runs for s in run.scored}
     try:
         print(describe(rates))
         # Printed with the floor, never instead of it: a tight floor over an
         # unstable passing set is the misleading case, and only this line makes
         # it visible.
         print()
-        print(describe_stability([{s.name for s in run.scored if s.covered} for run in runs]))
+        print(describe_stability(passing_sets))
+        # Names which specific questions are flaky, rather than only the
+        # aggregate count above -- #324: a coverage flip on one of these is
+        # noise the judge would have produced anyway, not a regression.
+        print()
+        print(describe_per_question_rates(per_question_pass_rate(passing_sets, all_names)))
     except ValueError as exc:
         print(f"refusing to calibrate: {exc}", file=sys.stderr)
         return 1
@@ -360,11 +386,25 @@ def _run(args) -> int:
     db = Memgraph(url=args.memgraph_url, username="", password="")
     graph = ActionsGraph(memgraph=db)
 
-    judge = _build_model(args.judge_model, anthropic=True)
-    agent = _build_model(args.agent_model, anthropic=False)
+    judge_provider, judge_model_id = _parse_model_spec(args.judge_model, default_provider=DEFAULT_JUDGE_PROVIDER)
+    agent_provider, agent_model_id = _parse_model_spec(args.agent_model, default_provider=DEFAULT_AGENT_PROVIDER)
+    judge = _build_model(judge_provider, judge_model_id)
+    agent = _build_model(agent_provider, agent_model_id)
     if agent is None:
         print("no agent model configured: set --agent-model or an OPENAI_API_KEY", file=sys.stderr)
         return 1
+
+    same_provider = judge is not None and judge_provider == agent_provider
+    if same_provider:
+        # #304's independence property (judge decorrelated from the pipeline's
+        # own blind spots) does not hold here. A legitimate experiment (#329,
+        # #324's model-vs-rubric diagnosis needs exactly this), just never the
+        # unannounced default -- so this is a warning, not a refusal.
+        print(
+            f"WARNING: judge ({judge_provider}) and agent ({agent_provider}) share a provider -- "
+            "#304's cross-provider independence does not hold for this run.",
+            file=sys.stderr,
+        )
 
     if args.gold_slice and not evidence_is_planted(graph):
         # Refuse rather than report a guaranteed zero. The gold slice's fixture
@@ -391,6 +431,7 @@ def _run(args) -> int:
                 judge=judge,
                 max_sessions_per_question=args.max_sessions_per_question,
                 memgraph_url=args.memgraph_url,
+                extraction_backend=args.extraction_backend,
             ),
         )
     )
@@ -406,15 +447,29 @@ def _run(args) -> int:
                     label=args.label,
                     corpus_revision=args.revision,
                     corpus_variant=args.variant,
-                    # Recorded even when absent: a comparison must refuse to
-                    # measure an unjudged run against a judged one.
-                    judge_model=args.judge_model or "none",
+                    # Provider-qualified and reflecting the resolved fallback
+                    # model, not the raw CLI arg (#329) -- e.g. omitting
+                    # --judge-model with ANTHROPIC_API_KEY set still judges
+                    # with DEFAULT_JUDGE_MODEL, and recording "none" for that
+                    # would let an unjudged and a judged run compare cleanly.
+                    judge_model=_resolved_spec(judge_provider, judge_model_id) if judge is not None else "none",
+                    # Previously untracked entirely: a run's answers depend on
+                    # this model too, and compare() below now pins it for the
+                    # same reason it already pins the judge and tokenizer.
+                    agent_model=_resolved_spec(agent_provider, agent_model_id),
+                    same_provider=same_provider,
                     # What was actually used, not what was configured -- a run
                     # counted in fallback units must not compare cleanly
                     # against one counted in real tokens.
                     tokenizer=tokenizer_in_use(),
                     questions=len(goldens),
                     changed=args.changed,
+                    # A LightRAG-built and a GLiNER2-built graph are different
+                    # systems under test (different entities, no cross-chunk
+                    # coreference for GLiNER2, a different workspace label) --
+                    # compare() below refuses across them for the same reason
+                    # it refuses across judges or tokenizers.
+                    extraction_backend=args.extraction_backend,
                 ),
                 scored=report.scored,
             ),
@@ -424,10 +479,56 @@ def _run(args) -> int:
     return 0
 
 
-#: Default judge. Dated rather than a moving alias, per #304: a judge that
-#: changes underneath you silently invalidates every prior baseline, which is
-#: the same reason the corpus revision is pinned.
+#: Default judge model. Dated rather than a moving alias, per #304: a judge
+#: that changes underneath you silently invalidates every prior baseline,
+#: which is the same reason the corpus revision is pinned.
 DEFAULT_JUDGE_MODEL = "claude-sonnet-4-5-20250929"
+
+#: Default provider for each role when a bare (unprefixed) model id -- or
+#: nothing at all -- is given. #304's decision was "a different provider than
+#: the pipeline", not "Anthropic" specifically (#329); these are only the
+#: defaults that satisfy it given the pipeline happens to be OpenAI-backed
+#: today, not a hardcoded pairing. --judge-model/--agent-model can override
+#: either independently via a 'provider:model_id' spec.
+DEFAULT_JUDGE_PROVIDER = "anthropic"
+DEFAULT_AGENT_PROVIDER = "openai"
+
+#: provider -> (API key env var, fallback model id used when none is given).
+#: Adding a provider is the whole change needed to make it reachable from
+#: either --judge-model or --agent-model -- nothing else in _build_model is
+#: provider-specific beyond the deepeval class each one maps to.
+_PROVIDER_KEYS: dict[str, tuple[str, str | None]] = {
+    "anthropic": ("ANTHROPIC_API_KEY", DEFAULT_JUDGE_MODEL),
+    # GPTModel has its own built-in default when given no model id.
+    "openai": ("OPENAI_API_KEY", None),
+}
+
+
+def _parse_model_spec(spec: str | None, *, default_provider: str) -> tuple[str, str | None]:
+    """Split a 'provider:model_id' CLI value into (provider, model_id).
+
+    A bare model id (no colon) keeps ``default_provider`` -- so existing
+    --judge-model/--agent-model values written before #329 keep meaning what
+    they meant. ``spec=None`` (the flag omitted) also keeps the default
+    provider, with no model id, i.e. "use that provider's own default."
+    """
+    if spec and ":" in spec:
+        provider, _, model_id = spec.partition(":")
+        return provider, (model_id or None)
+    return default_provider, spec
+
+
+def _resolved_spec(provider: str, model_id: str | None) -> str:
+    """The 'provider:model_id' actually used, after applying that provider's
+    fallback default -- for recording on RunMeta, not for building a model.
+
+    Comment at the call site explains why this matters more than it looks:
+    RunMeta.judge_model must reflect what ran, not what was typed on the
+    command line, or two runs that used different fallbacks could compare as
+    identical.
+    """
+    _, fallback = _PROVIDER_KEYS.get(provider, (None, None))
+    return f"{provider}:{model_id or fallback or 'default'}"
 
 
 def _clear_deepeval_anthropic_secret() -> None:
@@ -463,24 +564,35 @@ def _clear_deepeval_anthropic_secret() -> None:
         pass
 
 
-def _build_model(model_id: str | None, *, anthropic: bool):
-    """Instantiate a deepeval model, or None when nothing is configured."""
+def _build_model(provider: str, model_id: str | None):
+    """Instantiate a deepeval model for ``provider``, or None when nothing is
+    configured (no matching API key -- via ADR 0002's config-file resolution
+    or the environment directly -- present for it).
+
+    Keyed by the resolved provider rather than a two-vendor ``anthropic: bool``
+    (#329): the special-casing below is what deepeval itself requires per
+    provider (a settings-clearing workaround for Anthropic, a plain optional
+    model id for OpenAI), not a judge/agent distinction -- either role can
+    resolve to either provider.
+    """
+    if provider not in _PROVIDER_KEYS:
+        print(f"unknown model provider {provider!r}; supported: {', '.join(_PROVIDER_KEYS)}", file=sys.stderr)
+        return None
+    env_var, _ = _PROVIDER_KEYS[provider]
+    key = os.environ.get(env_var)
+    if not key:
+        return None
     try:
-        if anthropic:
-            key = os.environ.get("ANTHROPIC_API_KEY")
-            if not key:
-                return None
+        if provider == "anthropic":
             from deepeval.models import AnthropicModel
 
             _clear_deepeval_anthropic_secret()
             return AnthropicModel(model=model_id or DEFAULT_JUDGE_MODEL, _anthropic_api_key=key)
-        if not (model_id or os.environ.get("OPENAI_API_KEY")):
-            return None
         from deepeval.models import GPTModel
 
         return GPTModel(model=model_id) if model_id else GPTModel()
     except Exception as exc:
-        print(f"could not build model {model_id!r}: {exc}", file=sys.stderr)
+        print(f"could not build {provider} model {model_id!r}: {exc}", file=sys.stderr)
         return None
 
 

@@ -84,6 +84,28 @@ def test_runs_judged_by_different_models_are_refused():
         compare(baseline, candidate)
 
 
+def test_runs_using_different_agent_models_are_refused():
+    """Answers depend on the agent model too (#329) -- previously untracked,
+    so this comparison used to run silently across two agent models with
+    nothing to say so."""
+    baseline = _run(_meta(agent_model="openai:gpt-4o"), [_scored("q1")])
+    candidate = _run(_meta(agent_model="openai:gpt-4o-mini"), [_scored("q1")])
+
+    with pytest.raises(ValueError, match="agent model"):
+        compare(baseline, candidate)
+
+
+def test_runs_using_different_extraction_backends_are_refused():
+    """A LightRAG-built and a GLiNER2-built graph are different systems under
+    test -- comparing across them would measure the backend swap as though it
+    were the retrieval/schema change under test."""
+    baseline = _run(_meta(extraction_backend="lightrag"), [_scored("q1")])
+    candidate = _run(_meta(extraction_backend="gliner2"), [_scored("q1")])
+
+    with pytest.raises(ValueError, match="extraction backend"):
+        compare(baseline, candidate)
+
+
 def test_runs_over_different_numbers_of_questions_are_refused():
     """Coverage is reported as a rate, so a 20-question baseline and a
     60-question candidate yield comparable-looking percentages over different
@@ -195,6 +217,39 @@ def test_the_rendered_report_says_when_the_noise_floor_is_unknown():
     text = render(compare(baseline, candidate, noise_floor_pp=None))
 
     assert "not calibrated" in text.lower()
+
+
+def test_the_rendered_report_names_the_agent_model_too():
+    """Provenance covers the agent as well as the judge (#329) -- a reader
+    deciding whether a delta is real needs to know what produced the answers,
+    not only what scored them."""
+    baseline = _run(_meta(agent_model="openai:gpt-4o"), [_scored("q1")])
+    candidate = _run(_meta(label="cand", agent_model="openai:gpt-4o"), [_scored("q1")])
+
+    text = render(compare(baseline, candidate, noise_floor_pp=4.0))
+
+    assert "openai:gpt-4o" in text
+
+
+def test_a_same_provider_run_is_flagged_in_the_report():
+    """#304's cross-provider independence is a property of the run's own
+    configuration, not something compare() can see from a coverage delta --
+    so it must be recorded and surfaced explicitly, not left silent (#329)."""
+    baseline = _run(_meta(same_provider=True), [_scored("q1")])
+    candidate = _run(_meta(label="cand", same_provider=True), [_scored("q1")])
+
+    text = render(compare(baseline, candidate, noise_floor_pp=4.0))
+
+    assert "share a provider" in text.lower()
+
+
+def test_a_cross_provider_run_is_not_flagged():
+    baseline = _run(_meta(same_provider=False), [_scored("q1")])
+    candidate = _run(_meta(label="cand", same_provider=False), [_scored("q1")])
+
+    text = render(compare(baseline, candidate, noise_floor_pp=4.0))
+
+    assert "share a provider" not in text.lower()
 
 
 # --- Efficiency has to be measured on the same questions (#309) ---

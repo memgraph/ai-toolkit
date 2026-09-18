@@ -7,7 +7,12 @@ comparison report refuses to call any delta real -- so this is what turns
 """
 
 import pytest
-from context_graph_eval.calibrate import describe_stability, noise_floor_pp
+from context_graph_eval.calibrate import (
+    describe_per_question_rates,
+    describe_stability,
+    noise_floor_pp,
+    per_question_pass_rate,
+)
 
 
 def test_identical_runs_have_no_noise():
@@ -60,3 +65,45 @@ def test_a_stable_pass_set_is_reported_as_such():
     summary = describe_stability([{"a", "b"}, {"a", "b"}, {"a", "b"}])
 
     assert "2 of 2" in summary
+
+
+# --- Per-question pass rate (#324): the aggregate stability ratio above
+# cannot say *which* questions are flaky, or tell a question that always
+# fails from one that passes half the time -- both read as "not always" in
+# describe_stability's intersection/union. ---
+
+
+def test_per_question_pass_rate_reports_each_questions_own_rate():
+    passing_sets = [{"a", "b"}, {"a"}, {"a", "b"}]
+
+    rates = per_question_pass_rate(passing_sets, all_names={"a", "b", "c"})
+
+    assert rates == {"a": 1.0, "b": pytest.approx(2 / 3), "c": 0.0}
+
+
+def test_a_question_that_never_passes_still_gets_a_rate():
+    """Absent from every passing set is not the same as absent from the
+    result -- it must show up as 0.0, not be silently dropped."""
+    rates = per_question_pass_rate([{"a"}, {"a"}], all_names={"a", "never-passes"})
+
+    assert rates["never-passes"] == 0.0
+
+
+def test_per_question_pass_rate_needs_at_least_two_runs():
+    with pytest.raises(ValueError, match="at least"):
+        per_question_pass_rate([{"a"}], all_names={"a"})
+
+
+def test_describe_per_question_rates_names_the_flaky_ones():
+    """The whole point (#324): naming which question is flaky, not just
+    counting how many are, is what lets someone go look at it."""
+    summary = describe_per_question_rates({"stable-pass": 1.0, "stable-fail": 0.0, "flaky-one": 0.5})
+
+    assert "flaky-one: 50%" in summary
+    assert "1 flaky" in summary
+    assert "always passes: 1" in summary
+    assert "never passes: 1" in summary
+
+
+def test_describe_per_question_rates_handles_nothing_scored():
+    assert "no questions scored" in describe_per_question_rates({})
