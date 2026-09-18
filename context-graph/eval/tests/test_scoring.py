@@ -6,6 +6,7 @@ decides how a score is *composed*: the deterministic efficiency count, the
 coverage gate, and how tiers are kept apart.
 """
 
+import pytest
 from context_graph_eval.retrieval import Retrieved
 from context_graph_eval.scoring import (
     DEFAULT_TOKENIZER,
@@ -266,6 +267,30 @@ def test_mean_bleu_f1_latency_include_every_scored_question_not_just_covered():
     assert summary.mean_bleu == 0.5
     assert summary.mean_f1 == 0.5
     assert summary.mean_latency_seconds == 3.0
+
+
+def test_mean_bleu_f1_latency_survive_a_judge_free_run():
+    """The bug this guards against (#342): with no judge (or one that
+    errored on every question) metric_scores is empty for every row, so
+    aggregating BLEU/F1/latency over the judge-scored subset -- rather than
+    over all_rows -- silently produced three None aggregates instead of the
+    judge-free run's only headline numbers."""
+    report = aggregate(
+        [
+            _scored("q1", metric_scores={}, bleu=0.4, f1=0.6, latency=1.0),
+            _scored("q2", metric_scores={}, bleu=0.8, f1=0.2, latency=3.0),
+        ]
+    )
+
+    summary = report.by_tier[1]
+    # Unscored by the judge -- coverage and the gated efficiency median stay
+    # unavailable, since neither can mean anything without a verdict.
+    assert summary.coverage_rate is None
+    assert summary.unscored == 2
+    # But BLEU/F1/latency need no verdict, so they must not be None too.
+    assert summary.mean_bleu == pytest.approx(0.6)
+    assert summary.mean_f1 == pytest.approx(0.4)
+    assert summary.mean_latency_seconds == pytest.approx(2.0)
 
 
 def test_abstention_questions_are_reported_apart():

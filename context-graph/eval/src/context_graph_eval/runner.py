@@ -14,6 +14,7 @@ thing actually under test.
 
 import asyncio
 import os
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -248,10 +249,16 @@ async def _retrieve_all(
 
     async def one(golden: "Golden") -> Retrieved:
         async with limiter:
+            started = time.monotonic()
             try:
                 return await retrieve(golden.input, graph=graph, llm=llm)
             except Exception as exc:
-                return Retrieved(answer="", errors=[str(exc)])
+                # retrieve() times itself, but that timing rides out on the
+                # Retrieved it returns -- a raise never produces one, so the
+                # attempt is timed here too. A failure can have spent real
+                # time (a slow model call that then errored) before raising;
+                # reporting a hard-coded 0.0 there would make it look instant.
+                return Retrieved(answer="", errors=[str(exc)], latency_seconds=time.monotonic() - started)
 
     return list(await asyncio.gather(*(one(golden) for golden in goldens)))
 
@@ -260,8 +267,10 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
     """Turn retrieval results into per-question scores.
 
     Efficiency, BLEU, F1 and latency are all computed regardless of whether a
-    judge ran -- they are deterministic (#304), so there is no reason to make
-    any of them wait on an LLM.
+    judge ran, so none of them wait on an LLM. Efficiency, BLEU and F1 are
+    deterministic (#304); latency is not -- it is wall-clock time, which
+    varies run to run -- but it needs no judge either, so it belongs in this
+    same judge-free group despite not sharing that reason.
     """
     judged = _judge(goldens, retrieved, plan) if plan.judge is not None else {}
 

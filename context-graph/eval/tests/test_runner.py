@@ -8,11 +8,17 @@ Scoring is LLM-backed and gated. What is tested here without a key is the
 sequencing the runner is responsible for.
 """
 
+import asyncio
+from typing import TYPE_CHECKING, cast
+
 import pytest
 from context_graph_eval.convert.longmemeval import to_golden
 from context_graph_eval.runner import RunPlan, run_batch
 
 from actions_graph import ActionsGraph
+
+if TYPE_CHECKING:
+    from context_graph_eval.retrieval import LLM, ReadOnlyGraph
 
 
 def _record(question_id: str, *, answer: str = "A beagle.", fact: str = "I adopted a beagle named Max"):
@@ -193,6 +199,31 @@ async def test_a_question_whose_retrieval_fails_is_still_reported(eval_graph: Ac
 
     assert report.by_tier[1].unscored == 1
     assert report.by_tier[1].covered == 0
+
+
+async def test_a_failed_retrieval_preserves_the_time_it_spent_before_raising(monkeypatch):
+    """The exception path used to hard-code Retrieved(latency_seconds=0.0),
+    even when the attempt spent real time before raising -- making a slow
+    failure look instant (#342). retrieve() has no Retrieved to carry its own
+    timing through a raise, so one() must time the whole attempt itself.
+
+    Monkeypatches retrieve() directly rather than going through run_batch and
+    eval_graph: the bug is in _retrieve_all's own timing, not in anything a
+    real graph or judge would exercise."""
+    import context_graph_eval.runner as runner_module
+
+    async def _slow_failure(*_args, **_kwargs):
+        await asyncio.sleep(0.05)
+        raise RuntimeError("model unavailable")
+
+    monkeypatch.setattr(runner_module, "retrieve", _slow_failure)
+
+    golden = to_golden(_record("q1"))
+    retrieved = await runner_module._retrieve_all(
+        [golden], graph=cast("ReadOnlyGraph", object()), llm=cast("LLM", object()), max_concurrent=1
+    )
+
+    assert retrieved[0].latency_seconds >= 0.05
 
 
 def test_a_run_refuses_to_upload_to_a_third_party(monkeypatch):

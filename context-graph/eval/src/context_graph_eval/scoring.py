@@ -60,9 +60,12 @@ class Scored:
     #: reasoning as efficiency_tokens: no LLM call needed for either.
     bleu: float = 0.0
     f1: float = 0.0
-    #: Wall-clock seconds retrieve() took for this question. 0.0 for a
-    #: question whose retrieval raised outright (runner._retrieve_all) --
-    #: there is no real duration to report for work that never finished.
+    #: Wall-clock seconds retrieve() took for this question -- unlike bleu/f1
+    #: above, not deterministic (it's timing, not counting), but likewise
+    #: independent of whether a judge ran. Reflects real elapsed time even for
+    #: a question whose retrieval raised outright: runner._retrieve_all times
+    #: the attempt itself in that case, since retrieve() has no Retrieved to
+    #: report the elapsed time through when it never returns.
     latency_seconds: float = 0.0
 
 
@@ -87,9 +90,11 @@ class TierReport:
     #: Mean, not median: unlike efficiency_tokens (#309's gate, deliberately
     #: robust to one pathological payload), these are the blog-comparison
     #: metrics themselves -- a single outlier answer should show up in the
-    #: mean, not be shrugged off by a robust statistic. Over every scored
-    #: question, not just covered ones: BLEU/F1 are their own independent,
-    #: judge-free quality signal, not conditioned on our 0.7 coverage gate.
+    #: mean, not be shrugged off by a robust statistic. Aggregated over every
+    #: question in the tier, not just the judge-scored subset coverage and
+    #: efficiency use above: BLEU, F1 and latency are their own judge-free
+    #: signal, so a judge-free run -- or a judge that failed on some
+    #: questions -- must still report all three rather than three Nones.
     mean_bleu: float | None = None
     mean_f1: float | None = None
     mean_latency_seconds: float | None = None
@@ -250,23 +255,30 @@ def aggregate(scored: list[Scored]) -> RunReport:
         # A row with no metric scores was never judged -- the judge errored, or
         # none ran. Counting it as a failure turns an outage into a reported
         # score, so it is excluded from the rate and surfaced separately.
-        rows = [s for s in all_rows if s.metric_scores]
-        unscored = len(all_rows) - len(rows)
-        covered = [s for s in rows if s.covered]
-        abstentions = [s for s in rows if s.abstention]
+        # Coverage and (gated) efficiency need a judge's verdict, so they are
+        # aggregated over this judge-scored subset only, not over all_rows.
+        judge_scored_rows = [s for s in all_rows if s.metric_scores]
+        unscored = len(all_rows) - len(judge_scored_rows)
+        covered = [s for s in judge_scored_rows if s.covered]
+        abstentions = [s for s in judge_scored_rows if s.abstention]
         by_tier[tier] = TierReport(
             unscored=unscored,
-            questions=len(rows),
+            questions=len(judge_scored_rows),
             covered=len(covered),
-            coverage_rate=(len(covered) / len(rows) if rows else None),
+            coverage_rate=(len(covered) / len(judge_scored_rows) if judge_scored_rows else None),
             # Median, not mean: one pathological payload should not drag the
             # number that gets compared across schema versions.
             median_efficiency_tokens=(int(median([s.efficiency_tokens for s in covered])) if covered else None),
             abstention_total=len(abstentions),
             abstention_correct=sum(1 for s in abstentions if s.covered),
-            mean_bleu=(mean(s.bleu for s in rows) if rows else None),
-            mean_f1=(mean(s.f1 for s in rows) if rows else None),
-            mean_latency_seconds=(mean(s.latency_seconds for s in rows) if rows else None),
+            # Over all_rows, not judge_scored_rows: BLEU/F1/latency need no
+            # judge, so a judge-free run (or one where the judge errored on
+            # some questions) must still aggregate them over everything that
+            # was actually scored, rather than over an empty or shrunken
+            # judge-scored subset (#342).
+            mean_bleu=(mean(s.bleu for s in all_rows) if all_rows else None),
+            mean_f1=(mean(s.f1 for s in all_rows) if all_rows else None),
+            mean_latency_seconds=(mean(s.latency_seconds for s in all_rows) if all_rows else None),
         )
     return RunReport(by_tier=by_tier)
 

@@ -309,12 +309,24 @@ Quality is judged, cost is counted — asking an LLM to grade a number you can
 count adds variance for no information.
 
 - **Coverage** — `ContextualRecallMetric` over retrieval, plus one `GEval`
-  rubric over the answer itself.
+  rubric over the answer itself. Needs a judge model.
 - **Efficiency** — a deterministic token count of the retrieval payload. Fewer
   tokens returned for the same answer is better.
+- **BLEU** and **F1** — standard NLP similarity against the answer key, the
+  same axes LoCoMo, LongMemEval and BEAM report. Computed directly (BLEU-1 via
+  deepeval's own `Scorer`, F1 as token-level precision/recall), no judge call.
+- **Latency** — wall-clock seconds `retrieve()` took for the question. Not
+  deterministic like the metrics above (it's timing, not counting), but
+  likewise needs no judge.
 
 Coverage is a **hard gate**; efficiency only ranks questions that cleared it.
 Otherwise the metric is trivially gamed by returning nothing.
+
+BLEU, F1 and latency are **judge-free**: their per-tier means are computed
+over every scored question, judge or no judge, unlike coverage and the gated
+efficiency median above, which need a judge's verdict and so only cover the
+judge-scored subset. A judge-free run, or one where the judge errored on some
+questions, still reports all three.
 
 Three refinements, each added because it caught a wrong number:
 
@@ -339,6 +351,9 @@ report.by_tier[1].median_efficiency_tokens  # median, not mean: one pathological
 # compared across schema versions
 report.by_tier[1].abstention_correct  # reported apart -- here a confident
 # answer is the failure
+report.by_tier[1].mean_bleu             # judge-free: populated even with no
+report.by_tier[1].mean_f1               # judge configured, unlike
+report.by_tier[1].mean_latency_seconds  # coverage_rate/median_efficiency_tokens above
 ```
 
 `RunReport` has **no** blended headline field, by design. A single number across

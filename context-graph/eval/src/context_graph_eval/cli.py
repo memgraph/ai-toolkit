@@ -650,10 +650,12 @@ def _print_report(report, *, judged: bool) -> None:
         if summary.abstention_total:
             print(f"  abstention    {summary.abstention_correct}/{summary.abstention_total} correct")
 
-        # Deterministic, judge-free cross-checks (no LLM call, so printed
-        # regardless of whether a judge ran) -- standard NLP metrics other
-        # memory benchmarks also report, so a run here is comparable on more
-        # than just our own judged coverage.
+        # Judge-free cross-checks (no LLM call needed, so printed regardless
+        # of whether a judge ran) -- standard NLP metrics other memory
+        # benchmarks also report, so a run here is comparable on more than
+        # just our own judged coverage. BLEU and F1 are deterministic;
+        # latency is wall-clock and varies run to run, but it is judge-free
+        # for the same reason the other two are.
         if summary.mean_bleu is not None:
             print(f"  bleu          mean {summary.mean_bleu:.2f}")
         if summary.mean_f1 is not None:

@@ -337,11 +337,11 @@ class Retrieved:
     queries: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     #: Wall-clock seconds for the whole retrieve() call: every query/observe
-    #: round plus the final answer call. Measured here, not by the caller,
-    #: so a question whose retrieval raises (caught in runner._retrieve_all)
-    #: still has no latency to report -- there is nothing misleading to
-    #: default it to, unlike efficiency_tokens's honest 0 for an empty
-    #: payload.
+    #: round plus the final answer call. Measured here on a successful
+    #: return; a question whose retrieval raises (caught in
+    #: runner._retrieve_all) never gets a Retrieved out of this function to
+    #: carry that timing, so the caller times the attempt itself instead --
+    #: the 0.0 default below is never actually used for that path.
     latency_seconds: float = 0.0
 
 
