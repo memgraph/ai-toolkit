@@ -15,7 +15,7 @@ thing actually under test.
 import asyncio
 import os
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from .convert.longmemeval import to_session_fixtures
 from .inject import PENDING, inject_batch
@@ -28,6 +28,8 @@ from .scoring import (
     efficiency_tokens,
     enforce_retrieval_floor,
 )
+from .text_search import DEFAULT_LIMIT as DEFAULT_TEXT_SEARCH_LIMIT
+from .text_search import ensure_turn_text_index, retrieve_by_text_search
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
     from deepeval.dataset import Golden
@@ -35,6 +37,14 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
     from actions_graph import ActionsGraph
 
     from .retrieval import LLM
+
+#: "graph-agent" (default, #300's existing baseline: an agent writes its own
+#: Cypher against the reconciled memory) or "text-search" (this eval's cheaper
+#: comparison point: Memgraph's own full-text index over raw, unreconciled
+#: turns -- see text_search.py). Deliberately the one axis report.compare()
+#: does NOT pin: it is usually the thing a run using this field is measuring.
+RetrievalStrategyName = Literal["graph-agent", "text-search"]
+RETRIEVAL_STRATEGIES: tuple[RetrievalStrategyName, ...] = ("graph-agent", "text-search")
 
 
 @dataclass(frozen=True)
@@ -70,8 +80,18 @@ class RunPlan:
     #: evaluated, silently.
     memgraph_url: str | None = None
     #: "lightrag" (default) or "gliner2" -- see reconcile.EXTRACTION_BACKENDS
-    #: and reconcile_batch's docstring for what each implies.
+    #: and reconcile_batch's docstring for what each implies. Meaningless when
+    #: retrieval_strategy="text-search" (nothing reconciles), and ignored then.
     extraction_backend: ExtractionBackendName = "lightrag"
+    #: "graph-agent" (default) or "text-search" -- see RETRIEVAL_STRATEGIES
+    #: above. "text-search" forces reconciliation off regardless of
+    #: ``reconcile`` above: the whole point of that baseline is to skip the
+    #: dominant cost, and running reconciliation anyway would just discard its
+    #: output unused.
+    retrieval_strategy: RetrievalStrategyName = "graph-agent"
+    #: How many text-search hits to hand the answering LLM. Ignored for
+    #: "graph-agent". See text_search.DEFAULT_LIMIT for why this is not tuned.
+    text_search_limit: int = DEFAULT_TEXT_SEARCH_LIMIT
 
 
 @dataclass(frozen=True)
@@ -82,6 +102,9 @@ class BatchReport:
     scored: list[Scored] = field(default_factory=list)
     reconciled: int = 0
     reconcile_failures: int = 0
+    #: Turns text_search.ensure_turn_text_index materialized and indexed.
+    #: Always 0 for retrieval_strategy="graph-agent", which never calls it.
+    indexed_turns: int = 0
 
 
 def _require_reconciled(fixtures: list, *, graph: "ActionsGraph", extraction_backend: ExtractionBackendName) -> None:
@@ -202,13 +225,23 @@ async def run_batch(
         for record in records
         for fixture in to_session_fixtures(record, max_sessions=plan.max_sessions_per_question)
     ]
-    if plan.reuse_graph:
+    # reuse_graph exists to skip reconciliation's dominant LLM cost (#322) --
+    # text-search has no such cost to skip (indexing is deterministic and
+    # cheap), and _require_reconciled's pending-status check is meaningless
+    # for a strategy that never reconciles anything, so text-search always
+    # re-injects rather than reusing.
+    if plan.reuse_graph and plan.retrieval_strategy != "text-search":
         _require_reconciled(fixtures, graph=graph, extraction_backend=plan.extraction_backend)
     else:
         inject_batch(fixtures, graph=graph)
 
-    reconciled = failures = 0
-    if plan.reconcile:
+    reconciled = failures = indexed_turns = 0
+    if plan.retrieval_strategy == "text-search":
+        # No reconciliation regardless of plan.reconcile: this baseline's
+        # whole point is to skip the dominant cost, and reconciling anyway
+        # would just build memory this strategy never reads.
+        indexed_turns = ensure_turn_text_index(graph).turns
+    elif plan.reconcile:
         outcome = await reconcile_batch(
             graph.db,
             limit=plan.reconcile_limit,
@@ -218,7 +251,7 @@ async def run_batch(
         reconciled, failures = outcome.reconciled, outcome.failed
 
     read_only = ReadOnlyGraph(graph.db)
-    retrieved = await _retrieve_all(goldens, read_only, llm, plan.max_concurrent)
+    retrieved = await _retrieve_all(goldens, read_only, llm, plan)
 
     scored = _score(goldens, retrieved, plan)
     report = aggregate(scored)
@@ -227,6 +260,7 @@ async def run_batch(
         scored=scored,
         reconciled=reconciled,
         reconcile_failures=failures,
+        indexed_turns=indexed_turns,
     )
 
 
@@ -234,7 +268,7 @@ async def _retrieve_all(
     goldens: list["Golden"],
     graph: ReadOnlyGraph,
     llm: "LLM",
-    max_concurrent: int,
+    plan: RunPlan,
 ) -> list[Retrieved]:
     """Retrieve for every question, bounded so a batch cannot stampede the model.
 
@@ -242,11 +276,15 @@ async def _retrieve_all(
     propagating: a coverage rate computed over a silently shortened corpus is
     wrong, not merely noisy, so a failure has to be reported as a miss.
     """
-    limiter = asyncio.Semaphore(max_concurrent)
+    limiter = asyncio.Semaphore(plan.max_concurrent)
 
     async def one(golden: "Golden") -> Retrieved:
         async with limiter:
             try:
+                if plan.retrieval_strategy == "text-search":
+                    return await retrieve_by_text_search(
+                        golden.input, graph=graph, llm=llm, limit=plan.text_search_limit
+                    )
                 return await retrieve(golden.input, graph=graph, llm=llm)
             except Exception as exc:
                 return Retrieved(answer="", errors=[str(exc)])

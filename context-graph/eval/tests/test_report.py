@@ -106,6 +106,39 @@ def test_runs_using_different_extraction_backends_are_refused():
         compare(baseline, candidate)
 
 
+def test_a_text_search_run_is_comparable_to_a_graph_agent_run():
+    """retrieval_strategy is the one axis compare() must NOT pin: a
+    text-search baseline vs the graph-agent memory pipeline is exactly the
+    comparison this exists to enable. extraction_backend="none" (what a
+    text-search run actually records, since it never reconciles) must not
+    trip the extraction-backend pin either -- that is not a backend
+    disagreement, it is one side having none."""
+    baseline = _run(
+        _meta(retrieval_strategy="text-search", extraction_backend="none"),
+        [_scored("q1")],
+    )
+    candidate = _run(
+        _meta(label="cand", retrieval_strategy="graph-agent", extraction_backend="lightrag"),
+        [_scored("q1")],
+    )
+
+    comparison = compare(baseline, candidate)
+
+    assert comparison.baseline.retrieval_strategy == "text-search"
+    assert comparison.candidate.retrieval_strategy == "graph-agent"
+
+
+def test_extraction_backend_still_matters_between_two_graph_agent_runs():
+    """The "none" exemption must not become a blanket bypass: two real,
+    reconciled runs built with different backends are still a mismatch, and
+    still refused."""
+    baseline = _run(_meta(extraction_backend="lightrag"), [_scored("q1")])
+    candidate = _run(_meta(extraction_backend="gliner2"), [_scored("q1")])
+
+    with pytest.raises(ValueError, match="extraction backend"):
+        compare(baseline, candidate)
+
+
 def test_runs_over_different_numbers_of_questions_are_refused():
     """Coverage is reported as a rate, so a 20-question baseline and a
     60-question candidate yield comparable-looking percentages over different
@@ -229,6 +262,28 @@ def test_the_rendered_report_names_the_agent_model_too():
     text = render(compare(baseline, candidate, noise_floor_pp=4.0))
 
     assert "openai:gpt-4o" in text
+
+
+def test_the_rendered_report_names_both_retrieval_strategies_when_they_differ():
+    """Not pinned by compare() (deliberately -- it is usually the thing being
+    measured), so a reader must not mistake "not pinned" for "the same": a
+    text-search-vs-graph-agent comparison must be unmissable in the report."""
+    baseline = _run(_meta(retrieval_strategy="text-search", extraction_backend="none"), [_scored("q1")])
+    candidate = _run(_meta(label="cand", retrieval_strategy="graph-agent"), [_scored("q1")])
+
+    text = render(compare(baseline, candidate, noise_floor_pp=4.0))
+
+    assert "text-search" in text
+    assert "graph-agent" in text
+
+
+def test_the_rendered_report_omits_the_retrieval_line_when_strategies_match():
+    baseline = _run(_meta(), [_scored("q1")])
+    candidate = _run(_meta(label="cand"), [_scored("q1")])
+
+    text = render(compare(baseline, candidate, noise_floor_pp=4.0))
+
+    assert "retrieval " not in text
 
 
 def test_a_same_provider_run_is_flagged_in_the_report():

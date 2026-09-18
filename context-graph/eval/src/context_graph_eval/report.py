@@ -55,8 +55,19 @@ class RunMeta:
     #: "lightrag" or "gliner2" -- see reconcile.EXTRACTION_BACKENDS. Defaults
     #: to "lightrag" for runs saved before this field existed, which is what
     #: every one of them actually used (GLiNER2 wasn't reachable from this
-    #: CLI until this field was added).
+    #: CLI until this field was added). "none" when retrieval_strategy is
+    #: "text-search": that strategy never reconciles anything, so no backend
+    #: extracted anything -- compare() exempts the pin below when either side
+    #: is "none" rather than treating "text-search never reconciled" as a
+    #: backend mismatch.
     extraction_backend: str = "lightrag"
+    #: "graph-agent" or "text-search" -- see runner.RETRIEVAL_STRATEGIES.
+    #: Deliberately NOT pinned by compare() below: unlike every other field
+    #: here, this is usually the thing a comparison exists to measure, not a
+    #: nuisance variable that would make one incomparable to the other.
+    #: Defaults to "graph-agent" for runs saved before this field existed,
+    #: which is the only strategy that existed then.
+    retrieval_strategy: str = "graph-agent"
 
 
 @dataclass(frozen=True)
@@ -123,8 +134,12 @@ def compare(baseline: SavedRun, candidate: SavedRun, noise_floor_pp: float | Non
     _require_same(baseline.meta, candidate.meta, "agent_model", "agent model")
     # A LightRAG-built and a GLiNER2-built graph are different systems under
     # test -- comparing across them would measure the backend swap as though
-    # it were the schema/retrieval change under test.
-    _require_same(baseline.meta, candidate.meta, "extraction_backend", "extraction backend")
+    # it were the schema/retrieval change under test. Exempted when either
+    # side is "none" (a text-search run, which never reconciled): that is not
+    # a backend disagreement, it is one side not having a backend at all --
+    # exactly the comparison retrieval_strategy below exists to allow.
+    if "none" not in (baseline.meta.extraction_backend, candidate.meta.extraction_backend):
+        _require_same(baseline.meta, candidate.meta, "extraction_backend", "extraction backend")
     _require_same(baseline.meta, candidate.meta, "tokenizer", "tokenizer")
     # Question count too: coverage is reported as a rate, so a 20-question
     # baseline and a 60-question candidate produce comparable-looking
@@ -229,6 +244,15 @@ def render(comparison: Comparison) -> str:
         "",
         f"VERDICT  {comparison.verdict.value}",
     ]
+
+    # Named on its own line, not folded into the header above: this is
+    # deliberately the one axis compare() does not pin, so a reader must not
+    # mistake "not pinned" for "the same" -- a text-search-vs-graph-agent
+    # comparison should be unmissable at a glance.
+    if comparison.baseline.retrieval_strategy != meta.retrieval_strategy:
+        lines.append(
+            f"retrieval  {comparison.baseline.retrieval_strategy} (baseline) vs {meta.retrieval_strategy} (candidate)"
+        )
 
     if meta.same_provider:
         lines.append(
