@@ -102,6 +102,8 @@ async def main():
 asyncio.run(main())
 ```
 
+`extraction_backend` is pluggable — `LightRAGBackend` (LLM-based, shown above) or `GLiNER2Backend` (local, LLM-free) — see [unstructured2graph § choosing an extraction backend](/unstructured2graph/#choosing-an-extraction-backend).
+
 👉 [Full Documentation](https://memgraph.com/docs/ai-ecosystem/unstructured2graph) | [Examples](/unstructured2graph/examples/)
 
 ---

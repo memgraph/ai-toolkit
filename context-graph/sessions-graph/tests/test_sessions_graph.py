@@ -182,13 +182,7 @@ class TestSessionsGraphConnector:
         assert connector.active_user_id is None
         assert connector.active_session_id is None
 
-    def test_auto_reconcile_defaults_off_and_does_not_spawn_process(self, monkeypatch):
-        # Must not consult ambient env for this -- a real shell with
-        # SESSIONS_GRAPH_AUTO_RECONCILE=1 exported would otherwise make this
-        # test flip Popen on and fail, dumping the *real* env= dict (secrets
-        # included) into the assertion failure message. Same bug class this
-        # test exists to catch, just at the test level instead of the code.
-        monkeypatch.delenv("SESSIONS_GRAPH_AUTO_RECONCILE", raising=False)
+    def test_auto_reconcile_defaults_off_and_does_not_spawn_process(self):
         connector, _graph, _db, SessionStartEvent, SessionEndEvent = self._make()
 
         with patch("sessions_graph.connector.subprocess.Popen") as mock_popen:
@@ -229,19 +223,6 @@ class TestSessionsGraphConnector:
         assert env["MEMGRAPH_PASSWORD"] == "secret"
         assert env["MEMGRAPH_DATABASE"] == "mydb"
         assert env["OPENAI_API_KEY"] == "sk-test"
-
-    def test_auto_reconcile_env_var_enables_spawn_when_not_passed_explicitly(self, monkeypatch, context_graph_config):
-        from sessions_graph.connector import SessionsGraphConnector
-
-        monkeypatch.setenv("SESSIONS_GRAPH_AUTO_RECONCILE", "1")
-        _connector, graph, _db, SessionStartEvent, SessionEndEvent = self._make()
-        connector = SessionsGraphConnector(graph)
-
-        with patch("sessions_graph.connector.subprocess.Popen") as mock_popen:
-            connector.on_event(SessionStartEvent(session_id="s-1", user_id="alice"))
-            connector.on_event(SessionEndEvent(session_id="s-1"))
-
-        mock_popen.assert_called_once()
 
     def test_supports_session_events_only(self):
         connector, _, _, SessionStartEvent, SessionEndEvent = self._make()

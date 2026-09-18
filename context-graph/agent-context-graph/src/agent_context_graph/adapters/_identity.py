@@ -156,20 +156,18 @@ def resolve_llm_env() -> dict[str, str]:
     }
 
 
-def resolve_auto_reconcile() -> bool | None:
+def resolve_auto_reconcile() -> bool:
     """Resolve whether sessions-graph should auto-trigger reconciliation on SESSION_END.
 
-    Config file only — mirrors :func:`resolve_llm_env`. Returns ``None`` when
-    never configured (the config-file key is absent), distinct from an
-    explicit ``False`` — callers (``agent_context_graph.hooks.runner``) pass
-    this straight through to ``SessionsGraphConnector(auto_reconcile=...)``,
-    whose own resolution order is explicit arg > ``SESSIONS_GRAPH_AUTO_RECONCILE``
-    env var > default off. Collapsing "never configured" to ``False`` here
-    would short-circuit that env var fallback for anyone still relying on it.
-    Off by default given LightRAG entity extraction's LLM cost; opt in with
+    Config file only — mirrors :func:`resolve_llm_env`. The config-file value
+    is ``None`` when never configured; per ADR 0002 (config-file-only-hook-
+    resolution) there is no ambient env var fallback to preserve here, so
+    "never configured" collapses to ``False``, matching
+    ``SessionsGraphConnector``'s own default. Off by default given LightRAG
+    entity extraction's LLM cost; opt in with
     ``agent-context-graph config set reconcile.auto_reconcile true``.
     """
-    return load_config().auto_reconcile
+    return bool(load_config().auto_reconcile)
 
 
 def parse_bool_flag(value: str | bool) -> bool:

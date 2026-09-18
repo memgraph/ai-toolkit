@@ -54,6 +54,14 @@ class Scored:
     #: number was throwing it away. Absent for abstention questions, which are
     #: judged on the rubric alone.
     metric_scores: dict[str, float] = field(default_factory=dict)
+    #: The judge's own explanation behind each metric_scores entry, same keys.
+    #: deepeval generates this whether or not anyone keeps it -- it cost
+    #: nothing extra to keep. ContextualRecallMetric's reason already
+    #: synthesizes its per-sentence supported/unsupported verdicts into prose;
+    #: deepeval's public evaluate() API surfaces that text but not the raw
+    #: verdict list underneath it, so this is the finest attribution available
+    #: without reaching into deepeval's own metric internals.
+    metric_reasons: dict[str, str] = field(default_factory=dict)
     #: Deterministic, judge-free cross-checks against the answer key -- not
     #: gated by coverage, unlike efficiency_tokens (#309's gate is specific
     #: to that axis). Computed regardless of whether a judge ran, same

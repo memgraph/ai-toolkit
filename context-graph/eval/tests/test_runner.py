@@ -137,6 +137,42 @@ async def test_a_run_reports_which_questions_it_scored(eval_graph: ActionsGraph)
     assert {s.name for s in report.scored} == {"q1", "q2"}
 
 
+async def test_judge_reasons_are_kept_alongside_scores(eval_graph: ActionsGraph, monkeypatch):
+    """deepeval generates a reason for every score it produces regardless --
+    keeping it costs no extra judge call. Previously discarded in
+    _judge_group, which left a failed question saying only a bare number with
+    no way to tell whether retrieval or the answer was at fault without
+    rerunning by hand."""
+    import context_graph_eval.runner as runner_module
+    from context_graph_eval.runner import _Judged
+
+    def _fake_judge(goldens, retrieved, plan):
+        return {
+            "q1": _Judged(
+                scores={"Coverage": 0.4},
+                reasons={"Coverage": "the answer named the dog but omitted the breed"},
+            )
+        }
+
+    # Bypasses the real deepeval evaluate() call entirely -- this test is
+    # about whether _score threads _Judged.reasons onto Scored, not about
+    # running a judge.
+    monkeypatch.setattr(runner_module, "_judge", _fake_judge)
+
+    report = await run_batch(
+        [to_golden(_record("q1"))],
+        records=[_record("q1")],
+        graph=eval_graph,
+        llm=_StubLLM(),
+        # Any non-None value routes _score through _judge (now faked); the
+        # real judge is never constructed or called.
+        plan=RunPlan(reconcile=False, judge=object()),
+    )
+
+    assert report.scored[0].metric_reasons == {"Coverage": "the answer named the dog but omitted the breed"}
+    assert report.scored[0].metric_scores == {"Coverage": 0.4}
+
+
 async def test_reconciliation_is_told_which_graph_to_write_to(eval_graph: ActionsGraph, monkeypatch):
     """LightRAG's storage backends resolve their connection from the environment
     rather than the client passed in, so a run that does not plumb the URL

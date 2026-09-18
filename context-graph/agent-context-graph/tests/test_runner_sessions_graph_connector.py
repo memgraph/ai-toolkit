@@ -1,6 +1,7 @@
 """Tests that the sessions-graph connector wiring resolves auto_reconcile from
-persistent config (agent_context_graph.adapters._identity), not just the
-SESSIONS_GRAPH_AUTO_RECONCILE env var read internally by SessionsGraphConnector.
+persistent config (agent_context_graph.adapters._identity). Per ADR 0002
+(config-file-only-hook-resolution), SessionsGraphConnector itself consults no
+ambient env var -- config file only.
 """
 
 import sys
@@ -39,7 +40,7 @@ def fake_sessions_graph(monkeypatch):
             pass
 
     class _SessionsGraphConnector:
-        def __init__(self, graph, *, auto_reconcile=None):
+        def __init__(self, graph, *, auto_reconcile=False):
             constructed["auto_reconcile"] = auto_reconcile
 
     fake_core = ModuleType("sessions_graph")
@@ -52,12 +53,12 @@ def fake_sessions_graph(monkeypatch):
     return constructed
 
 
-def test_sessions_graph_connector_passes_none_when_unconfigured(config_dir, fake_sessions_graph):
-    """Unconfigured must resolve to None, not False -- otherwise it silently
-    suppresses the connector's own SESSIONS_GRAPH_AUTO_RECONCILE env fallback
-    for anyone who has that var exported (finding 1)."""
+def test_sessions_graph_connector_passes_false_when_unconfigured(config_dir, fake_sessions_graph):
+    """Unconfigured resolves to False -- SessionsGraphConnector no longer has
+    an ambient env fallback to preserve (ADR 0002), so this matches its own
+    default."""
     create_link(["sessions_graph"])
-    assert fake_sessions_graph["auto_reconcile"] is None
+    assert fake_sessions_graph["auto_reconcile"] is False
 
 
 def test_sessions_graph_connector_reads_auto_reconcile_true_from_config(config_dir, fake_sessions_graph):

@@ -117,6 +117,15 @@ def test_a_question_the_judge_could_not_score_is_not_counted_as_a_failure():
     assert report.by_tier[1].coverage_rate == 1.0
 
 
+def test_a_score_with_no_reasons_recorded_defaults_to_empty_not_missing():
+    """A Scored built without metric_reasons (every caller before this field
+    existed, and every judge-free question) must not raise on .get() -- an
+    absent reason is a normal case, not an error."""
+    scored = Scored(name="q1", tier=1, coverage=1.0, covered=True, efficiency_tokens=10)
+
+    assert scored.metric_reasons == {}
+
+
 def test_a_fully_unscoreable_tier_reports_no_rate():
     """Better to say nothing than to report 0%."""
     report = aggregate([Scored(name="q", tier=1, coverage=0.0, covered=False, efficiency_tokens=0)])

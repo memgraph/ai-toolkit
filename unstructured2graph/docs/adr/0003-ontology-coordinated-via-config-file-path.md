@@ -1,0 +1,7 @@
+# Coordinate the ontology via a shared config file path, not an in-memory object
+
+An extraction backend's extraction-time type steering (LightRAG's `addon_params`) and `unstructured2graph`'s Memgraph-side label promotion are two independent call sites, often different code — caller constructs/initializes `MemgraphLightRAGWrapper` before `unstructured2graph.from_texts()`/`from_unstructured()` runs, sometimes in a different function entirely. Passing a pre-built `Ontology` object to both risks silent drift: two independently-constructed objects can diverge, nothing catches it. Instead: both call sites reference same config file *path*; `from_texts()`/`from_unstructured()` load + parse it internally rather than accepting a pre-built object. Divergence now = "did you type the same path in both places" — smaller, more visible mistake than object inequality.
+
+`GLiNER2Backend` doesn't have this specific drift risk — it's constructed with an `Ontology` object directly (`GLiNER2Backend(ontology=...)`), typically in the same call as promotion — but a caller wiring both up separately should still `load_ontology()` the same path for both rather than build two objects, for the same reason.
+
+**Considered**: shared `Ontology` object constructed once, passed to both call sites — rejected: construction happens in different code, sometimes different processes, no structural guarantee they stay in sync.

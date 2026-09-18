@@ -1,0 +1,5 @@
+# Decouple label promotion from ontology enforcement
+
+First version (PR #248) had single `enforce_ontology` flag controlling both concerns at once: promoting `entity_type` to a real Memgraph label, and restricting/validating that promotion against a fixed vocabulary. Turning ontology enforcement off meant no label promotion at all, even unrestricted. Split into two independent params — `promote_labels` (promote every `entity_type`, sanitized, no vocabulary) and `enforce_ontology` (restrict promotion to a vocabulary, flag anything outside it `ontology_conformant: false`) — genuinely different concerns: idiomatic Labeled-Property-Graph typing out of an extraction backend's output (LightRAG's or GLiNER2's) doesn't require a curated ontology at all; a caller may want the former without ever wanting the latter. `enforce_ontology=True` wins when both set — stricter mode, superset of unrestricted promotion.
+
+**Considered**: keeping one flag (as in #248) — rejected once clear callers like sessions-graph might want plain label promotion without committing to (or maintaining) a curated ontology.

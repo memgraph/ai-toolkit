@@ -152,7 +152,7 @@ export OPENAI_API_KEY=...                        # or ANTHROPIC_API_KEY
 sessions-graph reconcile --pending
 ```
 
-This pulls each session's actions and memories, runs them through [unstructured2graph](../unstructured2graph/)'s LightRAG pipeline, and writes extracted entities (with typed labels like `:Person`, `:Organization`) linked back via `(:Action|:Memory)-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(:Entity)`. See [sessions-graph § reconciliation](./sessions-graph/README.md#session-reconciliation).
+This pulls each session's actions and memories, runs them through [unstructured2graph](../unstructured2graph/)'s chunk + entity-extraction pipeline, and writes extracted entities (with typed labels like `:Person`, `:Organization`) linked back via `(:Action|:Memory)-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(:Entity)`. The `sessions-graph reconcile` CLI above always extracts via LightRAG; programmatic callers can swap in another `ExtractionBackend` (e.g. GLiNER2, local and LLM-free) — see [sessions-graph § reconciliation](./sessions-graph/README.md#session-reconciliation).
 
 ## Querying the graph
 
