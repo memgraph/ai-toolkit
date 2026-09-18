@@ -6,21 +6,26 @@ decides how a score is *composed*: the deterministic efficiency count, the
 coverage gate, and how tiers are kept apart.
 """
 
+import pytest
 from context_graph_eval.retrieval import Retrieved
 from context_graph_eval.scoring import (
     DEFAULT_TOKENIZER,
     Scored,
     aggregate,
+    bleu_score,
     build_metrics,
     efficiency_tokens,
     enforce_retrieval_floor,
     gate_and_rank,
+    token_f1_score,
     tokenizer_in_use,
 )
 from deepeval.models import DeepEvalBaseLLM
 
 
-def _scored(name, *, tier=1, covered=True, tokens=100, abstention=False, metric_scores=None):
+def _scored(
+    name, *, tier=1, covered=True, tokens=100, abstention=False, metric_scores=None, bleu=0.0, f1=0.0, latency=0.0
+):
     return Scored(
         name=name,
         tier=tier,
@@ -31,6 +36,9 @@ def _scored(name, *, tier=1, covered=True, tokens=100, abstention=False, metric_
         # Non-empty by default: a Scored with no metric scores means the judge
         # could not score it, which is a different thing from scoring zero.
         metric_scores=metric_scores if metric_scores is not None else {"Coverage": 1.0 if covered else 0.0},
+        bleu=bleu,
+        f1=f1,
+        latency_seconds=latency,
     )
 
 
@@ -148,6 +156,64 @@ def test_returning_nothing_costs_nothing():
     assert efficiency_tokens(Retrieved(answer="", retrieval_context=[])) == 0
 
 
+# --- BLEU/F1: deterministic, judge-free cross-checks against the answer
+# key, computed the same way regardless of whether a judge ran. ---
+
+
+def test_bleu_scores_an_exact_match_as_perfect():
+    assert bleu_score("Admon was assigned the day shift.", "Admon was assigned the day shift.") == 1.0
+
+
+def test_bleu_scores_unrelated_text_near_zero():
+    assert bleu_score("Admon was assigned the day shift.", "Completely unrelated sentence about kayaking.") < 0.2
+
+
+def test_bleu_is_zero_for_an_empty_answer():
+    """An empty answer -- a failed or abstaining retrieval -- has zero token
+    overlap with any real expected output. Not an error: a real outcome."""
+    assert bleu_score("Admon was assigned the day shift.", "") == 0.0
+
+
+def test_bleu_is_zero_for_an_empty_expected_output():
+    assert bleu_score("", "Admon was assigned the day shift.") == 0.0
+
+
+def test_f1_scores_an_exact_match_as_perfect():
+    assert token_f1_score("Admon was assigned the day shift.", "Admon was assigned the day shift.") == 1.0
+
+
+def test_f1_rewards_partial_token_overlap():
+    """Half the expected tokens present, none extra: precision 1.0, recall
+    0.5, F1 the harmonic mean of the two -- not their average."""
+    f1 = token_f1_score("the day shift starts at eight am", "the day shift")
+
+    assert 0.0 < f1 < 1.0
+
+
+def test_f1_is_zero_for_no_overlap_at_all():
+    assert token_f1_score("Admon was assigned the day shift.", "Completely different words entirely.") == 0.0
+
+
+def test_f1_counts_token_multiplicity_not_just_membership():
+    """'the the the' against a single 'the' must not score a perfect match on
+    either side -- Counter intersection, not set intersection."""
+    f1 = token_f1_score("the cat sat", "the the the")
+
+    assert f1 < 1.0
+
+
+def test_f1_is_zero_for_an_empty_answer():
+    assert token_f1_score("Admon was assigned the day shift.", "") == 0.0
+
+
+def test_f1_ignores_punctuation_the_answer_key_happens_to_carry():
+    """Whitespace-splitting glued the expected output's trailing period onto
+    its last token, so "A beagle." against "A beagle" scored only 0.5 despite
+    being the same answer -- punctuation is not a fact the judge cares
+    about."""
+    assert token_f1_score("A beagle.", "A beagle") == 1.0
+
+
 def test_only_questions_that_cleared_coverage_are_ranked():
     """Coverage is a hard gate, not a weighted term (#309) -- otherwise a
     retrieval change could trade real coverage for token savings and still
@@ -200,6 +266,48 @@ def test_median_efficiency_uses_only_questions_that_passed():
     )
 
     assert report.by_tier[1].median_efficiency_tokens == 20
+
+
+def test_mean_bleu_f1_latency_include_every_scored_question_not_just_covered():
+    """Unlike efficiency's gate (#309, specific to that axis), BLEU/F1/latency
+    are their own independent, judge-free signal -- a failing question's
+    answer still has a real BLEU/F1/latency, and dropping it would hide
+    exactly the questions most worth looking at."""
+    report = aggregate(
+        [
+            _scored("passed", covered=True, bleu=1.0, f1=1.0, latency=2.0),
+            _scored("failed", covered=False, bleu=0.0, f1=0.0, latency=4.0),
+        ]
+    )
+
+    summary = report.by_tier[1]
+    assert summary.mean_bleu == 0.5
+    assert summary.mean_f1 == 0.5
+    assert summary.mean_latency_seconds == 3.0
+
+
+def test_mean_bleu_f1_latency_survive_a_judge_free_run():
+    """The bug this guards against (#342): with no judge (or one that
+    errored on every question) metric_scores is empty for every row, so
+    aggregating BLEU/F1/latency over the judge-scored subset -- rather than
+    over all_rows -- silently produced three None aggregates instead of the
+    judge-free run's only headline numbers."""
+    report = aggregate(
+        [
+            _scored("q1", metric_scores={}, bleu=0.4, f1=0.6, latency=1.0),
+            _scored("q2", metric_scores={}, bleu=0.8, f1=0.2, latency=3.0),
+        ]
+    )
+
+    summary = report.by_tier[1]
+    # Unscored by the judge -- coverage and the gated efficiency median stay
+    # unavailable, since neither can mean anything without a verdict.
+    assert summary.coverage_rate is None
+    assert summary.unscored == 2
+    # But BLEU/F1/latency need no verdict, so they must not be None too.
+    assert summary.mean_bleu == pytest.approx(0.6)
+    assert summary.mean_f1 == pytest.approx(0.4)
+    assert summary.mean_latency_seconds == pytest.approx(2.0)
 
 
 def test_abstention_questions_are_reported_apart():
