@@ -1,0 +1,166 @@
+====================================================================================================
+1. ANSWER SURVIVAL -- does an edge exist that carries the expected answer?
+====================================================================================================
+
+[single-session-user] What degree did I graduate with?
+  answer: 'Business Administration'  (session answer_280352e9)
+  constrained  2 answer-bearing edge(s)
+      studied(User:'me' -> Organization:'Business Administration')
+      studied(User:'user' -> Organization:'Business Administration')
+  permissive   7 answer-bearing edge(s)
+      attended(User:'me' -> Organization:'Business Administration')
+      attended(User:'user' -> Organization:'Business Administration')
+      knows(Person:'assistant' -> Organization:'Business Administration')
+      knows(User:'assistant' -> Organization:'Business Administration')
+      knows(User:'user' -> Organization:'Business Administration')
+      studied(User:'me' -> Organization:'Business Administration')
+
+[temporal-reasoning] How many days passed between my visit to the Museum of Modern Art (MoMA) and the 'Ancient Civilizations' exhibit at the Metropolitan Museum of Art?
+  answer: '7 days. 8 days (including the last day) is also acceptable.'  (session answer_d00ba6d0_1)
+  constrained  0 answer-bearing edge(s)
+  permissive   0 answer-bearing edge(s)
+
+[temporal-reasoning] How many days passed between my visit to the Museum of Modern Art (MoMA) and the 'Ancient Civilizations' exhibit at the Metropolitan Museum of Art?
+  answer: '7 days. 8 days (including the last day) is also acceptable.'  (session answer_d00ba6d0_2)
+  constrained  0 answer-bearing edge(s)
+  permissive   0 answer-bearing edge(s)
+
+[knowledge-update] What was my personal best time in the charity 5K run?
+  answer: '25 minutes and 50 seconds (or 25:50)'  (session answer_a25d4a91_1)
+  constrained  0 answer-bearing edge(s)
+  permissive   0 answer-bearing edge(s)
+
+[knowledge-update] What was my personal best time in the charity 5K run?
+  answer: '25 minutes and 50 seconds (or 25:50)'  (session answer_a25d4a91_2)
+  constrained  0 answer-bearing edge(s)
+  permissive   0 answer-bearing edge(s)
+
+[multi-session] How many items of clothing do I need to pick up or return from a store?
+  answer: 3  (session answer_afa9873b_2)
+  constrained  0 answer-bearing edge(s)
+  permissive   0 answer-bearing edge(s)
+
+[multi-session] How many items of clothing do I need to pick up or return from a store?
+  answer: 3  (session answer_afa9873b_3)
+  constrained  0 answer-bearing edge(s)
+  permissive   0 answer-bearing edge(s)
+
+[multi-session] How many items of clothing do I need to pick up or return from a store?
+  answer: 3  (session answer_afa9873b_1)
+  constrained  0 answer-bearing edge(s)
+  permissive   0 answer-bearing edge(s)
+
+[single-session-preference] Can you recommend some resources where I can learn more about video editing?
+  answer: 'The user would prefer responses that suggest resources specifically tailored to Adobe Premiere Pro, especially those that delve into its advanced settings. They might not prefer general video editing resources or resources related to other video editing software.'  (session answer_edb03329)
+  constrained  13 answer-bearing edge(s)
+      owns(User:'user' -> Product:'Lumetri Color Panel')
+      practices(User:'user' -> Activity:'Practice')
+      practices(User:'user' -> Activity:'best practices')
+      prefers(User:'user' -> Product:'Lumetri Color Panel')
+      prefers(User:'user' -> Topic:'Audio Advanced Settings')
+      prefers(User:'user' -> Topic:'advanced settings')
+  permissive   28 answer-bearing edge(s)
+      knows(User:'user' -> Organization:'Lumetri Color Panel')
+      knows(User:'user' -> Product:'Color Wheels')
+      knows(User:'user' -> Product:'Creative panel')
+      knows(User:'user' -> Product:'Lumetri Color Panel')
+      knows(User:'user' -> Product:'Shoulder')
+      knows(User:'user' -> Product:'Toe')
+
+[single-session-assistant] I'm checking our previous chat about the shift rotation sheet for GM social media agents. Can you remind me what was the rotation for Admon on a Sunday?
+  answer: 'Admon was assigned to the 8 am - 4 pm (Day Shift) on Sundays.'  (session answer_sharegpt_5Lzox6N_0)
+  constrained  0 answer-bearing edge(s)
+  permissive   0 answer-bearing edge(s)
+
+====================================================================================================
+2. LABEL NOISE -- one (head, tail) pair carrying several relation labels
+====================================================================================================
+
+constrained: 244 distinct pairs, 33 carry >1 relation label (14%)
+      'frida' -> 'retablos': ['owns', 'prefers', 'purchased', 'studied']
+      'user' -> 'meal prep': ['practices', 'prefers', 'studied']
+      'frida' -> 'paintings': ['owns', 'practices', 'purchased']
+      'frida' -> 'ex-votos': ['owns', 'prefers', 'purchased']
+      'user' -> 'gold': ['owns', 'prefers', 'purchased']
+      'user' -> 'tennis racket': ['owns', 'prefers', 'purchased']
+      'user' -> 'tops': ['owns', 'prefers', 'purchased']
+      'user' -> 'black jeans': ['owns', 'prefers', 'purchased']
+      'user' -> 'yoga pants': ['owns', 'prefers', 'purchased']
+      'user' -> 'mint': ['prefers', 'purchased']
+
+permissive: 242 distinct pairs, 50 carry >1 relation label (21%)
+      'frida' -> 'retablos': ['owns', 'practices', 'prefers', 'purchased', 'studied']
+      'user' -> 'meal prep': ['knows', 'practices', 'prefers', 'studied']
+      'user' -> 'lumetri color panel': ['knows', 'owns', 'prefers', 'studied']
+      'user' -> 'business administration': ['attended', 'knows', 'studied']
+      'user' -> 'gold': ['owns', 'prefers', 'purchased']
+      'user' -> 'tennis racket': ['owns', 'prefers', 'purchased']
+      'i' -> 'tennis racket': ['knows', 'owns', 'purchased']
+      'user' -> 'tops': ['owns', 'prefers', 'purchased']
+      'user' -> 'yoga pants': ['owns', 'prefers', 'purchased']
+      'me' -> 'business administration': ['attended', 'studied']
+
+====================================================================================================
+3. WHAT LANDS IN `User` -- the type #347 would collapse onto the session's user node
+====================================================================================================
+
+constrained: 599 User endpoints over 9 distinct surface forms
+      first-person forms: 502
+      literal 'assistant' (the role prefix of the other speaker): 12
+      neither -- third parties typed as User: 85 over 5 forms
+          'kahlo' x38
+          'frida' x33
+          'frida kahlo' x11
+          'you' x2
+          'magdy' x1
+
+permissive: 451 User endpoints over 7 distinct surface forms
+      first-person forms: 425
+      literal 'assistant' (the role prefix of the other speaker): 4
+      neither -- third parties typed as User: 22 over 3 forms
+          'frida' x14
+          'kahlo' x6
+          'you' x2
+
+====================================================================================================
+4. RELATION LABEL DISTRIBUTION
+====================================================================================================
+
+constrained: practices=182, studied=156, owns=120, prefers=111, purchased=97, attended=66, lives_in=61, works_for=55, knows=54, visited=53, located_in=49
+
+permissive: owns=91, studied=78, located_in=71, purchased=66, practices=64, knows=62, prefers=54, works_for=54, visited=54, attended=45, lives_in=33
+
+====================================================================================================
+5. SELF-LOOPS AND DEGENERATE EDGES
+====================================================================================================
+
+constrained: 12 edges whose endpoints have identical text
+      knows(Person:'Diego Rivera' -> Person:'Diego Rivera')
+      owns(Person:'Blazer' -> Product:'blazer')
+      visited(Person:'Agent' -> Location:'Agent')
+      works_for(Person:'Zara' -> Organization:'Zara')
+
+permissive: 17 edges whose endpoints have identical text
+      lives_in(Location:'closet' -> Location:'closet')
+      lives_in(Organization:'Curves panel' -> Organization:'Curves panel')
+      lives_in(Product:'Lumetri Color Panel' -> Product:'Lumetri Color Panel')
+      located_in(Location:'closet' -> Location:'closet')
+      owns(Person:'Blazer' -> Product:'blazer')
+      prefers(Organization:'Creative panel' -> Organization:'Creative panel')
+      prefers(Organization:'Fauvism' -> Organization:'Fauvism')
+      works_for(Organization:'Mint' -> Organization:'Mint')
+      works_for(Person:'Zara' -> Organization:'Zara')
+
+====================================================================================================
+6. FRAGMENTATION (#346) -- span-scoped vs merged identity, summed over sessions
+====================================================================================================
+
+constrained: 2253 mentions -> 2067 span-scoped nodes -> 903 merged nodes (557 of them in opted-in types)
+      collapse factor: 2.5 mentions per merged node
+      mentions per type: Product=503, Activity=444, Topic=417, Person=259, Location=192, Event=152, Organization=148, User=138
+      highest-degree merged nodes: User:user(364), User:i(132), Person:frida(103), Person:frida kahlo(82), Location:closet(74), Product:lumetri color panel(40), User:kahlo(38), Person:diego rivera(36)
+
+permissive: 2259 mentions -> 2078 span-scoped nodes -> 901 merged nodes (554 of them in opted-in types)
+      collapse factor: 2.5 mentions per merged node
+      mentions per type: Product=507, Activity=438, Topic=433, Person=251, Location=187, Organization=156, Event=151, User=136
+      highest-degree merged nodes: User:user(341), User:i(78), Location:closet(48), Person:assistant(33), Person:frida kahlo(25), Product:boots(21), Product:yoga pants(18), Product:lumetri color panel(18)

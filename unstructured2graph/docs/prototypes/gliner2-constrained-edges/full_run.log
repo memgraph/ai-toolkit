@@ -1,0 +1,1143 @@
+loading fastino/gliner2.5-base-v1 ...
+/Users/antejavor/repos/ai-toolkit/.claude/worktrees/backend-comparison/.venv/lib/python3.11/site-packages/gliner2/models/boundary/model.py:2101: UserWarning: Checkpoint uses legacy list-valued extra_special_tokens metadata; loading with compatibility normalization.
+  tokenizer = load_extractor_tokenizer(tokenizer_source)
+/Users/antejavor/repos/ai-toolkit/.claude/worktrees/backend-comparison/.venv/lib/python3.11/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+/Users/antejavor/repos/ai-toolkit/.claude/worktrees/backend-comparison/.venv/lib/python3.11/site-packages/gliner2/models/boundary/model.py:1147: RuntimeWarning: Encoder rejected attn_implementation='sdpa'; falling back to 'eager' (DebertaV2Model does not support an attention implementation through torch.nn.functional.scaled_dot_product_attention yet. Please request the support for this architecture: https://github.com/huggingface/transformers/issues/28005. If you believe this error is a bug, please open an issue in Transformers GitHub repository and load your model with the argument `attn_implementation="eager"` meanwhile. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="eager")`)
+  self.encoder = self._load_encoder(
+loaded in 7.3s on cpu
+vocabulary: 8 entity types, 11 relation types; permissive arm expands every endpoint to all 8
+
+====================================================================================================
+[single-session-user] What degree did I graduate with?
+  expected answer: 'Business Administration'
+  constrained:
+    window   0  1876ch  FEASIBLE    27e   0r    0.5s
+    window   1  1785ch  FEASIBLE    21e   2r    0.5s
+    window   2  1884ch  FEASIBLE    16e   4r    0.5s
+    window   3  1905ch  FEASIBLE    20e   2r    0.4s
+    window   4  1900ch  FEASIBLE    25e   3r    0.5s
+    window   5  1972ch  FEASIBLE    20e   2r    0.4s
+    window   6  1874ch  FEASIBLE    26e   0r    0.4s
+    window   7  1819ch  FEASIBLE    19e   5r    0.5s
+    window   8  1763ch  FEASIBLE    27e   0r    0.4s
+    window   9  1660ch  FEASIBLE    28e  35r    1.5s
+    window  10  1704ch  FEASIBLE    27e  16r    0.6s
+    window  11  1098ch  FEASIBLE    28e   2r    0.6s
+  permissive:
+    window   0  1876ch  FEASIBLE    27e   0r    0.5s
+    window   1  1785ch  FEASIBLE    22e   4r    0.6s
+    window   2  1884ch  FEASIBLE    16e   5r    0.7s
+    window   3  1905ch  FEASIBLE    20e   8r    0.8s
+    window   4  1900ch  FEASIBLE    25e   5r    0.6s
+    window   5  1972ch  FEASIBLE    20e   2r    0.5s
+    window   6  1874ch  FEASIBLE    26e   0r    0.5s
+    window   7  1819ch  FEASIBLE    20e   3r    0.7s
+    window   8  1763ch  FEASIBLE    27e   0r    0.4s
+    window   9  1660ch  FEASIBLE    28e   7r    0.7s
+    window  10  1704ch  FEASIBLE    27e   8r    0.7s
+    window  11  1098ch  FEASIBLE    28e   3r    0.5s
+
+  --- answer_280352e9 (2023/05/30 (Tue) 17:27, 17915 chars) ---
+  constrained: 71 raw edges, 31 distinct after merge, 0/12 windows infeasible, 7s
+      owns         (User) 'assistant' -> (Product) 'trello'   x1 conf<=0.60 valid_at=2023/05/30 (Tue) 17:27
+      owns         (User) 'user' -> (Product) 'produce'   x1 conf<=0.38 valid_at=2023/05/30 (Tue) 17:27
+      owns         (User) 'user' -> (Product) 'mason jars'   x2 conf<=0.55 valid_at=2023/05/30 (Tue) 17:27
+      practices    (Person) 'i' -> (Activity) 'exercise'   x1 conf<=0.37 valid_at=2023/05/30 (Tue) 17:27
+      practices    (Person) 'i' -> (Activity) 'meditation'   x1 conf<=0.42 valid_at=2023/05/30 (Tue) 17:27
+      practices    (User) 'i' -> (Activity) 'tips'   x8 conf<=0.87 valid_at=2023/05/30 (Tue) 17:27
+      practices    (User) 'me' -> (Activity) 'tracking expenses'   x1 conf<=0.57 valid_at=2023/05/30 (Tue) 17:27
+      practices    (User) 'user' -> (Activity) 'routine'   x1 conf<=0.93 valid_at=2023/05/30 (Tue) 17:27
+      practices    (User) 'user' -> (Activity) 'tracking'   x1 conf<=0.44 valid_at=2023/05/30 (Tue) 17:27
+      practices    (User) 'user' -> (Activity) 'tips'   x2 conf<=0.91 valid_at=2023/05/30 (Tue) 17:27
+      practices    (User) 'user' -> (Activity) 'meal prep'   x11 conf<=0.94 valid_at=2023/05/30 (Tue) 17:27
+      prefers      (User) 'i' -> (Topic) 'meal prep'   x10 conf<=0.80 valid_at=2023/05/30 (Tue) 17:27
+      prefers      (User) 'me' -> (Product) 'shoeboxed'   x1 conf<=0.21 valid_at=2023/05/30 (Tue) 17:27
+      prefers      (User) 'user' -> (Product) 'free app'   x1 conf<=0.91 valid_at=2023/05/30 (Tue) 17:27
+      prefers      (User) 'user' -> (Product) 'mint'   x1 conf<=0.84 valid_at=2023/05/30 (Tue) 17:27
+      prefers      (User) 'user' -> (Product) 'personal capital'   x1 conf<=0.93 valid_at=2023/05/30 (Tue) 17:27
+      prefers      (User) 'user' -> (Product) 'mint and personal capital'   x1 conf<=0.94 valid_at=2023/05/30 (Tue) 17:27
+      prefers      (User) 'user' -> (Topic) 'meal prep'   x3 conf<=0.89 valid_at=2023/05/30 (Tue) 17:27
+      purchased    (User) 'i' -> (Product) "chef's knife"   x1 conf<=0.35 valid_at=2023/05/30 (Tue) 17:27
+      purchased    (User) 'i' -> (Product) 'spatula'   x1 conf<=0.40 valid_at=2023/05/30 (Tue) 17:27
+      purchased    (User) 'user' -> (Product) 'mint'   x1 conf<=0.91 valid_at=2023/05/30 (Tue) 17:27
+      purchased    (User) 'user' -> (Product) 'produce'   x2 conf<=0.40 valid_at=2023/05/30 (Tue) 17:27
+      purchased    (User) 'user' -> (Product) "chef's knife"   x1 conf<=0.57 valid_at=2023/05/30 (Tue) 17:27
+      purchased    (User) 'user' -> (Product) 'cutting board'   x1 conf<=0.59 valid_at=2023/05/30 (Tue) 17:27
+      purchased    (User) 'user' -> (Product) 'spatula'   x1 conf<=0.58 valid_at=2023/05/30 (Tue) 17:27
+      studied      (Person) 'i' -> (Topic) 'task management'   x1 conf<=0.56 valid_at=2023/05/30 (Tue) 17:27
+      studied      (User) 'i' -> (Topic) 'meal prep'   x6 conf<=0.59 valid_at=2023/05/30 (Tue) 17:27
+      studied      (User) 'me' -> (Organization) 'business administration'   x1 conf<=0.79 valid_at=2023/05/30 (Tue) 17:27
+      studied      (User) 'user' -> (Organization) 'business administration'   x2 conf<=0.99 valid_at=2023/05/30 (Tue) 17:27
+      studied      (User) 'user' -> (Topic) 'finances'   x2 conf<=0.53 valid_at=2023/05/30 (Tue) 17:27
+      studied      (User) 'user' -> (Topic) 'meal prep'   x3 conf<=0.72 valid_at=2023/05/30 (Tue) 17:27
+  permissive: 45 raw edges, 33 distinct after merge, 0/12 windows infeasible, 7s
+      attended     (User) 'me' -> (Organization) 'business administration'   x1 conf<=0.66 valid_at=2023/05/30 (Tue) 17:27
+      attended     (User) 'user' -> (Organization) 'business administration'   x2 conf<=0.95 valid_at=2023/05/30 (Tue) 17:27
+      knows        (Person) 'assistant' -> (Organization) 'business administration'   x1 conf<=0.68 valid_at=2023/05/30 (Tue) 17:27
+      knows        (User) 'assistant' -> (Organization) 'business administration'   x1 conf<=0.57 valid_at=2023/05/30 (Tue) 17:27
+      knows        (User) 'user' -> (Organization) 'business administration'   x1 conf<=0.65 valid_at=2023/05/30 (Tue) 17:27
+      knows        (User) 'user' -> (Activity) 'meal prep'   x2 conf<=0.75 valid_at=2023/05/30 (Tue) 17:27
+      owns         (User) 'assistant' -> (Product) 'trello'   x1 conf<=0.60 valid_at=2023/05/30 (Tue) 17:27
+      owns         (User) 'user' -> (Product) 'mason jars'   x2 conf<=0.55 valid_at=2023/05/30 (Tue) 17:27
+      practices    (Person) 'i' -> (Activity) 'meditation'   x1 conf<=0.43 valid_at=2023/05/30 (Tue) 17:27
+      practices    (User) 'user' -> (Topic) 'routine'   x1 conf<=0.93 valid_at=2023/05/30 (Tue) 17:27
+      practices    (User) 'user' -> (Topic) 'paperwork'   x2 conf<=0.79 valid_at=2023/05/30 (Tue) 17:27
+      practices    (User) 'user' -> (Activity) 'tips'   x2 conf<=0.91 valid_at=2023/05/30 (Tue) 17:27
+      practices    (User) 'user' -> (Activity) 'meal prep'   x2 conf<=0.94 valid_at=2023/05/30 (Tue) 17:27
+      prefers      (User) 'me' -> (Organization) 'google drive'   x1 conf<=0.30 valid_at=2023/05/30 (Tue) 17:27
+      prefers      (User) 'me' -> (Organization) 'dropbox'   x1 conf<=0.30 valid_at=2023/05/30 (Tue) 17:27
+      prefers      (User) 'user' -> (Product) 'free app'   x1 conf<=0.91 valid_at=2023/05/30 (Tue) 17:27
+      prefers      (User) 'user' -> (Product) 'mint'   x1 conf<=0.84 valid_at=2023/05/30 (Tue) 17:27
+      prefers      (User) 'user' -> (Organization) 'personal capital'   x1 conf<=0.94 valid_at=2023/05/30 (Tue) 17:27
+      prefers      (User) 'user' -> (Topic) 'meal prep'   x2 conf<=0.89 valid_at=2023/05/30 (Tue) 17:27
+      purchased    (User) 'i' -> (Product) 'spatula'   x1 conf<=0.40 valid_at=2023/05/30 (Tue) 17:27
+      purchased    (User) 'user' -> (Product) 'mint'   x1 conf<=0.91 valid_at=2023/05/30 (Tue) 17:27
+      purchased    (User) 'user' -> (Product) 'produce'   x1 conf<=0.40 valid_at=2023/05/30 (Tue) 17:27
+      purchased    (User) 'user' -> (Product) 'cutting board'   x1 conf<=0.59 valid_at=2023/05/30 (Tue) 17:27
+      purchased    (User) 'user' -> (Product) 'spatula'   x1 conf<=0.58 valid_at=2023/05/30 (Tue) 17:27
+      studied      (Person) 'i' -> (Topic) 'task management'   x1 conf<=0.56 valid_at=2023/05/30 (Tue) 17:27
+      studied      (User) 'me' -> (Organization) 'business administration'   x1 conf<=0.79 valid_at=2023/05/30 (Tue) 17:27
+      studied      (User) 'user' -> (Organization) 'business administration'   x2 conf<=0.99 valid_at=2023/05/30 (Tue) 17:27
+      studied      (User) 'user' -> (Topic) 'finances'   x1 conf<=0.53 valid_at=2023/05/30 (Tue) 17:27
+      studied      (User) 'user' -> (Topic) 'meal prep'   x2 conf<=0.72 valid_at=2023/05/30 (Tue) 17:27
+      works_for    (Organization) 'mint' -> (Organization) 'mint'   x1 conf<=0.38 valid_at=2023/05/30 (Tue) 17:27
+      works_for    (Product) 'slow cooker' -> (Activity) 'meal prep'   x2 conf<=0.80 valid_at=2023/05/30 (Tue) 17:27
+      works_for    (Product) 'todoist' -> (Organization) 'new job'   x2 conf<=0.65 valid_at=2023/05/30 (Tue) 17:27
+      works_for    (Product) 'trello' -> (Organization) 'new job'   x2 conf<=0.66 valid_at=2023/05/30 (Tue) 17:27
+  diff: 20 shared claims, 11 constrained-only, 12 permissive-only, 2 shared-but-retyped
+      ~ practices('user' -> 'routine'): (User,Topic) permissive -> (User,Activity) constrained
+      ~ prefers('user' -> 'personal capital'): (User,Organization) permissive -> (User,Product) constrained
+    constrained-only (beam reallocation, if #348's claim holds):
+      + owns('user' -> 'produce')
+      + practices('i' -> 'exercise')
+      + practices('i' -> 'tips')
+      + practices('me' -> 'tracking expenses')
+      + practices('user' -> 'tracking')
+      + prefers('i' -> 'meal prep')
+      + prefers('me' -> 'shoeboxed')
+      + prefers('user' -> 'mint and personal capital')
+      + purchased('i' -> "chef's knife")
+      + purchased('user' -> "chef's knife")
+      + studied('i' -> 'meal prep')
+    permissive-only (suppressed by the domain/range constraint):
+      - attended('me' -> 'business administration')
+      - attended('user' -> 'business administration')
+      - knows('assistant' -> 'business administration')
+      - knows('user' -> 'business administration')
+      - knows('user' -> 'meal prep')
+      - practices('user' -> 'paperwork')
+      - prefers('me' -> 'dropbox')
+      - prefers('me' -> 'google drive')
+      - works_for('mint' -> 'mint')
+      - works_for('slow cooker' -> 'meal prep')
+      - works_for('todoist' -> 'new job')
+      - works_for('trello' -> 'new job')
+
+====================================================================================================
+[temporal-reasoning] How many days passed between my visit to the Museum of Modern Art (MoMA) and the 'Ancient Civilizations' exhibit at the Metropolitan Museum of Art?
+  expected answer: '7 days. 8 days (including the last day) is also acceptable.'
+  constrained:
+    window   0  1843ch  FEASIBLE    19e   9r    0.8s
+    window   1  1980ch  FEASIBLE    22e   6r    0.6s
+    window   2  1869ch  FEASIBLE    23e  20r    0.8s
+    window   3  1873ch  FEASIBLE    27e  40r    1.4s
+    window   4  1905ch  FEASIBLE    19e  21r    0.8s
+    window   5  1998ch  FEASIBLE    26e  13r    0.8s
+    window   6  2021ch  FEASIBLE    27e  46r    1.5s
+    window   7  2077ch  FEASIBLE    17e  21r    0.8s
+    window   8  1968ch  FEASIBLE    23e  13r    0.7s
+    window   9  1923ch  FEASIBLE    30e  33r    1.7s
+    window  10  1964ch  FEASIBLE    20e  77r    3.1s
+    window  11  1912ch  FEASIBLE    23e  29r    1.1s
+    window  12  1003ch  FEASIBLE    16e   5r    0.6s
+  permissive:
+    window   0  1843ch  FEASIBLE    19e   6r    0.7s
+    window   1  1980ch  FEASIBLE    22e   9r    0.9s
+    window   2  1869ch  FEASIBLE    22e  13r    1.1s
+    window   3  1873ch  FEASIBLE    27e   8r    0.8s
+    window   4  1905ch  FEASIBLE    19e  10r    0.8s
+    window   5  1998ch  FEASIBLE    20e   3r    0.6s
+    window   6  2021ch  FEASIBLE    27e   7r    0.7s
+    window   7  2077ch  FEASIBLE    17e   8r    0.7s
+    window   8  1968ch  FEASIBLE    23e   2r    0.6s
+    window   9  1923ch  FEASIBLE    30e   6r    0.7s
+    window  10  1964ch  FEASIBLE    20e  18r    2.3s
+    window  11  1912ch  FEASIBLE    22e   3r    0.6s
+    window  12  1003ch  FEASIBLE    16e   4r    1.3s
+
+  --- answer_d00ba6d0_1 (2023/01/08 (Sun) 12:49, 20357 chars) ---
+  constrained: 333 raw edges, 72 distinct after merge, 0/13 windows infeasible, 15s
+      attended     (User) 'i' -> (Event) 'moma tour'   x2 conf<=0.88 valid_at=2023/01/08 (Sun) 12:49
+      attended     (User) 'user' -> (Event) 'moma tour'   x2 conf<=0.91 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'assistant' -> (Person) 'frida kahlo'   x5 conf<=0.67 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'assistant' -> (Person) 'diego rivera'   x4 conf<=0.79 valid_at=2023/01/08 (Sun) 12:49
+      knows        (Person) 'diego rivera' -> (Person) 'diego rivera'   x1 conf<=0.16 valid_at=2023/01/08 (Sun) 12:49
+      knows        (Person) 'diego rivera' -> (Person) 'cristina kahlo'   x1 conf<=0.19 valid_at=2023/01/08 (Sun) 12:49
+      knows        (Person) 'frida' -> (Person) 'diego rivera'   x6 conf<=0.76 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'frida kahlo' -> (Person) 'diego rivera'   x6 conf<=0.65 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'i' -> (Person) 'frida kahlo'   x1 conf<=0.59 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'kahlo' -> (Person) 'diego rivera'   x10 conf<=0.80 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'kahlo' -> (Person) 'andré breton'   x5 conf<=0.86 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'user' -> (Person) 'frida kahlo'   x8 conf<=0.89 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'user' -> (Person) 'diego rivera'   x4 conf<=0.85 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'user' -> (Person) 'frida'   x1 conf<=0.58 valid_at=2023/01/08 (Sun) 12:49
+      lives_in     (Person) 'frida' -> (Location) 'france'   x7 conf<=0.96 valid_at=2023/01/08 (Sun) 12:49
+      lives_in     (Person) 'frida kahlo' -> (Location) 'french'   x1 conf<=0.48 valid_at=2023/01/08 (Sun) 12:49
+      lives_in     (Person) 'frida kahlo' -> (Location) 'mexican'   x8 conf<=0.88 valid_at=2023/01/08 (Sun) 12:49
+      lives_in     (Person) 'frida kahlo' -> (Location) 'mexican folk art'   x4 conf<=0.84 valid_at=2023/01/08 (Sun) 12:49
+      lives_in     (Person) 'henri matisse' -> (Location) 'french'   x3 conf<=0.57 valid_at=2023/01/08 (Sun) 12:49
+      located_in   (Event) 'frida' -> (Location) 'mexico'   x1 conf<=0.83 valid_at=2023/01/08 (Sun) 12:49
+      owns         (Person) 'frida' -> (Product) 'paintings'   x2 conf<=0.85 valid_at=2023/01/08 (Sun) 12:49
+      owns         (Person) 'frida' -> (Product) 'retablos'   x14 conf<=0.97 valid_at=2023/01/08 (Sun) 12:49
+      owns         (Person) 'frida' -> (Product) 'ex-votos'   x14 conf<=0.87 valid_at=2023/01/08 (Sun) 12:49
+      owns         (User) 'frida kahlo' -> (Product) 'paintings'   x2 conf<=0.85 valid_at=2023/01/08 (Sun) 12:49
+      practices    (Person) 'frida' -> (Activity) 'mexican folk art'   x6 conf<=0.69 valid_at=2023/01/08 (Sun) 12:49
+      practices    (User) 'frida' -> (Activity) 'paintings'   x1 conf<=0.30 valid_at=2023/01/08 (Sun) 12:49
+      practices    (Person) 'frida kahlo' -> (Activity) 'art'   x27 conf<=0.92 valid_at=2023/01/08 (Sun) 12:49
+      practices    (User) 'frida kahlo' -> (Activity) 'artistic vision'   x2 conf<=0.83 valid_at=2023/01/08 (Sun) 12:49
+      practices    (Person) 'frida kahlo' -> (Activity) 'mexican folk art'   x5 conf<=0.68 valid_at=2023/01/08 (Sun) 12:49
+      prefers      (Person) 'frida' -> (Product) 'retablos'   x14 conf<=0.87 valid_at=2023/01/08 (Sun) 12:49
+      prefers      (Person) 'frida' -> (Product) 'ex-votos'   x7 conf<=0.76 valid_at=2023/01/08 (Sun) 12:49
+      prefers      (Person) 'frida kahlo' -> (Topic) 'naïve'   x4 conf<=0.61 valid_at=2023/01/08 (Sun) 12:49
+      purchased    (Person) 'frida' -> (Product) 'paintings'   x2 conf<=0.82 valid_at=2023/01/08 (Sun) 12:49
+      purchased    (Person) 'frida' -> (Product) 'retablos'   x7 conf<=0.95 valid_at=2023/01/08 (Sun) 12:49
+      purchased    (Person) 'frida' -> (Product) 'ex-votos'   x14 conf<=0.91 valid_at=2023/01/08 (Sun) 12:49
+      purchased    (User) 'frida kahlo' -> (Product) 'paintings'   x1 conf<=0.75 valid_at=2023/01/08 (Sun) 12:49
+      purchased    (User) 'user' -> (Product) 'self-portraits'   x1 conf<=0.55 valid_at=2023/01/08 (Sun) 12:49
+      studied      (Person) 'diego' -> (Topic) 'mexican heritage'   x2 conf<=0.64 valid_at=2023/01/08 (Sun) 12:49
+      studied      (Person) 'diego rivera' -> (Organization) 'academy of san carlos'   x1 conf<=0.56 valid_at=2023/01/08 (Sun) 12:49
+      studied      (Person) 'frida' -> (Topic) 'mexican heritage'   x9 conf<=0.84 valid_at=2023/01/08 (Sun) 12:49
+      studied      (User) 'frida' -> (Topic) 'retablos'   x20 conf<=0.64 valid_at=2023/01/08 (Sun) 12:49
+      studied      (User) 'frida' -> (Topic) 'art'   x12 conf<=0.72 valid_at=2023/01/08 (Sun) 12:49
+      studied      (Person) 'frida kahlo' -> (Organization) 'academy of san carlos'   x4 conf<=0.89 valid_at=2023/01/08 (Sun) 12:49
+      studied      (Person) 'frida kahlo' -> (Topic) 'feminism'   x15 conf<=0.83 valid_at=2023/01/08 (Sun) 12:49
+      studied      (User) 'kahlo' -> (Topic) 'mythology'   x11 conf<=0.58 valid_at=2023/01/08 (Sun) 12:49
+      studied      (User) 'kahlo' -> (Topic) 'folklore'   x4 conf<=0.65 valid_at=2023/01/08 (Sun) 12:49
+      studied      (User) 'kahlo' -> (Topic) 'folk art'   x3 conf<=0.51 valid_at=2023/01/08 (Sun) 12:49
+      studied      (User) 'user' -> (Organization) 'cubism'   x1 conf<=0.57 valid_at=2023/01/08 (Sun) 12:49
+      studied      (User) 'user' -> (Topic) 'modern art movements'   x2 conf<=0.61 valid_at=2023/01/08 (Sun) 12:49
+      studied      (User) 'user' -> (Topic) 'cubism'   x1 conf<=0.56 valid_at=2023/01/08 (Sun) 12:49
+      visited      (User) 'kahlo' -> (Location) 'paris'   x5 conf<=0.97 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'albert gleizes' -> (Organization) 'cubism'   x1 conf<=0.91 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'andré derain' -> (Organization) 'fauvist artists'   x1 conf<=0.54 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'andré derain' -> (Organization) 'fauvist movement'   x3 conf<=0.64 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'andré derain' -> (Organization) 'fauvism'   x1 conf<=0.52 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'andré derain' -> (Organization) 'fauvist'   x1 conf<=0.50 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'diego rivera' -> (Organization) 'mexican muralist movement'   x2 conf<=0.52 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'fernand léger' -> (Organization) 'cubism'   x1 conf<=0.87 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'georges braque' -> (Organization) 'cubism'   x2 conf<=0.75 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'henri matisse' -> (Organization) 'fauvist artists'   x1 conf<=0.71 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'henri matisse' -> (Organization) 'fauvist movement'   x4 conf<=0.64 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'henri matisse' -> (Organization) 'fauvism'   x3 conf<=0.75 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'henri matisse' -> (Organization) 'fauvist'   x2 conf<=0.50 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'juan gris' -> (Organization) 'cubism'   x1 conf<=0.52 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'kees van dongen' -> (Organization) 'fauvist movement'   x2 conf<=0.65 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'maurice de vlaminck' -> (Organization) 'fauvist artists'   x1 conf<=0.53 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'maurice de vlaminck' -> (Organization) 'fauvist movement'   x4 conf<=0.64 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'maurice de vlaminck' -> (Organization) 'fauvism'   x3 conf<=0.54 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'pablo picasso' -> (Organization) 'cubism'   x2 conf<=0.64 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'raoul dufy' -> (Organization) 'fauvist artists'   x1 conf<=0.51 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'raoul dufy' -> (Organization) 'fauvist movement'   x3 conf<=0.69 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'raoul dufy' -> (Organization) 'fauvism'   x1 conf<=0.53 valid_at=2023/01/08 (Sun) 12:49
+  permissive: 97 raw edges, 56 distinct after merge, 0/13 windows infeasible, 12s
+      attended     (Person) 'frida kahlo' -> (Organization) 'academy of san carlos'   x2 conf<=0.87 valid_at=2023/01/08 (Sun) 12:49
+      attended     (User) 'i' -> (Event) 'moma tour'   x1 conf<=0.88 valid_at=2023/01/08 (Sun) 12:49
+      attended     (User) 'user' -> (Event) 'moma tour'   x2 conf<=0.91 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'frida' -> (Person) 'diego rivera'   x2 conf<=0.84 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'frida' -> (Topic) 'mexican culture'   x2 conf<=0.71 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'i' -> (Person) "frida kahlo's works"   x1 conf<=0.83 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'kahlo' -> (Person) 'andré breton'   x2 conf<=0.86 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'user' -> (Topic) '20th-century modern art movements'   x2 conf<=0.83 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'user' -> (Person) 'frida kahlo'   x5 conf<=0.89 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'user' -> (Person) "frida kahlo's works"   x1 conf<=0.92 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'user' -> (Topic) 'mexican folk art'   x1 conf<=0.61 valid_at=2023/01/08 (Sun) 12:49
+      knows        (User) 'user' -> (Product) 'ex-votos'   x2 conf<=0.63 valid_at=2023/01/08 (Sun) 12:49
+      lives_in     (Person) 'frida' -> (Location) 'france'   x2 conf<=0.96 valid_at=2023/01/08 (Sun) 12:49
+      lives_in     (Person) 'frida kahlo' -> (Location) 'french'   x1 conf<=0.48 valid_at=2023/01/08 (Sun) 12:49
+      lives_in     (Person) 'frida kahlo' -> (Location) 'mexican'   x2 conf<=0.88 valid_at=2023/01/08 (Sun) 12:49
+      lives_in     (Person) 'henri matisse' -> (Location) 'french'   x1 conf<=0.57 valid_at=2023/01/08 (Sun) 12:49
+      located_in   (Person) 'frida kahlo' -> (Location) 'mexico'   x1 conf<=0.94 valid_at=2023/01/08 (Sun) 12:49
+      located_in   (Product) 'retablos' -> (Location) 'france'   x2 conf<=0.94 valid_at=2023/01/08 (Sun) 12:49
+      owns         (User) 'frida' -> (Product) 'paintings'   x2 conf<=0.93 valid_at=2023/01/08 (Sun) 12:49
+      owns         (Person) 'frida' -> (Product) 'retablos'   x2 conf<=0.97 valid_at=2023/01/08 (Sun) 12:49
+      practices    (User) 'frida' -> (Activity) 'artistic vision'   x2 conf<=0.88 valid_at=2023/01/08 (Sun) 12:49
+      practices    (User) 'frida' -> (Topic) 'art'   x2 conf<=0.75 valid_at=2023/01/08 (Sun) 12:49
+      practices    (Person) 'frida' -> (Product) 'retablos'   x2 conf<=0.82 valid_at=2023/01/08 (Sun) 12:49
+      practices    (Person) 'frida kahlo' -> (Topic) 'artistic talents'   x2 conf<=0.91 valid_at=2023/01/08 (Sun) 12:49
+      practices    (Person) 'frida kahlo' -> (Activity) 'art'   x2 conf<=0.92 valid_at=2023/01/08 (Sun) 12:49
+      prefers      (Organization) 'fauvism' -> (Organization) 'fauvism'   x2 conf<=0.64 valid_at=2023/01/08 (Sun) 12:49
+      prefers      (Person) 'frida' -> (Product) 'retablos'   x2 conf<=0.87 valid_at=2023/01/08 (Sun) 12:49
+      prefers      (Person) 'frida kahlo' -> (Topic) 'naïve'   x2 conf<=0.61 valid_at=2023/01/08 (Sun) 12:49
+      prefers      (User) 'user' -> (Person) 'picasso'   x1 conf<=0.57 valid_at=2023/01/08 (Sun) 12:49
+      prefers      (User) 'user' -> (Person) 'braque'   x1 conf<=0.58 valid_at=2023/01/08 (Sun) 12:49
+      purchased    (User) 'frida' -> (Product) 'paintings'   x2 conf<=0.88 valid_at=2023/01/08 (Sun) 12:49
+      purchased    (Person) 'frida' -> (Product) 'retablos'   x2 conf<=0.95 valid_at=2023/01/08 (Sun) 12:49
+      purchased    (User) 'user' -> (Product) 'self-portraits'   x1 conf<=0.55 valid_at=2023/01/08 (Sun) 12:49
+      studied      (Person) 'frida' -> (Topic) 'mexican heritage'   x2 conf<=0.84 valid_at=2023/01/08 (Sun) 12:49
+      studied      (User) 'frida' -> (Topic) 'art'   x2 conf<=0.72 valid_at=2023/01/08 (Sun) 12:49
+      studied      (Person) 'frida' -> (Product) 'retablos'   x2 conf<=0.91 valid_at=2023/01/08 (Sun) 12:49
+      studied      (Person) 'frida kahlo' -> (Organization) 'academy of san carlos'   x2 conf<=0.89 valid_at=2023/01/08 (Sun) 12:49
+      studied      (Person) 'frida kahlo' -> (Topic) 'feminism'   x2 conf<=0.83 valid_at=2023/01/08 (Sun) 12:49
+      studied      (User) 'i' -> (Person) "frida kahlo's works"   x1 conf<=0.68 valid_at=2023/01/08 (Sun) 12:49
+      studied      (User) 'kahlo' -> (Topic) 'folklore'   x2 conf<=0.65 valid_at=2023/01/08 (Sun) 12:49
+      studied      (User) 'user' -> (Person) "frida kahlo's works"   x1 conf<=0.82 valid_at=2023/01/08 (Sun) 12:49
+      visited      (Person) 'diego rivera' -> (Person) 'frida'   x1 conf<=0.59 valid_at=2023/01/08 (Sun) 12:49
+      visited      (Person) 'frida' -> (Person) 'frida kahlo'   x1 conf<=0.49 valid_at=2023/01/08 (Sun) 12:49
+      visited      (Person) 'frida kahlo' -> (Person) 'diego rivera'   x2 conf<=0.71 valid_at=2023/01/08 (Sun) 12:49
+      visited      (User) 'i' -> (Event) 'moma tour'   x2 conf<=0.86 valid_at=2023/01/08 (Sun) 12:49
+      visited      (User) 'kahlo' -> (Location) 'paris'   x2 conf<=0.97 valid_at=2023/01/08 (Sun) 12:49
+      visited      (User) 'user' -> (Organization) 'museum of modern art'   x2 conf<=0.91 valid_at=2023/01/08 (Sun) 12:49
+      visited      (User) 'user' -> (Event) 'moma tour'   x2 conf<=0.91 valid_at=2023/01/08 (Sun) 12:49
+      visited      (User) 'user' -> (Person) 'diego rivera'   x1 conf<=0.59 valid_at=2023/01/08 (Sun) 12:49
+      visited      (User) 'user' -> (Person) 'frida kahlo'   x1 conf<=0.50 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'albert gleizes' -> (Topic) 'cubism'   x2 conf<=0.94 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'andré derain' -> (Organization) 'fauvist'   x1 conf<=0.50 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'diego rivera' -> (Organization) 'mexican muralist movement'   x2 conf<=0.52 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'georges braque' -> (Topic) 'cubism'   x2 conf<=0.75 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'henri matisse' -> (Organization) 'fauvism'   x2 conf<=0.75 valid_at=2023/01/08 (Sun) 12:49
+      works_for    (Person) 'henri matisse' -> (Organization) 'fauvist'   x1 conf<=0.50 valid_at=2023/01/08 (Sun) 12:49
+  diff: 30 shared claims, 41 constrained-only, 26 permissive-only, 6 shared-but-retyped
+      ~ knows('frida' -> 'diego rivera'): (User,Person) permissive -> (Person,Person) constrained
+      ~ owns('frida' -> 'paintings'): (User,Product) permissive -> (Person,Product) constrained
+      ~ purchased('frida' -> 'paintings'): (User,Product) permissive -> (Person,Product) constrained
+      ~ studied('frida' -> 'retablos'): (Person,Product) permissive -> (User,Topic) constrained
+      ~ works_for('albert gleizes' -> 'cubism'): (Person,Topic) permissive -> (Person,Organization) constrained
+      ~ works_for('georges braque' -> 'cubism'): (Person,Topic) permissive -> (Person,Organization) constrained
+    constrained-only (beam reallocation, if #348's claim holds):
+      + knows('assistant' -> 'diego rivera')
+      + knows('assistant' -> 'frida kahlo')
+      + knows('diego rivera' -> 'cristina kahlo')
+      + knows('diego rivera' -> 'diego rivera')
+      + knows('frida kahlo' -> 'diego rivera')
+      + knows('i' -> 'frida kahlo')
+      + knows('kahlo' -> 'diego rivera')
+      + knows('user' -> 'diego rivera')
+      + knows('user' -> 'frida')
+      + lives_in('frida kahlo' -> 'mexican folk art')
+      + located_in('frida' -> 'mexico')
+      + owns('frida' -> 'ex-votos')
+      + owns('frida kahlo' -> 'paintings')
+      + practices('frida' -> 'mexican folk art')
+      + practices('frida' -> 'paintings')
+    permissive-only (suppressed by the domain/range constraint):
+      - attended('frida kahlo' -> 'academy of san carlos')
+      - knows('frida' -> 'mexican culture')
+      - knows('i' -> "frida kahlo's works")
+      - knows('user' -> '20th-century modern art movements')
+      - knows('user' -> 'ex-votos')
+      - knows('user' -> "frida kahlo's works")
+      - knows('user' -> 'mexican folk art')
+      - located_in('frida kahlo' -> 'mexico')
+      - located_in('retablos' -> 'france')
+      - practices('frida' -> 'art')
+      - practices('frida' -> 'artistic vision')
+      - practices('frida' -> 'retablos')
+      - practices('frida kahlo' -> 'artistic talents')
+      - prefers('fauvism' -> 'fauvism')
+      - prefers('user' -> 'braque')
+
+====================================================================================================
+[temporal-reasoning] How many days passed between my visit to the Museum of Modern Art (MoMA) and the 'Ancient Civilizations' exhibit at the Metropolitan Museum of Art?
+  expected answer: '7 days. 8 days (including the last day) is also acceptable.'
+  constrained:
+    window   0  1863ch  FEASIBLE    18e   0r    0.4s
+    window   1  1968ch  FEASIBLE    19e   6r    0.5s
+    window   2  1952ch  FEASIBLE    22e  10r    0.6s
+    window   3  1898ch  FEASIBLE    18e   0r    0.4s
+    window   4  1981ch  FEASIBLE    24e  15r    0.9s
+    window   5  1903ch  FEASIBLE    29e  19r    1.3s
+    window   6  2087ch  FEASIBLE    27e  35r    1.4s
+    window   7  1897ch  FEASIBLE    20e   3r    0.6s
+    window   8  1891ch  FEASIBLE    23e   5r    0.5s
+    window   9  1921ch  FEASIBLE    31e   6r    0.6s
+    window  10   416ch  FEASIBLE     9e   0r    0.2s
+  permissive:
+    window   0  1863ch  FEASIBLE    18e   0r    0.5s
+    window   1  1968ch  FEASIBLE    19e   6r    0.6s
+    window   2  1952ch  FEASIBLE    22e  10r    0.6s
+    window   3  1898ch  FEASIBLE    18e   0r    0.6s
+    window   4  1981ch  FEASIBLE    24e  15r    0.9s
+    window   5  1903ch  FEASIBLE    29e  19r    1.3s
+    window   6  2087ch  FEASIBLE    27e  35r    1.4s
+    window   7  1897ch  FEASIBLE    20e   3r    0.7s
+    window   8  1891ch  FEASIBLE    23e   5r    0.5s
+    window   9  1921ch  FEASIBLE    31e   6r    0.6s
+    window  10   416ch  FEASIBLE     9e   0r    0.2s
+
+  --- answer_d00ba6d0_2 (2023/01/15 (Sun) 00:27, 16538 chars) ---
+  constrained: 99 raw edges, 33 distinct after merge, 0/11 windows infeasible, 7s
+      attended     (User) 'user' -> (Event) 'exhibit'   x1 conf<=0.96 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'american museum of natural history' -> (Location) 'new york city'   x3 conf<=0.34 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'brooklyn museum' -> (Location) 'new york city'   x6 conf<=0.82 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'brooklyn museum' -> (Location) 'amnh'   x6 conf<=0.78 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'chinchorro culture' -> (Location) 'china'   x1 conf<=0.41 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'guanches' -> (Location) 'china'   x3 conf<=0.57 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'guanches' -> (Location) 'chile and peru'   x1 conf<=0.23 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'guanches' -> (Location) 'canary islands'   x5 conf<=0.79 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'guanches' -> (Location) 'denmark'   x4 conf<=0.57 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'guanches' -> (Location) 'western china'   x1 conf<=0.40 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'guanches' -> (Location) 'peru'   x1 conf<=0.51 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'guanches' -> (Location) 'central asia'   x1 conf<=0.60 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'metropolitan museum of art' -> (Location) 'new york city'   x4 conf<=0.81 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'scythians' -> (Location) 'denmark'   x1 conf<=0.37 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'scythians' -> (Location) 'central asia'   x2 conf<=0.57 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'scythians' -> (Location) 'canary islands'   x4 conf<=0.65 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'scythians' -> (Location) 'peru'   x1 conf<=0.45 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'tarim basin mummies' -> (Location) 'china'   x3 conf<=0.55 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'tarim basin mummies' -> (Location) 'canary islands'   x1 conf<=0.52 valid_at=2023/01/15 (Sun) 00:27
+      owns         (User) 'i' -> (Product) 'sarcophagi'   x4 conf<=0.72 valid_at=2023/01/15 (Sun) 00:27
+      owns         (User) 'user' -> (Product) 'sarcophagi'   x5 conf<=0.95 valid_at=2023/01/15 (Sun) 00:27
+      owns         (User) 'user' -> (Product) 'gold'   x1 conf<=0.82 valid_at=2023/01/15 (Sun) 00:27
+      practices    (Person) 'ancient greeks' -> (Activity) 'mummification'   x2 conf<=0.34 valid_at=2023/01/15 (Sun) 00:27
+      practices    (Person) 'egyptians' -> (Activity) 'funerary practices'   x3 conf<=0.68 valid_at=2023/01/15 (Sun) 00:27
+      prefers      (User) 'user' -> (Product) 'sarcophagi'   x1 conf<=0.75 valid_at=2023/01/15 (Sun) 00:27
+      prefers      (User) 'user' -> (Product) 'gold'   x1 conf<=0.85 valid_at=2023/01/15 (Sun) 00:27
+      purchased    (User) 'user' -> (Product) 'gold'   x1 conf<=0.76 valid_at=2023/01/15 (Sun) 00:27
+      studied      (User) 'i' -> (Topic) 'ancient civilizations'   x12 conf<=0.97 valid_at=2023/01/15 (Sun) 00:27
+      studied      (User) 'i' -> (Topic) 'ancient cultures'   x8 conf<=0.98 valid_at=2023/01/15 (Sun) 00:27
+      studied      (User) 'user' -> (Topic) 'mummification'   x4 conf<=0.92 valid_at=2023/01/15 (Sun) 00:27
+      studied      (User) 'user' -> (Topic) 'ancient civilizations'   x3 conf<=0.98 valid_at=2023/01/15 (Sun) 00:27
+      studied      (User) 'user' -> (Topic) 'ancient cultures'   x2 conf<=0.99 valid_at=2023/01/15 (Sun) 00:27
+      works_for    (Person) 'new york university institute for the study of the ancient world' -> (Organization) 'brooklyn museum'   x3 conf<=0.36 valid_at=2023/01/15 (Sun) 00:27
+  permissive: 99 raw edges, 33 distinct after merge, 0/11 windows infeasible, 8s
+      attended     (User) 'user' -> (Event) 'exhibit'   x1 conf<=0.96 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'american museum of natural history' -> (Location) 'new york city'   x3 conf<=0.34 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'brooklyn museum' -> (Location) 'new york city'   x6 conf<=0.82 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'brooklyn museum' -> (Location) 'amnh'   x6 conf<=0.78 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'chinchorro culture' -> (Location) 'china'   x1 conf<=0.41 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'guanches' -> (Location) 'china'   x3 conf<=0.57 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'guanches' -> (Location) 'chile and peru'   x1 conf<=0.23 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'guanches' -> (Location) 'canary islands'   x5 conf<=0.79 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'guanches' -> (Location) 'denmark'   x4 conf<=0.57 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'guanches' -> (Location) 'western china'   x1 conf<=0.40 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'guanches' -> (Location) 'peru'   x1 conf<=0.51 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'guanches' -> (Location) 'central asia'   x1 conf<=0.60 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'metropolitan museum of art' -> (Location) 'new york city'   x4 conf<=0.81 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'scythians' -> (Location) 'denmark'   x1 conf<=0.37 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'scythians' -> (Location) 'central asia'   x2 conf<=0.57 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'scythians' -> (Location) 'canary islands'   x4 conf<=0.65 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'scythians' -> (Location) 'peru'   x1 conf<=0.45 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'tarim basin mummies' -> (Location) 'china'   x3 conf<=0.55 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'tarim basin mummies' -> (Location) 'canary islands'   x1 conf<=0.52 valid_at=2023/01/15 (Sun) 00:27
+      owns         (User) 'i' -> (Product) 'sarcophagi'   x4 conf<=0.72 valid_at=2023/01/15 (Sun) 00:27
+      owns         (User) 'user' -> (Product) 'sarcophagi'   x5 conf<=0.95 valid_at=2023/01/15 (Sun) 00:27
+      owns         (User) 'user' -> (Product) 'gold'   x1 conf<=0.82 valid_at=2023/01/15 (Sun) 00:27
+      practices    (Person) 'ancient greeks' -> (Activity) 'mummification'   x2 conf<=0.34 valid_at=2023/01/15 (Sun) 00:27
+      practices    (Person) 'egyptians' -> (Activity) 'funerary practices'   x3 conf<=0.68 valid_at=2023/01/15 (Sun) 00:27
+      prefers      (User) 'user' -> (Product) 'sarcophagi'   x1 conf<=0.75 valid_at=2023/01/15 (Sun) 00:27
+      prefers      (User) 'user' -> (Product) 'gold'   x1 conf<=0.85 valid_at=2023/01/15 (Sun) 00:27
+      purchased    (User) 'user' -> (Product) 'gold'   x1 conf<=0.76 valid_at=2023/01/15 (Sun) 00:27
+      studied      (User) 'i' -> (Topic) 'ancient civilizations'   x12 conf<=0.97 valid_at=2023/01/15 (Sun) 00:27
+      studied      (User) 'i' -> (Topic) 'ancient cultures'   x8 conf<=0.98 valid_at=2023/01/15 (Sun) 00:27
+      studied      (User) 'user' -> (Topic) 'mummification'   x4 conf<=0.92 valid_at=2023/01/15 (Sun) 00:27
+      studied      (User) 'user' -> (Topic) 'ancient civilizations'   x3 conf<=0.98 valid_at=2023/01/15 (Sun) 00:27
+      studied      (User) 'user' -> (Topic) 'ancient cultures'   x2 conf<=0.99 valid_at=2023/01/15 (Sun) 00:27
+      works_for    (Person) 'new york university institute for the study of the ancient world' -> (Organization) 'brooklyn museum'   x3 conf<=0.36 valid_at=2023/01/15 (Sun) 00:27
+  diff: 33 shared claims, 0 constrained-only, 0 permissive-only, 0 shared-but-retyped
+
+====================================================================================================
+[knowledge-update] What was my personal best time in the charity 5K run?
+  expected answer: '25 minutes and 50 seconds (or 25:50)'
+  constrained:
+    window   0  1720ch  FEASIBLE    25e  31r    1.5s
+    window   1  1815ch  FEASIBLE    22e   0r    0.5s
+    window   2  1794ch  FEASIBLE    18e   7r    0.6s
+    window   3  1787ch  FEASIBLE    22e   0r    0.4s
+    window   4  1844ch  FEASIBLE    19e   4r    0.6s
+    window   5  1787ch  FEASIBLE    20e   1r    0.4s
+    window   6  1935ch  FEASIBLE    21e   6r    0.5s
+    window   7  1806ch  FEASIBLE    23e   0r    0.5s
+    window   8  1831ch  FEASIBLE    19e  18r    0.7s
+    window   9  1694ch  FEASIBLE    21e  16r    0.6s
+    window  10  1209ch  FEASIBLE    21e   7r    0.5s
+  permissive:
+    window   0  1720ch  FEASIBLE    25e   6r    0.9s
+    window   1  1815ch  FEASIBLE    22e   0r    0.6s
+    window   2  1794ch  FEASIBLE    18e   6r    1.0s
+    window   3  1787ch  FEASIBLE    22e   0r    0.4s
+    window   4  1844ch  FEASIBLE    19e   4r    1.0s
+    window   5  1787ch  FEASIBLE    20e   1r    0.7s
+    window   6  1935ch  FEASIBLE    21e   5r    0.7s
+    window   7  1806ch  FEASIBLE    23e   0r    0.5s
+    window   8  1831ch  FEASIBLE    19e  13r    1.3s
+    window   9  1694ch  FEASIBLE    21e  12r    0.9s
+    window  10  1209ch  FEASIBLE    21e   8r    1.0s
+
+  --- answer_a25d4a91_1 (2023/05/23 (Tue) 13:01, 16143 chars) ---
+  constrained: 90 raw edges, 30 distinct after merge, 0/11 windows infeasible, 7s
+      attended     (User) 'i' -> (Event) 'quarterfinals'   x2 conf<=0.85 valid_at=2023/05/23 (Tue) 13:01
+      attended     (User) 'user' -> (Event) '5k run'   x1 conf<=0.69 valid_at=2023/05/23 (Tue) 13:01
+      attended     (User) 'user' -> (Event) 'charity 5k run'   x1 conf<=0.59 valid_at=2023/05/23 (Tue) 13:01
+      attended     (User) 'user' -> (Event) 'tennis tournament'   x3 conf<=0.97 valid_at=2023/05/23 (Tue) 13:01
+      attended     (User) 'user' -> (Event) 'tournament'   x8 conf<=0.96 valid_at=2023/05/23 (Tue) 13:01
+      attended     (User) 'you' -> (Event) 'quarterfinals'   x1 conf<=0.48 valid_at=2023/05/23 (Tue) 13:01
+      knows        (User) 'user' -> (Person) 'goal-scorer'   x2 conf<=0.63 valid_at=2023/05/23 (Tue) 13:01
+      owns         (User) 'i' -> (Product) 'tennis racket'   x4 conf<=0.93 valid_at=2023/05/23 (Tue) 13:01
+      owns         (User) 'i' -> (Product) 'synthetic strings'   x1 conf<=0.76 valid_at=2023/05/23 (Tue) 13:01
+      owns         (User) 'user' -> (Product) 'tennis racket'   x2 conf<=0.98 valid_at=2023/05/23 (Tue) 13:01
+      practices    (Person) 'coworkers' -> (Activity) 'soccer'   x15 conf<=0.67 valid_at=2023/05/23 (Tue) 13:01
+      practices    (User) 'i' -> (Activity) 'footwork'   x2 conf<=0.99 valid_at=2023/05/23 (Tue) 13:01
+      practices    (User) 'i' -> (Activity) 'returns'   x2 conf<=0.98 valid_at=2023/05/23 (Tue) 13:01
+      practices    (Person) 'teammate' -> (Activity) 'soccer'   x16 conf<=0.83 valid_at=2023/05/23 (Tue) 13:01
+      practices    (User) 'user' -> (Activity) 'running'   x4 conf<=0.94 valid_at=2023/05/23 (Tue) 13:01
+      practices    (User) 'user' -> (Activity) 'shooting'   x3 conf<=0.77 valid_at=2023/05/23 (Tue) 13:01
+      practices    (User) 'user' -> (Activity) 'serve and volleys'   x1 conf<=0.87 valid_at=2023/05/23 (Tue) 13:01
+      practices    (User) 'you' -> (Activity) 'training'   x1 conf<=0.35 valid_at=2023/05/23 (Tue) 13:01
+      prefers      (User) 'user' -> (Product) 'tennis racket'   x2 conf<=0.94 valid_at=2023/05/23 (Tue) 13:01
+      purchased    (User) 'i' -> (Product) 'tennis racket'   x6 conf<=0.95 valid_at=2023/05/23 (Tue) 13:01
+      purchased    (User) 'user' -> (Product) 'tennis racket'   x2 conf<=0.96 valid_at=2023/05/23 (Tue) 13:01
+      purchased    (User) 'user' -> (Product) 'strings'   x2 conf<=0.93 valid_at=2023/05/23 (Tue) 13:01
+      studied      (User) 'i' -> (Topic) 'string tension'   x1 conf<=0.54 valid_at=2023/05/23 (Tue) 13:01
+      studied      (User) 'i' -> (Topic) 'string pattern'   x1 conf<=0.61 valid_at=2023/05/23 (Tue) 13:01
+      studied      (User) 'i' -> (Topic) 'string gauge'   x1 conf<=0.59 valid_at=2023/05/23 (Tue) 13:01
+      studied      (Person) 'professional soccer players' -> (Topic) 'shooting techniques'   x1 conf<=0.59 valid_at=2023/05/23 (Tue) 13:01
+      studied      (User) 'user' -> (Topic) 'running technique'   x1 conf<=0.91 valid_at=2023/05/23 (Tue) 13:01
+      studied      (User) 'user' -> (Topic) 'shooting technique'   x2 conf<=0.85 valid_at=2023/05/23 (Tue) 13:01
+      visited      (User) 'user' -> (Location) 'venue'   x1 conf<=0.77 valid_at=2023/05/23 (Tue) 13:01
+      works_for    (Person) 'rackets' -> (Organization) 'tennis shops'   x1 conf<=0.69 valid_at=2023/05/23 (Tue) 13:01
+  permissive: 55 raw edges, 35 distinct after merge, 0/11 windows infeasible, 9s
+      attended     (User) 'i' -> (Event) 'quarterfinals'   x2 conf<=0.85 valid_at=2023/05/23 (Tue) 13:01
+      attended     (User) 'user' -> (Event) '5k run'   x1 conf<=0.69 valid_at=2023/05/23 (Tue) 13:01
+      attended     (User) 'user' -> (Event) 'tennis tournament'   x2 conf<=0.97 valid_at=2023/05/23 (Tue) 13:01
+      attended     (User) 'user' -> (Event) 'tournament'   x2 conf<=0.96 valid_at=2023/05/23 (Tue) 13:01
+      attended     (User) 'you' -> (Activity) 'tournament'   x1 conf<=0.42 valid_at=2023/05/23 (Tue) 13:01
+      knows        (Person) 'assistant' -> (Event) 'soccer game'   x1 conf<=0.58 valid_at=2023/05/23 (Tue) 13:01
+      knows        (User) 'i' -> (Product) 'tennis racket'   x2 conf<=0.55 valid_at=2023/05/23 (Tue) 13:01
+      knows        (User) 'user' -> (Activity) 'running'   x1 conf<=0.88 valid_at=2023/05/23 (Tue) 13:01
+      knows        (User) 'user' -> (Person) 'goal-scorer'   x2 conf<=0.63 valid_at=2023/05/23 (Tue) 13:01
+      knows        (User) 'user' -> (Product) 'strings'   x2 conf<=0.73 valid_at=2023/05/23 (Tue) 13:01
+      located_in   (Location) 'venue' -> (Event) 'tournament'   x1 conf<=0.21 valid_at=2023/05/23 (Tue) 13:01
+      owns         (User) 'i' -> (Product) 'tennis racket'   x2 conf<=0.93 valid_at=2023/05/23 (Tue) 13:01
+      owns         (User) 'i' -> (Product) 'synthetic strings'   x1 conf<=0.76 valid_at=2023/05/23 (Tue) 13:01
+      owns         (User) 'user' -> (Product) 'tennis racket'   x2 conf<=0.98 valid_at=2023/05/23 (Tue) 13:01
+      practices    (User) 'i' -> (Activity) 'footwork'   x2 conf<=0.99 valid_at=2023/05/23 (Tue) 13:01
+      practices    (Person) 'teammate' -> (Activity) 'soccer'   x2 conf<=0.83 valid_at=2023/05/23 (Tue) 13:01
+      practices    (User) 'user' -> (Activity) 'running'   x2 conf<=0.94 valid_at=2023/05/23 (Tue) 13:01
+      practices    (User) 'user' -> (Activity) 'shooting'   x1 conf<=0.77 valid_at=2023/05/23 (Tue) 13:01
+      practices    (User) 'user' -> (Activity) 'serve and volleys'   x1 conf<=0.87 valid_at=2023/05/23 (Tue) 13:01
+      practices    (User) 'you' -> (Activity) 'training'   x1 conf<=0.35 valid_at=2023/05/23 (Tue) 13:01
+      prefers      (User) 'user' -> (Product) 'healthy fats'   x1 conf<=0.48 valid_at=2023/05/23 (Tue) 13:01
+      prefers      (User) 'user' -> (Product) 'tennis racket'   x2 conf<=0.94 valid_at=2023/05/23 (Tue) 13:01
+      purchased    (User) 'i' -> (Product) 'tennis racket'   x2 conf<=0.95 valid_at=2023/05/23 (Tue) 13:01
+      purchased    (User) 'user' -> (Product) 'tennis racket'   x2 conf<=0.96 valid_at=2023/05/23 (Tue) 13:01
+      studied      (Person) 'assistant' -> (Activity) 'soccer'   x1 conf<=0.53 valid_at=2023/05/23 (Tue) 13:01
+      studied      (User) 'i' -> (Topic) 'string pattern'   x1 conf<=0.61 valid_at=2023/05/23 (Tue) 13:01
+      studied      (User) 'i' -> (Topic) 'string gauge'   x1 conf<=0.59 valid_at=2023/05/23 (Tue) 13:01
+      studied      (Person) 'professional soccer players' -> (Topic) 'shooting techniques'   x1 conf<=0.59 valid_at=2023/05/23 (Tue) 13:01
+      studied      (User) 'user' -> (Topic) 'running technique'   x1 conf<=0.91 valid_at=2023/05/23 (Tue) 13:01
+      studied      (User) 'user' -> (Topic) 'shooting technique'   x2 conf<=0.85 valid_at=2023/05/23 (Tue) 13:01
+      visited      (User) 'i' -> (Event) 'quarterfinals'   x3 conf<=0.94 valid_at=2023/05/23 (Tue) 13:01
+      visited      (Person) 'teammate' -> (Person) 'coworkers'   x2 conf<=0.70 valid_at=2023/05/23 (Tue) 13:01
+      visited      (User) 'user' -> (Event) 'tennis tournament'   x2 conf<=0.89 valid_at=2023/05/23 (Tue) 13:01
+      visited      (User) 'user' -> (Location) 'venue'   x1 conf<=0.77 valid_at=2023/05/23 (Tue) 13:01
+      works_for    (Product) 'rackets' -> (Organization) 'tennis shops'   x2 conf<=0.69 valid_at=2023/05/23 (Tue) 13:01
+  diff: 24 shared claims, 6 constrained-only, 11 permissive-only, 1 shared-but-retyped
+      ~ works_for('rackets' -> 'tennis shops'): (Product,Organization) permissive -> (Person,Organization) constrained
+    constrained-only (beam reallocation, if #348's claim holds):
+      + attended('user' -> 'charity 5k run')
+      + attended('you' -> 'quarterfinals')
+      + practices('coworkers' -> 'soccer')
+      + practices('i' -> 'returns')
+      + purchased('user' -> 'strings')
+      + studied('i' -> 'string tension')
+    permissive-only (suppressed by the domain/range constraint):
+      - attended('you' -> 'tournament')
+      - knows('assistant' -> 'soccer game')
+      - knows('i' -> 'tennis racket')
+      - knows('user' -> 'running')
+      - knows('user' -> 'strings')
+      - located_in('venue' -> 'tournament')
+      - prefers('user' -> 'healthy fats')
+      - studied('assistant' -> 'soccer')
+      - visited('i' -> 'quarterfinals')
+      - visited('teammate' -> 'coworkers')
+      - visited('user' -> 'tennis tournament')
+
+====================================================================================================
+[knowledge-update] What was my personal best time in the charity 5K run?
+  expected answer: '25 minutes and 50 seconds (or 25:50)'
+  constrained:
+    window   0  1827ch  FEASIBLE    24e   2r    0.6s
+    window   1  1854ch  FEASIBLE    23e   0r    0.5s
+    window   2  1900ch  FEASIBLE    19e   7r    0.6s
+    window   3  1864ch  FEASIBLE    17e   0r    0.5s
+    window   4  1708ch  FEASIBLE    15e   1r    0.5s
+    window   5  1701ch  FEASIBLE    21e  14r    0.6s
+    window   6  1807ch  FEASIBLE    15e   5r    0.5s
+    window   7  1823ch  FEASIBLE    21e  12r    0.6s
+    window   8  1677ch  FEASIBLE    21e   4r    0.5s
+    window   9  1845ch  FEASIBLE    21e   6r    0.7s
+    window  10  1844ch  FEASIBLE    18e   0r    0.5s
+    window  11  1163ch  FEASIBLE    20e   5r    0.7s
+  permissive:
+    window   0  1827ch  FEASIBLE    24e   8r    0.8s
+    window   1  1854ch  FEASIBLE    23e   0r    0.4s
+    window   2  1900ch  FEASIBLE    19e   6r    0.8s
+    window   3  1864ch  FEASIBLE    18e   0r    0.7s
+    window   4  1708ch  FEASIBLE    16e   5r    0.6s
+    window   5  1701ch  FEASIBLE    20e   9r    0.7s
+    window   6  1807ch  FEASIBLE    14e   8r    0.8s
+    window   7  1823ch  FEASIBLE    21e  10r    0.8s
+    window   8  1677ch  FEASIBLE    21e   5r    0.6s
+    window   9  1845ch  FEASIBLE    21e   7r    0.8s
+    window  10  1844ch  FEASIBLE    18e   0r    0.5s
+    window  11  1163ch  FEASIBLE    19e   0r    0.4s
+
+  --- answer_a25d4a91_2 (2023/05/30 (Tue) 13:53, 17689 chars) ---
+  constrained: 56 raw edges, 22 distinct after merge, 0/12 windows infeasible, 7s
+      attended     (User) 'user' -> (Event) 'charity 5k run'   x3 conf<=0.96 valid_at=2023/05/30 (Tue) 13:53
+      attended     (User) 'user' -> (Event) 'rest day'   x2 conf<=0.56 valid_at=2023/05/30 (Tue) 13:53
+      attended     (User) 'user' -> (Event) 'tennis tournament'   x3 conf<=0.98 valid_at=2023/05/30 (Tue) 13:53
+      attended     (User) 'user' -> (Event) 'tournament'   x2 conf<=0.95 valid_at=2023/05/30 (Tue) 13:53
+      owns         (User) 'i' -> (Product) 'barbell'   x1 conf<=0.52 valid_at=2023/05/30 (Tue) 13:53
+      owns         (User) 'user' -> (Product) 'barbell'   x1 conf<=0.65 valid_at=2023/05/30 (Tue) 13:53
+      practices    (User) 'i' -> (Activity) 'strength training'   x6 conf<=0.92 valid_at=2023/05/30 (Tue) 13:53
+      practices    (Person) 'monday' -> (Activity) 'easy run'   x2 conf<=0.26 valid_at=2023/05/30 (Tue) 13:53
+      practices    (Person) 'monday' -> (Activity) 'strength training'   x1 conf<=0.24 valid_at=2023/05/30 (Tue) 13:53
+      practices    (Person) 'monday' -> (Activity) 'long run'   x1 conf<=0.19 valid_at=2023/05/30 (Tue) 13:53
+      practices    (Person) 'monday' -> (Activity) 'interval training'   x1 conf<=0.24 valid_at=2023/05/30 (Tue) 13:53
+      practices    (User) 'user' -> (Activity) 'interval training'   x1 conf<=0.72 valid_at=2023/05/30 (Tue) 13:53
+      practices    (User) 'user' -> (Activity) 'intervals'   x4 conf<=0.65 valid_at=2023/05/30 (Tue) 13:53
+      practices    (User) 'user' -> (Activity) 'practice'   x1 conf<=0.70 valid_at=2023/05/30 (Tue) 13:53
+      practices    (User) 'user' -> (Activity) 'strength training'   x3 conf<=0.98 valid_at=2023/05/30 (Tue) 13:53
+      practices    (User) 'user' -> (Activity) 'toss'   x7 conf<=0.85 valid_at=2023/05/30 (Tue) 13:53
+      practices    (User) 'user' -> (Activity) 'serving'   x5 conf<=0.79 valid_at=2023/05/30 (Tue) 13:53
+      practices    (User) 'user' -> (Activity) 'serve'   x5 conf<=0.92 valid_at=2023/05/30 (Tue) 13:53
+      practices    (User) 'user' -> (Activity) 'toss and visualize'   x1 conf<=0.36 valid_at=2023/05/30 (Tue) 13:53
+      purchased    (User) 'i' -> (Product) 'barbell'   x1 conf<=0.63 valid_at=2023/05/30 (Tue) 13:53
+      purchased    (User) 'user' -> (Product) 'barbell'   x1 conf<=0.72 valid_at=2023/05/30 (Tue) 13:53
+      studied      (User) 'user' -> (Topic) 'toss consistency'   x4 conf<=0.90 valid_at=2023/05/30 (Tue) 13:53
+  permissive: 58 raw edges, 28 distinct after merge, 0/12 windows infeasible, 8s
+      attended     (User) 'user' -> (Event) 'charity 5k run'   x3 conf<=0.96 valid_at=2023/05/30 (Tue) 13:53
+      attended     (User) 'user' -> (Event) 'rest day'   x2 conf<=0.56 valid_at=2023/05/30 (Tue) 13:53
+      attended     (User) 'user' -> (Event) 'tennis tournament'   x3 conf<=0.98 valid_at=2023/05/30 (Tue) 13:53
+      attended     (User) 'user' -> (Event) 'tournament'   x2 conf<=0.95 valid_at=2023/05/30 (Tue) 13:53
+      knows        (User) 'user' -> (Topic) 'endurance'   x4 conf<=0.92 valid_at=2023/05/30 (Tue) 13:53
+      knows        (User) 'user' -> (Activity) 'running performance'   x2 conf<=0.79 valid_at=2023/05/30 (Tue) 13:53
+      knows        (User) 'user' -> (Topic) 'serve'   x2 conf<=0.98 valid_at=2023/05/30 (Tue) 13:53
+      knows        (User) 'user' -> (Topic) 'toss consistency'   x4 conf<=0.77 valid_at=2023/05/30 (Tue) 13:53
+      owns         (User) 'i' -> (Product) 'barbell'   x1 conf<=0.52 valid_at=2023/05/30 (Tue) 13:53
+      owns         (User) 'user' -> (Product) 'barbell'   x1 conf<=0.65 valid_at=2023/05/30 (Tue) 13:53
+      practices    (User) 'user' -> (Activity) 'interval training'   x1 conf<=0.72 valid_at=2023/05/30 (Tue) 13:53
+      practices    (User) 'user' -> (Activity) 'intervals'   x1 conf<=0.65 valid_at=2023/05/30 (Tue) 13:53
+      practices    (User) 'user' -> (Activity) 'practice'   x1 conf<=0.70 valid_at=2023/05/30 (Tue) 13:53
+      practices    (User) 'user' -> (Activity) 'strength training'   x2 conf<=0.98 valid_at=2023/05/30 (Tue) 13:53
+      practices    (User) 'user' -> (Activity) 'toss'   x4 conf<=0.85 valid_at=2023/05/30 (Tue) 13:53
+      practices    (User) 'user' -> (Activity) 'serve'   x3 conf<=0.92 valid_at=2023/05/30 (Tue) 13:53
+      prefers      (User) 'user' -> (Activity) 'intervals'   x1 conf<=0.48 valid_at=2023/05/30 (Tue) 13:53
+      purchased    (User) 'i' -> (Product) 'barbell'   x1 conf<=0.63 valid_at=2023/05/30 (Tue) 13:53
+      purchased    (User) 'user' -> (Product) 'barbell'   x1 conf<=0.72 valid_at=2023/05/30 (Tue) 13:53
+      studied      (User) 'user' -> (Topic) 'balance'   x1 conf<=0.48 valid_at=2023/05/30 (Tue) 13:53
+      studied      (User) 'user' -> (Topic) 'toss consistency'   x4 conf<=0.90 valid_at=2023/05/30 (Tue) 13:53
+      studied      (User) 'user' -> (Activity) 'interval training'   x1 conf<=0.52 valid_at=2023/05/30 (Tue) 13:53
+      visited      (User) 'i' -> (Event) 'tennis tournament'   x1 conf<=0.84 valid_at=2023/05/30 (Tue) 13:53
+      visited      (User) 'user' -> (Event) 'charity 5k run'   x3 conf<=0.94 valid_at=2023/05/30 (Tue) 13:53
+      visited      (User) 'user' -> (Event) 'tennis tournament'   x3 conf<=0.93 valid_at=2023/05/30 (Tue) 13:53
+      visited      (User) 'user' -> (Event) 'tournament'   x2 conf<=0.88 valid_at=2023/05/30 (Tue) 13:53
+      works_for    (Person) 'assistant' -> (Event) 'charity 5k run'   x2 conf<=0.90 valid_at=2023/05/30 (Tue) 13:53
+      works_for    (Activity) 'strength training' -> (Person) 'runner'   x2 conf<=0.97 valid_at=2023/05/30 (Tue) 13:53
+  diff: 15 shared claims, 7 constrained-only, 13 permissive-only, 0 shared-but-retyped
+    constrained-only (beam reallocation, if #348's claim holds):
+      + practices('i' -> 'strength training')
+      + practices('monday' -> 'easy run')
+      + practices('monday' -> 'interval training')
+      + practices('monday' -> 'long run')
+      + practices('monday' -> 'strength training')
+      + practices('user' -> 'serving')
+      + practices('user' -> 'toss and visualize')
+    permissive-only (suppressed by the domain/range constraint):
+      - knows('user' -> 'endurance')
+      - knows('user' -> 'running performance')
+      - knows('user' -> 'serve')
+      - knows('user' -> 'toss consistency')
+      - prefers('user' -> 'intervals')
+      - studied('user' -> 'balance')
+      - studied('user' -> 'interval training')
+      - visited('i' -> 'tennis tournament')
+      - visited('user' -> 'charity 5k run')
+      - visited('user' -> 'tennis tournament')
+      - visited('user' -> 'tournament')
+      - works_for('assistant' -> 'charity 5k run')
+      - works_for('strength training' -> 'runner')
+
+====================================================================================================
+[multi-session] How many items of clothing do I need to pick up or return from a store?
+  expected answer: 3
+  constrained:
+    window   0  1557ch  FEASIBLE    14e  18r    0.9s
+    window   1  1607ch  FEASIBLE    13e   8r    0.9s
+    window   2  1457ch  FEASIBLE     5e   0r    0.5s
+    window   3  1509ch  FEASIBLE    11e   1r    0.6s
+    window   4  1589ch  FEASIBLE    16e  11r    0.6s
+    window   5  1653ch  FEASIBLE    17e  13r    0.8s
+    window   6  1621ch  FEASIBLE    17e   3r    0.7s
+    window   7  1673ch  FEASIBLE    19e   3r    0.5s
+    window   8  1681ch  FEASIBLE    15e   2r    0.6s
+    window   9  1653ch  FEASIBLE    12e  12r    0.6s
+    window  10  1072ch  FEASIBLE    11e   5r    0.4s
+  permissive:
+    window   0  1557ch  FEASIBLE    14e  18r    0.8s
+    window   1  1607ch  FEASIBLE    13e   8r    0.9s
+    window   2  1457ch  FEASIBLE     5e   0r    0.4s
+    window   3  1509ch  FEASIBLE    11e   1r    0.6s
+    window   4  1589ch  FEASIBLE    16e  11r    0.6s
+    window   5  1653ch  FEASIBLE    17e  13r    0.8s
+    window   6  1621ch  FEASIBLE    17e   3r    0.7s
+    window   7  1673ch  FEASIBLE    19e   3r    0.5s
+    window   8  1681ch  FEASIBLE    15e   2r    0.6s
+    window   9  1653ch  FEASIBLE    12e  12r    0.6s
+    window  10  1072ch  FEASIBLE    11e   5r    0.5s
+
+  --- answer_afa9873b_2 (2023/02/15 (Wed) 06:30, 14373 chars) ---
+  constrained: 76 raw edges, 28 distinct after merge, 0/11 windows infeasible, 7s
+      attended     (User) 'i' -> (Event) 'meeting'   x1 conf<=0.93 valid_at=2023/02/15 (Wed) 06:30
+      attended     (User) 'user' -> (Event) 'meeting'   x2 conf<=0.97 valid_at=2023/02/15 (Wed) 06:30
+      lives_in     (User) 'user' -> (Location) 'closet'   x8 conf<=0.91 valid_at=2023/02/15 (Wed) 06:30
+      owns         (Person) 'blazer' -> (Product) 'blazer'   x4 conf<=0.75 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'i' -> (Product) 'navy blue blazer'   x3 conf<=0.81 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'i' -> (Product) 'short-sleeve shirts'   x3 conf<=0.77 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'user' -> (Product) 'navy blue blazer'   x3 conf<=0.93 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'user' -> (Product) 'shoes'   x2 conf<=0.85 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'user' -> (Product) 'tops'   x5 conf<=0.73 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'user' -> (Product) 'short-sleeve shirts'   x3 conf<=0.82 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'user' -> (Product) 'black jeans'   x5 conf<=0.89 valid_at=2023/02/15 (Wed) 06:30
+      practices    (Person) 'assistant' -> (Activity) 'decluttering'   x1 conf<=0.35 valid_at=2023/02/15 (Wed) 06:30
+      practices    (User) 'i' -> (Activity) 'decluttering'   x2 conf<=0.51 valid_at=2023/02/15 (Wed) 06:30
+      practices    (User) 'user' -> (Activity) 'decluttering'   x4 conf<=0.73 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (Person) 'blazer' -> (Product) 'garment bag'   x1 conf<=0.55 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'i' -> (Product) 'clothes'   x1 conf<=0.64 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'i' -> (Topic) 'clothes'   x1 conf<=0.71 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'i' -> (Product) 'short-sleeve shirts'   x3 conf<=0.39 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'user' -> (Product) 'clothes'   x1 conf<=0.67 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'user' -> (Topic) 'clothes'   x1 conf<=0.73 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'user' -> (Product) 'tops'   x5 conf<=0.91 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'user' -> (Product) 'short-sleeve shirts'   x3 conf<=0.62 valid_at=2023/02/15 (Wed) 06:30
+      purchased    (User) 'i' -> (Product) 'navy blue blazer'   x3 conf<=0.84 valid_at=2023/02/15 (Wed) 06:30
+      purchased    (User) 'i' -> (Product) 'new top'   x1 conf<=0.51 valid_at=2023/02/15 (Wed) 06:30
+      purchased    (User) 'user' -> (Product) 'navy blue blazer'   x3 conf<=0.93 valid_at=2023/02/15 (Wed) 06:30
+      purchased    (User) 'user' -> (Product) 'shoes'   x2 conf<=0.88 valid_at=2023/02/15 (Wed) 06:30
+      purchased    (User) 'user' -> (Product) 'new top'   x1 conf<=0.54 valid_at=2023/02/15 (Wed) 06:30
+      visited      (Person) 'assistant' -> (Location) 'closet'   x4 conf<=0.95 valid_at=2023/02/15 (Wed) 06:30
+  permissive: 76 raw edges, 28 distinct after merge, 0/11 windows infeasible, 7s
+      attended     (User) 'i' -> (Event) 'meeting'   x1 conf<=0.93 valid_at=2023/02/15 (Wed) 06:30
+      attended     (User) 'user' -> (Event) 'meeting'   x2 conf<=0.97 valid_at=2023/02/15 (Wed) 06:30
+      lives_in     (User) 'user' -> (Location) 'closet'   x8 conf<=0.91 valid_at=2023/02/15 (Wed) 06:30
+      owns         (Person) 'blazer' -> (Product) 'blazer'   x4 conf<=0.75 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'i' -> (Product) 'navy blue blazer'   x3 conf<=0.81 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'i' -> (Product) 'short-sleeve shirts'   x3 conf<=0.77 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'user' -> (Product) 'navy blue blazer'   x3 conf<=0.93 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'user' -> (Product) 'shoes'   x2 conf<=0.85 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'user' -> (Product) 'tops'   x5 conf<=0.73 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'user' -> (Product) 'short-sleeve shirts'   x3 conf<=0.82 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'user' -> (Product) 'black jeans'   x5 conf<=0.89 valid_at=2023/02/15 (Wed) 06:30
+      practices    (Person) 'assistant' -> (Activity) 'decluttering'   x1 conf<=0.35 valid_at=2023/02/15 (Wed) 06:30
+      practices    (User) 'i' -> (Activity) 'decluttering'   x2 conf<=0.51 valid_at=2023/02/15 (Wed) 06:30
+      practices    (User) 'user' -> (Activity) 'decluttering'   x4 conf<=0.73 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (Person) 'blazer' -> (Product) 'garment bag'   x1 conf<=0.55 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'i' -> (Product) 'clothes'   x1 conf<=0.64 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'i' -> (Topic) 'clothes'   x1 conf<=0.71 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'i' -> (Product) 'short-sleeve shirts'   x3 conf<=0.39 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'user' -> (Product) 'clothes'   x1 conf<=0.67 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'user' -> (Topic) 'clothes'   x1 conf<=0.73 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'user' -> (Product) 'tops'   x5 conf<=0.91 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'user' -> (Product) 'short-sleeve shirts'   x3 conf<=0.62 valid_at=2023/02/15 (Wed) 06:30
+      purchased    (User) 'i' -> (Product) 'navy blue blazer'   x3 conf<=0.84 valid_at=2023/02/15 (Wed) 06:30
+      purchased    (User) 'i' -> (Product) 'new top'   x1 conf<=0.51 valid_at=2023/02/15 (Wed) 06:30
+      purchased    (User) 'user' -> (Product) 'navy blue blazer'   x3 conf<=0.93 valid_at=2023/02/15 (Wed) 06:30
+      purchased    (User) 'user' -> (Product) 'shoes'   x2 conf<=0.88 valid_at=2023/02/15 (Wed) 06:30
+      purchased    (User) 'user' -> (Product) 'new top'   x1 conf<=0.54 valid_at=2023/02/15 (Wed) 06:30
+      visited      (Person) 'assistant' -> (Location) 'closet'   x4 conf<=0.95 valid_at=2023/02/15 (Wed) 06:30
+  diff: 26 shared claims, 0 constrained-only, 0 permissive-only, 0 shared-but-retyped
+
+====================================================================================================
+[multi-session] How many items of clothing do I need to pick up or return from a store?
+  expected answer: 3
+  constrained:
+    window   0  1649ch  FEASIBLE    30e  31r    1.2s
+    window   1  1772ch  FEASIBLE    22e   7r    1.2s
+    window   2  1662ch  FEASIBLE    23e   7r    0.6s
+    window   3  1834ch  FEASIBLE    26e  13r    0.6s
+    window   4  1794ch  FEASIBLE    25e  18r    0.7s
+    window   5  1746ch  FEASIBLE    27e   5r    0.5s
+    window   6  1781ch  FEASIBLE    26e  22r    0.7s
+    window   7  1407ch  FEASIBLE    16e   0r    0.4s
+  permissive:
+    window   0  1649ch  FEASIBLE    30e  31r    1.1s
+    window   1  1772ch  FEASIBLE    22e   7r    1.1s
+    window   2  1662ch  FEASIBLE    23e   7r    0.8s
+    window   3  1834ch  FEASIBLE    26e  13r    0.8s
+    window   4  1794ch  FEASIBLE    25e  18r    0.8s
+    window   5  1746ch  FEASIBLE    27e   5r    0.5s
+    window   6  1781ch  FEASIBLE    26e  22r    0.8s
+    window   7  1407ch  FEASIBLE    16e   0r    0.4s
+
+  --- answer_afa9873b_3 (2023/02/15 (Wed) 11:13, 11553 chars) ---
+  constrained: 103 raw edges, 33 distinct after merge, 0/8 windows infeasible, 6s
+      attended     (Person) 'sister' -> (Event) 'outdoor concert'   x3 conf<=0.68 valid_at=2023/02/15 (Wed) 11:13
+      attended     (User) 'user' -> (Event) 'outdoor concert'   x1 conf<=0.92 valid_at=2023/02/15 (Wed) 11:13
+      attended     (User) 'user' -> (Event) 'concert'   x8 conf<=0.98 valid_at=2023/02/15 (Wed) 11:13
+      lives_in     (User) 'user' -> (Location) 'closet'   x10 conf<=0.98 valid_at=2023/02/15 (Wed) 11:13
+      owns         (Person) 'assistant' -> (Product) 'boots'   x1 conf<=0.36 valid_at=2023/02/15 (Wed) 11:13
+      owns         (User) 'i' -> (Product) 'yoga pants'   x8 conf<=0.88 valid_at=2023/02/15 (Wed) 11:13
+      owns         (Person) 'i' -> (Product) 'yoga pants'   x4 conf<=0.56 valid_at=2023/02/15 (Wed) 11:13
+      owns         (User) 'user' -> (Product) 'green sweater'   x2 conf<=0.98 valid_at=2023/02/15 (Wed) 11:13
+      owns         (User) 'user' -> (Product) 'yellow sundress'   x5 conf<=0.91 valid_at=2023/02/15 (Wed) 11:13
+      owns         (User) 'user' -> (Product) 'boots'   x8 conf<=0.91 valid_at=2023/02/15 (Wed) 11:13
+      practices    (User) 'i' -> (Activity) 'laundry day'   x2 conf<=0.63 valid_at=2023/02/15 (Wed) 11:13
+      practices    (User) 'user' -> (Activity) 'washing'   x1 conf<=0.09 valid_at=2023/02/15 (Wed) 11:13
+      practices    (User) 'user' -> (Activity) 'laundry day'   x1 conf<=0.53 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'tops'   x2 conf<=0.61 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'bottoms'   x2 conf<=0.64 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'dresses'   x2 conf<=0.68 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'outerwear'   x1 conf<=0.53 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'socks'   x1 conf<=0.57 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'accessories'   x1 conf<=0.55 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'winter clothes'   x5 conf<=0.68 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'gloves'   x1 conf<=0.52 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'shoes'   x2 conf<=0.64 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'green sweater'   x2 conf<=0.96 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'yellow sundress'   x3 conf<=0.89 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'boots'   x8 conf<=0.89 valid_at=2023/02/15 (Wed) 11:13
+      studied      (Person) 'assistant' -> (Topic) 'tlc'   x1 conf<=0.67 valid_at=2023/02/15 (Wed) 11:13
+      studied      (Person) 'i' -> (Topic) 'tlc'   x1 conf<=0.71 valid_at=2023/02/15 (Wed) 11:13
+      studied      (User) 'user' -> (Topic) 'style'   x2 conf<=0.84 valid_at=2023/02/15 (Wed) 11:13
+      studied      (User) 'user' -> (Topic) 'tlc'   x1 conf<=0.80 valid_at=2023/02/15 (Wed) 11:13
+      visited      (Person) 'assistant' -> (Location) 'closet'   x10 conf<=0.99 valid_at=2023/02/15 (Wed) 11:13
+      visited      (User) 'i' -> (Location) 'gym'   x2 conf<=0.76 valid_at=2023/02/15 (Wed) 11:13
+      visited      (User) 'user' -> (Location) 'gym'   x1 conf<=0.53 valid_at=2023/02/15 (Wed) 11:13
+      works_for    (Person) 'zara' -> (Organization) 'zara'   x1 conf<=0.65 valid_at=2023/02/15 (Wed) 11:13
+  permissive: 103 raw edges, 33 distinct after merge, 0/8 windows infeasible, 6s
+      attended     (Person) 'sister' -> (Event) 'outdoor concert'   x3 conf<=0.68 valid_at=2023/02/15 (Wed) 11:13
+      attended     (User) 'user' -> (Event) 'outdoor concert'   x1 conf<=0.92 valid_at=2023/02/15 (Wed) 11:13
+      attended     (User) 'user' -> (Event) 'concert'   x8 conf<=0.98 valid_at=2023/02/15 (Wed) 11:13
+      lives_in     (User) 'user' -> (Location) 'closet'   x10 conf<=0.98 valid_at=2023/02/15 (Wed) 11:13
+      owns         (Person) 'assistant' -> (Product) 'boots'   x1 conf<=0.36 valid_at=2023/02/15 (Wed) 11:13
+      owns         (User) 'i' -> (Product) 'yoga pants'   x8 conf<=0.88 valid_at=2023/02/15 (Wed) 11:13
+      owns         (Person) 'i' -> (Product) 'yoga pants'   x4 conf<=0.56 valid_at=2023/02/15 (Wed) 11:13
+      owns         (User) 'user' -> (Product) 'green sweater'   x2 conf<=0.98 valid_at=2023/02/15 (Wed) 11:13
+      owns         (User) 'user' -> (Product) 'yellow sundress'   x5 conf<=0.91 valid_at=2023/02/15 (Wed) 11:13
+      owns         (User) 'user' -> (Product) 'boots'   x8 conf<=0.91 valid_at=2023/02/15 (Wed) 11:13
+      practices    (User) 'i' -> (Activity) 'laundry day'   x2 conf<=0.63 valid_at=2023/02/15 (Wed) 11:13
+      practices    (User) 'user' -> (Activity) 'washing'   x1 conf<=0.09 valid_at=2023/02/15 (Wed) 11:13
+      practices    (User) 'user' -> (Activity) 'laundry day'   x1 conf<=0.53 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'tops'   x2 conf<=0.61 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'bottoms'   x2 conf<=0.64 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'dresses'   x2 conf<=0.68 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'outerwear'   x1 conf<=0.53 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'socks'   x1 conf<=0.57 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'accessories'   x1 conf<=0.55 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'winter clothes'   x5 conf<=0.68 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'gloves'   x1 conf<=0.52 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'shoes'   x2 conf<=0.64 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'green sweater'   x2 conf<=0.96 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'yellow sundress'   x3 conf<=0.89 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'boots'   x8 conf<=0.89 valid_at=2023/02/15 (Wed) 11:13
+      studied      (Person) 'assistant' -> (Topic) 'tlc'   x1 conf<=0.67 valid_at=2023/02/15 (Wed) 11:13
+      studied      (Person) 'i' -> (Topic) 'tlc'   x1 conf<=0.71 valid_at=2023/02/15 (Wed) 11:13
+      studied      (User) 'user' -> (Topic) 'style'   x2 conf<=0.84 valid_at=2023/02/15 (Wed) 11:13
+      studied      (User) 'user' -> (Topic) 'tlc'   x1 conf<=0.80 valid_at=2023/02/15 (Wed) 11:13
+      visited      (Person) 'assistant' -> (Location) 'closet'   x10 conf<=0.99 valid_at=2023/02/15 (Wed) 11:13
+      visited      (User) 'i' -> (Location) 'gym'   x2 conf<=0.76 valid_at=2023/02/15 (Wed) 11:13
+      visited      (User) 'user' -> (Location) 'gym'   x1 conf<=0.53 valid_at=2023/02/15 (Wed) 11:13
+      works_for    (Person) 'zara' -> (Organization) 'zara'   x1 conf<=0.65 valid_at=2023/02/15 (Wed) 11:13
+  diff: 32 shared claims, 0 constrained-only, 0 permissive-only, 0 shared-but-retyped
+
+====================================================================================================
+[multi-session] How many items of clothing do I need to pick up or return from a store?
+  expected answer: 3
+  constrained:
+    window   0  1610ch  FEASIBLE    24e  45r    1.8s
+    window   1  1767ch  FEASIBLE    19e  10r    0.9s
+    window   2  1773ch  FEASIBLE    16e   2r    0.6s
+    window   3  1617ch  FEASIBLE    14e   6r    0.7s
+    window   4  1650ch  FEASIBLE    19e   8r    0.5s
+    window   5  1742ch  FEASIBLE    18e   8r    0.7s
+    window   6  1720ch  FEASIBLE    19e   0r    0.5s
+    window   7   729ch  FEASIBLE     9e   0r    0.3s
+  permissive:
+    window   0  1610ch  FEASIBLE    24e  19r    1.5s
+    window   1  1767ch  FEASIBLE    19e  11r    1.2s
+    window   2  1773ch  FEASIBLE    16e   5r    1.3s
+    window   3  1617ch  FEASIBLE    14e   7r    1.2s
+    window   4  1650ch  FEASIBLE    20e   8r    0.9s
+    window   5  1742ch  FEASIBLE    18e   9r    1.0s
+    window   6  1720ch  FEASIBLE    19e   0r    0.5s
+    window   7   729ch  FEASIBLE     9e   0r    0.3s
+
+  --- answer_afa9873b_1 (2023/02/15 (Wed) 16:19, 10656 chars) ---
+  constrained: 79 raw edges, 27 distinct after merge, 0/8 windows infeasible, 6s
+      attended     (User) 'user' -> (Event) 'dinner date'   x1 conf<=0.87 valid_at=2023/02/15 (Wed) 16:19
+      lives_in     (User) 'i' -> (Location) 'closet'   x9 conf<=0.85 valid_at=2023/02/15 (Wed) 16:19
+      lives_in     (User) 'user' -> (Location) 'closet'   x9 conf<=0.96 valid_at=2023/02/15 (Wed) 16:19
+      lives_in     (User) 'user' -> (Location) 'home'   x2 conf<=0.91 valid_at=2023/02/15 (Wed) 16:19
+      owns         (User) 'user' -> (Product) "levi's jeans"   x1 conf<=0.85 valid_at=2023/02/15 (Wed) 16:19
+      owns         (User) 'user' -> (Product) 'boots'   x2 conf<=0.91 valid_at=2023/02/15 (Wed) 16:19
+      owns         (User) 'user' -> (Product) 'new boots'   x2 conf<=0.52 valid_at=2023/02/15 (Wed) 16:19
+      owns         (User) 'user' -> (Product) 'yoga pants'   x2 conf<=0.85 valid_at=2023/02/15 (Wed) 16:19
+      practices    (User) 'user' -> (Activity) 'organizing'   x2 conf<=0.59 valid_at=2023/02/15 (Wed) 16:19
+      practices    (User) 'user' -> (Activity) 'laundry'   x2 conf<=0.62 valid_at=2023/02/15 (Wed) 16:19
+      prefers      (User) 'i' -> (Product) 'black jeans'   x1 conf<=0.54 valid_at=2023/02/15 (Wed) 16:19
+      prefers      (User) 'user' -> (Product) 'black jeans'   x1 conf<=0.75 valid_at=2023/02/15 (Wed) 16:19
+      prefers      (User) 'user' -> (Product) 'notes app'   x2 conf<=0.75 valid_at=2023/02/15 (Wed) 16:19
+      prefers      (User) 'user' -> (Product) 'yoga pants'   x2 conf<=0.92 valid_at=2023/02/15 (Wed) 16:19
+      purchased    (User) 'i' -> (Product) 'black jeans'   x3 conf<=0.76 valid_at=2023/02/15 (Wed) 16:19
+      purchased    (User) 'user' -> (Product) 'black jeans'   x1 conf<=0.85 valid_at=2023/02/15 (Wed) 16:19
+      purchased    (User) 'user' -> (Product) "levi's jeans"   x1 conf<=0.83 valid_at=2023/02/15 (Wed) 16:19
+      purchased    (User) 'user' -> (Product) 'yellow sundress'   x1 conf<=0.62 valid_at=2023/02/15 (Wed) 16:19
+      purchased    (User) 'user' -> (Product) 'boots'   x2 conf<=0.84 valid_at=2023/02/15 (Wed) 16:19
+      purchased    (User) 'user' -> (Product) 'new boots'   x1 conf<=0.52 valid_at=2023/02/15 (Wed) 16:19
+      purchased    (User) 'user' -> (Product) 'yoga pants'   x2 conf<=0.93 valid_at=2023/02/15 (Wed) 16:19
+      studied      (User) 'assistant' -> (Topic) 'wardrobe'   x1 conf<=0.55 valid_at=2023/02/15 (Wed) 16:19
+      visited      (Person) 'assistant' -> (Location) 'closet'   x14 conf<=0.90 valid_at=2023/02/15 (Wed) 16:19
+      visited      (User) 'assistant' -> (Location) 'closet'   x1 conf<=0.91 valid_at=2023/02/15 (Wed) 16:19
+      visited      (User) 'user' -> (Location) 'closet'   x9 conf<=0.91 valid_at=2023/02/15 (Wed) 16:19
+      works_for    (Person) 'assistant' -> (Organization) "levi's"   x2 conf<=0.98 valid_at=2023/02/15 (Wed) 16:19
+      works_for    (Person) 'assistant' -> (Organization) 'phone'   x3 conf<=0.91 valid_at=2023/02/15 (Wed) 16:19
+  permissive: 59 raw edges, 37 distinct after merge, 0/8 windows infeasible, 8s
+      attended     (User) 'user' -> (Event) 'dinner date'   x1 conf<=0.87 valid_at=2023/02/15 (Wed) 16:19
+      knows        (Person) 'assistant' -> (Organization) 'zara'   x1 conf<=0.78 valid_at=2023/02/15 (Wed) 16:19
+      knows        (User) 'user' -> (Organization) "levi's"   x2 conf<=0.68 valid_at=2023/02/15 (Wed) 16:19
+      lives_in     (Location) 'closet' -> (Location) 'closet'   x2 conf<=0.69 valid_at=2023/02/15 (Wed) 16:19
+      lives_in     (User) 'user' -> (Location) 'closet'   x2 conf<=0.96 valid_at=2023/02/15 (Wed) 16:19
+      lives_in     (User) 'user' -> (Location) 'home'   x2 conf<=0.91 valid_at=2023/02/15 (Wed) 16:19
+      located_in   (Location) 'closet' -> (Location) 'closet'   x3 conf<=0.67 valid_at=2023/02/15 (Wed) 16:19
+      located_in   (Location) 'gym bag' -> (Location) 'gym'   x1 conf<=0.73 valid_at=2023/02/15 (Wed) 16:19
+      located_in   (Product) 'receipts' -> (Location) 'home'   x1 conf<=0.15 valid_at=2023/02/15 (Wed) 16:19
+      located_in   (Product) 'shoes' -> (Topic) 'closet'   x1 conf<=0.89 valid_at=2023/02/15 (Wed) 16:19
+      located_in   (Product) 'shoes' -> (Location) 'closet'   x1 conf<=0.87 valid_at=2023/02/15 (Wed) 16:19
+      owns         (Organization) "levi's" -> (Product) 'black jeans'   x2 conf<=0.58 valid_at=2023/02/15 (Wed) 16:19
+      owns         (User) 'user' -> (Product) "levi's jeans"   x1 conf<=0.85 valid_at=2023/02/15 (Wed) 16:19
+      owns         (User) 'user' -> (Product) 'boots'   x2 conf<=0.91 valid_at=2023/02/15 (Wed) 16:19
+      owns         (User) 'user' -> (Product) 'new boots'   x2 conf<=0.52 valid_at=2023/02/15 (Wed) 16:19
+      owns         (User) 'user' -> (Product) 'yoga pants'   x2 conf<=0.85 valid_at=2023/02/15 (Wed) 16:19
+      practices    (User) 'user' -> (Activity) 'organizing'   x2 conf<=0.59 valid_at=2023/02/15 (Wed) 16:19
+      practices    (User) 'user' -> (Activity) 'laundry'   x2 conf<=0.62 valid_at=2023/02/15 (Wed) 16:19
+      prefers      (User) 'user' -> (Organization) "levi's"   x2 conf<=0.93 valid_at=2023/02/15 (Wed) 16:19
+      prefers      (User) 'user' -> (Product) 'notes app'   x2 conf<=0.75 valid_at=2023/02/15 (Wed) 16:19
+      prefers      (User) 'user' -> (Product) 'yoga pants'   x2 conf<=0.92 valid_at=2023/02/15 (Wed) 16:19
+      purchased    (User) 'i' -> (Product) 'black jeans'   x1 conf<=0.76 valid_at=2023/02/15 (Wed) 16:19
+      purchased    (User) 'user' -> (Product) 'black jeans'   x1 conf<=0.85 valid_at=2023/02/15 (Wed) 16:19
+      purchased    (User) 'user' -> (Product) "levi's jeans"   x1 conf<=0.83 valid_at=2023/02/15 (Wed) 16:19
+      purchased    (User) 'user' -> (Product) 'yellow sundress'   x1 conf<=0.62 valid_at=2023/02/15 (Wed) 16:19
+      purchased    (User) 'user' -> (Product) 'boots'   x2 conf<=0.84 valid_at=2023/02/15 (Wed) 16:19
+      purchased    (User) 'user' -> (Product) 'new boots'   x1 conf<=0.52 valid_at=2023/02/15 (Wed) 16:19
+      purchased    (User) 'user' -> (Product) 'yoga pants'   x2 conf<=0.93 valid_at=2023/02/15 (Wed) 16:19
+      studied      (User) 'assistant' -> (Topic) 'wardrobe'   x1 conf<=0.55 valid_at=2023/02/15 (Wed) 16:19
+      studied      (User) 'user' -> (Topic) 'closet space'   x2 conf<=0.64 valid_at=2023/02/15 (Wed) 16:19
+      visited      (Person) 'assistant' -> (Topic) 'closet'   x2 conf<=0.86 valid_at=2023/02/15 (Wed) 16:19
+      visited      (User) 'assistant' -> (Location) 'closet'   x1 conf<=0.91 valid_at=2023/02/15 (Wed) 16:19
+      visited      (User) 'user' -> (Location) 'closet'   x2 conf<=0.91 valid_at=2023/02/15 (Wed) 16:19
+      works_for    (Person) 'assistant' -> (Organization) "levi's"   x2 conf<=0.98 valid_at=2023/02/15 (Wed) 16:19
+      works_for    (Person) 'assistant' -> (Topic) 'closet'   x2 conf<=0.94 valid_at=2023/02/15 (Wed) 16:19
+      works_for    (Person) 'assistant' -> (Product) 'phone'   x1 conf<=0.89 valid_at=2023/02/15 (Wed) 16:19
+      works_for    (Person) 'assistant' -> (Organization) 'phone'   x1 conf<=0.91 valid_at=2023/02/15 (Wed) 16:19
+  diff: 23 shared claims, 3 constrained-only, 11 permissive-only, 0 shared-but-retyped
+    constrained-only (beam reallocation, if #348's claim holds):
+      + lives_in('i' -> 'closet')
+      + prefers('i' -> 'black jeans')
+      + prefers('user' -> 'black jeans')
+    permissive-only (suppressed by the domain/range constraint):
+      - knows('assistant' -> 'zara')
+      - knows('user' -> "levi's")
+      - lives_in('closet' -> 'closet')
+      - located_in('closet' -> 'closet')
+      - located_in('gym bag' -> 'gym')
+      - located_in('receipts' -> 'home')
+      - located_in('shoes' -> 'closet')
+      - owns("levi's" -> 'black jeans')
+      - prefers('user' -> "levi's")
+      - studied('user' -> 'closet space')
+      - works_for('assistant' -> 'closet')
+
+====================================================================================================
+[single-session-preference] Can you recommend some resources where I can learn more about video editing?
+  expected answer: 'The user would prefer responses that suggest resources specifically tailored to Adobe Premiere Pro, especially those that delve into its advanced settings. They might not prefer general video editing resources or resources related to other video editing software.'
+  constrained:
+    window   0  1922ch  FEASIBLE    25e  12r    0.7s
+    window   1  2017ch  FEASIBLE    27e   3r    0.6s
+    window   2  1854ch  FEASIBLE    22e   0r    0.5s
+    window   3  2024ch  FEASIBLE    25e   0r    0.5s
+    window   4  1889ch  FEASIBLE    13e   3r    0.7s
+    window   5  1896ch  FEASIBLE    25e   0r    0.5s
+    window   6  1935ch  FEASIBLE    18e   2r    0.7s
+    window   7  1722ch  FEASIBLE    19e   0r    0.6s
+    window   8  1708ch  FEASIBLE    15e   0r    0.5s
+    window   9  1742ch  FEASIBLE    16e   0r    0.5s
+    window  10  1849ch  FEASIBLE    17e   2r    0.6s
+    window  11  1788ch  FEASIBLE    26e   5r    0.7s
+    window  12  1829ch  FEASIBLE    30e   0r    0.5s
+    window  13  1933ch  FEASIBLE    27e  31r    1.3s
+    window  14  1902ch  FEASIBLE    18e  12r    1.0s
+    window  15  1805ch  FEASIBLE    23e   2r    0.5s
+    window  16   838ch  FEASIBLE    10e   0r    0.3s
+  permissive:
+    window   0  1922ch  FEASIBLE    25e   6r    0.7s
+    window   1  2017ch  FEASIBLE    27e   7r    0.7s
+    window   2  1854ch  FEASIBLE    22e   5r    0.6s
+    window   3  2024ch  FEASIBLE    25e   0r    0.4s
+    window   4  1889ch  FEASIBLE    14e   4r    0.6s
+    window   5  1896ch  FEASIBLE    26e   1r    0.5s
+    window   6  1935ch  FEASIBLE    21e   5r    0.7s
+    window   7  1722ch  FEASIBLE    19e   0r    0.5s
+    window   8  1708ch  FEASIBLE    16e   3r    0.5s
+    window   9  1742ch  FEASIBLE    20e   8r    0.9s
+    window  10  1849ch  FEASIBLE    17e   7r    0.7s
+    window  11  1788ch  FEASIBLE    26e   8r    0.7s
+    window  12  1829ch  FEASIBLE    30e   0r    0.4s
+    window  13  1933ch  FEASIBLE    27e  10r    0.9s
+    window  14  1902ch  FEASIBLE    19e   8r    0.8s
+    window  15  1805ch  FEASIBLE    24e   5r    0.7s
+    window  16   838ch  FEASIBLE    10e   0r    0.3s
+
+  --- answer_edb03329 (2023/05/21 (Sun) 14:21, 25673 chars) ---
+  constrained: 72 raw edges, 16 distinct after merge, 0/17 windows infeasible, 10s
+      owns         (User) 'user' -> (Product) 'lumetri color panel'   x2 conf<=0.81 valid_at=2023/05/21 (Sun) 14:21
+      practices    (Person) 'beginners' -> (Activity) 'color grading'   x10 conf<=0.82 valid_at=2023/05/21 (Sun) 14:21
+      practices    (User) 'user' -> (Activity) 'practice'   x1 conf<=0.66 valid_at=2023/05/21 (Sun) 14:21
+      practices    (User) 'user' -> (Activity) 'best practices'   x2 conf<=0.86 valid_at=2023/05/21 (Sun) 14:21
+      prefers      (User) 'i' -> (Product) 'lumetri color panel'   x11 conf<=0.71 valid_at=2023/05/21 (Sun) 14:21
+      prefers      (User) 'user' -> (Topic) 'audio advanced settings'   x1 conf<=0.60 valid_at=2023/05/21 (Sun) 14:21
+      prefers      (User) 'user' -> (Topic) 'advanced settings'   x3 conf<=0.82 valid_at=2023/05/21 (Sun) 14:21
+      prefers      (User) 'user' -> (Product) 'lumetri color panel'   x27 conf<=0.98 valid_at=2023/05/21 (Sun) 14:21
+      studied      (User) 'user' -> (Topic) 'audio advanced settings'   x1 conf<=0.59 valid_at=2023/05/21 (Sun) 14:21
+      studied      (User) 'user' -> (Topic) 'advanced settings'   x3 conf<=0.74 valid_at=2023/05/21 (Sun) 14:21
+      studied      (User) 'user' -> (Topic) 'effects and transitions'   x3 conf<=0.51 valid_at=2023/05/21 (Sun) 14:21
+      studied      (User) 'user' -> (Topic) 'dynamic link'   x1 conf<=0.46 valid_at=2023/05/21 (Sun) 14:21
+      studied      (User) 'user' -> (Topic) "premiere pro's advanced settings"   x1 conf<=0.69 valid_at=2023/05/21 (Sun) 14:21
+      studied      (User) 'user' -> (Organization) 'premiere pro'   x1 conf<=0.94 valid_at=2023/05/21 (Sun) 14:21
+      works_for    (Person) 'creative panel' -> (Organization) 'lumetri'   x3 conf<=0.89 valid_at=2023/05/21 (Sun) 14:21
+      works_for    (Person) 'curves panel' -> (Organization) 'lumetri color panel'   x2 conf<=0.85 valid_at=2023/05/21 (Sun) 14:21
+  permissive: 77 raw edges, 43 distinct after merge, 0/17 windows infeasible, 11s
+      knows        (User) 'user' -> (Topic) 'codecs'   x1 conf<=0.63 valid_at=2023/05/21 (Sun) 14:21
+      knows        (User) 'user' -> (Topic) 'settings'   x1 conf<=0.60 valid_at=2023/05/21 (Sun) 14:21
+      knows        (User) 'user' -> (Topic) 'color match'   x2 conf<=0.71 valid_at=2023/05/21 (Sun) 14:21
+      knows        (User) 'user' -> (Product) 'creative panel'   x1 conf<=0.37 valid_at=2023/05/21 (Sun) 14:21
+      knows        (User) 'user' -> (Product) 'toe'   x1 conf<=0.91 valid_at=2023/05/21 (Sun) 14:21
+      knows        (User) 'user' -> (Product) 'shoulder'   x1 conf<=0.88 valid_at=2023/05/21 (Sun) 14:21
+      knows        (User) 'user' -> (Product) 'lumetri color panel'   x4 conf<=0.96 valid_at=2023/05/21 (Sun) 14:21
+      knows        (User) 'user' -> (Organization) 'lumetri color panel'   x2 conf<=0.93 valid_at=2023/05/21 (Sun) 14:21
+      knows        (User) 'user' -> (Product) 'color wheels'   x3 conf<=0.65 valid_at=2023/05/21 (Sun) 14:21
+      lives_in     (Organization) 'curves panel' -> (Organization) 'curves panel'   x2 conf<=0.51 valid_at=2023/05/21 (Sun) 14:21
+      lives_in     (Product) 'lumetri color panel' -> (Product) 'lumetri color panel'   x1 conf<=0.51 valid_at=2023/05/21 (Sun) 14:21
+      located_in   (Product) 'color wheels' -> (Organization) 'lumetri color panel'   x2 conf<=0.73 valid_at=2023/05/21 (Sun) 14:21
+      located_in   (Product) 'creative panel' -> (Organization) 'lumetri'   x2 conf<=0.90 valid_at=2023/05/21 (Sun) 14:21
+      located_in   (Product) 'curve' -> (Organization) 'lumetri color panel'   x2 conf<=0.63 valid_at=2023/05/21 (Sun) 14:21
+      located_in   (Product) 'curve shapes' -> (Organization) 'curves panel'   x2 conf<=0.74 valid_at=2023/05/21 (Sun) 14:21
+      located_in   (Product) 'lumetri color panel' -> (Organization) 'premiere pro'   x2 conf<=0.66 valid_at=2023/05/21 (Sun) 14:21
+      located_in   (Product) 'toe' -> (Location) '0% and 20% on the x-axis'   x1 conf<=0.27 valid_at=2023/05/21 (Sun) 14:21
+      owns         (User) 'user' -> (Organization) 'lumetri color panel'   x2 conf<=0.81 valid_at=2023/05/21 (Sun) 14:21
+      practices    (Person) 'beginners' -> (Topic) 'color grading'   x1 conf<=0.82 valid_at=2023/05/21 (Sun) 14:21
+      practices    (Person) 'beginners' -> (Activity) 'color grading'   x1 conf<=0.80 valid_at=2023/05/21 (Sun) 14:21
+      practices    (User) 'user' -> (Activity) 'practice'   x1 conf<=0.66 valid_at=2023/05/21 (Sun) 14:21
+      practices    (User) 'user' -> (Activity) 'best practices'   x2 conf<=0.86 valid_at=2023/05/21 (Sun) 14:21
+      prefers      (Organization) 'creative panel' -> (Organization) 'creative panel'   x1 conf<=0.54 valid_at=2023/05/21 (Sun) 14:21
+      prefers      (User) 'user' -> (Topic) 'advanced settings'   x2 conf<=0.82 valid_at=2023/05/21 (Sun) 14:21
+      prefers      (User) 'user' -> (Product) 'lumetri color panel'   x4 conf<=0.98 valid_at=2023/05/21 (Sun) 14:21
+      prefers      (User) 'user' -> (Organization) 'lumetri color panel'   x4 conf<=0.95 valid_at=2023/05/21 (Sun) 14:21
+      studied      (User) 'user' -> (Topic) 'advanced settings'   x2 conf<=0.74 valid_at=2023/05/21 (Sun) 14:21
+      studied      (User) 'user' -> (Product) 'premiere pro'   x2 conf<=0.94 valid_at=2023/05/21 (Sun) 14:21
+      studied      (User) 'user' -> (Person) 'work of other filmmakers'   x1 conf<=0.46 valid_at=2023/05/21 (Sun) 14:21
+      studied      (User) 'user' -> (Product) 'lumetri color panel'   x2 conf<=0.90 valid_at=2023/05/21 (Sun) 14:21
+      visited      (User) 'user' -> (Event) 'videos'   x1 conf<=0.68 valid_at=2023/05/21 (Sun) 14:21
+      works_for    (Product) 'adobe premiere pro' -> (Activity) 'video editing'   x2 conf<=0.91 valid_at=2023/05/21 (Sun) 14:21
+      works_for    (Person) 'assistant' -> (Topic) 'color grading'   x1 conf<=0.36 valid_at=2023/05/21 (Sun) 14:21
+      works_for    (Person) 'assistant' -> (Topic) 'video'   x1 conf<=0.79 valid_at=2023/05/21 (Sun) 14:21
+      works_for    (Person) 'assistant' -> (Location) 'video'   x1 conf<=0.72 valid_at=2023/05/21 (Sun) 14:21
+      works_for    (Product) 'color wheels' -> (Organization) 'lumetri color panel'   x2 conf<=0.70 valid_at=2023/05/21 (Sun) 14:21
+      works_for    (Product) 'creative panel' -> (Organization) 'lumetri'   x2 conf<=0.91 valid_at=2023/05/21 (Sun) 14:21
+      works_for    (Product) 'curves panel' -> (Organization) 'lumetri color panel'   x2 conf<=0.85 valid_at=2023/05/21 (Sun) 14:21
+      works_for    (Organization) 'curves panel' -> (Event) 'videos'   x2 conf<=0.58 valid_at=2023/05/21 (Sun) 14:21
+      works_for    (Product) 'lumetri color panel' -> (Organization) 'adobe premiere pro'   x2 conf<=0.64 valid_at=2023/05/21 (Sun) 14:21
+      works_for    (Organization) 'lumetri color panel' -> (Activity) 'color grading'   x2 conf<=0.81 valid_at=2023/05/21 (Sun) 14:21
+      works_for    (Product) 'lumetri color panel' -> (Organization) 'premiere pro'   x2 conf<=0.96 valid_at=2023/05/21 (Sun) 14:21
+      works_for    (Product) 'orb' -> (Product) 'premiere pro'   x2 conf<=0.64 valid_at=2023/05/21 (Sun) 14:21
+  diff: 10 shared claims, 6 constrained-only, 29 permissive-only, 5 shared-but-retyped
+      ~ owns('user' -> 'lumetri color panel'): (User,Organization) permissive -> (User,Product) constrained
+      ~ prefers('user' -> 'lumetri color panel'): (User,Organization) permissive -> (User,Product) constrained
+      ~ studied('user' -> 'premiere pro'): (User,Product) permissive -> (User,Organization) constrained
+      ~ works_for('creative panel' -> 'lumetri'): (Product,Organization) permissive -> (Person,Organization) constrained
+      ~ works_for('curves panel' -> 'lumetri color panel'): (Product,Organization) permissive -> (Person,Organization) constrained
+    constrained-only (beam reallocation, if #348's claim holds):
+      + prefers('i' -> 'lumetri color panel')
+      + prefers('user' -> 'audio advanced settings')
+      + studied('user' -> 'audio advanced settings')
+      + studied('user' -> 'dynamic link')
+      + studied('user' -> 'effects and transitions')
+      + studied('user' -> "premiere pro's advanced settings")
+    permissive-only (suppressed by the domain/range constraint):
+      - knows('user' -> 'codecs')
+      - knows('user' -> 'color match')
+      - knows('user' -> 'color wheels')
+      - knows('user' -> 'creative panel')
+      - knows('user' -> 'lumetri color panel')
+      - knows('user' -> 'settings')
+      - knows('user' -> 'shoulder')
+      - knows('user' -> 'toe')
+      - lives_in('curves panel' -> 'curves panel')
+      - lives_in('lumetri color panel' -> 'lumetri color panel')
+      - located_in('color wheels' -> 'lumetri color panel')
+      - located_in('creative panel' -> 'lumetri')
+      - located_in('curve' -> 'lumetri color panel')
+      - located_in('curve shapes' -> 'curves panel')
+      - located_in('lumetri color panel' -> 'premiere pro')
+
+====================================================================================================
+[single-session-assistant] I'm checking our previous chat about the shift rotation sheet for GM social media agents. Can you remind me what was the rotation for Admon on a Sunday?
+  expected answer: 'Admon was assigned to the 8 am - 4 pm (Day Shift) on Sundays.'
+  constrained:
+    window   0  1370ch  FEASIBLE    21e   6r    0.7s
+    window   1  1357ch  FEASIBLE    18e   0r    0.4s
+    window   2  1439ch  FEASIBLE    21e   0r    0.4s
+    window   3  1433ch  FEASIBLE    23e   0r    0.4s
+    window   4  1462ch  FEASIBLE    23e   0r    0.4s
+    window   5   869ch  FEASIBLE    26e  19r    1.2s
+  permissive:
+    window   0  1370ch  FEASIBLE    21e   0r    0.5s
+    window   1  1357ch  FEASIBLE    18e   0r    0.4s
+    window   2  1439ch  FEASIBLE    21e   0r    0.4s
+    window   3  1433ch  FEASIBLE    23e   0r    0.5s
+    window   4  1462ch  FEASIBLE    23e   0r    0.4s
+    window   5   869ch  FEASIBLE    26e   3r    0.5s
+
+  --- answer_sharegpt_5Lzox6N_0 (2023/05/24 (Wed) 02:46, 6731 chars) ---
+  constrained: 25 raw edges, 12 distinct after merge, 0/6 windows infeasible, 4s
+      attended     (Person) 'adam' -> (Event) 'saturday'   x3 conf<=0.27 valid_at=2023/05/24 (Wed) 02:46
+      attended     (Person) 'adam' -> (Event) 'sunday'   x3 conf<=0.27 valid_at=2023/05/24 (Wed) 02:46
+      attended     (Person) 'adam' -> (Event) 'tuesday'   x1 conf<=0.24 valid_at=2023/05/24 (Wed) 02:46
+      attended     (Person) 'adam' -> (Event) 'wednesday'   x1 conf<=0.22 valid_at=2023/05/24 (Wed) 02:46
+      attended     (Person) 'adam' -> (Event) 'thursday'   x1 conf<=0.27 valid_at=2023/05/24 (Wed) 02:46
+      attended     (Person) 'adam' -> (Event) 'friday'   x1 conf<=0.28 valid_at=2023/05/24 (Wed) 02:46
+      attended     (Person) 'adam' -> (Event) 'monday'   x1 conf<=0.26 valid_at=2023/05/24 (Wed) 02:46
+      attended     (User) 'magdy' -> (Event) 'sunday'   x1 conf<=0.24 valid_at=2023/05/24 (Wed) 02:46
+      attended     (Person) 'mostafa' -> (Event) 'sunday'   x2 conf<=0.14 valid_at=2023/05/24 (Wed) 02:46
+      attended     (Person) 'mostafa' -> (Event) 'saturday'   x1 conf<=0.13 valid_at=2023/05/24 (Wed) 02:46
+      attended     (Person) 'sara' -> (Event) 'saturday'   x4 conf<=0.20 valid_at=2023/05/24 (Wed) 02:46
+      visited      (Person) 'agent' -> (Location) 'agent'   x6 conf<=0.40 valid_at=2023/05/24 (Wed) 02:46
+  permissive: 3 raw edges, 2 distinct after merge, 0/6 windows infeasible, 3s
+      attended     (Person) 'adam' -> (Event) 'saturday'   x2 conf<=0.31 valid_at=2023/05/24 (Wed) 02:46
+      located_in   (Person) 'adam' -> (Person) 'mostafa'   x1 conf<=0.18 valid_at=2023/05/24 (Wed) 02:46
+  diff: 1 shared claims, 11 constrained-only, 1 permissive-only, 0 shared-but-retyped
+    constrained-only (beam reallocation, if #348's claim holds):
+      + attended('adam' -> 'friday')
+      + attended('adam' -> 'monday')
+      + attended('adam' -> 'sunday')
+      + attended('adam' -> 'thursday')
+      + attended('adam' -> 'tuesday')
+      + attended('adam' -> 'wednesday')
+      + attended('magdy' -> 'sunday')
+      + attended('mostafa' -> 'saturday')
+      + attended('mostafa' -> 'sunday')
+      + attended('sara' -> 'saturday')
+      + visited('agent' -> 'agent')
+    permissive-only (suppressed by the domain/range constraint):
+      - located_in('adam' -> 'mostafa')
+
+====================================================================================================
+TOTALS
+  constrained   1004 raw edges    304 distinct    0/109 windows infeasible      75s
+  permissive     672 raw edges    328 distinct    0/109 windows infeasible      78s
+  diff: 214 shared (14 of them retyped), 85 constrained-only, 103 permissive-only
+  permissive edges violating the declared domain/range: 194
+
+wrote /private/tmp/claude-501/-Users-antejavor-repos-ai-toolkit/f5836d8b-9af7-40ee-9eb0-e2964666ce6c/scratchpad/constrained_edges_output.json
