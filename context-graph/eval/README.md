@@ -38,6 +38,8 @@ Benchmark survey and licence findings:
 ## Running a batch
 
 ```bash
+# --schema-info-enabled is required, not optional: retrieval's schema
+# description goes through memgraph-toolbox's SearchSchemaTool, which needs it
 docker run -d --name ai-toolkit-eval-memgraph -p 7689:7687 \
     memgraph/memgraph-mage:latest --schema-info-enabled=true
 
@@ -378,9 +380,19 @@ holds whatever ambient sessions happened to land that week.
 > shared or development database.**
 
 ```bash
+# --schema-info-enabled is required, not optional: retrieval's schema
+# description goes through memgraph-toolbox's SearchSchemaTool, which needs it
 docker run -d --name ai-toolkit-eval-memgraph -p 7689:7687 \
-    memgraph/memgraph-mage:latest
+    memgraph/memgraph-mage:latest --schema-info-enabled=true
 ```
+
+Omitting `--schema-info-enabled` does not fail loudly — `retrieval.py` falls
+back to bare label and relationship-type names so a contributor gets a weaker
+prompt rather than a crash. For a scored batch that fallback is not a
+degradation you can ignore: injected turn text lives inside `Action.properties`
+as JSON rather than in a `content` property, so an agent given only label names
+guesses at property names and the run scores near zero for reasons that have
+nothing to do with what is being measured.
 
 Tests read `EVAL_MEMGRAPH_URL` (default `bolt://localhost:7689`) and skip if no
 instance is reachable.
