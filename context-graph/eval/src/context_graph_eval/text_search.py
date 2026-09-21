@@ -92,9 +92,76 @@ def ensure_turn_text_index(graph: "ActionsGraph") -> Indexed:
 #: parseable, not a search-quality choice -- #300 defers those.
 _QUERY_TOKEN = re.compile(r"\w+")
 
+#: text_search.search_all is OR-across-terms, not AND (verified directly): a
+#: turn only needs to share SOME query word to score, not all of them. These
+#: are near-universal in English regardless of topic, so keeping them in the
+#: query does not add precision -- it adds a term with almost no discriminating
+#: power that can still contribute a nonzero score. Verified directly: on a
+#: two-document corpus, a query sharing only "my" with an unrelated turn
+#: outranked the turn actually containing the query's real keyword (documented
+#: in the README's Known Limitations). Dropping them is not the search-strategy
+#: tuning #300 defers -- it is the same kind of thing as stripping Tantivy's
+#: special characters above: removing terms that were never going to
+#: discriminate rather than adding any ranking sophistication.
+_STOPWORDS = frozenset(
+    [
+        "a",
+        "an",
+        "the",
+        "i",
+        "me",
+        "my",
+        "you",
+        "your",
+        "he",
+        "she",
+        "it",
+        "we",
+        "they",
+        "them",
+        "their",
+        "this",
+        "that",
+        "these",
+        "those",
+        "is",
+        "are",
+        "was",
+        "were",
+        "am",
+        "be",
+        "been",
+        "being",
+        "do",
+        "does",
+        "did",
+        "have",
+        "has",
+        "had",
+        "can",
+        "could",
+        "will",
+        "would",
+        "should",
+        "as",
+        "at",
+        "by",
+        "for",
+        "in",
+        "of",
+        "on",
+        "to",
+        "with",
+        "and",
+        "or",
+        "but",
+    ]
+)
+
 
 def _safe_query(question: str) -> str:
-    return " ".join(_QUERY_TOKEN.findall(question))
+    tokens = [t for t in _QUERY_TOKEN.findall(question) if t.lower() not in _STOPWORDS]
+    return " ".join(tokens)
 
 
 async def retrieve_by_text_search(

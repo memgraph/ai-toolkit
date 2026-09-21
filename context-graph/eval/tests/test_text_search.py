@@ -60,17 +60,13 @@ async def test_retrieve_by_text_search_hands_matching_turns_to_the_answering_llm
 
     # Shares a literal word ("beagle") with the planted content -- this is a
     # lexical baseline, not a semantic one, so the question has to overlap in
-    # wording for text_search to find anything at all. Not asserting the
-    # unrelated turn is absent: search_all ranks by score rather than
-    # filtering to term matches, and on a two-document corpus a stray
-    # stopword can outrank real overlap (verified directly) -- exactly the
-    # kind of weak precision this baseline exists to expose, not something to
-    # engineer around here (#300's reasoning again: tuning this is retrieval
-    # strategy).
+    # wording for text_search to find anything at all. "me"/"my" are dropped
+    # as stopwords now, so this no longer risks the unrelated turn outranking
+    # the real match the way it could before that fix.
     llm = _EchoLLM()
     result = await retrieve_by_text_search("Tell me about my beagle.", graph=ReadOnlyGraph(eval_graph.db), llm=llm)
 
-    assert any("beagle" in row for row in result.retrieval_context)
+    assert result.retrieval_context == ["session=s1 content=I adopted a beagle named Max"]
     # The final-answer prompt is what got echoed back, so the retrieved rows
     # must have actually reached the LLM call, not just been computed and
     # discarded.
@@ -93,8 +89,26 @@ def test_safe_query_strips_tantivy_special_characters():
     """Tantivy's query parser treats ':', '(', ')', '"' specially -- a natural
     question is full of characters that are not that, mostly '?'. This is
     making the query parseable, not a search-quality choice (#300)."""
-    assert _safe_query("What breed is the dog?") == "What breed is the dog"
+    assert _safe_query("What breed dog?") == "What breed dog"
 
 
 def test_safe_query_is_empty_for_a_question_with_no_word_characters():
     assert _safe_query("???") == ""
+
+
+def test_safe_query_drops_near_universal_words():
+    """search_all is OR-across-terms (verified directly against a live
+    index): a turn only needs to share SOME query word to score, so a word
+    with almost no discriminating power (is/the/a/my/...) can still
+    contribute a nonzero score to something unrelated. Dropped for the same
+    reason Tantivy's special characters are stripped above -- removing a term
+    that was never going to discriminate, not adding ranking sophistication."""
+    assert _safe_query("Is my mom using the same grocery list method as me?") == "mom using same grocery list method"
+
+
+def test_safe_query_keeps_meaningful_short_words():
+    """The stopword list must not be so broad it eats real content -- a bare
+    number is exactly the kind of short term this baseline depends on when
+    the expected answer IS a number. Must not be dropped as if it were a
+    near-universal word just because it is short."""
+    assert _safe_query("Was it 5 or 6 days?") == "5 6 days"
