@@ -2,21 +2,55 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
+from agent_context_graph import AgentLink
 from agent_context_graph.hooks.runtime_plugin import (
+    RuntimeCLIPlugin,
     UnknownRuntimeError,
     get_runtime_plugin,
     load_runtime_plugins,
 )
+from agent_context_graph.protocols import GraphConnector
+
+if TYPE_CHECKING:
+    from agent_context_graph.events import Event
+
+EXPECTED_RUNTIMES = {"codex", "claude-code", "gemini-cli", "copilot-cli", "cursor", "opencode"}
 
 
-def test_load_runtime_plugins_discovers_builtin_codex_and_claude_code():
+class _RecordingConnector(GraphConnector):
+    def __init__(self):
+        self.events: list[Event] = []
+
+    def on_event(self, event: Event) -> None:
+        self.events.append(event)
+
+
+def test_load_runtime_plugins_discovers_all_builtin_runtimes():
     plugins = load_runtime_plugins()
 
-    assert set(plugins) == {"codex", "claude-code"}
+    assert set(plugins) == EXPECTED_RUNTIMES
     assert plugins["codex"].name == "codex"
     assert plugins["claude-code"].name == "claude-code"
+
+
+@pytest.mark.parametrize("runtime", sorted(EXPECTED_RUNTIMES))
+def test_runtime_plugin_contract(runtime):
+    plugin = get_runtime_plugin(runtime)
+    connector = _RecordingConnector()
+    link = AgentLink()
+    link.add_connector(connector)
+
+    assert isinstance(plugin, RuntimeCLIPlugin)
+    adapter = plugin.adapter_class(link)
+    adapter.handle_payload(dict(plugin.probe_payload))
+
+    assert connector.events
+    assert all(event.source_sdk for event in connector.events)
+    assert isinstance(plugin.build_hooks_config("capture"), dict)
 
 
 def test_get_runtime_plugin_normalizes_underscores_and_hyphens():

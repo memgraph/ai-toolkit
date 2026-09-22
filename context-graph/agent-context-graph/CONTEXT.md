@@ -67,7 +67,7 @@ _Avoid_: Runtime Plugin (already means distribution package), Runtime Adapter (a
 - **Agent Session** may be persisted as a session node by a graph component; **Event Protocol** only carries the session identifier.
 - Tool/message events carry `agent_name` when runtime identifies a subagent. Agent Context Graph only transports this id; Graph Connectors decide how to use it. Codex adapter doesn't yet handle subagent lifecycle/ids ([#275](https://github.com/memgraph/ai-toolkit/issues/275)).
 - Runtime Plugin's generated command calls `hook run <name>`. CLI resolves name via Runtime Registration; plugin never names an adapter class directly.
-- Built-in Runtime Registrations: `codex`, `claude-code`. Other packages may publish more.
+- Built-in Runtime Registrations: `codex`, `claude-code`, `gemini-cli`, `copilot-cli`, `cursor`, and `opencode`. Other packages may publish more.
 
 ## Example dialogue
 

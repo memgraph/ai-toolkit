@@ -94,6 +94,11 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
         default=None,
         help="Override the session id from the hook payload.",
     )
+    parser.add_argument(
+        "--event-name",
+        default=None,
+        help="Supply the event name when the runtime payload omits it.",
+    )
     parser.add_argument("--memgraph-url", default=None, help="Memgraph Bolt URL. Overrides config file value.")
     parser.add_argument("--memgraph-user", default=None, help="Memgraph username. Overrides config file value.")
     parser.add_argument("--memgraph-password", default=None, help="Memgraph password. Overrides config file value.")
@@ -121,6 +126,8 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
     payload: dict[str, Any] = {}
     try:
         payload = load_payload()
+        if args.event_name is not None:
+            payload.setdefault("hook_event_name", args.event_name)
         link = create_link(connector_names, memgraph_env=memgraph_env)
         adapter = plugin.adapter_class(link, session_id=args.session_id)
         adapter.handle_payload(payload)

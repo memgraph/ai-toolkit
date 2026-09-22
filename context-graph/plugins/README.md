@@ -11,6 +11,10 @@ This directory contains plugin packages for multiple runtimes:
 - `agent-context-graph-codex`: OpenAI Codex plugin, published as `context-graph`.
 - `agent-context-graph-claude`: Claude Code plugin, published as `context-graph`.
 
+Gemini CLI, GitHub Copilot CLI, Cursor, and OpenCode are built-in Runtime
+Registrations but do not have marketplace packages in this directory. Their
+host-facing files are generated with `agent-context-graph hook init <runtime>`.
+
 The platform-specific directory names stay explicit, while the marketplace-facing plugin name is short so skills appear as `context-graph:agent-context-graph`.
 
 ## Marketplace Files
