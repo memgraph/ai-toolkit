@@ -10,6 +10,7 @@ describe the graph's shape, and loop an LLM over the two.
 """
 
 import re
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -335,6 +336,13 @@ class Retrieved:
     retrieval_context: list[str] = field(default_factory=list)
     queries: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    #: Wall-clock seconds for the whole retrieve() call: every query/observe
+    #: round plus the final answer call. Measured here on a successful
+    #: return; a question whose retrieval raises (caught in
+    #: runner._retrieve_all) never gets a Retrieved out of this function to
+    #: carry that timing, so the caller times the attempt itself instead --
+    #: the 0.0 default below is never actually used for that path.
+    latency_seconds: float = 0.0
 
 
 async def retrieve(
@@ -350,6 +358,7 @@ async def retrieve(
     statement should cost that question its answer, not abort a whole batch
     mid-run.
     """
+    started = time.monotonic()
     schema = graph_schema(graph)
     seen: list[str] = []
     queries: list[str] = []
@@ -399,7 +408,13 @@ async def retrieve(
         seen.extend(rendered)
 
     answer = await llm.complete(answer_prompt(question, seen))
-    return Retrieved(answer=answer.strip(), retrieval_context=seen, queries=queries, errors=errors)
+    return Retrieved(
+        answer=answer.strip(),
+        retrieval_context=seen,
+        queries=queries,
+        errors=errors,
+        latency_seconds=time.monotonic() - started,
+    )
 
 
 def _extract_cypher(reply: str) -> str | None:
