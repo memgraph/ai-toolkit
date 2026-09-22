@@ -18,8 +18,10 @@ from context_graph_eval.runner import BatchReport
 from context_graph_eval.scoring import Scored, aggregate
 
 
-def _report(scored: list[Scored]) -> BatchReport:
-    return BatchReport(by_tier=aggregate(scored).by_tier, scored=scored)
+def _report(scored: list[Scored], *, indexed_turns: int = 0, reconciled: int = 0) -> BatchReport:
+    return BatchReport(
+        by_tier=aggregate(scored).by_tier, scored=scored, indexed_turns=indexed_turns, reconciled=reconciled
+    )
 
 
 def _scored(name, *, covered=True, tokens=100, judged=True, metric_reasons=None):
@@ -64,6 +66,17 @@ def test_a_judged_run_reports_both_coverage_and_efficiency(capsys):
     out = capsys.readouterr().out
     assert "coverage      1/1 (100%)" in out
     assert "efficiency    median 120 tokens" in out
+
+
+def test_a_text_search_run_reports_the_index_not_reconciliation(capsys):
+    """The text-search baseline never reconciles anything -- printing
+    "reconciled 0 sessions" would read as an outage rather than as the
+    strategy's whole point."""
+    _print_report(_report([_scored("q1", covered=True)], indexed_turns=7, reconciled=0), judged=True)
+
+    out = capsys.readouterr().out
+    assert "text-search index: 7 turns indexed" in out
+    assert "reconciled" not in out
 
 
 def test_a_judge_outage_is_reported_as_unscored_not_as_zero(capsys):

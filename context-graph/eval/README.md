@@ -63,6 +63,11 @@ has no GLiNER2 equivalent and always runs through the LightRAG wrapper's LLM.
 across a mismatch the same way it refuses across a judge or tokenizer
 mismatch.
 
+`--retrieval-strategy {graph-agent,text-search}` (default `graph-agent`)
+swaps the whole retrieval mechanism instead of just the extraction backend --
+see "The text-search baseline" below. Unlike `--extraction-backend`, this is
+the one setting `compare()` deliberately does **not** refuse a mismatch on.
+
 The runner owns the **pipeline** loop; deepeval owns the **scoring** loop
 underneath it:
 
@@ -305,6 +310,52 @@ config at import time, which would point retrieval at whatever Memgraph the
 environment names instead of the eval instance. If that guard gains a pattern,
 this one needs it too.
 
+## The text-search baseline
+
+`--retrieval-strategy text-search` is a second, cheaper comparison point: how
+well does just full-text-searching the raw session transcript do, with **no
+reconciliation at all**? Reconciliation is a run's dominant cost, so this
+strategy skips it outright rather than reusing an already-built graph —
+there is no distilled memory for it to read.
+
+```
+context-graph-eval run --retrieval-strategy text-search --judge-model anthropic:claude-sonnet-4-5-20250929
+```
+
+Mechanically: `text_search.ensure_turn_text_index` materializes a plain
+`text` property on every `Action` (turn text lives inside `properties` as a
+JSON string that Memgraph — no APOC here — cannot unpack in Cypher, so this
+is done in Python), then creates a Memgraph `TEXT INDEX` over it. Each
+question calls `text_search.search_all` directly — no agent, no Cypher
+generation, no query loop — and hands the top matches to the **exact same
+`answer_prompt`** the graph-agent baseline uses, so a quality difference
+between the two is attributable to what was *retrieved*, not to two
+different answering prompts.
+
+This is deliberately not tuned. There is no ranking beyond Memgraph's own
+text-index score, no query rewriting beyond stripping characters Tantivy's
+parser treats specially (mostly the `?` a natural-language question is full
+of), no reranking. The question this baseline answers is "what does the
+existing, zero-effort tool give you", not "what is the best possible
+text-search baseline" — the same reasoning #300 already applied to deferring
+the graph-agent baseline's own retrieval-v2 design.
+
+**Comparable to a graph-agent run, deliberately.** Unlike every other field
+on a saved run, `retrieval_strategy` is the one `compare()` does **not**
+pin — it is usually the thing a comparison exists to measure. A text-search
+run records `extraction_backend: "none"` (it never reconciles, so no backend
+extracted anything), and `compare()` exempts that value from its
+extraction-backend pin rather than treating "one side never reconciled" as a
+backend mismatch. `render()` names both strategies on their own line
+whenever they differ, so a comparison across them can never be mistaken for
+one across two graph-agent runs.
+
+```
+context-graph-eval run --retrieval-strategy text-search --save runs/text-search.json --label text-search
+context-graph-eval run --save runs/graph-agent.json --label graph-agent
+context-graph-eval compare runs/text-search.json runs/graph-agent.json
+```
+
 ## Scoring
 
 Quality is judged, cost is counted — asking an LLM to grade a number you can
@@ -471,6 +522,21 @@ The loop reliably finds problems; it cannot yet **rank** two versions.
   what the model said rather than what the user did. The eval questions all ask
   about user facts.
 - **Tier 2 has one question.**
+- **The text-search baseline's ranking is not robust on short content.**
+  Originally verified directly against a two-document corpus: a query
+  sharing only a stopword (`"my"`) with an unrelated turn outranked the turn
+  actually containing the query's real keyword. `text_search.search_all`
+  ranks by Tantivy's own relevance score across every indexed turn rather
+  than filtering to term matches first, so on short content a near-universal
+  word can dominate. Since fixed for the common case: `_safe_query` drops a
+  short, standard English stopword list before querying, on the reasoning
+  that a word with almost no discriminating power was never contributing
+  precision, only noise -- the same kind of thing as stripping Tantivy's
+  special characters, not the search-strategy tuning this baseline otherwise
+  defers. Numbers and other short *topical* words are untouched. This
+  narrows the failure mode; it does not eliminate it -- two genuinely
+  on-topic words can still tie or lose on a short enough turn, and that
+  residual case is reported, not engineered around further.
 
 `calibrate` reports set stability alongside the floor, and now each
 question's own pass rate across the repeats -- naming the specific flaky
