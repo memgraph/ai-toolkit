@@ -73,6 +73,23 @@ async def test_retrieve_by_text_search_hands_matching_turns_to_the_answering_llm
     assert "beagle" in result.answer
 
 
+async def test_retrieve_by_text_search_caps_hits_at_the_configured_limit(eval_graph: ActionsGraph):
+    """The limit is passed straight to text_search.search_all, not applied
+    afterward in Cypher: verified directly that search_all returns EVERY
+    matching turn when no limit is given, uncapped. More turns than the limit
+    must not leak through -- that would silently defeat the whole point of
+    capping it (a bigger, costlier payload than the run configured)."""
+    for i in range(5):
+        _plant(eval_graph, f"s{i}", role=MessageRole.USER, content=f"I adopted a beagle turn number {i}")
+    ensure_turn_text_index(eval_graph)
+
+    result = await retrieve_by_text_search(
+        "Tell me about my beagle.", graph=ReadOnlyGraph(eval_graph.db), llm=_EchoLLM(), limit=2
+    )
+
+    assert len(result.retrieval_context) == 2
+
+
 async def test_retrieve_by_text_search_reports_no_rows_rather_than_silence(eval_graph: ActionsGraph):
     """An empty index (nothing indexed yet, or nothing matches) must be
     visible in errors, the same way retrieval.retrieve() records a query that

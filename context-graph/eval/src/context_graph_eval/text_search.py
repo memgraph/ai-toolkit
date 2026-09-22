@@ -15,6 +15,7 @@ answers is "what does the *existing*, zero-effort tool give you", not "what is
 the best possible text-search baseline".
 """
 
+import contextlib
 import json
 import re
 from dataclasses import dataclass
@@ -59,10 +60,13 @@ def ensure_turn_text_index(graph: "ActionsGraph") -> Indexed:
     actually index.
 
     ``CREATE TEXT INDEX`` on an index name that already exists is a verified
-    no-op (checked directly against a live instance), and the index stays
-    correct across ``inject_batch``'s wipe-and-reload (also verified directly:
-    old nodes gone, new nodes' content searchable, nothing stale) -- so this
-    runs unconditionally every batch rather than checking first.
+    no-op on this deployment (checked directly, twice, including recreating it
+    against a *different* property), and the index stays correct across
+    ``inject_batch``'s wipe-and-reload (also verified directly: old nodes
+    gone, new nodes' content searchable, nothing stale). Memgraph's own docs
+    say a duplicate name is refused, which is the opposite of what was
+    observed -- guarded with a try/except rather than trusted either way, so
+    this keeps working whichever behavior actually holds on a given server.
     """
     db = graph.db
     rows = db.query("MATCH (a:Action) WHERE a.text IS NULL RETURN a.action_id AS action_id, a.properties AS properties")
@@ -82,7 +86,12 @@ def ensure_turn_text_index(graph: "ActionsGraph") -> Indexed:
             {"rows": materialized},
         )
 
-    db.query(f"CREATE TEXT INDEX {TEXT_INDEX_NAME} ON :Action(text);")
+    # Same broad-suppress idiom sessions_graph.core.drop() already uses for
+    # this exact "might already exist" situation with a text index: Memgraph's
+    # own client error for a duplicate name is a generic MemgraphError, not a
+    # distinct exception type this could catch more narrowly.
+    with contextlib.suppress(Exception):
+        db.query(f"CREATE TEXT INDEX {TEXT_INDEX_NAME} ON :Action(text);")
     return Indexed(turns=len(materialized))
 
 
@@ -184,9 +193,15 @@ async def retrieve_by_text_search(
 
     if query:
         try:
+            # limit passed straight to search_all itself, not applied
+            # afterward in Cypher: without it, search_all returns EVERY
+            # matching turn (verified directly -- 20 of 20 on a small test
+            # corpus, not capped), which on the real batch-wide index means
+            # scoring and returning potentially thousands of rows just to
+            # discard all but ten of them.
             rows = graph.query(
-                f"CALL text_search.search_all('{TEXT_INDEX_NAME}', $query) YIELD node, score "
-                "WITH node, score ORDER BY score DESC LIMIT $limit "
+                f"CALL text_search.search_all('{TEXT_INDEX_NAME}', $query, $limit) YIELD node, score "
+                "WITH node, score ORDER BY score DESC "
                 "OPTIONAL MATCH (s:Session)-[:HAS_ACTION]->(node) "
                 "RETURN s.session_id AS session_id, node.text AS content, score",
                 {"query": query, "limit": limit},
