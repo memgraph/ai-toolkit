@@ -13,7 +13,16 @@ from actions_graph import (
     MessageRole,
     Session,
     ToolCall,
+    ToolResult,
 )
+from actions_graph.connector import ActionsGraphConnector
+from agent_context_graph import AgentLink
+from agent_context_graph.adapters.claude_code import ClaudeCodeHooksAdapter
+from agent_context_graph.adapters.codex import CodexHooksAdapter
+from agent_context_graph.adapters.copilot_cli import CopilotCLIHooksAdapter
+from agent_context_graph.adapters.cursor import CursorHooksAdapter
+from agent_context_graph.adapters.gemini_cli import GeminiCLIHooksAdapter
+from agent_context_graph.adapters.opencode import OpenCodeHooksAdapter
 
 
 @pytest.fixture
@@ -216,6 +225,100 @@ class TestActionOperations:
             action_type=ActionType.TOOL_CALL,
         )
         assert len(tool_calls) == 2
+
+
+@pytest.mark.parametrize(
+    ("adapter_class", "source_sdk", "session_start", "tool_start", "tool_end"),
+    [
+        pytest.param(CodexHooksAdapter, "codex", "SessionStart", "PreToolUse", "PostToolUse", id="codex"),
+        pytest.param(
+            ClaudeCodeHooksAdapter,
+            "claude-code",
+            "SessionStart",
+            "PreToolUse",
+            "PostToolUse",
+            id="claude-code",
+        ),
+        pytest.param(
+            GeminiCLIHooksAdapter,
+            "gemini-cli",
+            "SessionStart",
+            "BeforeTool",
+            "AfterTool",
+            id="gemini-cli",
+        ),
+        pytest.param(
+            CopilotCLIHooksAdapter,
+            "copilot-cli",
+            "sessionStart",
+            "preToolUse",
+            "postToolUse",
+            id="copilot-cli",
+        ),
+        pytest.param(
+            CursorHooksAdapter,
+            "cursor",
+            "sessionStart",
+            "preToolUse",
+            "postToolUse",
+            id="cursor",
+        ),
+        pytest.param(
+            OpenCodeHooksAdapter,
+            "opencode",
+            "session.created",
+            "tool.execute.before",
+            "tool.execute.after",
+            id="opencode",
+        ),
+    ],
+)
+def test_runtime_hook_tool_events_persist_as_actions(
+    graph: ActionsGraph,
+    adapter_class,
+    source_sdk: str,
+    session_start: str,
+    tool_start: str,
+    tool_end: str,
+):
+    """Every command-hook runtime persists tool activity in Memgraph."""
+    session_id = f"{source_sdk}-hook-e2e"
+    link = AgentLink()
+    link.add_connector(ActionsGraphConnector(graph))
+    adapter = adapter_class(link)
+
+    adapter.handle_payload(
+        {
+            "hook_event_name": session_start,
+            "session_id": session_id,
+            "cwd": "/test/project",
+        }
+    )
+    adapter.handle_payload(
+        {
+            "hook_event_name": tool_start,
+            "session_id": session_id,
+            "tool_name": "Read",
+            "tool_input": {"file_path": "/test/project/README.md"},
+            "tool_use_id": "tool-1",
+        }
+    )
+    adapter.handle_payload(
+        {
+            "hook_event_name": tool_end,
+            "session_id": session_id,
+            "tool_name": "Read",
+            "tool_response": "project documentation",
+            "tool_use_id": "tool-1",
+        }
+    )
+
+    actions = graph.get_session_actions(session_id)
+
+    assert [action.action_type for action in actions] == [ActionType.TOOL_CALL, ActionType.TOOL_RESULT]
+    assert all(isinstance(action, (ToolCall, ToolResult)) for action in actions)
+    assert [action.tool_name for action in actions if isinstance(action, (ToolCall, ToolResult))] == ["Read", "Read"]
+    assert all(action.metadata["source_sdk"] == source_sdk for action in actions)
 
 
 class TestAnalytics:

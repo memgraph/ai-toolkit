@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command setup for Context Graph on Claude Code or Codex: start Memgraph
+# One-command setup for Context Graph on a supported agent runtime: start Memgraph
 # if nothing is reachable, register the plugin marketplace, install the
 # plugin (this is what actually wires hooks into the runtime -- `bootstrap`
 # alone does not), install the agent-context-graph CLI with all three
@@ -10,7 +10,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/memgraph/ai-toolkit/main/context-graph/scripts/install.sh | bash
 #
 # Env overrides:
-#   CONTEXT_GRAPH_RUNTIME         claude-code (default) or codex
+#   CONTEXT_GRAPH_RUNTIME         claude-code (default), codex, gemini-cli,
+#                                 copilot-cli, cursor, or opencode
 #   AGENT_CONTEXT_GRAPH_USER_ID   identity to record (default: git user.name, else $USER)
 #   MEMGRAPH_HOST / MEMGRAPH_PORT default localhost:7687
 #   SKIP_MEMGRAPH=1               don't start a local Memgraph even if none is reachable
@@ -20,8 +21,8 @@ set -euo pipefail
 
 RUNTIME="${CONTEXT_GRAPH_RUNTIME:-claude-code}"
 case "$RUNTIME" in
-  claude-code | codex) ;;
-  *) echo "FAIL unknown CONTEXT_GRAPH_RUNTIME: $RUNTIME (expected claude-code or codex)" >&2; exit 1 ;;
+  claude-code | codex | gemini-cli | copilot-cli | cursor | opencode) ;;
+  *) echo "FAIL unknown CONTEXT_GRAPH_RUNTIME: $RUNTIME" >&2; exit 1 ;;
 esac
 CONNECTORS=(skills-graph actions-graph sessions-graph)
 MEMGRAPH_HOST="${MEMGRAPH_HOST:-localhost}"
@@ -118,6 +119,21 @@ case "$RUNTIME" in
       codex plugin add context-graph@context-graph-plugins
     fi
     ;;
+  gemini-cli)
+    command -v gemini >/dev/null 2>&1 || fail "gemini (Gemini CLI) not found on PATH -- install Gemini CLI first."
+    echo "Gemini CLI uses project-local command hooks; configuration follows CLI installation."
+    ;;
+  copilot-cli)
+    command -v copilot >/dev/null 2>&1 || fail "copilot (GitHub Copilot CLI) not found on PATH -- install Copilot CLI first."
+    echo "Copilot CLI uses project-local command hooks; configuration follows CLI installation."
+    ;;
+  cursor)
+    echo "Cursor uses project-local command hooks; configuration follows CLI installation."
+    ;;
+  opencode)
+    command -v opencode >/dev/null 2>&1 || fail "opencode not found on PATH -- install OpenCode first."
+    echo "OpenCode uses a project-local V2 plugin; installation follows CLI installation."
+    ;;
 esac
 
 # ---- 4. agent-context-graph CLI + connectors ---------------------------------
@@ -142,6 +158,18 @@ for c in "${CONNECTORS[@]}"; do connector_flags+=(--connector "$c"); done
 MEMGRAPH_HOST="$MEMGRAPH_HOST" MEMGRAPH_PORT="$MEMGRAPH_PORT" \
   agent-context-graph bootstrap --runtime "$RUNTIME" "${connector_flags[@]}" --no-reinstall
 
+case "$RUNTIME" in
+  gemini-cli | copilot-cli | cursor)
+    log "Installing project-local $RUNTIME capture wiring"
+    agent-context-graph hook init "$RUNTIME" --project-dir "$PWD" "${connector_flags[@]}"
+    ;;
+  opencode)
+    log "Installing project-local $RUNTIME capture wiring"
+    # This dedicated generated file is safe to refresh on repeated installs.
+    agent-context-graph hook init "$RUNTIME" --project-dir "$PWD" "${connector_flags[@]}" --force
+    ;;
+esac
+
 # ---- 5. Identity --------------------------------------------------------------
 USER_ID="${AGENT_CONTEXT_GRAPH_USER_ID:-$(git config --get user.name 2>/dev/null || true)}"
 USER_ID="${USER_ID:-$USER}"
@@ -152,7 +180,14 @@ agent-context-graph config set identity.user_id "$USER_ID"
 log "Verifying"
 agent-context-graph doctor --runtime "$RUNTIME" "${connector_flags[@]}"
 
-RUNTIME_LABEL="Claude Code"; [[ "$RUNTIME" == "codex" ]] && RUNTIME_LABEL="Codex"
+case "$RUNTIME" in
+  claude-code) RUNTIME_LABEL="Claude Code" ;;
+  codex) RUNTIME_LABEL="Codex" ;;
+  gemini-cli) RUNTIME_LABEL="Gemini CLI" ;;
+  copilot-cli) RUNTIME_LABEL="GitHub Copilot CLI" ;;
+  cursor) RUNTIME_LABEL="Cursor" ;;
+  opencode) RUNTIME_LABEL="OpenCode" ;;
+esac
 echo ""
 echo -e "\033[1;32m✓ Context Graph is live.\033[0m Use $RUNTIME_LABEL normally -- every session now"
 echo "writes Actions/Skills/Memories to bolt://${MEMGRAPH_HOST}:${MEMGRAPH_PORT}."

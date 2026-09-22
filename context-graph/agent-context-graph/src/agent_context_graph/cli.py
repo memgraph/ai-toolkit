@@ -534,7 +534,8 @@ def _check_runtime(runtime: str, connectors: list[str]) -> _CheckResult:
         plugin = get_runtime_plugin(runtime)
         link = create_link(connectors)
         adapter = plugin.adapter_class(link)
-        adapter.handle_payload({"hook_event_name": "Stop", "session_id": "doctor"})
+        probe_payload = getattr(plugin, "probe_payload", {"hook_event_name": "Stop", "session_id": "doctor"})
+        adapter.handle_payload(dict(probe_payload))
         return {"name": f"runtime:{runtime}", "ok": True, "detail": "strict hook smoke passed"}
     except Exception as exc:
         return {"name": f"runtime:{runtime}", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
