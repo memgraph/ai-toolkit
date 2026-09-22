@@ -299,7 +299,10 @@ async def test_a_failed_retrieval_preserves_the_time_it_spent_before_raising(mon
 
     golden = to_golden(_record("q1"))
     retrieved = await runner_module._retrieve_all(
-        [golden], graph=cast("ReadOnlyGraph", object()), llm=cast("LLM", object()), max_concurrent=1
+        [golden],
+        graph=cast("ReadOnlyGraph", object()),
+        llm=cast("LLM", object()),
+        plan=RunPlan(max_concurrent=1),
     )
 
     assert retrieved[0].latency_seconds >= 0.05
