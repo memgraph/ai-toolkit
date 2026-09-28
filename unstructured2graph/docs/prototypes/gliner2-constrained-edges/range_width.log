@@ -1,0 +1,111 @@
+permissive edges the declared ranges suppress, per relation (* = undeclared endpoint type)
+
+works_for   (User,Person) -> (Organization)  conformant=9 suppressed=50
+     16  junk                  Product* -> Organization   ["'color wheels'->'lumetri color panel'", "'creative panel'->'lumetri'", "'curves panel'->'lumetri color panel'"]
+     10  junk                    Person -> Topic*         ["'albert gleizes'->'cubism'", "'assistant'->'closet'", "'assistant'->'color grading'"]
+      4  junk                  Product* -> Activity*      ["'adobe premiere pro'->'video editing'", "'slow cooker'->'meal prep'"]
+      3  junk             Organization* -> Organization   ["'mint'->'mint'", "'zara'->'zara'"]
+      3  junk                    Person -> User*          ["'assistant'->'user'"]
+      3  junk                    Person -> Location*      ["'assistant'->'closet'", "'assistant'->'video'"]
+      2  junk                    Person -> Event*         ["'assistant'->'charity 5k run'"]
+      2  junk                 Activity* -> Person*        ["'strength training'->'runner'"]
+      2  junk                  Product* -> Product*       ["'orb'->'premiere pro'"]
+      2  junk             Organization* -> Event*         ["'curves panel'->'videos'"]
+      2  junk             Organization* -> Activity*      ["'lumetri color panel'->'color grading'"]
+      1  junk                    Person -> Product*       ["'assistant'->'phone'"]
+lives_in    (User,Person) -> (Location)  conformant=15 suppressed=10
+      4  junk                      User -> Topic*         ["'user'->'closet'"]
+      2  junk                 Location* -> Location       ["'closet'->'closet'"]
+      2  junk             Organization* -> Organization*  ["'curves panel'->'curves panel'"]
+      1  junk                    Person -> Product*       ["'deceased'->'sarcophagus'"]
+      1  junk                  Product* -> Product*       ["'lumetri color panel'->'lumetri color panel'"]
+visited     (User,Person) -> (Location)  conformant=11 suppressed=45
+     26  label-confusion           User -> Event*         ["'i'->'exhibit'", "'i'->'moma tour'", "'i'->'quarterfinals'"]
+      6  real                      User -> Organization*  ["'i'->'metropolitan museum of art'", "'user'->'brooklyn museum'", "'user'->'museum of modern art'"]
+      6  label-confusion         Person -> Person*        ["'diego rivera'->'frida'", "'frida kahlo'->'diego rivera'", "'frida'->'frida kahlo'"]
+      3  junk                    Person -> Topic*         ["'assistant'->'closet'"]
+      2  label-confusion           User -> Person*        ["'user'->'diego rivera'", "'user'->'frida kahlo'"]
+      2  junk                    Person -> Event*         ["'sister'->'outdoor concert'"]
+practices   (User,Person) -> (Activity)  conformant=48 suppressed=15
+      5  junk                      User -> Topic*         ["'frida'->'art'", "'user'->'paperwork'", "'user'->'routine'"]
+      3  junk                    Person -> Topic*         ["'beginners'->'color grading'", "'frida kahlo'->'artistic talents'"]
+      3  junk             Organization* -> Activity       ["'buddhist'->'mummification'", "'guanches'->'mummification'", "'scythians'->'mummification'"]
+      2  junk                    Person -> Product*       ["'frida'->'retablos'"]
+      2  junk             Organization* -> Topic*         ["'guanches'->'mummification'"]
+owns        (User,Person) -> (Product)  conformant=48 suppressed=6
+      2  junk                  Product* -> Product        ["'blazer'->'blazer'"]
+      2  junk             Organization* -> Product        ['"levi\'s"->\'black jeans\'']
+      2  junk                      User -> Organization*  ["'user'->'lumetri color panel'"]
+purchased   (User,Person) -> (Product)  conformant=46 suppressed=2
+      2  junk                  Product* -> Product        ["'black jeans'->'white button-down shirt'"]
+prefers     (User,Person) -> (Product,Activity,Topic)  conformant=31 suppressed=20
+     11  real                      User -> Organization*  ["'me'->'dropbox'", "'me'->'google drive'", '\'user\'->"levi\'s"']
+      4  junk                  Product* -> Product        ["'blazer'->'garment bag'", "'it'->'it'", "'yellow sundress'->'yellow sundress'"]
+      3  junk             Organization* -> Organization*  ["'creative panel'->'creative panel'", "'fauvism'->'fauvism'"]
+      2  junk                      User -> Person*        ["'user'->'braque'", "'user'->'picasso'"]
+studied     (User,Person) -> (Topic,Organization)  conformant=43 suppressed=15
+      6  label-confusion           User -> Product*       ["'user'->'lumetri color panel'", "'user'->'premiere pro'", "'user'->'sarcophagi'"]
+      3  junk                      User -> Person*        ['\'i\'->"frida kahlo\'s works"', '\'user\'->"frida kahlo\'s works"', "'user'->'work of other filmmakers'"]
+      2  junk                    Person -> Product*       ["'frida'->'retablos'"]
+      2  junk             Organization* -> Topic          ["'brooklyn museum'->'ancient world'"]
+      1  junk                    Person -> Activity*      ["'assistant'->'soccer'"]
+      1  junk                      User -> Activity*      ["'user'->'interval training'"]
+knows       (User,Person) -> (Person)  conformant=13 suppressed=55
+     21  junk                      User -> Topic*         ["'frida'->'mexican culture'", "'user'->'20th-century modern art movements'", "'user'->'codecs'"]
+     17  junk                      User -> Product*       ["'i'->'tennis racket'", "'user'->'color wheels'", "'user'->'creative panel'"]
+      6  junk                      User -> Organization*  ["'assistant'->'business administration'", '\'user\'->"levi\'s"', "'user'->'business administration'"]
+      5  junk                      User -> Activity*      ["'user'->'meal prep'", "'user'->'running performance'", "'user'->'running'"]
+      2  junk                    Person -> Organization*  ["'assistant'->'business administration'", "'assistant'->'zara'"]
+      2  junk                    Person -> Product*       ["'assistant'->'green sweater'"]
+      1  junk                    Person -> Event*         ["'assistant'->'soccer game'"]
+      1  junk                    Person -> Topic*         ["'i'->'tlc'"]
+attended    (User,Person) -> (Event)  conformant=31 suppressed=12
+      3  label-confusion           User -> Organization*  ["'me'->'business administration'", "'user'->'business administration'"]
+      2  real                    Person -> Organization*  ["'frida kahlo'->'academy of san carlos'"]
+      2  junk                      User -> Topic*         ["'user'->'ancient civilizations'"]
+      2  junk                  Product* -> Event          ["'green sweater'->'outdoor concert'"]
+      2  real                      User -> Location*      ["'i'->'gym'", "'user'->'gym'"]
+      1  junk                      User -> Activity*      ["'you'->'tournament'"]
+located_in  (Organization,Event) -> (Location)  conformant=6 suppressed=36
+     12  junk                  Product* -> Organization*  ["'boots'->'zara'", "'color wheels'->'lumetri color panel'", "'creative panel'->'lumetri'"]
+      6  junk                 Location* -> Location       ["'body'->'earth'", "'closet'->'closet'", "'gym bag'->'gym'"]
+      5  real                  Product* -> Location       ["'receipts'->'home'", "'retablos'->'france'", "'shoes'->'closet'"]
+      3  real                   Person* -> Location       ["'frida kahlo'->'mexico'", "'tollund man'->'denmark'"]
+      3  junk                  Product* -> Topic*         ["'shoes'->'closet'", "'winter clothes'->'closet'"]
+      2  junk                  Product* -> Event*         ["'sarcophagi'->'exhibit'"]
+      2  junk              Organization -> Organization*  ["'brooklyn museum'->'amnh'"]
+      1  junk                 Location* -> Event*         ["'venue'->'tournament'"]
+      1  junk                 Activity* -> Location       ["'dry cleaning'->'closet'"]
+      1  junk                   Person* -> Person*        ["'adam'->'mostafa'"]
+
+suppressed: 266  junk=194  label-confusion=43  real=29
+real losses with an Organization endpoint: 19/29
+
+TEST 1 -- frequency: does a group's share of its relation separate real from junk?
+      46%  label-confusion  visited(User -> Event) x26
+      31%  junk             knows(User -> Topic) x21
+      29%  junk             located_in(Product -> Organization) x12
+      27%  junk             works_for(Product -> Organization) x16
+      25%  junk             knows(User -> Product) x17
+      22%  real             prefers(User -> Organization) x11
+      17%  junk             works_for(Person -> Topic) x10
+      14%  junk             located_in(Location -> Location) x6
+      12%  real             located_in(Product -> Location) x5
+      11%  real             visited(User -> Organization) x6
+      11%  label-confusion  visited(Person -> Person) x6
+      10%  label-confusion  studied(User -> Product) x6
+       9%  junk             knows(User -> Organization) x6
+       8%  junk             practices(User -> Topic) x5
+       7%  junk             knows(User -> Activity) x5
+
+TEST 2 -- type ambiguity: is the undeclared endpoint's text typed with a declared type anywhere?
+    real             yes=5    no=24   (17%)
+    label-confusion  yes=4    no=39   (9%)
+    junk             yes=38   no=156  (20%)
+
+the model's typing is consistent, not noisy -- every type a real-loss endpoint receives:
+    'brooklyn museum'                {'Organization': 24}
+    'metropolitan museum of art'     {'Organization': 7}
+    'museum of modern art'           {'Organization': 2}
+    "levi's"                         {'Organization': 10}
+    'dropbox'                        {'Organization': 1}

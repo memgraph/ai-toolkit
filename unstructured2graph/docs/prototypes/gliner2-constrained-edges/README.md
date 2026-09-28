@@ -18,6 +18,9 @@ python role_gate.py              # #358: every User endpoint mapped to its speak
 python prefix_ablation.py        # #358: the role prefix on vs off (section E)
 python value_share.py            # #361: answer shapes across all 100 committed goldens (section F)
 python value_types.py            # #361: value-shaped entity types, recall and cost (section F)
+python range_width.py            # #359: what declared ranges suppress, and two rules that fail (section G)
+python multilabel.py             # #360: multi-label pairs and the co-fired `prefers` windows (section H)
+python relation_lever.py         # #360: relation description vs name as the steering lever (section H)
 ```
 
 > **Correction (#350 comment).** The first run of this prototype built each arm's
@@ -210,3 +213,29 @@ guard that caught #365). `25:50` lands as `personal_best(User -> Duration)`; Adm
 shift window is extracted but never bound; no MoMA event date is extracted; the original
 eleven relations lose ~8% of distinct claims; roughly half the value edges are junk; 35%
 of value keys cover more than one span — `value_types.log`.
+
+## G. #359 — how wide a declared range should be
+
+`range_width.py` groups the 266 permissive edges the declared ranges would suppress by
+(relation, head type, tail type), each with a verdict from reading its examples: 29 real
+facts a wider range would recover, 43 label confusion (another declared relation covers
+them), 194 junk — about 6.7 junk edges kept out per real one lost. 19 of the 29 have an
+`Organization` endpoint, and the model's typing is *consistent*, not noisy
+(`brooklyn museum` is `Organization` x24, never `Location`). Neither mechanical rule
+separates real from junk: by frequency the junk groups are the larger share
+(`knows -> Topic` 31% vs `visited -> Organization` 11%), and a type-ambiguity test passes
+17% of real vs 20% of junk — `range_width.log`.
+
+## H. #360 — several labels on one pair
+
+`multilabel.py`: 33 of 244 pairs carry more than one label, 21 of them `owns` +
+`purchased` — co-true, not synonyms — and confidence picks the wrong one (a false
+`prefers` 0.94 on `tennis racket`, a true one 0.75 on `black jeans`, which carries three
+labels, all correct). Co-fired `prefers` is right on 6 of 17 — `multilabel.log`.
+
+`relation_lever.py`: the joint compiler passes entity descriptions but writes relations
+as `{name: {"head": "", "tail": ""}}` (`joint_ie/compiler.py:27-28`), so a sharper
+`prefers` description produces a byte-identical edge list. The name is the only lever and
+it trades recall for precision rather than separating them: `likes` fires 2.4x, keeps
+6/6 true and 10/11 false; `says_they_like` keeps 3/6 and 5/11 and heads on `'assistant'`
+26 times. Renaming one label shifts the others' output too — `relation_lever.log`.

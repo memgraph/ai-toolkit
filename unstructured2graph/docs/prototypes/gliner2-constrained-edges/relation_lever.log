@@ -1,0 +1,6 @@
+baseline           prefers         raw=111  pairs=27   true kept 6/6  false kept 11/11  other relations raw=893  top heads=[('user', 17), ('i', 5), ('frida', 2)]
+sharp description  prefers         raw=111  pairs=27   true kept 6/6  false kept 11/11  other relations raw=893  top heads=[('user', 17), ('i', 5), ('frida', 2)]
+renamed            likes           raw=261  pairs=55   true kept 6/6  false kept 10/11  other relations raw=876  top heads=[('user', 36), ('i', 14), ('frida', 2)]
+renamed            says_they_like  raw=223  pairs=67   true kept 3/6  false kept 5/11  other relations raw=858  top heads=[('user', 32), ('assistant', 26), ('i', 7)]
+
+sharp description vs baseline: edge lists identical = True (expected: the compiler drops relation descriptions)

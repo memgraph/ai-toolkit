@@ -1,0 +1,85 @@
+244 distinct pairs, 33 multi-label (14%)
+
+     13  ('owns', 'purchased')
+      6  ('owns', 'prefers', 'purchased')
+      4  ('owns', 'prefers')
+      3  ('prefers', 'studied')
+      2  ('prefers', 'purchased')
+      1  ('practices', 'prefers', 'studied')
+      1  ('lives_in', 'practices')
+      1  ('owns', 'practices', 'purchased')
+      1  ('owns', 'prefers', 'purchased', 'studied')
+      1  ('lives_in', 'visited')
+
+every multi-label pair, labels by confidence:
+           'frida' -> 'retablos'                     owns 0.97, purchased 0.95, prefers 0.87, studied 0.64
+            'user' -> 'meal prep'                    practices 0.94, prefers 0.89, studied 0.72
+           'frida' -> 'paintings'                    owns 0.85, purchased 0.82, practices 0.30
+           'frida' -> 'ex-votos'                     purchased 0.91, owns 0.87, prefers 0.76
+            'user' -> 'gold'                         prefers 0.85, owns 0.82, purchased 0.76
+            'user' -> 'tennis racket'                owns 0.98, purchased 0.96, prefers 0.94
+            'user' -> 'tops'                         prefers 0.91, owns 0.73, purchased 0.61
+            'user' -> 'black jeans'                  owns 0.89, purchased 0.85, prefers 0.75
+            'user' -> 'yoga pants'                   purchased 0.93, prefers 0.92, owns 0.85
+            'user' -> 'mint'                         purchased 0.91, prefers 0.84
+            'user' -> 'produce'                      purchased 0.40, owns 0.38
+               'i' -> 'meal prep'                    prefers 0.80, studied 0.59
+     'frida kahlo' -> 'mexican folk art'             lives_in 0.84, practices 0.68
+     'frida kahlo' -> 'paintings'                    owns 0.85, purchased 0.75
+            'user' -> 'sarcophagi'                   owns 0.95, prefers 0.75
+               'i' -> 'tennis racket'                purchased 0.95, owns 0.93
+            'user' -> 'barbell'                      purchased 0.72, owns 0.65
+               'i' -> 'barbell'                      purchased 0.63, owns 0.52
+            'user' -> 'closet'                       lives_in 0.98, visited 0.91
+            'user' -> 'navy blue blazer'             owns 0.93, purchased 0.93
+               'i' -> 'navy blue blazer'             purchased 0.84, owns 0.81
+            'user' -> 'shoes'                        purchased 0.88, owns 0.85
+            'user' -> 'short-sleeve shirts'          owns 0.82, prefers 0.62
+               'i' -> 'short-sleeve shirts'          owns 0.77, prefers 0.39
+            'user' -> 'green sweater'                owns 0.98, purchased 0.96
+            'user' -> 'yellow sundress'              owns 0.91, purchased 0.89
+            'user' -> 'boots'                        owns 0.91, purchased 0.89
+               'i' -> 'black jeans'                  purchased 0.76, prefers 0.54
+            'user' -> "levi's jeans"                 owns 0.85, purchased 0.83
+            'user' -> 'new boots'                    owns 0.52, purchased 0.52
+            'user' -> 'audio advanced settings'      prefers 0.60, studied 0.59
+            'user' -> 'advanced settings'            prefers 0.82, studied 0.74
+            'user' -> 'lumetri color panel'          prefers 0.98, owns 0.81
+
+prefers: 27 pairs, co-fires with another label on 17 (63%) -- the reporting-only co-firing signal
+co-fired prefers judged true: 6/17
+
+  [TRUE ] 'frida' -> 'ex-votos'  prefers 0.76, labels ['owns', 'prefers', 'purchased']
+          ... | Ex-votos, on the other hand, are small, votive paintings that are offered to saints or spirits in exchange for favors or blessings. Frida often used ex-votos as a way to express her own emotions and experien...
+  [TRUE ] 'frida' -> 'retablos'  prefers 0.87, labels ['owns', 'prefers', 'purchased', 'studied']
+          ...otos:** |  | Frida was particularly drawn to retablos and ex-votos, two forms of Mexican folk art that were closely tied to her cultural heritage. |  | Retablos are small, devotional paintings that depict scene...
+  [TRUE ] 'i' -> 'black jeans'  prefers 0.54, labels ['prefers', 'purchased']
+          ...eekend. Can you give me some tips on how to maximize my closet space? By the way, I just got back from a dinner date last Friday and wore my new black jeans from Levi's, which I'm really loving. |  | assistant:...
+  [TRUE ] 'i' -> 'meal prep'  prefers 0.80, labels ['prefers', 'studied']
+          ...t more changes to optimize your savings. |  | user: I think I'll try out some of those tips and see how they work for me. I'm especially interested in meal prep, as I've heard it can be a game-changer for savin...
+  [false] 'i' -> 'short-sleeve shirts'  prefers 0.39, labels ['owns', 'prefers']
+          ...ts in a way that prevents wrinkling and creasing. | * **Consider a shirt organizer**: Invest in a shirt organizer or dividers to keep your short-sleeve shirts organized and easy to find in your dresser. | * **P...
+  [false] 'user' -> 'advanced settings'  prefers 0.82, labels ['prefers', 'studied']
+          ...th the different color wheels, curves, and creative tools like the Color Match feature. | 4. **Audio Advanced Settings**: Premiere Pro's audio advanced settings allow for precise control over audio mixing. Expl...
+  [false] 'user' -> 'audio advanced settings'  prefers 0.60, labels ['prefers', 'studied']
+          ...lor grading tools. Familiarize yourself with the different color wheels, curves, and creative tools like the Color Match feature. | 4. **Audio Advanced Settings**: Premiere Pro's audio advanced settings allow f...
+  [TRUE ] 'user' -> 'black jeans'  prefers 0.75, labels ['owns', 'prefers', 'purchased']
+          ...eekend. Can you give me some tips on how to maximize my closet space? By the way, I just got back from a dinner date last Friday and wore my new black jeans from Levi's, which I'm really loving. |  | assistant:...
+  [false] 'user' -> 'gold'  prefers 0.85, labels ['owns', 'prefers', 'purchased']
+          ...The colors used on sarcophagi held significant meaning, with red representing life and vitality, blue representing the heavens and the afterlife, and gold representing the sun and divine power. |  | **Interes...
+  [false] 'user' -> 'lumetri color panel'  prefers 0.98, labels ['owns', 'prefers']
+          ...an create more nuanced, cinematic looks that elevate your footage and engage your audience. |  | user: I'd like to know more about using the Lumetri Color Panel for color grading. Can you give me some tips on h...
+  [false] 'user' -> 'meal prep'  prefers 0.89, labels ['practices', 'prefers', 'studied']
+          ...4. **Use store loyalty programs**: Many stores offer loyalty programs that can help you save money on gas, groceries, or other items. | 15. **Consider meal prep**: Meal prep can help you save time and money by ...
+  [false] 'user' -> 'mint'  prefers 0.84, labels ['prefers', 'purchased']
+          ... make informed financial decisions. |  | There are many excellent personal expense tracking apps and tools available. Here are some popular ones: |  | 1. **Mint**: A free, user-friendly app that tracks your spe...
+  [TRUE ] 'user' -> 'sarcophagi'  prefers 0.75, labels ['owns', 'prefers']
+          ...| user: That's really interesting! I had no idea that the Egyptians believed the heart was the seat of the soul. I was particularly fascinated by the sarcophagi at the exhibit, can you tell me more about their ...
+  [false] 'user' -> 'short-sleeve shirts'  prefers 0.62, labels ['owns', 'prefers']
+          ...et's get started on decluttering and organizing your tops! Which category of tops do you want to tackle first? |  | user: I'll start with my short-sleeve shirts. I've got a lot of them, and some of them are fro...
+  [false] 'user' -> 'tennis racket'  prefers 0.94, labels ['owns', 'prefers', 'purchased']
+          ...ake it to at least the quarterfinals. I'll definitely work on my footwork and returns as well. Do you have any tips on how to choose the right tennis racket and strings for my playing style? |  | assistant: Cho...
+  [false] 'user' -> 'tops'  prefers 0.91, labels ['owns', 'prefers', 'purchased']
+          ...p, donate, and discard piles. Be ruthless – if you haven't worn it in a year, it's likely safe to let it go. | 2. **Categorize and group**: Divide your tops into categories (e.g., short-sleeve shirts, long-...
+  [false] 'user' -> 'yoga pants'  prefers 0.92, labels ['owns', 'prefers', 'purchased']
+          ...y and cleaning my gym gear. Do you have any tips on how to keep my workout clothes organized and fresh? |  | assistant: A funky gym bag and dirty yoga pants can be a real motivator to get organized! |  | Dedica...
