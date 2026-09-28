@@ -88,17 +88,17 @@ constrained: 244 distinct pairs, 33 carry >1 relation label (14%)
       'user' -> 'yoga pants': ['owns', 'prefers', 'purchased']
       'user' -> 'mint': ['prefers', 'purchased']
 
-permissive: 242 distinct pairs, 50 carry >1 relation label (21%)
+permissive: 233 distinct pairs, 58 carry >1 relation label (25%)
       'frida' -> 'retablos': ['owns', 'practices', 'prefers', 'purchased', 'studied']
       'user' -> 'meal prep': ['knows', 'practices', 'prefers', 'studied']
+      'user' -> 'sarcophagi': ['knows', 'owns', 'prefers', 'studied']
       'user' -> 'lumetri color panel': ['knows', 'owns', 'prefers', 'studied']
       'user' -> 'business administration': ['attended', 'knows', 'studied']
       'user' -> 'gold': ['owns', 'prefers', 'purchased']
       'user' -> 'tennis racket': ['owns', 'prefers', 'purchased']
       'i' -> 'tennis racket': ['knows', 'owns', 'purchased']
-      'user' -> 'tops': ['owns', 'prefers', 'purchased']
+      'user' -> 'tops': ['owns', 'prefers', 'studied']
       'user' -> 'yoga pants': ['owns', 'prefers', 'purchased']
-      'me' -> 'business administration': ['attended', 'studied']
 
 ====================================================================================================
 3. WHAT LANDS IN `User` -- the type #347 would collapse onto the session's user node
@@ -114,8 +114,8 @@ constrained: 599 User endpoints over 9 distinct surface forms
           'you' x2
           'magdy' x1
 
-permissive: 451 User endpoints over 7 distinct surface forms
-      first-person forms: 425
+permissive: 378 User endpoints over 7 distinct surface forms
+      first-person forms: 352
       literal 'assistant' (the role prefix of the other speaker): 4
       neither -- third parties typed as User: 22 over 3 forms
           'frida' x14
@@ -128,7 +128,7 @@ permissive: 451 User endpoints over 7 distinct surface forms
 
 constrained: practices=182, studied=156, owns=120, prefers=111, purchased=97, attended=66, lives_in=61, works_for=55, knows=54, visited=53, located_in=49
 
-permissive: owns=91, studied=78, located_in=71, purchased=66, practices=64, knows=62, prefers=54, works_for=54, visited=54, attended=45, lives_in=33
+permissive: knows=68, practices=63, works_for=59, studied=58, visited=56, owns=54, prefers=51, purchased=48, attended=43, located_in=42, lives_in=25
 
 ====================================================================================================
 5. SELF-LOOPS AND DEGENERATE EDGES
@@ -140,16 +140,17 @@ constrained: 12 edges whose endpoints have identical text
       visited(Person:'Agent' -> Location:'Agent')
       works_for(Person:'Zara' -> Organization:'Zara')
 
-permissive: 17 edges whose endpoints have identical text
+permissive: 19 edges whose endpoints have identical text
       lives_in(Location:'closet' -> Location:'closet')
       lives_in(Organization:'Curves panel' -> Organization:'Curves panel')
       lives_in(Product:'Lumetri Color Panel' -> Product:'Lumetri Color Panel')
       located_in(Location:'closet' -> Location:'closet')
-      owns(Person:'Blazer' -> Product:'blazer')
+      owns(Product:'Blazer' -> Product:'blazer')
       prefers(Organization:'Creative panel' -> Organization:'Creative panel')
       prefers(Organization:'Fauvism' -> Organization:'Fauvism')
+      prefers(Product:'it' -> Product:'it')
+      prefers(Product:'yellow sundress' -> Product:'yellow sundress')
       works_for(Organization:'Mint' -> Organization:'Mint')
-      works_for(Person:'Zara' -> Organization:'Zara')
 
 ====================================================================================================
 6. FRAGMENTATION (#346) -- span-scoped vs merged identity, summed over sessions
@@ -160,7 +161,7 @@ constrained: 2253 mentions -> 2067 span-scoped nodes -> 903 merged nodes (557 of
       mentions per type: Product=503, Activity=444, Topic=417, Person=259, Location=192, Event=152, Organization=148, User=138
       highest-degree merged nodes: User:user(364), User:i(132), Person:frida(103), Person:frida kahlo(82), Location:closet(74), Product:lumetri color panel(40), User:kahlo(38), Person:diego rivera(36)
 
-permissive: 2259 mentions -> 2078 span-scoped nodes -> 901 merged nodes (554 of them in opted-in types)
+permissive: 2265 mentions -> 2082 span-scoped nodes -> 903 merged nodes (554 of them in opted-in types)
       collapse factor: 2.5 mentions per merged node
-      mentions per type: Product=507, Activity=438, Topic=433, Person=251, Location=187, Organization=156, Event=151, User=136
-      highest-degree merged nodes: User:user(341), User:i(78), Location:closet(48), Person:assistant(33), Person:frida kahlo(25), Product:boots(21), Product:yoga pants(18), Product:lumetri color panel(18)
+      mentions per type: Product=510, Activity=440, Topic=436, Person=249, Location=185, Organization=160, Event=151, User=134
+      highest-degree merged nodes: User:user(305), User:i(41), Person:assistant(29), Location:closet(29), Person:frida kahlo(25), Product:lumetri color panel(18), Organization:lumetri color panel(18), Person:frida(16)

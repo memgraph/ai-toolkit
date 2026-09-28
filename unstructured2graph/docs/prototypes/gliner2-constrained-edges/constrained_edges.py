@@ -165,7 +165,19 @@ class ArmResult:
         return [w for w in self.windows if not w.feasible]
 
 
+_SCHEMAS: dict = {}
+
+
 def build_schema(engine, permissive: bool):
+    """Memoized per arm and held for the whole run: gliner2 2.0.0 caches compiled
+    schemas under repr(schema) -- a memory address -- so a schema rebuilt per call
+    can be served a freed predecessor's compilation."""
+    if permissive not in _SCHEMAS:
+        _SCHEMAS[permissive] = _build_schema(engine, permissive)
+    return _SCHEMAS[permissive]
+
+
+def _build_schema(engine, permissive: bool):
     """The same specification compiled two ways -- #348's two compilations, in
     one arm each. Permissive is "all declared entity types", because #345
     verified empty/None/"" endpoints all raise; that is also the translation the

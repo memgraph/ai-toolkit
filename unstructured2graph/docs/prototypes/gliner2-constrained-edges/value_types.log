@@ -1,0 +1,236 @@
+/Users/antejavor/repos/ai-toolkit/.claude/worktrees/backend-comparison/.venv/lib/python3.11/site-packages/gliner2/models/boundary/model.py:2101: UserWarning: Checkpoint uses legacy list-valued extra_special_tokens metadata; loading with compatibility normalization.
+  tokenizer = load_extractor_tokenizer(tokenizer_source)
+/Users/antejavor/repos/ai-toolkit/.claude/worktrees/backend-comparison/.venv/lib/python3.11/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+/Users/antejavor/repos/ai-toolkit/.claude/worktrees/backend-comparison/.venv/lib/python3.11/site-packages/gliner2/models/boundary/model.py:1147: RuntimeWarning: Encoder rejected attn_implementation='sdpa'; falling back to 'eager' (DebertaV2Model does not support an attention implementation through torch.nn.functional.scaled_dot_product_attention yet. Please request the support for this architecture: https://github.com/huggingface/transformers/issues/28005. If you believe this error is a bug, please open an issue in Transformers GitHub repository and load your model with the argument `attn_implementation="eager"` meanwhile. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="eager")`)
+  self.encoder = self._load_encoder(
+loaded fastino/gliner2.5-base-v1 in 7.1s on cpu
+baseline 8 types/11 rels; values 13 types/19 rels
+
+[single-session-user] answer_280352e9
+  baseline   12w   71 edges  284 mentions infeasible=0   7.2s
+  values     12w   70 edges  293 mentions infeasible=0  10.6s
+[multi-session] answer_afa9873b_2
+  baseline   11w   76 edges  150 mentions infeasible=0   7.4s
+  values     11w   72 edges  169 mentions infeasible=0  11.1s
+[multi-session] answer_afa9873b_3
+  baseline    8w  103 edges  195 mentions infeasible=0   6.1s
+  values      8w   83 edges  185 mentions infeasible=0   8.9s
+[multi-session] answer_afa9873b_1
+  baseline    8w   79 edges  138 mentions infeasible=0   6.0s
+  values      8w   99 edges  158 mentions infeasible=0   8.7s
+[single-session-preference] answer_edb03329
+  baseline   17w   72 edges  356 mentions infeasible=0  10.3s
+  values     17w   58 edges  363 mentions infeasible=0  14.4s
+[temporal-reasoning] answer_d00ba6d0_1
+  baseline   13w  333 edges  292 mentions infeasible=0  15.9s
+  values     13w  370 edges  323 mentions infeasible=0  23.0s
+[temporal-reasoning] answer_d00ba6d0_2
+  baseline   11w   99 edges  240 mentions infeasible=0   8.2s
+  values     11w  123 edges  246 mentions infeasible=0  11.5s
+[knowledge-update] answer_a25d4a91_1
+  baseline   11w   90 edges  231 mentions infeasible=0   6.8s
+  values     11w   90 edges  234 mentions infeasible=0   9.8s
+[knowledge-update] answer_a25d4a91_2
+  baseline   12w   56 edges  235 mentions infeasible=0   6.8s
+  values     12w   84 edges  287 mentions infeasible=0  10.3s
+[single-session-assistant] answer_sharegpt_5Lzox6N_0
+  baseline    6w   25 edges  132 mentions infeasible=0   3.8s
+  values      6w   72 edges  128 mentions infeasible=0   6.2s
+
+GUARD: baseline raw edges 1004 (#350 constrained arm: 1004); value relations leaked into baseline: 0
+
+================================================================================================
+1. DOES THE ANSWER LAND
+================================================================================================
+
+[single-session-user] What degree did I graduate with?  (answer_280352e9)
+  answer 'Business Administration'
+    baseline  2 answer-bearing edge(s); answer-bearing mentions: [('Organization', 'Business Administration')]
+        studied(User:'me' -> Organization:'Business Administration')
+        studied(User:'user' -> Organization:'Business Administration')
+    values    2 answer-bearing edge(s); answer-bearing mentions: [('Organization', 'Business Administration')]
+        studied(User:'me' -> Organization:'Business Administration')
+        studied(User:'user' -> Organization:'Business Administration')
+
+[multi-session] How many items of clothing do I need to pick up or return from a store?  (answer_afa9873b_2)
+  answer '3'
+    baseline  0 answer-bearing edge(s); answer-bearing mentions: []
+    values    0 answer-bearing edge(s); answer-bearing mentions: []
+
+[multi-session] How many items of clothing do I need to pick up or return from a store?  (answer_afa9873b_3)
+    baseline  0 answer-bearing edge(s); answer-bearing mentions: []
+    values    0 answer-bearing edge(s); answer-bearing mentions: []
+
+[multi-session] How many items of clothing do I need to pick up or return from a store?  (answer_afa9873b_1)
+    baseline  0 answer-bearing edge(s); answer-bearing mentions: []
+    values    0 answer-bearing edge(s); answer-bearing mentions: []
+
+[single-session-preference] Can you recommend some resources where I can learn more about video editing?  (answer_edb03329)
+  answer 'The user would prefer responses that suggest resources specifically tailored to '
+    baseline  13 answer-bearing edge(s); answer-bearing mentions: [('Activity', 'video'), ('Activity', 'video editing'), ('Event', 'video'), ('Event', 'videos'), ('Location', 'video'), ('Organization', 'Adobe Premiere Pro')]
+        owns(User:'user' -> Product:'Lumetri Color Panel')
+        practices(User:'user' -> Activity:'Practice')
+        practices(User:'user' -> Activity:'best practices')
+        prefers(User:'user' -> Product:'Lumetri Color Panel')
+        prefers(User:'user' -> Topic:'Audio Advanced Settings')
+        prefers(User:'user' -> Topic:'advanced settings')
+    values    14 answer-bearing edge(s); answer-bearing mentions: [('Activity', 'video editing'), ('Event', 'video'), ('Event', 'videos'), ('Organization', 'Adobe Premiere Pro'), ('Organization', 'Premiere Bro'), ('Organization', 'Premiere Pro')]
+        knows(User:'user' -> Person:'Creative panel')
+        lives_in(User:'user' -> Location:'Lumetri')
+        owns_count(User:'user' -> Quantity:'three')
+        practices(User:'user' -> Activity:'Practice')
+        practices(User:'user' -> Activity:'best practices')
+        prefers(User:'user' -> Product:'Lumetri Color Panel')
+
+[temporal-reasoning] How many days passed between my visit to the Museum of Modern Art (MoMA) and the  (answer_d00ba6d0_1)
+  answer '7 days. 8 days (including the last day) is also acceptable.'
+    baseline  0 answer-bearing edge(s); answer-bearing mentions: []
+    values    0 answer-bearing edge(s); answer-bearing mentions: []
+
+[temporal-reasoning] How many days passed between my visit to the Museum of Modern Art (MoMA) and the  (answer_d00ba6d0_2)
+    baseline  0 answer-bearing edge(s); answer-bearing mentions: []
+    values    1 answer-bearing edge(s); answer-bearing mentions: [('Duration', '70 days')]
+        spent_time(User:'user' -> Duration:'70 days')
+
+[knowledge-update] What was my personal best time in the charity 5K run?  (answer_a25d4a91_1)
+  answer '25 minutes and 50 seconds (or 25:50)'
+    baseline  0 answer-bearing edge(s); answer-bearing mentions: []
+    values    0 answer-bearing edge(s); answer-bearing mentions: [('Duration', '20-30 minutes'), ('Duration', '20-30 seconds')]
+
+[knowledge-update] What was my personal best time in the charity 5K run?  (answer_a25d4a91_2)
+    baseline  0 answer-bearing edge(s); answer-bearing mentions: []
+    values    5 answer-bearing edge(s); answer-bearing mentions: [('Duration', '2-3 seconds'), ('Duration', '25:50'), ('Duration', '30 seconds'), ('Duration', '30-60 seconds')]
+        lasted(Activity:'Plank' -> Duration:'30-60 seconds')
+        lasted(Activity:'Toss and Move' -> Duration:'2-3 seconds')
+        lasted(Activity:'Toss and Visualize' -> Duration:'2-3 seconds')
+        lasted(Activity:'plank' -> Duration:'30-60 seconds')
+        personal_best(User:'user' -> Duration:'25:50')
+
+[single-session-assistant] I'm checking our previous chat about the shift rotation sheet for GM social medi  (answer_sharegpt_5Lzox6N_0)
+  answer 'Admon was assigned to the 8 am - 4 pm (Day Shift) on Sundays.'
+    baseline  0 answer-bearing edge(s); answer-bearing mentions: [('User', 'Admon')]
+    values    4 answer-bearing edge(s); answer-bearing mentions: [('Person', 'shift rotation sheet'), ('TimeWindow', '12 am - 8 am'), ('TimeWindow', '12 pm - 8 pm'), ('TimeWindow', '4 pm - 12 am'), ('TimeWindow', '8 am - 4 pm'), ('TimeWindow', '8 am - 4 pm | 12 pm - 8 pm | 4 pm - 12 am')]
+        works_for(Person:'shift rotation sheet' -> Organization:'GM Social Media Agents')
+        works_for(Person:'shift rotation sheet' -> Organization:'GM social media agents')
+        works_shift(Person:'Agent' -> TimeWindow:'one shift per day')
+        works_shift(Person:'agent' -> TimeWindow:'one shift per day')
+
+================================================================================================
+2. DO THE ORIGINAL 11 RELATIONS DEGRADE
+================================================================================================
+  raw: baseline 1004 -> values arm 954
+  distinct claims: baseline 299 -> values arm 276; shared 201, lost 98, gained 75
+    attended          66    42   -24
+    knows             54    47    -7
+    lives_in          61    79   +18
+    located_in        49    55    +6
+    owns             120    45   -75
+    practices        182    93   -89
+    prefers          111   121   +10
+    purchased         97   105    +8
+    studied          156   239   +83
+    visited           53    55    +2
+    works_for         55    73   +18
+  sample of lost claims:
+      owns('assistant' -> 'trello')
+      owns('user' -> 'mason jars')
+      owns('user' -> 'produce')
+      practices('i' -> 'exercise')
+      practices('i' -> 'meditation')
+      practices('user' -> 'meal prep')
+      practices('user' -> 'routine')
+      practices('user' -> 'tracking')
+      prefers('me' -> 'shoeboxed')
+      purchased('i' -> "chef's knife")
+      purchased('i' -> 'spatula')
+      attended('i' -> 'quarterfinals')
+
+================================================================================================
+3. WHAT THE VALUE TYPES EXTRACTED
+================================================================================================
+  value mentions 193, value edges 167
+    Date          76  [('sunday', 14), ('may 6th', 6), ('saturday', 6), ('friday', 5), ('monday', 5), ('1940', 3), ('tuesday', 3), ('wednesday', 3)]
+    Duration      56  [('10-15 reps', 5), ('each week', 4), ('20-30 minutes', 3), ('7-9 hours of sleep', 3), ('4-6 weeks', 3), ('25:50', 3), ('1 week', 3), ('a while', 2)]
+    TimeWindow    38  [('8 am - 4 pm', 5), ('12 am - 8 am', 5), ('12 pm - 8 pm', 4), ('4 pm - 12 am', 4), ('rotating exhibit schedule', 2), ('wednesday', 2), ('thursday', 2), ('friday', 2)]
+    Quantity      20  [('three', 2), ('160-170 steps', 2), ('both feet', 2), ('10-15%', 2), ('clothes', 1), ('a bunch of them', 1), ('them', 1), ('a lot', 1)]
+    Money          3  [('premium features', 1), ('subscription fees', 1), ('tlc', 1)]
+  value relations fired: {'happened_on': 96, 'works_shift': 24, 'lasted': 18, 'costs': 13, 'spent_time': 5, 'paid': 4, 'owns_count': 4, 'personal_best': 3}
+  distinct value edges:
+      costs(Activity:'Washing' -> Money:'TLC')
+      costs(Activity:'app' -> Money:'premium features')
+      costs(Activity:'wash' -> Money:'TLC')
+      costs(Activity:'washing' -> Money:'TLC')
+      costs(Product:'SpendTracker' -> Money:'subscription fees')
+      costs(Product:'app' -> Money:'subscription fees')
+      happened_on(Activity:'Strength training' -> Date:'Saturday')
+      happened_on(Activity:'boots' -> Date:'February 5th')
+      happened_on(Event:'Friday' -> Date:'Sunday')
+      happened_on(Event:'Marriage' -> Date:'1927')
+      happened_on(Event:'Marriage' -> Date:'1929')
+      happened_on(Event:'Monday' -> Date:'Sunday')
+      happened_on(Event:'Rest day' -> Date:'Friday')
+      happened_on(Event:'Rest day' -> Date:'Saturday')
+      happened_on(Event:'Rest day' -> Date:'Sunday')
+      happened_on(Event:'Rest day' -> Date:'Thursday')
+      happened_on(Event:'Rest day' -> Date:'Wednesday')
+      happened_on(Event:'Saturday' -> Date:'Sunday')
+      happened_on(Event:'Separation' -> Date:'1939')
+      happened_on(Event:'Separation' -> Date:'1940')
+      happened_on(Event:'Sunday' -> Date:'Sunday')
+      happened_on(Event:'Tennis tournament' -> Date:'May 6th')
+      happened_on(Event:'Winter Clothes' -> Date:'holidays')
+      happened_on(Event:'bus accident' -> Date:'18')
+      happened_on(Event:'dinner date' -> Date:'Friday')
+      happened_on(Event:'marriage' -> Date:'18')
+      happened_on(Event:'marriage' -> Date:'1927')
+      happened_on(Event:'marriage' -> Date:'1929')
+      happened_on(Event:'marriage' -> Date:'1939')
+      happened_on(Event:'marriage' -> Date:'1940')
+      happened_on(Event:'meeting' -> Date:'a few weeks ago')
+      happened_on(Event:'separation' -> Date:'1940')
+      happened_on(Event:'tennis tournament' -> Date:'May 6th')
+      happened_on(Event:'tournament' -> Date:'May 6th')
+      happened_on(Event:'wedding' -> Date:'18')
+      happened_on(Event:'winter clothes' -> Date:'holidays')
+      lasted(Activity:'Plank' -> Duration:'30-60 seconds')
+      lasted(Activity:'Rest' -> Duration:'7-9 hours')
+      lasted(Activity:'Toss and Move' -> Duration:'2-3 seconds')
+      lasted(Activity:'Toss and Visualize' -> Duration:'2-3 seconds')
+      lasted(Activity:'clothes' -> Duration:'over a year')
+      lasted(Activity:'decluttering' -> Duration:'a few weeks ago')
+      lasted(Activity:'plank' -> Duration:'30-60 seconds')
+      lasted(Activity:'wash' -> Duration:'1-2 weeks')
+      lasted(Activity:'washing' -> Duration:'1-2 weeks')
+      lasted(Event:'Relationship' -> Duration:'20th century')
+      lasted(Event:'next game' -> Duration:'two weeks')
+      lasted(Event:'relationship' -> Duration:'20th century')
+      lasted(Event:'winter clothes' -> Duration:'a few months')
+      owns_count(User:'I' -> Quantity:'them')
+      owns_count(User:'I' -> Quantity:'three')
+      owns_count(User:'user' -> Quantity:'three')
+      paid(User:'I' -> Money:'TLC')
+      paid(User:'user' -> Money:'TLC')
+      paid(User:'user' -> Money:'premium features')
+      personal_best(User:'user' -> Duration:'25:50')
+      spent_time(User:'user' -> Duration:'70 days')
+      spent_time(User:'user' -> Duration:'each week')
+      works_shift(Person:'Agent' -> TimeWindow:'Friday')
+      works_shift(Person:'Agent' -> TimeWindow:'Saturday')
+
+================================================================================================
+4. VALUE-NODE COLLISIONS WITHIN A SESSION
+================================================================================================
+  distinct (type,text) keys 115; covering >1 span 40 (35%)
+      Date:'sunday' x8
+      TimeWindow:'8 am - 4 pm' x4
+      TimeWindow:'12 am - 8 am' x4
+      Duration:'10-15 reps' x4
+      TimeWindow:'4 pm - 12 am' x3
+      TimeWindow:'12 pm - 8 pm' x3
+      Duration:'25:50' x3
+      Duration:'20-30 minutes' x3
+      Date:'saturday' x3
+      Date:'monday' x3
+      Date:'1940' x3
+      TimeWindow:'wednesday' x2

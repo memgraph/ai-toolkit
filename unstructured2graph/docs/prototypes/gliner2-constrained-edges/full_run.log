@@ -5,7 +5,7 @@ loading fastino/gliner2.5-base-v1 ...
   warnings.warn(
 /Users/antejavor/repos/ai-toolkit/.claude/worktrees/backend-comparison/.venv/lib/python3.11/site-packages/gliner2/models/boundary/model.py:1147: RuntimeWarning: Encoder rejected attn_implementation='sdpa'; falling back to 'eager' (DebertaV2Model does not support an attention implementation through torch.nn.functional.scaled_dot_product_attention yet. Please request the support for this architecture: https://github.com/huggingface/transformers/issues/28005. If you believe this error is a bug, please open an issue in Transformers GitHub repository and load your model with the argument `attn_implementation="eager"` meanwhile. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="eager")`)
   self.encoder = self._load_encoder(
-loaded in 7.3s on cpu
+loaded in 6.5s on cpu
 vocabulary: 8 entity types, 11 relation types; permissive arm expands every endpoint to all 8
 
 ====================================================================================================
@@ -15,7 +15,7 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
     window   0  1876ch  FEASIBLE    27e   0r    0.5s
     window   1  1785ch  FEASIBLE    21e   2r    0.5s
     window   2  1884ch  FEASIBLE    16e   4r    0.5s
-    window   3  1905ch  FEASIBLE    20e   2r    0.4s
+    window   3  1905ch  FEASIBLE    20e   2r    0.5s
     window   4  1900ch  FEASIBLE    25e   3r    0.5s
     window   5  1972ch  FEASIBLE    20e   2r    0.4s
     window   6  1874ch  FEASIBLE    26e   0r    0.4s
@@ -25,18 +25,18 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
     window  10  1704ch  FEASIBLE    27e  16r    0.6s
     window  11  1098ch  FEASIBLE    28e   2r    0.6s
   permissive:
-    window   0  1876ch  FEASIBLE    27e   0r    0.5s
+    window   0  1876ch  FEASIBLE    27e   0r    0.4s
     window   1  1785ch  FEASIBLE    22e   4r    0.6s
     window   2  1884ch  FEASIBLE    16e   5r    0.7s
     window   3  1905ch  FEASIBLE    20e   8r    0.8s
-    window   4  1900ch  FEASIBLE    25e   5r    0.6s
+    window   4  1900ch  FEASIBLE    25e   5r    0.7s
     window   5  1972ch  FEASIBLE    20e   2r    0.5s
     window   6  1874ch  FEASIBLE    26e   0r    0.5s
     window   7  1819ch  FEASIBLE    20e   3r    0.7s
     window   8  1763ch  FEASIBLE    27e   0r    0.4s
-    window   9  1660ch  FEASIBLE    28e   7r    0.7s
+    window   9  1660ch  FEASIBLE    28e   7r    0.8s
     window  10  1704ch  FEASIBLE    27e   8r    0.7s
-    window  11  1098ch  FEASIBLE    28e   3r    0.5s
+    window  11  1098ch  FEASIBLE    28e   3r    0.6s
 
   --- answer_280352e9 (2023/05/30 (Tue) 17:27, 17915 chars) ---
   constrained: 71 raw edges, 31 distinct after merge, 0/12 windows infeasible, 7s
@@ -140,7 +140,7 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
   constrained:
     window   0  1843ch  FEASIBLE    19e   9r    0.8s
     window   1  1980ch  FEASIBLE    22e   6r    0.6s
-    window   2  1869ch  FEASIBLE    23e  20r    0.8s
+    window   2  1869ch  FEASIBLE    23e  20r    0.7s
     window   3  1873ch  FEASIBLE    27e  40r    1.4s
     window   4  1905ch  FEASIBLE    19e  21r    0.8s
     window   5  1998ch  FEASIBLE    26e  13r    0.8s
@@ -148,23 +148,23 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
     window   7  2077ch  FEASIBLE    17e  21r    0.8s
     window   8  1968ch  FEASIBLE    23e  13r    0.7s
     window   9  1923ch  FEASIBLE    30e  33r    1.7s
-    window  10  1964ch  FEASIBLE    20e  77r    3.1s
+    window  10  1964ch  FEASIBLE    20e  77r    3.2s
     window  11  1912ch  FEASIBLE    23e  29r    1.1s
-    window  12  1003ch  FEASIBLE    16e   5r    0.6s
+    window  12  1003ch  FEASIBLE    16e   5r    0.7s
   permissive:
     window   0  1843ch  FEASIBLE    19e   6r    0.7s
     window   1  1980ch  FEASIBLE    22e   9r    0.9s
     window   2  1869ch  FEASIBLE    22e  13r    1.1s
-    window   3  1873ch  FEASIBLE    27e   8r    0.8s
+    window   3  1873ch  FEASIBLE    27e   8r    0.7s
     window   4  1905ch  FEASIBLE    19e  10r    0.8s
     window   5  1998ch  FEASIBLE    20e   3r    0.6s
     window   6  2021ch  FEASIBLE    27e   7r    0.7s
-    window   7  2077ch  FEASIBLE    17e   8r    0.7s
+    window   7  2077ch  FEASIBLE    17e   8r    0.8s
     window   8  1968ch  FEASIBLE    23e   2r    0.6s
-    window   9  1923ch  FEASIBLE    30e   6r    0.7s
+    window   9  1923ch  FEASIBLE    30e   6r    0.6s
     window  10  1964ch  FEASIBLE    20e  18r    2.3s
     window  11  1912ch  FEASIBLE    22e   3r    0.6s
-    window  12  1003ch  FEASIBLE    16e   4r    1.3s
+    window  12  1003ch  FEASIBLE    16e   4r    1.2s
 
   --- answer_d00ba6d0_1 (2023/01/08 (Sun) 12:49, 20357 chars) ---
   constrained: 333 raw edges, 72 distinct after merge, 0/13 windows infeasible, 15s
@@ -343,26 +343,26 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
   constrained:
     window   0  1863ch  FEASIBLE    18e   0r    0.4s
     window   1  1968ch  FEASIBLE    19e   6r    0.5s
-    window   2  1952ch  FEASIBLE    22e  10r    0.6s
+    window   2  1952ch  FEASIBLE    22e  10r    0.5s
     window   3  1898ch  FEASIBLE    18e   0r    0.4s
     window   4  1981ch  FEASIBLE    24e  15r    0.9s
-    window   5  1903ch  FEASIBLE    29e  19r    1.3s
+    window   5  1903ch  FEASIBLE    29e  19r    1.2s
     window   6  2087ch  FEASIBLE    27e  35r    1.4s
     window   7  1897ch  FEASIBLE    20e   3r    0.6s
     window   8  1891ch  FEASIBLE    23e   5r    0.5s
     window   9  1921ch  FEASIBLE    31e   6r    0.6s
     window  10   416ch  FEASIBLE     9e   0r    0.2s
   permissive:
-    window   0  1863ch  FEASIBLE    18e   0r    0.5s
-    window   1  1968ch  FEASIBLE    19e   6r    0.6s
-    window   2  1952ch  FEASIBLE    22e  10r    0.6s
-    window   3  1898ch  FEASIBLE    18e   0r    0.6s
-    window   4  1981ch  FEASIBLE    24e  15r    0.9s
-    window   5  1903ch  FEASIBLE    29e  19r    1.3s
-    window   6  2087ch  FEASIBLE    27e  35r    1.4s
-    window   7  1897ch  FEASIBLE    20e   3r    0.7s
-    window   8  1891ch  FEASIBLE    23e   5r    0.5s
-    window   9  1921ch  FEASIBLE    31e   6r    0.6s
+    window   0  1863ch  FEASIBLE    19e   1r    0.5s
+    window   1  1968ch  FEASIBLE    19e   6r    0.8s
+    window   2  1952ch  FEASIBLE    22e  10r    1.1s
+    window   3  1898ch  FEASIBLE    20e   1r    0.5s
+    window   4  1981ch  FEASIBLE    25e   9r    0.8s
+    window   5  1903ch  FEASIBLE    29e   4r    0.6s
+    window   6  2087ch  FEASIBLE    27e   9r    0.9s
+    window   7  1897ch  FEASIBLE    20e   2r    0.6s
+    window   8  1891ch  FEASIBLE    23e   6r    0.7s
+    window   9  1921ch  FEASIBLE    31e   2r    0.5s
     window  10   416ch  FEASIBLE     9e   0r    0.2s
 
   --- answer_d00ba6d0_2 (2023/01/15 (Sun) 00:27, 16538 chars) ---
@@ -400,72 +400,104 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
       studied      (User) 'user' -> (Topic) 'ancient civilizations'   x3 conf<=0.98 valid_at=2023/01/15 (Sun) 00:27
       studied      (User) 'user' -> (Topic) 'ancient cultures'   x2 conf<=0.99 valid_at=2023/01/15 (Sun) 00:27
       works_for    (Person) 'new york university institute for the study of the ancient world' -> (Organization) 'brooklyn museum'   x3 conf<=0.36 valid_at=2023/01/15 (Sun) 00:27
-  permissive: 99 raw edges, 33 distinct after merge, 0/11 windows infeasible, 8s
+  permissive: 50 raw edges, 32 distinct after merge, 0/11 windows infeasible, 7s
       attended     (User) 'user' -> (Event) 'exhibit'   x1 conf<=0.96 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'american museum of natural history' -> (Location) 'new york city'   x3 conf<=0.34 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'brooklyn museum' -> (Location) 'new york city'   x6 conf<=0.82 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'brooklyn museum' -> (Location) 'amnh'   x6 conf<=0.78 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'chinchorro culture' -> (Location) 'china'   x1 conf<=0.41 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'guanches' -> (Location) 'china'   x3 conf<=0.57 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'guanches' -> (Location) 'chile and peru'   x1 conf<=0.23 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'guanches' -> (Location) 'canary islands'   x5 conf<=0.79 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'guanches' -> (Location) 'denmark'   x4 conf<=0.57 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'guanches' -> (Location) 'western china'   x1 conf<=0.40 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'guanches' -> (Location) 'peru'   x1 conf<=0.51 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'guanches' -> (Location) 'central asia'   x1 conf<=0.60 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'metropolitan museum of art' -> (Location) 'new york city'   x4 conf<=0.81 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'scythians' -> (Location) 'denmark'   x1 conf<=0.37 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'scythians' -> (Location) 'central asia'   x2 conf<=0.57 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'scythians' -> (Location) 'canary islands'   x4 conf<=0.65 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'scythians' -> (Location) 'peru'   x1 conf<=0.45 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'tarim basin mummies' -> (Location) 'china'   x3 conf<=0.55 valid_at=2023/01/15 (Sun) 00:27
-      located_in   (Organization) 'tarim basin mummies' -> (Location) 'canary islands'   x1 conf<=0.52 valid_at=2023/01/15 (Sun) 00:27
-      owns         (User) 'i' -> (Product) 'sarcophagi'   x4 conf<=0.72 valid_at=2023/01/15 (Sun) 00:27
-      owns         (User) 'user' -> (Product) 'sarcophagi'   x5 conf<=0.95 valid_at=2023/01/15 (Sun) 00:27
+      attended     (User) 'user' -> (Topic) 'ancient civilizations'   x2 conf<=0.96 valid_at=2023/01/15 (Sun) 00:27
+      knows        (User) 'user' -> (Product) 'sarcophagi'   x1 conf<=0.51 valid_at=2023/01/15 (Sun) 00:27
+      knows        (User) 'user' -> (Topic) 'mummification'   x1 conf<=0.36 valid_at=2023/01/15 (Sun) 00:27
+      lives_in     (Person) 'deceased' -> (Product) 'sarcophagus'   x1 conf<=0.75 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Location) 'body' -> (Location) 'earth'   x1 conf<=0.58 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'brooklyn museum' -> (Location) 'new york city'   x3 conf<=0.82 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'brooklyn museum' -> (Organization) 'amnh'   x2 conf<=0.85 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'guanches' -> (Location) 'china'   x2 conf<=0.57 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Organization) 'metropolitan museum of art' -> (Location) 'new york city'   x1 conf<=0.81 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Product) 'sarcophagi' -> (Event) 'exhibit'   x2 conf<=0.82 valid_at=2023/01/15 (Sun) 00:27
+      located_in   (Person) 'tollund man' -> (Location) 'denmark'   x2 conf<=0.88 valid_at=2023/01/15 (Sun) 00:27
+      owns         (User) 'user' -> (Product) 'sarcophagi'   x2 conf<=0.95 valid_at=2023/01/15 (Sun) 00:27
       owns         (User) 'user' -> (Product) 'gold'   x1 conf<=0.82 valid_at=2023/01/15 (Sun) 00:27
-      practices    (Person) 'ancient greeks' -> (Activity) 'mummification'   x2 conf<=0.34 valid_at=2023/01/15 (Sun) 00:27
-      practices    (Person) 'egyptians' -> (Activity) 'funerary practices'   x3 conf<=0.68 valid_at=2023/01/15 (Sun) 00:27
-      prefers      (User) 'user' -> (Product) 'sarcophagi'   x1 conf<=0.75 valid_at=2023/01/15 (Sun) 00:27
+      practices    (Organization) 'buddhist' -> (Activity) 'mummification'   x1 conf<=0.41 valid_at=2023/01/15 (Sun) 00:27
+      practices    (Person) 'egyptians' -> (Activity) 'funerary practices'   x2 conf<=0.68 valid_at=2023/01/15 (Sun) 00:27
+      practices    (Organization) 'guanches' -> (Topic) 'mummification'   x2 conf<=0.87 valid_at=2023/01/15 (Sun) 00:27
+      practices    (Organization) 'guanches' -> (Activity) 'mummification'   x1 conf<=0.79 valid_at=2023/01/15 (Sun) 00:27
+      practices    (Organization) 'scythians' -> (Activity) 'mummification'   x1 conf<=0.78 valid_at=2023/01/15 (Sun) 00:27
+      prefers      (User) 'user' -> (Product) 'sarcophagi'   x2 conf<=0.75 valid_at=2023/01/15 (Sun) 00:27
       prefers      (User) 'user' -> (Product) 'gold'   x1 conf<=0.85 valid_at=2023/01/15 (Sun) 00:27
+      prefers      (User) 'user' -> (Organization) 'american museum of natural history'   x2 conf<=0.91 valid_at=2023/01/15 (Sun) 00:27
       purchased    (User) 'user' -> (Product) 'gold'   x1 conf<=0.76 valid_at=2023/01/15 (Sun) 00:27
-      studied      (User) 'i' -> (Topic) 'ancient civilizations'   x12 conf<=0.97 valid_at=2023/01/15 (Sun) 00:27
-      studied      (User) 'i' -> (Topic) 'ancient cultures'   x8 conf<=0.98 valid_at=2023/01/15 (Sun) 00:27
+      studied      (Organization) 'brooklyn museum' -> (Topic) 'ancient world'   x2 conf<=0.75 valid_at=2023/01/15 (Sun) 00:27
       studied      (User) 'user' -> (Topic) 'mummification'   x4 conf<=0.92 valid_at=2023/01/15 (Sun) 00:27
-      studied      (User) 'user' -> (Topic) 'ancient civilizations'   x3 conf<=0.98 valid_at=2023/01/15 (Sun) 00:27
-      studied      (User) 'user' -> (Topic) 'ancient cultures'   x2 conf<=0.99 valid_at=2023/01/15 (Sun) 00:27
-      works_for    (Person) 'new york university institute for the study of the ancient world' -> (Organization) 'brooklyn museum'   x3 conf<=0.36 valid_at=2023/01/15 (Sun) 00:27
-  diff: 33 shared claims, 0 constrained-only, 0 permissive-only, 0 shared-but-retyped
+      studied      (User) 'user' -> (Product) 'sarcophagi'   x1 conf<=0.38 valid_at=2023/01/15 (Sun) 00:27
+      studied      (User) 'user' -> (Topic) 'ancient cultures'   x1 conf<=0.99 valid_at=2023/01/15 (Sun) 00:27
+      studied      (User) 'user' -> (Topic) 'ancient civilizations'   x1 conf<=0.98 valid_at=2023/01/15 (Sun) 00:27
+      visited      (User) 'i' -> (Event) 'exhibit'   x1 conf<=0.83 valid_at=2023/01/15 (Sun) 00:27
+      visited      (User) 'i' -> (Organization) 'metropolitan museum of art'   x2 conf<=0.81 valid_at=2023/01/15 (Sun) 00:27
+      visited      (User) 'user' -> (Event) 'exhibit'   x1 conf<=0.95 valid_at=2023/01/15 (Sun) 00:27
+      visited      (User) 'user' -> (Organization) 'brooklyn museum'   x2 conf<=0.79 valid_at=2023/01/15 (Sun) 00:27
+  diff: 14 shared claims, 19 constrained-only, 17 permissive-only, 1 shared-but-retyped
+      ~ located_in('brooklyn museum' -> 'amnh'): (Organization,Organization) permissive -> (Organization,Location) constrained
+    constrained-only (beam reallocation, if #348's claim holds):
+      + located_in('american museum of natural history' -> 'new york city')
+      + located_in('chinchorro culture' -> 'china')
+      + located_in('guanches' -> 'canary islands')
+      + located_in('guanches' -> 'central asia')
+      + located_in('guanches' -> 'chile and peru')
+      + located_in('guanches' -> 'denmark')
+      + located_in('guanches' -> 'peru')
+      + located_in('guanches' -> 'western china')
+      + located_in('scythians' -> 'canary islands')
+      + located_in('scythians' -> 'central asia')
+      + located_in('scythians' -> 'denmark')
+      + located_in('scythians' -> 'peru')
+      + located_in('tarim basin mummies' -> 'canary islands')
+      + located_in('tarim basin mummies' -> 'china')
+      + owns('i' -> 'sarcophagi')
+    permissive-only (suppressed by the domain/range constraint):
+      - attended('user' -> 'ancient civilizations')
+      - knows('user' -> 'mummification')
+      - knows('user' -> 'sarcophagi')
+      - lives_in('deceased' -> 'sarcophagus')
+      - located_in('body' -> 'earth')
+      - located_in('sarcophagi' -> 'exhibit')
+      - located_in('tollund man' -> 'denmark')
+      - practices('buddhist' -> 'mummification')
+      - practices('guanches' -> 'mummification')
+      - practices('scythians' -> 'mummification')
+      - prefers('user' -> 'american museum of natural history')
+      - studied('brooklyn museum' -> 'ancient world')
+      - studied('user' -> 'sarcophagi')
+      - visited('i' -> 'exhibit')
+      - visited('i' -> 'metropolitan museum of art')
 
 ====================================================================================================
 [knowledge-update] What was my personal best time in the charity 5K run?
   expected answer: '25 minutes and 50 seconds (or 25:50)'
   constrained:
-    window   0  1720ch  FEASIBLE    25e  31r    1.5s
-    window   1  1815ch  FEASIBLE    22e   0r    0.5s
-    window   2  1794ch  FEASIBLE    18e   7r    0.6s
+    window   0  1720ch  FEASIBLE    25e  31r    1.2s
+    window   1  1815ch  FEASIBLE    22e   0r    0.4s
+    window   2  1794ch  FEASIBLE    18e   7r    0.5s
     window   3  1787ch  FEASIBLE    22e   0r    0.4s
-    window   4  1844ch  FEASIBLE    19e   4r    0.6s
+    window   4  1844ch  FEASIBLE    19e   4r    0.5s
     window   5  1787ch  FEASIBLE    20e   1r    0.4s
     window   6  1935ch  FEASIBLE    21e   6r    0.5s
-    window   7  1806ch  FEASIBLE    23e   0r    0.5s
+    window   7  1806ch  FEASIBLE    23e   0r    0.4s
     window   8  1831ch  FEASIBLE    19e  18r    0.7s
     window   9  1694ch  FEASIBLE    21e  16r    0.6s
-    window  10  1209ch  FEASIBLE    21e   7r    0.5s
+    window  10  1209ch  FEASIBLE    21e   7r    0.4s
   permissive:
     window   0  1720ch  FEASIBLE    25e   6r    0.9s
-    window   1  1815ch  FEASIBLE    22e   0r    0.6s
+    window   1  1815ch  FEASIBLE    22e   0r    0.4s
     window   2  1794ch  FEASIBLE    18e   6r    1.0s
     window   3  1787ch  FEASIBLE    22e   0r    0.4s
-    window   4  1844ch  FEASIBLE    19e   4r    1.0s
-    window   5  1787ch  FEASIBLE    20e   1r    0.7s
-    window   6  1935ch  FEASIBLE    21e   5r    0.7s
-    window   7  1806ch  FEASIBLE    23e   0r    0.5s
-    window   8  1831ch  FEASIBLE    19e  13r    1.3s
-    window   9  1694ch  FEASIBLE    21e  12r    0.9s
-    window  10  1209ch  FEASIBLE    21e   8r    1.0s
+    window   4  1844ch  FEASIBLE    19e   4r    0.8s
+    window   5  1787ch  FEASIBLE    20e   1r    0.5s
+    window   6  1935ch  FEASIBLE    21e   5r    0.6s
+    window   7  1806ch  FEASIBLE    23e   0r    0.4s
+    window   8  1831ch  FEASIBLE    19e  13r    1.1s
+    window   9  1694ch  FEASIBLE    21e  12r    0.8s
+    window  10  1209ch  FEASIBLE    21e   8r    0.9s
 
   --- answer_a25d4a91_1 (2023/05/23 (Tue) 13:01, 16143 chars) ---
-  constrained: 90 raw edges, 30 distinct after merge, 0/11 windows infeasible, 7s
+  constrained: 90 raw edges, 30 distinct after merge, 0/11 windows infeasible, 6s
       attended     (User) 'i' -> (Event) 'quarterfinals'   x2 conf<=0.85 valid_at=2023/05/23 (Tue) 13:01
       attended     (User) 'user' -> (Event) '5k run'   x1 conf<=0.69 valid_at=2023/05/23 (Tue) 13:01
       attended     (User) 'user' -> (Event) 'charity 5k run'   x1 conf<=0.59 valid_at=2023/05/23 (Tue) 13:01
@@ -496,7 +528,7 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
       studied      (User) 'user' -> (Topic) 'shooting technique'   x2 conf<=0.85 valid_at=2023/05/23 (Tue) 13:01
       visited      (User) 'user' -> (Location) 'venue'   x1 conf<=0.77 valid_at=2023/05/23 (Tue) 13:01
       works_for    (Person) 'rackets' -> (Organization) 'tennis shops'   x1 conf<=0.69 valid_at=2023/05/23 (Tue) 13:01
-  permissive: 55 raw edges, 35 distinct after merge, 0/11 windows infeasible, 9s
+  permissive: 55 raw edges, 35 distinct after merge, 0/11 windows infeasible, 8s
       attended     (User) 'i' -> (Event) 'quarterfinals'   x2 conf<=0.85 valid_at=2023/05/23 (Tue) 13:01
       attended     (User) 'user' -> (Event) '5k run'   x1 conf<=0.69 valid_at=2023/05/23 (Tue) 13:01
       attended     (User) 'user' -> (Event) 'tennis tournament'   x2 conf<=0.97 valid_at=2023/05/23 (Tue) 13:01
@@ -558,34 +590,34 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
 [knowledge-update] What was my personal best time in the charity 5K run?
   expected answer: '25 minutes and 50 seconds (or 25:50)'
   constrained:
-    window   0  1827ch  FEASIBLE    24e   2r    0.6s
-    window   1  1854ch  FEASIBLE    23e   0r    0.5s
-    window   2  1900ch  FEASIBLE    19e   7r    0.6s
+    window   0  1827ch  FEASIBLE    24e   2r    0.5s
+    window   1  1854ch  FEASIBLE    23e   0r    0.4s
+    window   2  1900ch  FEASIBLE    19e   7r    0.5s
     window   3  1864ch  FEASIBLE    17e   0r    0.5s
-    window   4  1708ch  FEASIBLE    15e   1r    0.5s
+    window   4  1708ch  FEASIBLE    15e   1r    0.4s
     window   5  1701ch  FEASIBLE    21e  14r    0.6s
     window   6  1807ch  FEASIBLE    15e   5r    0.5s
-    window   7  1823ch  FEASIBLE    21e  12r    0.6s
+    window   7  1823ch  FEASIBLE    21e  12r    0.5s
     window   8  1677ch  FEASIBLE    21e   4r    0.5s
-    window   9  1845ch  FEASIBLE    21e   6r    0.7s
-    window  10  1844ch  FEASIBLE    18e   0r    0.5s
-    window  11  1163ch  FEASIBLE    20e   5r    0.7s
+    window   9  1845ch  FEASIBLE    21e   6r    0.6s
+    window  10  1844ch  FEASIBLE    18e   0r    0.4s
+    window  11  1163ch  FEASIBLE    20e   5r    0.6s
   permissive:
-    window   0  1827ch  FEASIBLE    24e   8r    0.8s
+    window   0  1827ch  FEASIBLE    24e   8r    0.9s
     window   1  1854ch  FEASIBLE    23e   0r    0.4s
-    window   2  1900ch  FEASIBLE    19e   6r    0.8s
-    window   3  1864ch  FEASIBLE    18e   0r    0.7s
+    window   2  1900ch  FEASIBLE    19e   6r    0.7s
+    window   3  1864ch  FEASIBLE    18e   0r    0.6s
     window   4  1708ch  FEASIBLE    16e   5r    0.6s
     window   5  1701ch  FEASIBLE    20e   9r    0.7s
-    window   6  1807ch  FEASIBLE    14e   8r    0.8s
+    window   6  1807ch  FEASIBLE    14e   8r    0.7s
     window   7  1823ch  FEASIBLE    21e  10r    0.8s
     window   8  1677ch  FEASIBLE    21e   5r    0.6s
-    window   9  1845ch  FEASIBLE    21e   7r    0.8s
-    window  10  1844ch  FEASIBLE    18e   0r    0.5s
+    window   9  1845ch  FEASIBLE    21e   7r    0.7s
+    window  10  1844ch  FEASIBLE    18e   0r    0.4s
     window  11  1163ch  FEASIBLE    19e   0r    0.4s
 
   --- answer_a25d4a91_2 (2023/05/30 (Tue) 13:53, 17689 chars) ---
-  constrained: 56 raw edges, 22 distinct after merge, 0/12 windows infeasible, 7s
+  constrained: 56 raw edges, 22 distinct after merge, 0/12 windows infeasible, 6s
       attended     (User) 'user' -> (Event) 'charity 5k run'   x3 conf<=0.96 valid_at=2023/05/30 (Tue) 13:53
       attended     (User) 'user' -> (Event) 'rest day'   x2 conf<=0.56 valid_at=2023/05/30 (Tue) 13:53
       attended     (User) 'user' -> (Event) 'tennis tournament'   x3 conf<=0.98 valid_at=2023/05/30 (Tue) 13:53
@@ -665,29 +697,29 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
 [multi-session] How many items of clothing do I need to pick up or return from a store?
   expected answer: 3
   constrained:
-    window   0  1557ch  FEASIBLE    14e  18r    0.9s
-    window   1  1607ch  FEASIBLE    13e   8r    0.9s
-    window   2  1457ch  FEASIBLE     5e   0r    0.5s
-    window   3  1509ch  FEASIBLE    11e   1r    0.6s
+    window   0  1557ch  FEASIBLE    14e  18r    0.8s
+    window   1  1607ch  FEASIBLE    13e   8r    0.8s
+    window   2  1457ch  FEASIBLE     5e   0r    0.4s
+    window   3  1509ch  FEASIBLE    11e   1r    0.5s
     window   4  1589ch  FEASIBLE    16e  11r    0.6s
     window   5  1653ch  FEASIBLE    17e  13r    0.8s
     window   6  1621ch  FEASIBLE    17e   3r    0.7s
     window   7  1673ch  FEASIBLE    19e   3r    0.5s
-    window   8  1681ch  FEASIBLE    15e   2r    0.6s
+    window   8  1681ch  FEASIBLE    15e   2r    0.5s
     window   9  1653ch  FEASIBLE    12e  12r    0.6s
     window  10  1072ch  FEASIBLE    11e   5r    0.4s
   permissive:
-    window   0  1557ch  FEASIBLE    14e  18r    0.8s
-    window   1  1607ch  FEASIBLE    13e   8r    0.9s
-    window   2  1457ch  FEASIBLE     5e   0r    0.4s
-    window   3  1509ch  FEASIBLE    11e   1r    0.6s
-    window   4  1589ch  FEASIBLE    16e  11r    0.6s
-    window   5  1653ch  FEASIBLE    17e  13r    0.8s
-    window   6  1621ch  FEASIBLE    17e   3r    0.7s
-    window   7  1673ch  FEASIBLE    19e   3r    0.5s
+    window   0  1557ch  FEASIBLE    14e  15r    1.4s
+    window   1  1607ch  FEASIBLE    12e   6r    1.0s
+    window   2  1457ch  FEASIBLE     6e   2r    0.6s
+    window   3  1509ch  FEASIBLE    12e   2r    0.8s
+    window   4  1589ch  FEASIBLE    17e   6r    0.7s
+    window   5  1653ch  FEASIBLE    17e   8r    0.6s
+    window   6  1621ch  FEASIBLE    16e   0r    0.6s
+    window   7  1673ch  FEASIBLE    19e   4r    0.5s
     window   8  1681ch  FEASIBLE    15e   2r    0.6s
-    window   9  1653ch  FEASIBLE    12e  12r    0.6s
-    window  10  1072ch  FEASIBLE    11e   5r    0.5s
+    window   9  1653ch  FEASIBLE    12e   9r    0.9s
+    window  10  1072ch  FEASIBLE    11e   4r    1.1s
 
   --- answer_afa9873b_2 (2023/02/15 (Wed) 06:30, 14373 chars) ---
   constrained: 76 raw edges, 28 distinct after merge, 0/11 windows infeasible, 7s
@@ -719,57 +751,77 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
       purchased    (User) 'user' -> (Product) 'shoes'   x2 conf<=0.88 valid_at=2023/02/15 (Wed) 06:30
       purchased    (User) 'user' -> (Product) 'new top'   x1 conf<=0.54 valid_at=2023/02/15 (Wed) 06:30
       visited      (Person) 'assistant' -> (Location) 'closet'   x4 conf<=0.95 valid_at=2023/02/15 (Wed) 06:30
-  permissive: 76 raw edges, 28 distinct after merge, 0/11 windows infeasible, 7s
+  permissive: 58 raw edges, 32 distinct after merge, 0/11 windows infeasible, 9s
       attended     (User) 'i' -> (Event) 'meeting'   x1 conf<=0.93 valid_at=2023/02/15 (Wed) 06:30
       attended     (User) 'user' -> (Event) 'meeting'   x2 conf<=0.97 valid_at=2023/02/15 (Wed) 06:30
-      lives_in     (User) 'user' -> (Location) 'closet'   x8 conf<=0.91 valid_at=2023/02/15 (Wed) 06:30
-      owns         (Person) 'blazer' -> (Product) 'blazer'   x4 conf<=0.75 valid_at=2023/02/15 (Wed) 06:30
-      owns         (User) 'i' -> (Product) 'navy blue blazer'   x3 conf<=0.81 valid_at=2023/02/15 (Wed) 06:30
-      owns         (User) 'i' -> (Product) 'short-sleeve shirts'   x3 conf<=0.77 valid_at=2023/02/15 (Wed) 06:30
+      lives_in     (User) 'user' -> (Location) 'closet'   x3 conf<=0.91 valid_at=2023/02/15 (Wed) 06:30
+      lives_in     (User) 'user' -> (Topic) 'closet'   x2 conf<=0.87 valid_at=2023/02/15 (Wed) 06:30
+      located_in   (Activity) 'dry cleaning' -> (Location) 'closet'   x1 conf<=0.92 valid_at=2023/02/15 (Wed) 06:30
+      owns         (Product) 'blazer' -> (Product) 'blazer'   x2 conf<=0.75 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'i' -> (Product) 'navy blue blazer'   x1 conf<=0.81 valid_at=2023/02/15 (Wed) 06:30
       owns         (User) 'user' -> (Product) 'navy blue blazer'   x3 conf<=0.93 valid_at=2023/02/15 (Wed) 06:30
       owns         (User) 'user' -> (Product) 'shoes'   x2 conf<=0.85 valid_at=2023/02/15 (Wed) 06:30
-      owns         (User) 'user' -> (Product) 'tops'   x5 conf<=0.73 valid_at=2023/02/15 (Wed) 06:30
-      owns         (User) 'user' -> (Product) 'short-sleeve shirts'   x3 conf<=0.82 valid_at=2023/02/15 (Wed) 06:30
-      owns         (User) 'user' -> (Product) 'black jeans'   x5 conf<=0.89 valid_at=2023/02/15 (Wed) 06:30
-      practices    (Person) 'assistant' -> (Activity) 'decluttering'   x1 conf<=0.35 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'user' -> (Product) 'tops'   x2 conf<=0.73 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'user' -> (Product) 'short-sleeve shirts'   x2 conf<=0.82 valid_at=2023/02/15 (Wed) 06:30
+      owns         (User) 'user' -> (Product) 'black jeans'   x4 conf<=0.89 valid_at=2023/02/15 (Wed) 06:30
       practices    (User) 'i' -> (Activity) 'decluttering'   x2 conf<=0.51 valid_at=2023/02/15 (Wed) 06:30
       practices    (User) 'user' -> (Activity) 'decluttering'   x4 conf<=0.73 valid_at=2023/02/15 (Wed) 06:30
-      prefers      (Person) 'blazer' -> (Product) 'garment bag'   x1 conf<=0.55 valid_at=2023/02/15 (Wed) 06:30
-      prefers      (User) 'i' -> (Product) 'clothes'   x1 conf<=0.64 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (Product) 'blazer' -> (Product) 'garment bag'   x2 conf<=0.56 valid_at=2023/02/15 (Wed) 06:30
       prefers      (User) 'i' -> (Topic) 'clothes'   x1 conf<=0.71 valid_at=2023/02/15 (Wed) 06:30
-      prefers      (User) 'i' -> (Product) 'short-sleeve shirts'   x3 conf<=0.39 valid_at=2023/02/15 (Wed) 06:30
-      prefers      (User) 'user' -> (Product) 'clothes'   x1 conf<=0.67 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (Product) 'it' -> (Product) 'it'   x1 conf<=0.59 valid_at=2023/02/15 (Wed) 06:30
       prefers      (User) 'user' -> (Topic) 'clothes'   x1 conf<=0.73 valid_at=2023/02/15 (Wed) 06:30
-      prefers      (User) 'user' -> (Product) 'tops'   x5 conf<=0.91 valid_at=2023/02/15 (Wed) 06:30
-      prefers      (User) 'user' -> (Product) 'short-sleeve shirts'   x3 conf<=0.62 valid_at=2023/02/15 (Wed) 06:30
-      purchased    (User) 'i' -> (Product) 'navy blue blazer'   x3 conf<=0.84 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'user' -> (Product) 'tops'   x2 conf<=0.91 valid_at=2023/02/15 (Wed) 06:30
+      prefers      (User) 'user' -> (Product) 'short-sleeve shirts'   x2 conf<=0.62 valid_at=2023/02/15 (Wed) 06:30
+      purchased    (Product) 'black jeans' -> (Product) 'white button-down shirt'   x2 conf<=0.55 valid_at=2023/02/15 (Wed) 06:30
+      purchased    (User) 'i' -> (Product) 'navy blue blazer'   x1 conf<=0.84 valid_at=2023/02/15 (Wed) 06:30
       purchased    (User) 'i' -> (Product) 'new top'   x1 conf<=0.51 valid_at=2023/02/15 (Wed) 06:30
       purchased    (User) 'user' -> (Product) 'navy blue blazer'   x3 conf<=0.93 valid_at=2023/02/15 (Wed) 06:30
       purchased    (User) 'user' -> (Product) 'shoes'   x2 conf<=0.88 valid_at=2023/02/15 (Wed) 06:30
       purchased    (User) 'user' -> (Product) 'new top'   x1 conf<=0.54 valid_at=2023/02/15 (Wed) 06:30
-      visited      (Person) 'assistant' -> (Location) 'closet'   x4 conf<=0.95 valid_at=2023/02/15 (Wed) 06:30
-  diff: 26 shared claims, 0 constrained-only, 0 permissive-only, 0 shared-but-retyped
+      studied      (User) 'user' -> (Product) 'tops'   x1 conf<=0.49 valid_at=2023/02/15 (Wed) 06:30
+      visited      (Person) 'assistant' -> (Location) 'closet'   x1 conf<=0.95 valid_at=2023/02/15 (Wed) 06:30
+      visited      (Person) 'assistant' -> (Topic) 'closet'   x1 conf<=0.95 valid_at=2023/02/15 (Wed) 06:30
+      visited      (User) 'user' -> (Event) 'meeting'   x1 conf<=0.95 valid_at=2023/02/15 (Wed) 06:30
+      works_for    (Person) 'assistant' -> (User) 'user'   x2 conf<=0.97 valid_at=2023/02/15 (Wed) 06:30
+      works_for    (Person) 'assistant' -> (Topic) 'closet'   x2 conf<=0.88 valid_at=2023/02/15 (Wed) 06:30
+  diff: 23 shared claims, 3 constrained-only, 7 permissive-only, 4 shared-but-retyped
+      ~ lives_in('user' -> 'closet'): (User,Topic) permissive -> (User,Location) constrained
+      ~ owns('blazer' -> 'blazer'): (Product,Product) permissive -> (Person,Product) constrained
+      ~ prefers('blazer' -> 'garment bag'): (Product,Product) permissive -> (Person,Product) constrained
+      ~ visited('assistant' -> 'closet'): (Person,Topic) permissive -> (Person,Location) constrained
+    constrained-only (beam reallocation, if #348's claim holds):
+      + owns('i' -> 'short-sleeve shirts')
+      + practices('assistant' -> 'decluttering')
+      + prefers('i' -> 'short-sleeve shirts')
+    permissive-only (suppressed by the domain/range constraint):
+      - located_in('dry cleaning' -> 'closet')
+      - prefers('it' -> 'it')
+      - purchased('black jeans' -> 'white button-down shirt')
+      - studied('user' -> 'tops')
+      - visited('user' -> 'meeting')
+      - works_for('assistant' -> 'closet')
+      - works_for('assistant' -> 'user')
 
 ====================================================================================================
 [multi-session] How many items of clothing do I need to pick up or return from a store?
   expected answer: 3
   constrained:
-    window   0  1649ch  FEASIBLE    30e  31r    1.2s
-    window   1  1772ch  FEASIBLE    22e   7r    1.2s
+    window   0  1649ch  FEASIBLE    30e  31r    1.1s
+    window   1  1772ch  FEASIBLE    22e   7r    1.1s
     window   2  1662ch  FEASIBLE    23e   7r    0.6s
     window   3  1834ch  FEASIBLE    26e  13r    0.6s
-    window   4  1794ch  FEASIBLE    25e  18r    0.7s
+    window   4  1794ch  FEASIBLE    25e  18r    0.8s
     window   5  1746ch  FEASIBLE    27e   5r    0.5s
     window   6  1781ch  FEASIBLE    26e  22r    0.7s
     window   7  1407ch  FEASIBLE    16e   0r    0.4s
   permissive:
-    window   0  1649ch  FEASIBLE    30e  31r    1.1s
-    window   1  1772ch  FEASIBLE    22e   7r    1.1s
-    window   2  1662ch  FEASIBLE    23e   7r    0.8s
-    window   3  1834ch  FEASIBLE    26e  13r    0.8s
-    window   4  1794ch  FEASIBLE    25e  18r    0.8s
-    window   5  1746ch  FEASIBLE    27e   5r    0.5s
-    window   6  1781ch  FEASIBLE    26e  22r    0.8s
+    window   0  1649ch  FEASIBLE    30e   9r    0.8s
+    window   1  1772ch  FEASIBLE    22e   8r    0.7s
+    window   2  1662ch  FEASIBLE    24e  11r    0.9s
+    window   3  1834ch  FEASIBLE    26e   9r    0.7s
+    window   4  1794ch  FEASIBLE    25e  10r    0.8s
+    window   5  1746ch  FEASIBLE    27e   6r    0.6s
+    window   6  1781ch  FEASIBLE    26e  12r    0.9s
     window   7  1407ch  FEASIBLE    16e   0r    0.4s
 
   --- answer_afa9873b_3 (2023/02/15 (Wed) 11:13, 11553 chars) ---
@@ -807,62 +859,96 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
       visited      (User) 'i' -> (Location) 'gym'   x2 conf<=0.76 valid_at=2023/02/15 (Wed) 11:13
       visited      (User) 'user' -> (Location) 'gym'   x1 conf<=0.53 valid_at=2023/02/15 (Wed) 11:13
       works_for    (Person) 'zara' -> (Organization) 'zara'   x1 conf<=0.65 valid_at=2023/02/15 (Wed) 11:13
-  permissive: 103 raw edges, 33 distinct after merge, 0/8 windows infeasible, 6s
-      attended     (Person) 'sister' -> (Event) 'outdoor concert'   x3 conf<=0.68 valid_at=2023/02/15 (Wed) 11:13
+  permissive: 65 raw edges, 36 distinct after merge, 0/8 windows infeasible, 6s
+      attended     (Product) 'green sweater' -> (Event) 'outdoor concert'   x2 conf<=0.87 valid_at=2023/02/15 (Wed) 11:13
+      attended     (User) 'i' -> (Location) 'gym'   x1 conf<=0.70 valid_at=2023/02/15 (Wed) 11:13
       attended     (User) 'user' -> (Event) 'outdoor concert'   x1 conf<=0.92 valid_at=2023/02/15 (Wed) 11:13
-      attended     (User) 'user' -> (Event) 'concert'   x8 conf<=0.98 valid_at=2023/02/15 (Wed) 11:13
-      lives_in     (User) 'user' -> (Location) 'closet'   x10 conf<=0.98 valid_at=2023/02/15 (Wed) 11:13
-      owns         (Person) 'assistant' -> (Product) 'boots'   x1 conf<=0.36 valid_at=2023/02/15 (Wed) 11:13
-      owns         (User) 'i' -> (Product) 'yoga pants'   x8 conf<=0.88 valid_at=2023/02/15 (Wed) 11:13
-      owns         (Person) 'i' -> (Product) 'yoga pants'   x4 conf<=0.56 valid_at=2023/02/15 (Wed) 11:13
+      attended     (User) 'user' -> (Event) 'concert'   x3 conf<=0.98 valid_at=2023/02/15 (Wed) 11:13
+      attended     (User) 'user' -> (Location) 'gym'   x1 conf<=0.69 valid_at=2023/02/15 (Wed) 11:13
+      knows        (Person) 'assistant' -> (Product) 'green sweater'   x2 conf<=0.74 valid_at=2023/02/15 (Wed) 11:13
+      knows        (Person) 'i' -> (Topic) 'tlc'   x1 conf<=0.53 valid_at=2023/02/15 (Wed) 11:13
+      knows        (User) 'user' -> (Topic) 'tlc'   x1 conf<=0.61 valid_at=2023/02/15 (Wed) 11:13
+      lives_in     (User) 'user' -> (Location) 'closet'   x2 conf<=0.98 valid_at=2023/02/15 (Wed) 11:13
+      lives_in     (User) 'user' -> (Topic) 'closet'   x2 conf<=0.74 valid_at=2023/02/15 (Wed) 11:13
+      located_in   (Product) 'boots' -> (Organization) 'zara'   x2 conf<=0.67 valid_at=2023/02/15 (Wed) 11:13
+      located_in   (Location) 'closet' -> (Location) 'closet'   x1 conf<=0.42 valid_at=2023/02/15 (Wed) 11:13
+      located_in   (Product) 'winter clothes' -> (Topic) 'closet'   x2 conf<=0.74 valid_at=2023/02/15 (Wed) 11:13
+      owns         (User) 'i' -> (Product) 'yoga pants'   x2 conf<=0.88 valid_at=2023/02/15 (Wed) 11:13
       owns         (User) 'user' -> (Product) 'green sweater'   x2 conf<=0.98 valid_at=2023/02/15 (Wed) 11:13
-      owns         (User) 'user' -> (Product) 'yellow sundress'   x5 conf<=0.91 valid_at=2023/02/15 (Wed) 11:13
-      owns         (User) 'user' -> (Product) 'boots'   x8 conf<=0.91 valid_at=2023/02/15 (Wed) 11:13
+      owns         (User) 'user' -> (Product) 'yellow sundress'   x2 conf<=0.91 valid_at=2023/02/15 (Wed) 11:13
+      owns         (User) 'user' -> (Product) 'boots'   x4 conf<=0.91 valid_at=2023/02/15 (Wed) 11:13
       practices    (User) 'i' -> (Activity) 'laundry day'   x2 conf<=0.63 valid_at=2023/02/15 (Wed) 11:13
-      practices    (User) 'user' -> (Activity) 'washing'   x1 conf<=0.09 valid_at=2023/02/15 (Wed) 11:13
-      practices    (User) 'user' -> (Activity) 'laundry day'   x1 conf<=0.53 valid_at=2023/02/15 (Wed) 11:13
-      purchased    (User) 'user' -> (Product) 'tops'   x2 conf<=0.61 valid_at=2023/02/15 (Wed) 11:13
-      purchased    (User) 'user' -> (Product) 'bottoms'   x2 conf<=0.64 valid_at=2023/02/15 (Wed) 11:13
-      purchased    (User) 'user' -> (Product) 'dresses'   x2 conf<=0.68 valid_at=2023/02/15 (Wed) 11:13
-      purchased    (User) 'user' -> (Product) 'outerwear'   x1 conf<=0.53 valid_at=2023/02/15 (Wed) 11:13
-      purchased    (User) 'user' -> (Product) 'socks'   x1 conf<=0.57 valid_at=2023/02/15 (Wed) 11:13
-      purchased    (User) 'user' -> (Product) 'accessories'   x1 conf<=0.55 valid_at=2023/02/15 (Wed) 11:13
-      purchased    (User) 'user' -> (Product) 'winter clothes'   x5 conf<=0.68 valid_at=2023/02/15 (Wed) 11:13
-      purchased    (User) 'user' -> (Product) 'gloves'   x1 conf<=0.52 valid_at=2023/02/15 (Wed) 11:13
-      purchased    (User) 'user' -> (Product) 'shoes'   x2 conf<=0.64 valid_at=2023/02/15 (Wed) 11:13
+      prefers      (Product) 'yellow sundress' -> (Product) 'yellow sundress'   x1 conf<=0.50 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'dresses'   x1 conf<=0.68 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'winter clothes'   x2 conf<=0.68 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'shoes'   x1 conf<=0.64 valid_at=2023/02/15 (Wed) 11:13
       purchased    (User) 'user' -> (Product) 'green sweater'   x2 conf<=0.96 valid_at=2023/02/15 (Wed) 11:13
-      purchased    (User) 'user' -> (Product) 'yellow sundress'   x3 conf<=0.89 valid_at=2023/02/15 (Wed) 11:13
-      purchased    (User) 'user' -> (Product) 'boots'   x8 conf<=0.89 valid_at=2023/02/15 (Wed) 11:13
-      studied      (Person) 'assistant' -> (Topic) 'tlc'   x1 conf<=0.67 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'yellow sundress'   x2 conf<=0.89 valid_at=2023/02/15 (Wed) 11:13
+      purchased    (User) 'user' -> (Product) 'boots'   x4 conf<=0.89 valid_at=2023/02/15 (Wed) 11:13
       studied      (Person) 'i' -> (Topic) 'tlc'   x1 conf<=0.71 valid_at=2023/02/15 (Wed) 11:13
       studied      (User) 'user' -> (Topic) 'style'   x2 conf<=0.84 valid_at=2023/02/15 (Wed) 11:13
       studied      (User) 'user' -> (Topic) 'tlc'   x1 conf<=0.80 valid_at=2023/02/15 (Wed) 11:13
-      visited      (Person) 'assistant' -> (Location) 'closet'   x10 conf<=0.99 valid_at=2023/02/15 (Wed) 11:13
+      visited      (Person) 'assistant' -> (Location) 'closet'   x2 conf<=0.99 valid_at=2023/02/15 (Wed) 11:13
       visited      (User) 'i' -> (Location) 'gym'   x2 conf<=0.76 valid_at=2023/02/15 (Wed) 11:13
-      visited      (User) 'user' -> (Location) 'gym'   x1 conf<=0.53 valid_at=2023/02/15 (Wed) 11:13
-      works_for    (Person) 'zara' -> (Organization) 'zara'   x1 conf<=0.65 valid_at=2023/02/15 (Wed) 11:13
-  diff: 32 shared claims, 0 constrained-only, 0 permissive-only, 0 shared-but-retyped
+      visited      (Person) 'sister' -> (Event) 'outdoor concert'   x2 conf<=0.83 valid_at=2023/02/15 (Wed) 11:13
+      visited      (User) 'user' -> (Event) 'outdoor concert'   x1 conf<=0.89 valid_at=2023/02/15 (Wed) 11:13
+      visited      (User) 'user' -> (Event) 'concert'   x3 conf<=0.88 valid_at=2023/02/15 (Wed) 11:13
+      works_for    (Person) 'assistant' -> (Location) 'closet'   x2 conf<=0.98 valid_at=2023/02/15 (Wed) 11:13
+      works_for    (Person) 'assistant' -> (User) 'user'   x1 conf<=0.99 valid_at=2023/02/15 (Wed) 11:13
+      works_for    (Organization) 'zara' -> (Organization) 'zara'   x2 conf<=0.65 valid_at=2023/02/15 (Wed) 11:13
+  diff: 20 shared claims, 12 constrained-only, 15 permissive-only, 2 shared-but-retyped
+      ~ lives_in('user' -> 'closet'): (User,Topic) permissive -> (User,Location) constrained
+      ~ works_for('zara' -> 'zara'): (Organization,Organization) permissive -> (Person,Organization) constrained
+    constrained-only (beam reallocation, if #348's claim holds):
+      + attended('sister' -> 'outdoor concert')
+      + owns('assistant' -> 'boots')
+      + practices('user' -> 'laundry day')
+      + practices('user' -> 'washing')
+      + purchased('user' -> 'accessories')
+      + purchased('user' -> 'bottoms')
+      + purchased('user' -> 'gloves')
+      + purchased('user' -> 'outerwear')
+      + purchased('user' -> 'socks')
+      + purchased('user' -> 'tops')
+      + studied('assistant' -> 'tlc')
+      + visited('user' -> 'gym')
+    permissive-only (suppressed by the domain/range constraint):
+      - attended('green sweater' -> 'outdoor concert')
+      - attended('i' -> 'gym')
+      - attended('user' -> 'gym')
+      - knows('assistant' -> 'green sweater')
+      - knows('i' -> 'tlc')
+      - knows('user' -> 'tlc')
+      - located_in('boots' -> 'zara')
+      - located_in('closet' -> 'closet')
+      - located_in('winter clothes' -> 'closet')
+      - prefers('yellow sundress' -> 'yellow sundress')
+      - visited('sister' -> 'outdoor concert')
+      - visited('user' -> 'concert')
+      - visited('user' -> 'outdoor concert')
+      - works_for('assistant' -> 'closet')
+      - works_for('assistant' -> 'user')
 
 ====================================================================================================
 [multi-session] How many items of clothing do I need to pick up or return from a store?
   expected answer: 3
   constrained:
-    window   0  1610ch  FEASIBLE    24e  45r    1.8s
-    window   1  1767ch  FEASIBLE    19e  10r    0.9s
-    window   2  1773ch  FEASIBLE    16e   2r    0.6s
+    window   0  1610ch  FEASIBLE    24e  45r    1.7s
+    window   1  1767ch  FEASIBLE    19e  10r    0.8s
+    window   2  1773ch  FEASIBLE    16e   2r    0.5s
     window   3  1617ch  FEASIBLE    14e   6r    0.7s
     window   4  1650ch  FEASIBLE    19e   8r    0.5s
     window   5  1742ch  FEASIBLE    18e   8r    0.7s
-    window   6  1720ch  FEASIBLE    19e   0r    0.5s
+    window   6  1720ch  FEASIBLE    19e   0r    0.4s
     window   7   729ch  FEASIBLE     9e   0r    0.3s
   permissive:
-    window   0  1610ch  FEASIBLE    24e  19r    1.5s
-    window   1  1767ch  FEASIBLE    19e  11r    1.2s
-    window   2  1773ch  FEASIBLE    16e   5r    1.3s
-    window   3  1617ch  FEASIBLE    14e   7r    1.2s
-    window   4  1650ch  FEASIBLE    20e   8r    0.9s
-    window   5  1742ch  FEASIBLE    18e   9r    1.0s
-    window   6  1720ch  FEASIBLE    19e   0r    0.5s
+    window   0  1610ch  FEASIBLE    24e  19r    1.4s
+    window   1  1767ch  FEASIBLE    19e  11r    1.1s
+    window   2  1773ch  FEASIBLE    16e   5r    1.2s
+    window   3  1617ch  FEASIBLE    14e   7r    0.9s
+    window   4  1650ch  FEASIBLE    20e   8r    0.8s
+    window   5  1742ch  FEASIBLE    18e   9r    0.9s
+    window   6  1720ch  FEASIBLE    19e   0r    0.4s
     window   7   729ch  FEASIBLE     9e   0r    0.3s
 
   --- answer_afa9873b_1 (2023/02/15 (Wed) 16:19, 10656 chars) ---
@@ -894,7 +980,7 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
       visited      (User) 'user' -> (Location) 'closet'   x9 conf<=0.91 valid_at=2023/02/15 (Wed) 16:19
       works_for    (Person) 'assistant' -> (Organization) "levi's"   x2 conf<=0.98 valid_at=2023/02/15 (Wed) 16:19
       works_for    (Person) 'assistant' -> (Organization) 'phone'   x3 conf<=0.91 valid_at=2023/02/15 (Wed) 16:19
-  permissive: 59 raw edges, 37 distinct after merge, 0/8 windows infeasible, 8s
+  permissive: 59 raw edges, 37 distinct after merge, 0/8 windows infeasible, 7s
       attended     (User) 'user' -> (Event) 'dinner date'   x1 conf<=0.87 valid_at=2023/02/15 (Wed) 16:19
       knows        (Person) 'assistant' -> (Organization) 'zara'   x1 conf<=0.78 valid_at=2023/02/15 (Wed) 16:19
       knows        (User) 'user' -> (Organization) "levi's"   x2 conf<=0.68 valid_at=2023/02/15 (Wed) 16:19
@@ -955,22 +1041,22 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
   expected answer: 'The user would prefer responses that suggest resources specifically tailored to Adobe Premiere Pro, especially those that delve into its advanced settings. They might not prefer general video editing resources or resources related to other video editing software.'
   constrained:
     window   0  1922ch  FEASIBLE    25e  12r    0.7s
-    window   1  2017ch  FEASIBLE    27e   3r    0.6s
+    window   1  2017ch  FEASIBLE    27e   3r    0.5s
     window   2  1854ch  FEASIBLE    22e   0r    0.5s
-    window   3  2024ch  FEASIBLE    25e   0r    0.5s
-    window   4  1889ch  FEASIBLE    13e   3r    0.7s
+    window   3  2024ch  FEASIBLE    25e   0r    0.4s
+    window   4  1889ch  FEASIBLE    13e   3r    0.6s
     window   5  1896ch  FEASIBLE    25e   0r    0.5s
-    window   6  1935ch  FEASIBLE    18e   2r    0.7s
-    window   7  1722ch  FEASIBLE    19e   0r    0.6s
-    window   8  1708ch  FEASIBLE    15e   0r    0.5s
+    window   6  1935ch  FEASIBLE    18e   2r    0.6s
+    window   7  1722ch  FEASIBLE    19e   0r    0.5s
+    window   8  1708ch  FEASIBLE    15e   0r    0.4s
     window   9  1742ch  FEASIBLE    16e   0r    0.5s
-    window  10  1849ch  FEASIBLE    17e   2r    0.6s
-    window  11  1788ch  FEASIBLE    26e   5r    0.7s
-    window  12  1829ch  FEASIBLE    30e   0r    0.5s
-    window  13  1933ch  FEASIBLE    27e  31r    1.3s
+    window  10  1849ch  FEASIBLE    17e   2r    0.5s
+    window  11  1788ch  FEASIBLE    26e   5r    0.5s
+    window  12  1829ch  FEASIBLE    30e   0r    0.4s
+    window  13  1933ch  FEASIBLE    27e  31r    1.2s
     window  14  1902ch  FEASIBLE    18e  12r    1.0s
     window  15  1805ch  FEASIBLE    23e   2r    0.5s
-    window  16   838ch  FEASIBLE    10e   0r    0.3s
+    window  16   838ch  FEASIBLE    10e   0r    0.2s
   permissive:
     window   0  1922ch  FEASIBLE    25e   6r    0.7s
     window   1  2017ch  FEASIBLE    27e   7r    0.7s
@@ -981,8 +1067,8 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
     window   6  1935ch  FEASIBLE    21e   5r    0.7s
     window   7  1722ch  FEASIBLE    19e   0r    0.5s
     window   8  1708ch  FEASIBLE    16e   3r    0.5s
-    window   9  1742ch  FEASIBLE    20e   8r    0.9s
-    window  10  1849ch  FEASIBLE    17e   7r    0.7s
+    window   9  1742ch  FEASIBLE    20e   8r    0.8s
+    window  10  1849ch  FEASIBLE    17e   7r    0.6s
     window  11  1788ch  FEASIBLE    26e   8r    0.7s
     window  12  1829ch  FEASIBLE    30e   0r    0.4s
     window  13  1933ch  FEASIBLE    27e  10r    0.9s
@@ -991,7 +1077,7 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
     window  16   838ch  FEASIBLE    10e   0r    0.3s
 
   --- answer_edb03329 (2023/05/21 (Sun) 14:21, 25673 chars) ---
-  constrained: 72 raw edges, 16 distinct after merge, 0/17 windows infeasible, 10s
+  constrained: 72 raw edges, 16 distinct after merge, 0/17 windows infeasible, 9s
       owns         (User) 'user' -> (Product) 'lumetri color panel'   x2 conf<=0.81 valid_at=2023/05/21 (Sun) 14:21
       practices    (Person) 'beginners' -> (Activity) 'color grading'   x10 conf<=0.82 valid_at=2023/05/21 (Sun) 14:21
       practices    (User) 'user' -> (Activity) 'practice'   x1 conf<=0.66 valid_at=2023/05/21 (Sun) 14:21
@@ -1091,17 +1177,17 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
     window   2  1439ch  FEASIBLE    21e   0r    0.4s
     window   3  1433ch  FEASIBLE    23e   0r    0.4s
     window   4  1462ch  FEASIBLE    23e   0r    0.4s
-    window   5   869ch  FEASIBLE    26e  19r    1.2s
+    window   5   869ch  FEASIBLE    26e  19r    1.1s
   permissive:
     window   0  1370ch  FEASIBLE    21e   0r    0.5s
     window   1  1357ch  FEASIBLE    18e   0r    0.4s
     window   2  1439ch  FEASIBLE    21e   0r    0.4s
-    window   3  1433ch  FEASIBLE    23e   0r    0.5s
+    window   3  1433ch  FEASIBLE    23e   0r    0.4s
     window   4  1462ch  FEASIBLE    23e   0r    0.4s
-    window   5   869ch  FEASIBLE    26e   3r    0.5s
+    window   5   869ch  FEASIBLE    26e   3r    0.4s
 
   --- answer_sharegpt_5Lzox6N_0 (2023/05/24 (Wed) 02:46, 6731 chars) ---
-  constrained: 25 raw edges, 12 distinct after merge, 0/6 windows infeasible, 4s
+  constrained: 25 raw edges, 12 distinct after merge, 0/6 windows infeasible, 3s
       attended     (Person) 'adam' -> (Event) 'saturday'   x3 conf<=0.27 valid_at=2023/05/24 (Wed) 02:46
       attended     (Person) 'adam' -> (Event) 'sunday'   x3 conf<=0.27 valid_at=2023/05/24 (Wed) 02:46
       attended     (Person) 'adam' -> (Event) 'tuesday'   x1 conf<=0.24 valid_at=2023/05/24 (Wed) 02:46
@@ -1135,9 +1221,9 @@ vocabulary: 8 entity types, 11 relation types; permissive arm expands every endp
 
 ====================================================================================================
 TOTALS
-  constrained   1004 raw edges    304 distinct    0/109 windows infeasible      75s
-  permissive     672 raw edges    328 distinct    0/109 windows infeasible      78s
-  diff: 214 shared (14 of them retyped), 85 constrained-only, 103 permissive-only
-  permissive edges violating the declared domain/range: 194
+  constrained   1004 raw edges    304 distinct    0/109 windows infeasible      71s
+  permissive     567 raw edges    334 distinct    0/109 windows infeasible      76s
+  diff: 180 shared (21 of them retyped), 119 constrained-only, 142 permissive-only
+  permissive edges violating the declared domain/range: 266
 
-wrote /private/tmp/claude-501/-Users-antejavor-repos-ai-toolkit/f5836d8b-9af7-40ee-9eb0-e2964666ce6c/scratchpad/constrained_edges_output.json
+wrote /Users/antejavor/repos/ai-toolkit-worktrees/gliner2-constrained-edges/unstructured2graph/docs/prototypes/gliner2-constrained-edges/constrained_edges_output.json

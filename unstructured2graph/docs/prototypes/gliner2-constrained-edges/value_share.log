@@ -1,0 +1,124 @@
+92 answerable of 100 (8 abstention)
+
+  stated literal          18    20% of answerable
+  date arithmetic         18    20% of answerable
+  sum of stated values     8     9% of answerable
+  count of edges          12    13% of answerable
+  named entity            21    23% of answerable
+  narrative               15    16% of answerable
+
+  a value of some kind     56    61%
+  needs a value slot       44    48%   (stated + date arithmetic + sums)
+  relations + identity     12    13%   (count of edges)
+
+  date arithmetic: 8 'how long ago' (valid_at suffices), 10 'between X and Y' (need the discussed event's date)
+
+  type                          stated     date      sum    count    named narrativ abstenti
+  multi-session                      1        0        7       11        0        5        2
+  temporal-reasoning                 0       18        1        0        2        3        2
+  knowledge-update                   9        0        0        1        3        1        2
+  single-session-user                5        0        0        0        8        0        2
+  single-session-assistant           3        0        0        0        8        0        0
+  single-session-preference          0        0        0        0        0        6        0
+
+every answer, with its class:
+    0 abstention            multi-session              Q: How many different museums or galleries did I visit in Decem  A: 0. You did not mention visitng any museum in Decem
+    1 stated literal        single-session-assistant   Q: I'm checking our previous chat about the shift rotation shee  A: Admon was assigned to the 8 am - 4 pm (Day Shift)
+    2 date arithmetic       temporal-reasoning         Q: How many months have passed since I last visited a museum wi  A: 5
+    3 abstention            knowledge-update           Q: How many Italian restaurants have I tried in my city?  A: The information provided is not enough. You mentio
+    4 named entity          single-session-assistant   Q: In our previous chat, you suggested 'sexual compulsions' and  A: I suggested 'sexual fixations', 'problematic sexua
+    5 date arithmetic       temporal-reasoning         Q: How many days passed between my visit to the Museum of Moder  A: 7 days. 8 days (including the last day) is also ac
+    6 narrative             single-session-preference  Q: Can you recommend some recent publications or conferences th  A: The user would prefer suggestions related to recen
+    7 named entity          knowledge-update           Q: Where do I initially keep my old sneakers?  A: under my bed
+    8 count of edges        multi-session              Q: How many pieces of furniture did I buy, assemble, sell, or f  A: 4
+    9 count of edges        multi-session              Q: How many different types of food delivery services have I us  A: 3
+   10 narrative             multi-session              Q: How many weddings have I attended in this year?  A: I attended three weddings. The couples were Rachel
+   11 sum of stated values  multi-session              Q: How much total money have I spent on bike-related expenses s  A: $185
+   12 narrative             temporal-reasoning         Q: What is the order of the three events: 'I signed up for the   A: First, I used a Buy One Get One Free coupon on Luv
+   13 abstention            temporal-reasoning         Q: Which task did I complete first, fixing the fence or purchas  A: The information provided is not enough. You mentio
+   14 narrative             knowledge-update           Q: Is my mom using the same grocery list method as me?  A: Yes.
+   15 count of edges        multi-session              Q: How many different cuisines have I learned to cook or tried   A: 4
+   16 named entity          knowledge-update           Q: Where did I go on my most recent family trip?  A: Paris
+   17 narrative             multi-session              Q: How many different doctors did I visit?  A: I visited three different doctors: a primary care
+   18 named entity          temporal-reasoning         Q: What is the order of the six museums I visited from earliest  A: Science Museum, Museum of Contemporary Art, Metrop
+   19 date arithmetic       temporal-reasoning         Q: How many weeks ago did I meet up with my aunt and receive th  A: 4
+   20 date arithmetic       temporal-reasoning         Q: How many weeks passed between the day I bought my new tennis  A: 1 week
+   21 stated literal        single-session-user        Q: What color did I repaint my bedroom walls?  A: a lighter shade of gray
+   22 sum of stated values  multi-session              Q: How many weeks did it take me to watch all the Marvel Cinema  A: 3.5 weeks
+   23 stated literal        single-session-assistant   Q: I'm going back to our previous conversation about the childr  A: The Plesiosaur had a blue scaly body.
+   24 narrative             temporal-reasoning         Q: What is the order of the three trips I took in the past thre  A: I went on a day hike to Muir Woods National Monume
+   25 count of edges        multi-session              Q: How many different types of citrus fruits have I used in my   A: 3
+   26 named entity          knowledge-update           Q: Where did Rachel move to after her recent relocation?  A: the suburbs
+   27 sum of stated values  multi-session              Q: How many days did I take social media breaks in total?  A: 17 days
+   28 date arithmetic       temporal-reasoning         Q: How many weeks ago did I attend the friends and family sale   A: 2
+   29 stated literal        knowledge-update           Q: How many bikes do I currently own?  A: 4
+   30 stated literal        knowledge-update           Q: How many engineers do I lead when I just started my new role  A: When you just started your new role as Senior Soft
+   31 sum of stated values  multi-session              Q: How many days did I spend on camping trips in the United Sta  A: 8 days.
+   32 named entity          single-session-user        Q: Where did I buy my new tennis racket from?  A: the sports store downtown
+   33 abstention            single-session-user        Q: What is the name of my hamster?  A: You did not mention this information. You mentione
+   34 abstention            multi-session              Q: How many times did I bake egg tarts in the past two weeks?  A: The information provided is not enough. You did no
+   35 named entity          single-session-user        Q: What play did I attend at the local community theater?  A: The Glass Menagerie
+   36 date arithmetic       temporal-reasoning         Q: How many months have passed since I participated in two char  A: 2
+   37 date arithmetic       temporal-reasoning         Q: How many days passed between the day I cancelled my FarmFres  A: 54 days. 55 days (including the last day) is also
+   38 abstention            temporal-reasoning         Q: How long have I been working before I started my current job  A: The information provided is not enough. From the i
+   39 stated literal        knowledge-update           Q: What was my personal best time in the charity 5K run?  A: 25 minutes and 50 seconds (or 25:50)
+   40 count of edges        multi-session              Q: How many tanks do I currently have, including the one I set   A: 3
+   41 count of edges        knowledge-update           Q: How many Korean restaurants have I tried in my city?  A: four
+   42 stated literal        knowledge-update           Q: How often do I attend yoga classes to help with my anxiety?  A: Three times a week.
+   43 count of edges        multi-session              Q: How many plants did I acquire in the last month?  A: 3
+   44 narrative             temporal-reasoning         Q: Which three events happened in the order from first to last:  A: First, I helped my friend prepare the nursery, the
+   45 stated literal        knowledge-update           Q: How many hours have I spent on my abstract ocean sculpture?  A: 10-12 hours
+   46 stated literal        single-session-user        Q: How much did I spend on a designer handbag?  A: $800
+   47 date arithmetic       temporal-reasoning         Q: How many days had passed since I finished reading 'The Seven  A: 18 days. 19 days (including the last day) is also
+   48 date arithmetic       temporal-reasoning         Q: How many days passed between the day I attended the gardenin  A: 6 days. 7 days (including the last day) is also ac
+   49 abstention            single-session-user        Q: How long have I been collecting vintage films?  A: You did not mention this information. You mentione
+   50 sum of stated values  multi-session              Q: What is the total amount I spent on luxury items in the past  A: $2,500
+   51 named entity          single-session-user        Q: What is the name of the playlist I created on Spotify?  A: Summer Vibes
+   52 stated literal        knowledge-update           Q: How many pages of 'A Short History of Nearly Everything' hav  A: 220
+   53 date arithmetic       temporal-reasoning         Q: How many weeks ago did I start using the cashback app 'Ibott  A: 3 weeks ago
+   54 stated literal        single-session-assistant   Q: I wanted to follow up on our previous conversation about bin  A: 38 subjects
+   55 named entity          single-session-assistant   Q: I wanted to check back on our previous conversation about Ne  A: Doc Martin
+   56 stated literal        multi-session              Q: What time did I go to bed on the day before I had a doctor's  A: 2 AM
+   57 narrative             single-session-preference  Q: Can you suggest a hotel for my upcoming trip to Miami?  A: The user would prefer suggestions of hotels in Mia
+   58 narrative             single-session-preference  Q: Can you suggest some accessories that would complement my cu  A: The user would prefer suggestions of Sony-compatib
+   59 narrative             multi-session              Q: How many properties did I view before making an offer on the  A: I viewed four properties before making an offer on
+   60 stated literal        single-session-user        Q: How long is my daily commute to work?  A: 45 minutes each way
+   61 abstention            knowledge-update           Q: How many engineers do I lead when I just started my new role  A: The information provided is not enough. You mentio
+   62 narrative             single-session-preference  Q: Can you recommend some interesting cultural events happening  A: The user would prefer responses that suggest cultu
+   63 date arithmetic       temporal-reasoning         Q: How many days did I spend on my solo camping trip to Yosemit  A: 2 days. 3 days (including the last day) is also ac
+   64 sum of stated values  temporal-reasoning         Q: How many weeks in total do I spent on reading 'The Nightinga  A: 2 weeks for 'The Nightingale', 4 weeks for 'Sapien
+   65 named entity          temporal-reasoning         Q: Which event happened first, my cousin's wedding or Michael's  A: Michael's engagement party
+   66 named entity          single-session-assistant   Q: I remember you told me about the refining processes at CITGO  A: Atmospheric distillation, fluid catalytic cracking
+   67 sum of stated values  multi-session              Q: How many hours have I spent playing games in total?  A: 140 hours
+   68 named entity          single-session-assistant   Q: I'm planning to revisit Orlando. I was wondering if you coul  A: The Sugar Factory at Icon Park.
+   69 date arithmetic       temporal-reasoning         Q: How many days passed between the day I started watering my h  A: 24 days. 25 days (including the last day) is also
+   70 stated literal        knowledge-update           Q: What day of the week do I take a cocktail-making class?  A: Friday
+   71 stated literal        knowledge-update           Q: What was the amount I was pre-approved for when I got my mor  A: $400,000
+   72 named entity          single-session-assistant   Q: Can you remind me of the name of the romantic Italian restau  A: Roscioli
+   73 named entity          single-session-user        Q: Where did I redeem a $5 coupon on coffee creamer?  A: Target
+   74 named entity          single-session-user        Q: What degree did I graduate with?  A: Business Administration
+   75 named entity          single-session-assistant   Q: I'm planning my trip to Amsterdam again and I was wondering,  A: International Budget Hostel
+   76 stated literal        single-session-user        Q: How many playlists do I have on Spotify?  A: 20
+   77 stated literal        knowledge-update           Q: How many short stories have I written since I started writin  A: seven
+   78 date arithmetic       temporal-reasoning         Q: How many months ago did I attend the Seattle International F  A: 4 months ago
+   79 narrative             multi-session              Q: How many movie festivals that I attended?  A: I attended four movie festivals.
+   80 date arithmetic       temporal-reasoning         Q: How many days ago did I buy a smoker?  A: 10 days ago. 11 days (including the last day) is a
+   81 named entity          single-session-user        Q: What was my last name before I changed it?  A: Johnson
+   82 date arithmetic       temporal-reasoning         Q: How many days ago did I attend a baking class at a local cul  A: 21 days. 22 days (including the last day) is also
+   83 count of edges        multi-session              Q: How many babies were born to friends and family members in t  A: 5
+   84 date arithmetic       temporal-reasoning         Q: How many days ago did I attend the Maundy Thursday service a  A: 4 days.
+   85 date arithmetic       temporal-reasoning         Q: How many days passed between the day I started playing along  A: 6 days. 7 days (including the last day) is also ac
+   86 sum of stated values  multi-session              Q: How many hours in total did I spend driving to my three road  A: 15 hours for getting to the three destinations (or
+   87 stated literal        single-session-user        Q: When did I volunteer at the local animal shelter's fundraisi  A: February 14th
+   88 count of edges        multi-session              Q: How many times did I bake something in the past two weeks?  A: 4
+   89 count of edges        multi-session              Q: How many items of clothing do I need to pick up or return fr  A: 3
+   90 narrative             multi-session              Q: How many model kits have I worked on or bought?  A: I have worked on or bought five model kits. The sc
+   91 count of edges        multi-session              Q: How many projects have I led or am currently leading?  A: 2
+   92 named entity          single-session-assistant   Q: I'm planning to visit Bandung again and I was wondering if y  A: Miss Bee Providore
+   93 narrative             single-session-preference  Q: Can you recommend a show or movie for me to watch tonight?  A: The user would prefer recommendations for stand-up
+   94 count of edges        multi-session              Q: How many different museums or galleries did I visit in the m  A: 2
+   95 narrative             single-session-preference  Q: Can you recommend some resources where I can learn more abou  A: The user would prefer responses that suggest resou
+   96 named entity          single-session-assistant   Q: I think we discussed work from home jobs for seniors earlier  A: Transcriptionist.
+   97 date arithmetic       temporal-reasoning         Q: How many days ago did I meet Emma?  A: 9 days ago. 10 days (including the last day) is al
+   98 named entity          single-session-user        Q: Where do I take yoga classes?  A: Serenity Yoga
+   99 named entity          single-session-user        Q: What was my previous occupation?  A: Marketing specialist at a small startup

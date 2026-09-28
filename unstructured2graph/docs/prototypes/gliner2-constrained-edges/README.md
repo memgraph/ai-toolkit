@@ -14,7 +14,18 @@ python sample_corpus.py          # writes sample_sessions.json (regenerable, not
 python constrained_edges.py      # writes full_run.log + constrained_edges_output.json (1.1MB, not committed)
 python analyze.py                # writes analysis.log
 python feasibility_probe.py      # the feasible=False reachability table in section D
+python role_gate.py              # #358: every User endpoint mapped to its speaker (section E)
+python prefix_ablation.py        # #358: the role prefix on vs off (section E)
+python value_share.py            # #361: answer shapes across all 100 committed goldens (section F)
+python value_types.py            # #361: value-shaped entity types, recall and cost (section F)
 ```
+
+> **Correction (#350 comment).** The first run of this prototype built each arm's
+> schema fresh per session, and gliner2 2.0.0 caches compiled schemas under
+> `repr(schema)` — a memory address (#365). In 3 of 10 sessions the permissive arm was
+> silently served the constrained compilation. `constrained_edges.py` now builds each
+> arm's schema once and holds it, and every figure below is from that clean run. The
+> constrained arm was unaffected; the permissive arm and the diff changed.
 
 10 evidence sessions (157K chars) from `longmemeval-s`, one per question type, run
 twice through a typed `JointSchema`: **constrained** (real `start_labels`/`end_labels`)
@@ -25,13 +36,13 @@ Full triples: `full_run.log`. Aggregates: `analysis.log`. Raw: `constrained_edge
 
 | | constrained | permissive |
 |---|---|---|
-| raw edges | 1004 | 672 |
-| distinct after merge | 304 | 328 |
+| raw edges | 1004 | 567 |
+| distinct after merge | 304 | 334 |
 | windows infeasible | 0/109 | 0/109 |
-| wall clock | 75s | 78s |
-| shared claims | 214 (14 of them endpoint-retyped) | |
-| only in one arm | 85 constrained-only | 103 permissive-only |
-| would fail #348's post-hoc check | — | 194 (29% of raw) |
+| wall clock | 69s | 74s |
+| shared claims | 180 (21 of them endpoint-retyped) | |
+| only in one arm | 119 constrained-only | 142 permissive-only |
+| would fail #348's post-hoc check | — | 266 (47% of raw) |
 
 ---
 
@@ -64,7 +75,7 @@ answer is a *value* (a time, a count, a shift), not a link between two entities.
 
 ---
 
-## B. What the constraint bought (85 constrained-only claims)
+## B. What the constraint bought (119 constrained-only claims)
 
 Suppressed junk that the permissive arm emitted, all flagged by the same binding
 compiled post-hoc:
@@ -84,7 +95,7 @@ filters" claim, and they are not junk:
     practices(User:'me' -> Activity:'tracking expenses')
     owns(User:'user' -> Product:'produce')
 
-And 14 claims survive both arms with **different endpoint typing**, which a text-keyed
+And 21 claims survive both arms with **different endpoint typing**, which a text-keyed
 diff would miss entirely:
 
     practices('user' -> 'routine'):          (User,Topic) permissive -> (User,Activity) constrained
@@ -115,7 +126,7 @@ Trello"* — false memories from an art-history digression and an assistant sugg
 
 ### C2. Relation labels are not discriminated
 
-14% of distinct pairs in the constrained arm (21% permissive) carry more than one label:
+14% of distinct pairs in the constrained arm (25% permissive) carry more than one label:
 
     'user' -> 'meal prep':    practices, prefers, studied
     'user' -> 'yoga pants':   owns, prefers, purchased
@@ -167,3 +178,35 @@ Probe over 12 windows (`feasibility_probe.py`):
 - Also learned: a `symmetric` relation is **rejected at schema build** unless its head and
   tail type sets are compatible (`ValueError: symmetric relations require compatible head
   and tail types`) — a symmetric relation type forces domain == range in the plan's model.
+
+---
+
+## E. #358 — which `User` mentions are the user
+
+`role_gate.py` maps every constrained-arm `User` endpoint back to the turn it came from
+(spans are document coordinates; the document is replayed from the corpus's per-turn
+roles and verified byte-exact). Every third party lands in an assistant turn; the
+assistant's own first person accounts for 10 more false collapses than surface form can
+see. Only *first-person surface AND user-role turn, plus `you` in an assistant turn*
+scores zero in both directions — `role_gate.log`.
+
+`prefix_ablation.py` reruns the constrained arm with and without the `role: ` prefix.
+The prefixed arm must reproduce 1004 raw edges (asserted). Removing the prefix gives
+47% more raw edges but fewer distinct claims, nearly doubles the `User` type's gate
+failures (105/599 -> 390/1222), and puts third parties inside user turns for the first
+time (0 -> 13) — `prefix_ablation.log`.
+
+## F. #361 — values, not links
+
+`value_share.py` classifies all 100 committed goldens by hand (printed for audit): 61%
+of answerable questions want a value, but only 48% need a value *slot* — 12 are counts
+of edges — and 10 of the 18 date questions need the discussed event's date, which
+`valid_at` is not (#364) — `value_share.log`.
+
+`value_types.py` adds `Duration`/`Quantity`/`Money`/`Date`/`TimeWindow` and eight
+relations into them, against this prototype's vocabulary as a baseline that must
+reproduce 1004 raw edges (asserted, with zero value relations leaking into it — the
+guard that caught #365). `25:50` lands as `personal_best(User -> Duration)`; Admon's
+shift window is extracted but never bound; no MoMA event date is extracted; the original
+eleven relations lose ~8% of distinct claims; roughly half the value edges are junk; 35%
+of value keys cover more than one span — `value_types.log`.

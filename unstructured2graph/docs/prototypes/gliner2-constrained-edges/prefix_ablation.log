@@ -1,0 +1,273 @@
+/Users/antejavor/repos/ai-toolkit/.claude/worktrees/backend-comparison/.venv/lib/python3.11/site-packages/gliner2/models/boundary/model.py:2101: UserWarning: Checkpoint uses legacy list-valued extra_special_tokens metadata; loading with compatibility normalization.
+  tokenizer = load_extractor_tokenizer(tokenizer_source)
+/Users/antejavor/repos/ai-toolkit/.claude/worktrees/backend-comparison/.venv/lib/python3.11/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+/Users/antejavor/repos/ai-toolkit/.claude/worktrees/backend-comparison/.venv/lib/python3.11/site-packages/gliner2/models/boundary/model.py:1147: RuntimeWarning: Encoder rejected attn_implementation='sdpa'; falling back to 'eager' (DebertaV2Model does not support an attention implementation through torch.nn.functional.scaled_dot_product_attention yet. Please request the support for this architecture: https://github.com/huggingface/transformers/issues/28005. If you believe this error is a bug, please open an issue in Transformers GitHub repository and load your model with the argument `attn_implementation="eager"` meanwhile. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="eager")`)
+  self.encoder = self._load_encoder(
+    window   0  1876ch  FEASIBLE    27e   0r    0.5s
+    window   1  1785ch  FEASIBLE    21e   2r    0.5s
+    window   2  1884ch  FEASIBLE    16e   4r    0.5s
+    window   3  1905ch  FEASIBLE    20e   2r    0.5s
+    window   4  1900ch  FEASIBLE    25e   3r    0.5s
+    window   5  1972ch  FEASIBLE    20e   2r    0.4s
+    window   6  1874ch  FEASIBLE    26e   0r    0.4s
+    window   7  1819ch  FEASIBLE    19e   5r    0.5s
+    window   8  1763ch  FEASIBLE    27e   0r    0.4s
+    window   9  1660ch  FEASIBLE    28e  35r    1.5s
+    window  10  1704ch  FEASIBLE    27e  16r    0.6s
+    window  11  1098ch  FEASIBLE    28e   2r    0.6s
+  answer_280352e9              prefixed   17915ch    71 edges   7.0s
+    window   0  1867ch  FEASIBLE    29e   4r    0.5s
+    window   1  1798ch  FEASIBLE    26e  22r    1.3s
+    window   2  1888ch  FEASIBLE    17e  11r    0.6s
+    window   3  1916ch  FEASIBLE    21e   4r    0.7s
+    window   4  1920ch  FEASIBLE    28e   0r    0.5s
+    window   5  1970ch  FEASIBLE    20e   1r    0.4s
+    window   6  1848ch  FEASIBLE    29e   2r    0.6s
+    window   7  1825ch  FEASIBLE    24e  17r    0.9s
+    window   8  1803ch  FEASIBLE    27e   0r    0.5s
+    window   9  1705ch  FEASIBLE    28e  29r    1.1s
+    window  10  1695ch  FEASIBLE    27e  45r    1.6s
+    window  11   996ch  FEASIBLE    29e   8r    0.9s
+  answer_280352e9              bare       17813ch   143 edges   9.6s
+    window   0  1557ch  FEASIBLE    14e  18r    0.9s
+    window   1  1607ch  FEASIBLE    13e   8r    0.9s
+    window   2  1457ch  FEASIBLE     5e   0r    0.5s
+    window   3  1509ch  FEASIBLE    11e   1r    0.6s
+    window   4  1589ch  FEASIBLE    16e  11r    0.6s
+    window   5  1653ch  FEASIBLE    17e  13r    0.9s
+    window   6  1621ch  FEASIBLE    17e   3r    0.7s
+    window   7  1673ch  FEASIBLE    19e   3r    0.6s
+    window   8  1681ch  FEASIBLE    15e   2r    0.7s
+    window   9  1653ch  FEASIBLE    12e  12r    0.6s
+    window  10  1072ch  FEASIBLE    11e   5r    0.5s
+  answer_afa9873b_2            prefixed   14373ch    76 edges   7.4s
+    window   0  1561ch  FEASIBLE    18e  16r    0.9s
+    window   1  1616ch  FEASIBLE    11e   3r    0.9s
+    window   2  1471ch  FEASIBLE    14e  10r    0.6s
+    window   3  1507ch  FEASIBLE    11e   3r    0.6s
+    window   4  1607ch  FEASIBLE    22e  53r    2.2s
+    window   5  1665ch  FEASIBLE    23e  40r    1.7s
+    window   6  1612ch  FEASIBLE    16e   4r    0.7s
+    window   7  1709ch  FEASIBLE    24e  17r    0.7s
+    window   8  1663ch  FEASIBLE    20e   9r    0.7s
+    window   9  1629ch  FEASIBLE    20e  20r    0.8s
+    window  10   955ch  FEASIBLE    11e   0r    0.4s
+  answer_afa9873b_2            bare       14271ch   175 edges  10.2s
+    window   0  1649ch  FEASIBLE    30e  31r    1.2s
+    window   1  1772ch  FEASIBLE    22e   7r    1.1s
+    window   2  1662ch  FEASIBLE    23e   7r    0.6s
+    window   3  1834ch  FEASIBLE    26e  13r    0.7s
+    window   4  1794ch  FEASIBLE    25e  18r    0.8s
+    window   5  1746ch  FEASIBLE    27e   5r    0.5s
+    window   6  1781ch  FEASIBLE    26e  22r    0.7s
+    window   7  1407ch  FEASIBLE    16e   0r    0.4s
+  answer_afa9873b_3            prefixed   11553ch   103 edges   6.1s
+    window   0  1648ch  FEASIBLE    29e  66r    2.9s
+    window   1  1778ch  FEASIBLE    26e  26r    2.9s
+    window   2  1662ch  FEASIBLE    28e  33r    1.0s
+    window   3  1831ch  FEASIBLE    27e   9r    0.5s
+    window   4  1792ch  FEASIBLE    31e  74r    3.2s
+    window   5  1767ch  FEASIBLE    25e   3r    0.5s
+    window   6  1767ch  FEASIBLE    27e  25r    0.9s
+    window   7  1301ch  FEASIBLE    12e   0r    0.5s
+  answer_afa9873b_3            bare       11451ch   236 edges  12.5s
+    window   0  1610ch  FEASIBLE    24e  45r    1.8s
+    window   1  1767ch  FEASIBLE    19e  10r    0.9s
+    window   2  1773ch  FEASIBLE    16e   2r    0.5s
+    window   3  1617ch  FEASIBLE    14e   6r    0.8s
+    window   4  1650ch  FEASIBLE    19e   8r    0.6s
+    window   5  1742ch  FEASIBLE    18e   8r    1.1s
+    window   6  1720ch  FEASIBLE    19e   0r    0.7s
+    window   7   729ch  FEASIBLE     9e   0r    0.5s
+  answer_afa9873b_1            prefixed   10656ch    79 edges   7.0s
+    window   0  1607ch  FEASIBLE    24e  36r    2.1s
+    window   1  1765ch  FEASIBLE    19e   3r    1.0s
+    window   2  1775ch  FEASIBLE    15e   0r    0.5s
+    window   3  1648ch  FEASIBLE    19e  24r    1.2s
+    window   4  1657ch  FEASIBLE    16e   4r    0.6s
+    window   5  1739ch  FEASIBLE    21e  31r    1.1s
+    window   6  1720ch  FEASIBLE    22e   0r    0.5s
+    window   7   641ch  FEASIBLE     8e   0r    0.3s
+  answer_afa9873b_1            bare       10571ch    98 edges   7.4s
+    window   0  1922ch  FEASIBLE    25e  12r    0.8s
+    window   1  2017ch  FEASIBLE    27e   3r    0.7s
+    window   2  1854ch  FEASIBLE    22e   0r    0.5s
+    window   3  2024ch  FEASIBLE    25e   0r    0.5s
+    window   4  1889ch  FEASIBLE    13e   3r    0.7s
+    window   5  1896ch  FEASIBLE    25e   0r    0.5s
+    window   6  1935ch  FEASIBLE    18e   2r    0.6s
+    window   7  1722ch  FEASIBLE    19e   0r    0.5s
+    window   8  1708ch  FEASIBLE    15e   0r    0.5s
+    window   9  1742ch  FEASIBLE    16e   0r    0.5s
+    window  10  1849ch  FEASIBLE    17e   2r    0.5s
+    window  11  1788ch  FEASIBLE    26e   5r    0.6s
+    window  12  1829ch  FEASIBLE    30e   0r    0.7s
+    window  13  1933ch  FEASIBLE    27e  31r    1.4s
+    window  14  1902ch  FEASIBLE    18e  12r    1.1s
+    window  15  1805ch  FEASIBLE    23e   2r    0.5s
+    window  16   838ch  FEASIBLE    10e   0r    0.3s
+  answer_edb03329              prefixed   25673ch    72 edges  10.8s
+    window   0  1914ch  FEASIBLE    26e  20r    1.2s
+    window   1  2005ch  FEASIBLE    24e   6r    0.7s
+    window   2  1870ch  FEASIBLE    22e   3r    0.7s
+    window   3  2032ch  FEASIBLE    17e   0r    0.5s
+    window   4  1899ch  FEASIBLE    13e   3r    0.7s
+    window   5  1904ch  FEASIBLE    25e   0r    0.4s
+    window   6  1938ch  FEASIBLE    18e   4r    0.8s
+    window   7  1712ch  FEASIBLE    20e   0r    0.5s
+    window   8  1717ch  FEASIBLE    18e   0r    0.5s
+    window   9  1718ch  FEASIBLE    23e   3r    0.7s
+    window  10  1892ch  FEASIBLE    24e   2r    0.7s
+    window  11  1796ch  FEASIBLE    31e   0r    0.5s
+    window  12  1859ch  FEASIBLE    22e   0r    0.5s
+    window  13  1924ch  FEASIBLE    30e  33r    1.9s
+    window  14  1944ch  FEASIBLE    20e   6r    1.0s
+    window  15  1790ch  FEASIBLE    10e   0r    0.5s
+    window  16   668ch  FEASIBLE     9e   0r    0.2s
+  answer_edb03329              bare       25520ch    80 edges  11.8s
+    window   0  1843ch  FEASIBLE    19e   9r    0.8s
+    window   1  1980ch  FEASIBLE    22e   6r    0.6s
+    window   2  1869ch  FEASIBLE    23e  20r    0.8s
+    window   3  1873ch  FEASIBLE    27e  40r    1.4s
+    window   4  1905ch  FEASIBLE    19e  21r    0.8s
+    window   5  1998ch  FEASIBLE    26e  13r    0.9s
+    window   6  2021ch  FEASIBLE    27e  46r    1.6s
+    window   7  2077ch  FEASIBLE    17e  21r    0.9s
+    window   8  1968ch  FEASIBLE    23e  13r    0.8s
+    window   9  1923ch  FEASIBLE    30e  33r    2.1s
+    window  10  1964ch  FEASIBLE    20e  77r    3.9s
+    window  11  1912ch  FEASIBLE    23e  29r    1.5s
+    window  12  1003ch  FEASIBLE    16e   5r    0.8s
+  answer_d00ba6d0_1            prefixed   20357ch   333 edges  16.9s
+    window   0  1850ch  FEASIBLE    21e   8r    0.7s
+    window   1  1977ch  FEASIBLE    23e  12r    0.7s
+    window   2  1868ch  FEASIBLE    24e  22r    0.9s
+    window   3  1852ch  FEASIBLE    28e  44r    1.5s
+    window   4  1899ch  FEASIBLE    19e  26r    1.0s
+    window   5  1987ch  FEASIBLE    25e  16r    0.8s
+    window   6  2016ch  FEASIBLE    27e  43r    1.6s
+    window   7  2074ch  FEASIBLE    16e  17r    0.7s
+    window   8  1970ch  FEASIBLE    22e  46r    2.0s
+    window   9  1936ch  FEASIBLE    29e  33r    1.7s
+    window  10  1924ch  FEASIBLE    23e  43r    1.4s
+    window  11  1870ch  FEASIBLE    27e  50r    2.2s
+    window  12   869ch  FEASIBLE    15e   6r    0.4s
+  answer_d00ba6d0_1            bare       20255ch   366 edges  15.5s
+    window   0  1863ch  FEASIBLE    18e   0r    0.4s
+    window   1  1968ch  FEASIBLE    19e   6r    0.5s
+    window   2  1952ch  FEASIBLE    22e  10r    0.6s
+    window   3  1898ch  FEASIBLE    18e   0r    0.5s
+    window   4  1981ch  FEASIBLE    24e  15r    0.9s
+    window   5  1903ch  FEASIBLE    29e  19r    1.2s
+    window   6  2087ch  FEASIBLE    27e  35r    1.4s
+    window   7  1897ch  FEASIBLE    20e   3r    0.6s
+    window   8  1891ch  FEASIBLE    23e   5r    0.5s
+    window   9  1921ch  FEASIBLE    31e   6r    0.6s
+    window  10   416ch  FEASIBLE     9e   0r    0.3s
+  answer_d00ba6d0_2            prefixed   16538ch    99 edges   7.5s
+    window   0  1864ch  FEASIBLE    18e   0r    0.5s
+    window   1  1966ch  FEASIBLE    22e  14r    0.6s
+    window   2  1962ch  FEASIBLE    22e  44r    1.5s
+    window   3  1904ch  FEASIBLE    18e   0r    0.5s
+    window   4  1996ch  FEASIBLE    28e   9r    0.8s
+    window   5  1903ch  FEASIBLE    28e  13r    1.0s
+    window   6  2054ch  FEASIBLE    29e  31r    1.2s
+    window   7  1889ch  FEASIBLE    21e   4r    0.7s
+    window   8  1879ch  FEASIBLE    24e   5r    0.7s
+    window   9  1928ch  FEASIBLE    32e   7r    0.8s
+  answer_d00ba6d0_2            bare       16453ch   127 edges   8.2s
+    window   0  1720ch  FEASIBLE    25e  31r    1.2s
+    window   1  1815ch  FEASIBLE    22e   0r    0.5s
+    window   2  1794ch  FEASIBLE    18e   7r    0.6s
+    window   3  1787ch  FEASIBLE    22e   0r    0.5s
+    window   4  1844ch  FEASIBLE    19e   4r    0.6s
+    window   5  1787ch  FEASIBLE    20e   1r    0.5s
+    window   6  1935ch  FEASIBLE    21e   6r    0.6s
+    window   7  1806ch  FEASIBLE    23e   0r    0.5s
+    window   8  1831ch  FEASIBLE    19e  18r    0.8s
+    window   9  1694ch  FEASIBLE    21e  16r    0.7s
+    window  10  1209ch  FEASIBLE    21e   7r    0.5s
+  answer_a25d4a91_1            prefixed   16143ch    90 edges   6.8s
+    window   0  1725ch  FEASIBLE    27e  16r    0.9s
+    window   1  1805ch  FEASIBLE    24e   0r    0.6s
+    window   2  1800ch  FEASIBLE    14e  35r    1.2s
+    window   3  1769ch  FEASIBLE    25e   0r    0.5s
+    window   4  1839ch  FEASIBLE    20e  12r    0.7s
+    window   5  1802ch  FEASIBLE    22e   1r    0.5s
+    window   6  1933ch  FEASIBLE    20e  14r    0.6s
+    window   7  1803ch  FEASIBLE    24e   0r    0.4s
+    window   8  1850ch  FEASIBLE    24e  34r    1.1s
+    window   9  1726ch  FEASIBLE    22e   0r    0.4s
+    window  10  1085ch  FEASIBLE    21e   7r    0.4s
+  answer_a25d4a91_1            bare       16041ch   119 edges   7.3s
+    window   0  1827ch  FEASIBLE    24e   2r    0.5s
+    window   1  1854ch  FEASIBLE    23e   0r    0.4s
+    window   2  1900ch  FEASIBLE    19e   7r    0.5s
+    window   3  1864ch  FEASIBLE    17e   0r    0.5s
+    window   4  1708ch  FEASIBLE    15e   1r    0.5s
+    window   5  1701ch  FEASIBLE    21e  14r    0.7s
+    window   6  1807ch  FEASIBLE    15e   5r    0.6s
+    window   7  1823ch  FEASIBLE    21e  12r    0.7s
+    window   8  1677ch  FEASIBLE    21e   4r    0.5s
+    window   9  1845ch  FEASIBLE    21e   6r    0.7s
+    window  10  1844ch  FEASIBLE    18e   0r    0.5s
+    window  11  1163ch  FEASIBLE    20e   5r    0.6s
+  answer_a25d4a91_2            prefixed   17689ch    56 edges   6.7s
+    window   0  1833ch  FEASIBLE    25e   4r    0.6s
+    window   1  1844ch  FEASIBLE    23e   0r    0.4s
+    window   2  1911ch  FEASIBLE    18e   4r    0.6s
+    window   3  1869ch  FEASIBLE    19e   0r    0.6s
+    window   4  1672ch  FEASIBLE    19e   0r    0.5s
+    window   5  1700ch  FEASIBLE    18e  12r    0.6s
+    window   6  1796ch  FEASIBLE    14e  12r    0.6s
+    window   7  1798ch  FEASIBLE    23e  41r    1.3s
+    window   8  1692ch  FEASIBLE    21e  12r    1.1s
+    window   9  1847ch  FEASIBLE    22e  21r    0.9s
+    window  10  1835ch  FEASIBLE    21e   0r    0.5s
+    window  11  1064ch  FEASIBLE    17e   4r    0.6s
+  answer_a25d4a91_2            bare       17587ch   110 edges   8.3s
+    window   0  1370ch  FEASIBLE    21e   6r    0.7s
+    window   1  1357ch  FEASIBLE    18e   0r    0.4s
+    window   2  1439ch  FEASIBLE    21e   0r    0.5s
+    window   3  1433ch  FEASIBLE    23e   0r    0.5s
+    window   4  1462ch  FEASIBLE    23e   0r    0.5s
+    window   5   869ch  FEASIBLE    26e  19r    1.2s
+  answer_sharegpt_5Lzox6N_0    prefixed    6731ch    25 edges   3.9s
+    window   0  1359ch  FEASIBLE    20e   0r    0.5s
+    window   1  1361ch  FEASIBLE    19e   0r    0.5s
+    window   2  1463ch  FEASIBLE    15e   0r    0.6s
+    window   3  1360ch  FEASIBLE    28e   0r    0.5s
+    window   4  1417ch  FEASIBLE    21e   6r    0.6s
+    window   5   774ch  FEASIBLE    29e  19r    1.3s
+  answer_sharegpt_5Lzox6N_0    bare        6612ch    25 edges   4.0s
+
+                                                prefixed      bare
+  raw edges                                         1004      1479
+  distinct typed claims, all sessions                292       269
+  distinct typed claims, per session                 304       276
+  User endpoints                                     599      1222
+  pass the #358 gate                                 494       832
+  fail the gate                                      105       390
+  third parties inside user turns                      0        13
+  'i' as User                                        135       932
+  third parties typed User                            83       251
+  answer-bearing (single-session-user)                 3         4
+  answer-bearing (single-session-preference)          46        25
+
+  prefixed: third parties inside user turns
+
+  bare: third parties inside user turns
+      works_for(User:'Lumetri Color Panel' -> Organization:'Premiere Pro')
+      works_for(User:'Lumetri Color Panel' -> Organization:'Premiere Pro')
+      practices(User:'Frida' -> Activity:'art')
+      practices(User:'Frida' -> Activity:'art')
+      practices(User:'Frida' -> Activity:'art')
+      practices(User:'Frida' -> Activity:'art')
+      practices(User:'Frida' -> Activity:'art')
+      knows(User:'Frida' -> Person:'retablos')
+      lives_in(User:'Frida' -> Location:'France')
+      owns(User:'Frida' -> Product:'Ex-votos')
+      owns(User:'Frida' -> Product:'ex-votos')
+      purchased(User:'Frida' -> Product:'Ex-votos')
+      purchased(User:'Frida' -> Product:'ex-votos')

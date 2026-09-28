@@ -1,0 +1,37 @@
+document reconstruction verified byte-exact for 10 sessions
+
+constrained arm: 599 User endpoints, by surface class x speaking role
+
+  class                   user turn  assistant turn   total
+  first-person                  492              10     502
+  literal 'assistant'             0              12      12
+  'you'                           0               2       2
+  third party                     0              83      83
+
+  per surface form:
+    'user'           user=364  assistant=0
+    'i'              user=125  assistant=10   also typed {'Person': 8}
+    'kahlo'          user=0    assistant=38
+    'frida'          user=0    assistant=33   also typed {'Person': 103, 'Event': 1}
+    'assistant'      user=0    assistant=12   also typed {'Person': 36}
+    'frida kahlo'    user=0    assistant=11   also typed {'Person': 82}
+    'me'             user=3    assistant=0
+    'you'            user=0    assistant=2
+    'magdy'          user=0    assistant=1
+
+  gate                                           collapsed  not-the-user admitted  real-user missed
+  #347 as decided: collapse all                        599                    105                 0
+  surface form only                                    502                     10                 2
+  role only                                            492                      0                 2
+  surface AND role                                     492                      0                 2
+  surface AND role, plus 'you'@assistant               494                      0                 0
+
+  first person inside assistant turns (distinct spans, with context):
+    ... and tools until you find what you like best. |  | Good luck with your meal prep journey, and I hope these recommendations help you get started!...
+        edge: purchased('I' -> "chef's knife")
+    ...so important to focus on your technique and training. Good luck with your tournament, and I hope you make it to the quarterfinals!...
+        edge: owns('I' -> 'Synthetic strings')
+    ... again next winter?** If it's a high-quality, classic item, consider keeping it. | 3. **Can I layer it with other pieces to create multiple outfits?** I...
+        edge: practices('I' -> 'decluttering')
+    ...: Think back to last summer and ask yourself: | 	* Did I wear this shirt frequently? | 	* Did I enjoy wearing it? | 	* Was it a favorite or did I struggle t...
+        edge: prefers('I' -> 'short-sleeve shirts')
