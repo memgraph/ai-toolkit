@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process"
-import { Plugin } from "@opencode/plugin"
+
+// No @opencode/plugin import: OpenCode resolves imports relative to this file,
+// where that package is not installed, and Plugin.define is only an identity
+// helper, so exporting the plugin object directly keeps this dependency-free.
 
 // argv, spawned directly: no shell, so no login profile or ambient env is
 // sourced between OpenCode and the hook (ADR 0002).
@@ -22,7 +25,7 @@ function capture(payload) {
   })
 }
 
-export default Plugin.define({
+export default {
   id: "memgraph.agent-context-graph",
   async setup(ctx) {
     const registrations = []
@@ -81,4 +84,4 @@ export default Plugin.define({
       await Promise.all(registrations.map((registration) => registration.dispose()))
     }
   },
-})
+}

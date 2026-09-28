@@ -366,7 +366,12 @@ _RUNTIME_CASES = [
                 "tool_name": "bash",
                 "tool_input": _LS,
                 "tool_use_id": "t1",
-                "tool_result": "README.md",
+                # V2's result shape, as captured from a live OpenCode 2.0.18 session.
+                "tool_result": {
+                    "output": {"exit": 0, "truncated": False, "output": "README.md", "status": "completed"},
+                    "content": [{"type": "text", "text": "README.md"}],
+                    "metadata": {"status": "completed", "truncated": False, "exit": 0},
+                },
                 "is_error": False,
             },
         ],

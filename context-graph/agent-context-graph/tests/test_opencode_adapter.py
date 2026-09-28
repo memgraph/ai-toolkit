@@ -60,7 +60,9 @@ def test_opencode_init_installs_v2_plugin_with_capture_command(tmp_path):
 
     plugin = (tmp_path / ".opencode" / "plugins" / "agent-context-graph" / "index.js").read_text()
     assert 'id: "memgraph.agent-context-graph"' in plugin
-    assert "Plugin.define" in plugin
+    assert "export default {" in plugin
+    # Only Node built-ins: OpenCode resolves imports next to the plugin file.
+    assert 'from "@opencode/plugin"' not in plugin
     assert 'const command = ["capture", "--strict"]' in plugin
     assert '"-lc"' not in plugin
     assert "ctx.tool.hook" in plugin
@@ -88,3 +90,30 @@ def test_opencode_records_completed_assistant_text_and_ignores_unmapped_events()
     assert message.role == "assistant"
     assert message.content == "done"
     assert isinstance(session_end, SessionEndEvent)
+
+
+def test_opencode_tool_result_records_model_text_and_flags_nonzero_exit():
+    link = AgentLink()
+    connector = _RecordingConnector()
+    link.add_connector(connector)
+    adapter = OpenCodeHooksAdapter(link)
+
+    (tool_end,) = adapter.handle_payload(
+        {
+            "hook_event_name": "tool.execute.after",
+            "session_id": "open-1",
+            "tool_name": "shell",
+            "tool_input": {"command": "false"},
+            "tool_use_id": "call-2",
+            "tool_result": {
+                "output": {"exit": 1, "truncated": False, "output": "", "status": "completed"},
+                "content": [{"type": "text", "text": "<exited with code 1>"}],
+                "metadata": {"exit": 1},
+            },
+            "is_error": False,
+        }
+    )
+
+    assert isinstance(tool_end, ToolEndEvent)
+    assert tool_end.result == "<exited with code 1>"
+    assert tool_end.is_error is True

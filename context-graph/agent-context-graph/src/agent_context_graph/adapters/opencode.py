@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import shlex
 from importlib import resources
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from agent_context_graph.adapters._spec import (
     EventContext,
@@ -38,14 +38,33 @@ def _assistant_text(context: EventContext) -> MessageEvent:
 def _tool_end(context: EventContext) -> ToolEndEvent:
     error = context.payload.get("error")
     error_dict = error if isinstance(error, dict) else {}
+    result, exit_code = _tool_result(context.value("tool_result"))
     return ToolEndEvent(
         **context.base(),
         tool_name=context.text("tool_name"),
         tool_use_id=context.optional_text("tool_use_id"),
-        result=context.value("tool_result"),
-        is_error=bool(context.payload.get("is_error")),
+        result=result,
+        is_error=bool(context.payload.get("is_error")) or exit_code not in (None, 0),
         error_message=str(error_dict.get("message", error)) if error else None,
     )
+
+
+def _tool_result(tool_result: Any) -> tuple[Any, Any]:
+    """Return a V2 tool result's model-facing text and shell exit code, if any.
+
+    V2 results are ``{output, content: [{type: "text", text}], metadata}``;
+    ``content`` is what the model saw, ``output`` is tool-specific.
+    """
+    if not isinstance(tool_result, dict):
+        return tool_result, None
+    output = tool_result.get("output")
+    exit_code = output.get("exit") if isinstance(output, dict) else None
+    parts = tool_result.get("content")
+    if isinstance(parts, list):
+        texts = [part["text"] for part in parts if isinstance(part, dict) and isinstance(part.get("text"), str)]
+        if texts:
+            return "\n".join(texts), exit_code
+    return tool_result, exit_code
 
 
 def _execution_failed(context: EventContext) -> ErrorOccurredEvent:
