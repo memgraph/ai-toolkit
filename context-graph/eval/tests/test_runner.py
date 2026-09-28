@@ -216,6 +216,50 @@ async def test_an_empty_corpus_runs_without_error(eval_graph: ActionsGraph):
     assert report.by_tier == {}
 
 
+class _FixedAnswerLLM:
+    """Answers every call the same way -- text-search only ever makes one
+    LLM call per question (the final answer), unlike the graph-agent
+    baseline's query/observe loop, so there is no call-parity to script."""
+
+    async def complete(self, prompt: str) -> str:
+        return "A beagle."
+
+
+async def test_text_search_strategy_skips_reconciliation(eval_graph: ActionsGraph):
+    """The whole point of this baseline is to skip reconciliation's dominant
+    LLM cost, so retrieval_strategy="text-search" must not pay for it even
+    when reconcile defaults to True."""
+    report = await run_batch(
+        [to_golden(_record("q1"))],
+        records=[_record("q1")],
+        graph=eval_graph,
+        llm=_FixedAnswerLLM(),
+        plan=RunPlan(reconcile=True, judge=None, retrieval_strategy="text-search"),
+    )
+
+    assert report.reconciled == 0
+    assert report.reconcile_failures == 0
+    # The turn planted by _record's "fact" is real content, so indexing found
+    # something to index -- 0 here would mean indexing silently no-opped.
+    assert report.indexed_turns > 0
+
+
+async def test_text_search_strategy_still_scores_questions(eval_graph: ActionsGraph):
+    """Skipping reconciliation must not mean skipping scoring: efficiency and
+    the rest of the judge-free rubric apply to this baseline exactly as they
+    do to the graph-agent one."""
+    report = await run_batch(
+        [to_golden(_record("q1"))],
+        records=[_record("q1")],
+        graph=eval_graph,
+        llm=_FixedAnswerLLM(),
+        plan=RunPlan(reconcile=False, judge=None, retrieval_strategy="text-search"),
+    )
+
+    assert report.scored[0].name == "q1"
+    assert report.scored[0].answer == "A beagle."
+
+
 async def test_a_question_whose_retrieval_fails_is_still_reported(eval_graph: ActionsGraph):
     """A batch must report a miss rather than losing the question: a coverage
     rate computed over a silently shortened corpus is wrong, not just noisy."""
@@ -255,7 +299,10 @@ async def test_a_failed_retrieval_preserves_the_time_it_spent_before_raising(mon
 
     golden = to_golden(_record("q1"))
     retrieved = await runner_module._retrieve_all(
-        [golden], graph=cast("ReadOnlyGraph", object()), llm=cast("LLM", object()), max_concurrent=1
+        [golden],
+        graph=cast("ReadOnlyGraph", object()),
+        llm=cast("LLM", object()),
+        plan=RunPlan(max_concurrent=1),
     )
 
     assert retrieved[0].latency_seconds >= 0.05

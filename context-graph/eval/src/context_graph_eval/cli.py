@@ -13,6 +13,8 @@ from pathlib import Path
 from .convert.longmemeval import DEFAULT_REVISION, build_corpus, fetch, haystack_path, load_raw
 from .corpus import write_corpus
 from .reconcile import EXTRACTION_BACKENDS
+from .runner import RETRIEVAL_STRATEGIES
+from .text_search import DEFAULT_LIMIT as DEFAULT_TEXT_SEARCH_LIMIT
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -104,6 +106,22 @@ def main(argv: list[str] | None = None) -> int:
         "unstructured2graph.gliner2_backend's module docstring). Narrative summarization always "
         "runs via a LightRAG wrapper's own LLM regardless of this choice -- GLiNER2 has no "
         "generative capability -- so an LLM key is still needed either way.",
+    )
+    run.add_argument(
+        "--retrieval-strategy",
+        choices=RETRIEVAL_STRATEGIES,
+        default="graph-agent",
+        help="'graph-agent' (default, #300: an agent writes its own Cypher against the reconciled "
+        "memory) or 'text-search' (the cheap comparison point this exists to enable: Memgraph's own "
+        "full-text index over raw, UNRECONCILED turns -- no distillation, no LLM extraction cost). "
+        "'text-search' forces reconciliation off regardless of --skip-reconcile: there is no memory "
+        "for it to build that this strategy would read.",
+    )
+    run.add_argument(
+        "--text-search-limit",
+        type=int,
+        default=DEFAULT_TEXT_SEARCH_LIMIT,
+        help="how many text-search hits to hand the answering LLM. Ignored for --retrieval-strategy graph-agent.",
     )
     run.add_argument(
         "--max-sessions-per-question",
@@ -432,6 +450,8 @@ def _run(args) -> int:
                 max_sessions_per_question=args.max_sessions_per_question,
                 memgraph_url=args.memgraph_url,
                 extraction_backend=args.extraction_backend,
+                retrieval_strategy=args.retrieval_strategy,
+                text_search_limit=args.text_search_limit,
             ),
         )
     )
@@ -468,8 +488,12 @@ def _run(args) -> int:
                     # systems under test (different entities, no cross-chunk
                     # coreference for GLiNER2, a different workspace label) --
                     # compare() below refuses across them for the same reason
-                    # it refuses across judges or tokenizers.
-                    extraction_backend=args.extraction_backend,
+                    # it refuses across judges or tokenizers. "none" for
+                    # text-search: that strategy never reconciles, so no
+                    # backend built anything -- compare() exempts the pin for
+                    # that value rather than treating it as a mismatch.
+                    extraction_backend=args.extraction_backend if args.retrieval_strategy == "graph-agent" else "none",
+                    retrieval_strategy=args.retrieval_strategy,
                 ),
                 scored=report.scored,
             ),
@@ -619,7 +643,9 @@ def _print_attribution(failures) -> None:
 def _print_report(report, *, judged: bool) -> None:
     from .scoring import gate_and_rank
 
-    if report.reconciled or report.reconcile_failures:
+    if report.indexed_turns:
+        print(f"text-search index: {report.indexed_turns} turns indexed (no reconciliation)")
+    elif report.reconciled or report.reconcile_failures:
         print(f"reconciled {report.reconciled} sessions ({report.reconcile_failures} failed)")
 
     if not report.by_tier:

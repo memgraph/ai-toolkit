@@ -157,7 +157,7 @@ class ReadOnlyGraph:
         """
         return self._db
 
-    def query(self, cypher: str) -> list[dict[str, Any]]:
+    def query(self, cypher: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         if is_write_query(cypher):
             raise WriteRefusedError(f"retrieval may not write to the graph under test: {cypher!r}")
         internal = internal_labels_in(cypher)
@@ -168,7 +168,7 @@ class ReadOnlyGraph:
                 "the answers. Query the model instead (Session, Action, Chunk, Episode, and the "
                 "entity labels)."
             )
-        return self._db.query(cypher)
+        return self._db.query(cypher, params)
 
 
 def is_write_query(cypher: str) -> bool:
@@ -407,7 +407,7 @@ async def retrieve(
             continue
         seen.extend(rendered)
 
-    answer = await llm.complete(_answer_prompt(question, seen))
+    answer = await llm.complete(answer_prompt(question, seen))
     return Retrieved(
         answer=answer.strip(),
         retrieval_context=seen,
@@ -500,7 +500,14 @@ def _query_prompt(question: str, schema: str, seen: list[str], errors: list[str]
     return "\n".join(parts)
 
 
-def _answer_prompt(question: str, seen: list[str]) -> str:
+def answer_prompt(question: str, seen: list[str]) -> str:
+    """The final-answer prompt, shared by every retrieval strategy.
+
+    Public rather than private: ``text_search.py``'s baseline uses this exact
+    prompt too, deliberately -- a quality difference between two retrieval
+    strategies should be attributable to what was retrieved, not to two
+    different answering prompts.
+    """
     rows = "\n".join(seen[:200]) if seen else "(nothing was retrieved)"
     return (
         "Answer the question using only the rows below. Be concise. "
