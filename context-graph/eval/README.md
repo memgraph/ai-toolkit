@@ -523,20 +523,16 @@ The loop reliably finds problems; it cannot yet **rank** two versions.
   about user facts.
 - **Tier 2 has one question.**
 - **The text-search baseline's ranking is not robust on short content.**
-  Originally verified directly against a two-document corpus: a query
-  sharing only a stopword (`"my"`) with an unrelated turn outranked the turn
-  actually containing the query's real keyword. `text_search.search_all`
-  ranks by Tantivy's own relevance score across every indexed turn rather
-  than filtering to term matches first, so on short content a near-universal
-  word can dominate. Since fixed for the common case: `_safe_query` drops a
-  short, standard English stopword list before querying, on the reasoning
-  that a word with almost no discriminating power was never contributing
-  precision, only noise -- the same kind of thing as stripping Tantivy's
-  special characters, not the search-strategy tuning this baseline otherwise
-  defers. Numbers and other short *topical* words are untouched. This
-  narrows the failure mode; it does not eliminate it -- two genuinely
-  on-topic words can still tie or lose on a short enough turn, and that
-  residual case is reported, not engineered around further.
+  On a two-document corpus, a query sharing only a stopword (`"my"`) with an
+  unrelated turn outranked the turn containing the query's real keyword:
+  `text_search.search_all` scores any turn sharing *some* query term, so on
+  short content a near-universal word can dominate. `_safe_query` now drops
+  a short English stopword list, which removes that specific case -- but this
+  was applied on principle, **not shown to improve coverage.** On the one
+  20-question comparison made, coverage went from 6/20 to 5/20: the filter
+  genuinely changed which turns made the top 10 for three questions (one
+  improved, two regressed), which at this sample size is indistinguishable
+  from noise in either direction.
 
 `calibrate` reports set stability alongside the floor, and now each
 question's own pass rate across the repeats -- naming the specific flaky

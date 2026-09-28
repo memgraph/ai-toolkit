@@ -15,11 +15,11 @@ answers is "what does the *existing*, zero-effort tool give you", not "what is
 the best possible text-search baseline".
 """
 
-import contextlib
 import json
 import re
+import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
 from .retrieval import Retrieved, answer_prompt
 
@@ -27,6 +27,13 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
     from actions_graph import ActionsGraph
 
     from .retrieval import LLM, ReadOnlyGraph
+
+
+class _Queryable(Protocol):
+    """Anything that runs parameterized Cypher: a raw client or a ReadOnlyGraph."""
+
+    def query(self, cypher: str, params: dict[str, Any] | None = None, /) -> list[dict[str, Any]]: ...
+
 
 #: One index, scoped to the eval instance only -- never the real harness's
 #: Action nodes, which this package must never touch (see inject.py's module
@@ -49,24 +56,21 @@ class Indexed:
 
 
 def ensure_turn_text_index(graph: "ActionsGraph") -> Indexed:
-    """Materialize a plain-text ``text`` property on every turn, then index it.
+    """Materialize a plain-text ``text`` property on every turn, index it, and prove search runs.
 
-    Turn text lives inside ``Action.properties`` as a JSON string (see
-    ``retrieval.graph_schema``'s docstring) -- Memgraph has no APOC, so that
-    JSON cannot be unpacked in Cypher. Extracted in Python instead: read every
-    ``Action``'s ``properties``, and for the ones that carry a ``content``
-    string (turns -- not every Action does; a tool call's properties has no
-    such key) write it back as a plain string property a text index can
-    actually index.
+    Turn text lives inside ``Action.properties`` as a JSON string, which
+    Memgraph (no APOC) cannot unpack in Cypher -- so ``content`` is extracted
+    in Python and written back as a plain property the index can cover.
+    Actions with no ``content`` string, such as tool calls, are skipped.
 
-    ``CREATE TEXT INDEX`` on an index name that already exists is a verified
-    no-op on this deployment (checked directly, twice, including recreating it
-    against a *different* property), and the index stays correct across
-    ``inject_batch``'s wipe-and-reload (also verified directly: old nodes
-    gone, new nodes' content searchable, nothing stale). Memgraph's own docs
-    say a duplicate name is refused, which is the opposite of what was
-    observed -- guarded with a try/except rather than trusted either way, so
-    this keeps working whichever behavior actually holds on a given server.
+    Ends with a probe through the same :func:`_search` call retrieval makes.
+    A search that cannot run fails every question the same way, and the
+    per-question path records a failure as a miss, so a broken index would
+    otherwise read as a 0% result rather than as a broken run.
+
+    Raises:
+        RuntimeError: the index is missing after creation, or text search
+            rejects the query retrieval would send.
     """
     db = graph.db
     rows = db.query("MATCH (a:Action) WHERE a.text IS NULL RETURN a.action_id AS action_id, a.properties AS properties")
@@ -86,13 +90,36 @@ def ensure_turn_text_index(graph: "ActionsGraph") -> Indexed:
             {"rows": materialized},
         )
 
-    # Same broad-suppress idiom sessions_graph.core.drop() already uses for
-    # this exact "might already exist" situation with a text index: Memgraph's
-    # own client error for a duplicate name is a generic MemgraphError, not a
-    # distinct exception type this could catch more narrowly.
-    with contextlib.suppress(Exception):
+    if not _index_exists(db):
         db.query(f"CREATE TEXT INDEX {TEXT_INDEX_NAME} ON :Action(text);")
+    if not _index_exists(db):
+        raise RuntimeError(f"text index {TEXT_INDEX_NAME} is missing after CREATE TEXT INDEX")
+
+    try:
+        _search(db, "probe", limit=1)
+    except Exception as exc:
+        raise RuntimeError(f"text search cannot run on this Memgraph: {exc}") from exc
     return Indexed(turns=len(materialized))
+
+
+def _index_exists(db: _Queryable) -> bool:
+    marker = f"(name: {TEXT_INDEX_NAME})"
+    return any(marker in str(row.get("index type", "")) for row in db.query("SHOW INDEX INFO"))
+
+
+def _search(graph: _Queryable, query: str, limit: int) -> list[dict[str, Any]]:
+    # The index name is a module constant, never input; the query text and
+    # limit are bound parameters. The limit is applied in Cypher rather than
+    # passed to search_all because that procedure's third argument changed
+    # type across Memgraph releases (an int on 3.9, a config map on 3.13), and
+    # the two-argument form is the one that runs on both.
+    return graph.query(
+        f"CALL text_search.search_all('{TEXT_INDEX_NAME}', $query) YIELD node, score "
+        "WITH node, score ORDER BY score DESC LIMIT $limit "
+        "OPTIONAL MATCH (s:Session)-[:HAS_ACTION]->(node) "
+        "RETURN s.session_id AS session_id, node.text AS content, score",
+        {"query": query, "limit": limit},
+    )
 
 
 #: Tantivy's query parser treats characters like : ( ) " * ~ ^ specially, and a
@@ -186,32 +213,21 @@ async def retrieve_by_text_search(
     baseline uses (see ``retrieval.retrieve``) -- deliberately, so a quality
     difference between the two baselines is attributable to what was
     *retrieved*, not to two different answering prompts.
-    """
-    query = _safe_query(question)
-    seen: list[str] = []
-    errors: list[str] = []
 
-    if query:
-        try:
-            # limit passed straight to search_all itself, not applied
-            # afterward in Cypher: without it, search_all returns EVERY
-            # matching turn (verified directly -- 20 of 20 on a small test
-            # corpus, not capped), which on the real batch-wide index means
-            # scoring and returning potentially thousands of rows just to
-            # discard all but ten of them.
-            rows = graph.query(
-                f"CALL text_search.search_all('{TEXT_INDEX_NAME}', $query, $limit) YIELD node, score "
-                "WITH node, score ORDER BY score DESC "
-                "OPTIONAL MATCH (s:Session)-[:HAS_ACTION]->(node) "
-                "RETURN s.session_id AS session_id, node.text AS content, score",
-                {"query": query, "limit": limit},
-            )
-        except Exception as exc:
-            rows = []
-            errors.append(f"text_search.search_all({query!r}): {exc}")
-        seen = [f"session={row['session_id']} content={row['content']}" for row in rows]
-        if not rows:
-            errors.append(f"text_search.search_all({query!r}): returned 0 rows")
+    Latency covers the search and the answer call, the same span
+    ``retrieval.retrieve`` times, so the two baselines' latencies compare.
+
+    Raises:
+        Exception: whatever ``text_search`` raises is not caught here. The
+            runner records a raised retrieval as a miss, as it does for the
+            graph-agent baseline; :func:`ensure_turn_text_index`'s probe is
+            what stops a search that can never run from reaching that point.
+    """
+    started = time.monotonic()
+    query = _safe_query(question)
+    rows = _search(graph, query, limit) if query else []
+    seen = [f"session={row['session_id']} content={row['content']}" for row in rows]
+    errors = [f"text_search.search_all({query!r}): returned 0 rows"] if query and not rows else []
 
     answer = await llm.complete(answer_prompt(question, seen))
     return Retrieved(
@@ -219,4 +235,5 @@ async def retrieve_by_text_search(
         retrieval_context=seen,
         queries=[query] if query else [],
         errors=errors,
+        latency_seconds=time.monotonic() - started,
     )

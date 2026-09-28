@@ -2,9 +2,13 @@
 
 Runs against the real eval Memgraph (no stubbing the index or the search
 procedure): the whole point of this baseline is Memgraph's own text index, so
-a test that mocked it would verify nothing about what actually happens.
+a test that mocked it would verify nothing about what actually happens. The
+one exception is forcing ``_search`` to raise -- a real Memgraph that can
+index but not search is not something a test can set up on demand.
 """
 
+import pytest
+from context_graph_eval import text_search
 from context_graph_eval.retrieval import ReadOnlyGraph
 from context_graph_eval.text_search import _safe_query, ensure_turn_text_index, retrieve_by_text_search
 
@@ -32,10 +36,35 @@ def test_indexing_skips_actions_with_no_content(eval_graph: ActionsGraph):
     """A tool-call Action's properties has no 'content' key -- materializing a
     'text' property for it would index noise the question was never about."""
     _plant(eval_graph, "s1", role=MessageRole.USER, content="I adopted a beagle named Max")
+    eval_graph.record_tool_call(session_id="s1", tool_name="Read", tool_input={"file_path": "notes.md"})
 
     indexed = ensure_turn_text_index(eval_graph)
 
     assert indexed.turns == 1
+    untexted = eval_graph.db.query("MATCH (a:Action) WHERE a.text IS NULL RETURN count(a) AS n")[0]["n"]
+    assert untexted == 1
+
+
+def test_indexing_fails_the_run_when_search_cannot_run(eval_graph: ActionsGraph, monkeypatch):
+    """A search that cannot run fails every question identically; left to the
+    per-question path, each becomes a recorded miss and the run reports ~0%
+    as if it were a measurement. It must fail before anything is scored."""
+
+    def _broken(*_args, **_kwargs):
+        raise RuntimeError("argument named 'config' at position 2 must be of type MAP")
+
+    monkeypatch.setattr(text_search, "_search", _broken)
+
+    with pytest.raises(RuntimeError, match="text search cannot run"):
+        ensure_turn_text_index(eval_graph)
+
+
+def test_indexing_twice_is_harmless(eval_graph: ActionsGraph):
+    """Runs every batch, against an instance whose index may already exist."""
+    _plant(eval_graph, "s1", role=MessageRole.USER, content="I adopted a beagle named Max")
+
+    ensure_turn_text_index(eval_graph)
+    ensure_turn_text_index(eval_graph)
 
 
 def test_indexed_turns_are_searchable_by_content(eval_graph: ActionsGraph):
@@ -74,11 +103,9 @@ async def test_retrieve_by_text_search_hands_matching_turns_to_the_answering_llm
 
 
 async def test_retrieve_by_text_search_caps_hits_at_the_configured_limit(eval_graph: ActionsGraph):
-    """The limit is passed straight to text_search.search_all, not applied
-    afterward in Cypher: verified directly that search_all returns EVERY
-    matching turn when no limit is given, uncapped. More turns than the limit
-    must not leak through -- that would silently defeat the whole point of
-    capping it (a bigger, costlier payload than the run configured)."""
+    """search_all itself returns every matching turn, uncapped -- more turns
+    than the limit leaking through would hand the answering LLM a bigger,
+    costlier payload than the run configured."""
     for i in range(5):
         _plant(eval_graph, f"s{i}", role=MessageRole.USER, content=f"I adopted a beagle turn number {i}")
     ensure_turn_text_index(eval_graph)
@@ -88,6 +115,36 @@ async def test_retrieve_by_text_search_caps_hits_at_the_configured_limit(eval_gr
     )
 
     assert len(result.retrieval_context) == 2
+
+
+async def test_retrieve_by_text_search_records_its_latency(eval_graph: ActionsGraph):
+    """Without it every successful text-search question reported 0.0s, making
+    this baseline's mean latency near-zero next to graph-agent's -- the one
+    axis this baseline exists to be compared on."""
+    _plant(eval_graph, "s1", role=MessageRole.USER, content="I adopted a beagle named Max")
+    ensure_turn_text_index(eval_graph)
+
+    result = await retrieve_by_text_search(
+        "Tell me about my beagle.", graph=ReadOnlyGraph(eval_graph.db), llm=_EchoLLM()
+    )
+
+    assert result.latency_seconds > 0.0
+
+
+async def test_a_search_that_raises_is_not_turned_into_an_empty_answer(eval_graph: ActionsGraph, monkeypatch):
+    """Swallowing the error here meant the LLM answered from nothing and the
+    question scored as an ordinary "not in memory" -- indistinguishable from a
+    real miss. It must reach the runner, which records it as an error."""
+
+    def _broken(*_args, **_kwargs):
+        raise RuntimeError("search failed")
+
+    monkeypatch.setattr(text_search, "_search", _broken)
+    llm = _EchoLLM()
+
+    with pytest.raises(RuntimeError, match="search failed"):
+        await retrieve_by_text_search("Tell me about my beagle.", graph=ReadOnlyGraph(eval_graph.db), llm=llm)
+    assert llm.prompts == []
 
 
 async def test_retrieve_by_text_search_reports_no_rows_rather_than_silence(eval_graph: ActionsGraph):
