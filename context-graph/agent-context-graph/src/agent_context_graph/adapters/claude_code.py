@@ -2,21 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
-
 from agent_context_graph.adapters._spec import (
     EventContext,
     HookConfig,
     RuntimeSpec,
     SpecAdapter,
+    SpecPlugin,
     event_user_id,
-)
-from agent_context_graph.adapters._spec import (
-    build_hooks_config as build_spec_hooks_config,
-)
-from agent_context_graph.adapters._spec import (
-    response_for_payload as spec_response_for_payload,
+    tool_start,
 )
 from agent_context_graph.events import (
     AgentEndEvent,
@@ -26,14 +19,7 @@ from agent_context_graph.events import (
     SessionEndEvent,
     SessionStartEvent,
     ToolEndEvent,
-    ToolStartEvent,
 )
-from agent_context_graph.hooks.runner import create_link, load_payload  # noqa: F401 -- public compatibility exports
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-
-    from agent_context_graph.protocols import RuntimeAdapter
 
 
 def _session_start(context: EventContext) -> SessionStartEvent:
@@ -49,16 +35,6 @@ def _user_prompt(context: EventContext) -> MessageEvent:
         **context.base(),
         role="user",
         content=context.value("prompt", ""),
-        agent_name=context.optional_text("agent_id"),
-    )
-
-
-def _tool_start(context: EventContext) -> ToolStartEvent:
-    return ToolStartEvent(
-        **context.base(),
-        tool_name=context.text("tool_name"),
-        tool_input=context.value("tool_input"),
-        tool_use_id=context.optional_text("tool_use_id"),
         agent_name=context.optional_text("agent_id"),
     )
 
@@ -158,7 +134,7 @@ SPEC = RuntimeSpec(
         "SessionStart": _session_start,
         "UserPromptSubmit": _user_prompt,
         "UserPromptExpansion": _user_prompt,
-        "PreToolUse": _tool_start,
+        "PreToolUse": tool_start,
         "PostToolUse": _tool_end,
         "PostToolUseFailure": _tool_failure,
         "PermissionRequest": _permission,
@@ -191,16 +167,15 @@ SPEC = RuntimeSpec(
         "command_source",
         "expansion_type",
     ),
+    # Installed by the Claude Code plugin's hooks.json, not a project-local file.
     config=HookConfig(
-        path=".claude/settings.json",
         layout="nested",
-        merge=True,
         matchers={
             hook: "*"
             for hook in ("PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "PermissionDenied")
         },
     ),
-    response_events=frozenset({"Stop", "SubagentStop"}),
+    responses={"Stop": {"continue": True}, "SubagentStop": {"continue": True}},
     probe_payload={"hook_event_name": "Stop", "session_id": "doctor"},
 )
 
@@ -211,43 +186,4 @@ class ClaudeCodeHooksAdapter(SpecAdapter):
     SPEC = SPEC
 
 
-ClaudeCodeAdapter = ClaudeCodeHooksAdapter
-
-
-def build_hooks_config(command: str, *, timeout: int = 30) -> dict[str, list[dict[str, Any]]]:
-    """Build a Claude Code hooks configuration using *command*."""
-    return build_spec_hooks_config(SPEC, command, timeout=timeout)
-
-
-def response_for_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """Return hook JSON when Claude Code expects a response."""
-    return spec_response_for_payload(SPEC, payload)
-
-
-@dataclass(frozen=True)
-class _ClaudeCodePlugin:
-    """Claude Code runtime registration."""
-
-    name: str = "claude-code"
-    adapter_class: type[RuntimeAdapter] = ClaudeCodeHooksAdapter
-    probe_payload: Mapping[str, Any] = field(default_factory=lambda: SPEC.probe_payload)
-
-    def response_for_payload(self, payload: dict[str, Any]) -> dict[str, Any] | None:
-        return response_for_payload(payload)
-
-    def build_hooks_config(self, command: str, *, timeout: int = 30) -> dict[str, Any]:
-        return build_hooks_config(command, timeout=timeout)
-
-
-PLUGIN = _ClaudeCodePlugin()
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    """Run the Claude Code hook CLI."""
-    from agent_context_graph.hooks.runner import run_hook
-
-    return run_hook(PLUGIN, argv)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+PLUGIN = SpecPlugin(SPEC, ClaudeCodeHooksAdapter)

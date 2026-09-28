@@ -453,12 +453,12 @@ Command-hook runtimes provide four pieces:
 1. **A payload translator.** Same idea as `RuntimeAdapter.get_runtime_hooks()`, but the input is the harness's raw JSON payload rather than a native callback. Map each of the harness's hook event names to the matching `Event` subclass and call `link.emit(...)`.
 2. **A hook-config generator** (`build_hooks_config(command)`). Builds whatever config shape the harness expects for wiring hooks, pointing every hook at your CLI entry point.
 3. **A response function** (`response_for_payload(payload)`). Returns the JSON the harness expects back on stdout, or `None`.
-4. **A native doctor probe** (`probe_payload`). This must use the runtime's own event name and field shape; not every harness calls session completion `Stop`.
+4. **A native doctor probe** (`probe_payload`). This must use the runtime's own event name and field shape; not every runtime calls session completion `Stop`.
 
-Built-in command-hook adapters use the declarative `RuntimeSpec` and
-`SpecAdapter` in `adapters/_spec.py`; a runtime supplies event rules, field
-aliases, metadata keys, hook configuration, and its probe without copying the
-dispatch lifecycle. The stdin-loading, connector-construction, and CLI parsing
+Built-in command-hook adapters use the declarative `RuntimeSpec`,
+`SpecAdapter`, and `SpecPlugin` in `adapters/_spec.py`; a runtime supplies
+event rules, field aliases, hook responses, metadata keys, hook configuration,
+and its probe, and `SpecPlugin` derives the Runtime Registration from them. The stdin-loading, connector-construction, and CLI parsing
 remain shared in `hooks/runner.py`. External packages can either use that
 module or implement `RuntimeAdapter` directly, then publish a Runtime
 Registration through the entry-point group.

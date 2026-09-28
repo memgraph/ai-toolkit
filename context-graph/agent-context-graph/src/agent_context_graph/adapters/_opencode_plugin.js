@@ -1,20 +1,25 @@
+import { spawn } from "node:child_process"
 import { Plugin } from "@opencode/plugin"
 
+// argv, spawned directly: no shell, so no login profile or ambient env is
+// sourced between OpenCode and the hook (ADR 0002).
 const command = __AGENT_CONTEXT_GRAPH_COMMAND__
 
-async function capture(payload) {
-  const child = Bun.spawn(["sh", "-lc", command], {
-    stdin: "pipe",
-    stdout: "ignore",
-    stderr: "inherit",
-  })
-  child.stdin.write(JSON.stringify(payload))
-  child.stdin.end()
-  await child.exited
-}
+const CAPTURED_EVENTS = new Set([
+  "session.created",
+  "session.deleted",
+  "session.text.ended",
+  "session.execution.failed",
+  "permission.asked",
+])
 
-function sessionID(value) {
-  return value?.sessionID ?? value?.session_id ?? value?.session?.id ?? value?.info?.id ?? ""
+function capture(payload) {
+  return new Promise((resolve) => {
+    const child = spawn(command[0], command.slice(1), { stdio: ["pipe", "ignore", "inherit"] })
+    child.on("error", resolve)
+    child.on("close", resolve)
+    child.stdin.end(JSON.stringify(payload))
+  })
 }
 
 export default Plugin.define({
@@ -37,7 +42,7 @@ export default Plugin.define({
         session_id: event.sessionID,
         tool_name: event.tool,
         tool_input: event.input,
-        tool_use_id: event.callID,
+        tool_use_id: event.id,
       })
     }))
 
@@ -47,8 +52,8 @@ export default Plugin.define({
         session_id: event.sessionID,
         tool_name: event.tool,
         tool_input: event.input,
+        tool_use_id: event.id,
         tool_result: event.status === "completed" ? event.result : undefined,
-        tool_use_id: event.callID,
         is_error: event.status === "error",
         error: event.status === "error" ? event.error : undefined,
       })
@@ -57,19 +62,16 @@ export default Plugin.define({
     const controller = new AbortController()
     void (async () => {
       for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-        if (!["session.created", "session.deleted", "session.error", "message.updated", "permission.asked"].includes(event.type)) continue
-        const properties = event.properties ?? event
-        const info = properties.info ?? properties.message ?? properties
+        if (!CAPTURED_EVENTS.has(event.type)) continue
+        const data = event.data ?? {}
         await capture({
           hook_event_name: event.type,
-          session_id: sessionID(properties),
-          role: info.role,
-          content: info.content ?? info.text,
-          model: info.model,
-          cwd: info.directory,
-          error: properties.error,
-          permission: properties.permission,
-          event,
+          session_id: data.sessionID,
+          cwd: data.location?.directory,
+          model: data.model?.id,
+          text: data.text,
+          error: data.error,
+          permission: data.action,
         })
       }
     })()

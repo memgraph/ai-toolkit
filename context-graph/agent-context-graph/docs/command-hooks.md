@@ -39,6 +39,11 @@ agent-context-graph hook init opencode
 JSON documents are merged without removing unrelated settings or hooks.
 OpenCode's generated plugin is replaced only with `--force`.
 
+`--setup-schema` creates the Memgraph schema for each selected connector after
+the wiring is written, for every runtime. Its `--memgraph-*` overrides are used
+only for that step and are never written into generated wiring; everything
+else resolves from the config file.
+
 ## Runtime shapes
 
 ### Codex and Claude Code
@@ -72,7 +77,10 @@ Runtime Plugin rather than `hook init`.
 
 Gemini stores nested command hooks under `hooks` in `.gemini/settings.json`.
 Its timeout is measured in milliseconds, so `--timeout 30` is written as
-`30000`. See the [Gemini CLI hooks reference](https://geminicli.com/docs/hooks/reference/).
+`30000`. `AfterModel` fires once per streamed chunk, so only the chunk
+carrying a `finishReason` is recorded as the end of a model call, with the
+model name taken from `llm_request.model`. Gemini sends no tool-call id. See
+the [Gemini CLI hooks reference](https://geminicli.com/docs/hooks/reference/).
 
 ### GitHub Copilot CLI
 
@@ -96,7 +104,13 @@ command supplies `--event-name` for the generic runner:
 }
 ```
 
-See the [GitHub Copilot hooks reference](https://docs.github.com/en/copilot/reference/hooks-reference).
+Native payloads carry `toolArgs` as a JSON string, which is parsed back into
+an object, and a `toolResult.resultType` other than `success` marks the result
+as an error. Copilot sends no tool-call id. Subagent start and stop are joined
+on `agentName`, the only field both payloads share. Capture hooks write no
+output, which Copilot treats as its default behavior.
+
+See the [GitHub Copilot hooks reference](https://docs.github.com/en/copilot/reference/hooks-configuration).
 `agentStop` is deliberately not installed: it marks the end of one turn,
 whereas `sessionEnd` is the durable session boundary represented by the Event
 Protocol.
@@ -106,7 +120,10 @@ Protocol.
 Cursor stores flat command entries in `.cursor/hooks.json`. The stable Agent
 Session key is `conversation_id`; `generation_id` is recorded as per-turn
 metadata. The per-turn `stop` hook is not treated as `SessionEnd`; Cursor's
-separate `sessionEnd` hook closes the conversation. See the
+separate `sessionEnd` hook closes the conversation. Cursor blocks a permission
+hook (`preToolUse`, `subagentStart`) whose output does not match its schema, so
+those hooks answer `{"permission": "allow"}`. That is the weakest vote: any
+other hook's `deny` or `ask` still wins. See the
 [Cursor hooks reference](https://cursor.com/docs/hooks).
 
 ### OpenCode
@@ -114,7 +131,12 @@ separate `sessionEnd` hook closes the conversation. See the
 OpenCode V2 does not use command-hook JSON. `hook init opencode` installs a
 dependency-free V2 plugin that registers prompt and tool hooks, subscribes to
 the public event stream, and pipes normalized JSON to the Python runtime
-registration. The shim never injects Memgraph or LLM credentials. See the
+registration. It captures `session.created`, `session.deleted`,
+`session.text.ended` (one completed assistant text part, not the streamed
+deltas), `session.execution.failed`, and `permission.asked`. The hook command
+is embedded as an argv array and spawned directly with `node:child_process`:
+no shell or login profile sits in between, and the shim never injects Memgraph
+or LLM credentials. See the
 [OpenCode V2 plugin reference](https://opencode.ai/v2/docs/build/plugins).
 `session.idle` is a reusable-session idle boundary and is not translated into
 `SessionEnd`; deletion is the terminal lifecycle event available on the public
@@ -155,7 +177,7 @@ agent-context-graph doctor --runtime cursor \
 ```
 
 Each runtime provides its own native probe payload; `doctor` does not assume
-that every harness calls its session-end event `Stop`.
+that every runtime calls its session-end event `Stop`.
 
 For live integration tests, use the repository-owned disposable Memgraph:
 
@@ -168,8 +190,11 @@ For live integration tests, use the repository-owned disposable Memgraph:
 ## Adding a runtime
 
 Command-hook runtimes declare a `RuntimeSpec` and subclass `SpecAdapter`.
-The spec owns field aliases, event rules, metadata keys, a native doctor probe,
-and command-config rendering. Register the plugin object in `pyproject.toml`:
+The spec owns field aliases, event rules, event-name aliases, hook responses,
+metadata keys, a native doctor probe, and command-config rendering. Wrap it in
+a `SpecPlugin`, passing `init=json_hook_installer(SPEC)` when the runtime reads
+a project-local JSON hook file, and publish that Runtime Registration in
+`pyproject.toml`:
 
 ```toml
 [project.entry-points."agent_context_graph.runtimes"]

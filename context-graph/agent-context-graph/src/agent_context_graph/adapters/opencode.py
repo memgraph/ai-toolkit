@@ -3,41 +3,24 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+import shlex
 from importlib import resources
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from agent_context_graph.adapters._spec import (
     EventContext,
     HookConfig,
     RuntimeSpec,
     SpecAdapter,
-    event_user_id,
-    hook_command_for,
+    SpecPlugin,
+    hook_command_argv,
+    session_start,
+    tool_start,
 )
-from agent_context_graph.events import (
-    ErrorOccurredEvent,
-    MessageEvent,
-    SessionEndEvent,
-    SessionStartEvent,
-    ToolEndEvent,
-    ToolStartEvent,
-)
+from agent_context_graph.events import ErrorOccurredEvent, MessageEvent, SessionEndEvent, ToolEndEvent
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
     from pathlib import Path
-
-    from agent_context_graph.protocols import RuntimeAdapter
-
-
-def _session_start(context: EventContext) -> SessionStartEvent:
-    return SessionStartEvent(
-        **context.base(),
-        model=context.optional_text("model"),
-        working_directory=context.optional_text("cwd"),
-        user_id=event_user_id(context),
-    )
 
 
 def _session_end(context: EventContext) -> SessionEndEvent:
@@ -48,28 +31,8 @@ def _prompt(context: EventContext) -> MessageEvent:
     return MessageEvent(**context.base(), role="user", content=context.value("prompt", ""))
 
 
-def _message(context: EventContext) -> MessageEvent | None:
-    role = context.payload.get("role")
-    content = context.payload.get("content")
-    # Prompt admission already records user messages, so only observe the
-    # assistant side of message updates to avoid duplicate actions.
-    if role != "assistant" or content is None:
-        return None
-    return MessageEvent(
-        **context.base(),
-        role=str(role),
-        content=content,
-        model=context.optional_text("model"),
-    )
-
-
-def _tool_start(context: EventContext) -> ToolStartEvent:
-    return ToolStartEvent(
-        **context.base(),
-        tool_name=context.text("tool_name"),
-        tool_input=context.value("tool_input"),
-        tool_use_id=context.optional_text("tool_use_id"),
-    )
+def _assistant_text(context: EventContext) -> MessageEvent:
+    return MessageEvent(**context.base(), role="assistant", content=context.payload.get("text", ""))
 
 
 def _tool_end(context: EventContext) -> ToolEndEvent:
@@ -85,14 +48,15 @@ def _tool_end(context: EventContext) -> ToolEndEvent:
     )
 
 
-def _error(context: EventContext) -> ErrorOccurredEvent:
+def _execution_failed(context: EventContext) -> ErrorOccurredEvent:
     error = context.payload.get("error")
     error_dict = error if isinstance(error, dict) else {}
+    details = {"status": error_dict["status"]} if error_dict.get("status") is not None else {}
     return ErrorOccurredEvent(
         **context.base(),
-        error_type=str(error_dict.get("name") or "opencode_error"),
-        error_message=str(error_dict.get("message") or error or "OpenCode session error"),
-        error_details={"event": context.payload.get("event")},
+        error_type=str(error_dict.get("type") or "opencode_error"),
+        error_message=str(error_dict.get("message") or error or "OpenCode session execution failed"),
+        error_details=details,
         recoverable=True,
     )
 
@@ -109,19 +73,24 @@ SPEC = RuntimeSpec(
     name="opencode",
     source_sdk="opencode",
     event_key="hook_event_name",
+    # OpenCode has no JSON command hooks: the installed V2 plugin subscribes to
+    # its hooks and bus events and pipes each one, normalized, to
+    # ``hook run opencode`` (see _opencode_plugin.js for the field mapping).
     hooks=(),
     rules={
-        "session.created": _session_start,
+        "session.created": session_start,
         "session.deleted": _session_end,
         "session.prompt": _prompt,
-        "message.updated": _message,
-        "tool.execute.before": _tool_start,
+        # Emitted once per completed assistant text part, unlike the streamed
+        # session.text.delta, so each assistant message is recorded once.
+        "session.text.ended": _assistant_text,
+        "tool.execute.before": tool_start,
         "tool.execute.after": _tool_end,
-        "session.error": _error,
+        "session.execution.failed": _execution_failed,
         "permission.asked": _permission,
     },
     metadata_keys=("cwd", "model", "metadata"),
-    config=HookConfig(path=".opencode/plugins/agent-context-graph/index.js", layout="flat"),
+    config=HookConfig(layout="flat"),
     probe_payload={"hook_event_name": "session.deleted", "session_id": "doctor"},
 )
 
@@ -132,62 +101,38 @@ class OpenCodeHooksAdapter(SpecAdapter):
     SPEC = SPEC
 
 
-OpenCodeAdapter = OpenCodeHooksAdapter
+_PLUGIN_PATH = ".opencode/plugins/agent-context-graph/index.js"
 
 
-def build_hooks_config(command: str, *, timeout: int = 30) -> dict[str, Any]:
-    """Return an empty map because OpenCode uses a V2 plugin, not JSON hooks."""
-    return {}
+def init(
+    project_dir: Path,
+    connectors: list[str],
+    *,
+    hook_command: str | None = None,
+    timeout: int = 30,
+    force: bool = False,
+) -> None:
+    """Install the dependency-free OpenCode V2 capture plugin.
 
+    The hook command is embedded as an argv array and spawned directly, so no
+    shell (and no login-shell profile) sits between OpenCode and the hook.
+    *timeout* is accepted for CLI symmetry; OpenCode plugins have no hook timeout.
 
-def response_for_payload(payload: dict[str, Any]) -> None:
-    """OpenCode callbacks are observational and need no hook response."""
-    return None
-
-
-def init(project_dir: Path, connectors: list[str], **kwargs: Any) -> None:
-    """Install the dependency-free OpenCode V2 capture plugin."""
-    target = project_dir / SPEC.config.path
-    if target.exists() and not kwargs.get("force", False):
+    Raises:
+        FileExistsError: if the plugin file exists and *force* is false.
+    """
+    target = project_dir / _PLUGIN_PATH
+    if target.exists() and not force:
         raise FileExistsError(f"Refusing to overwrite existing OpenCode plugin: {target} (pass force=True)")
 
-    command = kwargs.get("hook_command") or hook_command_for("opencode", connectors)
+    argv = shlex.split(hook_command) if hook_command else hook_command_argv(SPEC.name, connectors)
     template = (
         resources.files("agent_context_graph.adapters").joinpath("_opencode_plugin.js").read_text(encoding="utf-8")
     )
-    plugin = template.replace("__AGENT_CONTEXT_GRAPH_COMMAND__", json.dumps(command))
+    plugin = template.replace("__AGENT_CONTEXT_GRAPH_COMMAND__", json.dumps(argv))
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(plugin, encoding="utf-8")
     print(f"Wrote {target}")
 
 
-@dataclass(frozen=True)
-class _OpenCodePlugin:
-    """OpenCode runtime registration."""
-
-    name: str = "opencode"
-    adapter_class: type[RuntimeAdapter] = OpenCodeHooksAdapter
-    probe_payload: Mapping[str, Any] = field(default_factory=lambda: SPEC.probe_payload)
-
-    def response_for_payload(self, payload: dict[str, Any]) -> None:
-        return response_for_payload(payload)
-
-    def build_hooks_config(self, command: str, *, timeout: int = 30) -> dict[str, Any]:
-        return build_hooks_config(command, timeout=timeout)
-
-    def init(self, project_dir: Path, connectors: list[str], **kwargs: Any) -> None:
-        init(project_dir, connectors, **kwargs)
-
-
-PLUGIN = _OpenCodePlugin()
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    """Run the OpenCode capture hook command."""
-    from agent_context_graph.hooks.runner import run_hook
-
-    return run_hook(PLUGIN, argv)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+PLUGIN = SpecPlugin(SPEC, OpenCodeHooksAdapter, init=init)

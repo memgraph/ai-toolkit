@@ -3,7 +3,7 @@
 import json
 
 from agent_context_graph import AgentLink
-from agent_context_graph.adapters.gemini_cli import GeminiCLIHooksAdapter, build_hooks_config, init
+from agent_context_graph.adapters.gemini_cli import PLUGIN, GeminiCLIHooksAdapter, init
 from agent_context_graph.events import EventType, MessageEvent, ToolEndEvent
 from agent_context_graph.protocols import GraphConnector
 
@@ -65,4 +65,28 @@ def test_gemini_probe_is_its_native_session_end_event():
     )
 
     assert connector.events[0].event_type == EventType.SESSION_END
-    assert build_hooks_config("capture")["SessionEnd"]
+    assert PLUGIN.build_hooks_config("capture")["SessionEnd"]
+
+
+def test_gemini_after_model_records_one_llm_end_per_response():
+    link = AgentLink()
+    connector = _RecordingConnector()
+    link.add_connector(connector)
+    adapter = GeminiCLIHooksAdapter(link)
+    request = {"model": "gemini-2.5-pro", "messages": []}
+
+    streamed_chunk = {"candidates": [{"content": {"role": "model", "parts": ["Hel"]}}]}
+    final_chunk = {
+        "candidates": [{"content": {"role": "model", "parts": ["lo"]}, "finishReason": "STOP"}],
+        "usageMetadata": {"promptTokenCount": 12, "candidatesTokenCount": 3, "totalTokenCount": 15},
+    }
+    for chunk in (streamed_chunk, streamed_chunk, final_chunk):
+        adapter.handle_payload(
+            {"hook_event_name": "AfterModel", "session_id": "gemini-1", "llm_request": request, "llm_response": chunk}
+        )
+
+    (llm_end,) = connector.events
+    assert llm_end.event_type == EventType.LLM_END
+    assert llm_end.model == "gemini-2.5-pro"
+    assert llm_end.input_tokens == 12
+    assert llm_end.output_tokens == 3

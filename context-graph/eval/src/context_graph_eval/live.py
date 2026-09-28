@@ -107,11 +107,11 @@ def hooks_settings(path: Path) -> Path:
     A whole billed session recorded no data and reported success. The workspace
     venv already has every package; asking for a subset is what broke it.
     """
-    from agent_context_graph.adapters.claude_code import build_hooks_config
+    from agent_context_graph.adapters.claude_code import PLUGIN
 
     connectors = " ".join(f"--connector {name}" for name in CONNECTORS)
     command = f"uv run agent-context-graph hook run claude-code {connectors}"
-    path.write_text(json.dumps({"hooks": build_hooks_config(command)}), encoding="utf-8")
+    path.write_text(json.dumps({"hooks": PLUGIN.build_hooks_config(command)}), encoding="utf-8")
     return path
 
 

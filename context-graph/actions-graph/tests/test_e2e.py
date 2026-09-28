@@ -227,97 +227,187 @@ class TestActionOperations:
         assert len(tool_calls) == 2
 
 
-@pytest.mark.parametrize(
-    ("adapter_class", "source_sdk", "session_start", "tool_start", "tool_end"),
-    [
-        pytest.param(CodexHooksAdapter, "codex", "SessionStart", "PreToolUse", "PostToolUse", id="codex"),
-        pytest.param(
-            ClaudeCodeHooksAdapter,
-            "claude-code",
-            "SessionStart",
-            "PreToolUse",
-            "PostToolUse",
-            id="claude-code",
-        ),
-        pytest.param(
-            GeminiCLIHooksAdapter,
-            "gemini-cli",
-            "SessionStart",
-            "BeforeTool",
-            "AfterTool",
-            id="gemini-cli",
-        ),
-        pytest.param(
-            CopilotCLIHooksAdapter,
-            "copilot-cli",
-            "sessionStart",
-            "preToolUse",
-            "postToolUse",
-            id="copilot-cli",
-        ),
-        pytest.param(
-            CursorHooksAdapter,
-            "cursor",
-            "sessionStart",
-            "preToolUse",
-            "postToolUse",
-            id="cursor",
-        ),
-        pytest.param(
-            OpenCodeHooksAdapter,
-            "opencode",
-            "session.created",
-            "tool.execute.before",
-            "tool.execute.after",
-            id="opencode",
-        ),
-    ],
-)
+_CWD = "/test/project"
+_LS = {"command": "ls"}
+
+
+def _runtime_case(adapter_class, source_sdk, payloads, *, expected_result="README.md", **marks):
+    return pytest.param(adapter_class, source_sdk, payloads, expected_result, id=source_sdk, **marks)
+
+
+# One session start, tool start, and tool end per runtime, each in that
+# runtime's own documented payload shape -- so field-name and casing drift in
+# an adapter fails against a real graph, not just a recording connector.
+_RUNTIME_CASES = [
+    _runtime_case(
+        CodexHooksAdapter,
+        "codex",
+        [
+            {"hook_event_name": "SessionStart", "session_id": "S", "cwd": _CWD, "model": "gpt-5", "source": "startup"},
+            {
+                "hook_event_name": "PreToolUse",
+                "session_id": "S",
+                "tool_name": "Bash",
+                "tool_input": _LS,
+                "tool_use_id": "t1",
+            },
+            {
+                "hook_event_name": "PostToolUse",
+                "session_id": "S",
+                "tool_name": "Bash",
+                "tool_input": _LS,
+                "tool_response": "README.md",
+                "tool_use_id": "t1",
+            },
+        ],
+    ),
+    _runtime_case(
+        ClaudeCodeHooksAdapter,
+        "claude-code",
+        [
+            {"hook_event_name": "SessionStart", "session_id": "S", "cwd": _CWD, "source": "startup"},
+            {
+                "hook_event_name": "PreToolUse",
+                "session_id": "S",
+                "tool_name": "Bash",
+                "tool_input": _LS,
+                "tool_use_id": "t1",
+            },
+            {
+                "hook_event_name": "PostToolUse",
+                "session_id": "S",
+                "tool_name": "Bash",
+                "tool_input": _LS,
+                "tool_response": {"stdout": "README.md", "stderr": "", "interrupted": False},
+                "tool_use_id": "t1",
+            },
+        ],
+        # Claude Code passes structured results through; ActionsGraph stores them as text.
+        expected_result=str({"stdout": "README.md", "stderr": "", "interrupted": False}),
+    ),
+    _runtime_case(
+        GeminiCLIHooksAdapter,
+        "gemini-cli",
+        [
+            {"hook_event_name": "SessionStart", "session_id": "S", "cwd": _CWD, "source": "startup"},
+            # Gemini sends no tool call id.
+            {"hook_event_name": "BeforeTool", "session_id": "S", "tool_name": "run_shell_command", "tool_input": _LS},
+            {
+                "hook_event_name": "AfterTool",
+                "session_id": "S",
+                "tool_name": "run_shell_command",
+                "tool_input": _LS,
+                "tool_response": {"llmContent": "README.md", "returnDisplay": "README.md"},
+            },
+        ],
+    ),
+    _runtime_case(
+        CopilotCLIHooksAdapter,
+        "copilot-cli",
+        # Native camelCase payloads carry no event name; the runner injects
+        # it from --event-name, reproduced here as hook_event_name. No tool id.
+        [
+            {"hook_event_name": "sessionStart", "sessionId": "S", "timestamp": 1, "cwd": _CWD, "source": "new"},
+            {
+                "hook_event_name": "preToolUse",
+                "sessionId": "S",
+                "cwd": _CWD,
+                "toolName": "bash",
+                "toolArgs": '{"command": "ls"}',
+            },
+            {
+                "hook_event_name": "postToolUse",
+                "sessionId": "S",
+                "cwd": _CWD,
+                "toolName": "bash",
+                "toolArgs": '{"command": "ls"}',
+                "toolResult": {"resultType": "success", "textResultForLlm": "README.md"},
+            },
+        ],
+    ),
+    _runtime_case(
+        CursorHooksAdapter,
+        "cursor",
+        [
+            {"hook_event_name": "sessionStart", "conversation_id": "S", "session_id": "S", "workspace_roots": [_CWD]},
+            {
+                "hook_event_name": "preToolUse",
+                "conversation_id": "S",
+                "tool_name": "Shell",
+                "tool_input": _LS,
+                "tool_use_id": "t1",
+            },
+            {
+                "hook_event_name": "postToolUse",
+                "conversation_id": "S",
+                "tool_name": "Shell",
+                "tool_input": _LS,
+                "tool_output": "README.md",
+                "tool_use_id": "t1",
+            },
+        ],
+    ),
+    _runtime_case(
+        OpenCodeHooksAdapter,
+        "opencode",
+        # As normalized by _opencode_plugin.js from OpenCode V2's hook and bus events.
+        [
+            {"hook_event_name": "session.created", "session_id": "S", "cwd": _CWD, "model": "claude-sonnet-5"},
+            {
+                "hook_event_name": "tool.execute.before",
+                "session_id": "S",
+                "tool_name": "bash",
+                "tool_input": _LS,
+                "tool_use_id": "t1",
+            },
+            {
+                "hook_event_name": "tool.execute.after",
+                "session_id": "S",
+                "tool_name": "bash",
+                "tool_input": _LS,
+                "tool_use_id": "t1",
+                "tool_result": "README.md",
+                "is_error": False,
+            },
+        ],
+    ),
+]
+
+
+def _with_session_id(payload: dict, session_id: str) -> dict:
+    return {key: session_id if value == "S" else value for key, value in payload.items()}
+
+
+@pytest.mark.parametrize(("adapter_class", "source_sdk", "payloads", "expected_result"), _RUNTIME_CASES)
 def test_runtime_hook_tool_events_persist_as_actions(
     graph: ActionsGraph,
     adapter_class,
     source_sdk: str,
-    session_start: str,
-    tool_start: str,
-    tool_end: str,
+    payloads: list[dict],
+    expected_result,
 ):
-    """Every command-hook runtime persists tool activity in Memgraph."""
+    """Every command-hook runtime persists its native tool activity in Memgraph."""
     session_id = f"{source_sdk}-hook-e2e"
     link = AgentLink()
     link.add_connector(ActionsGraphConnector(graph))
     adapter = adapter_class(link)
 
-    adapter.handle_payload(
-        {
-            "hook_event_name": session_start,
-            "session_id": session_id,
-            "cwd": "/test/project",
-        }
-    )
-    adapter.handle_payload(
-        {
-            "hook_event_name": tool_start,
-            "session_id": session_id,
-            "tool_name": "Read",
-            "tool_input": {"file_path": "/test/project/README.md"},
-            "tool_use_id": "tool-1",
-        }
-    )
-    adapter.handle_payload(
-        {
-            "hook_event_name": tool_end,
-            "session_id": session_id,
-            "tool_name": "Read",
-            "tool_response": "project documentation",
-            "tool_use_id": "tool-1",
-        }
-    )
+    for payload in payloads:
+        adapter.handle_payload(_with_session_id(payload, session_id))
+
+    session = graph.get_session(session_id)
+    assert session is not None
+    assert session.working_directory == _CWD
 
     actions = graph.get_session_actions(session_id)
-
     assert [action.action_type for action in actions] == [ActionType.TOOL_CALL, ActionType.TOOL_RESULT]
-    assert all(isinstance(action, (ToolCall, ToolResult)) for action in actions)
-    assert [action.tool_name for action in actions if isinstance(action, (ToolCall, ToolResult))] == ["Read", "Read"]
+    tool_call, tool_result = actions
+    assert isinstance(tool_call, ToolCall)
+    assert isinstance(tool_result, ToolResult)
+    assert tool_call.tool_name == tool_result.tool_name
+    assert tool_call.tool_input == _LS
+    assert tool_result.content == expected_result
+    assert tool_result.is_error is False
     assert all(action.metadata["source_sdk"] == source_sdk for action in actions)
 
 

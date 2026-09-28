@@ -39,9 +39,9 @@ def test_opencode_shim_payloads_emit_events():
     )
     adapter.handle_payload(
         {
-            "hook_event_name": "session.error",
+            "hook_event_name": "session.execution.failed",
             "session_id": "open-1",
-            "error": {"name": "ProviderError", "message": "unavailable"},
+            "error": {"type": "ProviderError", "message": "unavailable", "status": 503},
         }
     )
 
@@ -52,6 +52,7 @@ def test_opencode_shim_payloads_emit_events():
     assert tool_end.result == "contents"
     assert isinstance(error, ErrorOccurredEvent)
     assert error.error_type == "ProviderError"
+    assert error.error_details == {"status": 503}
 
 
 def test_opencode_init_installs_v2_plugin_with_capture_command(tmp_path):
@@ -60,31 +61,30 @@ def test_opencode_init_installs_v2_plugin_with_capture_command(tmp_path):
     plugin = (tmp_path / ".opencode" / "plugins" / "agent-context-graph" / "index.js").read_text()
     assert 'id: "memgraph.agent-context-graph"' in plugin
     assert "Plugin.define" in plugin
-    assert '"capture --strict"' in plugin
+    assert 'const command = ["capture", "--strict"]' in plugin
+    assert '"-lc"' not in plugin
     assert "ctx.tool.hook" in plugin
     assert "ctx.event.subscribe" in plugin
+    assert "event.data" in plugin
+    assert "tool_use_id: event.id" in plugin
     assert '"session.idle"' not in plugin
 
 
-def test_opencode_records_assistant_updates_without_ending_idle_session():
+def test_opencode_records_completed_assistant_text_and_ignores_unmapped_events():
     link = AgentLink()
     connector = _RecordingConnector()
     link.add_connector(connector)
     adapter = OpenCodeHooksAdapter(link)
 
-    assert (
-        adapter.handle_payload(
-            {"hook_event_name": "message.updated", "session_id": "open-1", "role": "user", "content": "duplicate"}
-        )
-        == []
-    )
+    assert adapter.handle_payload({"hook_event_name": "session.text.delta", "session_id": "open-1"}) == []
     assert adapter.handle_payload({"hook_event_name": "session.idle", "session_id": "open-1"}) == []
 
-    message = adapter.handle_payload(
-        {"hook_event_name": "message.updated", "session_id": "open-1", "role": "assistant", "content": "done"}
-    )[0]
+    message = adapter.handle_payload({"hook_event_name": "session.text.ended", "session_id": "open-1", "text": "done"})[
+        0
+    ]
     session_end = adapter.handle_payload({"hook_event_name": "session.deleted", "session_id": "open-1"})[0]
 
     assert isinstance(message, MessageEvent)
     assert message.role == "assistant"
+    assert message.content == "done"
     assert isinstance(session_end, SessionEndEvent)

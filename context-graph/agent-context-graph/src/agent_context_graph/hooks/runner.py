@@ -10,6 +10,7 @@ of env var names. This collapses that into one implementation driven by a
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import sys
@@ -58,6 +59,31 @@ def create_link(connector_names: Iterable[str] = (), *, memgraph_env: dict[str, 
             msg = f"Unsupported connector: {connector_name}"
             raise ValueError(msg)
     return link
+
+
+_SCHEMA_COMPONENTS = {
+    "skills_graph": ("skills_graph", "SkillGraph"),
+    "actions_graph": ("actions_graph", "ActionsGraph"),
+    "sessions_graph": ("sessions_graph", "SessionsGraph"),
+}
+
+
+def setup_connector_schemas(connector_names: Iterable[str], *, memgraph_env: dict[str, str] | None = None) -> None:
+    """Create the Memgraph schema (indexes, constraints) for each named connector.
+
+    Raises:
+        ValueError: if a connector name is not supported.
+    """
+    kwargs = _memgraph_kwargs(memgraph_env)
+    for connector_name in connector_names:
+        normalized = connector_name.strip().replace("-", "_")
+        if not normalized:
+            continue
+        if normalized not in _SCHEMA_COMPONENTS:
+            raise ValueError(f"Unsupported connector: {connector_name}")
+        module_name, class_name = _SCHEMA_COMPONENTS[normalized]
+        component_class = getattr(importlib.import_module(module_name), class_name)
+        component_class(**kwargs).setup()
 
 
 def _env_prefix(runtime_name: str) -> str:

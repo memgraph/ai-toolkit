@@ -5,7 +5,14 @@ import json
 
 from agent_context_graph import AgentLink
 from agent_context_graph.adapters.copilot_cli import PLUGIN, CopilotCLIHooksAdapter, init
-from agent_context_graph.events import AgentEndEvent, ErrorOccurredEvent, SessionEndEvent, ToolEndEvent
+from agent_context_graph.events import (
+    AgentEndEvent,
+    AgentStartEvent,
+    ErrorOccurredEvent,
+    SessionEndEvent,
+    ToolEndEvent,
+    ToolStartEvent,
+)
 from agent_context_graph.hooks.runner import run_hook
 from agent_context_graph.protocols import GraphConnector
 
@@ -90,8 +97,68 @@ def test_copilot_only_ends_session_for_session_end():
 
 
 def test_runner_injects_event_name_for_native_copilot_payload(monkeypatch, capsys):
+    connector = _RecordingConnector()
+    link = AgentLink()
+    link.add_connector(connector)
+    monkeypatch.setattr("agent_context_graph.hooks.runner.create_link", lambda *_args, **_kwargs: link)
     monkeypatch.setattr("sys.stdin", io.StringIO('{"sessionId":"copilot-1","agentName":"research"}'))
 
     assert run_hook(PLUGIN, ["--event-name", "subagentStop"]) == 0
 
-    assert json.loads(capsys.readouterr().out) == {"decision": "allow"}
+    # Empty output falls through to Copilot's default behavior.
+    assert capsys.readouterr().out == ""
+    (agent_end,) = connector.events
+    assert isinstance(agent_end, AgentEndEvent)
+    assert agent_end.agent_name == "research"
+
+
+def test_copilot_native_payloads_parse_tool_args_and_flag_failed_results():
+    link = AgentLink()
+    connector = _RecordingConnector()
+    link.add_connector(connector)
+    adapter = CopilotCLIHooksAdapter(link)
+
+    adapter.handle_payload(
+        {"hook_event_name": "preToolUse", "sessionId": "copilot-1", "toolName": "bash", "toolArgs": '{"command": "ls"}'}
+    )
+    adapter.handle_payload(
+        {
+            "hook_event_name": "postToolUse",
+            "sessionId": "copilot-1",
+            "toolName": "bash",
+            "toolArgs": '{"command": "ls"}',
+            "toolResult": {"resultType": "failure", "textResultForLlm": "permission denied"},
+        }
+    )
+
+    tool_start, tool_end = connector.events
+    assert isinstance(tool_start, ToolStartEvent)
+    assert tool_start.tool_input == {"command": "ls"}
+    assert isinstance(tool_end, ToolEndEvent)
+    assert tool_end.is_error is True
+    assert tool_end.result == "permission denied"
+    assert tool_end.metadata["tool_input"] == {"command": "ls"}
+
+
+def test_copilot_subagent_start_and_stop_share_agent_name():
+    link = AgentLink()
+    connector = _RecordingConnector()
+    link.add_connector(connector)
+    adapter = CopilotCLIHooksAdapter(link)
+
+    adapter.handle_payload({"hook_event_name": "subagentStart", "sessionId": "copilot-1", "agentName": "research"})
+    adapter.handle_payload(
+        {
+            "hook_event_name": "subagentStop",
+            "sessionId": "copilot-1",
+            "agentId": "agent-7",
+            "agentType": "general-purpose",
+            "agentName": "research",
+            "response": "Done",
+        }
+    )
+
+    agent_start, agent_end = connector.events
+    assert isinstance(agent_start, AgentStartEvent)
+    assert agent_start.agent_name == agent_end.agent_name == "research"
+    assert agent_end.agent_type == "general-purpose"

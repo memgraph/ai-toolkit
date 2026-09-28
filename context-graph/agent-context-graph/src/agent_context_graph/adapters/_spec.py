@@ -1,8 +1,9 @@
 """Declarative support for command-hook runtime adapters.
 
-Runtime modules describe field aliases, event rules, and hook configuration.
-This module owns the shared payload dispatch and command-config rendering so a
-new runtime does not need to duplicate the adapter lifecycle.
+Runtime modules describe field aliases, event rules, hook responses, and hook
+configuration in a :class:`RuntimeSpec`. This module owns the shared payload
+dispatch, command-config rendering, and runtime registration so a new runtime
+only declares what differs about it.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 from agent_context_graph.adapters._identity import resolve_user_id
+from agent_context_graph.events import SessionStartEvent, ToolEndEvent, ToolStartEvent
 from agent_context_graph.protocols import RuntimeAdapter
 
 if TYPE_CHECKING:
@@ -25,6 +27,7 @@ if TYPE_CHECKING:
     from agent_context_graph.link import AgentLink
 
 EventRule = Callable[["EventContext"], "Event | list[Event] | None"]
+Installer = Callable[..., None]
 
 
 @dataclass(frozen=True)
@@ -58,10 +61,14 @@ class FieldMap:
 
 @dataclass(frozen=True)
 class HookConfig:
-    """Describe how a runtime represents and stores command hooks."""
+    """Describe how a runtime represents and stores command hooks.
 
-    path: str
+    ``path`` is ``None`` for a runtime whose hooks are installed by something
+    other than a project-local JSON file (e.g. Claude Code's plugin).
+    """
+
     layout: Literal["nested", "flat"]
+    path: str | None = None
     root_key: str = "hooks"
     version: int | None = None
     merge: bool = False
@@ -75,7 +82,13 @@ class HookConfig:
 
 @dataclass(frozen=True)
 class RuntimeSpec:
-    """Declarative contract for one command-hook runtime."""
+    """Declarative contract for one command-hook runtime.
+
+    ``responses`` maps an event name to the JSON the runtime expects on stdout
+    for it; events not listed get no output. ``event_aliases`` maps alternate
+    spellings of an event name onto the canonical name used by ``rules`` and
+    ``responses``.
+    """
 
     name: str
     source_sdk: str
@@ -85,8 +98,14 @@ class RuntimeSpec:
     metadata_keys: tuple[str, ...]
     config: HookConfig
     fields: FieldMap = FieldMap()
-    response_events: frozenset[str] = frozenset()
+    responses: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    event_aliases: Mapping[str, str] = field(default_factory=dict)
     probe_payload: Mapping[str, Any] = field(default_factory=dict)
+
+    def event_name(self, payload: Mapping[str, Any]) -> str:
+        """Return *payload*'s canonical event name."""
+        name = str(payload.get(self.event_key))
+        return self.event_aliases.get(name, name)
 
 
 @dataclass
@@ -107,9 +126,9 @@ class EventContext:
         return default
 
     def text(self, field_name: str, default: str = "") -> str:
-        """Return a common field coerced to text."""
+        """Return a common field coerced to text, or *default* when missing or empty."""
         value = self.value(field_name)
-        return default if value is None else str(value)
+        return default if value is None or value == "" else str(value)
 
     def optional_text(self, field_name: str) -> str | None:
         """Return a common field as text when present."""
@@ -141,8 +160,7 @@ class SpecAdapter(RuntimeAdapter):
 
     def handle_payload(self, payload: dict[str, Any]) -> list[Event]:
         """Translate and emit every event described by *payload*."""
-        event_name = payload.get(self.SPEC.event_key)
-        rule = self.SPEC.rules.get(str(event_name))
+        rule = self.SPEC.rules.get(self.SPEC.event_name(payload))
         if rule is None:
             return []
 
@@ -164,6 +182,55 @@ class SpecAdapter(RuntimeAdapter):
             if payload.get(key) is not None:
                 return str(payload[key])
         return ""
+
+
+@dataclass(frozen=True)
+class SpecPlugin:
+    """Runtime registration (``RuntimeCLIPlugin``) derived from a :class:`RuntimeSpec`.
+
+    ``init`` is ``None`` for a runtime with no project-local installer, which
+    the CLI reports as "not implemented" (see ``RuntimeCLIPlugin``).
+    """
+
+    spec: RuntimeSpec
+    adapter_class: type[SpecAdapter]
+    init: Installer | None = None
+
+    @property
+    def name(self) -> str:
+        """Return the runtime's registered name."""
+        return self.spec.name
+
+    @property
+    def probe_payload(self) -> Mapping[str, Any]:
+        """Return the payload ``doctor`` replays to smoke-test the runtime."""
+        return self.spec.probe_payload
+
+    def response_for_payload(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        """Return the JSON the runtime expects on stdout for *payload*, if any."""
+        response = self.spec.responses.get(self.spec.event_name(payload))
+        return None if response is None else dict(response)
+
+    def build_hooks_config(self, command: str, *, timeout: int = 30) -> dict[str, Any]:
+        """Render the runtime's hook map using *command*."""
+        return build_hooks_config(self.spec, command, timeout=timeout)
+
+
+def json_hook_installer(spec: RuntimeSpec) -> Installer:
+    """Return an ``init`` that writes *spec*'s project-local JSON hook file."""
+
+    def init(
+        project_dir: Path,
+        connectors: list[str],
+        *,
+        hook_command: str | None = None,
+        timeout: int = 30,
+        force: bool = False,
+    ) -> None:
+        path = write_hook_config(spec, project_dir, connectors, hook_command=hook_command, timeout=timeout, force=force)
+        print(f"Wrote {path}")
+
+    return init
 
 
 def build_hooks_config(spec: RuntimeSpec, command: str, *, timeout: int = 30) -> dict[str, list[dict[str, Any]]]:
@@ -190,13 +257,6 @@ def build_hooks_config(spec: RuntimeSpec, command: str, *, timeout: int = 30) ->
     return config
 
 
-def response_for_payload(spec: RuntimeSpec, payload: dict[str, Any]) -> dict[str, Any] | None:
-    """Return the non-blocking response required by selected hook events."""
-    if payload.get(spec.event_key) in spec.response_events:
-        return {"continue": True}
-    return None
-
-
 def write_hook_config(
     spec: RuntimeSpec,
     project_dir: Path,
@@ -210,7 +270,14 @@ def write_hook_config(
 
     Existing settings files are merged only when the runtime declares
     ``merge=True``. Otherwise callers must pass ``force=True`` to replace one.
+
+    Raises:
+        ValueError: if *spec* declares no config path, or an existing file to
+            merge into is not a JSON object with an object-valued hook map.
+        FileExistsError: if the file exists, is not mergeable, and *force* is false.
     """
+    if spec.config.path is None:
+        raise ValueError(f"{spec.name} has no project-local hook config file")
     config_path = project_dir / spec.config.path
     if config_path.exists() and not spec.config.merge and not force:
         raise FileExistsError(f"Refusing to overwrite existing {spec.name} config: {config_path} (pass force=True)")
@@ -237,14 +304,19 @@ def write_hook_config(
     return config_path
 
 
-def hook_command_for(runtime: str, connectors: list[str]) -> str:
-    """Build the installed hook command for *runtime* and *connectors*."""
+def hook_command_argv(runtime: str, connectors: list[str]) -> list[str]:
+    """Build the installed hook command for *runtime* and *connectors* as argv."""
     executable = shutil.which("agent-context-graph")
     base = [executable] if executable else [sys.executable, "-m", "agent_context_graph.cli"]
-    parts = [*base, "hook", "run", runtime]
+    argv = [*base, "hook", "run", runtime]
     for connector in connectors:
-        parts.extend(["--connector", connector])
-    return shlex.join(parts)
+        argv.extend(["--connector", connector])
+    return argv
+
+
+def hook_command_for(runtime: str, connectors: list[str]) -> str:
+    """Build the installed hook command for *runtime* and *connectors* as a shell string."""
+    return shlex.join(hook_command_argv(runtime, connectors))
 
 
 def _metadata_from_payload(payload: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
@@ -278,3 +350,38 @@ def extract_tool_result(tool_response: Any) -> tuple[Any, bool, str | None]:
     if result is None:
         result = tool_response
     return result, is_error, string_or_none(error_message)
+
+
+def session_start(context: EventContext) -> SessionStartEvent:
+    """Default session-start rule: working directory, model, and user identity."""
+    return SessionStartEvent(
+        **context.base(),
+        model=context.optional_text("model"),
+        working_directory=context.optional_text("cwd"),
+        user_id=event_user_id(context),
+    )
+
+
+def tool_start(context: EventContext) -> ToolStartEvent:
+    """Default tool-start rule shared by every command-hook runtime."""
+    return ToolStartEvent(
+        **context.base(),
+        tool_name=context.text("tool_name"),
+        tool_input=context.value("tool_input"),
+        tool_use_id=context.optional_text("tool_use_id"),
+        agent_name=context.optional_text("agent_id"),
+    )
+
+
+def tool_end(context: EventContext) -> ToolEndEvent:
+    """Default tool-end rule: normalize the result via :func:`extract_tool_result`."""
+    result, is_error, error_message = extract_tool_result(context.value("tool_result"))
+    return ToolEndEvent(
+        **context.base(),
+        tool_name=context.text("tool_name"),
+        tool_use_id=context.optional_text("tool_use_id"),
+        result=result,
+        is_error=is_error,
+        error_message=error_message,
+        agent_name=context.optional_text("agent_id"),
+    )

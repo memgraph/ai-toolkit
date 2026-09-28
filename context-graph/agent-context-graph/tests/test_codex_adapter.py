@@ -3,7 +3,7 @@
 import io
 
 from agent_context_graph import AgentLink
-from agent_context_graph.adapters.codex import CodexHooksAdapter, build_hooks_config, load_payload, response_for_payload
+from agent_context_graph.adapters.codex import PLUGIN, CodexHooksAdapter
 from agent_context_graph.events import (
     Event,
     EventType,
@@ -12,6 +12,7 @@ from agent_context_graph.events import (
     ToolEndEvent,
     ToolStartEvent,
 )
+from agent_context_graph.hooks.runner import load_payload
 from agent_context_graph.protocols import GraphConnector
 
 
@@ -139,11 +140,11 @@ def test_stop_payload_emits_session_end_and_json_response():
     adapter.handle_payload(payload)
 
     assert rec.events[0].event_type == EventType.SESSION_END
-    assert response_for_payload(payload) == {"continue": True}
+    assert PLUGIN.response_for_payload(payload) == {"continue": True}
 
 
 def test_build_hooks_config_uses_command_for_supported_hooks():
-    config = build_hooks_config("python hook.py")
+    config = PLUGIN.build_hooks_config("python hook.py")
 
     assert "SessionStart" in config
     assert "PreToolUse" in config

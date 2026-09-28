@@ -12,6 +12,8 @@
 # Env overrides:
 #   CONTEXT_GRAPH_RUNTIME         claude-code (default), codex, gemini-cli,
 #                                 copilot-cli, cursor, or opencode
+#   CONTEXT_GRAPH_PROJECT_DIR     project to wire for gemini-cli, copilot-cli,
+#                                 cursor, opencode (default: current directory)
 #   AGENT_CONTEXT_GRAPH_USER_ID   identity to record (default: git user.name, else $USER)
 #   MEMGRAPH_HOST / MEMGRAPH_PORT default localhost:7687
 #   SKIP_MEMGRAPH=1               don't start a local Memgraph even if none is reachable
@@ -20,10 +22,21 @@
 set -euo pipefail
 
 RUNTIME="${CONTEXT_GRAPH_RUNTIME:-claude-code}"
+# RUNTIME_WIRING: "plugin" installs a distributable Runtime Plugin (user-wide);
+# "project" writes project-local wiring with `hook init`.
 case "$RUNTIME" in
-  claude-code | codex | gemini-cli | copilot-cli | cursor | opencode) ;;
-  *) echo "FAIL unknown CONTEXT_GRAPH_RUNTIME: $RUNTIME" >&2; exit 1 ;;
+  claude-code) RUNTIME_LABEL="Claude Code"; RUNTIME_BINS=(claude); RUNTIME_WIRING=plugin ;;
+  codex) RUNTIME_LABEL="Codex"; RUNTIME_BINS=(codex); RUNTIME_WIRING=plugin ;;
+  gemini-cli) RUNTIME_LABEL="Gemini CLI"; RUNTIME_BINS=(gemini); RUNTIME_WIRING=project ;;
+  copilot-cli) RUNTIME_LABEL="GitHub Copilot CLI"; RUNTIME_BINS=(copilot); RUNTIME_WIRING=project ;;
+  cursor) RUNTIME_LABEL="Cursor"; RUNTIME_BINS=(cursor cursor-agent); RUNTIME_WIRING=project ;;
+  opencode) RUNTIME_LABEL="OpenCode"; RUNTIME_BINS=(opencode); RUNTIME_WIRING=project ;;
+  *)
+    echo "FAIL unknown CONTEXT_GRAPH_RUNTIME: $RUNTIME (expected claude-code, codex, gemini-cli, copilot-cli, cursor, or opencode)" >&2
+    exit 1
+    ;;
 esac
+PROJECT_DIR="${CONTEXT_GRAPH_PROJECT_DIR:-$PWD}"
 CONNECTORS=(skills-graph actions-graph sessions-graph)
 MEMGRAPH_HOST="${MEMGRAPH_HOST:-localhost}"
 MEMGRAPH_PORT="${MEMGRAPH_PORT:-7687}"
@@ -119,20 +132,18 @@ case "$RUNTIME" in
       codex plugin add context-graph@context-graph-plugins
     fi
     ;;
-  gemini-cli)
-    command -v gemini >/dev/null 2>&1 || fail "gemini (Gemini CLI) not found on PATH -- install Gemini CLI first."
-    echo "Gemini CLI uses project-local command hooks; configuration follows CLI installation."
-    ;;
-  copilot-cli)
-    command -v copilot >/dev/null 2>&1 || fail "copilot (GitHub Copilot CLI) not found on PATH -- install Copilot CLI first."
-    echo "Copilot CLI uses project-local command hooks; configuration follows CLI installation."
-    ;;
-  cursor)
-    echo "Cursor uses project-local command hooks; configuration follows CLI installation."
-    ;;
-  opencode)
-    command -v opencode >/dev/null 2>&1 || fail "opencode not found on PATH -- install OpenCode first."
-    echo "OpenCode uses a project-local V2 plugin; installation follows CLI installation."
+  *)
+    runtime_bin_found=false
+    for bin in "${RUNTIME_BINS[@]}"; do
+      command -v "$bin" >/dev/null 2>&1 && runtime_bin_found=true
+    done
+    $runtime_bin_found || fail "${RUNTIME_BINS[*]} not found on PATH -- install $RUNTIME_LABEL first."
+    [[ -d "$PROJECT_DIR" ]] || fail "CONTEXT_GRAPH_PROJECT_DIR is not a directory: $PROJECT_DIR"
+    # Under `curl | bash` the current directory is wherever the user happened
+    # to be; wiring $HOME would capture every session started anywhere below it.
+    [[ "$(cd "$PROJECT_DIR" && pwd -P)" != "$(cd "$HOME" && pwd -P)" ]] ||
+      fail "refusing to write $RUNTIME_LABEL project wiring into \$HOME -- cd into a project or set CONTEXT_GRAPH_PROJECT_DIR."
+    echo "$RUNTIME_LABEL uses project-local wiring for $PROJECT_DIR; it is written after the CLI install."
     ;;
 esac
 
@@ -158,17 +169,15 @@ for c in "${CONNECTORS[@]}"; do connector_flags+=(--connector "$c"); done
 MEMGRAPH_HOST="$MEMGRAPH_HOST" MEMGRAPH_PORT="$MEMGRAPH_PORT" \
   agent-context-graph bootstrap --runtime "$RUNTIME" "${connector_flags[@]}" --no-reinstall
 
-case "$RUNTIME" in
-  gemini-cli | copilot-cli | cursor)
-    log "Installing project-local $RUNTIME capture wiring"
-    agent-context-graph hook init "$RUNTIME" --project-dir "$PWD" "${connector_flags[@]}"
-    ;;
-  opencode)
-    log "Installing project-local $RUNTIME capture wiring"
-    # This dedicated generated file is safe to refresh on repeated installs.
-    agent-context-graph hook init "$RUNTIME" --project-dir "$PWD" "${connector_flags[@]}" --force
-    ;;
-esac
+if [[ "$RUNTIME_WIRING" == project ]]; then
+  log "Installing project-local $RUNTIME_LABEL capture wiring in $PROJECT_DIR"
+  init_flags=()
+  # OpenCode's plugin is a dedicated generated file, safe to refresh on
+  # repeated installs; the JSON hook files are merged instead.
+  [[ "$RUNTIME" == opencode ]] && init_flags+=(--force)
+  # The `+` expansion keeps an empty array safe under `set -u` on bash 3.2 (macOS).
+  agent-context-graph hook init "$RUNTIME" --project-dir "$PROJECT_DIR" "${connector_flags[@]}" ${init_flags[@]+"${init_flags[@]}"}
+fi
 
 # ---- 5. Identity --------------------------------------------------------------
 USER_ID="${AGENT_CONTEXT_GRAPH_USER_ID:-$(git config --get user.name 2>/dev/null || true)}"
@@ -180,14 +189,6 @@ agent-context-graph config set identity.user_id "$USER_ID"
 log "Verifying"
 agent-context-graph doctor --runtime "$RUNTIME" "${connector_flags[@]}"
 
-case "$RUNTIME" in
-  claude-code) RUNTIME_LABEL="Claude Code" ;;
-  codex) RUNTIME_LABEL="Codex" ;;
-  gemini-cli) RUNTIME_LABEL="Gemini CLI" ;;
-  copilot-cli) RUNTIME_LABEL="GitHub Copilot CLI" ;;
-  cursor) RUNTIME_LABEL="Cursor" ;;
-  opencode) RUNTIME_LABEL="OpenCode" ;;
-esac
 echo ""
 echo -e "\033[1;32m✓ Context Graph is live.\033[0m Use $RUNTIME_LABEL normally -- every session now"
 echo "writes Actions/Skills/Memories to bolt://${MEMGRAPH_HOST}:${MEMGRAPH_PORT}."
