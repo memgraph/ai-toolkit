@@ -1,0 +1,31 @@
+
+== as written: 72 edges; works_shift 3; edges touching Admon 0
+    works_shift(Person:'Agent' -> TimeWindow:'Saturday')
+    works_shift(Person:'Agent' -> TimeWindow:'Sunday')
+    works_shift(Person:'agent' -> TimeWindow:'Sunday')
+
+== linearized, generic: 84 edges; works_shift 0; edges touching Admon 0
+
+== linearized, with a verb: 89 edges; works_shift 18; edges touching Admon 1
+    works_shift(Person:'Adam' -> TimeWindow:'12 am - 8 am')
+    works_shift(Person:'Admon' -> TimeWindow:'12 am - 8 am')
+    works_shift(Person:'Agent 1' -> TimeWindow:'12 am - 8 am')
+    works_shift(Person:'Agent 1' -> TimeWindow:'12 pm - 8 pm')
+    works_shift(Person:'Agent 1' -> TimeWindow:'4 pm - 12 am')
+    works_shift(Person:'Agent 1' -> TimeWindow:'8 am - 4 pm')
+    works_shift(Person:'Agent 1' -> TimeWindow:'one shift per day')
+    works_shift(Person:'Agent 2' -> TimeWindow:'one shift per day')
+    works_shift(Person:'Agent 3' -> TimeWindow:'one shift per day')
+    works_shift(Person:'Ehab' -> TimeWindow:'4 pm - 12 am')
+    works_shift(Person:'Magdy' -> TimeWindow:'12 am - 8 am')
+    works_shift(Person:'Mostafa' -> TimeWindow:'12 am - 8 am')
+    works_shift(Person:'Mostafa' -> TimeWindow:'4 pm - 12 am')
+    works_shift(Person:'Sara' -> TimeWindow:'12 am - 8 am')
+    works_shift(Person:'Sara' -> TimeWindow:'4 pm - 12 am')
+    works_shift(User:'Ehab' -> TimeWindow:'4 pm - 12 am')
+    works_shift(User:'Magdy' -> TimeWindow:'4 pm - 12 am')
+    works_shift(User:'Nemr' -> TimeWindow:'4 pm - 12 am')
+
+generic row: Sunday, 8 am - 4 pm (Day Shift): Admon. Sunday, 12 pm - 8 pm (Afternoon Shift): Magdy. Sunday, 4 pm - 12 am (Evening Shift): Ehab. Sunday, 12 am - 8 am (Night S
+
+with a verb row: Admon is assigned to the 8 am - 4 pm (Day Shift) on Sunday. Magdy is assigned to the 12 pm - 8 pm (Afternoon Shift) on Sunday. Ehab is assigned to the 4 pm - 12

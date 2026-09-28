@@ -1,0 +1,6 @@
+regime          windows  mentions   raw  distinct  cross-turn  user->asst  ungrounded   secs   answer-bearing
+words 192/32        215      3889  1258       465    406 (32%)         321          61    189   {'single-session-user': 2, 'temporal-reasoning': 5, 'knowledge-update': 3}
+words 384/64        109      2386  1121       342    507 (45%)         388          96    149   {'single-session-user': 3, 'temporal-reasoning': 5, 'knowledge-update': 3}
+words 768/128        56      1276   784       172    515 (66%)         349          82    113   {'single-session-user': 2, 'knowledge-update': 4}
+turns <=384         143      2413   947       369    142 (15%)         106          11    147   {'single-session-user': 2, 'temporal-reasoning': 3, 'knowledge-update': 3}
+one turn each       164      2509   895       393      0 (0%)           0           0    153   {'single-session-user': 2, 'temporal-reasoning': 3, 'knowledge-update': 3}

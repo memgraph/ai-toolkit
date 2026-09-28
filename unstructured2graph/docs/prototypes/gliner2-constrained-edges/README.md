@@ -21,6 +21,8 @@ python value_types.py            # #361: value-shaped entity types, recall and c
 python range_width.py            # #359: what declared ranges suppress, and two rules that fail (section G)
 python multilabel.py             # #360: multi-label pairs and the co-fired `prefers` windows (section H)
 python relation_lever.py         # #360: relation description vs name as the steering lever (section H)
+python windowing.py              # #352: word vs turn-aligned windows, cross-turn edges (section I)
+python tables.py                 # #352: markdown tables, as written vs linearized (section I)
 ```
 
 > **Correction (#350 comment).** The first run of this prototype built each arm's
@@ -239,3 +241,28 @@ as `{name: {"head": "", "tail": ""}}` (`joint_ie/compiler.py:27-28`), so a sharp
 it trades recall for precision rather than separating them: `likes` fires 2.4x, keeps
 6/6 true and 10/11 false; `says_they_like` keeps 3/6 and 5/11 and heads on `'assistant'`
 26 times. Renaming one label shifts the others' output too — `relation_lever.log`.
+
+## I. #352 — windows follow turns
+
+`windowing.py` runs #361's value vocabulary under five regimes. The 384/64 word regime
+must reproduce `value_types.py`'s values arm (1121 raw edges, asserted):
+
+| regime | raw | distinct | cross-turn | user->assistant (ungrounded) |
+|---|---:|---:|---:|---:|
+| words 192/32 | 1258 | 465 | 32% | 321 (61) |
+| words 384/64 | 1121 | 342 | 45% | 388 (96) |
+| words 768/128 | 784 | 172 | 66% | 349 (82) |
+| turns packed <=384 | 947 | 369 | 15% | 106 (11) |
+| one turn each | 895 | 393 | 0% | 0 (0) |
+
+Past the encoder's 512 positions, extraction degrades: at 768 words mentions and distinct
+claims halve. Under word windows, 35% of all edges put an assistant-turn tail on a
+user-turn head (*ungrounded*: the user never wrote the tail anywhere in the session), and
+those heads pass #358's gate, which checks only the head's turn. One turn per window
+removes them, yields more distinct claims, loses no answer, and gains #359's
+`visited(User -> 'museum of modern art')` — `windowing.log`.
+
+`tables.py`: a markdown table spreads a fact across a column header, a row label and a
+cell. Rewriting rows as generic sentences binds nothing (no predicate); a verb template
+binds but puts Admon on the wrong shift and drops the day — the fact is n-ary —
+`tables.log`.
