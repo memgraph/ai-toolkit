@@ -10,10 +10,10 @@
 #   curl -fsSL https://raw.githubusercontent.com/memgraph/ai-toolkit/main/context-graph/scripts/install.sh | bash
 #
 # Env overrides:
-#   CONTEXT_GRAPH_RUNTIME         claude-code (default), codex, gemini-cli,
-#                                 copilot-cli, cursor, or opencode
-#   CONTEXT_GRAPH_PROJECT_DIR     project to wire for gemini-cli, copilot-cli,
-#                                 cursor, opencode (default: current directory)
+#   CONTEXT_GRAPH_RUNTIME         claude-code (default), codex, copilot-cli,
+#                                 cursor, opencode, or antigravity-cli
+#   CONTEXT_GRAPH_PROJECT_DIR     project to wire for copilot-cli, cursor,
+#                                 opencode, antigravity-cli (default: current directory)
 #   AGENT_CONTEXT_GRAPH_USER_ID   identity to record (default: git user.name, else $USER)
 #   MEMGRAPH_HOST / MEMGRAPH_PORT default localhost:7687
 #   SKIP_MEMGRAPH=1               don't start a local Memgraph even if none is reachable
@@ -27,12 +27,12 @@ RUNTIME="${CONTEXT_GRAPH_RUNTIME:-claude-code}"
 case "$RUNTIME" in
   claude-code) RUNTIME_LABEL="Claude Code"; RUNTIME_BINS=(claude); RUNTIME_WIRING=plugin ;;
   codex) RUNTIME_LABEL="Codex"; RUNTIME_BINS=(codex); RUNTIME_WIRING=plugin ;;
-  gemini-cli) RUNTIME_LABEL="Gemini CLI"; RUNTIME_BINS=(gemini); RUNTIME_WIRING=project ;;
   copilot-cli) RUNTIME_LABEL="GitHub Copilot CLI"; RUNTIME_BINS=(copilot); RUNTIME_WIRING=project ;;
   cursor) RUNTIME_LABEL="Cursor"; RUNTIME_BINS=(cursor cursor-agent); RUNTIME_WIRING=project ;;
   opencode) RUNTIME_LABEL="OpenCode"; RUNTIME_BINS=(opencode); RUNTIME_WIRING=project ;;
+  antigravity-cli) RUNTIME_LABEL="Antigravity CLI"; RUNTIME_BINS=(agy); RUNTIME_WIRING=project ;;
   *)
-    echo "FAIL unknown CONTEXT_GRAPH_RUNTIME: $RUNTIME (expected claude-code, codex, gemini-cli, copilot-cli, cursor, or opencode)" >&2
+    echo "FAIL unknown CONTEXT_GRAPH_RUNTIME: $RUNTIME (expected claude-code, codex, copilot-cli, cursor, opencode, or antigravity-cli)" >&2
     exit 1
     ;;
 esac

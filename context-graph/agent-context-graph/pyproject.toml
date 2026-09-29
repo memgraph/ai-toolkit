@@ -21,10 +21,10 @@ agent-context-graph = "agent_context_graph.cli:main"
 [project.entry-points."agent_context_graph.runtimes"]
 codex = "agent_context_graph.adapters.codex:PLUGIN"
 claude-code = "agent_context_graph.adapters.claude_code:PLUGIN"
-gemini-cli = "agent_context_graph.adapters.gemini_cli:PLUGIN"
 copilot-cli = "agent_context_graph.adapters.copilot_cli:PLUGIN"
 cursor = "agent_context_graph.adapters.cursor:PLUGIN"
 opencode = "agent_context_graph.adapters.opencode:PLUGIN"
+antigravity-cli = "agent_context_graph.adapters.antigravity_cli:PLUGIN"
 
 [project.optional-dependencies]
 claude = [

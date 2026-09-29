@@ -18,7 +18,7 @@ from agent_context_graph.protocols import GraphConnector
 if TYPE_CHECKING:
     from agent_context_graph.events import Event
 
-EXPECTED_RUNTIMES = {"codex", "claude-code", "gemini-cli", "copilot-cli", "cursor", "opencode"}
+EXPECTED_RUNTIMES = {"codex", "claude-code", "copilot-cli", "cursor", "opencode", "antigravity-cli"}
 
 
 class _RecordingConnector(GraphConnector):

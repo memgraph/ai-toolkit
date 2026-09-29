@@ -17,11 +17,11 @@ from actions_graph import (
 )
 from actions_graph.connector import ActionsGraphConnector
 from agent_context_graph import AgentLink
+from agent_context_graph.adapters.antigravity_cli import AntigravityCLIHooksAdapter
 from agent_context_graph.adapters.claude_code import ClaudeCodeHooksAdapter
 from agent_context_graph.adapters.codex import CodexHooksAdapter
 from agent_context_graph.adapters.copilot_cli import CopilotCLIHooksAdapter
 from agent_context_graph.adapters.cursor import CursorHooksAdapter
-from agent_context_graph.adapters.gemini_cli import GeminiCLIHooksAdapter
 from agent_context_graph.adapters.opencode import OpenCodeHooksAdapter
 
 
@@ -286,22 +286,6 @@ _RUNTIME_CASES = [
         expected_result=str({"stdout": "README.md", "stderr": "", "interrupted": False}),
     ),
     _runtime_case(
-        GeminiCLIHooksAdapter,
-        "gemini-cli",
-        [
-            {"hook_event_name": "SessionStart", "session_id": "S", "cwd": _CWD, "source": "startup"},
-            # Gemini sends no tool call id.
-            {"hook_event_name": "BeforeTool", "session_id": "S", "tool_name": "run_shell_command", "tool_input": _LS},
-            {
-                "hook_event_name": "AfterTool",
-                "session_id": "S",
-                "tool_name": "run_shell_command",
-                "tool_input": _LS,
-                "tool_response": {"llmContent": "README.md", "returnDisplay": "README.md"},
-            },
-        ],
-    ),
-    _runtime_case(
         CopilotCLIHooksAdapter,
         "copilot-cli",
         # Native camelCase payloads carry no event name; the runner injects
@@ -375,6 +359,39 @@ _RUNTIME_CASES = [
                 "is_error": False,
             },
         ],
+    ),
+    _runtime_case(
+        AntigravityCLIHooksAdapter,
+        "antigravity-cli",
+        # As captured from a live agy 1.2.13 session: no event name (injected
+        # via --event-name), no tool-call id (stepIdx pairs the two), and no
+        # tool result, so the recorded result is empty.
+        [
+            {
+                "hook_event_name": "PreInvocation",
+                "conversationId": "S",
+                "modelName": "gemini-3.8-flash-high",
+                "workspacePaths": [_CWD],
+                "invocationNum": 0,
+                "initialNumSteps": 1,
+            },
+            {
+                "hook_event_name": "PreToolUse",
+                "conversationId": "S",
+                "workspacePaths": [_CWD],
+                "stepIdx": 2,
+                "toolCall": {"name": "run_command", "args": _LS},
+            },
+            {
+                "hook_event_name": "PostToolUse",
+                "conversationId": "S",
+                "workspacePaths": [_CWD],
+                "stepIdx": 2,
+                "toolCall": {"name": "run_command", "args": _LS},
+                "error": "",
+            },
+        ],
+        expected_result=None,
     ),
 ]
 

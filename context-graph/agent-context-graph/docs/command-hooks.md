@@ -20,22 +20,22 @@ Runtime registrations are discovered through the
 |---|---|---|---|
 | Claude Code | `claude-code` | JSON command hooks | Runtime Plugin recommended |
 | OpenAI Codex | `codex` | JSON command hooks | `.codex/config.toml`, `.codex/hooks.json` |
-| Gemini CLI | `gemini-cli` | JSON command hooks | `.gemini/settings.json` |
 | GitHub Copilot CLI | `copilot-cli` | JSON command hooks | `.github/hooks/agent-context-graph.json` |
 | Cursor | `cursor` | JSON command hooks | `.cursor/hooks.json` |
 | OpenCode | `opencode` | V2 JavaScript plugin | `.opencode/plugins/agent-context-graph/index.js` |
+| Antigravity CLI | `antigravity-cli` | JSON command hooks | `.agents/hooks.json` |
 
 Generate wiring for runtimes with a project-local installer:
 
 ```bash
-agent-context-graph hook init gemini-cli
 agent-context-graph hook init copilot-cli
 agent-context-graph hook init cursor
 agent-context-graph hook init opencode
+agent-context-graph hook init antigravity-cli
 ```
 
 `hook init` enables all three built-in connectors by default. Use repeated
-`--connector` flags to select a subset. Existing Gemini, Copilot, and Cursor
+`--connector` flags to select a subset. Existing Copilot, Cursor, and Antigravity
 JSON documents are merged without removing unrelated settings or hooks.
 OpenCode's generated plugin is replaced only with `--force`.
 
@@ -72,15 +72,6 @@ Both use nested command entries:
 Codex's initializer also writes `[features] hooks = true` to
 `.codex/config.toml`. Claude Code is normally wired by the repository's
 Runtime Plugin rather than `hook init`.
-
-### Gemini CLI
-
-Gemini stores nested command hooks under `hooks` in `.gemini/settings.json`.
-Its timeout is measured in milliseconds, so `--timeout 30` is written as
-`30000`. `AfterModel` fires once per streamed chunk, so only the chunk
-carrying a `finishReason` is recorded as the end of a model call, with the
-model name taken from `llm_request.model`. Gemini sends no tool-call id. See
-the [Gemini CLI hooks reference](https://geminicli.com/docs/hooks/reference/).
 
 ### GitHub Copilot CLI
 
@@ -142,6 +133,44 @@ or LLM credentials. See the
 `SessionEnd`; deletion is the terminal lifecycle event available on the public
 event stream.
 
+### Antigravity CLI
+
+Antigravity CLI (`agy`, the successor to Gemini CLI) reads named hook groups
+from `.agents/hooks.json`; `hook init` owns the `agent-context-graph` group and
+merges it beside any others. Only the tool events (`PreToolUse`,
+`PostToolUse`) take matcher groups. `PreInvocation` and `Stop` are written as
+flat handlers, because `agy` rejects the whole file when a lifecycle event is
+nested. Timeouts are in seconds.
+
+```json
+{
+  "agent-context-graph": {
+    "PreInvocation": [
+      {"type": "command", "command": "agent-context-graph hook run antigravity-cli --event-name PreInvocation", "timeout": 30}
+    ],
+    "PreToolUse": [
+      {"hooks": [{"type": "command", "command": "agent-context-graph hook run antigravity-cli --event-name PreToolUse", "timeout": 30}]}
+    ]
+  }
+}
+```
+
+Payloads carry no event name, so the generated command supplies
+`--event-name`. The session key is `conversationId`. There is no session-start
+hook: each turn's first model invocation (`invocationNum` resets to `0` per
+turn) records the session with `modelName` and `workspacePaths[0]`, and repeats
+are ignored. There is no tool-call id either;
+`stepIdx`, shared by a call's `PreToolUse` and `PostToolUse`, pairs them.
+`Stop` ends one execution loop rather than the conversation, so only a failed
+execution is recorded, as an error.
+
+Antigravity hooks carry no tool results, prompts, assistant text, or token
+usage, so an Antigravity session records which tools ran and whether they
+failed, but not what they returned. Capture hooks never answer a permission
+decision: an empty `PreToolUse` response leaves `agy`'s own prompt in charge,
+and `PostToolUse` answers the required `{}`. See the
+[Antigravity hooks reference](https://antigravity.google/docs/hooks/).
+
 ## Persistent hook configuration
 
 Hook subprocesses read identity, Memgraph, LLM, and reconciliation values from
@@ -159,7 +188,7 @@ Bootstrap captures supported environment variables into that file as a
 write-time convenience:
 
 ```bash
-agent-context-graph bootstrap --runtime gemini-cli \
+agent-context-graph bootstrap --runtime antigravity-cli \
   --connector skills-graph \
   --connector actions-graph \
   --connector sessions-graph

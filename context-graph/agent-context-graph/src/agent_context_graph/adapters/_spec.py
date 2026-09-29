@@ -65,6 +65,9 @@ class HookConfig:
 
     ``path`` is ``None`` for a runtime whose hooks are installed by something
     other than a project-local JSON file (e.g. Claude Code's plugin).
+    ``flat_hooks`` names events written with the flat layout even when
+    ``layout`` is nested, for runtimes that only accept matcher groups on some
+    events.
     """
 
     layout: Literal["nested", "flat"]
@@ -78,6 +81,7 @@ class HookConfig:
     include_type: bool = True
     inject_event_name: bool = False
     matchers: Mapping[str, str] = field(default_factory=dict)
+    flat_hooks: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -246,7 +250,7 @@ def build_hooks_config(spec: RuntimeSpec, command: str, *, timeout: int = 30) ->
         if spec.config.timeout_key is not None:
             command_entry[spec.config.timeout_key] = timeout * spec.config.timeout_multiplier
 
-        if spec.config.layout == "nested":
+        if spec.config.layout == "nested" and hook_name not in spec.config.flat_hooks:
             entry: dict[str, Any] = {"hooks": [command_entry]}
         else:
             entry = command_entry
