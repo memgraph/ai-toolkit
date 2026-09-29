@@ -1,0 +1,40 @@
+{
+ "questions": 100,
+ "non_abstention": 92,
+ "literal_answers": 44,
+ "funnel_over_literal": {
+  "literal": 44,
+  "entity": 24,
+  "edge": 19,
+  "user_edge": 11
+ },
+ "oracle_covered": {
+  "edges": 21,
+  "text": 48
+ },
+ "oracle_by_type": {
+  "edges": {
+   "knowledge-update": 6,
+   "multi-session": 3,
+   "single-session-assistant": 2,
+   "single-session-user": 6,
+   "temporal-reasoning": 4
+  },
+  "text": {
+   "knowledge-update": 6,
+   "multi-session": 13,
+   "single-session-assistant": 7,
+   "single-session-preference": 2,
+   "single-session-user": 13,
+   "temporal-reasoning": 7
+  }
+ },
+ "questions_by_type": {
+  "knowledge-update": 16,
+  "multi-session": 26,
+  "single-session-assistant": 11,
+  "single-session-preference": 6,
+  "single-session-user": 15,
+  "temporal-reasoning": 26
+ }
+}
