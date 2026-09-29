@@ -266,3 +266,33 @@ removes them, yields more distinct claims, loses no answer, and gains #359's
 cell. Rewriting rows as generic sentences binds nothing (no predicate); a verb template
 binds but puts Admon on the wrong shift and drops the day — the fact is n-ary —
 `tables.log`.
+
+## J. #366 — the derivation contract, run once
+
+`derive.py A` / `derive.py B` run #353's pipeline end to end from two disjoint
+time-stratified propose samples (9-10 whole sessions, ~115k chars) over one shared
+60-session observe sample; the 10 evidence sessions are in no sample. The LLM is
+`claude -p` (claude-opus-5-5) with no user settings or tools; every stage and its
+provenance (model, tokens, cost) is cached in `derivation/A.json` / `B.json`, which are
+committed because an LLM call does not reproduce. `read_derived.py` runs the hand
+vocabulary (must reproduce 895) and both derived ones over the evidence sessions:
+
+| vocabulary | raw | distinct | answer-bearing | MoMA `visited` | LLM cost |
+|---|---:|---:|---:|---|---:|
+| hand (#361) | 895 | 393 | 8 | 0.66-0.78 | - |
+| derived A | 433 | 186 | 0 | none (no `Location` proposed) | $0.51 |
+| derived B | 842 | 313 | 9 | 0.94-0.97 | $0.59 |
+
+Propose coverage is the whole difference: A's sample had no travel, and prune cannot add.
+Neither derivation proposed a relation into a core value type, so `25:50` is lost.
+Behavioural agreement is 84% on spans both typed, while 876 spans are typed only by B.
+Tense variants co-fire (`visited_location` 21/30 pairs) — `read_derived.log`.
+
+**gliner2's candidate caps are alphabetical under ties.** The first run observed 245 edges
+over 709k chars and prune kept one relation of twelve (`derivation/*_cap128.json`). A
+permissive endpoint gives every span one equal-scoring copy per type; relation candidates
+are cut to `relation_pair_cap` (128) and `max_edges_per_type` (256) with ties broken on
+`str((entity_type, start, end))` (`joint_ie/candidates.py:353`), so past 11 types User,
+sorting last, never heads an edge. It also costs constrained extraction 4% of its User
+edges, because #358's rule puts `Person` beside `User` — `observe_diagnosis.log`. The
+reruns observe at `relation_pair_cap = max_edges_per_type = 4096`.

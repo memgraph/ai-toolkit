@@ -1,0 +1,12 @@
+10 evidence sessions, 157628 chars; caps default (128/256) or raised (4096)
+schema          windows caps        raw  User head   top head types
+8 permissive    words   default     567   375 ( 66%)   [('User', 375), ('Person', 96), ('Product', 55), ('Organization', 29)]
+8 permissive    turn    default     619   448 ( 72%)   [('User', 448), ('Person', 71), ('Product', 41), ('Organization', 29)]
+13 permissive   words   default     376     0 (  0%)   [('Person', 265), ('Product', 41), ('Activity', 24), ('Event', 19)]
+13 permissive   turn    default     355     0 (  0%)   [('Person', 260), ('Product', 31), ('Event', 22), ('Organization', 18)]
+13 permissive   turn    raised     1827   821 ( 45%)   [('User', 821), ('Person', 315), ('Product', 222), ('Topic', 88)]
+13 constrained  turn    default     895   502 ( 56%)   [('User', 502), ('Person', 207), ('Event', 118), ('Organization', 35)]
+13 constrained  turn    raised      928   535 ( 58%)   [('User', 535), ('Person', 207), ('Event', 118), ('Organization', 35)]
+A permissive    turn    default      41     0 (  0%)   [('Device', 16), ('Activity', 10), ('CreativeWork', 7), ('Date', 4)]
+A permissive    turn    raised      745   364 ( 49%)   [('User', 364), ('Device', 91), ('Activity', 84), ('Organization', 71)]
+A intended      turn    default     334   297 ( 89%)   [('User', 297), ('Course', 37)]

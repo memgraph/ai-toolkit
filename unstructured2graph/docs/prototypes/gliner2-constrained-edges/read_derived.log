@@ -1,0 +1,157 @@
+--- derivation A
+   User              global  mentions  1021  recurring 0.07  caps 0.47  the person speaking in the first person -- I, me, my, myself
+   Person            global  mentions  1042  recurring 0.08  caps 0.44  another named individual: a family member, friend, colleague, doctor,
+   Duration          span    mentions   222  recurring 0.06  caps 0.01  a length of time: 25:50, 45 minutes, three weeks, 10-12 hours
+   Quantity          span    mentions   590  recurring 0.06  caps 0.1  a count or amount of things: 3, four, 38 subjects, 5 pairs, 220 pages
+   Money             span    mentions    68  recurring 0.0  caps 0.01  an amount of money: $185, $2,500, $400,000
+   Date              span    mentions   144  recurring 0.12  caps 0.38  a calendar date or day: February 14th, Friday, last Thursday, May 6
+   TimeWindow        span    mentions    95  recurring 0.09  caps 0.13  a span of clock time: 8 am - 4 pm, 2 AM, the day shift
+   Organization      global  mentions  1332  recurring 0.05  caps 0.74  A named company, university, school, platform provider, league or inst
+   Device            chunk   mentions   826  recurring 0.07  caps 0.28  A physical product or piece of equipment the user owns or wants to buy
+   Course            global  mentions   249  recurring 0.03  caps 0.5  An educational program, degree, certification or scholarship, e.g. Cou
+   JobRole           chunk   mentions   259  recurring 0.06  caps 0.34  A job title or professional position, e.g. senior software engineer, t
+   Activity          chunk   mentions  1250  recurring 0.06  caps 0.23  A hobby, sport, pastime or personal project the user does, e.g. smokin
+   CreativeWork      global  mentions   337  recurring 0.03  caps 0.64  A named book, TV show, film, performance or event the user reads or wa
+   Food              chunk   mentions   801  recurring 0.16  caps 0.19  A dish, ingredient, meat cut or recipe the user cooks, e.g. BBQ sauce,
+   owns                  ['User', 'Person'] -> ['Device']
+   considering_buying    ['User', 'Person'] -> ['Device']
+   works_as              ['User', 'Person'] -> ['JobRole']
+   works_at              ['User', 'Person'] -> ['Organization']
+   plans_to_take         ['User', 'Person'] -> ['Activity', 'Course']
+   offered_by            ['Course', 'CreativeWork', 'Device'] -> ['Organization', 'Person']
+   does_hobby            ['User', 'Person'] -> ['Activity']
+   read_or_watched       ['User', 'Person'] -> ['CreativeWork']
+   cooks                 ['User', 'Person'] -> ['Food']
+   dropped relations ['received_job_offer_from', 'applying_to', 'has_player_on_roster']
+   dropped types []
+--- derivation B
+   User              global  mentions  1185  recurring 0.09  caps 0.56  the person speaking in the first person -- I, me, my, myself
+   Person            global  mentions   941  recurring 0.07  caps 0.43  another named individual: a family member, friend, colleague, doctor,
+   Duration          span    mentions   210  recurring 0.06  caps 0.02  a length of time: 25:50, 45 minutes, three weeks, 10-12 hours
+   Quantity          span    mentions   924  recurring 0.06  caps 0.08  a count or amount of things: 3, four, 38 subjects, 5 pairs, 220 pages
+   Money             span    mentions    75  recurring 0.0  caps 0.0  an amount of money: $185, $2,500, $400,000
+   Date              span    mentions   137  recurring 0.13  caps 0.34  a calendar date or day: February 14th, Friday, last Thursday, May 6
+   TimeWindow        span    mentions    67  recurring 0.08  caps 0.12  a span of clock time: 8 am - 4 pm, 2 AM, the day shift
+   Location          global  mentions  1226  recurring 0.08  caps 0.47  A named place: city, region, national park, trail, venue, or country (
+   Organization      global  mentions  1275  recurring 0.04  caps 0.72  A company, employer, school, culinary school, or other institution (my
+   Occupation        chunk   mentions   374  recurring 0.09  caps 0.3  A job title or professional role held or offered (accountant, technica
+   Pet               chunk   mentions   121  recurring 0.08  caps 0.25  A named or described animal the user keeps (Bubbles the betta fish, go
+   Possession        chunk   mentions   817  recurring 0.05  caps 0.16  A physical item the user owns, buys, or sells (20-gallon tank, slow co
+   Activity          chunk   mentions  1059  recurring 0.06  caps 0.28  A hobby, skill, or pursuit the user practices (stand-up comedy, hiking
+   Course            chunk   mentions   156  recurring 0.02  caps 0.57  A class, workshop, degree program, or certification the user takes or
+   Event             chunk   mentions   345  recurring 0.04  caps 0.19  A specific occasion or gathering the user attends or plans (conference
+   CreativeWork      global  mentions   461  recurring 0.03  caps 0.58  A named movie, series, podcast, book, or franchise the user consumes o
+   Dish              chunk   mentions   310  recurring 0.06  caps 0.43  A food or recipe the user cooks or wants to cook (shrimp stir-fry, hom
+   works_as              ['User', 'Person'] -> ['Occupation']
+   works_at              ['User', 'Person'] -> ['Organization']
+   owns_pet              ['User', 'Person'] -> ['Pet']
+   owns_item             ['User', 'Person'] -> ['Possession']
+   plans_to_sell         ['User', 'Person'] -> ['Possession']
+   practices_activity    ['User', 'Person'] -> ['Activity']
+   enrolled_in           ['User', 'Person'] -> ['Course']
+   course_offered_by     ['Course'] -> ['Organization']
+   attends_event         ['User', 'Person'] -> ['Event']
+   event_located_in      ['Event'] -> ['Location']
+   visited_location      ['User', 'Person'] -> ['Location']
+   plans_to_visit        ['User', 'Person'] -> ['Location']
+   lives_in              ['User', 'Person'] -> ['Location']
+   watched_or_listened_to['User', 'Person'] -> ['CreativeWork']
+   plans_to_watch        ['User', 'Person'] -> ['CreativeWork']
+   cooks_dish            ['User', 'Person'] -> ['Dish']
+   dropped relations ['offered_job_by', 'pet_lives_in', 'favorite_of_user', 'friend_of_user']
+   dropped types []
+
+=== hand: 895 raw, 393 distinct, 2509 mentions
+answer-bearing: 8
+   attended(User:'user' -> Event:'MoMA tour') 0.839
+   personal_best(User:'I' -> Duration:'25:50') 0.807
+   personal_best(User:'I' -> Duration:'25:50') 0.848
+   personal_best(User:'user' -> Duration:'25:50') 0.955
+   studied(User:'assistant' -> Organization:'Business Administration') 0.621
+   studied(User:'user' -> Topic:'Business Administration') 0.976
+   visited(User:'I' -> Location:'Museum of Modern Art') 0.655
+   visited(User:'user' -> Location:'Museum of Modern Art') 0.781
+edges into MoMA: ["attended(User:'user' -> Event:'MoMA tour') 0.839", "visited(User:'I' -> Location:'Museum of Modern Art') 0.655", "visited(User:'user' -> Location:'Museum of Modern Art') 0.781"]
+relations (raw, top pairs, examples):
+   studied                163  [('User->Topic', 72), ('Person->Topic', 55), ('User->Organization', 34)]  ['user -> work', 'Trello -> task management', 'user -> Business Administration', 'assistant -> Business Administration']
+   prefers                129  [('User->Product', 88), ('User->Topic', 23), ('Person->Activity', 6)]  ['user -> task management apps', 'user -> digital', 'user -> Trello', 'Trello -> task management']
+   happened_on             99  [('Event->Date', 99)]  ['winter clothes -> holidays', 'outdoor concert -> weekend', 'concert -> February 5th', 'dinner date -> last Friday']
+   purchased               85  [('User->Product', 72), ('Person->Product', 13)]  ['user -> planner', 'user -> groceries', 'user -> household items', 'I -> groceries']
+   works_for               69  [('Person->Organization', 60), ('User->Organization', 9)]  ['Evernote -> Google', 'Evernote -> Microsoft', 'manager -> new job', 'Clarity Money -> Toshl Finance']
+   owns                    55  [('User->Product', 48), ('Person->Product', 7)]  ['user -> navy blue blazer', 'I -> navy blue blazer', 'user -> tops', 'I -> tops']
+   practices               53  [('User->Activity', 35), ('Person->Activity', 18)]  ['user -> routine', 'assistant -> Washing', 'user -> video editing', 'I -> Practice']
+   located_in              45  [('Organization->Location', 35), ('Event->Location', 10)]  ['dry cleaning -> closet', 'Fauvism -> France', 'Tarim Basin Mummies -> Canary Islands', 'Tarim Basin Mummies -> Denmark']
+   lives_in                43  [('User->Location', 30), ('Person->Location', 13)]  ['user -> closet', 'I -> closet', 'jeans -> closet', 'user -> home']
+   visited                 41  [('User->Location', 39), ('Person->Location', 2)]  ['assistant -> closet', 'assistant -> dresser drawers', 'assistant -> Dresser Drawers', 'user -> closet']
+   knows                   31  [('User->Person', 29), ('Person->Person', 2)]  ['assistant -> Short-sleeve shirts', 'user -> sister', 'I -> sister', 'user -> Cubism']
+   costs                   23  [('Activity->Money', 13), ('Product->Money', 10)]  ['app -> subscription fees', 'SpendTracker -> subscription fees', 'Wash -> TLC', 'wash -> TLC']
+   lasted                  19  [('Activity->Duration', 10), ('Event->Duration', 9)]  ['routine -> some time', 'closet -> each week', 'laundry -> each week', 'mummification -> 70 days']
+   attended                15  [('User->Event', 11), ('Person->Event', 4)]  ['user -> meeting', 'user -> outdoor concert', 'user -> concert', 'I -> concert']
+   works_shift             15  [('Person->TimeWindow', 15)]  ['Agent -> Saturday', 'Agent -> Sunday', 'agent -> Sunday']
+   spent_time               5  [('User->Duration', 5)]  ['user -> a while', 'I -> a while', 'assistant -> a year']
+   personal_best            5  [('User->Duration', 3), ('Person->Duration', 2)]  ['Pablo Picasso -> influential artists', 'user -> 25:50', 'I -> 25:50']
+co-firing: 55/315 pairs multi-label; top [('prefers', '38/70'), ('purchased', '32/45'), ('owns', '26/27'), ('studied', '14/56')]
+   combos [(('owns', 'prefers', 'purchased'), 17), (('prefers', 'studied'), 9), (('owns', 'purchased'), 9), (('prefers', 'purchased'), 6)]
+User endpoints not first person: 198/502 (39.4%)  [('frida kahlo', 69), ('assistant', 58), ('frida', 55), ('raoul dufy', 7), ('curves panel', 3), ('follow through', 3)]
+
+=== A: 433 raw, 186 distinct, 1699 mentions
+answer-bearing: 0
+edges into MoMA: none
+relations (raw, top pairs, examples):
+   owns                    94  [('User->Device', 88), ('Person->Device', 6)]  ['user -> navy blue blazer', 'I -> navy blue blazer', 'user -> tops', 'I -> tops']
+   offered_by              91  [('Device->Organization', 51), ('Course->Organization', 17), ('CreativeWork->Organization', 11)]  ['task management app -> Microsoft', 'task management app -> Evernote', 'task management app -> Google', 'Shoeboxed -> OneDrive']
+   considering_buying      69  [('User->Device', 65), ('Person->Device', 4)]  ['user -> containers', 'user -> tools', 'I -> containers', 'I -> tools']
+   does_hobby              65  [('User->Activity', 56), ('Person->Activity', 9)]  ['user -> meal prep', 'I -> meal prep', 'assistant -> Meal prep', 'assistant -> meal prep']
+   works_as                47  [('User->JobRole', 27), ('Person->JobRole', 20)]  ['user -> new job', 'I -> new job', 'user -> new role', 'assistant -> new role']
+   plans_to_take           47  [('User->Activity', 26), ('Person->Activity', 19), ('User->Course', 1)]  ['user -> Personal Capital', 'I -> Personal Capital', 'user -> tips', 'I -> tips']
+   works_at                16  [('User->Organization', 11), ('Person->Organization', 5)]  ['assistant -> tops', 'assistant -> Tops', 'Frida Kahlo -> Paris', 'Frida Kahlo -> Academy of San Carlos']
+   read_or_watched          4  [('User->CreativeWork', 4)]  ['user -> Curves panel', 'user -> Cubism', 'I -> Cubism', 'user -> Fauvism']
+co-firing: 15/162 pairs multi-label; top [('considering_buying', '11/20'), ('owns', '11/31'), ('plans_to_take', '4/22'), ('does_hobby', '4/25')]
+   combos [(('considering_buying', 'owns'), 11), (('does_hobby', 'plans_to_take'), 4)]
+User endpoints not first person: 54/278 (19.4%)  [('assistant', 22), ('frida kahlo', 17), ('frida', 9), ('yourself', 5), ('raoul dufy', 1)]
+
+=== B: 842 raw, 313 distinct, 2184 mentions
+answer-bearing: 9
+   attends_event(User:'I' -> Event:'MoMA tour') 0.596
+   attends_event(User:'user' -> Event:'MoMA tour') 0.738
+   enrolled_in(User:'assistant' -> Course:'Business Administration') 0.538
+   enrolled_in(User:'user' -> Course:'Business Administration') 0.999
+   event_located_in(Event:'guided tour' -> Location:'Museum of Modern Art') 0.876
+   plans_to_visit(User:'I' -> Location:'Museum of Modern Art') 0.572
+   plans_to_visit(User:'user' -> Location:'Museum of Modern Art') 0.65
+   visited_location(User:'I' -> Location:'Museum of Modern Art') 0.937
+   visited_location(User:'user' -> Location:'Museum of Modern Art') 0.966
+edges into MoMA: ["attends_event(User:'I' -> Event:'MoMA tour') 0.596", "attends_event(User:'user' -> Event:'MoMA tour') 0.738", "event_located_in(Event:'guided tour' -> Location:'Museum of Modern Art') 0.876", "plans_to_visit(User:'I' -> Location:'Museum of Modern Art') 0.572", "plans_to_visit(User:'user' -> Location:'Museum of Modern Art') 0.65", "visited_location(User:'I' -> Location:'Museum of Modern Art') 0.937", "visited_location(User:'user' -> Location:'Museum of Modern Art') 0.966"]
+relations (raw, top pairs, examples):
+   owns_item              179  [('User->Possession', 158), ('Person->Possession', 21)]  ['user -> planner', 'I -> planner', 'user -> groceries', 'user -> household items']
+   attends_event           91  [('User->Event', 83), ('Person->Event', 8)]  ['user -> meeting', 'I -> meeting', 'user -> outdoor concert', 'I -> outdoor concert']
+   lives_in                91  [('User->Location', 69), ('Person->Location', 22)]  ['user -> closet', 'I -> closet', 'user -> gym', 'user -> home']
+   course_offered_by       86  [('Course->Organization', 86)]  ['free trials -> Microsoft', 'free trials -> Google', 'free trials -> Evernote', 'tutorials -> Google']
+   visited_location        86  [('User->Location', 75), ('Person->Location', 11)]  ['user -> closet', 'I -> closet', 'assistant -> closet', 'assistant -> tops']
+   works_as                73  [('User->Occupation', 41), ('Person->Occupation', 32)]  ['user -> new job', 'I -> new job', 'user -> new role', 'assistant -> new role']
+   practices_activity      69  [('User->Activity', 57), ('Person->Activity', 12)]  ['user -> meal prep', 'I -> meal prep', 'user -> decluttering', 'I -> decluttering']
+   event_located_in        54  [('Event->Location', 54)]  ['seasonal swap -> closet', 'seasonal rotation -> closet', 'Creative panel -> Lumetri', 'color grading -> video']
+   plans_to_visit          33  [('User->Location', 33)]  ['assistant -> closet', 'user -> closet', 'I -> closet', 'user -> Museum of Modern Art']
+   works_at                30  [('User->Organization', 17), ('Person->Organization', 13)]  ['assistant -> Microsoft', 'user -> Zara', "user -> Levi's", "I -> Levi's"]
+   plans_to_sell           25  [('User->Possession', 25)]  ['user -> tools', 'I -> tools', 'assistant -> clothes', 'user -> them']
+   plans_to_watch          13  [('User->CreativeWork', 12), ('Person->CreativeWork', 1)]  ['user -> Trello', 'I -> Trello', 'user -> Curves panel', 'user -> Cubism']
+   watched_or_listened_to  10  [('User->CreativeWork', 10)]  ['user -> Trello', 'I -> Trello', 'user -> Curves panel', 'user -> Cubism']
+   enrolled_in              2  [('User->Course', 2)]  ['user -> Business Administration', 'assistant -> Business Administration']
+co-firing: 41/250 pairs multi-label; top [('visited_location', '21/30'), ('lives_in', '15/25'), ('owns_item', '13/67'), ('plans_to_sell', '12/14')]
+   combos [(('owns_item', 'plans_to_sell'), 12), (('lives_in', 'visited_location'), 9), (('plans_to_watch', 'watched_or_listened_to'), 7), (('plans_to_visit', 'visited_location'), 6)]
+User endpoints not first person: 146/582 (25.1%)  [('assistant', 52), ('frida kahlo', 50), ('frida', 17), ('yellow sundress', 15), ('premiere pro', 3), ('gleizes', 3)]
+
+=== stability: 1213 spans typed by both, 423 only by A, 876 only by B; agreement under best A->B type map 1021/1213 (84%)
+   A:Activity           -> B:Activity           246/302  also [('Event', 38), ('Location', 11), ('Course', 4)]
+   A:User               -> B:User               158/165  also [('Organization', 4), ('Person', 2), ('Occupation', 1)]
+   A:Person             -> B:Person             127/164  also [('User', 22), ('CreativeWork', 8), ('Occupation', 6)]
+   A:Organization       -> B:Organization       124/152  also [('Location', 20), ('User', 5), ('CreativeWork', 1)]
+   A:Device             -> B:Possession         89/117  also [('Location', 15), ('CreativeWork', 7), ('Organization', 4)]
+   A:Date               -> B:Date               91/91  also []
+   A:CreativeWork       -> B:CreativeWork       40/47  also [('Activity', 5), ('Event', 2)]
+   A:Duration           -> B:Duration           42/42  also []
+   A:TimeWindow         -> B:TimeWindow         30/38  also [('Location', 4), ('Event', 4)]
+   A:JobRole            -> B:Occupation         31/32  also [('Person', 1)]
+   A:Quantity           -> B:Quantity           16/28  also [('Possession', 12)]
+   A:Course             -> B:Course             16/22  also [('Organization', 4), ('Possession', 1), ('CreativeWork', 1)]
+   A:Food               -> B:Quantity           11/13  also [('Dish', 1), ('Location', 1)]

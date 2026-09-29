@@ -1,0 +1,1362 @@
+{
+ "samples": {
+  "observe": [
+   "sharegpt_CMplLnT_29",
+   "sharegpt_5NoXULS_0",
+   "d07f014a",
+   "b4ee9f6b",
+   "f66ca54c",
+   "261235d1",
+   "f6ce25ef",
+   "answer_c7ddc051_1",
+   "864a563d_5",
+   "sharegpt_quVKffw_0",
+   "2640383e",
+   "9e05d9a0",
+   "9bec5593_2",
+   "82ea1455_2",
+   "2af27403_2",
+   "a3107e2a_2",
+   "5ff94163_2",
+   "sharegpt_CqJTtJZ_78",
+   "87a183c1_2",
+   "sharegpt_c1GD2va_7",
+   "65698aa9_2",
+   "sharegpt_Bwk7dXW_0",
+   "ultrachat_22304",
+   "ultrachat_433398",
+   "ultrachat_447648",
+   "ultrachat_285724",
+   "ultrachat_539537",
+   "sharegpt_CMbaRkD_37",
+   "sharegpt_jl0GWjL_0",
+   "sharegpt_9Wnceim_41",
+   "544fe66c_2",
+   "27ce9f13_2",
+   "sharegpt_SNshiYQ_11",
+   "dcc7f430_1",
+   "sharegpt_rnL5VQO_17",
+   "af0ab6ab",
+   "fdd0f680_2",
+   "ultrachat_460283",
+   "sharegpt_SzQ9LQj_0",
+   "c8fcdf5a_2",
+   "sharegpt_JRQtEcd_0",
+   "sharegpt_o3FfE7d_0",
+   "answer_3a5010af_1",
+   "ultrachat_494422",
+   "998616b4_3",
+   "082b7e52_2",
+   "787bf8b1_1",
+   "answer_67074b4b_2",
+   "sharegpt_QovWQci_0",
+   "answer_90de9b4d_2",
+   "ultrachat_73163",
+   "5ace87df_1",
+   "3a980e89_3",
+   "sharegpt_oXgiN7q_53",
+   "8acb29f9_1",
+   "answer_ae3a122b_2",
+   "d2d7a96a_1",
+   "dde142b2_2",
+   "sharegpt_BgSFVRW_0",
+   "sharegpt_KZW5X0e_0"
+  ],
+  "propose": [
+   "answer_56521e66_1",
+   "114c1fb7_5",
+   "ultrachat_169366",
+   "sharegpt_MO9Xxet_71",
+   "sharegpt_eoJwAWu_4",
+   "e50b3e90_6",
+   "ultrachat_556482",
+   "ultrachat_251166",
+   "2a319f4b_3"
+  ]
+ },
+ "propose": {
+  "vocabulary": {
+   "entity_types": [
+    {
+     "label": "Organization",
+     "description": "A named company, university, school, platform provider, league or institution, e.g. Cardiff University, Coursera, a rival company"
+    },
+    {
+     "label": "Device",
+     "description": "A physical product or piece of equipment the user owns or wants to buy, e.g. smoker, smart TV, laptop, router, mesh network system, wood pellets"
+    },
+    {
+     "label": "Course",
+     "description": "An educational program, degree, certification or scholarship, e.g. Coursera Project Management Specialization, MBA, PMP certification, Vice-Chancellor's International Scholarship"
+    },
+    {
+     "label": "JobRole",
+     "description": "A job title or professional position, e.g. senior software engineer, technical lead"
+    },
+    {
+     "label": "Activity",
+     "description": "A hobby, sport, pastime or personal project the user does, e.g. smoking meats, fantasy baseball, making BBQ sauce"
+    },
+    {
+     "label": "CreativeWork",
+     "description": "A named book, TV show, film, performance or event the user reads or watches, e.g. The Kite Runner, a virtual comedy show"
+    },
+    {
+     "label": "Food",
+     "description": "A dish, ingredient, meat cut or recipe the user cooks, e.g. BBQ sauce, pork shoulder, brisket, hickory wood"
+    }
+   ],
+   "value_types": [],
+   "relations": [
+    {
+     "name": "owns",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Device"
+     ]
+    },
+    {
+     "name": "considering_buying",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Device"
+     ]
+    },
+    {
+     "name": "works_as",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "JobRole"
+     ]
+    },
+    {
+     "name": "works_at",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Organization"
+     ]
+    },
+    {
+     "name": "received_job_offer_from",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Organization"
+     ]
+    },
+    {
+     "name": "plans_to_take",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Course"
+     ]
+    },
+    {
+     "name": "applying_to",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Organization",
+      "Course"
+     ]
+    },
+    {
+     "name": "offered_by",
+     "intended_head": [
+      "Course"
+     ],
+     "intended_tail": [
+      "Organization"
+     ]
+    },
+    {
+     "name": "does_hobby",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Activity"
+     ]
+    },
+    {
+     "name": "read_or_watched",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "CreativeWork"
+     ]
+    },
+    {
+     "name": "cooks",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Food"
+     ]
+    },
+    {
+     "name": "has_player_on_roster",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Person"
+     ]
+    }
+   ]
+  },
+  "provenance": {
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "input_tokens": 39488,
+   "output_tokens": 1496,
+   "cost_usd": 0.345816,
+   "seconds": 18.4,
+   "prompt_chars": 115489
+  }
+ },
+ "observe": {
+  "tables": {
+   "relations": {
+    "owns": {
+     "edges": 7,
+     "pairs": [
+      {
+       "head": "Device",
+       "tail": "Device",
+       "count": 5,
+       "examples": [
+        "Toilevator -> Toilevator",
+        "shoes -> shoes",
+        "user -> RV",
+        "user -> camera"
+       ]
+      },
+      {
+       "head": "CreativeWork",
+       "tail": "Organization",
+       "count": 1,
+       "examples": [
+        "Marvel -> Marvel"
+       ]
+      },
+      {
+       "head": "Date",
+       "tail": "Device",
+       "count": 1,
+       "examples": [
+        "user -> sectional sofa"
+       ]
+      }
+     ]
+    },
+    "considering_buying": {
+     "edges": 7,
+     "pairs": [
+      {
+       "head": "Device",
+       "tail": "Device",
+       "count": 5,
+       "examples": [
+        "user -> RV",
+        "bag -> Urban Disguise 40L",
+        "tripod -> Nikon D5600",
+        "user -> remote shutter release"
+       ]
+      },
+      {
+       "head": "Date",
+       "tail": "Device",
+       "count": 2,
+       "examples": [
+        "assistant -> external hard drive",
+        "user -> microfiber or Crypton fabric"
+       ]
+      }
+     ]
+    },
+    "works_as": {
+     "edges": 14,
+     "pairs": [
+      {
+       "head": "JobRole",
+       "tail": "JobRole",
+       "count": 7,
+       "examples": [
+        "US citizen -> US citizen",
+        "assistant -> AI",
+        "product manager -> product manager",
+        "mindfulness coach -> healthcare professional"
+       ]
+      },
+      {
+       "head": "Date",
+       "tail": "JobRole",
+       "count": 2,
+       "examples": [
+        "Blanche -> Southern belle",
+        "Gilles Deleuze -> philosopher"
+       ]
+      },
+      {
+       "head": "Money",
+       "tail": "User",
+       "count": 2,
+       "examples": [
+        "assistant -> fitness enthusiast"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Course",
+       "count": 1,
+       "examples": [
+        "Riverstone Backpackers -> Enviro-Silver certified"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "JobRole",
+       "count": 1,
+       "examples": [
+        "members -> author"
+       ]
+      },
+      {
+       "head": "Money",
+       "tail": "JobRole",
+       "count": 1,
+       "examples": [
+        "Ana -> instructor"
+       ]
+      }
+     ]
+    },
+    "works_at": {
+     "edges": 24,
+     "pairs": [
+      {
+       "head": "JobRole",
+       "tail": "Organization",
+       "count": 8,
+       "examples": [
+        "Asian American and Pacific Islander women -> government and political organizations",
+        "author -> publisher",
+        "immigration officers -> Immigration",
+        "assistant -> Twitch"
+       ]
+      },
+      {
+       "head": "Device",
+       "tail": "Organization",
+       "count": 3,
+       "examples": [
+        "Toilevator -> GMS Group Medial Supply",
+        "M-Rail -> Hart Mobility",
+        "High Cliff State Park -> High Cliff State Park"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Organization",
+       "count": 3,
+       "examples": [
+        "Tongariro Alpine Crossing -> New Zealand",
+        "members -> book club",
+        "The Starlight Serenaders -> school"
+       ]
+      },
+      {
+       "head": "JobRole",
+       "tail": "JobRole",
+       "count": 3,
+       "examples": [
+        "creator -> creator",
+        "psychologist -> mental health professional",
+        "guides -> fishermen"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Organization",
+       "count": 2,
+       "examples": [
+        "Salsa -> YouTube",
+        "Veggie-Packed Minestrone Soup -> soup kitchen"
+       ]
+      },
+      {
+       "head": "Money",
+       "tail": "Organization",
+       "count": 2,
+       "examples": [
+        "Frida Kahlo -> Escuela Nacional de Bellas Artes",
+        "user -> soup kitchen"
+       ]
+      },
+      {
+       "head": "Money",
+       "tail": "User",
+       "count": 1,
+       "examples": [
+        "assistant -> fitness enthusiast"
+       ]
+      },
+      {
+       "head": "CreativeWork",
+       "tail": "Organization",
+       "count": 1,
+       "examples": [
+        "Women in Art -> Modern Art Museum"
+       ]
+      }
+     ]
+    },
+    "received_job_offer_from": {
+     "edges": 37,
+     "pairs": [
+      {
+       "head": "Device",
+       "tail": "Organization",
+       "count": 13,
+       "examples": [
+        "Toilevator -> GMS Group Medical Supply, LLC",
+        "Toilevator -> GMS Group Medical Supply",
+        "Toilevator -> manufacturer's website",
+        "MRail bed rail -> Medline Industries, Inc."
+       ]
+      },
+      {
+       "head": "JobRole",
+       "tail": "Organization",
+       "count": 4,
+       "examples": [
+        "author -> publisher",
+        "assistant -> Twitch",
+        "product manager -> Upwork"
+       ]
+      },
+      {
+       "head": "CreativeWork",
+       "tail": "Person",
+       "count": 4,
+       "examples": [
+        "Hamilton -> Lin-Manuel Miranda",
+        "To Kill a Mockingbird -> James Baldwin",
+        "To Kill a Mockingbird -> Baldwin",
+        "Beloved -> Toni Morrison"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Organization",
+       "count": 3,
+       "examples": [
+        "stream -> YouTube",
+        "miles -> Emirates"
+       ]
+      },
+      {
+       "head": "JobRole",
+       "tail": "User",
+       "count": 2,
+       "examples": [
+        "Asian American and Pacific Islander women -> Asian American and Pacific Islander women",
+        "Todoist -> Todoist"
+       ]
+      },
+      {
+       "head": "Date",
+       "tail": "Person",
+       "count": 2,
+       "examples": [
+        "Blanche -> Stanley",
+        "Gilles Deleuze -> Gilbert Simondon"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Organization",
+       "count": 2,
+       "examples": [
+        "Salsa -> YouTube",
+        "bitcoin -> Microsoft"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Person",
+       "count": 2,
+       "examples": [
+        "Frida -> Wilhelm Kahlo",
+        "coin collection -> grandfather"
+       ]
+      }
+     ]
+    },
+    "plans_to_take": {
+     "edges": 12,
+     "pairs": [
+      {
+       "head": "Device",
+       "tail": "Activity",
+       "count": 3,
+       "examples": [
+        "I -> road trip",
+        "bag -> hiking",
+        "user -> light gaming"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Activity",
+       "count": 2,
+       "examples": [
+        "Taupo -> skydiving",
+        "Funko -> Funko Pops"
+       ]
+      },
+      {
+       "head": "Device",
+       "tail": "Device",
+       "count": 2,
+       "examples": [
+        "tripod -> Nikon D5600",
+        "user -> Manfrotto MT057CXPRO4"
+       ]
+      },
+      {
+       "head": "Money",
+       "tail": "Activity",
+       "count": 2,
+       "examples": [
+        "user -> volunteer work",
+        "user -> picnic"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "CreativeWork",
+       "count": 1,
+       "examples": [
+        "members -> debut novel"
+       ]
+      },
+      {
+       "head": "CreativeWork",
+       "tail": "Activity",
+       "count": 1,
+       "examples": [
+        "user -> movie marathon"
+       ]
+      },
+      {
+       "head": "Date",
+       "tail": "Person",
+       "count": 1,
+       "examples": [
+        "Max -> Max"
+       ]
+      }
+     ]
+    },
+    "applying_to": {
+     "edges": 28,
+     "pairs": [
+      {
+       "head": "Activity",
+       "tail": "Food",
+       "count": 4,
+       "examples": [
+        "Water -> herbs",
+        "pest control -> herbs",
+        "Pruning -> herbs",
+        "pruning -> Herbs"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Organization",
+       "count": 3,
+       "examples": [
+        "members -> book club",
+        "return ticket -> Immigration",
+        "return ticket -> immigration"
+       ]
+      },
+      {
+       "head": "Device",
+       "tail": "Device",
+       "count": 3,
+       "examples": [
+        "shoe tree -> shoes",
+        "tripod -> Nikon D5600",
+        "user -> Manfrotto MT057CXPRO4"
+       ]
+      },
+      {
+       "head": "Money",
+       "tail": "User",
+       "count": 2,
+       "examples": [
+        "assistant -> fitness enthusiast"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Activity",
+       "count": 2,
+       "examples": [
+        "dining out expenses -> Dining out expenses",
+        "stretching -> hip flexors"
+       ]
+      },
+      {
+       "head": "Course",
+       "tail": "Activity",
+       "count": 1,
+       "examples": [
+        "rule of thirds -> landscape photography"
+       ]
+      },
+      {
+       "head": "CreativeWork",
+       "tail": "Organization",
+       "count": 1,
+       "examples": [
+        "visual aids -> book club"
+       ]
+      },
+      {
+       "head": "CreativeWork",
+       "tail": "Activity",
+       "count": 1,
+       "examples": [
+        "hero's journey -> Writing"
+       ]
+      }
+     ]
+    },
+    "offered_by": {
+     "edges": 71,
+     "pairs": [
+      {
+       "head": "Device",
+       "tail": "Organization",
+       "count": 19,
+       "examples": [
+        "Toilevator -> GMS Group Medical Supply, LLC",
+        "Toilevator -> GMS Group Medical Supply",
+        "Toilevator -> manufacturer's website",
+        "MRail bed rail -> Medline.com"
+       ]
+      },
+      {
+       "head": "Course",
+       "tail": "Organization",
+       "count": 10,
+       "examples": [
+        "The Great Courses -> 500px",
+        "Geopandas -> Jupyter",
+        "tips -> Twitch",
+        "courses -> Product School"
+       ]
+      },
+      {
+       "head": "CreativeWork",
+       "tail": "Organization",
+       "count": 9,
+       "examples": [
+        "Canva -> Adobe",
+        "debut novel -> publisher",
+        "debut novel -> book club",
+        "discounts -> YouTube"
+       ]
+      },
+      {
+       "head": "CreativeWork",
+       "tail": "Person",
+       "count": 5,
+       "examples": [
+        "Hamilton -> Lin-Manuel Miranda",
+        "To Kill a Mockingbird -> James Baldwin",
+        "To Kill a Mockingbird -> Baldwin",
+        "Beloved -> Toni Morrison"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Organization",
+       "count": 4,
+       "examples": [
+        "Zumba classes -> dance studio",
+        "Survey Monkey -> Canva",
+        "Funko Pops -> Funko",
+        "articles -> Scrum.org"
+       ]
+      },
+      {
+       "head": "JobRole",
+       "tail": "Organization",
+       "count": 3,
+       "examples": [
+        "assistant -> Twitch",
+        "Professional Agile Leadership -> Scrum.org",
+        "Certified Agile Practitioner -> Agile Alliance"
+       ]
+      },
+      {
+       "head": "CreativeWork",
+       "tail": "User",
+       "count": 3,
+       "examples": [
+        "The Dance Sensations -> I",
+        "The Starlight Serenaders -> Mia",
+        "self-portraits -> Frida Kahlo"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Person",
+       "count": 3,
+       "examples": [
+        "marriage -> Diego",
+        "Collage Art -> attendees",
+        "skincare tips -> assistant"
+       ]
+      }
+     ]
+    },
+    "does_hobby": {
+     "edges": 13,
+     "pairs": [
+      {
+       "head": "Date",
+       "tail": "Activity",
+       "count": 4,
+       "examples": [
+        "Mia -> music",
+        "assistant -> gaming",
+        "Max -> fishing",
+        "user -> tidy routine"
+       ]
+      },
+      {
+       "head": "JobRole",
+       "tail": "Activity",
+       "count": 2,
+       "examples": [
+        "assistant -> Growing your own herbs",
+        "Namer -> Naming"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Activity",
+       "count": 2,
+       "examples": [
+        "The Starlight Serenaders -> music",
+        "Max -> swimming"
+       ]
+      },
+      {
+       "head": "Device",
+       "tail": "Activity",
+       "count": 2,
+       "examples": [
+        "I -> road trip",
+        "user -> light gaming"
+       ]
+      },
+      {
+       "head": "CreativeWork",
+       "tail": "Activity",
+       "count": 1,
+       "examples": [
+        "user -> movie marathon"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Activity",
+       "count": 1,
+       "examples": [
+        "subreddit -> coin collecting"
+       ]
+      },
+      {
+       "head": "Money",
+       "tail": "Activity",
+       "count": 1,
+       "examples": [
+        "user -> picnic"
+       ]
+      }
+     ]
+    },
+    "read_or_watched": {
+     "edges": 1,
+     "pairs": [
+      {
+       "head": "CreativeWork",
+       "tail": "CreativeWork",
+       "count": 1,
+       "examples": [
+        "Harry Potter -> Harry Potter"
+       ]
+      }
+     ]
+    },
+    "cooks": {
+     "edges": 3,
+     "pairs": [
+      {
+       "head": "Money",
+       "tail": "Food",
+       "count": 2,
+       "examples": [
+        "user -> fruit platter",
+        "user -> bird-friendly food"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Food",
+       "count": 1,
+       "examples": [
+        "Max -> catch"
+       ]
+      }
+     ]
+    },
+    "has_player_on_roster": {
+     "edges": 28,
+     "pairs": [
+      {
+       "head": "Activity",
+       "tail": "Organization",
+       "count": 5,
+       "examples": [
+        "stream -> Twitch",
+        "stream -> YouTube",
+        "collaboration -> Twitch",
+        "live stream -> Instagram"
+       ]
+      },
+      {
+       "head": "Course",
+       "tail": "Organization",
+       "count": 3,
+       "examples": [
+        "Geopandas -> PySAL",
+        "Kaggle competitions -> DataCamp",
+        "Data Visualization with Python -> Reddit"
+       ]
+      },
+      {
+       "head": "CreativeWork",
+       "tail": "CreativeWork",
+       "count": 3,
+       "examples": [
+        "Hamilton -> Hamilton",
+        "musicals -> musicals",
+        "The Goonies -> The NeverEnding Story"
+       ]
+      },
+      {
+       "head": "CreativeWork",
+       "tail": "Person",
+       "count": 3,
+       "examples": [
+        "The Starlight Serenaders -> Olivia",
+        "To Kill a Mockingbird -> James Baldwin",
+        "To Kill a Mockingbird -> Tom Robinson"
+       ]
+      },
+      {
+       "head": "JobRole",
+       "tail": "Organization",
+       "count": 2,
+       "examples": [
+        "US citizen -> UK",
+        "assistant -> Twitch"
+       ]
+      },
+      {
+       "head": "Date",
+       "tail": "Person",
+       "count": 2,
+       "examples": [
+        "Gilles Deleuze -> Gilbert Simondon",
+        "Mia -> Madison"
+       ]
+      },
+      {
+       "head": "CreativeWork",
+       "tail": "Organization",
+       "count": 1,
+       "examples": [
+        "Photoshop Fridays -> Twitch"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Activity",
+       "count": 1,
+       "examples": [
+        "Instagram Live -> stories"
+       ]
+      }
+     ]
+    }
+   },
+   "types": {
+    "User": {
+     "mentions": 980,
+     "distinct_texts": 78,
+     "sessions": 60,
+     "texts_recurring_across_sessions": 0.08,
+     "capitalized_share": 0.47,
+     "mentions_per_text_per_session": 4.24,
+     "top_texts": [
+      "user",
+      "i",
+      "assistant",
+      "you",
+      "frida",
+      "wolves",
+      "whiskers",
+      "sarah",
+      "todoist",
+      "urban disguise 40l"
+     ]
+    },
+    "Person": {
+     "mentions": 985,
+     "distinct_texts": 371,
+     "sessions": 57,
+     "texts_recurring_across_sessions": 0.07,
+     "capitalized_share": 0.44,
+     "mentions_per_text_per_session": 2.06,
+     "top_texts": [
+      "assistant",
+      "attendees",
+      "i",
+      "appraiser",
+      "frida",
+      "author",
+      "you",
+      "me",
+      "debut authors",
+      "family"
+     ]
+    },
+    "Duration": {
+     "mentions": 222,
+     "distinct_texts": 121,
+     "sessions": 40,
+     "texts_recurring_across_sessions": 0.06,
+     "capitalized_share": 0.01,
+     "mentions_per_text_per_session": 1.71,
+     "top_texts": [
+      "30 seconds",
+      "12-15 reps",
+      "30 minutes",
+      "months",
+      "6 months",
+      "1-2 hours",
+      "6-12 months",
+      "90 days",
+      "5 days",
+      "1-2 seconds"
+     ]
+    },
+    "Quantity": {
+     "mentions": 567,
+     "distinct_texts": 264,
+     "sessions": 51,
+     "texts_recurring_across_sessions": 0.06,
+     "capitalized_share": 0.1,
+     "mentions_per_text_per_session": 1.88,
+     "top_texts": [
+      "3",
+      "100",
+      "2",
+      "cards",
+      "0",
+      "sp2",
+      "wavepoints",
+      "x",
+      "y",
+      "grid_size"
+     ]
+    },
+    "Money": {
+     "mentions": 72,
+     "distinct_texts": 43,
+     "sessions": 17,
+     "texts_recurring_across_sessions": 0.02,
+     "capitalized_share": 0.03,
+     "mentions_per_text_per_session": 1.64,
+     "top_texts": [
+      "$2,500,000",
+      "$1,200,000",
+      "$10 coupon",
+      "10000 rupees",
+      "$95",
+      "$10-$20",
+      "$80",
+      "$999",
+      "$15/month",
+      "$20/month"
+     ]
+    },
+    "Date": {
+     "mentions": 149,
+     "distinct_texts": 86,
+     "sessions": 35,
+     "texts_recurring_across_sessions": 0.12,
+     "capitalized_share": 0.39,
+     "mentions_per_text_per_session": 1.54,
+     "top_texts": [
+      "august",
+      "2023",
+      "1939",
+      "monday",
+      "tuesday",
+      "2017",
+      "thursday",
+      "friday",
+      "2013",
+      "2015"
+     ]
+    },
+    "TimeWindow": {
+     "mentions": 94,
+     "distinct_texts": 63,
+     "sessions": 23,
+     "texts_recurring_across_sessions": 0.1,
+     "capitalized_share": 0.13,
+     "mentions_per_text_per_session": 1.36,
+     "top_texts": [
+      "golden hour",
+      "commercial breaks",
+      "website",
+      "winter months",
+      "june to september",
+      "day",
+      "second day",
+      "overcast days",
+      "planned route",
+      "expected return time"
+     ]
+    },
+    "Organization": {
+     "mentions": 1300,
+     "distinct_texts": 552,
+     "sessions": 55,
+     "texts_recurring_across_sessions": 0.05,
+     "capitalized_share": 0.75,
+     "mentions_per_text_per_session": 2.2,
+     "top_texts": [
+      "emirates",
+      "turkish airlines",
+      "ethereum",
+      "instagram",
+      "etias",
+      "youtube",
+      "scrum.org",
+      "karoo region",
+      "publisher",
+      "datacamp"
+     ]
+    },
+    "Device": {
+     "mentions": 786,
+     "distinct_texts": 385,
+     "sessions": 46,
+     "texts_recurring_across_sessions": 0.07,
+     "capitalized_share": 0.28,
+     "mentions_per_text_per_session": 1.84,
+     "top_texts": [
+      "mirror",
+      "camera",
+      "toilevator",
+      "laptop",
+      "shoes",
+      "binoculars",
+      "improvements",
+      "tripod",
+      "macbook air",
+      "wide-angle lens"
+     ]
+    },
+    "Course": {
+     "mentions": 238,
+     "distinct_texts": 172,
+     "sessions": 35,
+     "texts_recurring_across_sessions": 0.03,
+     "capitalized_share": 0.53,
+     "mentions_per_text_per_session": 1.34,
+     "top_texts": [
+      "hdr software",
+      "the mabinogion",
+      "data visualization with python",
+      "statistical modeling",
+      "data visualization with python: matplotlib and seaborn",
+      "blockchain",
+      "psm assessment",
+      "fiction",
+      "master's degree",
+      "autolayout"
+     ]
+    },
+    "JobRole": {
+     "mentions": 243,
+     "distinct_texts": 137,
+     "sessions": 44,
+     "texts_recurring_across_sessions": 0.06,
+     "capitalized_share": 0.34,
+     "mentions_per_text_per_session": 1.61,
+     "top_texts": [
+      "namer",
+      "product manager",
+      "research and monitoring",
+      "export options",
+      "assistant",
+      "author",
+      "agents",
+      "healthcare professional",
+      "editors",
+      "instructors"
+     ]
+    },
+    "Activity": {
+     "mentions": 1189,
+     "distinct_texts": 523,
+     "sessions": 50,
+     "texts_recurring_across_sessions": 0.06,
+     "capitalized_share": 0.23,
+     "mentions_per_text_per_session": 2.12,
+     "top_texts": [
+      "writing",
+      "exercise",
+      "hike",
+      "hiking",
+      "workout",
+      "hunting",
+      "hunt",
+      "practice",
+      "discussion",
+      "music"
+     ]
+    },
+    "CreativeWork": {
+     "mentions": 321,
+     "distinct_texts": 202,
+     "sessions": 28,
+     "texts_recurring_across_sessions": 0.03,
+     "capitalized_share": 0.64,
+     "mentions_per_text_per_session": 1.54,
+     "top_texts": [
+      "to kill a mockingbird",
+      "go tell it on the mountain",
+      "debut novel",
+      "the goonies",
+      "the seven husbands of evelyn hugo",
+      "photoshop",
+      "hamilton",
+      "paintings",
+      "the neverending story",
+      "the hate u give"
+     ]
+    },
+    "Food": {
+     "mentions": 792,
+     "distinct_texts": 292,
+     "sessions": 27,
+     "texts_recurring_across_sessions": 0.16,
+     "capitalized_share": 0.2,
+     "mentions_per_text_per_session": 2.23,
+     "top_texts": [
+      "herbs",
+      "food",
+      "water",
+      "peanut butter",
+      "tea",
+      "suet",
+      "bass",
+      "shoes",
+      "walleye",
+      "meat"
+     ]
+    }
+   }
+  },
+  "seconds": 801,
+  "edges": 245,
+  "mentions": 7938,
+  "chars": 708663
+ },
+ "prune": {
+  "result": {
+   "relations": [
+    {
+     "name": "offered_by",
+     "head": [
+      "Device",
+      "Course",
+      "Activity"
+     ],
+     "tail": [
+      "Organization"
+     ],
+     "reason": "The only relation whose observed edges are mostly meaningful: a product, course or class offered by a company or provider (Toilevator -> GMS Group Medical Supply, courses -> Product School, Zumba classes -> dance studio). The CreativeWork/JobRole/User/Person pairs are noise or really authorship, so they are dropped."
+    }
+   ],
+   "dropped_relations": [
+    {
+     "name": "owns",
+     "reason": "Never fired with a User/Person head. Observed pairs are Device->Device self-loops (Toilevator -> Toilevator) where 'user' was mistyped, plus Date/CreativeWork noise."
+    }
+   ],
+   "entity_types": [
+    {
+     "label": "Organization",
+     "identity": "global",
+     "reason": "Mostly named, capitalized entities (75%) such as Emirates, YouTube and Scrum.org that refer to the same thing in every session."
+    },
+    {
+     "label": "Device",
+     "identity": "chunk",
+     "reason": "Mostly generic lowercase nouns (mirror, camera, laptop, shoes). The same word in two sessions is usually a different item."
+    },
+    {
+     "label": "Course",
+     "identity": "global",
+     "reason": "Mostly named programs or subjects (Data Visualization with Python, PSM assessment) that are stable identifiers."
+    },
+    {
+     "label": "Activity",
+     "identity": "chunk",
+     "reason": "Generic lowercase activities (writing, hiking, workout) that depend on the session and are not shared entities."
+    },
+    {
+     "label": "JobRole",
+     "identity": "chunk",
+     "reason": "Generic role nouns (author, editors, product manager) whose meaning depends on the session."
+    },
+    {
+     "label": "CreativeWork",
+     "identity": "global",
+     "reason": "Mostly capitalized titles (To Kill a Mockingbird, Hamilton, The Goonies) that name the same work everywhere."
+    },
+    {
+     "label": "Food",
+     "identity": "chunk",
+     "reason": "Generic lowercase ingredients and dishes (herbs, water, tea, meat). Repeated wording does not mean the same item."
+    }
+   ],
+   "dropped_types": []
+  },
+  "provenance": {
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "input_tokens": 11638,
+   "output_tokens": 1575,
+   "cost_usd": 0.12459600000000001,
+   "seconds": 17.0,
+   "prompt_chars": 23150
+  }
+ },
+ "validation": [],
+ "vocabulary": {
+  "entity_types": {
+   "User": {
+    "description": "the person speaking in the first person -- I, me, my, myself",
+    "identity": "global"
+   },
+   "Person": {
+    "description": "another named individual: a family member, friend, colleague, doctor, teacher",
+    "identity": "global"
+   },
+   "Duration": {
+    "description": "a length of time: 25:50, 45 minutes, three weeks, 10-12 hours",
+    "identity": "span"
+   },
+   "Quantity": {
+    "description": "a count or amount of things: 3, four, 38 subjects, 5 pairs, 220 pages",
+    "identity": "span"
+   },
+   "Money": {
+    "description": "an amount of money: $185, $2,500, $400,000",
+    "identity": "span"
+   },
+   "Date": {
+    "description": "a calendar date or day: February 14th, Friday, last Thursday, May 6",
+    "identity": "span"
+   },
+   "TimeWindow": {
+    "description": "a span of clock time: 8 am - 4 pm, 2 AM, the day shift",
+    "identity": "span"
+   },
+   "Organization": {
+    "description": "A named company, university, school, platform provider, league or institution, e.g. Cardiff University, Coursera, a rival company",
+    "identity": "global"
+   },
+   "Device": {
+    "description": "A physical product or piece of equipment the user owns or wants to buy, e.g. smoker, smart TV, laptop, router, mesh network system, wood pellets",
+    "identity": "chunk"
+   },
+   "Course": {
+    "description": "An educational program, degree, certification or scholarship, e.g. Coursera Project Management Specialization, MBA, PMP certification, Vice-Chancellor's International Scholarship",
+    "identity": "global"
+   },
+   "JobRole": {
+    "description": "A job title or professional position, e.g. senior software engineer, technical lead",
+    "identity": "chunk"
+   },
+   "Activity": {
+    "description": "A hobby, sport, pastime or personal project the user does, e.g. smoking meats, fantasy baseball, making BBQ sauce",
+    "identity": "chunk"
+   },
+   "CreativeWork": {
+    "description": "A named book, TV show, film, performance or event the user reads or watches, e.g. The Kite Runner, a virtual comedy show",
+    "identity": "global"
+   },
+   "Food": {
+    "description": "A dish, ingredient, meat cut or recipe the user cooks, e.g. BBQ sauce, pork shoulder, brisket, hickory wood",
+    "identity": "chunk"
+   }
+  },
+  "relations": [
+   {
+    "name": "offered_by",
+    "head": [
+     "Device",
+     "Course",
+     "Activity"
+    ],
+    "tail": [
+     "Organization"
+    ]
+   }
+  ]
+ }
+}

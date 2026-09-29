@@ -1,0 +1,6 @@
+[A] propose 9 sessions, observe 60
+[A] proposed 7 domain types, 0 value types, 12 relations
+[A] propose cost {'models': ['claude-opus-5-5'], 'input_tokens': 39488, 'output_tokens': 1496, 'cost_usd': 0.345816, 'seconds': 18.4, 'prompt_chars': 115489}
+[A] observe 245 edges, 7938 mentions over 708663 chars in 801s
+[A] prune cost {'models': ['claude-opus-5-5'], 'input_tokens': 11638, 'output_tokens': 1575, 'cost_usd': 0.12459600000000001, 'seconds': 17.0, 'prompt_chars': 23150}
+[A] validation: PASS

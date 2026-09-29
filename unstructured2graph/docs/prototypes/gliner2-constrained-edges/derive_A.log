@@ -1,0 +1,66 @@
+[A] propose 9 sessions, observe 60
+[A] proposed 7 domain types, 0 value types, 12 relations
+[A] propose cost {'models': ['claude-opus-5-5'], 'input_tokens': 39488, 'output_tokens': 1496, 'cost_usd': 0.345816, 'seconds': 18.4, 'prompt_chars': 115489}
+   1/60 ultrachat_433398
+   2/60 sharegpt_SzQ9LQj_0
+   3/60 5ace87df_1
+   4/60 sharegpt_jl0GWjL_0
+   5/60 sharegpt_CMbaRkD_37
+   6/60 sharegpt_SNshiYQ_11
+   7/60 ultrachat_73163
+   8/60 sharegpt_oXgiN7q_53
+   9/60 82ea1455_2
+   10/60 f6ce25ef
+   11/60 ultrachat_22304
+   12/60 544fe66c_2
+   13/60 fdd0f680_2
+   14/60 sharegpt_quVKffw_0
+   15/60 sharegpt_KZW5X0e_0
+   16/60 5ff94163_2
+   17/60 082b7e52_2
+   18/60 261235d1
+   19/60 ultrachat_539537
+   20/60 ultrachat_494422
+   21/60 b4ee9f6b
+   22/60 sharegpt_JRQtEcd_0
+   23/60 af0ab6ab
+   24/60 sharegpt_c1GD2va_7
+   25/60 sharegpt_o3FfE7d_0
+   26/60 dcc7f430_1
+   27/60 27ce9f13_2
+   28/60 sharegpt_Bwk7dXW_0
+   29/60 answer_3a5010af_1
+   30/60 ultrachat_447648
+   31/60 f66ca54c
+   32/60 sharegpt_5NoXULS_0
+   33/60 9bec5593_2
+   34/60 sharegpt_CMplLnT_29
+   35/60 d07f014a
+   36/60 2640383e
+   37/60 864a563d_5
+   38/60 9e05d9a0
+   39/60 sharegpt_QovWQci_0
+   40/60 sharegpt_9Wnceim_41
+   41/60 787bf8b1_1
+   42/60 dde142b2_2
+   43/60 answer_c7ddc051_1
+   44/60 answer_67074b4b_2
+   45/60 8acb29f9_1
+   46/60 3a980e89_3
+   47/60 c8fcdf5a_2
+   48/60 d2d7a96a_1
+   49/60 answer_90de9b4d_2
+   50/60 2af27403_2
+   51/60 a3107e2a_2
+   52/60 answer_ae3a122b_2
+   53/60 sharegpt_BgSFVRW_0
+   54/60 sharegpt_CqJTtJZ_78
+   55/60 sharegpt_rnL5VQO_17
+   56/60 65698aa9_2
+   57/60 998616b4_3
+   58/60 ultrachat_285724
+   59/60 ultrachat_460283
+   60/60 87a183c1_2
+[A] observe 4505 edges, 8236 mentions over 708663 chars in 3727s
+[A] prune cost {'models': ['claude-opus-5-5'], 'input_tokens': 15023, 'output_tokens': 2044, 'cost_usd': 0.161056, 'seconds': 21.5, 'prompt_chars': 31379}
+[A] validation: PASS
