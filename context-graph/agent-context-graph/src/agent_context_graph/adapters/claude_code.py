@@ -176,6 +176,9 @@ SPEC = RuntimeSpec(
         },
     ),
     responses={"Stop": {"continue": True}, "SubagentStop": {"continue": True}},
+    # Grok Build also runs .claude/settings.json hooks, with its own payloads
+    # (camelCase duplicates of every field); its grok runtime records those.
+    foreign_payload_keys=frozenset({"hookEventName"}),
     probe_payload={"hook_event_name": "Stop", "session_id": "doctor"},
 )
 

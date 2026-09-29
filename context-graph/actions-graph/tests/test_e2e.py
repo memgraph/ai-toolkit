@@ -22,6 +22,7 @@ from agent_context_graph.adapters.claude_code import ClaudeCodeHooksAdapter
 from agent_context_graph.adapters.codex import CodexHooksAdapter
 from agent_context_graph.adapters.copilot_cli import CopilotCLIHooksAdapter
 from agent_context_graph.adapters.cursor import CursorHooksAdapter
+from agent_context_graph.adapters.grok import GrokHooksAdapter
 from agent_context_graph.adapters.opencode import OpenCodeHooksAdapter
 
 
@@ -392,6 +393,30 @@ _RUNTIME_CASES = [
             },
         ],
         expected_result=None,
+    ),
+    _runtime_case(
+        GrokHooksAdapter,
+        "grok",
+        # As captured from a live grok 1.0.40 session: every field arrives in
+        # both camelCase and snake_case, and tool results are typed objects.
+        [
+            {"hook_event_name": "SessionStart", "session_id": "S", "sessionId": "S", "cwd": _CWD, "source": "new"},
+            {
+                "hook_event_name": "PreToolUse",
+                "session_id": "S",
+                "tool_name": "run_terminal_command",
+                "tool_input": _LS,
+                "tool_use_id": "call-1",
+            },
+            {
+                "hook_event_name": "PostToolUse",
+                "session_id": "S",
+                "tool_name": "run_terminal_command",
+                "tool_input": _LS,
+                "tool_response": {"type": "Bash", "output_for_prompt": "README.md", "exit_code": 0},
+                "tool_use_id": "call-1",
+            },
+        ],
     ),
 ]
 

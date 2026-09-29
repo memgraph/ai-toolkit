@@ -159,6 +159,9 @@ SPEC = RuntimeSpec(
         "subagentStart": {"permission": "allow"},
         "beforeSubmitPrompt": {"continue": True},
     },
+    # Grok Build also runs .cursor/hooks.json hooks, with its own payloads
+    # (camelCase duplicates of every field); its grok runtime records those.
+    foreign_payload_keys=frozenset({"hookEventName"}),
     probe_payload={"hook_event_name": "sessionEnd", "session_id": "doctor", "reason": "completed"},
 )
 

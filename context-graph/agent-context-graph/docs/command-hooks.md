@@ -24,6 +24,7 @@ Runtime registrations are discovered through the
 | Cursor | `cursor` | JSON command hooks | `.cursor/hooks.json` |
 | OpenCode | `opencode` | V2 JavaScript plugin | `.opencode/plugins/agent-context-graph/index.js` |
 | Antigravity CLI | `antigravity-cli` | JSON command hooks | `.agents/hooks.json` |
+| Grok Build | `grok` | JSON command hooks | `.grok/hooks/agent-context-graph.json` |
 
 Generate wiring for runtimes with a project-local installer:
 
@@ -32,10 +33,11 @@ agent-context-graph hook init copilot-cli
 agent-context-graph hook init cursor
 agent-context-graph hook init opencode
 agent-context-graph hook init antigravity-cli
+agent-context-graph hook init grok
 ```
 
 `hook init` enables all three built-in connectors by default. Use repeated
-`--connector` flags to select a subset. Existing Copilot, Cursor, and Antigravity
+`--connector` flags to select a subset. Existing Copilot, Cursor, Antigravity, and Grok
 JSON documents are merged without removing unrelated settings or hooks.
 OpenCode's generated plugin is replaced only with `--force`.
 
@@ -170,6 +172,30 @@ failed, but not what they returned. Capture hooks never answer a permission
 decision: an empty `PreToolUse` response leaves `agy`'s own prompt in charge,
 and `PostToolUse` answers the required `{}`. See the
 [Antigravity hooks reference](https://antigravity.google/docs/hooks/).
+
+### Grok Build
+
+Grok Build (`grok`) reads project hooks from `.grok/hooks/*.json`;
+`hook init grok` writes a dedicated `.grok/hooks/agent-context-graph.json` in
+the Claude Code shape (`{"hooks": {Event: [{"hooks": [...]}]}}`), with timeouts
+in seconds. Project hooks run only after the folder is trusted (`/hooks-trust`
+or `grok --trust`).
+
+Payloads repeat every field in camelCase and Claude Code's snake_case
+(`hook_event_name`, `session_id`, `tool_name`, `tool_input`, `tool_response`,
+`tool_use_id`), so tool calls pair on a real id. Tool results are typed:
+shell results record `output_for_prompt` and a non-zero `exit_code` marks an
+error; file reads record `FileContent.content`. `Stop` fires at the end of
+every turn (`reason: end_turn`) and again at shutdown, so it records
+`lastAssistantMessage` as the assistant reply and never ends the session;
+`SessionEnd` does.
+
+Grok also runs hooks from a project's `.claude/settings.json` and
+`.cursor/hooks.json`, passing its own payloads. The `claude-code` and `cursor`
+registrations ignore payloads carrying Grok's camelCase `hookEventName`, which
+those runtimes never send, so a project wired for several runtimes records a
+Grok session once, as `grok`. See the
+[Grok Build hooks reference](https://docs.x.ai/build/features/hooks).
 
 ## Persistent hook configuration
 

@@ -91,7 +91,9 @@ class RuntimeSpec:
     ``responses`` maps an event name to the JSON the runtime expects on stdout
     for it; events not listed get no output. ``event_aliases`` maps alternate
     spellings of an event name onto the canonical name used by ``rules`` and
-    ``responses``.
+    ``responses``. ``foreign_payload_keys`` are keys this runtime never sends;
+    a payload carrying one came from another runtime reading this runtime's
+    hook file, and is ignored.
     """
 
     name: str
@@ -104,6 +106,7 @@ class RuntimeSpec:
     fields: FieldMap = FieldMap()
     responses: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     event_aliases: Mapping[str, str] = field(default_factory=dict)
+    foreign_payload_keys: frozenset[str] = frozenset()
     probe_payload: Mapping[str, Any] = field(default_factory=dict)
 
     def event_name(self, payload: Mapping[str, Any]) -> str:
@@ -165,7 +168,7 @@ class SpecAdapter(RuntimeAdapter):
     def handle_payload(self, payload: dict[str, Any]) -> list[Event]:
         """Translate and emit every event described by *payload*."""
         rule = self.SPEC.rules.get(self.SPEC.event_name(payload))
-        if rule is None:
+        if rule is None or not self.SPEC.foreign_payload_keys.isdisjoint(payload):
             return []
 
         session_id = self._session_id or self._resolve_session_id(payload)

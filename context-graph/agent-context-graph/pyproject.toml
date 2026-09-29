@@ -25,6 +25,7 @@ copilot-cli = "agent_context_graph.adapters.copilot_cli:PLUGIN"
 cursor = "agent_context_graph.adapters.cursor:PLUGIN"
 opencode = "agent_context_graph.adapters.opencode:PLUGIN"
 antigravity-cli = "agent_context_graph.adapters.antigravity_cli:PLUGIN"
+grok = "agent_context_graph.adapters.grok:PLUGIN"
 
 [project.optional-dependencies]
 claude = [

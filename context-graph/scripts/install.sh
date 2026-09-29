@@ -11,9 +11,9 @@
 #
 # Env overrides:
 #   CONTEXT_GRAPH_RUNTIME         claude-code (default), codex, copilot-cli,
-#                                 cursor, opencode, or antigravity-cli
+#                                 cursor, opencode, antigravity-cli, or grok
 #   CONTEXT_GRAPH_PROJECT_DIR     project to wire for copilot-cli, cursor,
-#                                 opencode, antigravity-cli (default: current directory)
+#                                 opencode, antigravity-cli, grok (default: current directory)
 #   AGENT_CONTEXT_GRAPH_USER_ID   identity to record (default: git user.name, else $USER)
 #   MEMGRAPH_HOST / MEMGRAPH_PORT default localhost:7687
 #   SKIP_MEMGRAPH=1               don't start a local Memgraph even if none is reachable
@@ -31,8 +31,9 @@ case "$RUNTIME" in
   cursor) RUNTIME_LABEL="Cursor"; RUNTIME_BINS=(cursor cursor-agent); RUNTIME_WIRING=project ;;
   opencode) RUNTIME_LABEL="OpenCode"; RUNTIME_BINS=(opencode); RUNTIME_WIRING=project ;;
   antigravity-cli) RUNTIME_LABEL="Antigravity CLI"; RUNTIME_BINS=(agy); RUNTIME_WIRING=project ;;
+  grok) RUNTIME_LABEL="Grok Build"; RUNTIME_BINS=(grok); RUNTIME_WIRING=project ;;
   *)
-    echo "FAIL unknown CONTEXT_GRAPH_RUNTIME: $RUNTIME (expected claude-code, codex, copilot-cli, cursor, opencode, or antigravity-cli)" >&2
+    echo "FAIL unknown CONTEXT_GRAPH_RUNTIME: $RUNTIME (expected claude-code, codex, copilot-cli, cursor, opencode, antigravity-cli, or grok)" >&2
     exit 1
     ;;
 esac
