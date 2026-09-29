@@ -388,4 +388,4 @@ def test_schema_shows_relationship_properties_with_their_types(populated: ReadOn
     schema = graph_schema(populated)
 
     assert ":visited -- chunk (string), confidence (float), valid_at (datetime)" in schema
-    assert "Paris" not in schema
+    assert "2023-05-30" not in schema  # keys and types, never values
