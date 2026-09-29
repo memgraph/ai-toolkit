@@ -100,20 +100,46 @@ def create_nodes_from_list(
                     raise e
 
 
-def connect_chunks_to_entities(memgraph: Memgraph, chunk_label: str, entity_label: str):
+def connect_chunks_to_entities(
+    memgraph: Memgraph, chunk_label: str, entity_label: str, chunk_hashes: list[str] | None = None
+):
     """MERGE (entity)-[:MENTIONED_IN]->(chunk) for every entity whose file_path names a chunk hash.
 
-    Looks each chunk up by hash rather than joining the two labels, so with
-    ensure_lookup(chunk_label, "hash") this is one index probe per entity
-    instead of a cartesian product of the two labels.
+    With `chunk_hashes`, only entities of those chunks are visited, one
+    `file_path` lookup per chunk. Without it, every entity in the workspace
+    is, which run once per ingest makes a growing graph's ingestion
+    quadratic. Each chunk is looked up by hash, never joined across the two
+    labels.
     """
+    if chunk_hashes is None:
+        memgraph.query(
+            f"""
+            MATCH (n:{entity_label})
+            WHERE n.file_path IS NOT NULL
+            MATCH (m:{chunk_label} {{hash: n.file_path}})
+            MERGE (n)-[:MENTIONED_IN]->(m);
+            """
+        )
+        return
     memgraph.query(
         f"""
-        MATCH (n:{entity_label})
-        WHERE n.file_path IS NOT NULL
-        MATCH (m:{chunk_label} {{hash: n.file_path}})
+        UNWIND $chunk_hashes AS h
+        MATCH (m:{chunk_label} {{hash: h}})
+        MATCH (n:{entity_label} {{file_path: h}})
         MERGE (n)-[:MENTIONED_IN]->(m);
-        """
+        """,
+        params={"chunk_hashes": list(chunk_hashes)},
+    )
+
+
+def _entities(workspace_label: str, chunk_hashes: list[str] | None) -> str:
+    """A clause binding `n` to workspace entities -- all, or those MENTIONED_IN `chunk_hashes` --
+    that a WHERE can follow."""
+    if chunk_hashes is None:
+        return f"MATCH (n:{workspace_label})"
+    return (
+        f"MATCH (c:Chunk) WHERE c.hash IN $chunk_hashes "
+        f"MATCH (n:{workspace_label})-[:MENTIONED_IN]->(c) WITH DISTINCT n"
     )
 
 
@@ -139,7 +165,9 @@ def link_mentions(memgraph: Memgraph, entity_label: str, match_key: str, chunk_h
     )
 
 
-def promote_entity_types_to_labels(memgraph: Memgraph, workspace_label: str, ontology: "Ontology") -> None:
+def promote_entity_types_to_labels(
+    memgraph: Memgraph, workspace_label: str, ontology: "Ontology", chunk_hashes: list[str] | None = None
+) -> None:
     """
     Additively promote each entity's `entity_type` property to a real
     Memgraph label (e.g. entity_type="person" -> :Person), for entity_type
@@ -155,25 +183,32 @@ def promote_entity_types_to_labels(memgraph: Memgraph, workspace_label: str, ont
     indistinguishable from an unprocessed node. Re-running this (e.g. after
     the ontology grows a new type) clears the flag on anything that now
     conforms.
+
+    With `chunk_hashes`, only entities MENTIONED_IN those chunks are visited,
+    so run connect_chunks_to_entities first. Ingestion passes the chunks it
+    just wrote; re-projecting a whole workspace after an ontology change
+    omits it.
     """
+    entities = _entities(workspace_label, chunk_hashes)
+    params = {"chunk_hashes": list(chunk_hashes)} if chunk_hashes is not None else {}
     labels = ontology.allowed_labels()
     for label in labels:
         memgraph.query(
             f"""
-            MATCH (n:{workspace_label})
+            {entities}
             WHERE toLower(n.entity_type) = toLower($label) AND NOT n:{label}
             SET n:{label}
             """,
-            params={"label": label},
+            params={**params, "label": label},
         )
 
     if not labels:
-        memgraph.query(f"MATCH (n:{workspace_label}) SET n.ontology_conformant = false")
+        memgraph.query(f"{entities} SET n.ontology_conformant = false", params=params)
         return
 
     conforms_clause = " OR ".join(f"n:{label}" for label in labels)
-    memgraph.query(f"MATCH (n:{workspace_label}) WHERE NOT ({conforms_clause}) SET n.ontology_conformant = false")
-    memgraph.query(f"MATCH (n:{workspace_label}) WHERE {conforms_clause} REMOVE n.ontology_conformant")
+    memgraph.query(f"{entities} WHERE NOT ({conforms_clause}) SET n.ontology_conformant = false", params=params)
+    memgraph.query(f"{entities} WHERE {conforms_clause} REMOVE n.ontology_conformant", params=params)
 
 
 def promote_all_entity_types_to_labels(memgraph: Memgraph, workspace_label: str) -> None:
@@ -221,18 +256,33 @@ def _any_label(variable: str, labels: tuple[str, ...]) -> str:
 _TOUCHES_WORKSPACE = "($workspace IN labels(a) OR $workspace IN labels(b))"
 
 
-def _relationship_scope(chunk_hashes: list[str] | None) -> tuple[str, dict[str, Any]]:
-    """A WHERE fragment restricting `r` to relationships extracted from `chunk_hashes`.
+def _relationships(workspace_label: str, relation_type: str | None, chunk_hashes: list[str] | None) -> str:
+    """A clause binding `r` (and its endpoints `a`, `b`) to extracted relationships touching the
+    workspace -- all of them, or those extracted from `chunk_hashes` -- that a WHERE can follow.
 
-    GLiNER2 stamps its edges with `chunk`; LightRAG's carry `file_path`, which
-    holds every contributing chunk's hash joined by a separator, hence CONTAINS.
+    Scoped, it starts from the chunks' own entities (every extracted
+    relationship has a workspace endpoint MENTIONED_IN its chunk) rather than
+    scanning every relationship of the type, which per ingest would make a
+    growing graph's ingestion quadratic. GLiNER2 stamps its edges with
+    `chunk`; LightRAG's carry `file_path`, every contributing chunk's hash
+    joined by a separator, hence CONTAINS.
     """
+    typed = f":{relation_type}" if relation_type else ""
     if chunk_hashes is None:
-        return "true", {}
+        return f"MATCH (a)-[r{typed}]->(b) WHERE {_TOUCHES_WORKSPACE} WITH a, r, b"
     return (
-        "any(h IN $chunk_hashes WHERE coalesce(r.chunk, r.file_path, '') CONTAINS h)",
-        {"chunk_hashes": list(chunk_hashes)},
+        f"MATCH (c:Chunk) WHERE c.hash IN $chunk_hashes "
+        f"MATCH (c)<-[:MENTIONED_IN]-(n:{workspace_label})-[r{typed}]-() "
+        f"WHERE any(h IN $chunk_hashes WHERE coalesce(r.chunk, r.file_path, '') CONTAINS h) "
+        f"WITH DISTINCT r WITH startNode(r) AS a, r, endNode(r) AS b"
     )
+
+
+def _scope_params(workspace_label: str, chunk_hashes: list[str] | None) -> dict[str, Any]:
+    params: dict[str, Any] = {"workspace": workspace_label}
+    if chunk_hashes is not None:
+        params["chunk_hashes"] = list(chunk_hashes)
+    return params
 
 
 def enforce_relation_domain_range(
@@ -263,7 +313,7 @@ def enforce_relation_domain_range(
     """
     _require_valid_identifier(workspace_label, "workspace_label")
     model = ontology.model
-    scope, params = _relationship_scope(chunk_hashes)
+    params = _scope_params(workspace_label, chunk_hashes)
     issues: list[ValidationIssue] = []
     for relation in ontology.relation_types:
         if not relation.constrained:
@@ -273,18 +323,17 @@ def enforce_relation_domain_range(
             f"({_any_label('a', model.endpoint_labels(relation, 'start'))}) "
             f"AND ({_any_label('b', model.endpoint_labels(relation, 'end'))})"
         )
-        match = f"MATCH (a)-[r:{relation.label}]->(b) WHERE {_TOUCHES_WORKSPACE} AND {scope}"
+        match = _relationships(workspace_label, relation.label, chunk_hashes)
         rows = memgraph.query(
             f"""
-            {match} AND NOT ({conforms})
+            {match}
+            WHERE NOT ({conforms})
             SET r.ontology_conformant = false
             RETURN labels(a) AS start_labels, labels(b) AS end_labels, count(r) AS count
             """,
-            params={**params, "workspace": workspace_label},
+            params=params,
         )
-        memgraph.query(
-            f"{match} AND {conforms} REMOVE r.ontology_conformant", params={**params, "workspace": workspace_label}
-        )
+        memgraph.query(f"{match} WHERE {conforms} REMOVE r.ontology_conformant", params=params)
         for row in rows:
             start = tuple(sorted(label for label in row["start_labels"] if label != workspace_label))
             end = tuple(sorted(label for label in row["end_labels"] if label != workspace_label))
@@ -347,24 +396,18 @@ def ontology_report(
             chunks (an entity counts if it is MENTIONED_IN one of them).
     """
     _require_valid_identifier(workspace_label, "workspace_label")
-    scope, params = _relationship_scope(chunk_hashes)
-    structural = list(STRUCTURAL_RELATIONSHIP_TYPES)
-    entity_scope = (
-        "EXISTS { MATCH (n)-[:MENTIONED_IN]->(c:Chunk) WHERE c.hash IN $chunk_hashes }"
-        if chunk_hashes is not None
-        else "true"
-    )
+    params = _scope_params(workspace_label, chunk_hashes)
     nonconformant_entities = memgraph.query(
-        f"MATCH (n:{workspace_label}) WHERE n.ontology_conformant = false AND {entity_scope} RETURN count(n) AS count",
+        f"{_entities(workspace_label, chunk_hashes)} WHERE n.ontology_conformant = false RETURN count(n) AS count",
         params=params,
     )[0]["count"]
     rows = memgraph.query(
         f"""
-        MATCH (a)-[r]->(b)
-        WHERE {_TOUCHES_WORKSPACE} AND NOT type(r) IN $structural AND {scope}
+        {_relationships(workspace_label, None, chunk_hashes)}
+        WHERE NOT type(r) IN $structural
         RETURN type(r) AS type, count(r) AS count, sum(CASE WHEN r.ontology_conformant = false THEN 1 ELSE 0 END) AS flagged
         """,
-        params={**params, "structural": structural, "workspace": workspace_label},
+        params={**params, "structural": list(STRUCTURAL_RELATIONSHIP_TYPES)},
     )
     declared = set(ontology.allowed_relation_labels())
     by_type = {row["type"]: row for row in rows}
@@ -372,15 +415,14 @@ def ontology_report(
     declared_relationships = sum(row["count"] for t, row in by_type.items() if t in declared)
     nonconformant_relations = sum(row["flagged"] for t, row in by_type.items() if t in declared)
 
+    # One cheap existence probe per declared type (it stops at the first
+    # match), not a scan of every relationship: this runs after every ingest.
     present = {
-        row["type"]
-        for row in memgraph.query(
-            f"""
-            MATCH (a)-[r]->(b)
-            WHERE {_TOUCHES_WORKSPACE} AND type(r) IN $declared
-            RETURN DISTINCT type(r) AS type
-            """,
-            params={"declared": sorted(declared), "workspace": workspace_label},
+        label
+        for label in declared
+        if memgraph.query(
+            f"MATCH (a)-[r:{label}]->(b) WHERE {_TOUCHES_WORKSPACE} RETURN 1 AS hit LIMIT 1",
+            params={"workspace": workspace_label},
         )
     }
     zero_instance = tuple(label for label in ontology.allowed_relation_labels() if label not in present)

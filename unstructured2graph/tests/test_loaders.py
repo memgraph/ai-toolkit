@@ -2,7 +2,7 @@
 
 import hashlib
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -113,7 +113,7 @@ async def test_entity_workspace_explicit_override_matching_backend_is_accepted()
             ["fake.txt"], memgraph, extraction_backend, only_chunks=False, entity_workspace="auto_derived"
         )
 
-    mock_connect.assert_called_once_with(memgraph, "Chunk", "auto_derived")
+    mock_connect.assert_called_once_with(memgraph, "Chunk", "auto_derived", chunk_hashes=ANY)
 
 
 @pytest.mark.asyncio
@@ -146,7 +146,7 @@ async def test_entity_workspace_auto_derived_from_backend():
     ):
         await from_unstructured(["fake.txt"], memgraph, extraction_backend, only_chunks=False)
 
-    mock_connect.assert_called_once_with(memgraph, "Chunk", "tenant_42")
+    mock_connect.assert_called_once_with(memgraph, "Chunk", "tenant_42", chunk_hashes=ANY)
 
 
 @pytest.mark.asyncio
@@ -167,7 +167,7 @@ async def test_connect_chunks_to_entities_called_once_per_document():
         await from_unstructured(["fake.txt"], memgraph, extraction_backend, only_chunks=False)
 
     assert extraction_backend.aingest_chunk.await_count == 3
-    mock_connect.assert_called_once_with(memgraph, "Chunk", "base")
+    mock_connect.assert_called_once_with(memgraph, "Chunk", "base", chunk_hashes=ANY)
 
 
 @pytest.mark.asyncio
@@ -290,7 +290,7 @@ async def test_from_texts_runs_entity_extraction_and_connects_chunks():
     assert len(grouped) == 1
     assert len(grouped[0]) == 1
     extraction_backend.aingest_chunk.assert_awaited_once()
-    mock_connect.assert_called_once_with(memgraph, "Chunk", "base")
+    mock_connect.assert_called_once_with(memgraph, "Chunk", "base", chunk_hashes=ANY)
 
 
 @pytest.mark.asyncio

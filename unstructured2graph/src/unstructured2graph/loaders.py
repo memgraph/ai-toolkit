@@ -21,6 +21,7 @@ from .memgraph import (
     connect_chunks_to_entities,
     create_entity_type_constraint,
     create_nodes_from_list,
+    create_property_index,
     enforce_relation_domain_range,
     ensure_lookup,
     link_nodes_in_order,
@@ -333,13 +334,18 @@ async def _ingest_chunks(
         resolved_workspace = cast("str", entity_workspace)
         create_entity_type_constraint(memgraph, resolved_workspace)
         ensure_lookup(memgraph, resolved_workspace, "entity_id")
+        create_property_index(memgraph, resolved_workspace, "file_path")
         for chunk in chunks:
             await backend.aingest_chunk(memgraph, chunk)
-        connect_chunks_to_entities(memgraph, "Chunk", resolved_workspace)
+        # Post-processing covers only what this call ingested: over the whole
+        # workspace, every ingest would rescan every entity, and a growing
+        # graph's ingestion would go quadratic.
+        hashes = [chunk.hash for chunk in chunks]
+        connect_chunks_to_entities(memgraph, "Chunk", resolved_workspace, chunk_hashes=hashes)
         if enforce_ontology:
             ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
-            promote_entity_types_to_labels(memgraph, resolved_workspace, ontology)
-            _enforce_relations(memgraph, resolved_workspace, ontology, [chunk.hash for chunk in chunks])
+            promote_entity_types_to_labels(memgraph, resolved_workspace, ontology, chunk_hashes=hashes)
+            _enforce_relations(memgraph, resolved_workspace, ontology, hashes)
         elif promote_labels:
             promote_all_entity_types_to_labels(memgraph, resolved_workspace)
 
@@ -696,11 +702,13 @@ async def process_enqueued_and_finalize(
         )
 
     create_entity_type_constraint(memgraph, resolved_entity_workspace)
-    connect_chunks_to_entities(memgraph, "Chunk", resolved_entity_workspace)
+    create_property_index(memgraph, resolved_entity_workspace, "file_path")
+    hashes = [chunk.hash for chunk in chunks]
+    connect_chunks_to_entities(memgraph, "Chunk", resolved_entity_workspace, chunk_hashes=hashes)
     if enforce_ontology:
         ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
-        promote_entity_types_to_labels(memgraph, resolved_entity_workspace, ontology)
-        _enforce_relations(memgraph, resolved_entity_workspace, ontology, [chunk.hash for chunk in chunks])
+        promote_entity_types_to_labels(memgraph, resolved_entity_workspace, ontology, chunk_hashes=hashes)
+        _enforce_relations(memgraph, resolved_entity_workspace, ontology, hashes)
     elif promote_labels:
         promote_all_entity_types_to_labels(memgraph, resolved_entity_workspace)
 
