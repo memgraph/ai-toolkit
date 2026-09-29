@@ -252,7 +252,8 @@ def _detailed_schema(graph: ReadOnlyGraph) -> str | None:
             start = ":".join(edge.get("start_labels") or ["?"])
             end = ":".join(edge.get("end_labels") or ["?"])
             lines.append(f"  (:{start})-[:{edge.get('edge_type')}]->(:{end})")
-        properties = _describe_relationship_properties(graph, sorted({e.get("edge_type") for e in edges} - {None}))
+        edge_types = sorted({str(e["edge_type"]) for e in edges if e.get("edge_type")})
+        properties = _describe_relationship_properties(graph, edge_types)
         if properties:
             lines.append("")
             lines.append("Relationship properties:")

@@ -1,0 +1,117 @@
+"""Tests for the hybrid retrieval strategy, against the real eval Memgraph.
+
+The embedder is a deterministic bag-of-words stand-in, so no model is
+downloaded; everything the strategy reads from and writes to the graph is
+real.
+"""
+
+import hashlib
+import re
+
+import numpy as np
+import pytest
+from context_graph_eval.hybrid import HybridConfig, ensure_hybrid_index, link_turns, retrieve_hybrid
+from context_graph_eval.retrieval import ReadOnlyGraph
+
+from actions_graph import ActionsGraph, MessageRole, Session
+
+
+class _BagOfWords:
+    def __call__(self, texts):
+        out = np.zeros((len(texts), 64), dtype="float32")
+        for row, text in enumerate(texts):
+            for word in re.findall(r"\w+", text.lower()):
+                out[row, int(hashlib.md5(word.encode()).hexdigest(), 16) % 64] += 1
+        norms = np.linalg.norm(out, axis=1, keepdims=True)
+        return out / np.where(norms == 0, 1, norms)
+
+
+class _EchoLLM:
+    async def complete(self, prompt: str) -> str:
+        return prompt
+
+
+def _plant(graph: ActionsGraph) -> None:
+    """One reconciled-looking session: two turns, their chunk, an entity and a typed fact."""
+    graph.ensure_session(Session(session_id="s1", started_at="2023-05-30T17:27:00+00:00"))
+    graph.record_message(
+        session_id="s1",
+        role=MessageRole.USER,
+        content="I went to the Museum of Modern Art. It was wonderful.",
+        timestamp="2023-05-30T17:27:00+00:00",
+    )
+    graph.record_message(
+        session_id="s1",
+        role=MessageRole.ASSISTANT,
+        content="Glad you enjoyed it!",
+        timestamp="2023-05-30T17:27:01+00:00",
+    )
+    db = graph.db
+    db.query("MATCH (a:Action) MERGE (c:Chunk {hash: 'c1', text: 'session'}) MERGE (a)-[:HAS_CHUNK]->(c)")
+    db.query(
+        "MATCH (c:Chunk {hash: 'c1'}) "
+        "CREATE (n:gliner2:Location {entity_id: 'moma', entity_type: 'Location', text: 'Museum of Modern Art'})"
+        "-[:MENTIONED_IN]->(c) "
+        "CREATE (u:User {user_id: 'u1'}) "
+        "CREATE (u)-[:visited {chunk: 'c1', confidence: 0.9, valid_at: datetime('2023-05-30T17:27:00+00:00')}]->(n)"
+    )
+
+
+def test_link_turns_gives_entities_their_turns_and_edges_their_source(eval_graph: ActionsGraph):
+    _plant(eval_graph)
+    from context_graph_eval.text_search import ensure_turn_text_index
+
+    ensure_turn_text_index(eval_graph)
+    counts = link_turns(eval_graph.db)
+
+    assert counts == {"entity_turn_links": 1, "edges_sourced": 1}
+    edge = eval_graph.db.query("MATCH ()-[r:visited]->() RETURN r.turn AS turn, r.text AS text")[0]
+    user_turn = eval_graph.db.query("MATCH (a:UserMessage) RETURN a.action_id AS id")[0]["id"]
+    assert edge == {"turn": user_turn, "text": "I went to the Museum of Modern Art."}
+
+
+@pytest.mark.asyncio
+async def test_hybrid_hands_the_answerer_facts_and_their_source_turn(eval_graph: ActionsGraph, tmp_path):
+    _plant(eval_graph)
+    index = ensure_hybrid_index(eval_graph, tmp_path / "index.npz", embedder=_BagOfWords())
+
+    result = await retrieve_hybrid(
+        "When did I visit the Museum of Modern Art?", graph=ReadOnlyGraph(eval_graph.db), llm=_EchoLLM(), index=index
+    )
+
+    assert 'FACT: user -[visited @ 2023-05-30]-> Museum of Modern Art -- "I went to the Museum of Modern Art."' in (
+        result.retrieval_context
+    )
+    assert any(row.startswith("TURN [session s1, 2023-05-30T17:27, user]") for row in result.retrieval_context)
+
+
+@pytest.mark.asyncio
+async def test_dropping_the_graph_lanes_leaves_turns_only(eval_graph: ActionsGraph, tmp_path):
+    _plant(eval_graph)
+    index = ensure_hybrid_index(eval_graph, tmp_path / "index.npz", embedder=_BagOfWords())
+
+    result = await retrieve_hybrid(
+        "Museum of Modern Art",
+        graph=ReadOnlyGraph(eval_graph.db),
+        llm=_EchoLLM(),
+        index=index,
+        config=HybridConfig(lanes=("turns", "text")),
+    )
+
+    assert result.retrieval_context
+    assert not any(row.startswith("FACT:") for row in result.retrieval_context)
+
+
+def test_index_is_cached_between_runs_over_the_same_graph(eval_graph: ActionsGraph, tmp_path):
+    _plant(eval_graph)
+    calls = []
+
+    class _Counting(_BagOfWords):
+        def __call__(self, texts):
+            calls.append(len(texts))
+            return super().__call__(texts)
+
+    ensure_hybrid_index(eval_graph, tmp_path / "index.npz", embedder=_Counting())
+    embedded = len(calls)
+    ensure_hybrid_index(eval_graph, tmp_path / "index.npz", embedder=_Counting())
+    assert len(calls) == embedded
