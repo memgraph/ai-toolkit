@@ -1,0 +1,6 @@
+seconds 134; stats GLiNER2Stats(windows=174, infeasible_windows=0, mentions=2525, mentions_bound_to_user=110, mentions_retyped=30, mentions_dropped=63, relations_written=351, self_loops_dropped=1)
+relationships 351, declared 351, nonconformant entities 0, relations 0, zero-instance ('paid', 'owns_count')
+25:50 [{'type': 'personal_best', 'head': 'anon-answer_a25d4a91_2', 'tail': '25:50'}]
+MoMA [{'type': 'visited', 'head': 'anon-answer_d00ba6d0_1', 'tail': 'Museum of Modern Art'}]
+Business Administration [{'type': 'studied', 'head': 'anon-answer_280352e9', 'tail': 'Business Administration'}]
+edges onto User: 141

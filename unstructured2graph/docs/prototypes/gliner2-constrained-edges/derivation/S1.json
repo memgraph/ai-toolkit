@@ -1,0 +1,6295 @@
+{
+ "samples": {
+  "observe": [
+   "sharegpt_CMplLnT_29",
+   "sharegpt_5NoXULS_0",
+   "d07f014a",
+   "b4ee9f6b",
+   "f66ca54c",
+   "261235d1",
+   "f6ce25ef",
+   "answer_c7ddc051_1",
+   "864a563d_5",
+   "sharegpt_quVKffw_0",
+   "2640383e",
+   "9e05d9a0",
+   "9bec5593_2",
+   "82ea1455_2",
+   "2af27403_2",
+   "a3107e2a_2",
+   "5ff94163_2",
+   "sharegpt_CqJTtJZ_78",
+   "87a183c1_2",
+   "sharegpt_c1GD2va_7",
+   "65698aa9_2",
+   "sharegpt_Bwk7dXW_0",
+   "ultrachat_22304",
+   "ultrachat_433398",
+   "ultrachat_447648",
+   "ultrachat_285724",
+   "ultrachat_539537",
+   "sharegpt_CMbaRkD_37",
+   "sharegpt_jl0GWjL_0",
+   "sharegpt_9Wnceim_41",
+   "544fe66c_2",
+   "27ce9f13_2",
+   "sharegpt_SNshiYQ_11",
+   "dcc7f430_1",
+   "sharegpt_rnL5VQO_17",
+   "af0ab6ab",
+   "fdd0f680_2",
+   "ultrachat_460283",
+   "sharegpt_SzQ9LQj_0",
+   "c8fcdf5a_2",
+   "sharegpt_JRQtEcd_0",
+   "sharegpt_o3FfE7d_0",
+   "answer_3a5010af_1",
+   "ultrachat_494422",
+   "998616b4_3",
+   "082b7e52_2",
+   "787bf8b1_1",
+   "answer_67074b4b_2",
+   "sharegpt_QovWQci_0",
+   "answer_90de9b4d_2",
+   "ultrachat_73163",
+   "5ace87df_1",
+   "3a980e89_3",
+   "sharegpt_oXgiN7q_53",
+   "8acb29f9_1",
+   "answer_ae3a122b_2",
+   "d2d7a96a_1",
+   "dde142b2_2",
+   "sharegpt_BgSFVRW_0",
+   "sharegpt_KZW5X0e_0"
+  ],
+  "propose_batches": [
+   [
+    "sharegpt_2YoO81t_403",
+    "8062f4ab_2",
+    "answer_a8b4290f_2",
+    "13b6b7ab_1",
+    "ultrachat_38938",
+    "52381716_1",
+    "ultrachat_250588",
+    "65bc93cf_7",
+    "answer_6a3b5c13_4",
+    "sharegpt_a4rfTHu_11"
+   ],
+   [
+    "ultrachat_287397",
+    "49576fd6",
+    "sharegpt_fPcL10k_0",
+    "ultrachat_420353",
+    "ultrachat_478030",
+    "ultrachat_467976",
+    "b1e06c1a",
+    "8672f398_2",
+    "a1b3dd27_1",
+    "sharegpt_7y4qwfF_11"
+   ],
+   [
+    "491ebc5d_2",
+    "3de0912a_3",
+    "a79e512e_2",
+    "ultrachat_328443",
+    "sharegpt_VuQnjeB_0",
+    "02b63d04_1",
+    "ultrachat_159269",
+    "183b6085",
+    "sharegpt_9l7gjYP_17",
+    "sharegpt_cfz0d02_36"
+   ],
+   [
+    "ultrachat_7047",
+    "sharegpt_f9nnqJo_0",
+    "sharegpt_8jC6dT1_33",
+    "9f8c432e_1",
+    "ultrachat_22151",
+    "b18cbb8b_1",
+    "28cd2f40",
+    "sharegpt_iqPG9aE_0",
+    "33994682_3",
+    "3d98b7e6_2"
+   ]
+  ]
+ },
+ "proposals": [
+  {
+   "vocabulary": {
+    "entity_types": [
+     {
+      "label": "Place",
+      "description": "A named geographic location, park, city, country or region: Big Sur, Yellowstone, New Zealand, downtown"
+     },
+     {
+      "label": "Trip",
+      "description": "A specific trip, trek, camping trip or outing the user went on or has planned: 3-day solo camping trip, 10-day trek, weekend bike ride"
+     },
+     {
+      "label": "Product",
+      "description": "A specific item or product model the user owns, buys, gives or is looking at: Merrell Moab 2 boots, Bell Zephyr helmet, Voluspa candle, picture frame, gift card"
+     },
+     {
+      "label": "Organization",
+      "description": "A named store, brand, company, service or school the user deals with: Things Remembered, Bath & Body Works, Instacart, Publix, Walmart, West Elm"
+     },
+     {
+      "label": "FoodDrink",
+      "description": "A food, dish, drink or ingredient the user eats, drinks or cooks: quinoa breakfast bowl, oatmeal with banana, chamomile tea, oat milk, Morning Sunrise coffee blend"
+     },
+     {
+      "label": "Activity",
+      "description": "A hobby, sport or recurring activity the user does: hiking, backpacking, cycling, meal prepping, exercise"
+     },
+     {
+      "label": "Project",
+      "description": "A work or personal project the user builds or works on: farm management app, drone component"
+     }
+    ],
+    "value_types": [],
+    "relations": [
+     {
+      "name": "went_on_trip",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Trip"
+      ]
+     },
+     {
+      "name": "trip_destination",
+      "intended_head": [
+       "Trip"
+      ],
+      "intended_tail": [
+       "Place"
+      ]
+     },
+     {
+      "name": "trip_duration",
+      "intended_head": [
+       "Trip"
+      ],
+      "intended_tail": [
+       "Duration"
+      ]
+     },
+     {
+      "name": "trip_date",
+      "intended_head": [
+       "Trip"
+      ],
+      "intended_tail": [
+       "Date"
+      ]
+     },
+     {
+      "name": "visited_place",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Place"
+      ]
+     },
+     {
+      "name": "owns_product",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Product"
+      ]
+     },
+     {
+      "name": "bought_product",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Product"
+      ]
+     },
+     {
+      "name": "product_bought_from",
+      "intended_head": [
+       "Product"
+      ],
+      "intended_tail": [
+       "Organization"
+      ]
+     },
+     {
+      "name": "product_price",
+      "intended_head": [
+       "Product"
+      ],
+      "intended_tail": [
+       "Money"
+      ]
+     },
+     {
+      "name": "product_quantity",
+      "intended_head": [
+       "Product"
+      ],
+      "intended_tail": [
+       "Quantity"
+      ]
+     },
+     {
+      "name": "gift_given_to",
+      "intended_head": [
+       "Product"
+      ],
+      "intended_tail": [
+       "Person"
+      ]
+     },
+     {
+      "name": "uses_service",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Organization"
+      ]
+     },
+     {
+      "name": "spent_money",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Money"
+      ]
+     },
+     {
+      "name": "has_budget",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Money"
+      ]
+     },
+     {
+      "name": "eats_or_drinks",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "FoodDrink"
+      ]
+     },
+     {
+      "name": "does_activity",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Activity"
+      ]
+     },
+     {
+      "name": "works_on_project",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Project"
+      ]
+     },
+     {
+      "name": "has_family_member",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Person"
+      ]
+     },
+     {
+      "name": "has_friend",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Person"
+      ]
+     },
+     {
+      "name": "studies_at",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Organization"
+      ]
+     }
+    ]
+   },
+   "provenance": {
+    "models": [
+     "claude-opus-5-5"
+    ],
+    "input_tokens": 40080,
+    "output_tokens": 1926,
+    "cost_usd": 0.359152,
+    "seconds": 25.4,
+    "prompt_chars": 109005
+   }
+  },
+  {
+   "vocabulary": {
+    "entity_types": [
+     {
+      "label": "Activity",
+      "description": "A sport, hobby, class or practice the user does: running, cycling, yoga, swimming, cooking classes, brick workouts, language podcasts"
+     },
+     {
+      "label": "Event",
+      "description": "A specific dated occurrence the user takes part in: a race, triathlon, charity run, workshop, trip"
+     },
+     {
+      "label": "Location",
+      "description": "A city, country, region or venue: Paris, Madrid, Mosul, a local pool"
+     },
+     {
+      "label": "Organization",
+      "description": "A company, school, charity, government body or service provider: culinary school, city government, Apple, Azure, Forge"
+     },
+     {
+      "label": "Product",
+      "description": "A physical item, device, software tool or service the user owns, buys, uses or sells: coffee table, running shoes, Wi-Fi hotspot, energy gels, business intelligence solution"
+     },
+     {
+      "label": "Dish",
+      "description": "A food, recipe or dish the user cooks or eats: shrimp stir-fry, homemade pasta, jasmine rice, garlic bread"
+     },
+     {
+      "label": "Language",
+      "description": "A human language the user speaks or studies: French, Spanish"
+     },
+     {
+      "label": "Topic",
+      "description": "A subject or issue the user is interested in or cares about: data privacy, Mosul reconstruction, sustainability"
+     }
+    ],
+    "value_types": [],
+    "relations": [
+     {
+      "name": "participates_in",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Activity",
+       "Event"
+      ]
+     },
+     {
+      "name": "event_date",
+      "intended_head": [
+       "Event"
+      ],
+      "intended_tail": [
+       "Date"
+      ]
+     },
+     {
+      "name": "finish_time",
+      "intended_head": [
+       "Event"
+      ],
+      "intended_tail": [
+       "Duration"
+      ]
+     },
+     {
+      "name": "improved_personal_best_by",
+      "intended_head": [
+       "User",
+       "Event"
+      ],
+      "intended_tail": [
+       "Duration"
+      ]
+     },
+     {
+      "name": "frequency_per_week",
+      "intended_head": [
+       "Activity"
+      ],
+      "intended_tail": [
+       "Quantity"
+      ]
+     },
+     {
+      "name": "practiced_for_duration",
+      "intended_head": [
+       "Activity"
+      ],
+      "intended_tail": [
+       "Duration"
+      ]
+     },
+     {
+      "name": "scheduled_at_time",
+      "intended_head": [
+       "Activity"
+      ],
+      "intended_tail": [
+       "TimeWindow"
+      ]
+     },
+     {
+      "name": "attends",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Organization"
+      ]
+     },
+     {
+      "name": "works_for",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Organization"
+      ]
+     },
+     {
+      "name": "sells",
+      "intended_head": [
+       "User",
+       "Organization"
+      ],
+      "intended_tail": [
+       "Product"
+      ]
+     },
+     {
+      "name": "owns",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Product"
+      ]
+     },
+     {
+      "name": "buys",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Product"
+      ]
+     },
+     {
+      "name": "uses",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Product",
+       "Organization"
+      ]
+     },
+     {
+      "name": "got_rid_of",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Product"
+      ]
+     },
+     {
+      "name": "item_count",
+      "intended_head": [
+       "Product"
+      ],
+      "intended_tail": [
+       "Quantity"
+      ]
+     },
+     {
+      "name": "price_of",
+      "intended_head": [
+       "Product"
+      ],
+      "intended_tail": [
+       "Money"
+      ]
+     },
+     {
+      "name": "travels_to",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Location"
+      ]
+     },
+     {
+      "name": "lives_in",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Location"
+      ]
+     },
+     {
+      "name": "located_in",
+      "intended_head": [
+       "Organization",
+       "Event"
+      ],
+      "intended_tail": [
+       "Location"
+      ]
+     },
+     {
+      "name": "learns_language",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Language"
+      ]
+     },
+     {
+      "name": "cooks",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Dish"
+      ]
+     },
+     {
+      "name": "prefers",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Product",
+       "Dish"
+      ]
+     },
+     {
+      "name": "interested_in",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Topic",
+       "Organization"
+      ]
+     }
+    ]
+   },
+   "provenance": {
+    "models": [
+     "claude-opus-5-5"
+    ],
+    "input_tokens": 35750,
+    "output_tokens": 2224,
+    "cost_usd": 0.3243802,
+    "seconds": 24.4,
+    "prompt_chars": 104949
+   }
+  },
+  {
+   "vocabulary": {
+    "entity_types": [
+     {
+      "label": "Place",
+      "description": "A named geographic location or venue: city, neighborhood, landmark, museum, park, trail, shrine"
+     },
+     {
+      "label": "Organization",
+      "description": "A named company, school, employer, brand or institution"
+     },
+     {
+      "label": "Occupation",
+      "description": "A job title or profession, e.g. English teacher"
+     },
+     {
+      "label": "Activity",
+      "description": "A hobby, sport, skill or recurring pursuit, e.g. sourdough baking, BBQ, composting, walking"
+     },
+     {
+      "label": "Product",
+      "description": "A specific device, tool or item someone owns or uses, e.g. Fitbit Versa 3, garlic press, compost bin"
+     },
+     {
+      "label": "Food",
+      "description": "A dish, recipe, ingredient, sauce, rub or cooking material, e.g. biga, Jamaican Jerk rub, apple wood chips"
+     },
+     {
+      "label": "Language",
+      "description": "A human language someone speaks, teaches or is learning"
+     }
+    ],
+    "value_types": [],
+    "relations": [
+     {
+      "name": "visits_place",
+      "intended_head": [
+       "User",
+       "Person"
+      ],
+      "intended_tail": [
+       "Place"
+      ]
+     },
+     {
+      "name": "works_at",
+      "intended_head": [
+       "User",
+       "Person"
+      ],
+      "intended_tail": [
+       "Organization"
+      ]
+     },
+     {
+      "name": "works_as",
+      "intended_head": [
+       "User",
+       "Person"
+      ],
+      "intended_tail": [
+       "Occupation"
+      ]
+     },
+     {
+      "name": "commutes_from",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Place"
+      ]
+     },
+     {
+      "name": "located_in",
+      "intended_head": [
+       "Organization",
+       "Place"
+      ],
+      "intended_tail": [
+       "Place"
+      ]
+     },
+     {
+      "name": "learns_language",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Language"
+      ]
+     },
+     {
+      "name": "does_activity",
+      "intended_head": [
+       "User",
+       "Person"
+      ],
+      "intended_tail": [
+       "Activity"
+      ]
+     },
+     {
+      "name": "owns_product",
+      "intended_head": [
+       "User",
+       "Person"
+      ],
+      "intended_tail": [
+       "Product"
+      ]
+     },
+     {
+      "name": "gave_item_to",
+      "intended_head": [
+       "Product"
+      ],
+      "intended_tail": [
+       "Person"
+      ]
+     },
+     {
+      "name": "is_sibling_of",
+      "intended_head": [
+       "Person"
+      ],
+      "intended_tail": [
+       "User"
+      ]
+     },
+     {
+      "name": "cooks_with",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Food"
+      ]
+     },
+     {
+      "name": "has_done_activity_for",
+      "intended_head": [
+       "Activity"
+      ],
+      "intended_tail": [
+       "Duration"
+      ]
+     },
+     {
+      "name": "has_owned_product_for",
+      "intended_head": [
+       "Product"
+      ],
+      "intended_tail": [
+       "Duration"
+      ]
+     },
+     {
+      "name": "sleeps_per_night",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Duration"
+      ]
+     },
+     {
+      "name": "has_daily_goal_of",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Quantity",
+       "Duration"
+      ]
+     }
+    ]
+   },
+   "provenance": {
+    "models": [
+     "claude-opus-5-5"
+    ],
+    "input_tokens": 37980,
+    "output_tokens": 1867,
+    "cost_usd": 0.3350802,
+    "seconds": 24.2,
+    "prompt_chars": 105481
+   }
+  },
+  {
+   "vocabulary": {
+    "entity_types": [
+     {
+      "label": "Organization",
+      "description": "A named company, employer, business, venue, club or sports team: Smith & Co., Lake Como Kayak, Los Angeles Lakers, a sports bar"
+     },
+     {
+      "label": "JobTitle",
+      "description": "A job title or professional role someone holds: Senior Marketing Manager"
+     },
+     {
+      "label": "Event",
+      "description": "A specific occurrence the user attends, hosts or watches: a workshop, a match, a final, a trip, a class"
+     },
+     {
+      "label": "Location",
+      "description": "A named geographic place or destination: a city, region, lake, country"
+     },
+     {
+      "label": "Product",
+      "description": "A physical item the user owns or uses: electric car, moka pot, kayak"
+     },
+     {
+      "label": "Software",
+      "description": "A named app, tool or digital platform: Trello, Todoist, Google Calendar, LinkedIn"
+     },
+     {
+      "label": "Activity",
+      "description": "A hobby, sport, pastime or recurring activity: kayaking, photography, brewing coffee, solo travel"
+     },
+     {
+      "label": "MedicalProcedure",
+      "description": "A health or medical procedure or treatment: egg freezing, embryo freezing, acupuncture"
+     }
+    ],
+    "value_types": [],
+    "relations": [
+     {
+      "name": "works_at",
+      "intended_head": [
+       "User",
+       "Person"
+      ],
+      "intended_tail": [
+       "Organization"
+      ]
+     },
+     {
+      "name": "has_job_title",
+      "intended_head": [
+       "User",
+       "Person"
+      ],
+      "intended_tail": [
+       "JobTitle"
+      ]
+     },
+     {
+      "name": "time_in_job",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Duration"
+      ]
+     },
+     {
+      "name": "owns",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Product"
+      ]
+     },
+     {
+      "name": "uses_software",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Software"
+      ]
+     },
+     {
+      "name": "does_activity",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Activity"
+      ]
+     },
+     {
+      "name": "attended_event",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Event"
+      ]
+     },
+     {
+      "name": "hosts_event",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Event"
+      ]
+     },
+     {
+      "name": "attended_event_with",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Person"
+      ]
+     },
+     {
+      "name": "event_date",
+      "intended_head": [
+       "Event"
+      ],
+      "intended_tail": [
+       "Date"
+      ]
+     },
+     {
+      "name": "event_start_time",
+      "intended_head": [
+       "Event"
+      ],
+      "intended_tail": [
+       "TimeWindow"
+      ]
+     },
+     {
+      "name": "event_duration",
+      "intended_head": [
+       "Event"
+      ],
+      "intended_tail": [
+       "Duration"
+      ]
+     },
+     {
+      "name": "event_location",
+      "intended_head": [
+       "Event"
+      ],
+      "intended_tail": [
+       "Location",
+       "Organization"
+      ]
+     },
+     {
+      "name": "is_fan_of",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Organization"
+      ]
+     },
+     {
+      "name": "has_family_member",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Person"
+      ]
+     },
+     {
+      "name": "person_age",
+      "intended_head": [
+       "Person",
+       "User"
+      ],
+      "intended_tail": [
+       "Quantity"
+      ]
+     },
+     {
+      "name": "older_than_user_by",
+      "intended_head": [
+       "Person"
+      ],
+      "intended_tail": [
+       "Duration"
+      ]
+     },
+     {
+      "name": "travels_to",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Location"
+      ]
+     },
+     {
+      "name": "books_service_from",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "Organization"
+      ]
+     },
+     {
+      "name": "undergoes_medical_procedure",
+      "intended_head": [
+       "User"
+      ],
+      "intended_tail": [
+       "MedicalProcedure"
+      ]
+     },
+     {
+      "name": "organization_located_in",
+      "intended_head": [
+       "Organization"
+      ],
+      "intended_tail": [
+       "Location"
+      ]
+     }
+    ]
+   },
+   "provenance": {
+    "models": [
+     "claude-opus-5-5"
+    ],
+    "input_tokens": 34133,
+    "output_tokens": 2169,
+    "cost_usd": 0.31034419999999996,
+    "seconds": 22.9,
+    "prompt_chars": 98766
+   }
+  }
+ ],
+ "propose": {
+  "vocabulary": {
+   "entity_types": [
+    {
+     "label": "Place",
+     "description": "A named geographic location or venue: city, country, region, neighborhood, park, trail, lake, landmark, museum, shrine, local pool: Big Sur, Paris, Lake Como, downtown"
+    },
+    {
+     "label": "Event",
+     "description": "A specific dated occurrence the user takes part in, attends, hosts or plans: a trip, trek, camping trip, outing, race, triathlon, charity run, workshop, class, match, final"
+    },
+    {
+     "label": "Organization",
+     "description": "A named company, store, brand, employer, school, charity, government body, service provider, club or sports team: Walmart, Instacart, culinary school, Smith & Co., Los Angeles Lakers"
+    },
+    {
+     "label": "Product",
+     "description": "A specific physical item, device, app, software tool or service someone owns, buys, uses, gives or sells: Merrell Moab 2 boots, Fitbit Versa 3, moka pot, gift card, Trello, Google Calendar"
+    },
+    {
+     "label": "Food",
+     "description": "A food, dish, drink, recipe, ingredient, sauce or cooking material: quinoa breakfast bowl, chamomile tea, oat milk, shrimp stir-fry, biga, Jamaican Jerk rub"
+    },
+    {
+     "label": "Activity",
+     "description": "A hobby, sport, skill, class, practice or recurring pursuit: hiking, cycling, yoga, sourdough baking, meal prepping, kayaking, photography"
+    },
+    {
+     "label": "Project",
+     "description": "A work or personal project someone builds or works on: farm management app, drone component"
+    },
+    {
+     "label": "Language",
+     "description": "A human language someone speaks, teaches or studies: French, Spanish"
+    },
+    {
+     "label": "Topic",
+     "description": "A subject or issue the user is interested in or cares about: data privacy, Mosul reconstruction, sustainability"
+    },
+    {
+     "label": "Occupation",
+     "description": "A job title, role or profession: English teacher, Senior Marketing Manager"
+    },
+    {
+     "label": "MedicalProcedure",
+     "description": "A health or medical procedure or treatment: egg freezing, embryo freezing, acupuncture"
+    }
+   ],
+   "value_types": [],
+   "relations": [
+    {
+     "name": "participates_in_event",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Event"
+     ]
+    },
+    {
+     "name": "hosts_event",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Event"
+     ]
+    },
+    {
+     "name": "attended_event_with",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Person"
+     ]
+    },
+    {
+     "name": "event_location",
+     "intended_head": [
+      "Event"
+     ],
+     "intended_tail": [
+      "Place",
+      "Organization"
+     ]
+    },
+    {
+     "name": "event_date",
+     "intended_head": [
+      "Event"
+     ],
+     "intended_tail": [
+      "Date"
+     ]
+    },
+    {
+     "name": "event_time",
+     "intended_head": [
+      "Event"
+     ],
+     "intended_tail": [
+      "TimeWindow"
+     ]
+    },
+    {
+     "name": "event_duration",
+     "intended_head": [
+      "Event"
+     ],
+     "intended_tail": [
+      "Duration"
+     ]
+    },
+    {
+     "name": "race_finish_time",
+     "intended_head": [
+      "Event"
+     ],
+     "intended_tail": [
+      "Duration"
+     ]
+    },
+    {
+     "name": "improved_personal_best_by",
+     "intended_head": [
+      "User",
+      "Event"
+     ],
+     "intended_tail": [
+      "Duration"
+     ]
+    },
+    {
+     "name": "visits_place",
+     "intended_head": [
+      "User",
+      "Person"
+     ],
+     "intended_tail": [
+      "Place"
+     ]
+    },
+    {
+     "name": "lives_in",
+     "intended_head": [
+      "User",
+      "Person"
+     ],
+     "intended_tail": [
+      "Place"
+     ]
+    },
+    {
+     "name": "commutes_from",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Place"
+     ]
+    },
+    {
+     "name": "located_in",
+     "intended_head": [
+      "Organization",
+      "Place"
+     ],
+     "intended_tail": [
+      "Place"
+     ]
+    },
+    {
+     "name": "owns_product",
+     "intended_head": [
+      "User",
+      "Person"
+     ],
+     "intended_tail": [
+      "Product"
+     ]
+    },
+    {
+     "name": "buys_product",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Product"
+     ]
+    },
+    {
+     "name": "product_bought_from",
+     "intended_head": [
+      "Product"
+     ],
+     "intended_tail": [
+      "Organization"
+     ]
+    },
+    {
+     "name": "product_price",
+     "intended_head": [
+      "Product"
+     ],
+     "intended_tail": [
+      "Money"
+     ]
+    },
+    {
+     "name": "product_quantity",
+     "intended_head": [
+      "Product"
+     ],
+     "intended_tail": [
+      "Quantity"
+     ]
+    },
+    {
+     "name": "owned_product_for",
+     "intended_head": [
+      "Product"
+     ],
+     "intended_tail": [
+      "Duration"
+     ]
+    },
+    {
+     "name": "gift_given_to",
+     "intended_head": [
+      "Product"
+     ],
+     "intended_tail": [
+      "Person"
+     ]
+    },
+    {
+     "name": "got_rid_of",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Product"
+     ]
+    },
+    {
+     "name": "sells",
+     "intended_head": [
+      "User",
+      "Organization"
+     ],
+     "intended_tail": [
+      "Product"
+     ]
+    },
+    {
+     "name": "uses",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Product",
+      "Organization"
+     ]
+    },
+    {
+     "name": "spent_money",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Money"
+     ]
+    },
+    {
+     "name": "has_budget",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Money"
+     ]
+    },
+    {
+     "name": "eats_or_drinks",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Food"
+     ]
+    },
+    {
+     "name": "cooks",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Food"
+     ]
+    },
+    {
+     "name": "prefers",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Product",
+      "Food"
+     ]
+    },
+    {
+     "name": "does_activity",
+     "intended_head": [
+      "User",
+      "Person"
+     ],
+     "intended_tail": [
+      "Activity"
+     ]
+    },
+    {
+     "name": "activity_times_per_week",
+     "intended_head": [
+      "Activity"
+     ],
+     "intended_tail": [
+      "Quantity"
+     ]
+    },
+    {
+     "name": "activity_practiced_for",
+     "intended_head": [
+      "Activity"
+     ],
+     "intended_tail": [
+      "Duration"
+     ]
+    },
+    {
+     "name": "activity_scheduled_at",
+     "intended_head": [
+      "Activity"
+     ],
+     "intended_tail": [
+      "TimeWindow"
+     ]
+    },
+    {
+     "name": "works_on_project",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Project"
+     ]
+    },
+    {
+     "name": "has_family_member",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Person"
+     ]
+    },
+    {
+     "name": "has_friend",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Person"
+     ]
+    },
+    {
+     "name": "has_age",
+     "intended_head": [
+      "User",
+      "Person"
+     ],
+     "intended_tail": [
+      "Quantity"
+     ]
+    },
+    {
+     "name": "older_than_user_by",
+     "intended_head": [
+      "Person"
+     ],
+     "intended_tail": [
+      "Duration"
+     ]
+    },
+    {
+     "name": "studies_at",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Organization"
+     ]
+    },
+    {
+     "name": "works_at",
+     "intended_head": [
+      "User",
+      "Person"
+     ],
+     "intended_tail": [
+      "Organization"
+     ]
+    },
+    {
+     "name": "has_occupation",
+     "intended_head": [
+      "User",
+      "Person"
+     ],
+     "intended_tail": [
+      "Occupation"
+     ]
+    },
+    {
+     "name": "time_in_job",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Duration"
+     ]
+    },
+    {
+     "name": "learns_language",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Language"
+     ]
+    },
+    {
+     "name": "interested_in",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Topic",
+      "Organization"
+     ]
+    },
+    {
+     "name": "is_fan_of",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Organization"
+     ]
+    },
+    {
+     "name": "undergoes_medical_procedure",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "MedicalProcedure"
+     ]
+    },
+    {
+     "name": "sleeps_per_night",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Duration"
+     ]
+    },
+    {
+     "name": "has_daily_goal_of",
+     "intended_head": [
+      "User"
+     ],
+     "intended_tail": [
+      "Quantity",
+      "Duration"
+     ]
+    }
+   ]
+  },
+  "provenance": {
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "input_tokens": 8554,
+   "output_tokens": 3872,
+   "cost_usd": 0.13977219999999999,
+   "seconds": 34.3,
+   "prompt_chars": 17496
+  }
+ },
+ "observe": {
+  "tables": {
+   "relations": {
+    "participates_in_event": {
+     "edges": 465,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Event",
+       "count": 239,
+       "examples": [
+        "Asian American and Pacific Islander women -> rallies",
+        "Asian American and Pacific Islander women -> protests",
+        "Asian American and Pacific Islander women -> marches",
+        "user -> photography workshop"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Event",
+       "count": 140,
+       "examples": [
+        "Judy Chu -> Dream Act",
+        "Asian American and Pacific Islander women -> rallies",
+        "Asian American and Pacific Islander women -> protests",
+        "photographers -> Photokina"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Event",
+       "count": 46,
+       "examples": [
+        "resistance -> change",
+        "Resistance -> change",
+        "wolves -> hunting",
+        "wolves -> hunt"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Event",
+       "count": 13,
+       "examples": [
+        "Taupo -> Scenic Flights",
+        "Taupo -> Skydive Taupo",
+        "wolves -> hunt",
+        "Funko -> New York Comic Con"
+       ]
+      },
+      {
+       "head": "Occupation",
+       "tail": "Event",
+       "count": 10,
+       "examples": [
+        "author -> Writers Digest Conference",
+        "author -> BookExpo",
+        "author -> Frankfurt Book Fair",
+        "Author -> Writers Digest Conference"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Activity",
+       "count": 10,
+       "examples": [
+        "user -> Zumba",
+        "user -> scavenger hunt",
+        "user -> family Olympics",
+        "user -> hike"
+       ]
+      },
+      {
+       "head": "Place",
+       "tail": "Event",
+       "count": 4,
+       "examples": [
+        "Whistler -> trip",
+        "Portland -> trip"
+       ]
+      },
+      {
+       "head": "Quantity",
+       "tail": "Event",
+       "count": 3,
+       "examples": [
+        "Frida -> relationship",
+        "Frida -> Marriage",
+        "Frida -> marriage"
+       ]
+      }
+     ]
+    },
+    "hosts_event": {
+     "edges": 379,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Event",
+       "count": 175,
+       "examples": [
+        "Asian American and Pacific Islander women -> rallies",
+        "Asian American and Pacific Islander women -> marches",
+        "user -> photography workshop",
+        "user -> workshop"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Event",
+       "count": 63,
+       "examples": [
+        "Kaggle -> Jupyter Notebooks",
+        "GitHub -> Jupyter Notebooks",
+        "Taupo -> Scenic Flights",
+        "Taupo -> Skydive Taupo"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Event",
+       "count": 41,
+       "examples": [
+        "Photography festivals and conferences -> Outdoor Photographer Conference & Expo",
+        "resistance -> change",
+        "Resistance -> change",
+        "The Starlight Serenaders -> school events"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Event",
+       "count": 37,
+       "examples": [
+        "user -> final appraisal report",
+        "US citizens -> travel",
+        "US citizens -> trip",
+        "assistant -> Q&A session"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Activity",
+       "count": 18,
+       "examples": [
+        "Chase Sapphire Preferred -> Travel",
+        "Chase Sapphire Preferred -> travel",
+        "Citi Premier Card -> Travel",
+        "Citi Premier Card -> travel"
+       ]
+      },
+      {
+       "head": "Occupation",
+       "tail": "Event",
+       "count": 12,
+       "examples": [
+        "author -> Writers Digest Conference",
+        "author -> BookExpo",
+        "author -> Frankfurt Book Fair",
+        "Author -> Writers Digest Conference"
+       ]
+      },
+      {
+       "head": "Place",
+       "tail": "Event",
+       "count": 9,
+       "examples": [
+        "Taupo -> Scenic Flights",
+        "Nikko -> Golden Week",
+        "Whistler -> trip",
+        "Portland -> trip"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Activity",
+       "count": 6,
+       "examples": [
+        "Family Olympics -> potluck",
+        "Family Olympics -> family movie night",
+        "Family Olympics -> Campfire",
+        "Family Olympics -> Bonfire"
+       ]
+      }
+     ]
+    },
+    "attended_event_with": {
+     "edges": 633,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Person",
+       "count": 248,
+       "examples": [
+        "Asian American and Pacific Islander women -> immigrants",
+        "Jenny Yang -> Fred Korematsu",
+        "Pramila Jayapal -> Fred Korematsu",
+        "user -> advocates"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Person",
+       "count": 199,
+       "examples": [
+        "photographers -> photographers",
+        "Blanche -> Stanley",
+        "Stanley -> Stanley",
+        "Blanche -> Stella"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "User",
+       "count": 42,
+       "examples": [
+        "Sarah -> Sarah",
+        "viewers -> viewers",
+        "Ana -> Ana",
+        "assistant -> users"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Person",
+       "count": 36,
+       "examples": [
+        "Resistance -> everyone",
+        "stream -> viewers",
+        "The Starlight Serenaders -> schoolmates",
+        "reunion -> family"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Organization",
+       "count": 17,
+       "examples": [
+        "author -> publishers",
+        "user -> airline",
+        "user -> Emirates",
+        "I -> Emirates"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Organization",
+       "count": 13,
+       "examples": [
+        "Emirates -> British Airways"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Organization",
+       "count": 12,
+       "examples": [
+        "debut authors -> agents",
+        "Debut Authors -> agents"
+       ]
+      },
+      {
+       "head": "Quantity",
+       "tail": "Quantity",
+       "count": 12,
+       "examples": [
+        "viewers -> viewers"
+       ]
+      }
+     ]
+    },
+    "event_location": {
+     "edges": 645,
+     "pairs": [
+      {
+       "head": "Event",
+       "tail": "Place",
+       "count": 267,
+       "examples": [
+        "National Parks Photography Workshops -> national parks",
+        "Photography festivals and conferences -> national parks",
+        "Photokina -> national parks",
+        "PhotoPlus Expo -> national parks"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Organization",
+       "count": 62,
+       "examples": [
+        "Jupyter Notebooks -> GitHub",
+        "Scenic Flights -> Taupo",
+        "Skydive Taupo -> Taupo",
+        "stream -> Twitch"
+       ]
+      },
+      {
+       "head": "Topic",
+       "tail": "Place",
+       "count": 61,
+       "examples": [
+        "Bachata -> Dominican Republic",
+        "subject property -> Oakland",
+        "Ecosystem services -> Karoo region",
+        "Ecosystem services -> Karoo"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Place",
+       "count": 56,
+       "examples": [
+        "outdoor photography -> location",
+        "landscape photography -> Coastal areas",
+        "landscape photography -> Mountains",
+        "landscape photography -> Urban areas"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Place",
+       "count": 54,
+       "examples": [
+        "The Mirror -> New York museum",
+        "mirror -> New York museum",
+        "Mirror -> New York museum",
+        "mirror -> England"
+       ]
+      },
+      {
+       "head": "Place",
+       "tail": "Place",
+       "count": 27,
+       "examples": [
+        "photography -> location",
+        "Whakaipo Bay Track -> Red Hut car park",
+        "Tongariro River Trail -> Tongariro River Trail",
+        "Olympic National Park -> Seattle"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Place",
+       "count": 24,
+       "examples": [
+        "Tongariro Holiday Park -> Tongariro National Park",
+        "Tongariro Holiday Park -> National Park Village",
+        "Riverstone Backpackers -> Tongariro National Park",
+        "Skotel Alpine Resort -> Tongariro National Park"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Place",
+       "count": 23,
+       "examples": [
+        "herbs -> home",
+        "slugs -> garden",
+        "Slugs -> garden",
+        "minestrone soup -> soup kitchen"
+       ]
+      }
+     ]
+    },
+    "event_date": {
+     "edges": 158,
+     "pairs": [
+      {
+       "head": "Event",
+       "tail": "Date",
+       "count": 122,
+       "examples": [
+        "The Seven Husbands of Evelyn Hugo -> 2013",
+        "The Seven Husbands of Evelyn Hugo -> 2015",
+        "The Seven Husbands of Evelyn Hugo -> 2017",
+        "The Seven Husbands of Evelyn Hugo -> 2014"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Date",
+       "count": 13,
+       "examples": [
+        "The Broken Column -> 1944",
+        "Ethereum -> 2013",
+        "Ethereum -> 2015",
+        "The Goonies -> 1984"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Date",
+       "count": 8,
+       "examples": [
+        "Hartmobility -> September 2021",
+        "Hart Vision Medical -> September 2021",
+        "movements -> recent years",
+        "Kanaya Honten -> 1666"
+       ]
+      },
+      {
+       "head": "Date",
+       "tail": "Date",
+       "count": 8,
+       "examples": [
+        "June -> June",
+        "Monday -> Friday",
+        "Wednesday -> Friday",
+        "Thursday -> Friday"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Date",
+       "count": 3,
+       "examples": [
+        "The Two Fridas -> 1939",
+        "Jack White -> 2018",
+        "Jack White -> 2019"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Date",
+       "count": 2,
+       "examples": [
+        "whale watching -> December to January",
+        "hike -> 17th"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Date",
+       "count": 1,
+       "examples": [
+        "user -> tomorrow"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Date",
+       "count": 1,
+       "examples": [
+        "bitcoins -> 2009"
+       ]
+      }
+     ]
+    },
+    "event_time": {
+     "edges": 35,
+     "pairs": [
+      {
+       "head": "Event",
+       "tail": "TimeWindow",
+       "count": 18,
+       "examples": [
+        "Golden hour -> dawn or dusk",
+        "live stream -> peak hours",
+        "live stream -> lunch breaks",
+        "live stream -> evenings"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Quantity",
+       "count": 5,
+       "examples": [
+        "Recovery -> 5 minutes",
+        "Hill Sprints -> 5 minutes",
+        "Cool-down -> 5 minutes",
+        "cool-down -> 5 minutes"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Date",
+       "count": 4,
+       "examples": [
+        "photography workshop -> second day",
+        "trip -> June to September",
+        "Scenic Drive -> June to September"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Duration",
+       "count": 3,
+       "examples": [
+        "Tongariro River Trail -> 4-6 hours",
+        "photography workshop -> tonight"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Food",
+       "count": 2,
+       "examples": [
+        "Golden Hour -> 60 minutes before sunset",
+        "golden hour -> 60 minutes before sunset"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Quantity",
+       "count": 2,
+       "examples": [
+        "Lunch break -> 2:30 PM"
+       ]
+      },
+      {
+       "head": "Topic",
+       "tail": "TimeWindow",
+       "count": 1,
+       "examples": [
+        "composition -> golden hour"
+       ]
+      }
+     ]
+    },
+    "event_duration": {
+     "edges": 279,
+     "pairs": [
+      {
+       "head": "Activity",
+       "tail": "Duration",
+       "count": 81,
+       "examples": [
+        "Drying -> 1-2 hours",
+        "chewing -> 6-9 months",
+        "Chewing -> 6-9 months",
+        "Dumbbell Circuit -> 30 minutes"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Duration",
+       "count": 80,
+       "examples": [
+        "change -> long-term effort",
+        "resistance -> long-term effort",
+        "Resistance -> long-term effort",
+        "Citrus Sunrise recipe -> a few days"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Duration",
+       "count": 40,
+       "examples": [
+        "drying herbs -> 1-2 hours",
+        "drying herbs -> 6 months",
+        "Dried Herbs -> 1-2 hours",
+        "Dried Herbs -> 6 months"
+       ]
+      },
+      {
+       "head": "Topic",
+       "tail": "Duration",
+       "count": 37,
+       "examples": [
+        "publishing process -> months to a year",
+        "publishing process -> months or even years",
+        "Publishing Process -> months to a year",
+        "Publishing Process -> months or even years"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Quantity",
+       "count": 13,
+       "examples": [
+        "Dynamic plank -> 12-15 reps",
+        "Medicine ball slams -> 12-15 reps",
+        "Side crunches -> 12-15 reps",
+        "Flutter kicks with an oblique focus -> 12-15 reps"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Duration",
+       "count": 10,
+       "examples": [
+        "Tongariro River Trail -> 4-6 hours",
+        "ADOBE PHOTOSHOP -> 60 MINUTES",
+        "LED strips -> 10-15 years",
+        "sectional sofa -> 5-10 years"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Quantity",
+       "count": 6,
+       "examples": [
+        "LED strips -> 20,000 to 30,000 hours",
+        "Intel Iris Xe -> 60 FPS"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Quantity",
+       "count": 4,
+       "examples": [
+        "Skydive Taupo -> 4-hour",
+        "trip -> 40 minutes",
+        "trip -> 30 minutes"
+       ]
+      }
+     ]
+    },
+    "race_finish_time": {
+     "edges": 1,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Duration",
+       "count": 1,
+       "examples": [
+        "The Starlight Serenaders -> first place"
+       ]
+      }
+     ]
+    },
+    "improved_personal_best_by": {
+     "edges": 405,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Person",
+       "count": 54,
+       "examples": [
+        "user -> Asian American and Pacific Islander women",
+        "user -> instructor",
+        "I -> instructor",
+        "author -> debut author"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Person",
+       "count": 51,
+       "examples": [
+        "Giles Deleuze -> Gilbert Simondon",
+        "George Guidall -> Scott Brick",
+        "Scott Brick -> Scott Brick",
+        "Juliet Stevenson -> Scott Brick"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "User",
+       "count": 45,
+       "examples": [
+        "Taylor Jenkins Reid -> Taylor Jenkins Reid",
+        "author -> debut author",
+        "US citizen -> US citizen",
+        "user -> Mia"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Event",
+       "count": 39,
+       "examples": [
+        "Ethereum -> Ethereum",
+        "obedience -> Obedience",
+        "Obedience -> Obedience",
+        "Obedience -> obedience"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Topic",
+       "count": 35,
+       "examples": [
+        "user -> outdoor photography skills",
+        "user -> data analysis skills",
+        "I -> data analysis skills",
+        "user -> Bisphenol-A"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Product",
+       "count": 28,
+       "examples": [
+        "author -> debut novel",
+        "user -> Instagram live streams",
+        "someone -> Purell",
+        "assistant -> Todoist"
+       ]
+      },
+      {
+       "head": "Topic",
+       "tail": "Topic",
+       "count": 27,
+       "examples": [
+        "Leading Lines -> Leading lines",
+        "Leading lines -> Leading Lines",
+        "subject property -> cost",
+        "Property -> cost"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Person",
+       "count": 18,
+       "examples": [
+        "Bitcoin -> Satoshi Nakamoto",
+        "bitcoin -> Satoshi Nakamoto",
+        "PoS -> validator",
+        "coin collection -> grandfather"
+       ]
+      }
+     ]
+    },
+    "visits_place": {
+     "edges": 528,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Place",
+       "count": 357,
+       "examples": [
+        "Asian American and Pacific Islander women -> United States",
+        "Congresswoman Chu -> Central America",
+        "assistant -> community",
+        "user -> real-world setting"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Place",
+       "count": 57,
+       "examples": [
+        "photographers -> national parks",
+        "viewer -> beach",
+        "young boy -> room",
+        "US citizens -> Schengen Area"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Topic",
+       "count": 26,
+       "examples": [
+        "appraiser -> subject property"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Event",
+       "count": 15,
+       "examples": [
+        "user -> exhibition",
+        "I -> exhibition",
+        "user -> family reunion",
+        "I -> family reunion"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "User",
+       "count": 13,
+       "examples": [
+        "friends -> I"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Topic",
+       "count": 13,
+       "examples": [
+        "user -> closet",
+        "I -> closet",
+        "assistant -> closet",
+        "assistant -> space"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Organization",
+       "count": 11,
+       "examples": [
+        "user -> book club",
+        "user -> YouTube",
+        "I -> YouTube",
+        "user -> University of Missouri"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Person",
+       "count": 10,
+       "examples": [
+        "assistant -> attendees"
+       ]
+      }
+     ]
+    },
+    "lives_in": {
+     "edges": 626,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Place",
+       "count": 281,
+       "examples": [
+        "Asian American and Pacific Islander women -> United States",
+        "assistant -> Figma",
+        "user -> property",
+        "assistant -> Python"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Place",
+       "count": 63,
+       "examples": [
+        "Judy Chu -> California",
+        "Asian American and Pacific Islander women -> community",
+        "viewer -> beach",
+        "individuals -> bed"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Place",
+       "count": 47,
+       "examples": [
+        "herbs -> home",
+        "kereru -> Tongariro River",
+        "tui -> Tongariro River",
+        "bellbird -> Tongariro River"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Place",
+       "count": 35,
+       "examples": [
+        "Bachata -> Dominican Republic",
+        "wolves -> wild",
+        "Wolves -> wild",
+        "wolves -> pack"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Place",
+       "count": 27,
+       "examples": [
+        "Stander Super Pole -> home",
+        "Hart Mobility Titan Pole -> bathroom",
+        "Titan Pole -> living room",
+        "Titan Pole -> bathroom"
+       ]
+      },
+      {
+       "head": "Place",
+       "tail": "Place",
+       "count": 24,
+       "examples": [
+        "Tongariro River Trail -> Tongariro River Trail",
+        "Tongariro River Trail -> remote area",
+        "pack -> wild",
+        "shoes -> closet"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Language",
+       "count": 22,
+       "examples": [
+        "Jupyter Notebook -> Python",
+        "assistant -> python",
+        "user -> Python",
+        "I -> Python"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Topic",
+       "count": 19,
+       "examples": [
+        "individuals -> society",
+        "Blanche -> society",
+        "appraiser -> subject property"
+       ]
+      }
+     ]
+    },
+    "commutes_from": {
+     "edges": 128,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Place",
+       "count": 73,
+       "examples": [
+        "US citizen -> Europe",
+        "user -> Ireland",
+        "I -> Ireland",
+        "user -> Tokyo"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Place",
+       "count": 25,
+       "examples": [
+        "US citizens -> Europe",
+        "black americans -> south",
+        "you -> far away",
+        "Max -> Lake Winnebago"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Organization",
+       "count": 18,
+       "examples": [
+        "user -> YouTube",
+        "user -> Disney+",
+        "I -> Disney+",
+        "user -> Emirates"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Place",
+       "count": 6,
+       "examples": [
+        "Riverstone Backpackers -> Tongariro National Park"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Place",
+       "count": 3,
+       "examples": [
+        "JR Tohoku Shinkansen -> Tokyo Station",
+        "train -> Nikko"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Organization",
+       "count": 2,
+       "examples": [
+        "Emirates -> Emirates"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Organization",
+       "count": 1,
+       "examples": [
+        "Mia -> school administrator"
+       ]
+      }
+     ]
+    },
+    "located_in": {
+     "edges": 642,
+     "pairs": [
+      {
+       "head": "Place",
+       "tail": "Place",
+       "count": 203,
+       "examples": [
+        "property -> property",
+        "staircase -> old English estate",
+        "Tongariro National Park -> Tongariro National Park",
+        "Waikato River -> New Zealand"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Place",
+       "count": 99,
+       "examples": [
+        "layer -> Figma",
+        "National Parks Photography Workshops -> national parks",
+        "Wildlife Photography Workshops -> national parks",
+        "Sunset -> beach"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Place",
+       "count": 69,
+       "examples": [
+        "Stander Super Pole -> home",
+        "The Mirror -> England",
+        "mirror -> England",
+        "Mirror -> England"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Place",
+       "count": 59,
+       "examples": [
+        "immigrant and refugee advocacy groups -> community",
+        "GMS Group Medical Supply, LLC -> Pennsylvania, USA",
+        "Tongariro Holiday Park -> National Park Village",
+        "Tongariro Holiday Park -> Turangi"
+       ]
+      },
+      {
+       "head": "Topic",
+       "tail": "Place",
+       "count": 55,
+       "examples": [
+        "Bachata -> Dominican Republic",
+        "society -> American",
+        "subject property -> Oakland",
+        "Property -> Oakland"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Place",
+       "count": 38,
+       "examples": [
+        "Pramila Jayapal -> Washington",
+        "Taylor Jenkins Reid -> Los Angeles",
+        "user -> UK",
+        "user -> Tokyo"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Place",
+       "count": 24,
+       "examples": [
+        "shoes -> high cabinet",
+        "Lawn Twister -> reunion area",
+        "Water Balloon Toss -> reunion area",
+        "Badminton or Cornhole -> reunion area"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Place",
+       "count": 19,
+       "examples": [
+        "herbs -> home",
+        "bitcoins -> world",
+        "Downy Woodpeckers -> North America"
+       ]
+      }
+     ]
+    },
+    "owns_product": {
+     "edges": 26,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Product",
+       "count": 19,
+       "examples": [
+        "user -> Toilevator",
+        "user -> mirror",
+        "I -> Nikon D5600",
+        "user -> Manfrotto BeFree"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Product",
+       "count": 7,
+       "examples": [
+        "woman -> mirror",
+        "older man -> mirror",
+        "original purchaser -> sectional sofa"
+       ]
+      }
+     ]
+    },
+    "buys_product": {
+     "edges": 56,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Product",
+       "count": 32,
+       "examples": [
+        "user -> winter coat",
+        "I -> winter coat",
+        "user -> 18-55mm kit lens",
+        "user -> Nikon D5600"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Food",
+       "count": 24,
+       "examples": [
+        "user -> pasta sauce",
+        "user -> meat",
+        "I -> pasta sauce",
+        "I -> fresh produce"
+       ]
+      }
+     ]
+    },
+    "product_bought_from": {
+     "edges": 217,
+     "pairs": [
+      {
+       "head": "Product",
+       "tail": "Organization",
+       "count": 67,
+       "examples": [
+        "Toilevator -> GMS Group Medical Supply, LLC",
+        "Toilevator -> manufacturer's website",
+        "Stander Super Pole -> Stander",
+        "MRail bed rail -> Medline.com"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Organization",
+       "count": 56,
+       "examples": [
+        "user -> GMS Group Medial Supply",
+        "user -> Hartmobility",
+        "user -> Twitch",
+        "user -> Disney+"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Person",
+       "count": 43,
+       "examples": [
+        "user -> Gilbert Simondon",
+        "user -> Guattari",
+        "Frida Kahlo -> Wilhelm Kahlo",
+        "Frida -> Wilhelm Kahlo"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Organization",
+       "count": 14,
+       "examples": [
+        "The Park Hotel Ruapehu -> Skotel Alpine Resort",
+        "Philips Hue -> IKEA",
+        "LIFX -> IKEA",
+        "Emirates miles -> Turkish Airlines"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Product",
+       "count": 12,
+       "examples": [
+        "Hart Mobility Titan Pole -> Hart Mobility Titan Pole"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Organization",
+       "count": 7,
+       "examples": [
+        "employee -> private collection",
+        "figure -> Hake's Auctions",
+        "figure -> Heritage Auctions",
+        "figure -> Morphy Auctions"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Person",
+       "count": 6,
+       "examples": [
+        "Karen Korematsu -> Fred Korematsu",
+        "Frida -> Diego Rivera"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Place",
+       "count": 5,
+       "examples": [
+        "user -> indoor herb garden",
+        "I -> indoor herb garden"
+       ]
+      }
+     ]
+    },
+    "product_price": {
+     "edges": 70,
+     "pairs": [
+      {
+       "head": "Product",
+       "tail": "Money",
+       "count": 39,
+       "examples": [
+        "Lightroom -> $14.99/month",
+        "Lightroom -> $15/month",
+        "Lightroom -> $69",
+        "Lightroom -> $14.95/month"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Quantity",
+       "count": 25,
+       "examples": [
+        "Hart Mobility Titan Pole -> 450 pounds",
+        "HealthCraft SuperPole -> 450 pounds",
+        "Wi-Fi Bulbs -> 2700K-3000K",
+        "Sylvania Smart+ -> 2700K-3000K"
+       ]
+      },
+      {
+       "head": "Money",
+       "tail": "Money",
+       "count": 3,
+       "examples": [
+        "$10 coupon -> $10"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Quantity",
+       "count": 1,
+       "examples": [
+        "Bitcoin -> largest"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Money",
+       "count": 1,
+       "examples": [
+        "Davis & Sanford Travel Tripod -> $200-$300"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Duration",
+       "count": 1,
+       "examples": [
+        "Vello RS-N2II Wired Remote Shutter Release -> expensive"
+       ]
+      }
+     ]
+    },
+    "product_quantity": {
+     "edges": 190,
+     "pairs": [
+      {
+       "head": "Product",
+       "tail": "Quantity",
+       "count": 136,
+       "examples": [
+        "HealthCraft SuperPole -> white",
+        "dried lemon balm leaves -> 1-2 teaspoons",
+        "dried lemon balm leaves -> 1-2 teaspoons per 8 oz cup",
+        "Dried lemon balm leaves -> 1-2 teaspoons"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Quantity",
+       "count": 17,
+       "examples": [
+        "rice -> tablespoons",
+        "tea blends -> 1-2 ounces",
+        "tea blends -> 28-57 grams",
+        "Herbal tea blends -> 1-2 ounces"
+       ]
+      },
+      {
+       "head": "Quantity",
+       "tail": "Quantity",
+       "count": 12,
+       "examples": [
+        "BPA -> 5.7 nanograms",
+        "waveX -> 2",
+        "waveX -> -100",
+        "files -> 1-5GB"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Quantity",
+       "count": 9,
+       "examples": [
+        "fertilizer -> 20-20-20",
+        "Agility training -> treats",
+        "Obedience training -> treats",
+        "Scent work -> treats"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Quantity",
+       "count": 6,
+       "examples": [
+        "Bitcoin -> new units",
+        "Ethereum -> 21 million",
+        "Ethereum -> 18 million per year",
+        "tripod -> 25 lbs (11 kg)"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Quantity",
+       "count": 4,
+       "examples": [
+        "George Guidall -> 1,000 audiobooks",
+        "Scott Brick -> 1,000 audiobooks",
+        "Juliet Stevenson -> 1,000 audiobooks"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Quantity",
+       "count": 3,
+       "examples": [
+        "Riverstone Backpackers -> 30 minutes",
+        "Emirates -> 23,000 miles",
+        "Emirates -> 15,000 miles"
+       ]
+      },
+      {
+       "head": "Quantity",
+       "tail": "Food",
+       "count": 2,
+       "examples": [
+        "BPA -> 10.2 nanograms per milliliter of blood"
+       ]
+      }
+     ]
+    },
+    "owned_product_for": {
+     "edges": 680,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Place",
+       "count": 87,
+       "examples": [
+        "user -> property",
+        "Ana -> beginners",
+        "user -> Tokyo",
+        "I -> Tokyo"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Person",
+       "count": 54,
+       "examples": [
+        "user -> beginners",
+        "I -> beginners",
+        "Stanley -> Blanche",
+        "user -> disobedient dog"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Product",
+       "count": 48,
+       "examples": [
+        "Toilevator -> Toilevator",
+        "MRail bed rail -> MRail bed rail",
+        "Hart Mobility Titan Pole -> Titan Pole",
+        "Hart Mobility Titan Pole -> Hart Mobility Titan Pole"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "User",
+       "count": 46,
+       "examples": [
+        "Wolves -> Wolves",
+        "Wolves -> wolves",
+        "wolves -> Wolves",
+        "wolves -> wolves"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Person",
+       "count": 39,
+       "examples": [
+        "Blanche -> Blanche",
+        "Taylor Jenkins Reid -> Henrietta Lacks",
+        "Gilbert Simondon -> Giles Deleuze",
+        "wolves -> wolves"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Topic",
+       "count": 36,
+       "examples": [
+        "appraiser -> subject property"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Organization",
+       "count": 35,
+       "examples": [
+        "user -> book club",
+        "user -> wolves",
+        "wolf -> wolves",
+        "I -> five high school girls"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Organization",
+       "count": 32,
+       "examples": [
+        "wolves -> wolves",
+        "Emirates -> Turkish Airlines",
+        "Emirates -> Emirates miles",
+        "Funko -> Marvel"
+       ]
+      }
+     ]
+    },
+    "gift_given_to": {
+     "edges": 33,
+     "pairs": [
+      {
+       "head": "Product",
+       "tail": "Person",
+       "count": 9,
+       "examples": [
+        "travel adapter -> US citizens",
+        "gift card -> author",
+        "post-workout smoothie -> yourself",
+        "relaxing bath -> yourself"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Event",
+       "count": 8,
+       "examples": [
+        "NFTs -> Ethereum"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "User",
+       "count": 7,
+       "examples": [
+        "mother -> Frida"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "User",
+       "count": 4,
+       "examples": [
+        "gift card -> user",
+        "gift card -> Easter",
+        "rewards coupon -> user",
+        "rewards coupon -> I"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Person",
+       "count": 4,
+       "examples": [
+        "suet -> woodpeckers"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Place",
+       "count": 1,
+       "examples": [
+        "Suica or Pasmo card -> Nikko"
+       ]
+      }
+     ]
+    },
+    "got_rid_of": {
+     "edges": 722,
+     "pairs": [
+      {
+       "head": "Product",
+       "tail": "Product",
+       "count": 115,
+       "examples": [
+        "pen line -> pen line",
+        "Darktable -> Adobe Photoshop Elements",
+        "Adobe Photoshop Elements -> Adobe Photoshop",
+        "Nik Collection -> Lightroom"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Product",
+       "count": 61,
+       "examples": [
+        "Sarah -> mirror",
+        "two men -> mirror",
+        "user -> West Side Story",
+        "I -> West Side Story"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Topic",
+       "count": 52,
+       "examples": [
+        "Stanley -> societal expectations",
+        "Gilles Deleuze -> individuation",
+        "user -> language barrier",
+        "I -> language barrier"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Event",
+       "count": 50,
+       "examples": [
+        "assistant -> Jupyter Notebooks",
+        "user -> debut novel",
+        "user -> return ticket",
+        "I -> return ticket"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Topic",
+       "count": 48,
+       "examples": [
+        "resistance -> privilege",
+        "resistance -> societal norms",
+        "resistance -> oppression",
+        "resistance -> fear"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Topic",
+       "count": 35,
+       "examples": [
+        "Stanley -> societal expectations",
+        "Blanche -> societal expectations",
+        "Blanche -> societal norms",
+        "Henrietta Lacks -> loss"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Quantity",
+       "count": 33,
+       "examples": [
+        "movers -> mirror",
+        "Wolves -> prey",
+        "wolves -> prey",
+        "user -> shoes"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Food",
+       "count": 27,
+       "examples": [
+        "herbs -> pests",
+        "Herbs -> pests",
+        "birds -> Sliced fruits",
+        "birds -> Peanut butter"
+       ]
+      }
+     ]
+    },
+    "sells": {
+     "edges": 33,
+     "pairs": [
+      {
+       "head": "Organization",
+       "tail": "Product",
+       "count": 26,
+       "examples": [
+        "Stander -> Tension Mount Transfer Pole",
+        "Hartmobility -> bedrail",
+        "Hart Vision Medical -> bed rails",
+        "ShoeKeep -> shoe trees"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Product",
+       "count": 7,
+       "examples": [
+        "user -> Nikon D5600",
+        "user -> Nikon Z6",
+        "user -> NVIDIA GeForce MX450",
+        "I -> NVIDIA GeForce MX450"
+       ]
+      }
+     ]
+    },
+    "uses": {
+     "edges": 524,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Product",
+       "count": 193,
+       "examples": [
+        "user -> Pen tool",
+        "Jupyter Notebook -> Rasterio",
+        "Jupyter Notebook -> Geopandas",
+        "user -> lemon balm leaves"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Product",
+       "count": 42,
+       "examples": [
+        "Jupyter -> LandChangePy",
+        "Jupyter -> PySAL",
+        "Jupyter -> Rasterio",
+        "Glass Bottle Vase -> Wire Hanger"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Quantity",
+       "count": 31,
+       "examples": [
+        "attendees -> fabric scraps",
+        "attendees -> glue",
+        "attendees -> paint",
+        "attendees -> ribbons"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Product",
+       "count": 30,
+       "examples": [
+        "Jupyter Notebooks -> PySAL",
+        "Jupyter Notebooks -> Rasterio",
+        "Ethereum -> decentralized, digital ledger",
+        "photos -> Props"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Product",
+       "count": 25,
+       "examples": [
+        "user -> PHPExcel",
+        "team -> thermal paper",
+        "volunteers -> Purell",
+        "volunteers -> Hand Sanitizer"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Topic",
+       "count": 24,
+       "examples": [
+        "Frida -> Symbolism",
+        "Frida -> symbolism",
+        "Fridas -> symbolism",
+        "Kvothe -> Naming"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Product",
+       "count": 17,
+       "examples": [
+        "Tongariro Springs Boutique Suites -> energy-efficient systems",
+        "Emirates -> miles",
+        "Safeway rewards coupon -> note-taking app",
+        "Safeway rewards coupon -> Note-taking app"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Quantity",
+       "count": 15,
+       "examples": [
+        "user -> fresh leaves",
+        "I -> fresh leaves",
+        "Namer -> true name",
+        "Namer -> names"
+       ]
+      }
+     ]
+    },
+    "spent_money": {
+     "edges": 65,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Money",
+       "count": 36,
+       "examples": [
+        "user -> 10000 rupees",
+        "assistant -> 10000 rupees",
+        "user -> $25",
+        "I -> $25"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Activity",
+       "count": 7,
+       "examples": [
+        "user -> dining out",
+        "I -> dining out"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Money",
+       "count": 6,
+       "examples": [
+        "appraiser -> $2,500,000"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Quantity",
+       "count": 6,
+       "examples": [
+        "user -> buying in bulk",
+        "user -> $100-120",
+        "I -> $100-120"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Quantity",
+       "count": 6,
+       "examples": [
+        "Scrum.org -> $200 to $500"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Money",
+       "count": 3,
+       "examples": [
+        "Dell XPS -> $999",
+        "Dell XPS -> $1,249",
+        "Dell XPS -> $1,599"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Money",
+       "count": 1,
+       "examples": [
+        "assistant -> $80"
+       ]
+      }
+     ]
+    },
+    "has_budget": {
+     "edges": 56,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Quantity",
+       "count": 26,
+       "examples": [
+        "user -> fees",
+        "user -> 23,000 miles",
+        "user -> 15,000 miles",
+        "I -> 23,000 miles"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Money",
+       "count": 19,
+       "examples": [
+        "user -> 10000 rupees",
+        "assistant -> 10000 rupees",
+        "user -> $25",
+        "I -> $25"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Duration",
+       "count": 5,
+       "examples": [
+        "user -> 50/30/20 rule",
+        "I -> 50/30/20 rule"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Place",
+       "count": 2,
+       "examples": [
+        "user -> dollars"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Money",
+       "count": 2,
+       "examples": [
+        "Dining out expenses -> $20-30",
+        "dining out expenses -> $20-30"
+       ]
+      },
+      {
+       "head": "Place",
+       "tail": "Quantity",
+       "count": 1,
+       "examples": [
+        "Bandon -> 75 miles"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Money",
+       "count": 1,
+       "examples": [
+        "assistant -> $80"
+       ]
+      }
+     ]
+    },
+    "eats_or_drinks": {
+     "edges": 221,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Food",
+       "count": 95,
+       "examples": [
+        "user -> tea",
+        "I -> tea",
+        "user -> Citrus Sunrise",
+        "I -> Citrus Sunrise"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Food",
+       "count": 51,
+       "examples": [
+        "wolf -> plants",
+        "wolves -> food",
+        "wolves -> prey",
+        "volunteers -> french fries"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Food",
+       "count": 26,
+       "examples": [
+        "slugs -> beer",
+        "Slugs -> beer",
+        "Slugs -> Beer",
+        "birds -> peanut butter"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Food",
+       "count": 13,
+       "examples": [
+        "wolves -> meat of their prey",
+        "Wolves -> meat of their prey",
+        "wolves -> food"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Activity",
+       "count": 8,
+       "examples": [
+        "user -> meal prepping",
+        "user -> dining out",
+        "I -> dining out"
+       ]
+      },
+      {
+       "head": "Place",
+       "tail": "Food",
+       "count": 6,
+       "examples": [
+        "Whistler -> craft beer",
+        "Portland -> craft beer",
+        "Bandon -> Dungeness crab",
+        "Bandon -> fish 'n' chips"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Quantity",
+       "count": 5,
+       "examples": [
+        "Blanche -> drinks heavily",
+        "birds -> water"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Quantity",
+       "count": 5,
+       "examples": [
+        "user -> 12 films",
+        "I -> 12 films"
+       ]
+      }
+     ]
+    },
+    "cooks": {
+     "edges": 128,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Food",
+       "count": 58,
+       "examples": [
+        "user -> tea",
+        "I -> tea",
+        "user -> Citrus Sunrise",
+        "I -> Citrus Sunrise"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Food",
+       "count": 24,
+       "examples": [
+        "herbs -> herbs",
+        "Tofuya Ukai -> soba",
+        "Cottage Cheese -> Peanut Butter",
+        "Cottage Cheese -> peanut butter"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Food",
+       "count": 22,
+       "examples": [
+        "wolf -> plants",
+        "volunteers -> french fries",
+        "volunteers -> 10 french fries",
+        "customer -> food"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Quantity",
+       "count": 9,
+       "examples": [
+        "user -> dishes",
+        "I -> dishes",
+        "user -> large batch"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Product",
+       "count": 6,
+       "examples": [
+        "user -> lemon balm leaves",
+        "I -> lemon balm leaves",
+        "user -> canned beans",
+        "user -> silver spinnerbaits"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Food",
+       "count": 3,
+       "examples": [
+        "Creel Lodge -> gourmet meals",
+        "Kanaya Honten -> kaiseki",
+        "Kiritappu -> kaiseki"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Food",
+       "count": 2,
+       "examples": [
+        "Creel Lodge -> gourmet meals",
+        "cottage cheese -> Cottage Cheese"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Activity",
+       "count": 2,
+       "examples": [
+        "user -> meals",
+        "I -> meals"
+       ]
+      }
+     ]
+    },
+    "prefers": {
+     "edges": 532,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Product",
+       "count": 117,
+       "examples": [
+        "user -> bedrail",
+        "user -> Mrail",
+        "user -> Jupyter Notebooks",
+        "user -> eco-lodges"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Topic",
+       "count": 101,
+       "examples": [
+        "user -> editing software",
+        "I -> editing software",
+        "user -> landscape",
+        "user -> portrait"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Activity",
+       "count": 46,
+       "examples": [
+        "user -> sunset scenes",
+        "I -> sunset scenes",
+        "user -> Tongariro Alpine Crossing hike",
+        "I -> Tongariro Alpine Crossing hike"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Food",
+       "count": 43,
+       "examples": [
+        "slugs -> beer",
+        "Slugs -> beer",
+        "Nyjer seed -> sunflower seeds",
+        "Suet -> sunflower seeds"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Food",
+       "count": 41,
+       "examples": [
+        "user -> Citrus Sunrise",
+        "I -> Citrus Sunrise",
+        "user -> fresh leaves",
+        "user -> fresh herbs"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Event",
+       "count": 28,
+       "examples": [
+        "user -> debut novel",
+        "user -> Zumba classes",
+        "I -> Zumba classes",
+        "user -> Bachata workshop"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Product",
+       "count": 18,
+       "examples": [
+        "Creel Lodge -> rainwater harvesting",
+        "airline credit card -> Citi Premier Card",
+        "Lowepro ProTactic 450 AW -> 50mm prime lens",
+        "ProTactic 450 AW -> 50mm prime lens"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Activity",
+       "count": 16,
+       "examples": [
+        "Max -> swimming",
+        "Max -> retrieving"
+       ]
+      }
+     ]
+    },
+    "does_activity": {
+     "edges": 183,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Activity",
+       "count": 93,
+       "examples": [
+        "assistant -> cooking",
+        "outdoor enthusiasts -> hike",
+        "user -> hiking",
+        "user -> hike"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Activity",
+       "count": 50,
+       "examples": [
+        "Blanche -> promiscuous behavior",
+        "dog -> training",
+        "Emma -> practice sessions",
+        "Whiskers -> walks"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Topic",
+       "count": 11,
+       "examples": [
+        "Namer -> Naming"
+       ]
+      },
+      {
+       "head": "Place",
+       "tail": "Activity",
+       "count": 10,
+       "examples": [
+        "Whistler -> skiing",
+        "Whistler -> hiking",
+        "Whistler -> biking",
+        "Portland -> hiking"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Event",
+       "count": 7,
+       "examples": [
+        "user -> cardio days",
+        "I -> cardio days"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Activity",
+       "count": 5,
+       "examples": [
+        "Taupo -> kayaking",
+        "Taupo -> Hiking and Biking",
+        "Taupo -> paddle-boarding",
+        "Taupo -> sailing"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Quantity",
+       "count": 3,
+       "examples": [
+        "Blanche -> drinks heavily"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Activity",
+       "count": 2,
+       "examples": [
+        "herbs -> Pruning and Grooming",
+        "herbs -> inspect"
+       ]
+      }
+     ]
+    },
+    "activity_times_per_week": {
+     "edges": 51,
+     "pairs": [
+      {
+       "head": "Activity",
+       "tail": "Quantity",
+       "count": 16,
+       "examples": [
+        "Recovery -> 5 minutes",
+        "cool-down -> 5 minutes",
+        "workshops -> 1.67 workshops",
+        "Core Rotations -> 2-3 times a week"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Duration",
+       "count": 11,
+       "examples": [
+        "Jump Rope -> 30 seconds",
+        "stretching -> 10-15 minutes",
+        "stretch -> 10-15 minutes",
+        "Stretch -> 10-15 minutes"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Quantity",
+       "count": 5,
+       "examples": [
+        "user -> $100-120",
+        "I -> $100-120"
+       ]
+      },
+      {
+       "head": "Quantity",
+       "tail": "Quantity",
+       "count": 4,
+       "examples": [
+        "workshops -> 1.67 workshops"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Quantity",
+       "count": 4,
+       "examples": [
+        "workshop -> 1.67 workshops",
+        "workshops -> 1.67 workshops",
+        "shopping trip -> bi-weekly",
+        "shopping trip -> monthly"
+       ]
+      },
+      {
+       "head": "Place",
+       "tail": "Duration",
+       "count": 4,
+       "examples": [
+        "living room -> 10 minutes"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Duration",
+       "count": 3,
+       "examples": [
+        "user -> 6 months",
+        "user -> three months",
+        "user -> 10 minutes"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Place",
+       "count": 2,
+       "examples": [
+        "user -> every week",
+        "I -> every week"
+       ]
+      }
+     ]
+    },
+    "activity_practiced_for": {
+     "edges": 192,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Activity",
+       "count": 36,
+       "examples": [
+        "user -> morning tea",
+        "user -> salsa technique",
+        "I -> performance",
+        "Mia -> performances"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Topic",
+       "count": 24,
+       "examples": [
+        "user -> landscape photography",
+        "Frida Kahlo -> painting",
+        "Frida -> painting",
+        "Frida -> art"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Food",
+       "count": 22,
+       "examples": [
+        "Prune -> herbs",
+        "Prune -> Herbs",
+        "prune -> herbs"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Activity",
+       "count": 15,
+       "examples": [
+        "Madison -> group",
+        "Max -> swimming",
+        "Max -> fishing"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Food",
+       "count": 13,
+       "examples": [
+        "user -> Citrus Sunrise",
+        "I -> Citrus Sunrise",
+        "user -> morning tea",
+        "user -> herbs"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Activity",
+       "count": 13,
+       "examples": [
+        "hike -> hike"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Event",
+       "count": 13,
+       "examples": [
+        "I -> first performance",
+        "Mia -> first performance",
+        "user -> workshop",
+        "user -> reunion"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Event",
+       "count": 12,
+       "examples": [
+        "wolves -> hunting",
+        "Wolves -> hunting"
+       ]
+      }
+     ]
+    },
+    "activity_scheduled_at": {
+     "edges": 398,
+     "pairs": [
+      {
+       "head": "Event",
+       "tail": "Place",
+       "count": 90,
+       "examples": [
+        "Shoot -> location",
+        "shoot -> location",
+        "Scenic Flights -> Lake Taupo",
+        "training -> home"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Place",
+       "count": 74,
+       "examples": [
+        "skydiving -> Lake Taupo",
+        "hike -> Tongariro River Trail",
+        "hiking -> Portland",
+        "skiing -> Whistler"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Event",
+       "count": 63,
+       "examples": [
+        "workshop -> Photokina",
+        "photo shoot -> photography workshop",
+        "hike -> Tongariro Alpine Crossing",
+        "performances -> charity functions"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Organization",
+       "count": 49,
+       "examples": [
+        "Scenic Flights -> Taupo",
+        "Discussion -> book club",
+        "stream -> YouTube",
+        "live streams -> YouTube"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Event",
+       "count": 20,
+       "examples": [
+        "Writing Conferences -> BookExpo",
+        "Q&A session -> streams",
+        "first performance -> charity functions",
+        "sales -> sales"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Activity",
+       "count": 19,
+       "examples": [
+        "Zumba classes -> studio",
+        "class -> studio",
+        "Class -> studio",
+        "practice sessions -> group"
+       ]
+      },
+      {
+       "head": "Activity",
+       "tail": "Organization",
+       "count": 18,
+       "examples": [
+        "photography -> 500px",
+        "swimming pool -> Riverstone Backpackers",
+        "games room -> Riverstone Backpackers",
+        "guided hikes -> Tongariro Springs Boutique Suites"
+       ]
+      },
+      {
+       "head": "Project",
+       "tail": "User",
+       "count": 11,
+       "examples": [
+        "tasks -> Todoist"
+       ]
+      }
+     ]
+    },
+    "works_on_project": {
+     "edges": 12,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Project",
+       "count": 12,
+       "examples": [
+        "assistant -> Headspace",
+        "assistant -> Calm",
+        "assistant -> Insight Timer",
+        "user -> upcycled planters project"
+       ]
+      }
+     ]
+    },
+    "has_family_member": {
+     "edges": 193,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Person",
+       "count": 117,
+       "examples": [
+        "Jenny Yang -> Fred Korematsu",
+        "Pramila Jayapal -> Fred Korematsu",
+        "Sarah -> noble family",
+        "user -> Taylor Jenkins Reid"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Person",
+       "count": 28,
+       "examples": [
+        "Karen Korematsu -> Fred Korematsu",
+        "woman -> husband",
+        "Gilles Deleuze -> F\u00e9lix Guattari",
+        "Frida -> Diego Rivera"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Organization",
+       "count": 22,
+       "examples": [
+        "I -> school administrator",
+        "Mia -> school administrator",
+        "Frida -> mother"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Person",
+       "count": 15,
+       "examples": [
+        "reunion -> family",
+        "Reunion -> family",
+        "Reunion -> family members",
+        "Family Reunion -> family"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Food",
+       "count": 5,
+       "examples": [
+        "assistant -> robins",
+        "assistant -> woodpeckers",
+        "assistant -> nuthatches"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Organization",
+       "count": 2,
+       "examples": [
+        "The Starlight Serenaders -> school administrator"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Quantity",
+       "count": 2,
+       "examples": [
+        "assistant -> Whiskers"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Language",
+       "count": 1,
+       "examples": [
+        "Frida Kahlo -> Mexican"
+       ]
+      }
+     ]
+    },
+    "has_friend": {
+     "edges": 193,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Person",
+       "count": 117,
+       "examples": [
+        "Sarah -> young boy",
+        "Sarah -> colleague",
+        "user -> Taylor Jenkins Reid",
+        "user -> Johnson"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Person",
+       "count": 31,
+       "examples": [
+        "woman -> family",
+        "Gilles Deleuze -> F\u00e9lix Guattari",
+        "Frida -> Diego Rivera",
+        "Frida -> women artists"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Food",
+       "count": 13,
+       "examples": [
+        "birds -> woodpeckers",
+        "birds -> nuthatches",
+        "Birds -> woodpeckers"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "User",
+       "count": 12,
+       "examples": [
+        "younger man -> younger man"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Organization",
+       "count": 9,
+       "examples": [
+        "assistant -> immigration officers",
+        "Frida -> mother"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Person",
+       "count": 3,
+       "examples": [
+        "The Starlight Serenaders -> five high school girls",
+        "To Kill a Mockingbird -> Baldwin"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Person",
+       "count": 2,
+       "examples": [
+        "five high school girls -> friends"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Organization",
+       "count": 2,
+       "examples": [
+        "The Starlight Serenaders -> school administrator"
+       ]
+      }
+     ]
+    },
+    "has_age": {
+     "edges": 10,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Date",
+       "count": 6,
+       "examples": [
+        "Taylor Jenkins Reid -> December 20, 1983",
+        "Frida Kahlo -> 1907"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Date",
+       "count": 1,
+       "examples": [
+        "Blanche -> 1950s"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Person",
+       "count": 1,
+       "examples": [
+        "Elderly Man -> elderly man"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Occupation",
+       "count": 1,
+       "examples": [
+        "Ethereum -> Canadian-Russian programmer"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Duration",
+       "count": 1,
+       "examples": [
+        "Captain Steve -> over 20 years of experience fishing Lake Winnebago"
+       ]
+      }
+     ]
+    },
+    "older_than_user_by": {
+     "edges": 78,
+     "pairs": [
+      {
+       "head": "Person",
+       "tail": "Person",
+       "count": 16,
+       "examples": [
+        "Deleuze -> Anna Tsing",
+        "main protagonist -> main protagonist",
+        "Pixies -> Rothfuss",
+        "Bogles -> Rothfuss"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Person",
+       "count": 15,
+       "examples": [
+        "user -> instructor",
+        "I -> instructor",
+        "Gilles Deleuze -> Gilbert Simondon",
+        "user -> another creator"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Person",
+       "count": 10,
+       "examples": [
+        "To Kill a Mockingbird -> Harper Lee",
+        "Bitcoin -> Satoshi Nakamoto"
+       ]
+      },
+      {
+       "head": "Topic",
+       "tail": "Person",
+       "count": 7,
+       "examples": [
+        "MoSCoW prioritization -> Dai Clegg"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Occupation",
+       "count": 6,
+       "examples": [
+        "Sarah -> previous owner",
+        "user -> author",
+        "assistant -> instructor"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Occupation",
+       "count": 6,
+       "examples": [
+        "Max -> assistant"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Event",
+       "count": 3,
+       "examples": [
+        "user -> Hamilton",
+        "user -> To Kill a Mockingbird",
+        "user -> Go Tell it on the Mountain"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Event",
+       "count": 3,
+       "examples": [
+        "Patrick Rothfuss -> Kingkiller Chronicle"
+       ]
+      }
+     ]
+    },
+    "studies_at": {
+     "edges": 26,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Organization",
+       "count": 16,
+       "examples": [
+        "user -> Seaborn",
+        "user -> Coursera",
+        "I -> Coursera",
+        "user -> University of Missouri"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Project",
+       "count": 4,
+       "examples": [
+        "user -> Coursera",
+        "I -> Coursera"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Event",
+       "count": 2,
+       "examples": [
+        "user -> course",
+        "user -> master's degree"
+       ]
+      },
+      {
+       "head": "Topic",
+       "tail": "Occupation",
+       "count": 2,
+       "examples": [
+        "Psychology -> mental health professional",
+        "psychology -> mental health professional"
+       ]
+      },
+      {
+       "head": "Occupation",
+       "tail": "Occupation",
+       "count": 2,
+       "examples": [
+        "psychologist -> mental health professional"
+       ]
+      }
+     ]
+    },
+    "works_at": {
+     "edges": 277,
+     "pairs": [
+      {
+       "head": "Organization",
+       "tail": "Organization",
+       "count": 113,
+       "examples": [
+        "Creel Lodge -> Riverstone Backpackers",
+        "Riverstone Backpackers -> Riverstone Backpackers",
+        "Publisher -> publisher",
+        "publisher -> publishers"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Organization",
+       "count": 34,
+       "examples": [
+        "Asian American and Pacific Islander women -> government and political organizations",
+        "Pramila Jayapal -> United States House of Representatives",
+        "author -> literary agents",
+        "author -> publisher"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Organization",
+       "count": 29,
+       "examples": [
+        "Judy Chu -> United States House of Representatives",
+        "Karen Korematsu -> U.S. Commission on International Religious Freedom",
+        "Karen Korematsu -> OneAmerica",
+        "employee -> museum"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Occupation",
+       "count": 25,
+       "examples": [
+        "Taylor Jenkins Reid -> screenwriter",
+        "Taylor Jenkins Reid -> producer",
+        "assistant -> AI",
+        "Frida Kahlo -> artist"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Organization",
+       "count": 18,
+       "examples": [
+        "M-Rail -> Hart Mobility",
+        "Creel Lodge -> Riverstone Backpackers",
+        "Trello -> Microsoft",
+        "Asana -> Google"
+       ]
+      },
+      {
+       "head": "Occupation",
+       "tail": "Organization",
+       "count": 18,
+       "examples": [
+        "author -> publisher",
+        "Author -> publisher",
+        "fellow creator -> Twitch",
+        "Product Manager -> Freelancer's Union"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Place",
+       "count": 12,
+       "examples": [
+        "user -> home",
+        "I -> home",
+        "HIIT -> home",
+        "Frida -> Escuela Nacional de Bellas Artes"
+       ]
+      },
+      {
+       "head": "Occupation",
+       "tail": "Occupation",
+       "count": 5,
+       "examples": [
+        "Entrepreneurship -> Full-time job",
+        "Scrum Master -> Scrum Master",
+        "registered dietitian -> healthcare professional",
+        "psychologist -> mental health professional"
+       ]
+      }
+     ]
+    },
+    "has_occupation": {
+     "edges": 169,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Occupation",
+       "count": 84,
+       "examples": [
+        "Pramila Jayapal -> politician",
+        "Sarah -> assistant",
+        "assistant -> AI language model",
+        "Taylor Jenkins Reid -> author"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Occupation",
+       "count": 57,
+       "examples": [
+        "Judy Chu -> politician",
+        "Karen Korematsu -> attorney",
+        "Karen Korematsu -> activist",
+        "Karen Korematsu -> politician"
+       ]
+      },
+      {
+       "head": "Occupation",
+       "tail": "Topic",
+       "count": 7,
+       "examples": [
+        "author -> Publishing",
+        "author -> writing career",
+        "author -> publishing"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Topic",
+       "count": 5,
+       "examples": [
+        "assistant -> product management"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "User",
+       "count": 3,
+       "examples": [
+        "US citizen -> US citizen"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Occupation",
+       "count": 3,
+       "examples": [
+        "NiSi -> photographer",
+        "Singh-Ray -> photographer"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Language",
+       "count": 2,
+       "examples": [
+        "assistant -> AI language model"
+       ]
+      },
+      {
+       "head": "Topic",
+       "tail": "Occupation",
+       "count": 2,
+       "examples": [
+        "Psychology -> mental health professional",
+        "psychology -> mental health professional"
+       ]
+      }
+     ]
+    },
+    "time_in_job": {
+     "edges": 146,
+     "pairs": [
+      {
+       "head": "Topic",
+       "tail": "Language",
+       "count": 29,
+       "examples": [
+        "Machine Learning -> Python",
+        "machine learning -> Python",
+        "Data Visualization -> Python",
+        "data visualization -> Python"
+       ]
+      },
+      {
+       "head": "Topic",
+       "tail": "Topic",
+       "count": 17,
+       "examples": [
+        "Framing -> Composition",
+        "Framing -> landscape photography",
+        "Leading Lines -> Composition",
+        "Leading Lines -> landscape photography"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Occupation",
+       "count": 13,
+       "examples": [
+        "Taylor Jenkins Reid -> screenwriter",
+        "Taylor Jenkins Reid -> producer",
+        "user -> product management"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Event",
+       "count": 13,
+       "examples": [
+        "Fae -> Temerant"
+       ]
+      },
+      {
+       "head": "Product",
+       "tail": "Topic",
+       "count": 12,
+       "examples": [
+        "The rule of thirds -> composition technique",
+        "leading lines -> Composition",
+        "leading lines -> landscape photography",
+        "leading lines -> composition"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Language",
+       "count": 7,
+       "examples": [
+        "Jupyter Notebook -> Python",
+        "PySAL -> Python"
+       ]
+      },
+      {
+       "head": "Occupation",
+       "tail": "Topic",
+       "count": 7,
+       "examples": [
+        "author platform -> email marketing",
+        "narrator -> audiobook"
+       ]
+      },
+      {
+       "head": "Topic",
+       "tail": "Project",
+       "count": 7,
+       "examples": [
+        "MoSCoW prioritization -> Agile project management"
+       ]
+      }
+     ]
+    },
+    "learns_language": {
+     "edges": 31,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Language",
+       "count": 26,
+       "examples": [
+        "Deleuze -> minority language",
+        "user -> Japanese",
+        "I -> Japanese",
+        "assistant -> Japanese"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Topic",
+       "count": 3,
+       "examples": [
+        "user -> Agile methodologies",
+        "I -> Agile methodologies"
+       ]
+      },
+      {
+       "head": "Quantity",
+       "tail": "Place",
+       "count": 2,
+       "examples": [
+        "Deleuze -> French"
+       ]
+      }
+     ]
+    },
+    "interested_in": {
+     "edges": 219,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Topic",
+       "count": 152,
+       "examples": [
+        "user -> immigrant and refugee rights",
+        "user -> editing software",
+        "I -> editing software",
+        "user -> photography genres"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Topic",
+       "count": 49,
+       "examples": [
+        "photographers -> camera settings",
+        "photographers -> composition",
+        "photographers -> landscape",
+        "photographers -> fieldcraft"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Activity",
+       "count": 11,
+       "examples": [
+        "user -> Tongariro Alpine Crossing hike",
+        "I -> Tongariro Alpine Crossing hike",
+        "user -> dance styles",
+        "user -> Cape Kiwanda Trail"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Place",
+       "count": 3,
+       "examples": [
+        "user -> Tongariro River Trail",
+        "I -> Tongariro River Trail",
+        "user -> Oregon Coast Highway route"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Topic",
+       "count": 2,
+       "examples": [
+        "Resistance -> social justice",
+        "Resistance -> equality"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Topic",
+       "count": 1,
+       "examples": [
+        "Taupo -> geothermal energy production"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Food",
+       "count": 1,
+       "examples": [
+        "user -> veggie-packed minestrone soup"
+       ]
+      }
+     ]
+    },
+    "is_fan_of": {
+     "edges": 407,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Topic",
+       "count": 121,
+       "examples": [
+        "user -> editing software",
+        "I -> editing software",
+        "user -> landscape",
+        "user -> portrait"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Product",
+       "count": 63,
+       "examples": [
+        "user -> bedrail",
+        "user -> Mrail",
+        "user -> eco-lodges",
+        "user -> Instagram live streams"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Food",
+       "count": 51,
+       "examples": [
+        "slugs -> beer",
+        "Slugs -> beer",
+        "Nyjer seed -> Suet",
+        "Nyjer seed -> suet"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Event",
+       "count": 40,
+       "examples": [
+        "user -> debut novel",
+        "user -> Zumba classes",
+        "I -> Zumba classes",
+        "user -> Bachata workshop"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Activity",
+       "count": 32,
+       "examples": [
+        "user -> sunset scenes",
+        "I -> sunset scenes",
+        "user -> Tongariro Alpine Crossing hike",
+        "I -> Tongariro Alpine Crossing hike"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Food",
+       "count": 27,
+       "examples": [
+        "user -> Citrus Sunrise",
+        "I -> Citrus Sunrise",
+        "user -> fresh herbs",
+        "user -> Japanese cuisine"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Activity",
+       "count": 16,
+       "examples": [
+        "Max -> swimming",
+        "Max -> retrieving"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Quantity",
+       "count": 13,
+       "examples": [
+        "herbs -> full sun",
+        "Herbs -> full sun",
+        "herbs -> partial shade"
+       ]
+      }
+     ]
+    },
+    "undergoes_medical_procedure": {
+     "edges": 43,
+     "pairs": [
+      {
+       "head": "Topic",
+       "tail": "Topic",
+       "count": 17,
+       "examples": [
+        "subject property -> physical depreciation"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "MedicalProcedure",
+       "count": 10,
+       "examples": [
+        "Ethereum -> Proof-of-Stake"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "MedicalProcedure",
+       "count": 4,
+       "examples": [
+        "Whiskers -> dental check-up"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Event",
+       "count": 3,
+       "examples": [
+        "Mia -> accident"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "MedicalProcedure",
+       "count": 3,
+       "examples": [
+        "Ethereum -> Proof-of-Stake"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Topic",
+       "count": 2,
+       "examples": [
+        "Scott Brick -> self-improvement"
+       ]
+      },
+      {
+       "head": "Organization",
+       "tail": "Event",
+       "count": 2,
+       "examples": [
+        "five high school girls -> accident"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "MedicalProcedure",
+       "count": 2,
+       "examples": [
+        "Frida Kahlo -> over 30 surgeries"
+       ]
+      }
+     ]
+    },
+    "sleeps_per_night": {
+     "edges": 39,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Duration",
+       "count": 26,
+       "examples": [
+        "user -> 5 days",
+        "I -> 5 days",
+        "user -> 20 minutes",
+        "Frida Kahlo -> several months"
+       ]
+      },
+      {
+       "head": "Topic",
+       "tail": "Duration",
+       "count": 6,
+       "examples": [
+        "skin -> 7-8 hours",
+        "body -> 7-9 hours"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Duration",
+       "count": 5,
+       "examples": [
+        "herbs -> 6 months",
+        "Herbs -> 6 months"
+       ]
+      },
+      {
+       "head": "Food",
+       "tail": "Quantity",
+       "count": 1,
+       "examples": [
+        "herbs -> 12-14 hours"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Quantity",
+       "count": 1,
+       "examples": [
+        "user -> 500 pages"
+       ]
+      }
+     ]
+    },
+    "has_daily_goal_of": {
+     "edges": 264,
+     "pairs": [
+      {
+       "head": "User",
+       "tail": "Topic",
+       "count": 113,
+       "examples": [
+        "user -> immigrant and refugee rights",
+        "user -> outdoor photography skills",
+        "user -> social justice",
+        "user -> equality"
+       ]
+      },
+      {
+       "head": "Person",
+       "tail": "Topic",
+       "count": 58,
+       "examples": [
+        "Karen Korematsu -> immigrant and refugee rights",
+        "Karen Korematsu -> protection of immigrants' rights",
+        "Karen Korematsu -> human trafficking",
+        "Karen Korematsu -> civil rights"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Event",
+       "count": 20,
+       "examples": [
+        "user -> power outages",
+        "user -> Digital Marketing",
+        "user -> Leadership Development",
+        "I -> Digital Marketing"
+       ]
+      },
+      {
+       "head": "Event",
+       "tail": "Topic",
+       "count": 17,
+       "examples": [
+        "resistance -> social justice",
+        "resistance -> equality",
+        "Resistance -> social justice",
+        "Resistance -> equality"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Activity",
+       "count": 11,
+       "examples": [
+        "user -> salsa technique",
+        "Ana -> Bachata skills",
+        "user -> repurposing items",
+        "I -> repurposing items"
+       ]
+      },
+      {
+       "head": "Quantity",
+       "tail": "Topic",
+       "count": 8,
+       "examples": [
+        "Deleuze -> individuation"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Quantity",
+       "count": 7,
+       "examples": [
+        "user -> bushy growth",
+        "user -> legginess",
+        "user -> impulse buys",
+        "I -> impulse buys"
+       ]
+      },
+      {
+       "head": "User",
+       "tail": "Duration",
+       "count": 6,
+       "examples": [
+        "character -> move forward",
+        "user -> earn more miles",
+        "I -> earn more miles"
+       ]
+      }
+     ]
+    }
+   },
+   "types": {
+    "User": {
+     "mentions": 1179,
+     "distinct_texts": 89,
+     "sessions": 60,
+     "texts_recurring_across_sessions": 0.09,
+     "capitalized_share": 0.47,
+     "mentions_per_text_per_session": 4.53,
+     "top_texts": [
+      "i",
+      "user",
+      "assistant",
+      "frida",
+      "you",
+      "author",
+      "wolves",
+      "todoist",
+      "sarah",
+      "someone"
+     ]
+    },
+    "Person": {
+     "mentions": 748,
+     "distinct_texts": 326,
+     "sessions": 53,
+     "texts_recurring_across_sessions": 0.06,
+     "capitalized_share": 0.49,
+     "mentions_per_text_per_session": 1.99,
+     "top_texts": [
+      "attendees",
+      "assistant",
+      "frida",
+      "birds",
+      "family members",
+      "debut authors",
+      "appraiser",
+      "me",
+      "max",
+      "family"
+     ]
+    },
+    "Duration": {
+     "mentions": 195,
+     "distinct_texts": 111,
+     "sessions": 41,
+     "texts_recurring_across_sessions": 0.05,
+     "capitalized_share": 0.03,
+     "mentions_per_text_per_session": 1.65,
+     "top_texts": [
+      "30 seconds",
+      "12-15 reps",
+      "30 minutes",
+      "6 months",
+      "1-2 hours",
+      "6-12 months",
+      "months to a year",
+      "1-2 seconds",
+      "90 days",
+      "5 days"
+     ]
+    },
+    "Quantity": {
+     "mentions": 875,
+     "distinct_texts": 461,
+     "sessions": 59,
+     "texts_recurring_across_sessions": 0.06,
+     "capitalized_share": 0.05,
+     "mentions_per_text_per_session": 1.68,
+     "top_texts": [
+      "0",
+      "cards",
+      "100",
+      "x",
+      "2",
+      "bpa",
+      "y",
+      "i",
+      "m",
+      "the"
+     ]
+    },
+    "Money": {
+     "mentions": 52,
+     "distinct_texts": 31,
+     "sessions": 9,
+     "texts_recurring_across_sessions": 0.0,
+     "capitalized_share": 0.0,
+     "mentions_per_text_per_session": 1.68,
+     "top_texts": [
+      "$2,500,000",
+      "10000 rupees",
+      "$95",
+      "$80",
+      "$999",
+      "$15/month",
+      "$20/month",
+      "$4,000",
+      "$1,249",
+      "$1,599"
+     ]
+    },
+    "Date": {
+     "mentions": 145,
+     "distinct_texts": 80,
+     "sessions": 32,
+     "texts_recurring_across_sessions": 0.14,
+     "capitalized_share": 0.36,
+     "mentions_per_text_per_session": 1.56,
+     "top_texts": [
+      "august",
+      "2023",
+      "1939",
+      "monday",
+      "tuesday",
+      "2017",
+      "wednesday",
+      "thursday",
+      "friday",
+      "last week"
+     ]
+    },
+    "TimeWindow": {
+     "mentions": 25,
+     "distinct_texts": 21,
+     "sessions": 8,
+     "texts_recurring_across_sessions": 0.05,
+     "capitalized_share": 0.12,
+     "mentions_per_text_per_session": 1.14,
+     "top_texts": [
+      "golden hour",
+      "5:00 pm",
+      "website",
+      "dawn or dusk",
+      "different times of day and year",
+      "overcast conditions",
+      "stories",
+      "peak hours",
+      "lunch breaks",
+      "evenings"
+     ]
+    },
+    "Place": {
+     "mentions": 1013,
+     "distinct_texts": 374,
+     "sessions": 53,
+     "texts_recurring_across_sessions": 0.1,
+     "capitalized_share": 0.46,
+     "mentions_per_text_per_session": 2.32,
+     "top_texts": [
+      "city",
+      "europe",
+      "living room",
+      "property",
+      "closet",
+      "uk",
+      "ireland",
+      "home",
+      "bed",
+      "lake winnebago"
+     ]
+    },
+    "Event": {
+     "mentions": 834,
+     "distinct_texts": 276,
+     "sessions": 54,
+     "texts_recurring_across_sessions": 0.05,
+     "capitalized_share": 0.36,
+     "mentions_per_text_per_session": 2.79,
+     "top_texts": [
+      "trip",
+      "reunion",
+      "fae",
+      "workshop",
+      "ethereum",
+      "travel",
+      "wolves",
+      "psychology",
+      "return ticket",
+      "to kill a mockingbird"
+     ]
+    },
+    "Organization": {
+     "mentions": 826,
+     "distinct_texts": 368,
+     "sessions": 49,
+     "texts_recurring_across_sessions": 0.05,
+     "capitalized_share": 0.74,
+     "mentions_per_text_per_session": 2.09,
+     "top_texts": [
+      "emirates",
+      "appraiser",
+      "turkish airlines",
+      "youtube",
+      "publisher",
+      "instagram",
+      "agile alliance",
+      "book club",
+      "datacamp",
+      "funko"
+     ]
+    },
+    "Product": {
+     "mentions": 1192,
+     "distinct_texts": 646,
+     "sessions": 54,
+     "texts_recurring_across_sessions": 0.02,
+     "capitalized_share": 0.54,
+     "mentions_per_text_per_session": 1.8,
+     "top_texts": [
+      "wide-angle lens",
+      "mirror",
+      "bpa",
+      "shoe trees",
+      "toilevator",
+      "urban disguise 40l",
+      "binoculars",
+      "bitcoin",
+      "macbook air",
+      "sectional sofa"
+     ]
+    },
+    "Food": {
+     "mentions": 702,
+     "distinct_texts": 302,
+     "sessions": 24,
+     "texts_recurring_across_sessions": 0.13,
+     "capitalized_share": 0.17,
+     "mentions_per_text_per_session": 2.03,
+     "top_texts": [
+      "herbs",
+      "food",
+      "peanut butter",
+      "suet",
+      "birds",
+      "tea blends",
+      "meat",
+      "beer",
+      "bitcoins",
+      "produce"
+     ]
+    },
+    "Activity": {
+     "mentions": 672,
+     "distinct_texts": 324,
+     "sessions": 44,
+     "texts_recurring_across_sessions": 0.06,
+     "capitalized_share": 0.25,
+     "mentions_per_text_per_session": 1.91,
+     "top_texts": [
+      "photography",
+      "hiking",
+      "hike",
+      "exercise",
+      "workout",
+      "fishing",
+      "performances",
+      "practice",
+      "training",
+      "whale watching"
+     ]
+    },
+    "Project": {
+     "mentions": 132,
+     "distinct_texts": 84,
+     "sessions": 27,
+     "texts_recurring_across_sessions": 0.05,
+     "capitalized_share": 0.46,
+     "mentions_per_text_per_session": 1.47,
+     "top_texts": [
+      "projects",
+      "tasks",
+      "kdtree",
+      "sample project",
+      "online resources",
+      "work",
+      "matplotlib",
+      "r/writing",
+      "absolute write",
+      "writing.com"
+     ]
+    },
+    "Language": {
+     "mentions": 101,
+     "distinct_texts": 20,
+     "sessions": 16,
+     "texts_recurring_across_sessions": 0.15,
+     "capitalized_share": 0.67,
+     "mentions_per_text_per_session": 4.21,
+     "top_texts": [
+      "python",
+      "dominant culture",
+      "japanese",
+      "language",
+      "javascript",
+      "ai language model",
+      "php",
+      "large language model",
+      "english",
+      "matplotlib"
+     ]
+    },
+    "Topic": {
+     "mentions": 1955,
+     "distinct_texts": 741,
+     "sessions": 58,
+     "texts_recurring_across_sessions": 0.09,
+     "capitalized_share": 0.22,
+     "mentions_per_text_per_session": 2.38,
+     "top_texts": [
+      "subject property",
+      "value",
+      "data visualization",
+      "agile",
+      "collection",
+      "income approach",
+      "core",
+      "naming",
+      "scrum",
+      "mythology"
+     ]
+    },
+    "Occupation": {
+     "mentions": 171,
+     "distinct_texts": 94,
+     "sessions": 36,
+     "texts_recurring_across_sessions": 0.12,
+     "capitalized_share": 0.18,
+     "mentions_per_text_per_session": 1.51,
+     "top_texts": [
+      "author",
+      "painter",
+      "assistant",
+      "product manager",
+      "healthcare professional",
+      "narrator",
+      "guitarist",
+      "artist",
+      "singer-songwriter",
+      "appraiser"
+     ]
+    },
+    "MedicalProcedure": {
+     "mentions": 33,
+     "distinct_texts": 20,
+     "sessions": 12,
+     "texts_recurring_across_sessions": 0.05,
+     "capitalized_share": 0.3,
+     "mentions_per_text_per_session": 1.57,
+     "top_texts": [
+      "post-processing",
+      "rule of thirds",
+      "adaptation",
+      "proof-of-stake",
+      "manual focus",
+      "hdr",
+      "deterritorialization",
+      "dental check-up",
+      "over 30 surgeries",
+      "full-frame model"
+     ]
+    }
+   }
+  },
+  "seconds": 13732,
+  "edges": 11408,
+  "mentions": 10850,
+  "chars": 708663,
+  "pair_cap": 4096
+ },
+ "prune": {
+  "result": {
+   "relations": [
+    {
+     "name": "participates_in_event",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Event"
+     ],
+     "reason": "User/Person->Event dominant; other pairs noise"
+    },
+    {
+     "name": "hosts_event",
+     "head": [
+      "User",
+      "Person",
+      "Organization"
+     ],
+     "tail": [
+      "Event"
+     ],
+     "reason": "Hosts are users, people or organizations"
+    },
+    {
+     "name": "attended_event_with",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Person"
+     ],
+     "reason": "Companion edges are User/Person->Person"
+    },
+    {
+     "name": "event_location",
+     "head": [
+      "Event"
+     ],
+     "tail": [
+      "Place",
+      "Organization"
+     ],
+     "reason": "Event->Place/Organization dominant as intended"
+    },
+    {
+     "name": "event_date",
+     "head": [
+      "Event"
+     ],
+     "tail": [
+      "Date"
+     ],
+     "reason": "Event->Date dominant"
+    },
+    {
+     "name": "event_time",
+     "head": [
+      "Event"
+     ],
+     "tail": [
+      "TimeWindow"
+     ],
+     "reason": "Event->TimeWindow dominant"
+    },
+    {
+     "name": "event_duration",
+     "head": [
+      "Event",
+      "Activity"
+     ],
+     "tail": [
+      "Duration"
+     ],
+     "reason": "Event and Activity durations both valid"
+    },
+    {
+     "name": "visits_place",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Place"
+     ],
+     "reason": "User/Person->Place dominant"
+    },
+    {
+     "name": "lives_in",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Place"
+     ],
+     "reason": "Residence edges User/Person->Place"
+    },
+    {
+     "name": "commutes_from",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Place"
+     ],
+     "reason": "User/Person->Place dominant"
+    },
+    {
+     "name": "located_in",
+     "head": [
+      "Place",
+      "Organization",
+      "Event"
+     ],
+     "tail": [
+      "Place"
+     ],
+     "reason": "Containment of places, orgs and events in places"
+    },
+    {
+     "name": "owns_product",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Product"
+     ],
+     "reason": "Clean observed pairs"
+    },
+    {
+     "name": "buys_product",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Product",
+      "Food"
+     ],
+     "reason": "User buys products and groceries; Person added per rule"
+    },
+    {
+     "name": "product_bought_from",
+     "head": [
+      "Product"
+     ],
+     "tail": [
+      "Organization"
+     ],
+     "reason": "Product->Organization matches intent"
+    },
+    {
+     "name": "product_price",
+     "head": [
+      "Product"
+     ],
+     "tail": [
+      "Money"
+     ],
+     "reason": "Product->Money dominant"
+    },
+    {
+     "name": "product_quantity",
+     "head": [
+      "Product",
+      "Food"
+     ],
+     "tail": [
+      "Quantity"
+     ],
+     "reason": "Amounts of products and food"
+    },
+    {
+     "name": "gift_given_to",
+     "head": [
+      "Product"
+     ],
+     "tail": [
+      "Person",
+      "User"
+     ],
+     "reason": "Gift recipients; small but plausible"
+    },
+    {
+     "name": "sells",
+     "head": [
+      "Organization",
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Product"
+     ],
+     "reason": "Organization/User->Product observed"
+    },
+    {
+     "name": "uses",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Product"
+     ],
+     "reason": "User/Person->Product dominant"
+    },
+    {
+     "name": "spent_money",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Money"
+     ],
+     "reason": "User->Money dominant"
+    },
+    {
+     "name": "has_budget",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Money"
+     ],
+     "reason": "User/Person->Money observed"
+    },
+    {
+     "name": "eats_or_drinks",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Food"
+     ],
+     "reason": "User/Person->Food dominant"
+    },
+    {
+     "name": "cooks",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Food"
+     ],
+     "reason": "User/Person->Food dominant"
+    },
+    {
+     "name": "prefers",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Product",
+      "Food",
+      "Activity"
+     ],
+     "reason": "Preferences over products, food, activities"
+    },
+    {
+     "name": "does_activity",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Activity"
+     ],
+     "reason": "User/Person->Activity dominant"
+    },
+    {
+     "name": "activity_times_per_week",
+     "head": [
+      "Activity"
+     ],
+     "tail": [
+      "Quantity"
+     ],
+     "reason": "Activity->Quantity frequency edges"
+    },
+    {
+     "name": "works_on_project",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Project"
+     ],
+     "reason": "Only observed pair; small but valid"
+    },
+    {
+     "name": "has_family_member",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Person"
+     ],
+     "reason": "Family edges between people"
+    },
+    {
+     "name": "has_friend",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Person"
+     ],
+     "reason": "Friend edges between people"
+    },
+    {
+     "name": "studies_at",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Organization"
+     ],
+     "reason": "User->Organization dominant"
+    },
+    {
+     "name": "works_at",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Organization"
+     ],
+     "reason": "Employment edges; Org->Org noise"
+    },
+    {
+     "name": "has_occupation",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Occupation"
+     ],
+     "reason": "Dominant clean pairs"
+    },
+    {
+     "name": "learns_language",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Language"
+     ],
+     "reason": "User->Language dominant"
+    },
+    {
+     "name": "interested_in",
+     "head": [
+      "User",
+      "Person"
+     ],
+     "tail": [
+      "Topic",
+      "Activity"
+     ],
+     "reason": "Interest in topics and activities"
+    }
+   ],
+   "dropped_relations": [
+    {
+     "name": "race_finish_time",
+     "reason": "Single noisy edge"
+    },
+    {
+     "name": "improved_personal_best_by",
+     "reason": "No Duration tails; all noise"
+    },
+    {
+     "name": "owned_product_for",
+     "reason": "No Product->Duration; all noise"
+    },
+    {
+     "name": "got_rid_of",
+     "reason": "Mostly noise (Product->Product, Topic tails)"
+    },
+    {
+     "name": "activity_practiced_for",
+     "reason": "No Duration tails observed; noise"
+    },
+    {
+     "name": "activity_scheduled_at",
+     "reason": "No TimeWindow tails; duplicates location relations"
+    },
+    {
+     "name": "has_age",
+     "reason": "No Quantity tails; noise"
+    },
+    {
+     "name": "older_than_user_by",
+     "reason": "No Duration tails; noise"
+    },
+    {
+     "name": "time_in_job",
+     "reason": "No Duration tails; noise"
+    },
+    {
+     "name": "is_fan_of",
+     "reason": "Never fired on Organization; duplicates prefers/interested_in"
+    },
+    {
+     "name": "undergoes_medical_procedure",
+     "reason": "Mostly noise, few valid edges"
+    },
+    {
+     "name": "sleeps_per_night",
+     "reason": "Edges are mostly unrelated durations"
+    },
+    {
+     "name": "has_daily_goal_of",
+     "reason": "No valid Quantity/Duration goals; noise"
+    }
+   ],
+   "entity_types": [
+    {
+     "label": "Place",
+     "identity": "global",
+     "reason": "Named places recur across sessions"
+    },
+    {
+     "label": "Event",
+     "identity": "chunk",
+     "reason": "Generic nouns like trip, workshop; low recurrence"
+    },
+    {
+     "label": "Organization",
+     "identity": "global",
+     "reason": "Highly capitalized named entities"
+    },
+    {
+     "label": "Product",
+     "identity": "chunk",
+     "reason": "Very low cross-session recurrence, many generic items"
+    },
+    {
+     "label": "Food",
+     "identity": "chunk",
+     "reason": "Generic nouns like herbs, food"
+    },
+    {
+     "label": "Activity",
+     "identity": "chunk",
+     "reason": "Generic activity nouns"
+    },
+    {
+     "label": "Project",
+     "identity": "chunk",
+     "reason": "Generic nouns like projects, tasks"
+    },
+    {
+     "label": "Language",
+     "identity": "global",
+     "reason": "Small closed set, recurring names"
+    },
+    {
+     "label": "Topic",
+     "identity": "chunk",
+     "reason": "Generic subject nouns"
+    },
+    {
+     "label": "Occupation",
+     "identity": "chunk",
+     "reason": "Generic role nouns"
+    }
+   ],
+   "dropped_types": [
+    {
+     "label": "MedicalProcedure",
+     "reason": "Mentions mostly noise and its relation was dropped"
+    }
+   ]
+  },
+  "provenance": {
+   "models": [
+    "claude-opus-5-5"
+   ],
+   "input_tokens": 39184,
+   "output_tokens": 4049,
+   "cost_usd": 0.394444,
+   "seconds": 44.3,
+   "prompt_chars": 85676
+  }
+ },
+ "validation": [],
+ "vocabulary": {
+  "entity_types": {
+   "User": {
+    "description": "the person speaking in the first person -- I, me, my, myself",
+    "identity": "global"
+   },
+   "Person": {
+    "description": "another named individual: a family member, friend, colleague, doctor, teacher",
+    "identity": "global"
+   },
+   "Duration": {
+    "description": "a length of time: 25:50, 45 minutes, three weeks, 10-12 hours",
+    "identity": "span"
+   },
+   "Quantity": {
+    "description": "a count or amount of things: 3, four, 38 subjects, 5 pairs, 220 pages",
+    "identity": "span"
+   },
+   "Money": {
+    "description": "an amount of money: $185, $2,500, $400,000",
+    "identity": "span"
+   },
+   "Date": {
+    "description": "a calendar date or day: February 14th, Friday, last Thursday, May 6",
+    "identity": "span"
+   },
+   "TimeWindow": {
+    "description": "a span of clock time: 8 am - 4 pm, 2 AM, the day shift",
+    "identity": "span"
+   },
+   "Place": {
+    "description": "A named geographic location or venue: city, country, region, neighborhood, park, trail, lake, landmark, museum, shrine, local pool: Big Sur, Paris, Lake Como, downtown",
+    "identity": "global"
+   },
+   "Event": {
+    "description": "A specific dated occurrence the user takes part in, attends, hosts or plans: a trip, trek, camping trip, outing, race, triathlon, charity run, workshop, class, match, final",
+    "identity": "chunk"
+   },
+   "Organization": {
+    "description": "A named company, store, brand, employer, school, charity, government body, service provider, club or sports team: Walmart, Instacart, culinary school, Smith & Co., Los Angeles Lakers",
+    "identity": "global"
+   },
+   "Product": {
+    "description": "A specific physical item, device, app, software tool or service someone owns, buys, uses, gives or sells: Merrell Moab 2 boots, Fitbit Versa 3, moka pot, gift card, Trello, Google Calendar",
+    "identity": "chunk"
+   },
+   "Food": {
+    "description": "A food, dish, drink, recipe, ingredient, sauce or cooking material: quinoa breakfast bowl, chamomile tea, oat milk, shrimp stir-fry, biga, Jamaican Jerk rub",
+    "identity": "chunk"
+   },
+   "Activity": {
+    "description": "A hobby, sport, skill, class, practice or recurring pursuit: hiking, cycling, yoga, sourdough baking, meal prepping, kayaking, photography",
+    "identity": "chunk"
+   },
+   "Project": {
+    "description": "A work or personal project someone builds or works on: farm management app, drone component",
+    "identity": "chunk"
+   },
+   "Language": {
+    "description": "A human language someone speaks, teaches or studies: French, Spanish",
+    "identity": "global"
+   },
+   "Topic": {
+    "description": "A subject or issue the user is interested in or cares about: data privacy, Mosul reconstruction, sustainability",
+    "identity": "chunk"
+   },
+   "Occupation": {
+    "description": "A job title, role or profession: English teacher, Senior Marketing Manager",
+    "identity": "chunk"
+   }
+  },
+  "relations": [
+   {
+    "name": "participates_in_event",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Event"
+    ]
+   },
+   {
+    "name": "hosts_event",
+    "head": [
+     "User",
+     "Person",
+     "Organization"
+    ],
+    "tail": [
+     "Event"
+    ]
+   },
+   {
+    "name": "attended_event_with",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Person"
+    ]
+   },
+   {
+    "name": "event_location",
+    "head": [
+     "Event"
+    ],
+    "tail": [
+     "Place",
+     "Organization"
+    ]
+   },
+   {
+    "name": "event_date",
+    "head": [
+     "Event"
+    ],
+    "tail": [
+     "Date"
+    ]
+   },
+   {
+    "name": "event_time",
+    "head": [
+     "Event"
+    ],
+    "tail": [
+     "TimeWindow"
+    ]
+   },
+   {
+    "name": "event_duration",
+    "head": [
+     "Event",
+     "Activity"
+    ],
+    "tail": [
+     "Duration"
+    ]
+   },
+   {
+    "name": "visits_place",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Place"
+    ]
+   },
+   {
+    "name": "lives_in",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Place"
+    ]
+   },
+   {
+    "name": "commutes_from",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Place"
+    ]
+   },
+   {
+    "name": "located_in",
+    "head": [
+     "Place",
+     "Organization",
+     "Event"
+    ],
+    "tail": [
+     "Place"
+    ]
+   },
+   {
+    "name": "owns_product",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Product"
+    ]
+   },
+   {
+    "name": "buys_product",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Product",
+     "Food"
+    ]
+   },
+   {
+    "name": "product_bought_from",
+    "head": [
+     "Product"
+    ],
+    "tail": [
+     "Organization"
+    ]
+   },
+   {
+    "name": "product_price",
+    "head": [
+     "Product"
+    ],
+    "tail": [
+     "Money"
+    ]
+   },
+   {
+    "name": "product_quantity",
+    "head": [
+     "Product",
+     "Food"
+    ],
+    "tail": [
+     "Quantity"
+    ]
+   },
+   {
+    "name": "gift_given_to",
+    "head": [
+     "Product"
+    ],
+    "tail": [
+     "Person",
+     "User"
+    ]
+   },
+   {
+    "name": "sells",
+    "head": [
+     "Organization",
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Product"
+    ]
+   },
+   {
+    "name": "uses",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Product"
+    ]
+   },
+   {
+    "name": "spent_money",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Money"
+    ]
+   },
+   {
+    "name": "has_budget",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Money"
+    ]
+   },
+   {
+    "name": "eats_or_drinks",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Food"
+    ]
+   },
+   {
+    "name": "cooks",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Food"
+    ]
+   },
+   {
+    "name": "prefers",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Product",
+     "Food",
+     "Activity"
+    ]
+   },
+   {
+    "name": "does_activity",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Activity"
+    ]
+   },
+   {
+    "name": "activity_times_per_week",
+    "head": [
+     "Activity"
+    ],
+    "tail": [
+     "Quantity"
+    ]
+   },
+   {
+    "name": "works_on_project",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Project"
+    ]
+   },
+   {
+    "name": "has_family_member",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Person"
+    ]
+   },
+   {
+    "name": "has_friend",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Person"
+    ]
+   },
+   {
+    "name": "studies_at",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Organization"
+    ]
+   },
+   {
+    "name": "works_at",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Organization"
+    ]
+   },
+   {
+    "name": "has_occupation",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Occupation"
+    ]
+   },
+   {
+    "name": "learns_language",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Language"
+    ]
+   },
+   {
+    "name": "interested_in",
+    "head": [
+     "User",
+     "Person"
+    ],
+    "tail": [
+     "Topic",
+     "Activity"
+    ]
+   }
+  ]
+ },
+ "unanchored_value_types": [],
+ "cost_usd": 1.863
+}

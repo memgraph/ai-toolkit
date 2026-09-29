@@ -16,6 +16,7 @@ import json
 import re
 import sys
 from collections import Counter, defaultdict
+from itertools import pairwise
 from pathlib import Path
 
 import derive
@@ -24,7 +25,8 @@ from role_gate import FIRST_PERSON
 from windowing import ANSWERS
 
 HERE = Path(__file__).parent
-DERIVATIONS = ("A", "B")
+DERIVATIONS = tuple(sys.argv[1:]) or ("A", "B")
+TENSE = re.compile(r"^(plans?_to|wants?_to|will|used_to|considering|intends?_to|going_to)_(.+)$")
 
 
 def distinct(edges):
@@ -85,26 +87,37 @@ def report_arm(name, edges, mentions, meta):
     )
 
 
-def agreement(mentions_a, mentions_b):
-    """Align A's types to B's by the spans both typed, and report how much they agree."""
+def tense_variants(relations):
+    """Modal/tense relation names (plans_to_X...) and the base relation each shadows, if declared (#366)."""
+    names = {r["name"] for r in relations}
+    found = []
+    for name in sorted(names):
+        if m := TENSE.match(name):
+            base = m.group(2)
+            found.append((name, sorted(n for n in names if n != name and (n == base or base in n or n in base))))
+    return found
+
+
+def agreement(mentions_a, mentions_b, a="A", b="B"):
+    """Align a's types to b's by the spans both typed, and report how much they agree."""
     typed_a = {(m["sid"], m["start"], vt.norm(m["text"])): m["type"] for m in mentions_a}
     typed_b = {(m["sid"], m["start"], vt.norm(m["text"])): m["type"] for m in mentions_b}
     shared = typed_a.keys() & typed_b.keys()
     matrix = Counter((typed_a[k], typed_b[k]) for k in shared)
     best = {}
-    for (a, b), n in matrix.items():
-        if n > best.get(a, (None, 0))[1]:
-            best[a] = (b, n)
+    for (ta, tb), n in matrix.items():
+        if n > best.get(ta, (None, 0))[1]:
+            best[ta] = (tb, n)
     agreed = sum(n for _, n in best.values())
     print(
-        f"\n=== stability: {len(shared)} spans typed by both, {len(typed_a.keys() - shared)} only by A, "
-        f"{len(typed_b.keys() - shared)} only by B; agreement under best A->B type map {agreed}/{len(shared)} "
+        f"\n=== stability: {len(shared)} spans typed by both, {len(typed_a.keys() - shared)} only by {a}, "
+        f"{len(typed_b.keys() - shared)} only by {b}; agreement under best {a}->{b} type map {agreed}/{len(shared)} "
         f"({100 * agreed / max(len(shared), 1):.0f}%)"
     )
     totals = Counter(typed_a[k] for k in shared)
-    for a, (b, n) in sorted(best.items(), key=lambda kv: -totals[kv[0]]):
-        others = [(bb, nn) for (aa, bb), nn in matrix.most_common() if aa == a and bb != b][:3]
-        print(f"   A:{a:<18} -> B:{b:<18} {n}/{totals[a]}  also {others}")
+    for ta, (tb, n) in sorted(best.items(), key=lambda kv: -totals[kv[0]]):
+        others = [(bb, nn) for (aa, bb), nn in matrix.most_common() if aa == ta and bb != tb][:3]
+        print(f"   {a}:{ta:<18} -> {b}:{tb:<18} {n}/{totals[ta]}  also {others}")
 
 
 def main():
@@ -126,6 +139,9 @@ def main():
         dropped = state["prune"]["result"]
         print(f"   dropped relations {[r['name'] for r in dropped['dropped_relations']]}")
         print(f"   dropped types {[t['label'] for t in dropped['dropped_types']]}")
+        print(f"   tense variants {tense_variants(state['vocabulary']['relations'])}")
+        if "unanchored_value_types" in state:
+            print(f"   core value types with no relation into them {state['unanchored_value_types']}")
 
     sample = json.loads((HERE / "sample_sessions.json").read_text())
     meta = {s["session_id"]: q for q in sample for s in q["sessions"]}
@@ -146,7 +162,8 @@ def main():
     for name, (edges, mentions) in results.items():
         report_arm(name, edges, mentions, meta)
         (derive.OUT / f"eval_{name}.json").write_text(json.dumps({"edges": edges, "mentions": mentions}, indent=1))
-    agreement(results["A"][1], results["B"][1])
+    for a, b in pairwise(DERIVATIONS):
+        agreement(results[a][1], results[b][1], a, b)
     return 0
 
 
