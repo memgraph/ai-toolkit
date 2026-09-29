@@ -252,7 +252,39 @@ def _detailed_schema(graph: ReadOnlyGraph) -> str | None:
             start = ":".join(edge.get("start_labels") or ["?"])
             end = ":".join(edge.get("end_labels") or ["?"])
             lines.append(f"  (:{start})-[:{edge.get('edge_type')}]->(:{end})")
+        properties = _describe_relationship_properties(graph, sorted({e.get("edge_type") for e in edges} - {None}))
+        if properties:
+            lines.append("")
+            lines.append("Relationship properties:")
+            lines.extend(properties)
     return "\n".join(lines)
+
+
+#: Memgraph's valueType() names for temporal values, rendered as what they are.
+_TEMPORAL_TYPES = {"ZONED_DATE_TIME": "datetime", "LOCAL_DATE_TIME": "datetime", "DATE": "date", "DURATION": "duration"}
+
+
+def _describe_relationship_properties(graph: ReadOnlyGraph, edge_types: list[str]) -> list[str]:
+    """One line per relationship type that carries properties: each key and its value type.
+
+    Without it the agent cannot see what an edge carries -- e.g. that an
+    extracted fact's `valid_at` is a datetime it can compare or subtract (#364)
+    -- and goes looking for date nodes instead. Only keys and types are shown,
+    never values, for the same reason node properties hide free text.
+    """
+    described: list[str] = []
+    for edge_type in edge_types:
+        rows = graph.query(
+            f"MATCH ()-[r:`{edge_type}`]->() WITH r LIMIT 200 "
+            "UNWIND keys(r) AS key RETURN DISTINCT key, valueType(r[key]) AS type ORDER BY key"
+        )
+        if not rows:
+            continue
+        fields = ", ".join(
+            f"{row['key']} ({_TEMPORAL_TYPES.get(row['type'], str(row['type']).lower())})" for row in rows
+        )
+        described.append(f"  :{edge_type} -- {fields}")
+    return described
 
 
 def _label_sets(graph: ReadOnlyGraph) -> list[list[str]]:
