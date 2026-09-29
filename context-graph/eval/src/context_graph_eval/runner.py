@@ -102,6 +102,9 @@ class RunPlan:
     #: and where its embeddings are cached between runs over the same graph.
     hybrid: HybridConfig = field(default_factory=HybridConfig)
     hybrid_cache: Path = Path(".cache/context-graph-eval/hybrid-index.npz")
+    #: Tell the answering LLM when each question is asked (#367). Off by
+    #: default so runs stay comparable with those scored without it.
+    question_date: bool = False
 
 
 @dataclass(frozen=True)
@@ -293,14 +296,17 @@ async def _retrieve_all(
     async def one(golden: "Golden") -> Retrieved:
         async with limiter:
             started = time.monotonic()
+            today = (golden.additional_metadata or {}).get("question_date") if plan.question_date else None
             try:
                 if plan.retrieval_strategy == "hybrid":
-                    return await retrieve_hybrid(golden.input, graph=graph, llm=llm, index=index, config=plan.hybrid)
+                    return await retrieve_hybrid(
+                        golden.input, graph=graph, llm=llm, index=index, config=plan.hybrid, today=today
+                    )
                 if plan.retrieval_strategy == "text-search":
                     return await retrieve_by_text_search(
-                        golden.input, graph=graph, llm=llm, limit=plan.text_search_limit
+                        golden.input, graph=graph, llm=llm, limit=plan.text_search_limit, today=today
                     )
-                return await retrieve(golden.input, graph=graph, llm=llm)
+                return await retrieve(golden.input, graph=graph, llm=llm, today=today)
             except Exception as exc:
                 # retrieve() times itself, but that timing rides out on the
                 # Retrieved it returns -- a raise never produces one, so the

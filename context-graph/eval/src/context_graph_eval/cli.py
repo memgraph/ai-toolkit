@@ -122,6 +122,12 @@ def main(argv: list[str] | None = None) -> int:
         "search and uses the typed graph to find facts and more turns (see hybrid.py).",
     )
     run.add_argument(
+        "--question-date",
+        action="store_true",
+        help="tell the answering LLM the date each question is asked (#367). Off by default, so runs "
+        "stay comparable with ones scored without it; compare only runs that agree on it.",
+    )
+    run.add_argument(
         "--hybrid-lanes",
         default=",".join(HYBRID_LANES),
         help=f"comma-separated lanes for --retrieval-strategy hybrid, from {', '.join(HYBRID_LANES)}. "
@@ -463,6 +469,7 @@ def _run(args) -> int:
                 retrieval_strategy=args.retrieval_strategy,
                 text_search_limit=args.text_search_limit,
                 hybrid=HybridConfig(lanes=tuple(lane for lane in args.hybrid_lanes.split(",") if lane)),
+                question_date=args.question_date,
             ),
         )
     )

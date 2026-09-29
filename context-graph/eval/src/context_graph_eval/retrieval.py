@@ -384,6 +384,7 @@ async def retrieve(
     graph: ReadOnlyGraph,
     llm: LLM,
     max_steps: int = DEFAULT_MAX_STEPS,
+    today: str | None = None,
 ) -> Retrieved:
     """Answer ``question`` by letting ``llm`` query ``graph``.
 
@@ -440,7 +441,7 @@ async def retrieve(
             continue
         seen.extend(rendered)
 
-    answer = await llm.complete(answer_prompt(question, seen))
+    answer = await llm.complete(answer_prompt(question, seen, today))
     return Retrieved(
         answer=answer.strip(),
         retrieval_context=seen,
@@ -533,7 +534,7 @@ def _query_prompt(question: str, schema: str, seen: list[str], errors: list[str]
     return "\n".join(parts)
 
 
-def answer_prompt(question: str, seen: list[str]) -> str:
+def answer_prompt(question: str, seen: list[str], today: str | None = None) -> str:
     """The final-answer prompt, shared by every retrieval strategy.
 
     Public rather than private: ``text_search.py``'s baseline uses this exact
@@ -542,8 +543,11 @@ def answer_prompt(question: str, seen: list[str]) -> str:
     different answering prompts.
     """
     rows = "\n".join(seen[:200]) if seen else "(nothing was retrieved)"
+    # Opt-in (--question-date, #367): "how many days ago" is unanswerable
+    # without knowing when the question is asked, whatever the graph holds.
+    asked = f"The question is being asked on {today}.\n" if today else ""
     return (
         "Answer the question using only the rows below. Be concise. "
         'If the rows do not contain the answer, say exactly "not in memory".\n\n'
-        f"Rows:\n{rows}\n\nQuestion: {question}\nAnswer:"
+        f"Rows:\n{rows}\n\n{asked}Question: {question}\nAnswer:"
     )

@@ -288,7 +288,13 @@ _EDGE_RETURN = (
 
 
 async def retrieve_hybrid(
-    question: str, *, graph: ReadOnlyGraph, llm: LLM, index: HybridIndex, config: HybridConfig | None = None
+    question: str,
+    *,
+    graph: ReadOnlyGraph,
+    llm: LLM,
+    index: HybridIndex,
+    config: HybridConfig | None = None,
+    today: str | None = None,
 ) -> Retrieved:
     """Answer ``question`` from turns found by text and vector search, plus the typed facts and
     source turns the graph leads to. Same ``answer_prompt`` as every other strategy."""
@@ -346,7 +352,7 @@ async def retrieve_hybrid(
     # a temporal one the sequence.
     ordered = sorted(facts.values(), key=lambda f: f.get("valid_at") or "")
     seen = [_fact(f) for f in ordered] + _turn_rows(graph, list(dict.fromkeys(turn_ids)), config.turn_chars)
-    answer = await llm.complete(answer_prompt(question, seen))
+    answer = await llm.complete(answer_prompt(question, seen, today))
     return Retrieved(
         answer=answer.strip(), retrieval_context=seen, queries=queries, latency_seconds=time.monotonic() - started
     )
