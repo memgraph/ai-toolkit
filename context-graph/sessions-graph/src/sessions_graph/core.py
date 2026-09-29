@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from actions_graph import ActionsGraph
-    from unstructured2graph import ExtractionBackend
+    from unstructured2graph import Document, ExtractionBackend
 
 _FULLTEXT_INDEX = "memory_content_index"
 
@@ -61,6 +61,21 @@ class _PreparedSession:
     def combined_text(self) -> str:
         """The session's deduped texts joined into the one document LightRAG sees."""
         return "\n\n".join(self.unique_texts.values())
+
+    def document(self, user_id: str) -> Document:
+        """combined_text as an unstructured2graph Document: one segment per deduped
+        source, carrying its speaker and timestamp, and the session's user."""
+        from unstructured2graph import Document, Segment
+
+        first: dict[str, ReconciliationSource] = {}
+        for source in self.sources:
+            first.setdefault(content_hash(source.text), source)
+        segments, cursor = [], 0
+        for digest, text in self.unique_texts.items():
+            source = first[digest]
+            segments.append(Segment(cursor, cursor + len(text), source.role, source.valid_at))
+            cursor += len(text) + 2
+        return Document(text=self.combined_text, segments=tuple(segments), user_id=user_id)
 
 
 class SessionsGraph:
@@ -461,7 +476,7 @@ class SessionsGraph:
         actions_graph = self._default_actions_graph(actions_graph, "reconcile_session")
 
         try:
-            from unstructured2graph import LightRAGBackend, from_texts
+            from unstructured2graph import LightRAGBackend, from_documents
         except ImportError as exc:
             msg = "unstructured2graph is required for reconcile_session; install sessions-graph[reconciliation]"
             raise ImportError(msg) from exc
@@ -471,16 +486,13 @@ class SessionsGraph:
         try:
             summary_text: str | None = None
             used_backend: str | None = None
+            integrity: tuple[int, int] | None = None
             if prepared.unique_texts:
                 # The whole session's deduped texts as ONE document, not one
-                # per turn. A turn is still never split mid-utterance (that's
-                # what #327 fixed, and MAX_SESSION_BATCH_CHARS stays well
-                # above MAX_RECONCILABLE_CHARS so a turn's own truncation
-                # bound is always the tighter one) -- but today each turn was
-                # also extracted in total isolation from every other turn in
-                # the same session, one independent LightRAG document (and
-                # therefore two LLM calls) each. That undercounts the real
-                # unit worth extracting from: a session's entities and
+                # per turn. Each turn used to be extracted in total isolation
+                # from every other turn in the same session, one independent
+                # LightRAG document (and therefore two LLM calls) each. That
+                # undercounts the real unit worth extracting from: a session's entities and
                 # relations often span turns (coreference, a fact stated in
                 # one turn and referenced in another), invisible to an
                 # extractor that never sees more than one turn at a time.
@@ -497,20 +509,29 @@ class SessionsGraph:
                 # the win is real but modest -- measured on 5 real sessions,
                 # 106 -> 70 extraction+gleaning calls (1.51x), not the 4x+ a
                 # naive CHUNK_SIZE=1200 assumption would predict.
+                #
+                # Handed over verbatim, as one Document with a segment per
+                # source, rather than re-chunked through `unstructured`, whose
+                # partitioner rewrites text and would invalidate the turn
+                # offsets. The segments are what the GLiNER2 backend windows on
+                # (one turn each, #352) and resolves the user's own mentions
+                # with (#358); LightRAG reads the text alone.
                 backend = extraction_backend or LightRAGBackend(lightrag_wrapper)
-                grouped_chunks = await from_texts(
-                    [prepared.combined_text],
+                user_id = self._session_user(session_id)
+                grouped_chunks = await from_documents(
+                    [prepared.document(user_id)],
                     memgraph=self._db,
                     extraction_backend=backend,
                     entity_workspace=entity_workspace,
                     promote_labels=promote_labels,
                     enforce_ontology=enforce_ontology,
                     ontology_path=ontology_path,
-                    chunk_kwargs={"max_characters": MAX_SESSION_BATCH_CHARS},
                 )
                 used_backend = type(backend).__name__
                 session_chunks = grouped_chunks[0] if grouped_chunks else []
                 self._link_chunks_to_sources(prepared.sources, session_chunks)
+                if enforce_ontology and session_chunks:
+                    integrity = self._integrity(backend.workspace_label, ontology_path, session_chunks)
                 summary_text = await summarize_session_texts(lightrag_wrapper, list(prepared.unique_texts.values()))
 
             self._write_completed(session_id, summary_text=summary_text, extraction_backend=used_backend)
@@ -520,6 +541,8 @@ class SessionsGraph:
                 texts_considered=len(prepared.sources),
                 texts_deduped=len(prepared.unique_texts),
                 summary_written=summary_text is not None,
+                nonconformant_entities=integrity[0] if integrity else None,
+                nonconformant_relations=integrity[1] if integrity else None,
             )
         except Exception as e:
             self._write_failed(session_id, str(e))
@@ -769,6 +792,40 @@ class SessionsGraph:
             params={"limit": limit},
         )
         return [row["session_id"] for row in rows]
+
+    def _session_user(self, session_id: str) -> str:
+        """The user_id of *session_id*'s (:User), synthesizing ``anon-<session_id>`` if it has none.
+
+        Processing, never collection, supplies the missing user (#347): every
+        session needs a (:User) for the GLiNER2 backend to bind the user's own
+        mentions onto. Collection records one only when the harness reports a
+        user, and the eval injector never does (#354). ``anon-`` rather than
+        ``anon:`` because ``validate_user_id`` does not accept a colon.
+        """
+        rows = self._db.query(
+            "MATCH (u:User)-[:HAD_SESSION]->(:Session {session_id: $session_id}) RETURN u.user_id AS user_id LIMIT 1",
+            params={"session_id": session_id},
+        )
+        if rows:
+            return rows[0]["user_id"]
+        user_id = f"anon-{session_id}"
+        self._db.query(
+            """
+            MERGE (u:User {user_id: $user_id})
+            MERGE (s:Session {session_id: $session_id})
+            MERGE (u)-[:HAD_SESSION]->(s)
+            """,
+            params={"user_id": user_id, "session_id": session_id},
+        )
+        return user_id
+
+    def _integrity(self, workspace: str, ontology_path: str | Path | None, chunks: list[Any]) -> tuple[int, int]:
+        """(non-conformant entities, non-conformant relationships) over *chunks*, for ReconciliationSummary."""
+        from unstructured2graph import DEFAULT_ONTOLOGY, load_ontology, ontology_report
+
+        ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
+        report = ontology_report(self._db, workspace, ontology, chunk_hashes=[chunk.hash for chunk in chunks])
+        return report.nonconformant_entities, report.nonconformant_relations
 
     def _link_chunks_to_sources(
         self,

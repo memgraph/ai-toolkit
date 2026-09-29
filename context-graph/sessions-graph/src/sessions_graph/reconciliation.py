@@ -16,6 +16,7 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -122,11 +123,19 @@ class ReconciliationSource:
     ``kind`` identifies which node the resulting Chunk(s) get linked back to
     via HAS_CHUNK: "action" -> (:Action {action_id: node_id}), "memory" ->
     (:Memory {memory_id: node_id}).
+
+    ``role`` is the speaker of a Message ("user", "assistant", ...) and None
+    for anything that is nobody's utterance (tool calls and results,
+    memories); the GLiNER2 backend's mention resolver keys on it (#358).
+    ``valid_at`` is when the source was produced, as ISO-8601, and becomes
+    ``valid_at`` on every relationship extracted from it (#364).
     """
 
     kind: str
     node_id: str
     text: str
+    role: str | None = None
+    valid_at: str | None = None
 
 
 #: Maps an ReconciliationSource.kind to the (node label, id property) it links to.
@@ -138,7 +147,14 @@ NODE_LABELS: dict[str, tuple[str, str]] = {
 
 @dataclass(frozen=True)
 class ReconciliationSummary:
-    """Result of one ``SessionsGraph.reconcile_session`` call."""
+    """Result of one ``SessionsGraph.reconcile_session`` call.
+
+    ``nonconformant_entities`` and ``nonconformant_relations`` are the
+    ontology integrity counts over this session's chunks (see
+    ``unstructured2graph.ontology_report``), or None when the ontology was not
+    enforced. An integrity alarm, not a filter: on a GLiNER2 graph both are
+    zero by construction, so anything else is a bug (#355).
+    """
 
     session_id: str
     status: str  # "completed" | "failed"
@@ -146,6 +162,26 @@ class ReconciliationSummary:
     texts_deduped: int
     error: str | None = None
     summary_written: bool = False
+    nonconformant_entities: int | None = None
+    nonconformant_relations: int | None = None
+
+
+def normalize_timestamp(value: str | None) -> str | None:
+    """``value`` as ISO-8601 with an explicit offset (UTC assumed when it has none), or None if unparseable.
+
+    Memgraph's ``datetime()`` rejects what it cannot parse, and one bad
+    timestamp would fail the whole relationship write, so anything that isn't
+    ISO-8601 is dropped here rather than there.
+    """
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.isoformat()
 
 
 _SUMMARY_PROMPT_TEMPLATE = (
@@ -186,12 +222,29 @@ def build_reconciliation_sources(
     document ``reconcile_session`` sends to ``unstructured2graph.from_texts``,
     so the extractor sees the conversation in the order it actually happened.
     """
+    from actions_graph.models import Message
+
     sources: list[ReconciliationSource] = []
     for action in actions:
         text = extract_reconcilable_text(action)
         if text:
-            sources.append(ReconciliationSource(kind="action", node_id=action.action_id, text=text))
+            sources.append(
+                ReconciliationSource(
+                    kind="action",
+                    node_id=action.action_id,
+                    text=text,
+                    role=action.role.value if isinstance(action, Message) else None,
+                    valid_at=normalize_timestamp(action.timestamp),
+                )
+            )
     for memory in memories:
         if memory.content and memory.content.strip():
-            sources.append(ReconciliationSource(kind="memory", node_id=memory.memory_id, text=memory.content.strip()))
+            sources.append(
+                ReconciliationSource(
+                    kind="memory",
+                    node_id=memory.memory_id,
+                    text=memory.content.strip(),
+                    valid_at=normalize_timestamp(memory.created_at),
+                )
+            )
     return sources

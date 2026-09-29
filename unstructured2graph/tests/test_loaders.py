@@ -103,17 +103,17 @@ def test_partition_kwargs_passed_through(tmp_path):
 @pytest.mark.asyncio
 async def test_entity_workspace_explicit_override_matching_backend_is_accepted():
     memgraph = MagicMock()
-    extraction_backend = _backend_with_workspace("auto-derived")
+    extraction_backend = _backend_with_workspace("auto_derived")
 
     with (
         patch("unstructured2graph.loaders.make_chunks", return_value=[_fake_document()]),
         patch("unstructured2graph.loaders.connect_chunks_to_entities") as mock_connect,
     ):
         await from_unstructured(
-            ["fake.txt"], memgraph, extraction_backend, only_chunks=False, entity_workspace="auto-derived"
+            ["fake.txt"], memgraph, extraction_backend, only_chunks=False, entity_workspace="auto_derived"
         )
 
-    mock_connect.assert_called_once_with(memgraph, "Chunk", "auto-derived")
+    mock_connect.assert_called_once_with(memgraph, "Chunk", "auto_derived")
 
 
 @pytest.mark.asyncio
@@ -121,7 +121,7 @@ async def test_entity_workspace_explicit_override_mismatch_raises():
     """A mismatched override would otherwise silently make connect_chunks_to_entities()
     scan the wrong label and find nothing -- must fail loudly instead."""
     memgraph = MagicMock()
-    extraction_backend = _backend_with_workspace("auto-derived")
+    extraction_backend = _backend_with_workspace("auto_derived")
 
     with (
         patch("unstructured2graph.loaders.make_chunks", return_value=[_fake_document()]),
@@ -138,7 +138,7 @@ async def test_entity_workspace_auto_derived_from_backend():
     whatever a backend derives it from (LightRAG's resolved workspace, a fixed
     string, ...) is that backend's own concern."""
     memgraph = MagicMock()
-    extraction_backend = _backend_with_workspace("tenant-42")
+    extraction_backend = _backend_with_workspace("tenant_42")
 
     with (
         patch("unstructured2graph.loaders.make_chunks", return_value=[_fake_document()]),
@@ -146,7 +146,7 @@ async def test_entity_workspace_auto_derived_from_backend():
     ):
         await from_unstructured(["fake.txt"], memgraph, extraction_backend, only_chunks=False)
 
-    mock_connect.assert_called_once_with(memgraph, "Chunk", "tenant-42")
+    mock_connect.assert_called_once_with(memgraph, "Chunk", "tenant_42")
 
 
 @pytest.mark.asyncio

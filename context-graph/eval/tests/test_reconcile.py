@@ -112,24 +112,31 @@ async def _stub_no_entities(prompt, system_prompt=None, history_messages=None, *
 
 
 class _FakeGLiNER2Schema:
-    """Mirrors gliner2's real chainable schema builder -- see
-    unstructured2graph/tests/test_gliner2_backend.py's own _FakeSchema, which
-    established this as GLiNER2Backend's supported way to run without the
-    real `gliner2` package."""
+    """Mirrors gliner2's chainable JointSchema builder -- see
+    unstructured2graph/tests/gliner2_fakes.py, which established an injected
+    engine as GLiNER2Backend's supported way to run without the real `gliner2`
+    package."""
 
-    def entities(self, schema):
+    def entity(self, *args, **kwargs):
         return self
 
-    def relations(self, schema):
+    def relation(self, *args, **kwargs):
         return self
 
 
-class _FakeGLiNER2Model:
+class _FakeGLiNER2Engine:
+    """A joint engine that finds nothing."""
+
     def create_schema(self):
         return _FakeGLiNER2Schema()
 
-    def extract_long(self, text, schema, **kwargs):
-        return {"entities": {}}
+    def compile_schema(self, schema):
+        return schema
+
+    def extract(self, text, schema, config=None):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(entities=[], relations=[], feasible=True)
 
 
 def _one_session_fixture(session_id: str):
@@ -175,8 +182,8 @@ async def test_reconcile_batch_gliner2_mode_reconciles_one_session_at_a_time(eva
     # would resolve to the mock itself, calling it recursively.
     from unstructured2graph.gliner2_backend import GLiNER2Backend as RealGLiNER2Backend
 
-    def _fake_gliner2_backend():
-        return RealGLiNER2Backend(model=_FakeGLiNER2Model())
+    def _fake_gliner2_backend(**kwargs):
+        return RealGLiNER2Backend(model=_FakeGLiNER2Engine(), **kwargs)
 
     try:
         with patch("unstructured2graph.gliner2_backend.GLiNER2Backend", side_effect=_fake_gliner2_backend):

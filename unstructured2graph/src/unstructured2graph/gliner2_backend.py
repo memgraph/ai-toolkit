@@ -15,32 +15,70 @@ GHSA-69w3-r845-3855). Install it manually in your own environment:
 `pip install 'gliner2[local]>=2.0.0'`. Doing so accepts that CVE's exposure
 for your environment only; it never affects the workspace-managed lock or
 anyone who doesn't opt in.
+
+The typed relation model (map #344) this backend implements:
+
+- Extraction runs on gliner2's joint path (`gliner2.joint_ie`), where a
+  relation's start/end labels are enforced during decoding (#345). The coarse
+  `Schema.relations()` builder writes blank head/tail types and was never
+  constrained at all.
+- One window per segment (a conversation turn), split only past
+  `chunk_size` words (#352): a window spanning turns puts a tail from one
+  speaker on a head from the other.
+- Every mention goes through a mention resolver before it gets an identity
+  (#358): the user's own mentions bind to (:User {user_id}), a third party
+  typed User is re-typed Person, and first person in the assistant's mouth
+  is dropped.
+- Identity is per entity type (#346, #361): `global`, `chunk` or `span`.
+- A relationship carries the source chunk, the source turn's timestamp as
+  `valid_at` (#364) and the model's confidence. Self-loops left after identity
+  resolution are dropped (#355).
 """
 
 import asyncio
 import hashlib
 import logging
 import re
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Any, Literal
 
+from hygm import PERSON_LABEL, USER_LABEL, require_valid_identifier
 from memgraph_toolbox.api.memgraph import Memgraph
 
-from .memgraph import create_nodes_from_list, upsert_typed_relationships
+from .memgraph import Endpoint, create_nodes_from_list, link_mentions, upsert_extracted_relationships
 from .ontology import DEFAULT_ONTOLOGY, Ontology
 
 if TYPE_CHECKING:
-    from .loaders import Chunk
+    from .loaders import Chunk, Segment
 
 logger = logging.getLogger(__name__)
 
-# workspace gets f-string-interpolated into every Cypher query this backend's
-# entities/relations touch (create_nodes_from_list, connect_chunks_to_entities,
-# promote_*_to_labels, upsert_typed_relationships) -- same restriction, and
-# same duplicated-with-a-comment convention, as ontology.py's and memgraph.py's
-# own _VALID_LABEL_PATTERN, since workspace is a caller-supplied constructor
-# argument rather than a compile-time literal.
-_VALID_LABEL_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+#: gliner2 2.0.0 cuts relation candidate pairs to `relation_pair_cap` (default
+#: 128) and then `max_edges_per_type` (256), breaking ties between equally
+#: scored pairs alphabetically by entity type. Every typed copy of a span pair
+#: ties, so at the defaults `User`, sorting last, loses edges: ~4% on a
+#: constrained schema, all of them on a permissive one past 11 types (#371).
+DEFAULT_CANDIDATE_CAP = 4096
+
+#: Surfaces that are the speaker themself. `user` is here because every user
+#: turn carries a "user: " role prefix, which the model types User.
+FIRST_PERSON = frozenset({"i", "me", "my", "myself", "mine", "user", "i'm", "i've"})
+
+#: gliner2's own word pattern (gliner2.processing.word_splitter.WhitespaceTokenSplitter,
+#: copied because it is private). Windows are sized in the words the model
+#: counts -- punctuation is a word of its own -- so `chunk_size` means what
+#: gliner2's chunk_size means; sized in whitespace words, a long turn's windows
+#: run past the encoder's 512 positions and lose mentions (#352).
+_WORD = re.compile(
+    r"""(?:https?://[^\s]+|www\.[^\s]+)
+    |[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}
+    |@[a-z0-9_]+
+    |\w+(?:[-_]\w+)*
+    |\S""",
+    re.VERBOSE | re.IGNORECASE,
+)
 
 
 def _normalize_text(text: str) -> str:
@@ -48,59 +86,151 @@ def _normalize_text(text: str) -> str:
 
 
 @dataclass(frozen=True)
-class ExtractedEntity:
-    """One entity span GLiNER2 returned, before ontology/confidence filtering."""
+class Mention:
+    """One entity span GLiNER2 returned, in chunk coordinates."""
 
     entity_type: str
     text: str
-    start: int | None
-    end: int | None
+    start: int
+    end: int
     confidence: float | None
 
 
 @dataclass(frozen=True)
-class ExtractedRelation:
-    """One relation triple GLiNER2 returned, head/tail as raw spans -- not yet
-    resolved to a specific extracted entity's id (see GLiNER2Backend._resolve_entity_id)."""
+class Resolution:
+    """What a mention resolver decided for one mention.
 
-    relation_type: str
-    head_text: str
-    head_span: tuple[int, int] | None
-    head_confidence: float | None
-    tail_text: str
-    tail_span: tuple[int, int] | None
-    tail_confidence: float | None
-
-
-def _entity_id(chunk_hash: str, entity_type: str, normalized_text: str) -> str:
+    action:
+        keep       -- an ordinary entity of `entity_type`
+        bind_user  -- the chunk's own user: (:User {user_id: chunk.user_id})
+        drop       -- not written, and neither is any relationship touching it
     """
-    GLiNER2 gives only raw text spans, no canonical entity id the way
-    LightRAG's LLM-assigned entity_id does -- so identity is derived from
-    (chunk hash, entity type, normalized text) instead. Deliberately scoped
-    to the chunk, not global: connect_chunks_to_entities() joins on exact
-    scalar file_path == hash equality, so a globally-merged identity would
-    make file_path ambiguous across chunks. One consequence: unlike
-    LightRAG, this backend does no cross-chunk coreference -- the same
-    real-world entity mentioned in two different chunks becomes two
-    separate Memgraph nodes.
+
+    action: Literal["keep", "bind_user", "drop"]
+    entity_type: str | None = None
+
+
+KEEP = Resolution("keep")
+BIND_USER = Resolution("bind_user")
+DROP = Resolution("drop")
+
+#: (mention, the segment it sits in or None, the chunk) -> Resolution.
+MentionResolver = Callable[[Mention, "Segment | None", "Chunk"], Resolution]
+
+
+def resolve_user_mentions(mention: Mention, segment: "Segment | None", chunk: "Chunk") -> Resolution:
+    """The default mention resolver: decide which `User` mentions are the user (#358).
+
+    A User mention is the user iff its surface is first person AND it sits in
+    a user turn -- or it is "you" in an assistant turn. Measured over #350's
+    sessions the two halves catch disjoint errors, so only the conjunction
+    scores zero both ways. Otherwise:
+
+    - a first-person mention in any other turn, "you" outside an assistant
+      turn, and the literal "assistant" are dropped: a first-person mention in
+      the assistant's mouth is not the user asserting anything;
+    - anything else typed User is a third party, re-typed Person.
+
+    Mentions of other types, and every mention in a chunk with no `user_id`,
+    are kept as extracted.
     """
-    return hashlib.sha256(f"{chunk_hash}|{entity_type}|{normalized_text}".encode()).hexdigest()
+    if mention.entity_type != USER_LABEL or chunk.user_id is None:
+        return KEEP
+    surface = _normalize_text(mention.text)
+    role = segment.role if segment is not None else None
+    if (role == "user" and surface in FIRST_PERSON) or (role == "assistant" and surface == "you"):
+        return BIND_USER
+    if surface in FIRST_PERSON or surface in {"you", "assistant"}:
+        return DROP
+    return Resolution("keep", PERSON_LABEL)
+
+
+@dataclass
+class GLiNER2Stats:
+    """Running counts across every chunk this backend ingested. Reporting only."""
+
+    windows: int = 0
+    #: A window whose decoding found no feasible solution. Unreachable under
+    #: domain/range and cardinality constraints (#350, 0/109), so nonzero is a bug.
+    infeasible_windows: int = 0
+    mentions: int = 0
+    mentions_bound_to_user: int = 0
+    mentions_retyped: int = 0
+    mentions_dropped: int = 0
+    relations_written: int = 0
+    self_loops_dropped: int = 0
+
+
+@dataclass(frozen=True)
+class _Window:
+    start: int
+    end: int
+    segment: "Segment | None"
+
+
+@dataclass
+class _Extracted:
+    mentions: list[tuple[Mention, "Segment | None"]] = field(default_factory=list)
+    # (relation type, head mention index, tail mention index, confidence)
+    relations: list[tuple[str, int, int, float | None]] = field(default_factory=list)
+    infeasible: int = 0
+    windows: int = 0
+
+
+def _entity_id(chunk_hash: str, entity_type: str, normalized_text: str, identity: str, span: tuple[int, int]) -> str:
+    """
+    A stable node key for one mention, scoped by its type's identity (#346, #361):
+
+    - global: (type, normalized text) -- one node across every chunk, so a
+      name mentioned in two sessions is one node. Its `file_path` keeps the
+      first chunk's hash (ON CREATE SET); MENTIONED_IN, written per chunk at
+      ingest, carries the rest.
+    - chunk: (chunk hash, type, normalized text) -- one node per chunk.
+    - span: (chunk hash, type, span offsets) -- one node per mention, for
+      values, where every "3" in a session is a different fact.
+    """
+    if identity == "global":
+        key = f"global|{entity_type}|{normalized_text}"
+    elif identity == "span":
+        key = f"{chunk_hash}|{entity_type}|{span[0]}:{span[1]}"
+    else:
+        key = f"{chunk_hash}|{entity_type}|{normalized_text}"
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def _word_windows(text: str, start: int, end: int, size: int, overlap: int) -> list[tuple[int, int]]:
+    """Character ranges of `size`-word windows over text[start:end], consecutive ones sharing `overlap` words."""
+    words = [(m.start(), m.end()) for m in _WORD.finditer(text, start, end)]  # already absolute offsets
+    if len(words) <= size:
+        return [(start, end)]
+    step = max(size - overlap, 1)
+    ranges = []
+    for first in range(0, len(words), step):
+        last = min(first + size, len(words)) - 1
+        ranges.append((words[first][0], words[last][1]))
+        if last == len(words) - 1:
+            break
+    return ranges
 
 
 class GLiNER2Backend:
     """Local, LLM-free ExtractionBackend backed by a GLiNER2 model.
 
-    Entity types come from `ontology.entity_types`; if `ontology` also
-    carries `relation_types`, relations are extracted too and written as
-    per-relation-type Cypher relationship types (e.g. `:works_for`), not a
-    single generic edge type -- unlike LightRAG's free-form LLM-assigned
-    entity_type (which needs a later label-promotion pass because nothing
-    constrains what the LLM returns), GLiNER2's relation labels come from
-    this closed, pre-validated vocabulary, so the safe Cypher identifier is
-    already known at write time.
+    Entity types come from `ontology.entity_types`; relation types, with the
+    entity types each may connect, from `ontology.relation_types`, written as
+    per-relation-type Cypher relationship types (e.g. `:works_for`). The same
+    start/end labels constrain decoding here and are checked again post hoc by
+    memgraph.enforce_relation_domain_range (#348): one specification, two
+    compilations, so a post-hoc violation on this backend's output is a bug.
 
-    See _entity_id() for the cross-chunk coreference limitation this
-    backend has relative to LightRAGBackend.
+    The schema is compiled once, here, and held: gliner2 caches compiled
+    schemas under the schema object's memory address, so a schema rebuilt per
+    call can collide with a dead one's cache entry and silently extract
+    against the wrong vocabulary (#365).
+
+    Relationships whose endpoint is the user are written onto
+    (:User {user_id}), which this backend never creates: the caller (e.g.
+    sessions-graph, which owns (:User)) must MERGE it before ingesting.
     """
 
     def __init__(
@@ -113,265 +243,240 @@ class GLiNER2Backend:
         relation_confidence_threshold: float | None = None,
         chunk_size: int = 384,
         chunk_overlap: int = 64,
+        mention_resolver: MentionResolver = resolve_user_mentions,
+        candidate_cap: int = DEFAULT_CANDIDATE_CAP,
     ) -> None:
         """
         Args:
-            model_name: A GLiNER2 model checkpoint (e.g. the 74M "small",
-                200M "base", or 300M multilingual variant). Ignored if
-                `model` is given.
-            ontology: Entity (and optionally relation) vocabulary to extract
-                against. Defaults to DEFAULT_ONTOLOGY, which is entity-only
-                (there's no LightRAG-equivalent default relation vocabulary
-                to mirror) -- pass one with `relation_types` to also extract
-                relations.
+            model_name: A GLiNER2 checkpoint. Ignored if `model` is given.
+            ontology: Entity and relation vocabulary to extract against.
+                Defaults to DEFAULT_ONTOLOGY, which is entity-only -- pass one
+                with `relation_types` to also extract relations.
             workspace: Memgraph label entity nodes are written under.
-                Distinct from LightRAGBackend's default ("base") so the two
-                backends' output doesn't collide if run against the same
-                database. f-string-interpolated into every Cypher query this
-                backend's data touches, so it must be a valid identifier
-                (letters, digits, underscore, not starting with a digit).
-            model: Pre-loaded GLiNER2 extractor (e.g. an AutoExtractor
-                instance), or a test fake exposing the same
-                create_schema()/extract_long() methods. Bypasses loading
-                `model_name` and importing `gliner2` entirely -- the only
-                supported way to use this class without the `gliner2`
-                package installed.
-            entity_confidence_threshold: Drop extracted entities below this
-                confidence. None (default) keeps everything the model returns.
-            relation_confidence_threshold: Drop extracted relations whose
-                head/tail confidence falls below this (relations carry no
-                confidence of their own -- see _extract_sync). None (default)
-                keeps everything the model returns.
-            chunk_size: Word-window size `model.extract_long()` scans `text`
-                with (see _extract_sync for why extract() alone isn't used).
-                GLiNER2's own default.
-            chunk_overlap: Overlap, in words, between consecutive windows --
-                gives an entity/relation spanning a window boundary a chance
-                to fall fully inside at least one window. GLiNER2's own
-                default.
+                f-string-interpolated into every Cypher query this backend's
+                data touches, so it must be a valid identifier.
+            model: A pre-loaded gliner2 model (an AutoExtractor, wrapped in a
+                `gliner2.joint_ie.JointIEEngine` here), or an object exposing
+                the engine's own create_schema()/compile_schema()/extract()
+                -- a JointIEEngine, or a test fake, which needs no `gliner2`
+                installed at all.
+            entity_confidence_threshold: Drop mentions below this confidence.
+                None (default) keeps everything the model returns.
+            relation_confidence_threshold: Drop relations below this confidence.
+                None (default) keeps everything the model returns.
+            chunk_size: Maximum words per extraction window. A segment (turn)
+                longer than this is split into overlapping windows; past the
+                encoder's 512 positions mentions and distinct claims halve (#352).
+            chunk_overlap: Words shared by consecutive windows of one long segment.
+            mention_resolver: Decides, per mention, keep / re-type / bind to
+                the chunk's user / drop, before identity. Defaults to
+                resolve_user_mentions (#358).
+            candidate_cap: gliner2's relation_pair_cap and max_edges_per_type;
+                see DEFAULT_CANDIDATE_CAP.
 
         Raises:
             ValueError: if `workspace` isn't a valid Cypher identifier.
-            ImportError: if `model` is omitted and `gliner2` isn't installed
-                (see the module docstring for why it's a manual install, not
-                a pyproject.toml extra).
+            ImportError: if `model` is omitted (or is a bare model to wrap)
+                and `gliner2` isn't installed.
         """
-        if not _VALID_LABEL_PATTERN.match(workspace):
-            raise ValueError(
-                f"Invalid workspace {workspace!r}: must be a valid identifier (letters, digits, "
-                "underscore, not starting with a digit) since it's used directly as a Memgraph label"
-            )
-
-        if model is not None:
-            self.model = model
-        else:
-            try:
-                # ty can't resolve this: gliner2 is deliberately not part of
-                # the workspace's managed dependency graph at all (see this
-                # module's docstring), so `uv sync --all-extras` never
-                # installs it -- unlike a normal optional extra, there's no
-                # sync flag that would make this resolvable in CI.
-                from gliner2 import AutoExtractor  # ty: ignore[unresolved-import]
-            except ImportError as e:
-                raise ImportError(
-                    "gliner2 is required for GLiNER2Backend; install it manually with "
-                    "`pip install 'gliner2[local]>=2.0.0'` (see this module's docstring for why "
-                    "it's not a pyproject.toml extra)"
-                ) from e
-            self.model = AutoExtractor.from_pretrained(model_name)
-
-        resolved_ontology = ontology if ontology is not None else DEFAULT_ONTOLOGY
-        self._entity_schema = {t.label: t.description for t in resolved_ontology.entity_types}
-        self._relation_schema = {t.label: t.description for t in resolved_ontology.relation_types}
+        require_valid_identifier(workspace, "workspace")
         self._workspace = workspace
+        self.ontology = ontology if ontology is not None else DEFAULT_ONTOLOGY
+        self.engine = self._engine(model, model_name)
         self.entity_confidence_threshold = entity_confidence_threshold
         self.relation_confidence_threshold = relation_confidence_threshold
         self._chunk_size = chunk_size
         self._chunk_overlap = chunk_overlap
+        self._resolve = mention_resolver
+        self._identity = {t.label: t.identity for t in self.ontology.entity_types}
+        self._config = self._make_config(candidate_cap)
+        self._schema = self.engine.compile_schema(self._build_schema())
+        self.stats = GLiNER2Stats()
+
+    @staticmethod
+    def _engine(model: Any | None, model_name: str) -> Any:
+        if model is not None and all(hasattr(model, a) for a in ("create_schema", "compile_schema", "extract")):
+            return model
+        try:
+            # ty can't resolve this: gliner2 is deliberately not part of the
+            # workspace's managed dependency graph (see the module docstring).
+            from gliner2 import AutoExtractor  # ty: ignore[unresolved-import]
+            from gliner2.joint_ie import JointIEEngine  # ty: ignore[unresolved-import]
+        except ImportError as e:
+            raise ImportError(
+                "gliner2 is required for GLiNER2Backend; install it manually with "
+                "`pip install 'gliner2[local]>=2.0.0'` (see this module's docstring for why "
+                "it's not a pyproject.toml extra)"
+            ) from e
+        return JointIEEngine(model if model is not None else AutoExtractor.from_pretrained(model_name))
+
+    @staticmethod
+    def _make_config(candidate_cap: int) -> Any:
+        options = {
+            "include_spans": True,
+            "include_confidence": True,
+            "relation_pair_cap": candidate_cap,
+            "max_edges_per_type": candidate_cap,
+        }
+        try:
+            from gliner2.joint_ie import JointIEConfig  # ty: ignore[unresolved-import]
+        except ImportError:  # only reachable with an injected engine, which takes any config object
+            return SimpleNamespace(**options)
+        return JointIEConfig(**options)
+
+    def _build_schema(self) -> Any:
+        """The ontology as a JointSchema. An unconstrained endpoint becomes every declared
+        entity type, since JointSchema rejects an empty head/tail (#345)."""
+        model = self.ontology.model
+        schema = self.engine.create_schema()
+        for entity_type in self.ontology.entity_types:
+            schema = schema.entity(entity_type.label, entity_type.description or None)
+        for relation in self.ontology.relation_types:
+            # No description: the joint compiler drops relation descriptions, so
+            # the name is the only steering surface (#360).
+            schema = schema.relation(
+                relation.label, model.endpoint_labels(relation, "start"), model.endpoint_labels(relation, "end")
+            )
+        return schema
 
     @property
     def workspace_label(self) -> str:
         return self._workspace
 
-    def _extract_sync(self, text: str) -> tuple[list[ExtractedEntity], list[ExtractedRelation]]:
+    def _windows(self, chunk: "Chunk") -> list[_Window]:
+        spans = [(s.start, s.end, s) for s in chunk.segments] or [(0, len(chunk.text), None)]
+        windows = []
+        for start, end, segment in spans:
+            for lo, hi in _word_windows(chunk.text, start, end, self._chunk_size, self._chunk_overlap):
+                if chunk.text[lo:hi].strip():
+                    windows.append(_Window(lo, hi, segment))
+        return windows
+
+    def _extract_sync(self, chunk: "Chunk") -> _Extracted:
         """
-        Synchronous, CPU/GPU-bound model call (GLiNER2 has no async API,
-        unlike LightRAG's network-bound LLM call) -- run via asyncio.to_thread
-        from aingest_chunk() so it doesn't block the event loop.
+        Run the joint extractor over each window of `chunk` and map everything
+        back to chunk coordinates. Synchronous and CPU/GPU-bound (GLiNER2 has no
+        async API), so aingest_chunk() runs it via asyncio.to_thread.
 
-        One combined `model.extract_long()` call covers both entities and
-        relations in the same pass: `model.create_schema().entities(
-        self._entity_schema)`, `.relations(self._relation_schema)` when
-        relations are configured, then `model.extract_long(text, schema,
-        chunk_size=self._chunk_size, chunk_overlap=self._chunk_overlap,
-        include_spans=True, include_confidence=True)`. Confirmed against
-        gliner2==2.0.0 that this returns `{"entities": {...},
-        "relation_extraction": {...}}` -- the same per-key shape
-        extract_entities()/extract_relations() each return individually,
-        just merged into one result.
-
-        `extract_long()`, not the plain single-pass `extract()`: GLiNER2 is
-        an encoder-only span/boundary classifier with a fixed effective
-        context, and a session's combined text (one document per session,
-        not per turn) routinely exceeds it. Past that point `extract()`
-        both slows down and silently drops most entities, with no error --
-        confirmed on a real 16k-char session: `extract()` took 16.0s and
-        found 18 entities, `extract_long()` (this method, chunk_size=384,
-        chunk_overlap=64 -- GLiNER2's own defaults) took 4.3s and found 249.
-        `extract_long()` windows `text` into overlapping word chunks and
-        merges results back into text-global coordinates itself, so this
-        method's own span-based entity/relation matching below is unaffected
-        either way (see #336).
-
-        This used to be two independent calls (extract_entities() then
-        extract_relations()). A relation's head/tail span only ever carries
-        a text span, not a reference to a specific already-extracted entity,
-        so matching them back together (see aingest_chunk()) is required
-        either way -- but running two independent inference passes could
-        return a relation's head/tail with a subtly different span/text for
-        the same real entity than the entities pass returned, dropping a
-        real relation at the matching step for no reason beyond the two
-        calls disagreeing. Confirmed live: for entities the model recognizes
-        in *both* its entities and relations output, a joint call returns
-        identical spans for each (e.g. "Alice Johnson" at the same (0, 13)
-        in both), which two independent calls did not reliably guarantee.
-
-        This does not make every relation matchable, and callers should not
-        expect it to: GLiNER2's relation task can name a head/tail span its
-        entities task never surfaces at all under the configured entity
-        schema (observed live: a `located_in` relation between "townhouse"
-        and "Brookside neighborhood" where the entities result for that
-        chunk was empty) -- joint or not, there's no extracted entity_type
-        to write such an endpoint under, so aingest_chunk() still correctly
-        skips-and-logs it rather than fabricating one.
-
-        Returns:
-            (entities, relations) extracted from `text`, unfiltered --
-            confidence-threshold and ontology filtering happen in
-            aingest_chunk().
+        A mention found by two overlapping windows of one long segment is one
+        mention. Relations never cross windows: their endpoints are the
+        window's own entity ids.
         """
-        schema = self.model.create_schema().entities(self._entity_schema)
-        if self._relation_schema:
-            schema = schema.relations(self._relation_schema)
-        raw = self.model.extract_long(
-            text,
-            schema,
-            chunk_size=self._chunk_size,
-            chunk_overlap=self._chunk_overlap,
-            include_spans=True,
-            include_confidence=True,
+        extracted = _Extracted()
+        index_of: dict[tuple[str, int, int], int] = {}
+        for window in self._windows(chunk):
+            result = self.engine.extract(chunk.text[window.start : window.end], self._schema, config=self._config)
+            extracted.windows += 1
+            if not getattr(result, "feasible", True):
+                extracted.infeasible += 1
+                logger.error(f"GLiNER2 decoding was infeasible for a window of chunk {chunk.hash[:12]}: a bug (#355)")
+            local: dict[str, int] = {}
+            for entity in result.entities:
+                start, end = entity.start + window.start, entity.end + window.start
+                key = (entity.type, start, end)
+                if key not in index_of:
+                    index_of[key] = len(extracted.mentions)
+                    extracted.mentions.append(
+                        (Mention(entity.type, entity.text, start, end, entity.confidence), window.segment)
+                    )
+                local[entity.id] = index_of[key]
+            for relation in result.relations:
+                if relation.head in local and relation.tail in local:
+                    extracted.relations.append(
+                        (relation.type, local[relation.head], local[relation.tail], relation.confidence)
+                    )
+        return extracted
+
+    def _endpoint(
+        self, mention: Mention, resolution: Resolution, chunk: "Chunk"
+    ) -> tuple[Endpoint, dict | None] | None:
+        """The node a mention resolves to, and the entity node to write for it (None for the user)."""
+        if resolution.action == "drop":
+            return None
+        if resolution.action == "bind_user":
+            return Endpoint(USER_LABEL, "user_id", str(chunk.user_id)), None
+        entity_type = resolution.entity_type or mention.entity_type
+        if entity_type not in self._identity:
+            return None
+        normalized = _normalize_text(mention.text)
+        if not normalized:
+            return None
+        entity_id = _entity_id(
+            chunk.hash, entity_type, normalized, self._identity[entity_type], (mention.start, mention.end)
         )
-
-        entities: list[ExtractedEntity] = []
-        for entity_type, spans in raw.get("entities", {}).items():
-            for span in spans:
-                if isinstance(span, dict):
-                    entities.append(
-                        ExtractedEntity(
-                            entity_type=entity_type,
-                            text=span.get("text", ""),
-                            start=span.get("start"),
-                            end=span.get("end"),
-                            confidence=span.get("confidence"),
-                        )
-                    )
-                else:
-                    entities.append(
-                        ExtractedEntity(entity_type=entity_type, text=str(span), start=None, end=None, confidence=None)
-                    )
-
-        relations: list[ExtractedRelation] = []
-        for relation_type, pairs in raw.get("relation_extraction", {}).items():
-            for pair in pairs:
-                if isinstance(pair, dict):
-                    head, tail = pair.get("head"), pair.get("tail")
-                elif isinstance(pair, (tuple, list)) and len(pair) == 2:
-                    head, tail = {"text": pair[0]}, {"text": pair[1]}
-                else:
-                    continue
-                head = head if isinstance(head, dict) else {"text": str(head)}
-                tail = tail if isinstance(tail, dict) else {"text": str(tail)}
-                relations.append(
-                    ExtractedRelation(
-                        relation_type=relation_type,
-                        head_text=head.get("text", ""),
-                        head_span=(head["start"], head["end"]) if head.get("start") is not None else None,
-                        head_confidence=head.get("confidence"),
-                        tail_text=tail.get("text", ""),
-                        tail_span=(tail["start"], tail["end"]) if tail.get("start") is not None else None,
-                        tail_confidence=tail.get("confidence"),
-                    )
-                )
-        return entities, relations
-
-    @staticmethod
-    def _resolve_entity_id(
-        span: tuple[int, int] | None,
-        text: str,
-        by_span: dict[tuple[int, int], str],
-        by_text: dict[str, str],
-    ) -> str | None:
-        if span is not None and span in by_span:
-            return by_span[span]
-        return by_text.get(_normalize_text(text))
+        node = {"entity_id": entity_id, "entity_type": entity_type, "text": mention.text, "file_path": chunk.hash}
+        return Endpoint(self._workspace, "entity_id", entity_id), node
 
     async def aingest_chunk(self, memgraph: Memgraph, chunk: "Chunk") -> None:
-        entities, relations = await asyncio.to_thread(self._extract_sync, chunk.text)
+        extracted = await asyncio.to_thread(self._extract_sync, chunk)
+        self.stats.windows += extracted.windows
+        self.stats.infeasible_windows += extracted.infeasible
 
-        entity_id_by_span: dict[tuple[int, int], str] = {}
-        entity_id_by_text: dict[str, str] = {}
-        node_dicts: list[dict[str, Any]] = []
-        for entity in entities:
+        endpoints: list[Endpoint | None] = []
+        valid_at: list[str | None] = []
+        nodes: dict[str, dict[str, Any]] = {}
+        for mention, segment in extracted.mentions:
+            self.stats.mentions += 1
             if (
                 self.entity_confidence_threshold is not None
-                and entity.confidence is not None
-                and entity.confidence < self.entity_confidence_threshold
+                and mention.confidence is not None
+                and mention.confidence < self.entity_confidence_threshold
             ):
+                endpoints.append(None)
+                valid_at.append(None)
                 continue
-            normalized = _normalize_text(entity.text)
-            if not normalized:
+            resolution = self._resolve(mention, segment, chunk)
+            if resolution.action == "drop":
+                self.stats.mentions_dropped += 1
+            elif resolution.action == "bind_user":
+                self.stats.mentions_bound_to_user += 1
+            elif resolution.entity_type not in (None, mention.entity_type):
+                self.stats.mentions_retyped += 1
+            resolved = self._endpoint(mention, resolution, chunk)
+            endpoints.append(resolved[0] if resolved else None)
+            valid_at.append(segment.valid_at if segment is not None else None)
+            if resolved and resolved[1] is not None:
+                nodes.setdefault(resolved[1]["entity_id"], resolved[1])
+
+        if nodes:
+            create_nodes_from_list(memgraph, list(nodes.values()), self._workspace, 100, merge_key="entity_id")
+            link_mentions(memgraph, self._workspace, "entity_id", chunk.hash, list(nodes))
+
+        merged: dict[tuple[str, Endpoint, Endpoint], dict[str, Any]] = {}
+        for relation_type, head_index, tail_index, confidence in extracted.relations:
+            head, tail = endpoints[head_index], endpoints[tail_index]
+            if head is None or tail is None:
                 continue
-            entity_id = _entity_id(chunk.hash, entity.entity_type, normalized)
-            node_dicts.append(
-                {
-                    "entity_id": entity_id,
-                    "entity_type": entity.entity_type,
-                    "text": entity.text,
-                    "file_path": chunk.hash,
-                }
-            )
-            if entity.start is not None and entity.end is not None:
-                entity_id_by_span[(entity.start, entity.end)] = entity_id
-            entity_id_by_text.setdefault(normalized, entity_id)
-
-        if node_dicts:
-            create_nodes_from_list(memgraph, node_dicts, self._workspace, 100, merge_key="entity_id")
-
-        if not relations:
-            return
-
-        relationships_by_type: dict[str, list[dict[str, Any]]] = {}
-        for relation in relations:
-            confidences = [c for c in (relation.head_confidence, relation.tail_confidence) if c is not None]
             if (
                 self.relation_confidence_threshold is not None
-                and confidences
-                and min(confidences) < self.relation_confidence_threshold
+                and confidence is not None
+                and confidence < self.relation_confidence_threshold
             ):
                 continue
-            head_id = self._resolve_entity_id(
-                relation.head_span, relation.head_text, entity_id_by_span, entity_id_by_text
-            )
-            tail_id = self._resolve_entity_id(
-                relation.tail_span, relation.tail_text, entity_id_by_span, entity_id_by_text
-            )
-            if head_id is None or tail_id is None:
-                logger.warning(
-                    f"Skipping {relation.relation_type!r} relation: could not match head/tail "
-                    f"({relation.head_text!r} -> {relation.tail_text!r}) to an extracted entity"
-                )
+            if head == tail:
+                # allow_self can't see this: decoding sees two spans, identity
+                # resolution then makes them one node (#355).
+                self.stats.self_loops_dropped += 1
                 continue
-            relationships_by_type.setdefault(relation.relation_type, []).append({"from": head_id, "to": tail_id})
+            when = valid_at[head_index]
+            key = (relation_type, head, tail)
+            previous = merged.get(key)
+            if previous is None:
+                merged[key] = {
+                    "type": relation_type,
+                    "head": head,
+                    "tail": tail,
+                    "chunk": chunk.hash,
+                    "valid_at": when,
+                    "confidence": confidence,
+                }
+                continue
+            # The same fact twice in one chunk: when it was first said, how sure the model ever was.
+            if when is not None and (previous["valid_at"] is None or when < previous["valid_at"]):
+                previous["valid_at"] = when
+            if confidence is not None and (previous["confidence"] is None or confidence > previous["confidence"]):
+                previous["confidence"] = confidence
 
-        if relationships_by_type:
-            upsert_typed_relationships(memgraph, self._workspace, "entity_id", relationships_by_type)
+        if merged:
+            upsert_extracted_relationships(memgraph, list(merged.values()))
+            self.stats.relations_written += len(merged)

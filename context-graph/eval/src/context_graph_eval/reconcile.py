@@ -12,6 +12,7 @@ scoring one.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
@@ -210,6 +211,10 @@ BACKEND_CLASS_NAMES: dict[ExtractionBackendName, str] = {
     "gliner2": "GLiNER2Backend",
 }
 
+#: The vocabulary GLiNER2 extracts against on this corpus (#361's hand-written
+#: one), until a derived vocabulary replaces it.
+GLINER2_ONTOLOGY_PATH = Path(__file__).parent / "ontologies" / "longmemeval.yaml"
+
 
 async def reconcile_batch(
     db: "Memgraph",
@@ -262,7 +267,9 @@ async def reconcile_batch(
     ``MemgraphLightRAGWrapper`` is still constructed: narrative summarization
     (``SessionsGraph.reconcile_session``'s Episode) is a generative task
     GLiNER2 cannot do at all, so it always runs through the LightRAG wrapper's
-    own LLM regardless of which backend extracts entities. "gliner2" sessions
+    own LLM regardless of which backend extracts entities. GLiNER2 extracts
+    against :data:`GLINER2_ONTOLOGY_PATH`, and a session whose output is not
+    ontology-conformant is reported in ``errors``, since that is a bug. "gliner2" sessions
     reconcile one at a time via ``reconcile_session`` rather than through
     ``reconcile_sessions_batch``: map #322's batch/queue pipeline exists to
     give LightRAG's own worker pool more than one document at a time, which
@@ -320,9 +327,10 @@ async def reconcile_batch(
 
     gliner2_backend = None
     if extraction_backend == "gliner2":
+        from unstructured2graph import load_ontology
         from unstructured2graph.gliner2_backend import GLiNER2Backend
 
-        gliner2_backend = GLiNER2Backend()
+        gliner2_backend = GLiNER2Backend(ontology=load_ontology(GLINER2_ONTOLOGY_PATH))
 
     reconciled = 0
     errors: list[str] = []
@@ -354,7 +362,16 @@ async def reconcile_batch(
                     lightrag_wrapper=lightrag_wrapper,
                     extraction_backend=gliner2_backend,
                     enforce_ontology=True,
+                    # The same file the backend extracts against, so label
+                    # promotion and the domain/range check can't drift from it.
+                    ontology_path=GLINER2_ONTOLOGY_PATH,
                 )
+                if summary.nonconformant_entities or summary.nonconformant_relations:
+                    # Zero by construction on GLiNER2 output (#355): nonzero is a bug.
+                    errors.append(
+                        f"{session_id}: {summary.nonconformant_entities} non-conformant entities, "
+                        f"{summary.nonconformant_relations} non-conformant relationships"
+                    )
                 _tally([summary])
                 _report(index)
         else:

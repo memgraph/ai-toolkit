@@ -17,6 +17,7 @@ this must never point at a shared or development database.
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
@@ -26,6 +27,21 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
 
 #: Marks the Session as awaiting distillation. Reconciliation sweeps for this.
 PENDING = "pending"
+
+#: LongMemEval's session date format, e.g. '2023/05/30 (Tue) 17:27'.
+CORPUS_DATE_FORMAT = "%Y/%m/%d (%a) %H:%M"
+
+
+def corpus_time(date: str) -> datetime | None:
+    """A corpus session date as a UTC datetime, or None if it isn't in CORPUS_DATE_FORMAT.
+
+    The corpus gives no timezone; UTC is assumed, which only matters for
+    arithmetic across sessions, and there every session shares it.
+    """
+    try:
+        return datetime.strptime(date, CORPUS_DATE_FORMAT).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
 
 
 @dataclass(frozen=True)
@@ -69,10 +85,11 @@ def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph")
 
     turns = 0
     for fixture in deduped.values():
+        started = corpus_time(fixture.date)
         graph.ensure_session(
             Session(
                 session_id=fixture.session_id,
-                started_at=fixture.date,
+                started_at=started.isoformat() if started else fixture.date,
                 # Deliberately not written: SessionFixture.holds_evidence. That
                 # is corpus-side bookkeeping, and putting it in the graph would
                 # hand retrieval the answer's location -- telling the thing
@@ -80,11 +97,18 @@ def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph")
                 metadata={"origin": "eval-fixture"},
             )
         )
-        for turn in fixture.turns:
+        for index, turn in enumerate(fixture.turns):
+            # Stamped with the session's own date, not left at ingest time:
+            # an extracted fact's valid_at is its source turn's timestamp
+            # (#364), and ingest time would date every fact to the eval run.
+            # One second apart because get_session_actions orders by
+            # timestamp, so identical stamps would lose the turn order.
+            stamp = {"timestamp": (started + timedelta(seconds=index)).isoformat()} if started else {}
             graph.record_message(
                 session_id=fixture.session_id,
                 role=MessageRole(turn.role),
                 content=turn.content,
+                **stamp,
             )
             turns += 1
 
