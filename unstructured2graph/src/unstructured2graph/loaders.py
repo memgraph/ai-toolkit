@@ -21,21 +21,73 @@ from .memgraph import (
     connect_chunks_to_entities,
     create_entity_type_constraint,
     create_nodes_from_list,
-    create_unique_constraint,
+    create_property_index,
+    enforce_relation_domain_range,
+    ensure_lookup,
     link_nodes_in_order,
     promote_all_entity_types_to_labels,
     promote_entity_types_to_labels,
 )
-from .ontology import DEFAULT_ONTOLOGY, load_ontology
+from .ontology import DEFAULT_ONTOLOGY, Ontology, load_ontology
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class Segment:
+    """One span of a Chunk's text with its own speaker and time, e.g. a conversation turn.
+
+    Attributes:
+        start: Character offset of the segment in Chunk.text.
+        end: Character offset one past its end.
+        role: Who produced it ("user", "assistant", ...), or None for output
+            that is nobody's utterance (a tool result).
+        valid_at: ISO-8601 timestamp of when it was produced. Relationships
+            extracted from it carry this as `valid_at` (#364).
+    """
+
+    start: int
+    end: int
+    role: str | None = None
+    valid_at: str | None = None
+
+
 @dataclass
 class Chunk:
+    """
+    One unit of text written as a (:Chunk {hash, text}) node.
+
+    `segments` and `user_id` are optional structure a backend may use: the
+    GLiNER2 backend extracts one segment per window (#352) and resolves the
+    user's own mentions onto (:User {user_id}) (#358). Backends that don't
+    use them (LightRAG) read `text` alone.
+    """
+
     text: str
     hash: str
+    segments: tuple[Segment, ...] = ()
+    user_id: str | None = None
+
+
+@dataclass(frozen=True)
+class Document:
+    """A text to ingest verbatim as one Chunk, with optional segment structure.
+
+    Unlike from_texts(), which re-chunks through `unstructured` (whose
+    partitioner rewrites text: it drops list bullets and folds line breaks and
+    tables), a Document's text is stored exactly as given, so segment offsets
+    stay valid.
+    """
+
+    text: str
+    segments: tuple[Segment, ...] = ()
+    user_id: str | None = None
+
+    def __post_init__(self) -> None:
+        for segment in self.segments:
+            if not 0 <= segment.start <= segment.end <= len(self.text):
+                raise ValueError(f"Segment {segment} lies outside the document text (length {len(self.text)})")
 
 
 @dataclass
@@ -196,6 +248,12 @@ def _resolve_entity_workspace(
     return cast("ExtractionBackend", extraction_backend).workspace_label
 
 
+def _enforce_relations(memgraph: Memgraph, workspace: str, ontology: Ontology, chunk_hashes: list[str]) -> None:
+    """Run the post-hoc domain/range check over what these chunks produced and log each violation."""
+    for issue in enforce_relation_domain_range(memgraph, workspace, ontology, chunk_hashes=chunk_hashes):
+        logger.warning(issue.message)
+
+
 async def _ingest_chunks(
     chunks: list[Chunk],
     memgraph: Memgraph,
@@ -216,7 +274,7 @@ async def _ingest_chunks(
 
     Internal helper shared by from_unstructured() and from_texts(). Not
     exported: it relies on its caller having already ensured the Chunk.hash
-    uniqueness constraint (see create_unique_constraint) and resolved
+    uniqueness constraint and index (see ensure_lookup) and resolved
     entity_workspace (see _resolve_entity_workspace) once per call rather than
     per chunk batch — an unresolved entity_workspace=None with
     only_chunks=False would silently build a MATCH (n:None) query in
@@ -275,12 +333,19 @@ async def _ingest_chunks(
         backend = cast("ExtractionBackend", extraction_backend)
         resolved_workspace = cast("str", entity_workspace)
         create_entity_type_constraint(memgraph, resolved_workspace)
+        ensure_lookup(memgraph, resolved_workspace, "entity_id")
+        create_property_index(memgraph, resolved_workspace, "file_path")
         for chunk in chunks:
             await backend.aingest_chunk(memgraph, chunk)
-        connect_chunks_to_entities(memgraph, "Chunk", resolved_workspace)
+        # Post-processing covers only what this call ingested: over the whole
+        # workspace, every ingest would rescan every entity, and a growing
+        # graph's ingestion would go quadratic.
+        hashes = [chunk.hash for chunk in chunks]
+        connect_chunks_to_entities(memgraph, "Chunk", resolved_workspace, chunk_hashes=hashes)
         if enforce_ontology:
             ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
-            promote_entity_types_to_labels(memgraph, resolved_workspace, ontology)
+            promote_entity_types_to_labels(memgraph, resolved_workspace, ontology, chunk_hashes=hashes)
+            _enforce_relations(memgraph, resolved_workspace, ontology, hashes)
         elif promote_labels:
             promote_all_entity_types_to_labels(memgraph, resolved_workspace)
 
@@ -348,7 +413,7 @@ async def from_texts(
     if not only_chunks and extraction_backend is None:
         raise ValueError("extraction_backend is required when only_chunks=False")
 
-    create_unique_constraint(memgraph, "Chunk", "hash")
+    ensure_lookup(memgraph, "Chunk", "hash")
     resolved_entity_workspace = _resolve_entity_workspace(extraction_backend, entity_workspace, only_chunks)
 
     grouped_chunks = [parse_text(text, chunk_kwargs=chunk_kwargs) for text in texts]
@@ -362,6 +427,72 @@ async def from_texts(
         memgraph,
         extraction_backend=extraction_backend,
         only_chunks=only_chunks,
+        link_chunks=False,
+        entity_workspace=resolved_entity_workspace,
+        promote_labels=promote_labels,
+        enforce_ontology=enforce_ontology,
+        ontology_path=ontology_path,
+    )
+    return grouped_chunks
+
+
+async def from_documents(
+    documents: list[Document],
+    memgraph: Memgraph,
+    extraction_backend: ExtractionBackend,
+    entity_workspace: str | None = None,
+    promote_labels: bool = False,
+    enforce_ontology: bool = False,
+    ontology_path: str | Path | None = None,
+) -> list[list[Chunk]]:
+    """
+    Ingest Documents verbatim, one Chunk each, through the same Chunk-node +
+    extraction pipeline as from_texts().
+
+    The difference from from_texts() is only how text becomes chunks: none of
+    `unstructured`'s partitioning, so the stored text is byte-identical to the
+    input and each Document's segments (e.g. conversation turns with their
+    speaker and timestamp) travel with its Chunk to the backend. A whole
+    session is one Chunk (#352); backends window it themselves.
+
+    Args:
+        documents: Documents to ingest. Empty/whitespace-only ones produce no chunk.
+        memgraph: Memgraph instance for database operations.
+        extraction_backend: The ExtractionBackend to run over each chunk.
+        entity_workspace, promote_labels, enforce_ontology, ontology_path: As
+            for from_texts().
+
+    Returns:
+        One list per input document, in input order, holding its one Chunk (or
+        nothing for an empty document) -- the same grouping as from_texts().
+    """
+    ensure_lookup(memgraph, "Chunk", "hash")
+    resolved_entity_workspace = _resolve_entity_workspace(extraction_backend, entity_workspace, only_chunks=False)
+    grouped_chunks = [
+        [
+            Chunk(
+                text=document.text,
+                hash=hashlib.sha256(document.text.encode()).hexdigest(),
+                segments=document.segments,
+                user_id=document.user_id,
+            )
+        ]
+        if document.text.strip()
+        else []
+        for document in documents
+    ]
+    unique: dict[str, Chunk] = {}
+    for group in grouped_chunks:
+        for chunk in group:
+            unique.setdefault(chunk.hash, chunk)
+    if not unique:
+        logger.warning("No chunks produced from provided documents")
+        return grouped_chunks
+    await _ingest_chunks(
+        list(unique.values()),
+        memgraph,
+        extraction_backend=extraction_backend,
+        only_chunks=False,
         link_chunks=False,
         entity_workspace=resolved_entity_workspace,
         promote_labels=promote_labels,
@@ -416,7 +547,7 @@ async def enqueue_texts(
         raise (e.g. a Memgraph connection error, or LightRAG's own
         enqueue-time validation).
     """
-    create_unique_constraint(memgraph, "Chunk", "hash")
+    ensure_lookup(memgraph, "Chunk", "hash")
 
     grouped_chunks = [parse_text(text, chunk_kwargs=chunk_kwargs) for text in texts]
     flat_chunks = [chunk for group in grouped_chunks for chunk in group]
@@ -571,10 +702,13 @@ async def process_enqueued_and_finalize(
         )
 
     create_entity_type_constraint(memgraph, resolved_entity_workspace)
-    connect_chunks_to_entities(memgraph, "Chunk", resolved_entity_workspace)
+    create_property_index(memgraph, resolved_entity_workspace, "file_path")
+    hashes = [chunk.hash for chunk in chunks]
+    connect_chunks_to_entities(memgraph, "Chunk", resolved_entity_workspace, chunk_hashes=hashes)
     if enforce_ontology:
         ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
-        promote_entity_types_to_labels(memgraph, resolved_entity_workspace, ontology)
+        promote_entity_types_to_labels(memgraph, resolved_entity_workspace, ontology, chunk_hashes=hashes)
+        _enforce_relations(memgraph, resolved_entity_workspace, ontology, hashes)
     elif promote_labels:
         promote_all_entity_types_to_labels(memgraph, resolved_entity_workspace)
 
@@ -627,7 +761,7 @@ async def from_unstructured(
         raise ValueError("extraction_backend is required when only_chunks=False")
 
     # LightRAG uses `{source_id: "chunk-ID..."}` to reference its chunks.
-    create_unique_constraint(memgraph, "Chunk", "hash")
+    ensure_lookup(memgraph, "Chunk", "hash")
     resolved_entity_workspace = _resolve_entity_workspace(extraction_backend, entity_workspace, only_chunks)
     chunked_documents = make_chunks(sources, partition_kwargs=partition_kwargs)
     total_chunks = sum(len(document.chunks) for document in chunked_documents)

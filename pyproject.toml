@@ -14,6 +14,7 @@ dependencies = [
 [tool.uv.sources]
 memgraph-toolbox = { workspace = true }
 lightrag-memgraph = { workspace = true }
+hygm = { workspace = true }
 
 [tool.uv]
 constraint-dependencies = [
@@ -54,6 +55,7 @@ constraint-dependencies = [
 [tool.uv.workspace]
 members = [
     "memgraph-toolbox/",
+    "hygm/",
     "integrations/langchain-memgraph/",
     "integrations/mcp-memgraph/",
     "integrations/lightrag-memgraph",
@@ -102,7 +104,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["memgraph_toolbox", "mcp_memgraph", "langchain_memgraph", "lightrag_memgraph", "unstructured2graph", "skills_graph", "actions_graph", "agent_context_graph"]
+known-first-party = ["hygm", "memgraph_toolbox", "mcp_memgraph", "langchain_memgraph", "lightrag_memgraph", "unstructured2graph", "skills_graph", "actions_graph", "agent_context_graph"]
 
 [tool.ruff.lint.per-file-ignores]
 # Notebook cells reference variables from earlier cells — not actual undefined names

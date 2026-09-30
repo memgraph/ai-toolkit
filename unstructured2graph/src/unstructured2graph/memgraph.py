@@ -1,8 +1,17 @@
 import logging
 import re
 import time
+from collections import defaultdict
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from hygm import (
+    CYPHER_IDENTIFIER_PATTERN,
+    ValidationCategory,
+    ValidationIssue,
+    ValidationSeverity,
+    require_valid_identifier,
+)
 from lightrag_memgraph import DEFAULT_EMBEDDING_DIM
 from memgraph_toolbox.api.memgraph import Memgraph
 
@@ -11,24 +20,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# A derived label gets f-string-interpolated directly into Cypher
-# (SET n:{label}), so it's restricted to safe identifier characters.
-_VALID_LABEL_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _LABEL_WORD_SPLIT_PATTERN = re.compile(r"[^A-Za-z0-9]+")
+
+#: Relationship types this package writes for its own structure, never extracted facts.
+STRUCTURAL_RELATIONSHIP_TYPES = ("MENTIONED_IN", "NEXT")
 
 
 def _require_valid_identifier(value: str, role: str) -> None:
     """Raise ValueError unless `value` is safe to f-string-interpolate into
     Cypher as a label, relationship type, property key, or variable name --
-    Cypher can parameterize values but not these, so any of them built from
-    caller-supplied or extracted data (not a compile-time literal) must be
-    checked before use. `role` names what was being validated, for a
-    diagnosable error message (e.g. "node_label", "relation type")."""
-    if not _VALID_LABEL_PATTERN.match(value):
-        raise ValueError(
-            f"Invalid {role} {value!r}: must be a valid identifier (letters, digits, "
-            "underscore, not starting with a digit) to use directly in a Cypher query"
-        )
+    Cypher can parameterize values but not these. See hygm.identifiers."""
+    require_valid_identifier(value, role)
 
 
 def _entity_type_to_label(entity_type: str) -> str | None:
@@ -43,7 +45,7 @@ def _entity_type_to_label(entity_type: str) -> str | None:
     if not words:
         return None
     label = "".join(word[:1].upper() + word[1:].lower() for word in words)
-    return label if _VALID_LABEL_PATTERN.match(label) else None
+    return label if CYPHER_IDENTIFIER_PATTERN.match(label) else None
 
 
 def create_nodes_from_list(
@@ -98,17 +100,74 @@ def create_nodes_from_list(
                     raise e
 
 
-def connect_chunks_to_entities(memgraph: Memgraph, chunk_label: str, entity_label: str):
+def connect_chunks_to_entities(
+    memgraph: Memgraph, chunk_label: str, entity_label: str, chunk_hashes: list[str] | None = None
+):
+    """MERGE (entity)-[:MENTIONED_IN]->(chunk) for every entity whose file_path names a chunk hash.
+
+    With `chunk_hashes`, only entities of those chunks are visited, one
+    `file_path` lookup per chunk. Without it, every entity in the workspace
+    is, which run once per ingest makes a growing graph's ingestion
+    quadratic. Each chunk is looked up by hash, never joined across the two
+    labels.
+    """
+    if chunk_hashes is None:
+        memgraph.query(
+            f"""
+            MATCH (n:{entity_label})
+            WHERE n.file_path IS NOT NULL
+            MATCH (m:{chunk_label} {{hash: n.file_path}})
+            MERGE (n)-[:MENTIONED_IN]->(m);
+            """
+        )
+        return
     memgraph.query(
         f"""
-        MATCH (n:{entity_label}), (m:{chunk_label})
-        WHERE n.file_path = m.hash
+        UNWIND $chunk_hashes AS h
+        MATCH (m:{chunk_label} {{hash: h}})
+        MATCH (n:{entity_label} {{file_path: h}})
         MERGE (n)-[:MENTIONED_IN]->(m);
-        """
+        """,
+        params={"chunk_hashes": list(chunk_hashes)},
     )
 
 
-def promote_entity_types_to_labels(memgraph: Memgraph, workspace_label: str, ontology: "Ontology") -> None:
+def _entities(workspace_label: str, chunk_hashes: list[str] | None) -> str:
+    """A clause binding `n` to workspace entities -- all, or those MENTIONED_IN `chunk_hashes` --
+    that a WHERE can follow."""
+    if chunk_hashes is None:
+        return f"MATCH (n:{workspace_label})"
+    return (
+        f"MATCH (c:Chunk) WHERE c.hash IN $chunk_hashes "
+        f"MATCH (n:{workspace_label})-[:MENTIONED_IN]->(c) WITH DISTINCT n"
+    )
+
+
+def link_mentions(memgraph: Memgraph, entity_label: str, match_key: str, chunk_hash: str, entity_ids: list[str]):
+    """MERGE (entity)-[:MENTIONED_IN]->(:Chunk {hash: chunk_hash}) for each id, at ingest.
+
+    Needed once an entity's identity outlives its chunk (#346): a merged node
+    keeps only its first chunk's file_path, so connect_chunks_to_entities alone
+    would link it to that one chunk and lose every later mention.
+    """
+    _require_valid_identifier(entity_label, "entity_label")
+    _require_valid_identifier(match_key, "match_key")
+    if not entity_ids:
+        return
+    memgraph.query(
+        f"""
+        MATCH (c:Chunk {{hash: $chunk_hash}})
+        UNWIND $ids AS id
+        MATCH (n:{entity_label} {{{match_key}: id}})
+        MERGE (n)-[:MENTIONED_IN]->(c)
+        """,
+        params={"chunk_hash": chunk_hash, "ids": sorted(set(entity_ids))},
+    )
+
+
+def promote_entity_types_to_labels(
+    memgraph: Memgraph, workspace_label: str, ontology: "Ontology", chunk_hashes: list[str] | None = None
+) -> None:
     """
     Additively promote each entity's `entity_type` property to a real
     Memgraph label (e.g. entity_type="person" -> :Person), for entity_type
@@ -124,25 +183,32 @@ def promote_entity_types_to_labels(memgraph: Memgraph, workspace_label: str, ont
     indistinguishable from an unprocessed node. Re-running this (e.g. after
     the ontology grows a new type) clears the flag on anything that now
     conforms.
+
+    With `chunk_hashes`, only entities MENTIONED_IN those chunks are visited,
+    so run connect_chunks_to_entities first. Ingestion passes the chunks it
+    just wrote; re-projecting a whole workspace after an ontology change
+    omits it.
     """
+    entities = _entities(workspace_label, chunk_hashes)
+    params = {"chunk_hashes": list(chunk_hashes)} if chunk_hashes is not None else {}
     labels = ontology.allowed_labels()
     for label in labels:
         memgraph.query(
             f"""
-            MATCH (n:{workspace_label})
+            {entities}
             WHERE toLower(n.entity_type) = toLower($label) AND NOT n:{label}
             SET n:{label}
             """,
-            params={"label": label},
+            params={**params, "label": label},
         )
 
     if not labels:
-        memgraph.query(f"MATCH (n:{workspace_label}) SET n.ontology_conformant = false")
+        memgraph.query(f"{entities} SET n.ontology_conformant = false", params=params)
         return
 
     conforms_clause = " OR ".join(f"n:{label}" for label in labels)
-    memgraph.query(f"MATCH (n:{workspace_label}) WHERE NOT ({conforms_clause}) SET n.ontology_conformant = false")
-    memgraph.query(f"MATCH (n:{workspace_label}) WHERE {conforms_clause} REMOVE n.ontology_conformant")
+    memgraph.query(f"{entities} WHERE NOT ({conforms_clause}) SET n.ontology_conformant = false", params=params)
+    memgraph.query(f"{entities} WHERE {conforms_clause} REMOVE n.ontology_conformant", params=params)
 
 
 def promote_all_entity_types_to_labels(memgraph: Memgraph, workspace_label: str) -> None:
@@ -174,6 +240,285 @@ def promote_all_entity_types_to_labels(memgraph: Memgraph, workspace_label: str)
             SET n:{label}
             """,
             params={"entity_type": entity_type},
+        )
+
+
+def _any_label(variable: str, labels: tuple[str, ...]) -> str:
+    for label in labels:
+        _require_valid_identifier(label, "label")
+    return " OR ".join(f"{variable}:{label}" for label in labels)
+
+
+# Deliberately not `(a:ws OR b:ws)`: Memgraph 3.13.1 plans an OR of label
+# checks on two different variables as `Filter (a:ws), (b:ws)` -- an AND -- so
+# every relationship with one non-workspace endpoint, e.g. onto (:User), is
+# silently skipped (verified with EXPLAIN). A label test on one variable is fine.
+_TOUCHES_WORKSPACE = "($workspace IN labels(a) OR $workspace IN labels(b))"
+
+
+def _relationships(workspace_label: str, relation_type: str | None, chunk_hashes: list[str] | None) -> str:
+    """A clause binding `r` (and its endpoints `a`, `b`) to extracted relationships touching the
+    workspace -- all of them, or those extracted from `chunk_hashes` -- that a WHERE can follow.
+
+    Scoped, it starts from the chunks' own entities (every extracted
+    relationship has a workspace endpoint MENTIONED_IN its chunk) rather than
+    scanning every relationship of the type, which per ingest would make a
+    growing graph's ingestion quadratic. GLiNER2 stamps its edges with
+    `chunk`; LightRAG's carry `file_path`, every contributing chunk's hash
+    joined by a separator, hence CONTAINS.
+    """
+    typed = f":{relation_type}" if relation_type else ""
+    if chunk_hashes is None:
+        return f"MATCH (a)-[r{typed}]->(b) WHERE {_TOUCHES_WORKSPACE} WITH a, r, b"
+    return (
+        f"MATCH (c:Chunk) WHERE c.hash IN $chunk_hashes "
+        f"MATCH (c)<-[:MENTIONED_IN]-(n:{workspace_label})-[r{typed}]-() "
+        f"WHERE any(h IN $chunk_hashes WHERE coalesce(r.chunk, r.file_path, '') CONTAINS h) "
+        f"WITH DISTINCT r WITH startNode(r) AS a, r, endNode(r) AS b"
+    )
+
+
+def _scope_params(workspace_label: str, chunk_hashes: list[str] | None) -> dict[str, Any]:
+    params: dict[str, Any] = {"workspace": workspace_label}
+    if chunk_hashes is not None:
+        params["chunk_hashes"] = list(chunk_hashes)
+    return params
+
+
+def enforce_relation_domain_range(
+    memgraph: Memgraph, workspace_label: str, ontology: "Ontology", chunk_hashes: list[str] | None = None
+) -> list[ValidationIssue]:
+    """
+    The post-hoc half of the typed relation model (#348): check every
+    relationship of a declared, constrained relation type against its
+    start_labels/end_labels, over already-promoted labels, so run it after
+    promote_entity_types_to_labels().
+
+    A mismatch is never removed -- per ADR 0004 it is kept and stamped
+    `r.ontology_conformant = false`, and a relationship that now conforms has
+    the flag cleared. On a GLiNER2 graph a flag means a bug: the same
+    specification constrained its decoding, and domain/range survives the
+    window merge (#355). A relation type with neither side constrained is never
+    checked.
+
+    Only relationships touching a `workspace_label` node are considered, so
+    another package's relationship of the same type is left alone.
+
+    Args:
+        chunk_hashes: If given, only relationships extracted from these chunks.
+
+    Returns:
+        One WARNING issue per distinct (relation type, start labels, end labels)
+        violation, with the count in `details["count"]`.
+    """
+    _require_valid_identifier(workspace_label, "workspace_label")
+    model = ontology.model
+    params = _scope_params(workspace_label, chunk_hashes)
+    issues: list[ValidationIssue] = []
+    for relation in ontology.relation_types:
+        if not relation.constrained:
+            continue
+        _require_valid_identifier(relation.label, "relation type")
+        conforms = (
+            f"({_any_label('a', model.endpoint_labels(relation, 'start'))}) "
+            f"AND ({_any_label('b', model.endpoint_labels(relation, 'end'))})"
+        )
+        match = _relationships(workspace_label, relation.label, chunk_hashes)
+        rows = memgraph.query(
+            f"""
+            {match}
+            WHERE NOT ({conforms})
+            SET r.ontology_conformant = false
+            RETURN labels(a) AS start_labels, labels(b) AS end_labels, count(r) AS count
+            """,
+            params=params,
+        )
+        memgraph.query(f"{match} WHERE {conforms} REMOVE r.ontology_conformant", params=params)
+        for row in rows:
+            start = tuple(sorted(label for label in row["start_labels"] if label != workspace_label))
+            end = tuple(sorted(label for label in row["end_labels"] if label != workspace_label))
+            issues.append(
+                ValidationIssue(
+                    severity=ValidationSeverity.WARNING,
+                    category=ValidationCategory.STRUCTURE,
+                    message=(
+                        f"{row['count']} :{relation.label} relationship(s) from {start or '(unlabelled)'} to "
+                        f"{end or '(unlabelled)'} fall outside its declared domain/range"
+                    ),
+                    expected=(model.endpoint_labels(relation, "start"), model.endpoint_labels(relation, "end")),
+                    actual=(start, end),
+                    details={"relation_type": relation.label, "count": row["count"]},
+                )
+            )
+    return issues
+
+
+@dataclass(frozen=True)
+class OntologyReport:
+    """What the graph holds relative to an ontology: integrity and coverage counts.
+
+    Reporting only -- nothing reads these to filter (#355). On a GLiNER2 graph
+    both non-conformant counts should be zero; anything else is a bug.
+
+    Attributes:
+        nonconformant_entities: Workspace entities stamped ontology_conformant=false.
+        nonconformant_relations: Relationships stamped ontology_conformant=false.
+        relationships: Extracted relationships touching a workspace entity.
+        declared_relationships: Those whose type the ontology declares.
+        zero_instance_relation_types: Declared types with no instance anywhere
+            in the workspace (always workspace-wide, even when scoped).
+        issues: The coverage findings, as ValidationIssues (#349).
+    """
+
+    nonconformant_entities: int
+    nonconformant_relations: int
+    relationships: int
+    declared_relationships: int
+    zero_instance_relation_types: tuple[str, ...] = ()
+    issues: tuple[ValidationIssue, ...] = field(default_factory=tuple)
+
+
+def ontology_report(
+    memgraph: Memgraph, workspace_label: str, ontology: "Ontology", chunk_hashes: list[str] | None = None
+) -> OntologyReport:
+    """
+    Read what the graph holds against `ontology`. Run it after label promotion
+    and enforce_relation_domain_range(), whose flags it counts.
+
+    Coverage is observed from the graph rather than asked of the backend
+    (#349): "relationships, none of a declared type" means the backend emits
+    untyped relations (LightRAG's :DIRECTED); "no relationships at all" means
+    nothing was extracted. Both are distinct from a declared type that simply
+    never materialized.
+
+    Args:
+        chunk_hashes: If given, entity and relationship counts cover only these
+            chunks (an entity counts if it is MENTIONED_IN one of them).
+    """
+    _require_valid_identifier(workspace_label, "workspace_label")
+    params = _scope_params(workspace_label, chunk_hashes)
+    nonconformant_entities = memgraph.query(
+        f"{_entities(workspace_label, chunk_hashes)} WHERE n.ontology_conformant = false RETURN count(n) AS count",
+        params=params,
+    )[0]["count"]
+    rows = memgraph.query(
+        f"""
+        {_relationships(workspace_label, None, chunk_hashes)}
+        WHERE NOT type(r) IN $structural
+        RETURN type(r) AS type, count(r) AS count, sum(CASE WHEN r.ontology_conformant = false THEN 1 ELSE 0 END) AS flagged
+        """,
+        params={**params, "structural": list(STRUCTURAL_RELATIONSHIP_TYPES)},
+    )
+    declared = set(ontology.allowed_relation_labels())
+    by_type = {row["type"]: row for row in rows}
+    relationships = sum(row["count"] for row in rows)
+    declared_relationships = sum(row["count"] for t, row in by_type.items() if t in declared)
+    nonconformant_relations = sum(row["flagged"] for t, row in by_type.items() if t in declared)
+
+    # One cheap existence probe per declared type (it stops at the first
+    # match), not a scan of every relationship: this runs after every ingest.
+    present = {
+        label
+        for label in declared
+        if memgraph.query(
+            f"MATCH (a)-[r:{label}]->(b) WHERE {_TOUCHES_WORKSPACE} RETURN 1 AS hit LIMIT 1",
+            params={"workspace": workspace_label},
+        )
+    }
+    zero_instance = tuple(label for label in ontology.allowed_relation_labels() if label not in present)
+
+    issues: list[ValidationIssue] = []
+    if declared and relationships and not declared_relationships:
+        issues.append(
+            ValidationIssue(
+                ValidationSeverity.WARNING,
+                ValidationCategory.COVERAGE,
+                f"{relationships} relationship(s), none of a declared relation type: the backend does not "
+                "emit typed relations, so domain/range checking is vacuous here",
+                details={"types": sorted(by_type)},
+            )
+        )
+    elif declared and not relationships:
+        issues.append(
+            ValidationIssue(ValidationSeverity.INFO, ValidationCategory.COVERAGE, "No relationships extracted")
+        )
+    if declared and zero_instance:
+        issues.append(
+            ValidationIssue(
+                ValidationSeverity.WARNING,
+                ValidationCategory.COVERAGE,
+                f"{len(zero_instance)} declared relation type(s) have no instances: {', '.join(zero_instance)}",
+                details={"relation_types": list(zero_instance)},
+            )
+        )
+    return OntologyReport(
+        nonconformant_entities=nonconformant_entities,
+        nonconformant_relations=nonconformant_relations,
+        relationships=relationships,
+        declared_relationships=declared_relationships,
+        zero_instance_relation_types=zero_instance,
+        issues=tuple(issues),
+    )
+
+
+@dataclass(frozen=True)
+class Endpoint:
+    """How to find one end of an extracted relationship: MATCH (:label {key: value})."""
+
+    label: str
+    key: str
+    value: str
+
+
+def upsert_extracted_relationships(memgraph: Memgraph, relationships: list[dict[str, Any]]) -> None:
+    """
+    MERGE extracted relationships, one per (type, head, tail, source chunk).
+
+    Keyed on the source chunk as well as the endpoints, so a fact asserted in
+    two sessions is two relationships with their own valid_at: superseded
+    facts are retained, timestamps only (#347), and a question asking for the
+    *initial* value still has it. Re-ingesting a chunk is idempotent.
+
+    Args:
+        relationships: dicts with `type`, `head`/`tail` (Endpoint), `chunk`
+            (the source chunk hash), `valid_at` (ISO-8601 string or None, stored
+            as a Memgraph datetime so date arithmetic is a subtraction, #364)
+            and `confidence` (float or None).
+
+    Raises:
+        ValueError: if a relationship type, endpoint label or key isn't a valid Cypher identifier.
+    """
+    groups: dict[tuple[str, str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for rel in relationships:
+        head, tail = rel["head"], rel["tail"]
+        groups[(rel["type"], head.label, head.key, tail.label, tail.key)].append(
+            {
+                "from": head.value,
+                "to": tail.value,
+                "chunk": rel["chunk"],
+                "valid_at": rel.get("valid_at"),
+                "confidence": rel.get("confidence"),
+            }
+        )
+    for (relation_type, head_label, head_key, tail_label, tail_key), rows in groups.items():
+        for value, role in (
+            (relation_type, "relation type"),
+            (head_label, "endpoint label"),
+            (head_key, "endpoint key"),
+            (tail_label, "endpoint label"),
+            (tail_key, "endpoint key"),
+        ):
+            _require_valid_identifier(value, role)
+        memgraph.query(
+            f"""
+            UNWIND $rows AS rel
+            MATCH (a:{head_label} {{{head_key}: rel.from}})
+            MATCH (b:{tail_label} {{{tail_key}: rel.to}})
+            MERGE (a)-[r:{relation_type} {{chunk: rel.chunk}}]->(b)
+            SET r.valid_at = CASE WHEN rel.valid_at IS NULL THEN null ELSE datetime(rel.valid_at) END,
+                r.confidence = rel.confidence
+            """,
+            params={"rows": rows},
         )
 
 
@@ -294,6 +639,24 @@ def create_entity_type_constraint(memgraph: Memgraph, label: str):
         logger.info(f"Ensured entity_type typed-string constraint on :{label}")
     except Exception as e:
         logger.warning(f"Error creating entity_type typed-string constraint on :{label}: {e}")
+
+
+def ensure_lookup(memgraph: Memgraph, label: str, property: str) -> None:
+    """Idempotently ensure :label(property) is both unique and indexed.
+
+    Both, because in Memgraph a uniqueness constraint does not create an index
+    (verified with EXPLAIN: MATCH (c:Chunk {hash: ...}) plans a label scan plus
+    a filter under the constraint alone), so every MERGE on the key would scan
+    the whole label; and an index alone does not stop two concurrent MERGEs
+    from both creating.
+    """
+    _require_valid_identifier(label, "label")
+    _require_valid_identifier(property, "property")
+    create_unique_constraint(memgraph, label, property)
+    try:
+        memgraph.query(f"CREATE INDEX ON :{label}({property});")
+    except Exception as e:
+        logger.warning(f"Error creating index on :{label}({property}): {e}")
 
 
 def create_label_index(memgraph: Memgraph, label: str):

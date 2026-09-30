@@ -1,0 +1,46 @@
+# The hand-written vocabulary the GLiNER2 extraction path runs on LongMemEval
+# until a derived one replaces it (LlmRecommendationStrategy, #353/#372). It is
+# #361's value vocabulary exactly as measured on the 10 evidence sessions with
+# one turn per window (#352: 895 raw / 393 distinct edges), plus identities.
+#
+# - User/Person are the fixed core (#353). User is the session's own user; a
+#   mention the resolver decides is a third party is re-typed Person, so every
+#   endpoint that takes User also takes Person (#358).
+# - Relation descriptions are documentation: gliner2's joint compiler drops
+#   them, and the name is the only steering surface (#360).
+# - identity (#346, #361, #366): global for named things that recur across
+#   sessions, chunk for generic nouns, span for values.
+entity_types:
+  - {label: User, identity: global, description: "the person speaking in the first person -- I, me, my, myself"}
+  - {label: Person, identity: global, description: "another named individual: a family member, friend, colleague, doctor, teacher"}
+  - {label: Organization, identity: global, description: "a company, employer, school, university, team, club or institution"}
+  - {label: Location, identity: global, description: "a place: a city, country, neighbourhood, venue or building"}
+  - {label: Activity, identity: chunk, description: "something a person does regularly: a hobby, sport, exercise, practice or routine"}
+  - {label: Product, identity: chunk, description: "a concrete item or brand someone owns, buys, uses or wants"}
+  - {label: Event, identity: chunk, description: "a dated happening: a trip, appointment, race, wedding, interview or move"}
+  - {label: Topic, identity: chunk, description: "a subject of study, skill or interest: a degree, a language, a field of work"}
+  - {label: Duration, identity: span, description: "a length of time: 25:50, 45 minutes, three weeks, 10-12 hours"}
+  - {label: Quantity, identity: span, description: "a count or amount of things: 3, four, 38 subjects, 5 pairs, 220 pages"}
+  - {label: Money, identity: span, description: "an amount of money: $185, $2,500, $400,000"}
+  - {label: Date, identity: span, description: "a calendar date or day: February 14th, Friday, last Thursday, May 6"}
+  - {label: TimeWindow, identity: span, description: "a span of clock time: 8 am - 4 pm, 2 AM, the day shift"}
+relation_types:
+  - {label: works_for, description: "is employed by or works at", start_labels: [User, Person], end_labels: [Organization]}
+  - {label: lives_in, description: "resides in or has moved to", start_labels: [User, Person], end_labels: [Location]}
+  - {label: visited, description: "travelled to or went to", start_labels: [User, Person], end_labels: [Location]}
+  - {label: practices, description: "does this activity, as a hobby or routine", start_labels: [User, Person], end_labels: [Activity]}
+  - {label: owns, description: "has or possesses this item", start_labels: [User, Person], end_labels: [Product]}
+  - {label: purchased, description: "bought or ordered this item", start_labels: [User, Person], end_labels: [Product]}
+  - {label: prefers, description: "likes, favours or chooses", start_labels: [User, Person], end_labels: [Product, Activity, Topic]}
+  - {label: studied, description: "studied, learned or graduated in/from", start_labels: [User, Person], end_labels: [Topic, Organization]}
+  - {label: knows, description: "is related to or acquainted with", start_labels: [User, Person], end_labels: [Person]}
+  - {label: attended, description: "took part in or was present at", start_labels: [User, Person], end_labels: [Event]}
+  - {label: located_in, description: "is situated or takes place in", start_labels: [Organization, Event], end_labels: [Location]}
+  - {label: personal_best, description: "best recorded time or result achieved", start_labels: [User, Person], end_labels: [Duration]}
+  - {label: lasted, description: "took or went on for this much time", start_labels: [Event, Activity], end_labels: [Duration]}
+  - {label: spent_time, description: "spent this much time on something", start_labels: [User, Person], end_labels: [Duration]}
+  - {label: paid, description: "paid or spent this amount", start_labels: [User, Person], end_labels: [Money]}
+  - {label: costs, description: "has this price", start_labels: [Product, Event, Activity], end_labels: [Money]}
+  - {label: owns_count, description: "has or needs this many of something", start_labels: [User, Person], end_labels: [Quantity]}
+  - {label: happened_on, description: "took place on this date", start_labels: [Event, Activity], end_labels: [Date]}
+  - {label: works_shift, description: "is scheduled for this shift", start_labels: [User, Person], end_labels: [TimeWindow]}
