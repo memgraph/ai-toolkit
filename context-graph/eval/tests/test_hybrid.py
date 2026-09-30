@@ -115,3 +115,37 @@ def test_index_is_cached_between_runs_over_the_same_graph(eval_graph: ActionsGra
     embedded = len(calls)
     ensure_hybrid_index(eval_graph, tmp_path / "index.npz", embedder=_Counting())
     assert len(calls) == embedded
+
+
+@pytest.mark.asyncio
+async def test_user_facts_gathers_the_users_facts_of_a_relation_type_across_sessions(
+    eval_graph: ActionsGraph, tmp_path
+):
+    """The aggregation a counting question needs: every wedding the user attended, whichever session it was in."""
+    db = eval_graph.db
+    db.query("CREATE (:User {user_id: 'u1'})")
+    for session, couple in (("s1", "Rachel and Mike"), ("s2", "Emily and Sarah"), ("s3", "Jen and Tom")):
+        eval_graph.ensure_session(Session(session_id=session, started_at="2023-05-30T17:27:00+00:00"))
+        eval_graph.record_message(
+            session_id=session, role=MessageRole.USER, content=f"I attended the wedding of {couple}."
+        )
+        db.query(
+            "MATCH (a:Action) WHERE NOT (a)-[:HAS_CHUNK]->() MERGE (c:Chunk {hash: $s, text: 'x'}) MERGE (a)-[:HAS_CHUNK]->(c) "
+            "WITH c MATCH (u:User {user_id: 'u1'}) "
+            "CREATE (n:gliner2:Event {entity_id: $s, entity_type: 'Event', text: $w})-[:MENTIONED_IN]->(c) "
+            "CREATE (u)-[:attended {chunk: $s, confidence: 0.9}]->(n)",
+            {"s": session, "w": f"wedding of {couple}"},
+        )
+    index = ensure_hybrid_index(eval_graph, tmp_path / "index.npz", embedder=_BagOfWords())
+
+    result = await retrieve_hybrid(
+        "How many weddings have I attended?",
+        graph=ReadOnlyGraph(db),
+        llm=_EchoLLM(),
+        index=index,
+        config=HybridConfig(lanes=("user_facts",), user_fact_types=1),
+    )
+
+    facts = [row for row in result.retrieval_context if row.startswith("FACT:")]
+    assert len(facts) == 3
+    assert all(row.startswith("FACT: user -[attended]-> wedding of") for row in facts)

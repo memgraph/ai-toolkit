@@ -171,3 +171,16 @@ def test_turns_are_stamped_with_the_session_date_in_order(eval_graph: ActionsGra
         "2023-05-20T14:03:00+00:00",
         "2023-05-20T14:03:01+00:00",
     ]
+
+
+def test_every_session_belongs_to_the_one_batch_user(eval_graph: ActionsGraph):
+    """LongMemEval frames a haystack as one user's history, so facts from
+    different sessions must be gatherable from one (:User)."""
+    from context_graph_eval.inject import EVAL_USER_ID
+
+    inject_batch([_fixture("s1"), _fixture("s2")], graph=eval_graph)
+
+    rows = eval_graph.db.query(
+        "MATCH (u:User)-[:HAD_SESSION]->(s:Session) RETURN u.user_id AS user, count(s) AS sessions"
+    )
+    assert rows == [{"user": EVAL_USER_ID, "sessions": 2}]

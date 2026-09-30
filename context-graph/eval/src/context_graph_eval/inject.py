@@ -28,6 +28,12 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
 #: Marks the Session as awaiting distillation. Reconciliation sweeps for this.
 PENDING = "pending"
 
+#: The one user every injected session belongs to. LongMemEval frames each
+#: haystack as a single user's chat history, so the batch has one person: with
+#: none recorded, reconciliation minted one per session (#354), and a question
+#: spanning three sessions had no single user to gather facts across.
+EVAL_USER_ID = "longmemeval-user"
+
 #: LongMemEval's session date format, e.g. '2023/05/30 (Tue) 17:27'.
 CORPUS_DATE_FORMAT = "%Y/%m/%d (%a) %H:%M"
 
@@ -112,6 +118,11 @@ def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph")
             )
             turns += 1
 
+        graph.db.query(
+            "MERGE (u:User {user_id: $user_id}) WITH u MATCH (s:Session {session_id: $session_id}) "
+            "MERGE (u)-[:HAD_SESSION]->(s)",
+            {"user_id": EVAL_USER_ID, "session_id": fixture.session_id},
+        )
         _mark_pending(graph, fixture.session_id)
 
     return Written(sessions=len(deduped), turns=turns)

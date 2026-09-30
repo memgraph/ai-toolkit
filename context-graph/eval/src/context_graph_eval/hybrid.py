@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 #: bge's retrieval instruction, prepended to queries only (not to passages).
 QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
-LANES = ("turns", "text", "entities", "facts")
+LANES = ("turns", "text", "entities", "facts", "user_facts")
 _SENTENCE = re.compile(r"[^.!?\n]+[.!?]?")
 
 
@@ -59,6 +59,9 @@ class HybridConfig:
     edges_per_entity: int = 6
     facts_k: int = 15
     fact_turns_k: int = 8
+    #: user_facts: how many relation types to pick, and facts to keep across them.
+    user_fact_types: int = 2
+    user_facts_k: int = 30
     turn_chars: int = 1500
 
 
@@ -102,6 +105,22 @@ class HybridIndex:
     edge_ids: list[int]
     edge_vecs: Any
     embedder: Any = field(repr=False, default=None)
+    #: Per edge, aligned with edge_ids: its relationship type, and whether it starts at a (:User).
+    edge_types: list[str] = field(default_factory=list)
+    edge_from_user: list[bool] = field(default_factory=list)
+    _type_vecs: dict[str, Any] = field(default_factory=dict, repr=False)
+
+    def relation_types(self, query: Any, k: int) -> list[str]:
+        """The k relationship types whose names are closest to the query."""
+        import numpy as np
+
+        names = sorted(set(self.edge_types))
+        missing = [n for n in names if n not in self._type_vecs]
+        if missing:
+            for name, vec in zip(missing, self.embedder([n.replace("_", " ") for n in missing]), strict=True):
+                self._type_vecs[name] = vec
+        scores = np.array([self._type_vecs[n] @ query for n in names])
+        return [names[i] for i in np.argsort(-scores)[:k]]
 
 
 def _sentence_with(text: str, needle: str) -> str:
@@ -177,9 +196,14 @@ def build_index(db: Any, cache: Path, embedder: Any) -> HybridIndex:
     entities = db.query("MATCH (n:gliner2) RETURN n.entity_id AS id, n.text AS text ORDER BY id")
     edges = db.query(
         "MATCH (a)-[r]->(b) WHERE r.chunk IS NOT NULL "
-        "RETURN id(r) AS id, type(r) AS type, coalesce(a.text, 'user') AS head, b.text AS tail, r.text AS text ORDER BY id"
+        "RETURN id(r) AS id, type(r) AS type, coalesce(a.text, 'user') AS head, b.text AS tail, r.text AS text, "
+        "'User' IN labels(a) AS from_user ORDER BY id"
     )
-    key = hashlib.sha256(json.dumps([len(turns), len(entities), len(edges), EMBEDDING_MODEL]).encode()).hexdigest()[:16]
+    key = hashlib.sha256(
+        json.dumps([len(turns), len(entities), len(edges), EMBEDDING_MODEL, "v2"]).encode()
+    ).hexdigest()[:16]
+    edge_types = [e["type"] for e in edges]
+    edge_from_user = [bool(e["from_user"]) for e in edges]
     if cache.exists():
         stored = np.load(cache, allow_pickle=True)
         if str(stored["key"]) == key:
@@ -191,6 +215,8 @@ def build_index(db: Any, cache: Path, embedder: Any) -> HybridIndex:
                 [int(i) for i in stored["edge_ids"]],
                 stored["edge_vecs"],
                 embedder,
+                edge_types,
+                edge_from_user,
             )
     turn_vecs = embedder([t["text"][:2000] for t in turns])
     entity_vecs = embedder([e["text"] or "" for e in entities])
@@ -214,6 +240,8 @@ def build_index(db: Any, cache: Path, embedder: Any) -> HybridIndex:
         [e["id"] for e in edges],
         edge_vecs,
         embedder,
+        edge_types,
+        edge_from_user,
     )
 
 
@@ -294,10 +322,30 @@ async def retrieve_hybrid(
         edge_ids = [index.edge_ids[i] for i in _top(index.edge_vecs, query, config.facts_k)]
         for row in graph.query("MATCH (a)-[r]->(b) WHERE id(r) IN $ids " + _EDGE_RETURN, {"ids": edge_ids}):
             facts.setdefault(row["id"], row)
+    if "user_facts" in config.lanes and index.edge_types:
+        # The graph-native lane: every fact the user holds of the relation types
+        # the question is about, across all sessions -- what "how many
+        # weddings did I attend" needs and top-k similarity over turns cannot
+        # gather. Ranked by similarity to keep the context bounded.
+        import numpy as np
+
+        wanted = set(index.relation_types(query, config.user_fact_types))
+        candidates = [
+            i for i, (t, u) in enumerate(zip(index.edge_types, index.edge_from_user, strict=True)) if u and t in wanted
+        ]
+        if candidates:
+            scores = index.edge_vecs[candidates] @ query
+            chosen = [index.edge_ids[candidates[i]] for i in np.argsort(-scores)[: config.user_facts_k]]
+            queries.append(f"user facts: {sorted(wanted)}")
+            for row in graph.query("MATCH (a)-[r]->(b) WHERE id(r) IN $ids " + _EDGE_RETURN, {"ids": chosen}):
+                facts.setdefault(row["id"], row)
     if facts:
         turn_ids += [f["turn"] for f in facts.values() if f.get("turn")][: config.fact_turns_k]
 
-    seen = [_fact(f) for f in facts.values()] + _turn_rows(graph, list(dict.fromkeys(turn_ids)), config.turn_chars)
+    # Facts in time order: a knowledge-update question wants the latest value,
+    # a temporal one the sequence.
+    ordered = sorted(facts.values(), key=lambda f: f.get("valid_at") or "")
+    seen = [_fact(f) for f in ordered] + _turn_rows(graph, list(dict.fromkeys(turn_ids)), config.turn_chars)
     answer = await llm.complete(answer_prompt(question, seen))
     return Retrieved(
         answer=answer.strip(), retrieval_context=seen, queries=queries, latency_seconds=time.monotonic() - started
