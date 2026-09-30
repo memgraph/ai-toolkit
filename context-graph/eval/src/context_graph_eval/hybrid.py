@@ -62,6 +62,9 @@ class HybridConfig:
     #: user_facts: how many relation types to pick, and facts to keep across them.
     user_fact_types: int = 2
     user_facts_k: int = 30
+    #: How user_facts picks its relation types: "facts" (the types of the
+    #: user's facts nearest the question) or "names" (type labels by embedding).
+    user_fact_types_from: str = "names"
     turn_chars: int = 1500
 
 
@@ -335,10 +338,19 @@ async def retrieve_hybrid(
         # gather. Ranked by similarity to keep the context bounded.
         import numpy as np
 
-        wanted = set(index.relation_types(query, config.user_fact_types))
-        candidates = [
-            i for i, (t, u) in enumerate(zip(index.edge_types, index.edge_from_user, strict=True)) if u and t in wanted
-        ]
+        user_edges = [i for i, u in enumerate(index.edge_from_user) if u]
+        if config.user_fact_types_from == "names":
+            wanted = set(index.relation_types(query, config.user_fact_types))
+        else:
+            # The types of the user's facts most similar to the question: naming
+            # the type by embedding its label picked generic ones (spent_time)
+            # for almost every question.
+            nearest = np.argsort(-(index.edge_vecs[user_edges] @ query))[:10] if user_edges else []
+            counts: dict[str, int] = {}
+            for i in nearest:
+                counts[index.edge_types[user_edges[int(i)]]] = counts.get(index.edge_types[user_edges[int(i)]], 0) + 1
+            wanted = set(sorted(counts, key=lambda t: -counts[t])[: config.user_fact_types])
+        candidates = [i for i in user_edges if index.edge_types[i] in wanted]
         if candidates:
             scores = index.edge_vecs[candidates] @ query
             chosen = [index.edge_ids[candidates[i]] for i in np.argsort(-scores)[: config.user_facts_k]]

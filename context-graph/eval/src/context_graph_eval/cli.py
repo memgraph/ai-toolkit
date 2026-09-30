@@ -128,6 +128,12 @@ def main(argv: list[str] | None = None) -> int:
         "stay comparable with ones scored without it; compare only runs that agree on it.",
     )
     run.add_argument(
+        "--hybrid-user-fact-types-from",
+        choices=("facts", "names"),
+        default="names",
+        help="how the hybrid user_facts lane picks relation types (see hybrid.HybridConfig).",
+    )
+    run.add_argument(
         "--hybrid-lanes",
         default=",".join(HYBRID_LANES),
         help=f"comma-separated lanes for --retrieval-strategy hybrid, from {', '.join(HYBRID_LANES)}. "
@@ -468,7 +474,10 @@ def _run(args) -> int:
                 extraction_backend=args.extraction_backend,
                 retrieval_strategy=args.retrieval_strategy,
                 text_search_limit=args.text_search_limit,
-                hybrid=HybridConfig(lanes=tuple(lane for lane in args.hybrid_lanes.split(",") if lane)),
+                hybrid=HybridConfig(
+                    lanes=tuple(lane for lane in args.hybrid_lanes.split(",") if lane),
+                    user_fact_types_from=args.hybrid_user_fact_types_from,
+                ),
                 question_date=args.question_date,
             ),
         )
