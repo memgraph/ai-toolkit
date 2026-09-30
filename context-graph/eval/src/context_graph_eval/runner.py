@@ -398,7 +398,16 @@ def _judge_group(group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, abst
     )
 
     judged: dict[str, _Judged] = {}
-    for golden, test_result in zip(goldens, result.test_results, strict=False):
+    # Matched by name, never by position: deepeval returns test results in
+    # completion order under async concurrency, so zipping them with the input
+    # order handed every question another question's scores -- verified with a
+    # fake metric of random latency, and visible in saved runs as Contextual
+    # Recall reasons quoting a different question's expected answer.
+    by_name = {test_result.name: test_result for test_result in result.test_results}
+    for golden in goldens:
+        test_result = by_name.get(golden.name)
+        if test_result is None:
+            continue
         # Kept per metric, not collapsed. The weakest still decides the gate --
         # passing one check while failing another is not a pass -- but which
         # one failed is what tells you whether retrieval or the answer was at

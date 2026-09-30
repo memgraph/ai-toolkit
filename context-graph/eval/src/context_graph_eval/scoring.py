@@ -412,6 +412,9 @@ def to_test_case(golden: "Golden", retrieved: "Retrieved") -> Any:
     from deepeval.test_case import LLMTestCase
 
     return LLMTestCase(
+        # Named so the judge's results can be matched back to their question:
+        # deepeval returns them in completion order, not input order.
+        name=golden.name,
         input=golden.input,
         actual_output=retrieved.answer,
         expected_output=golden.expected_output,
