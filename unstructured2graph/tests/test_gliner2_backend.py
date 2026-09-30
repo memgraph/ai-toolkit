@@ -150,7 +150,11 @@ def test_without_segments_the_whole_text_is_word_windowed():
         ("User", "I", None, DROP),  # a tool result is nobody's utterance
         ("User", "Kahlo", "user", Resolution("keep", "Person")),  # a third party
         ("User", "Kahlo", "assistant", Resolution("keep", "Person")),
-        ("Location", "I", "user", KEEP),  # only User mentions are resolved
+        ("Location", "I", "user", KEEP),  # only User and Person mentions are resolved
+        ("Person", "I", "user", BIND_USER),  # the model types pronouns Person too
+        ("Person", "you", "assistant", BIND_USER),
+        ("Person", "I", "assistant", DROP),
+        ("Person", "Frida", "user", KEEP),  # a named third party stays as extracted
     ],
 )
 def test_resolve_user_mentions(entity_type, surface, role, expected):
@@ -256,6 +260,19 @@ async def test_global_identity_merges_across_chunks_and_links_every_mention(memg
     assert paris == [{"nodes": 1, "chunks": 2}]
     shoes = memgraph.query("MATCH (n:gliner2 {text: 'shoes'}) RETURN count(n) AS nodes")
     assert shoes == [{"nodes": 2}]  # chunk identity: one per session
+
+
+@pytest.mark.asyncio
+async def test_a_lowercase_mention_of_a_global_type_stays_per_chunk(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"home": "Location", "Paris": "Location"})
+    await from_documents(
+        [_session(("user", "home and Paris", None)), _session(("user", "home again, Paris again", None))],
+        memgraph,
+        backend,
+    )
+    counts = {row["text"]: row["n"] for row in memgraph.query("MATCH (n:gliner2) RETURN n.text AS text, count(n) AS n")}
+    assert counts == {"home": 2, "Paris": 1}
 
 
 @pytest.mark.asyncio

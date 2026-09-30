@@ -131,16 +131,25 @@ def resolve_user_mentions(mention: Mention, segment: "Segment | None", chunk: "C
       the assistant's mouth is not the user asserting anything;
     - anything else typed User is a third party, re-typed Person.
 
+    A `Person` mention whose surface is a speaker pronoun ("I", "you",
+    "assistant") gets the same rule: the model types pronouns `Person` as well
+    as `User`, and left alone they merged, under global identity, into
+    `Person:'you'` / `Person:'I'` hubs spanning a hundred unrelated sessions,
+    heading the user's own facts.
+
     Mentions of other types, and every mention in a chunk with no `user_id`,
     are kept as extracted.
     """
-    if mention.entity_type != USER_LABEL or chunk.user_id is None:
+    if chunk.user_id is None or mention.entity_type not in (USER_LABEL, PERSON_LABEL):
         return KEEP
     surface = _normalize_text(mention.text)
+    speaker_pronoun = surface in FIRST_PERSON or surface in {"you", "assistant"}
+    if mention.entity_type == PERSON_LABEL and not speaker_pronoun:
+        return KEEP
     role = segment.role if segment is not None else None
     if (role == "user" and surface in FIRST_PERSON) or (role == "assistant" and surface == "you"):
         return BIND_USER
-    if surface in FIRST_PERSON or surface in {"you", "assistant"}:
+    if speaker_pronoun:
         return DROP
     return Resolution("keep", PERSON_LABEL)
 
@@ -401,9 +410,14 @@ class GLiNER2Backend:
         normalized = _normalize_text(mention.text)
         if not normalized:
             return None
-        entity_id = _entity_id(
-            chunk.hash, entity_type, normalized, self._identity[entity_type], (mention.start, mention.end)
-        )
+        identity = self._identity[entity_type]
+        if identity == "global" and mention.text == mention.text.lower():
+            # Global identity is for names. An all-lowercase mention of a
+            # global type is a generic noun ("home", "area", "city"), and
+            # merging those across sessions built hubs joining ~50 unrelated
+            # conversations each, so it stays per chunk.
+            identity = "chunk"
+        entity_id = _entity_id(chunk.hash, entity_type, normalized, identity, (mention.start, mention.end))
         node = {"entity_id": entity_id, "entity_type": entity_type, "text": mention.text, "file_path": chunk.hash}
         return Endpoint(self._workspace, "entity_id", entity_id), node
 
