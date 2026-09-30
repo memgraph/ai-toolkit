@@ -406,3 +406,14 @@ def test_abstention_is_judged_on_refusing_not_on_reciting_the_near_miss():
     assert "decline" in criteria or "refus" in criteria
     # The failure mode being fixed: demanding the expected output's facts back.
     assert "every fact" not in criteria
+
+
+def test_rubrics_carry_fixed_evaluation_steps_so_the_judge_never_writes_them():
+    """Without them deepeval generates steps per question: an extra judge call each, and drifting rubrics."""
+    from context_graph_eval.scoring import ABSTENTION_STEPS, COVERAGE_STEPS, build_metrics
+
+    judge = _StubJudge()
+    coverage = next(m for m in build_metrics(judge) if getattr(m, "name", "") == "Coverage")
+    abstention = build_metrics(judge, abstention=True)[0]
+    assert coverage.evaluation_steps == COVERAGE_STEPS
+    assert abstention.evaluation_steps == ABSTENTION_STEPS
