@@ -1,0 +1,2001 @@
+{
+  "meta": {
+    "agent_model": "openai:default",
+    "changed": "",
+    "corpus_revision": "98d7416c24c778c2fee6e6f3006e7a073259d48f",
+    "corpus_variant": "s",
+    "extraction_backend": "none",
+    "judge_model": "openai:gpt-4o",
+    "label": "fx-text-r1",
+    "questions": 100,
+    "retrieval_strategy": "text-search",
+    "same_provider": true,
+    "tokenizer": "cl100k_base"
+  },
+  "scored": [
+    {
+      "abstention": true,
+      "answer": "not in memory",
+      "bleu": 0.04632230081520103,
+      "coverage": 0.738232059002944,
+      "covered": true,
+      "efficiency_tokens": 3171,
+      "f1": 0.30769230769230765,
+      "latency_seconds": 1.1266076670144685,
+      "metric_reasons": {
+        "Abstention [GEval]": "The actual output correctly indicates that the information is not in memory, aligning with the expected output's implication of absence. However, it does not explicitly state a zero count or mention the user's query about museums, which would have been a bonus."
+      },
+      "metric_scores": {
+        "Abstention [GEval]": 0.738232059002944
+      },
+      "name": "80ec1f4f_abs",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "On Sunday, Admon is assigned to the 8 am - 4 pm (Day Shift).",
+      "bleu": 0.7777777777777778,
+      "coverage": 0.8846047400513279,
+      "covered": true,
+      "efficiency_tokens": 2156,
+      "f1": 0.8461538461538461,
+      "latency_seconds": 0.9109793329844251,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output perfectly aligns with the information in the retrieval context, specifically matching the details in the 1st node. Great job!",
+        "Coverage [GEval]": "The actual output contains all the facts present in the expected output, specifically the assignment of Admon to the 8 am - 4 pm shift on Sundays. The wording is slightly different, but it does not contradict the expected facts. The only minor issue is the tense difference, which does not affect the factual accuracy."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.8846047400513279
+      },
+      "name": "7161e7e2",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 1653,
+      "f1": 0.0,
+      "latency_seconds": 0.763770834018942,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '5' in the expected output does not match any node(s) in the retrieval context, indicating a complete lack of alignment.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact '5'. This indicates a complete failure to provide the required information, as no facts from the expected output are present in the actual output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "0bc8ad92",
+      "tier": 1
+    },
+    {
+      "abstention": true,
+      "answer": "not in memory",
+      "bleu": 0.0031345208504984018,
+      "coverage": 0.6566939203360385,
+      "covered": false,
+      "efficiency_tokens": 1840,
+      "f1": 0.1111111111111111,
+      "latency_seconds": 0.6860075420117937,
+      "metric_reasons": {
+        "Abstention [GEval]": "The actual output correctly indicates that the information is not in memory, aligning with the expected output's implication. However, it lacks the detail of mentioning the user's previous mention of Korean restaurants, which would have been a bonus."
+      },
+      "metric_scores": {
+        "Abstention [GEval]": 0.6566939203360385
+      },
+      "name": "6aeb4375_abs",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "The other four options were:\n\n1. Sexual fixations\n2. Problematic sexual behaviors\n3. Sexual impulsivity\n4. Compulsive sexuality",
+      "bleu": 0.2608695652173913,
+      "coverage": 0.9941654161844401,
+      "covered": true,
+      "efficiency_tokens": 1822,
+      "f1": 0.6,
+      "latency_seconds": 0.7980212079710327,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because every sentence in the expected output perfectly aligns with the information provided by the 1st node in the retrieval context. Great job!",
+        "Coverage [GEval]": "The actual output includes all the facts present in the expected output, listing the four alternative terms exactly as mentioned: 'sexual fixations', 'problematic sexual behaviors', 'sexual impulsivity', and 'compulsive sexuality'. There are no missing facts or contradictions, and the format difference does not affect the content accuracy."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.9941654161844401
+      },
+      "name": "ceb54acb",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2756,
+      "f1": 0.0,
+      "latency_seconds": 0.6135037920321338,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because none of the sentences in the expected output, '7 days.' and '8 days (including the last day) is also acceptable.', can be linked to any node(s) in the retrieval context.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the facts present in the expected output, such as '7 days' or '8 days (including the last day)'. This indicates a complete failure to align with the expected facts."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_59149c77",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 1.4612572707782455e-07,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 1922,
+      "f1": 0.08510638297872342,
+      "latency_seconds": 0.6857376669649966,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because none of the sentences in the expected output align with the information in the nodes in the retrieval context. Specifically, the focus on AI in healthcare and the exclusion of general AI topics are not addressed in any of the retrieval context nodes.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the expected facts about recent publications or conferences related to artificial intelligence in healthcare, specifically deep learning for medical image analysis. It fails to provide any relevant information or suggestions, resulting in a complete lack of alignment with the expected output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0013222822627240332
+      },
+      "name": "75832dbd",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Under your bed.",
+      "bleu": 0.25,
+      "coverage": 0.8935372023272878,
+      "covered": true,
+      "efficiency_tokens": 2527,
+      "f1": 0.6666666666666666,
+      "latency_seconds": 0.6705599160050042,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the sentence 'under my bed' perfectly aligns with the 5th node in the retrieval context, showcasing a flawless match. Great job!",
+        "Coverage [GEval]": "The actual output 'Under your bed.' closely matches the expected output 'under my bed'. Both contain the key fact 'under bed'. The difference in capitalization and pronoun usage does not contradict the expected output, but slightly affects the alignment."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.8935372023272878
+      },
+      "name": "07741c44",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Based on the rows, you assembled one IKEA bookshelf in your home office about two months ago. There is no information about buying, selling, or fixing any other pieces of furniture.\n\nFinal answer: 1 piece of furniture assembled.",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2478,
+      "f1": 0.0,
+      "latency_seconds": 0.8981204580049962,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '4' in the expected output does not correspond to any node(s) in the retrieval context, indicating a complete lack of alignment.",
+        "Coverage [GEval]": "The actual output correctly identifies that one piece of furniture was assembled, which is a fact present in the expected output. However, it fails to account for the total number of pieces of furniture involved in buying, selling, or fixing, leading to a discrepancy with the expected output of 4. Additionally, the actual output does not contradict the expected output but is incomplete."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.1700735898217311
+      },
+      "name": "gpt4_15e38248",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You have used two different types of food delivery services recently: Domino's Pizza and Fresh Fusion.",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3197,
+      "f1": 0.0,
+      "latency_seconds": 0.6754403340164572,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the expected output '3' is a numeric value that lacks any corresponding content in the nodes in the retrieval context.",
+        "Coverage [GEval]": "The actual output does not match the expected output. The expected output is a numerical value '3', indicating the number of food delivery services used. The actual output provides names of services, 'Domino's Pizza and Fresh Fusion', which contradicts the expected numerical response and fails to include the correct count."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.05263683386834876
+      },
+      "name": "d682f1a2",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You have attended at least two weddings this year.",
+      "bleu": 0.09986132510942386,
+      "coverage": 0.18722984721819602,
+      "covered": false,
+      "efficiency_tokens": 1834,
+      "f1": 0.15384615384615383,
+      "latency_seconds": 0.6976984580396675,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.50 because the retrieval context partially supports the expected output. While the mention of 'Rachel and Mike, Emily and Sarah, and Jen and Tom' aligns with the 1st node in the retrieval context, there is no information in any node about attending three weddings, leading to a balanced score.",
+        "Coverage [GEval]": "The actual output mentions attending weddings but lacks specific details such as the exact number of weddings and the names of the couples, which are present in the expected output. The statement 'at least two weddings' does not contradict the expected output but is incomplete."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.5,
+        "Coverage [GEval]": 0.18722984721819602
+      },
+      "name": "gpt4_2f8be40d",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2101,
+      "f1": 0.0,
+      "latency_seconds": 0.6737837079563178,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '$185' from the expected output cannot be linked to any node(s) in the retrieval context, indicating a complete lack of alignment.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact '$185'. This indicates a complete failure to provide the required information, as no facts from the expected output are present in the actual output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_d84a3211",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "The order is:\n1. I signed up for the rewards program at ShopRite.\n2. I used a Buy One Get One Free coupon on Luvs diapers at Walmart.\n3. I redeemed $12 cashback for a $10 Amazon gift card from Ibotta.",
+      "bleu": 0.8,
+      "coverage": 0.08006800015318902,
+      "covered": false,
+      "efficiency_tokens": 2719,
+      "f1": 0.8860759493670887,
+      "latency_seconds": 0.7937241669860668,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because every sentence in the expected output perfectly aligns with the nodes in the retrieval context, showcasing a flawless match. Great job!",
+        "Coverage [GEval]": "The actual output does not match the expected order of events. The expected output specifies a different sequence: using the coupon first, redeeming cashback second, and signing up for the rewards program last. The actual output lists the events in a completely different order, failing to align with any of the expected facts."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.08006800015318902
+      },
+      "name": "gpt4_18c2b244",
+      "tier": 1
+    },
+    {
+      "abstention": true,
+      "answer": "not in memory",
+      "bleu": 0.0008262507255554528,
+      "coverage": 0.696032834632556,
+      "covered": false,
+      "efficiency_tokens": 4487,
+      "f1": 0.09090909090909091,
+      "latency_seconds": 0.6065727499662898,
+      "metric_reasons": {
+        "Abstention [GEval]": "The actual output correctly indicates that the information is not in memory, aligning with the expected output's intent. However, it does not explicitly mention the absence of information about purchasing cows from Peter, which is a minor shortcoming. The response does not provide a confident specific answer, which is appropriate."
+      },
+      "metric_scores": {
+        "Abstention [GEval]": 0.696032834632556
+      },
+      "name": "gpt4_70e84552_abs",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Based on the rows, your mom is now using the same grocery list app as you, so you can easily share lists and keep track of what you need.",
+      "bleu": 0.03125,
+      "coverage": 0.32085976056938253,
+      "covered": false,
+      "efficiency_tokens": 2636,
+      "f1": 0.0,
+      "latency_seconds": 0.799136665998958,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output 'Yes.' perfectly aligns with the 2nd node in the retrieval context, showcasing a seamless connection. Great job!",
+        "Coverage [GEval]": "The actual output confirms the expected output by stating that the mom is using the same grocery list app, which aligns with the expected 'Yes'. However, it includes additional details about sharing lists and tracking needs, which do not contradict but are unnecessary for the expected confirmation."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.32085976056938253
+      },
+      "name": "d7c942c3",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Based on the rows, you have tried Korean (bibimbap), Korean BBQ, Indian, and Middle Eastern dishes. That makes at least four different cuisines.",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 1524,
+      "f1": 0.0,
+      "latency_seconds": 0.8771764159901068,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '4' in the expected output cannot be linked to any node(s) in the retrieval context, indicating a complete mismatch.",
+        "Coverage [GEval]": "The actual output correctly identifies the number of cuisines as four, aligning with the expected output. However, it includes extra details about specific dishes and cuisines, which do not contradict the expected facts but are unnecessary for the answer."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.7959880808489017
+      },
+      "name": "d23cf73b",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Your most recent family trip was to Paris.",
+      "bleu": 0.11111111111111109,
+      "coverage": 0.913595144734186,
+      "covered": true,
+      "efficiency_tokens": 2242,
+      "f1": 0.2222222222222222,
+      "latency_seconds": 0.8249420420033857,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output 'Paris' perfectly aligns with the 1st node in the retrieval context, which directly references a trip to Paris. Great job on achieving a flawless match!",
+        "Coverage [GEval]": "The actual output correctly identifies the location 'Paris' as the destination of the most recent family trip, which matches the expected output. There are no missing facts or contradictions present."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.913595144734186
+      },
+      "name": "9ea5eabc",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2095,
+      "f1": 0.0,
+      "latency_seconds": 0.8609782090061344,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the expected output about visiting doctors does not align with any nodes in the retrieval context, which are centered around travel, activities, and AI in healthcare.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the facts present in the expected output, which lists three different doctors visited. There are no facts from the expected output in the actual output, and thus, all facts are missing."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0015424555193445824
+      },
+      "name": "gpt4_f2262a51",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3125,
+      "f1": 0.0,
+      "latency_seconds": 0.7398035830119625,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.30 because only a few nodes in the retrieval context directly mention museums from the expected output. Specifically, the 1st and 7th nodes in the retrieval context mention the Science Museum, and the 4th node mentions the American Museum of Natural History. However, the majority of nodes, such as the 2nd, 3rd, 5th, 6th, 8th, 9th, and 10th, do not reference any museums listed in the expected output, leading to a lower recall score.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the facts present in the expected output, which lists the order of six museums. This indicates a complete failure to meet the evaluation criteria, as no facts from the expected output are present in the actual output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.3,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_7abb270c",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2037,
+      "f1": 0.0,
+      "latency_seconds": 0.5769364169682376,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '4' in the expected output is a numeric value that lacks any corresponding content in the nodes in the retrieval context.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact '4'. This indicates a complete failure to align with the expected output, as the required information is entirely missing."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "71017276",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2826,
+      "f1": 0.0,
+      "latency_seconds": 0.6424481659778394,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '1 week' in the expected output cannot be linked to any node(s) in the retrieval context, which primarily discusses topics unrelated to timeframes, such as tennis and cycling.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the facts present in the expected output '1 week'. There is a complete absence of relevant information, resulting in a failure to meet the evaluation criteria."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_7a0daae1",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You repainted your bedroom walls a lighter shade of gray.",
+      "bleu": 0.45454545454545453,
+      "coverage": 0.9269313988099925,
+      "covered": true,
+      "efficiency_tokens": 3000,
+      "f1": 0.6666666666666666,
+      "latency_seconds": 0.630895042035263,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output perfectly aligns with the retrieval context, specifically matching the 2nd node's description of 'a lighter shade of gray.' Great job!",
+        "Coverage [GEval]": "The actual output contains the fact 'a lighter shade of gray,' which matches the expected output. There are no missing facts, and the additional context provided in the actual output does not contradict the expected output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.9269313988099925
+      },
+      "name": "6f9b354f",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "It took you two weeks to watch all 22 Marvel Cinematic Universe movies and a week and a half to watch all the main Star Wars films.",
+      "bleu": 0.03571428571428572,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3375,
+      "f1": 0.06666666666666667,
+      "latency_seconds": 0.7784117920091376,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the expected output '3.5 weeks' cannot be linked to any node(s) in the retrieval context, as there is no mention of '3.5 weeks' in the provided context.",
+        "Coverage [GEval]": "The actual output provides a detailed breakdown of the time taken for each movie series, totaling 3.5 weeks, which aligns with the expected output. However, it fails to directly state the total duration as 3.5 weeks, which is the expected output. The additional details do not contradict the expected output but do not fulfill the requirement of directly providing the total time."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.3302452098442269
+      },
+      "name": "e831120c",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "The Plesiosaur has a blue scaly body.",
+      "bleu": 0.875,
+      "coverage": 0.8959129608381415,
+      "covered": true,
+      "efficiency_tokens": 3694,
+      "f1": 0.8571428571428571,
+      "latency_seconds": 1.3654518339899369,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output perfectly aligns with the information in the retrieval context, specifically matching the details in node 3. Great job!",
+        "Coverage [GEval]": "The actual output closely aligns with the expected output, correctly identifying the Plesiosaur's scaly body as blue. The only discrepancy is the use of 'has' instead of 'had', which does not contradict the expected facts but slightly affects the tense consistency."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.8959129608381415
+      },
+      "name": "89527b6b",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 1641,
+      "f1": 0.0,
+      "latency_seconds": 0.5749060829984955,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because none of the sentences in the expected output can be linked to any nodes in the retrieval context, indicating a complete lack of relevant information.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the facts present in the expected output, which details three specific trips in chronological order. This results in a complete failure to meet the evaluation criteria, as all expected facts are missing and there is no alignment with the expected output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_7f6b06db",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Based on the rows, you have used the following types of citrus fruits in your cocktail recipes: lime, lemon, orange, and grapefruit. That makes a total of 4 different types of citrus fruits.",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3978,
+      "f1": 0.0,
+      "latency_seconds": 0.898250917030964,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the expected output '3' is a numeric value that lacks any corresponding content in the nodes in the retrieval context, leading to no supportive connections.",
+        "Coverage [GEval]": "The actual output lists four types of citrus fruits, while the expected output indicates only three. This discrepancy shows that the actual output contains an extra fact, which contradicts the expected output, resulting in a failure to align with the evaluation steps."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.10161127643926353
+      },
+      "name": "c4a1ceb8",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2119,
+      "f1": 0.0,
+      "latency_seconds": 0.5804401669884101,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence 'the suburbs' in the expected output does not correspond to any node(s) in the retrieval context, indicating a complete lack of alignment.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact 'the suburbs'. This indicates a complete failure to align with the expected output, as the necessary information is entirely missing."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0035503716810493364
+      },
+      "name": "830ce83f",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 4367,
+      "f1": 0.0,
+      "latency_seconds": 0.6905354160116985,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '17 days' from the expected output cannot be linked to any node(s) in the retrieval context.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact '17 days'. There is a complete absence of the expected information, and no additional details are provided that could align with the expected output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.007234279865525317
+      },
+      "name": "6cb6f249",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You attended the friends and family sale at Nordstrom yesterday.",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 1541,
+      "f1": 0.0,
+      "latency_seconds": 0.7458845000364818,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '2' from the expected output cannot be linked to any node(s) in the retrieval context.",
+        "Coverage [GEval]": "The actual output does not contain the expected fact of '2 weeks ago' and instead provides a contradictory detail by stating 'yesterday'. This indicates a complete failure to align with the expected output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.00450574285933687
+      },
+      "name": "af082822",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You currently own four bikes: your road bike, mountain bike, commuter bike, and a new hybrid bike you just purchased.",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2889,
+      "f1": 0.0,
+      "latency_seconds": 0.7455504579702392,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '4' in the expected output does not correspond to any information from the nodes in the retrieval context.",
+        "Coverage [GEval]": "The actual output correctly identifies the number of bikes as four, aligning with the expected output. However, it includes additional details about the types of bikes, which are not present in the expected output. These extra details do not contradict the expected fact but are unnecessary for the response."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.5778610713390575
+      },
+      "name": "89941a93",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "When you just started your new role as Senior Software Engineer, you led a team of 4 engineers. Now, you lead a team of 5 engineers.",
+      "bleu": 0.7666666666666667,
+      "coverage": 0.874456580439358,
+      "covered": true,
+      "efficiency_tokens": 1377,
+      "f1": 0.8695652173913044,
+      "latency_seconds": 0.8568400840158574,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because every sentence in the expected output is perfectly aligned with the nodes in the retrieval context, showcasing a seamless match between the information provided and the expected details. Great job!",
+        "Coverage [GEval]": "The actual output contains all the facts present in the expected output, specifically the numbers of engineers led initially and currently. The only discrepancy is the inclusion of the phrase 'a team of,' which does not contradict the expected facts but adds unnecessary detail."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.874456580439358
+      },
+      "name": "031748ae",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3097,
+      "f1": 0.0,
+      "latency_seconds": 0.7250108330044895,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '8 days.' in the expected output does not correspond to any information found in the nodes in the retrieval context.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact '8 days.' This indicates a complete failure to align with the expected output, as no facts from the expected output are present in the actual output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "b5ef892d",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You bought your new tennis racket from a sports store downtown.",
+      "bleu": 0.25,
+      "coverage": 0.8528865559781511,
+      "covered": true,
+      "efficiency_tokens": 2780,
+      "f1": 0.39999999999999997,
+      "latency_seconds": 0.6516884589800611,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output perfectly aligns with the 3rd node in the retrieval context, showcasing a flawless match. Great job!",
+        "Coverage [GEval]": "The actual output contains all the facts present in the expected output, specifically mentioning 'sports store downtown'. However, it includes additional information 'You bought your new tennis racket from' which does not contradict the expected output but is not required."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.8528865559781511
+      },
+      "name": "f8c5f88b",
+      "tier": 1
+    },
+    {
+      "abstention": true,
+      "answer": "not in memory",
+      "bleu": 0.0031345208504984018,
+      "coverage": 0.6718534827906434,
+      "covered": false,
+      "efficiency_tokens": 4635,
+      "f1": 0.1111111111111111,
+      "latency_seconds": 0.6013370419968851,
+      "metric_reasons": {
+        "Abstention [GEval]": "The actual output correctly indicates that the information is not in memory, aligning with the expected output's indication of absence. However, it lacks the additional detail of mentioning the user's cat Luna, which would have been a bonus."
+      },
+      "metric_scores": {
+        "Abstention [GEval]": 0.6718534827906434
+      },
+      "name": "0862e8bf_abs",
+      "tier": 1
+    },
+    {
+      "abstention": true,
+      "answer": "not in memory",
+      "bleu": 0.006105212962911393,
+      "coverage": 0.6513243682205907,
+      "covered": false,
+      "efficiency_tokens": 1256,
+      "f1": 0.125,
+      "latency_seconds": 0.5449677919968963,
+      "metric_reasons": {
+        "Abstention [GEval]": "The actual output correctly indicates that the information is not in memory, aligning with the expected output's implication. However, it lacks the explicit refusal or statement of absence present in the expected output. The actual output does not provide a confident specific answer, which is appropriate. There is no mention of what the user did mention, which could have been a bonus."
+      },
+      "metric_scores": {
+        "Abstention [GEval]": 0.6513243682205907
+      },
+      "name": "88432d0a_abs",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2855,
+      "f1": 0.0,
+      "latency_seconds": 0.9642621660022996,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence 'The Glass Menagerie' from the expected output cannot be linked to any node(s) in the retrieval context, indicating a complete lack of relevant information.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact 'The Glass Menagerie'. This indicates a complete failure to align with the expected output, as no facts from the expected output are present in the actual output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "58bf7951",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2356,
+      "f1": 0.0,
+      "latency_seconds": 0.6659345829975791,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.50 because only one sentence in the expected output aligns with the 1st node in the retrieval context, while the other sentence lacks direct attribution to any node in the retrieval context.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the expected facts from the expected output '2'. There are no facts present in the actual output, and it fails to provide any relevant information related to the input question."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.5,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "b46e15ed",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3627,
+      "f1": 0.0,
+      "latency_seconds": 0.6581502909539267,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because none of the sentences in the expected output, '54 days.' and '55 days (including the last day) is also acceptable.', can be attributed to any node(s) in the retrieval context.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the expected facts '54 days' or '55 days'. There are no additional details to verify for contradictions, but the absence of expected facts results in a failure to meet the evaluation criteria."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_1916e0ea",
+      "tier": 1
+    },
+    {
+      "abstention": true,
+      "answer": "not in memory",
+      "bleu": 0.0008262507255554528,
+      "coverage": 0.5607619524105282,
+      "covered": false,
+      "efficiency_tokens": 2710,
+      "f1": 0.09523809523809525,
+      "latency_seconds": 0.563396165962331,
+      "metric_reasons": {
+        "Abstention [GEval]": "The actual output correctly indicates that the information is not in memory, aligning with the expected output's implication of insufficient information. However, it lacks the detail present in the expected output, which provides a more specific explanation. The actual output does not provide a confident specific answer, which is appropriate, but it also does not mention Google, which would have been a bonus."
+      },
+      "metric_scores": {
+        "Abstention [GEval]": 0.5607619524105282
+      },
+      "name": "gpt4_93159ced_abs",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Your personal best time in the charity 5K run was 25:50.",
+      "bleu": 0.08333333333333333,
+      "coverage": 0.8927306638518528,
+      "covered": true,
+      "efficiency_tokens": 3371,
+      "f1": 0.2,
+      "latency_seconds": 0.7622615000000224,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output perfectly aligns with the information from the node(s) in the retrieval context, specifically the 2nd node, which directly supports the sentence '25 minutes and 50 seconds (or 25:50)'.",
+        "Coverage [GEval]": "The actual output correctly includes the fact '25:50', which matches the expected output. However, it adds 'Your personal best time in the charity 5K run was', which is extra but does not contradict the expected output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.8927306638518528
+      },
+      "name": "6a1eabeb",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You currently have a small 1-gallon tank that you set up for your friend's kid. The rows do not mention any other tanks, so based on the information provided: 1 tank.",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3751,
+      "f1": 0.0,
+      "latency_seconds": 0.7631501670111902,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '3' in the expected output does not correspond to any node(s) in the retrieval context, indicating a complete lack of alignment.",
+        "Coverage [GEval]": "The actual output fails to match the expected output as it only accounts for 1 tank, whereas the expected output indicates there should be 3 tanks. This discrepancy shows that the actual output is missing facts and does not align with the expected result."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.040905372656152066
+      },
+      "name": "46a3abf7",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You have tried three different Korean restaurants in your city.",
+      "bleu": 0,
+      "coverage": 0.20010459470460362,
+      "covered": false,
+      "efficiency_tokens": 1745,
+      "f1": 0.0,
+      "latency_seconds": 0.7241242500022054,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output 'four' perfectly aligns with the information in the 3rd and 4th nodes in the retrieval context, showcasing a flawless match. Great job!",
+        "Coverage [GEval]": "The actual output states that three Korean restaurants have been tried, while the expected output indicates four. This discrepancy shows a failure to match the expected fact. However, the actual output does not contradict the expected output beyond the numerical difference."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.20010459470460362
+      },
+      "name": "6aeb4375",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You attend yoga classes three times a week to help with your anxiety.",
+      "bleu": 0.2857142857142857,
+      "coverage": 0.7632989287879948,
+      "covered": true,
+      "efficiency_tokens": 2827,
+      "f1": 0.47058823529411764,
+      "latency_seconds": 0.7075283330050297,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output perfectly aligns with the information from the 3rd node in the retrieval context, highlighting a seamless connection. Great job!",
+        "Coverage [GEval]": "The actual output contains the key fact 'three times a week' from the expected output, fulfilling the primary requirement. However, it includes additional context about attending yoga classes for anxiety, which does not contradict the expected output but is not necessary for alignment."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.7632989287879948
+      },
+      "name": "945e3d21",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 610,
+      "f1": 0.0,
+      "latency_seconds": 0.5873959590098821,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the expected output '3' is a numeric value that lacks any corresponding content in the nodes in the retrieval context.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact '3'. This indicates a complete failure to provide the required information, as the expected output is entirely missing from the actual output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "3a704032",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "The order from first to last is:\n1. The day I helped my cousin pick out stuff for her baby shower\n2. The day I helped my friend prepare the nursery\n3. The day I ordered a customized phone case for my friend's birthday",
+      "bleu": 0.6122448979591837,
+      "coverage": 0.3508412393394278,
+      "covered": false,
+      "efficiency_tokens": 2234,
+      "f1": 0.7692307692307692,
+      "latency_seconds": 0.7514835000038147,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because every sentence in the expected output perfectly aligns with the nodes in the retrieval context, showcasing a flawless match. Great job!",
+        "Coverage [GEval]": "The actual output lists the events in a different order than the expected output. The expected order is: nursery preparation, baby shower preparation, and phone case ordering. The actual output incorrectly places the baby shower preparation first, which contradicts the expected sequence."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.3508412393394278
+      },
+      "name": "gpt4_f49edff3",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You have spent 10-12 hours on your abstract ocean sculpture.",
+      "bleu": 0.18181818181818182,
+      "coverage": 0.8573587300995433,
+      "covered": true,
+      "efficiency_tokens": 3492,
+      "f1": 0.42857142857142855,
+      "latency_seconds": 0.7619297500350513,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output '10-12 hours' is perfectly aligned with the information in the retrieval context, specifically mentioned in nodes 2 and 3. Great job!",
+        "Coverage [GEval]": "The actual output contains the key fact '10-12 hours' from the expected output, fulfilling the primary requirement. However, it includes additional context ('You have spent on your abstract ocean sculpture') that does not contradict the expected output but is unnecessary for the evaluation."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.8573587300995433
+      },
+      "name": "71315a70",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You spent $800 on a designer handbag.",
+      "bleu": 0.2222222222222222,
+      "coverage": 0.8326717952460397,
+      "covered": true,
+      "efficiency_tokens": 3048,
+      "f1": 0.25,
+      "latency_seconds": 0.7635723749990575,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output '$800' perfectly aligns with the 1st node in the retrieval context, which explicitly mentions the same amount. Great job on achieving a flawless match!",
+        "Coverage [GEval]": "The actual output contains the key fact '$800' from the expected output, fulfilling the primary requirement. However, it includes additional context ('You spent $800 on a designer handbag') that does not contradict the expected output but is not necessary."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.8326717952460397
+      },
+      "name": "7527f7e2",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3205,
+      "f1": 0.0,
+      "latency_seconds": 0.61039124999661,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because neither sentence in the expected output ('18 days.' and '19 days (including the last day) is also acceptable.') can be linked to any node(s) in the retrieval context, indicating a complete lack of alignment.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the expected facts, such as '18 days' or '19 days'. This indicates a complete failure to align with the expected output, as no relevant information is provided."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "0db4c65d",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2684,
+      "f1": 0.0,
+      "latency_seconds": 0.6855119169922546,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because none of the sentences in the expected output, specifically '6 days.' and '7 days (including the last day) is also acceptable.', can be linked to any node(s) in the retrieval context.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the facts present in the expected output, such as '6 days' or '7 days (including the last day)'. This indicates a complete failure to align with the expected output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_1e4a8aeb",
+      "tier": 1
+    },
+    {
+      "abstention": true,
+      "answer": "not in memory",
+      "bleu": 0.0031345208504984018,
+      "coverage": 0.7257536340070763,
+      "covered": true,
+      "efficiency_tokens": 1037,
+      "f1": 0.1111111111111111,
+      "latency_seconds": 0.6338060420239344,
+      "metric_reasons": {
+        "Abstention [GEval]": "The actual output correctly indicates that the information is not in memory, aligning with the expected output's indication of absence. However, it lacks the additional detail of mentioning vintage cameras, which would have been a bonus."
+      },
+      "metric_scores": {
+        "Abstention [GEval]": 0.7257536340070763
+      },
+      "name": "15745da0_abs",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Based on the rows, you mentioned buying a designer handbag for $800. No other specific luxury item purchases or amounts are listed. \n\nTotal amount spent on luxury items in the past few months: $800.",
+      "bleu": 0.024390243902439022,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3161,
+      "f1": 0.0,
+      "latency_seconds": 0.8784599160426296,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the expected output '$2,500' lacks any direct connection to the nodes in the retrieval context, making it impossible to attribute this figure to any specific information provided.",
+        "Coverage [GEval]": "The actual output identifies a specific luxury item purchase of $800, but it fails to match the expected total of $2,500. This indicates missing facts regarding other luxury purchases. The actual output does not contradict the expected output but is incomplete."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.1669090883057382
+      },
+      "name": "36b9f61e",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Summer Vibes",
+      "bleu": 1.0,
+      "coverage": 1.0,
+      "covered": true,
+      "efficiency_tokens": 3782,
+      "f1": 1.0,
+      "latency_seconds": 0.7051931250025518,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the sentence 'Summer Vibes' perfectly aligns with the 1st node in the retrieval context, showcasing a flawless match. Great job!",
+        "Coverage [GEval]": "The actual output matches the expected output exactly, with 'Summer Vibes' being present in both. There are no missing or extra details, ensuring full alignment with the evaluation steps."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 1.0
+      },
+      "name": "1e043500",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You have read up to page 220.",
+      "bleu": 0.12500000000000003,
+      "coverage": 0.7781221550440078,
+      "covered": true,
+      "efficiency_tokens": 2293,
+      "f1": 0.25,
+      "latency_seconds": 0.6391276670037769,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output '220' perfectly aligns with the information from the 1st and 2nd nodes in the retrieval context, both confirming the page number. Great job!",
+        "Coverage [GEval]": "The actual output contains the correct fact '220' as in the expected output, fulfilling the primary requirement. However, it includes additional context 'You have read up to page' which does not contradict the expected output but is unnecessary."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.7781221550440078
+      },
+      "name": "184da446",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3709,
+      "f1": 0.0,
+      "latency_seconds": 0.6920267909881659,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '3 weeks ago' from the expected output cannot be linked to any node(s) in the retrieval context, indicating a complete lack of relevant information.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the fact '3 weeks ago' from the expected output. This indicates a complete failure to align with the expected output, as the key fact is entirely missing and there is no relevant information provided."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_e072b769",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "The study published in the journal Music and Medicine involved 38 subjects.",
+      "bleu": 0.15384615384615385,
+      "coverage": 0.995614224420913,
+      "covered": true,
+      "efficiency_tokens": 2342,
+      "f1": 0.2857142857142857,
+      "latency_seconds": 1.241575499996543,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output perfectly aligns with the information from the 3rd node in the retrieval context, showcasing a flawless match. Great job!",
+        "Coverage [GEval]": "The actual output correctly states the number of subjects as 38, which matches the expected output. There are no missing facts or contradictions in the actual output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.995614224420913
+      },
+      "name": "0e5e2d1a",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You used \"doc martin\" as the example, mentioning that now only the last season is available.",
+      "bleu": 0,
+      "coverage": 0.5,
+      "covered": false,
+      "efficiency_tokens": 3280,
+      "f1": 0.2222222222222222,
+      "latency_seconds": 0.7196007909951732,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.50 because the sentence 'Doc Martin' aligns with the 1st node in the retrieval context, which references the show, but lacks additional context to fully connect with other nodes.",
+        "Coverage [GEval]": "The actual output correctly identifies 'Doc Martin' as the show used as an example, aligning with the expected output. However, it includes additional details about the availability of the last season, which do not contradict the expected facts but are not required."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.5,
+        "Coverage [GEval]": 0.8005176110361398
+      },
+      "name": "f523d9fe",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2980,
+      "f1": 0.0,
+      "latency_seconds": 0.5905683749588206,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '2 AM' from the expected output cannot be linked to any node(s) in the retrieval context, indicating a complete lack of alignment.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact '2 AM'. This indicates a complete failure to provide the required information, as none of the expected facts are present in the actual output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "dd2973ad",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 2.759958479190111e-08,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2129,
+      "f1": 0.07547169811320754,
+      "latency_seconds": 1.0110140410251915,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because none of the sentences in the expected output align with any nodes in the retrieval context. Specifically, the preferences for hotels in Miami with unique features like a rooftop pool or hot tub (sentence 1) and the aversion to basic or budget hotels (sentence 2) are not supported by any node in the retrieval context.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the expected facts about hotel preferences in Miami, such as great views, unique features like a rooftop pool or hot tub, or the avoidance of basic or budget hotels. There are no facts present in the actual output, and it fails to align with any of the expected details."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0017442485183119898
+      },
+      "name": "0edc2aef",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Here are some accessories that would complement your current photography setup:\n\n- Camera strap\n- Lens cleaning kit\n- Remote shutter release\n- Photography filters (e.g., polarizing, neutral density, creative filters)\n- Phone camera lens or phone tripod (for phone photography)\n- Portable photo printer\n- Camera phone case\n- Power bank for your camera\n- Photography-themed mug, t-shirt, or tote bag\n- Gift card to a camera store or online retailer\n\nThese accessories can enhance your photography experience and help you practice and improve your skills.",
+      "bleu": 0.1122448979591837,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 4476,
+      "f1": 0.17699115044247787,
+      "latency_seconds": 1.2919029589975253,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because none of the sentences in the expected output align with any node(s) in the retrieval context, which primarily addresses camera display ideas and gift suggestions, rather than Sony-compatible accessories or high-quality photography gear.",
+        "Coverage [GEval]": "The actual output provides a list of general photography accessories, but it fails to address the user's preference for Sony-compatible or high-quality gear. While the suggestions could enhance a photography setup, they do not specifically align with the expected focus on brand compatibility or quality. Additionally, the inclusion of non-gear items like a mug or gift card does not contradict the expected output but does not meet the user's specified preferences."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.21676000291734412
+      },
+      "name": "06878be2",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 9.016673675348965e-12,
+      "coverage": 0.02112916905461238,
+      "covered": false,
+      "efficiency_tokens": 3033,
+      "f1": 0.02631578947368421,
+      "latency_seconds": 0.7376284999772906,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.20 because only the first sentence about viewing the townhouse in the Brookside neighborhood aligns with the 1st node in the retrieval context. The remaining sentences regarding the bungalow, Cedar Creek property, highway noise, and the rejected offer on the 2-bedroom condo lack corresponding information in the nodes, leading to a low recall score.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the facts present in the expected output. It fails to mention the number of properties viewed or any reasons for not making offers on them, resulting in a complete lack of alignment with the expected output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.2,
+        "Coverage [GEval]": 0.02112916905461238
+      },
+      "name": "gpt4_7fce9456",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "45 minutes each way.",
+      "bleu": 0.8,
+      "coverage": 1.0,
+      "covered": true,
+      "efficiency_tokens": 1699,
+      "f1": 1.0,
+      "latency_seconds": 1.0767368749948218,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output perfectly aligns with the information in the 1st node in the retrieval context, ensuring complete accuracy and relevance. Great job!",
+        "Coverage [GEval]": "The actual output matches the expected output exactly, with all facts present and no contradictions or missing information."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 1.0
+      },
+      "name": "118b2229",
+      "tier": 1
+    },
+    {
+      "abstention": true,
+      "answer": "You lead a team of 4 engineers in your new role as Senior Software Engineer.",
+      "bleu": 0.30068905947105035,
+      "coverage": 0.22247769928756708,
+      "covered": false,
+      "efficiency_tokens": 1377,
+      "f1": 0.34285714285714286,
+      "latency_seconds": 0.7704817079938948,
+      "metric_reasons": {
+        "Abstention [GEval]": "The actual output provides a confident specific answer, which indicates a failure according to step 3. It incorrectly assumes the role as Senior Software Engineer instead of Software Engineer Manager, failing to acknowledge the absence of information as expected in step 1. However, it does name a role mentioned by the user, which is a minor bonus according to step 4."
+      },
+      "metric_scores": {
+        "Abstention [GEval]": 0.22247769928756708
+      },
+      "name": "031748ae_abs",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 1.3799792395950555e-08,
+      "coverage": 0.0016657039032929861,
+      "covered": false,
+      "efficiency_tokens": 2135,
+      "f1": 0.03773584905660377,
+      "latency_seconds": 0.721829957969021,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because every sentence in the expected output is perfectly aligned with the 1st node in the retrieval context, which highlights cultural events that promote language diversity and provide language learning resources, matching the user's preferences.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the facts present in the expected output. It fails to mention cultural events, language skills, Spanish, French, or language learning resources. There are no facts from the expected output present, resulting in a complete failure to meet the evaluation criteria."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.0016657039032929861
+      },
+      "name": "35a27287",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 1866,
+      "f1": 0.0,
+      "latency_seconds": 0.592612459033262,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because every sentence in the expected output is perfectly aligned with the information from the 5th node in the retrieval context, ensuring complete accuracy and relevance.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the facts present in the expected output, such as '2 days' or '3 days'. This indicates a complete failure to align with the expected response, as no relevant information is provided."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_1d80365e",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2042,
+      "f1": 0.0,
+      "latency_seconds": 0.6277513329987414,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.33 because only the mention of 'Sapiens: A Brief History of Humankind' aligns with nodes 1 and 2 in the retrieval context, while references to 'The Nightingale', 'The Power', and the total duration of 8 weeks lack corresponding nodes in the retrieval context.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the facts present in the expected output, such as the time spent on each book and the total weeks. This results in a complete failure to meet the evaluation criteria."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.3333333333333333,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_a1b77f9c",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Your cousin's wedding happened first.",
+      "bleu": 0.14285714285714285,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 1920,
+      "f1": 0.2,
+      "latency_seconds": 0.6602570409886539,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output perfectly aligns with the retrieval context, specifically the 1st node, which directly mentions 'Michael's engagement party.' Great job on achieving a flawless match!",
+        "Coverage [GEval]": "The actual output incorrectly states that the cousin's wedding happened first, while the expected output indicates that Michael's engagement party was the first event. This discrepancy shows a complete misalignment with the expected facts, resulting in a failure to meet the evaluation criteria."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_4929293a",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "At the Lake Charles Refinery, the main refining processes are:\n\n- Atmospheric distillation\n- Fluid catalytic cracking (FCC)\n- Alkylation\n- Hydrotreating",
+      "bleu": 0.30769230769230765,
+      "coverage": 0.9961533808670604,
+      "covered": true,
+      "efficiency_tokens": 2186,
+      "f1": 0.5925925925925926,
+      "latency_seconds": 0.6925917090266012,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because every sentence in the expected output is perfectly aligned with the information provided in the 1st node in the retrieval context. Great job!",
+        "Coverage [GEval]": "The actual output includes all the facts present in the expected output: atmospheric distillation, fluid catalytic cracking (FCC), alkylation, and hydrotreating. There are no missing facts or contradictions, and the format difference does not affect the content alignment."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.9961533808670604
+      },
+      "name": "6ae235be",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Based on the rows, you spent around 70 hours playing Assassin's Creed Odyssey and around 30 hours playing The Last of Us Part II, totaling approximately 100 hours.",
+      "bleu": 0.03125,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2115,
+      "f1": 0.06451612903225806,
+      "latency_seconds": 0.8419047089992091,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '140 hours' in the expected output does not correspond to any node(s) in the retrieval context, indicating a complete lack of alignment.",
+        "Coverage [GEval]": "The actual output provides a detailed breakdown of hours spent on specific games, totaling 100 hours, which contradicts the expected output of 140 hours. This discrepancy indicates a failure to match the expected total, and the presence of extra details does not align with the expected output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.13989219729692703
+      },
+      "name": "28dc39ac",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "The Sugar Factory - A sweet shop located at Icon Park that offers an enormous menu of sweet treats, including specialty drinks and giant milkshakes.",
+      "bleu": 0.25925925925925924,
+      "coverage": 0.8154980644016383,
+      "covered": true,
+      "efficiency_tokens": 1663,
+      "f1": 0.4,
+      "latency_seconds": 0.6189704579883255,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the sentence 'The Sugar Factory at Icon Park.' perfectly aligns with the information in the 1st node in the retrieval context, showcasing a flawless match. Great job!",
+        "Coverage [GEval]": "The actual output correctly identifies 'The Sugar Factory at Icon Park,' matching the expected output. It includes additional details about the location and offerings, which do not contradict the expected facts but rather enhance the description. No expected facts are missing, and no contradictions are present."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.8154980644016383
+      },
+      "name": "e9327a54",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3194,
+      "f1": 0.0,
+      "latency_seconds": 0.608606250025332,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because none of the sentences in the expected output relate to any nodes in the retrieval context, which focuses on herb gardening and recipes.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the facts present in the expected output, which specifies '24 days' or '25 days'. There is a complete absence of the required information, resulting in a failure to meet the evaluation criteria."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_1d4ab0c9",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Friday",
+      "bleu": 1.0,
+      "coverage": 1.0,
+      "covered": true,
+      "efficiency_tokens": 2646,
+      "f1": 1.0,
+      "latency_seconds": 0.6962949589942582,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output 'Friday' perfectly aligns with the information from the nodes in the retrieval context, specifically the 1st and 3rd nodes that highlight events occurring on Fridays. Great job!",
+        "Coverage [GEval]": "The actual output matches the expected output exactly, with 'Friday' being the correct day for the cocktail-making class. There are no missing facts or extraneous details affecting the expected facts."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 1.0
+      },
+      "name": "ce6d2d27",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You were pre-approved for $350,000 from Wells Fargo.",
+      "bleu": 0.10000000000000002,
+      "coverage": 0.2075081780092968,
+      "covered": false,
+      "efficiency_tokens": 3789,
+      "f1": 0.16666666666666669,
+      "latency_seconds": 0.7252957079908811,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output '$400,000' perfectly aligns with the 2nd node in the retrieval context, which directly references the same amount. Great job on achieving a flawless match!",
+        "Coverage [GEval]": "The actual output provides a pre-approval amount of $350,000, which does not match the expected amount of $400,000. This discrepancy indicates a failure to include the correct fact. However, the actual output does not contradict the expected output beyond the incorrect amount."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.2075081780092968
+      },
+      "name": "852ce960",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Trattoria Da Enzo al 29",
+      "bleu": 0,
+      "coverage": 0.003496469995916724,
+      "covered": false,
+      "efficiency_tokens": 3513,
+      "f1": 0.0,
+      "latency_seconds": 0.7110999160213396,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output 'Roscioli' perfectly aligns with the 2nd node in the retrieval context, which provides detailed information about Roscioli's location and nature, ensuring complete contextual accuracy. Great job!",
+        "Coverage [GEval]": "The actual output 'Trattoria Da Enzo al 29' does not match the expected output 'Roscioli'. The expected fact, which is the name of the restaurant, is missing in the actual output, resulting in a failure to meet the evaluation criteria."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.003496469995916724
+      },
+      "name": "4c36ccef",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 4024,
+      "f1": 0.0,
+      "latency_seconds": 0.6126095830113627,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence 'Target' in the expected output cannot be linked to any node(s) in the retrieval context, indicating a complete lack of alignment.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact 'Target'. This indicates a complete failure to align with the expected output, as the key detail is entirely missing."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "51a45a95",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2889,
+      "f1": 0.0,
+      "latency_seconds": 0.6834922920097597,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence 'Business Administration' in the expected output cannot be linked to any node(s) in the retrieval context, indicating a complete lack of alignment.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact 'Business Administration'. This indicates a complete failure to align with the expected output, as no facts from the expected output are present in the actual output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "e47becba",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "International Budget Hostel",
+      "bleu": 1.0,
+      "coverage": 1.0,
+      "covered": true,
+      "efficiency_tokens": 1128,
+      "f1": 1.0,
+      "latency_seconds": 0.6041252919822,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output 'International Budget Hostel' perfectly aligns with the 4th node in the retrieval context, which provides a detailed mention of the hostel. Great job on achieving a perfect match!",
+        "Coverage [GEval]": "The actual output matches the expected output exactly, with 'International Budget Hostel' being correctly identified as the recommended hostel near the Red Light District. There are no missing facts or contradictions present."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 1.0
+      },
+      "name": "7e00a6cb",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You have 20 playlists on Spotify.",
+      "bleu": 0.14285714285714285,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3778,
+      "f1": 0.2857142857142857,
+      "latency_seconds": 0.9354390410007909,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the expected output '20' does not correspond to any information from the nodes in the retrieval context, indicating a complete mismatch.",
+        "Coverage [GEval]": "The actual output contains the correct fact '20' as in the expected output, fulfilling the primary requirement. However, it includes additional context ('You have 20 playlists on Spotify') which does not contradict the expected output but is not necessary."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.8100583134669886
+      },
+      "name": "c960da58",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You have written seven short stories since you started writing regularly.",
+      "bleu": 0.08333333333333333,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3394,
+      "f1": 0.16666666666666669,
+      "latency_seconds": 1.1394251660094596,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence 'seven' lacks any contextual connection to the nodes in the retrieval context, making it impossible to attribute or support its presence.",
+        "Coverage [GEval]": "The actual output contains the key fact 'seven' from the expected output, fulfilling the primary requirement. However, it includes additional context ('You have written seven short stories since you started writing regularly') that does not contradict the expected output but is not necessary for alignment."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.8061989481248192
+      },
+      "name": "a1eacc2a",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3348,
+      "f1": 0.0,
+      "latency_seconds": 0.6708317089942284,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '4 months ago' in the expected output lacks any connection to the nodes in the retrieval context, as it is a standalone timestamp without relevant context.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact '4 months ago'. This indicates a complete failure to align with the expected output, as the key information is missing and there is no relevant information provided."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.005100176861644096
+      },
+      "name": "gpt4_6dc9b45b",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.004454277963306544,
+      "covered": false,
+      "efficiency_tokens": 3530,
+      "f1": 0.0,
+      "latency_seconds": 0.7744349999702536,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the sentence 'I attended four movie festivals.' is perfectly aligned with the 1st node in the retrieval context, which confirms attendance at multiple festivals. Great job!",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the fact from the expected output, which is 'I attended four movie festivals.' This indicates a complete failure to include the necessary information, and there are no additional details to evaluate for contradictions."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.004454277963306544
+      },
+      "name": "gpt4_a56e767c",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 1780,
+      "f1": 0.0,
+      "latency_seconds": 1.6837224590126425,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because none of the sentences in the expected output align with any nodes in the retrieval context, indicating a complete mismatch.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the expected facts '10 days ago' or '11 days (including the last day)'. This indicates a complete failure to align with the expected output, as no relevant information is provided."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_8279ba02",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Johnson",
+      "bleu": 1.0,
+      "coverage": 1.0,
+      "covered": true,
+      "efficiency_tokens": 3543,
+      "f1": 1.0,
+      "latency_seconds": 0.6677965000271797,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output 'Johnson' perfectly aligns with the 1st node in the retrieval context, ensuring complete accuracy. Great job!",
+        "Coverage [GEval]": "The actual output matches the expected output exactly, with 'Johnson' being present in both. There are no missing or extra details, ensuring full alignment with the evaluation steps."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 1.0
+      },
+      "name": "c5e8278d",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2132,
+      "f1": 0.0,
+      "latency_seconds": 0.7058324580430053,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because none of the sentences in the expected output relate to any nodes in the retrieval context, which covers topics like baking, racing schools, and birthday celebrations, rather than time durations.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the expected facts, such as '21 days' or '22 days'. This indicates a complete absence of alignment with the expected output, resulting in a failure according to the evaluation steps."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "9a707b81",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Four babies were born: Rachel's son Max, Mike and Emma's daughter Charlotte, and your aunt's twins Ava and Lily.",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2470,
+      "f1": 0.0,
+      "latency_seconds": 0.8623743749922141,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '5' in the expected output does not correspond to any information in the nodes in the retrieval context, indicating a complete lack of alignment.",
+        "Coverage [GEval]": "The actual output does not align with the expected output. The expected output is a numerical value '5', indicating the number of babies born, while the actual output provides a detailed list of names and relationships, totaling four babies. This discrepancy indicates a failure to meet the expected output, as the actual output does not match the expected numerical fact."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.18420760267537797
+      },
+      "name": "2e6d26dc",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3005,
+      "f1": 0.0,
+      "latency_seconds": 0.7700370830134489,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '4 days.' from the expected output cannot be linked to any node(s) in the retrieval context, indicating a complete lack of alignment.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the facts present in the expected output '4 days.' There is a complete absence of the expected information, resulting in a failure to meet the evaluation criteria."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_b5700ca9",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2455,
+      "f1": 0.0,
+      "latency_seconds": 0.7397018750198185,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because none of the sentences in the expected output, '6 days.' and '7 days (including the last day) is also acceptable.', can be linked to any nodes in the retrieval context.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the facts present in the expected output, which specifies '6 days' or '7 days'. This indicates a complete failure to align with the expected facts, as no relevant information is provided in the actual output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_fa19884c",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3832,
+      "f1": 0.0,
+      "latency_seconds": 0.6050280419876799,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the expected output's mention of '15 hours for getting to the three destinations' lacks direct support from any node(s) in the retrieval context, which discusses travel destinations and road trips without specifying this travel time.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the facts present in the expected output, such as '15 hours for getting to the three destinations' or '30 hours for the round trip'. This results in a complete failure to meet the evaluation criteria."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "aae3761f",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You volunteered at the \"Love is in the Air\" fundraising dinner back in February, on Valentine's Day.",
+      "bleu": 0.04545454545454546,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3229,
+      "f1": 0.09999999999999999,
+      "latency_seconds": 0.6989035829901695,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence 'February 14th' from the expected output cannot be linked to any node(s) in the retrieval context, indicating a complete lack of relevant information.",
+        "Coverage [GEval]": "The actual output correctly identifies the date as Valentine's Day in February, aligning with the expected output of February 14th. However, it includes additional details about the event name and theme, which do not contradict the expected facts but are not required."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.6780425473142535
+      },
+      "name": "58ef2f1c",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 1267,
+      "f1": 0.0,
+      "latency_seconds": 0.5303921250160784,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '4' from the expected output cannot be linked to any node(s) in the retrieval context, indicating a complete lack of alignment.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact '4'. There is a complete absence of the expected information, resulting in a failure to meet the evaluation criteria."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "88432d0a",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "You need to pick up one pair of boots from Zara and return the old pair.",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3411,
+      "f1": 0.0,
+      "latency_seconds": 0.9628468749579042,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '3' in the expected output lacks any connection to the nodes in the retrieval context, indicating a complete mismatch.",
+        "Coverage [GEval]": "The actual output does not contain the expected numerical answer '3' and instead provides irrelevant details about picking up and returning boots from Zara. This indicates a complete misalignment with the expected output, as none of the expected facts are present."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.005849566525966002
+      },
+      "name": "0a995998",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Based on the rows, you have recently finished a Revell F-15 Eagle kit and mentioned having a 1/72 scale B-29 bomber model kit and a 1/24 scale '69 Camaro kit. This suggests you have worked on or bought at least three model kits.",
+      "bleu": 0.4782871054046016,
+      "coverage": 0.37275225505112186,
+      "covered": false,
+      "efficiency_tokens": 2224,
+      "f1": 0.5263157894736842,
+      "latency_seconds": 0.8641724170302041,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.60 because while the retrieval context nodes provide information on the Revell F-15 Eagle, 1/72 scale B-29 bomber, and 1/24 scale '69 Camaro, they lack details on the Tamiya 1/48 scale Spitfire Mk.V and the 1/16 scale German Tiger I tank, leading to partial alignment with the expected output.",
+        "Coverage [GEval]": "The actual output mentions three model kits: Revell F-15 Eagle, 1/72 scale B-29 bomber, and 1/24 scale '69 Camaro, which are present in the expected output. However, it misses two model kits: Tamiya 1/48 scale Spitfire Mk.V and 1/16 scale German Tiger I tank. The actual output does not contradict the expected output but fails to account for all five model kits mentioned in the expected output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.6,
+        "Coverage [GEval]": 0.37275225505112186
+      },
+      "name": "gpt4_59c863d7",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3376,
+      "f1": 0.0,
+      "latency_seconds": 0.6237352910102345,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.50 because the first sentence in the expected output aligns well with the 1st node in the retrieval context, discussing the impact of imperialism and colonialism. However, the second sentence lacks a clear connection to any node in the retrieval context, leading to a balanced score.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact '2'. There is a complete absence of the expected information, resulting in a failure to meet the evaluation criteria."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.5,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "6d550036",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Miss Bee Providore",
+      "bleu": 1.0,
+      "coverage": 0.316237420668348,
+      "covered": false,
+      "efficiency_tokens": 1860,
+      "f1": 1.0,
+      "latency_seconds": 0.8698652500170283,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output 'Miss Bee Providore' perfectly aligns with the information in the 1st node in the retrieval context, showcasing a flawless match. Great job!",
+        "Coverage [GEval]": "The actual output 'Miss Bee Providore' does not match the expected output, which should be the name of a restaurant in Cihampelas Walk serving Nasi Goreng. This indicates a complete misalignment with the expected facts, as the provided name does not correspond to the location or dish mentioned in the input."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.316237420668348
+      },
+      "name": "c4f10528",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 2.1120235358186548e-05,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2748,
+      "f1": 0.0606060606060606,
+      "latency_seconds": 0.6226663329871371,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because none of the sentences in the expected output align with any nodes in the retrieval context, which focus on unrelated topics like movie tracking, rather than preferences for stand-up comedy specials on Netflix.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the facts present in the expected output, such as the preference for stand-up comedy specials on Netflix or the focus on storytelling. This results in a complete failure to meet the expected criteria."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "32260d93",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 3337,
+      "f1": 0.0,
+      "latency_seconds": 0.6165667499881238,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence '2' in the expected output lacks any connection to the nodes in the retrieval context, indicating a complete mismatch.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact '2'. This indicates a complete failure to provide the required information, as the expected output is entirely missing from the actual output."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.00396861265417041
+      },
+      "name": "80ec1f4f",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Here are some recommended resources to learn more about video editing:\n\n- Adobe Premiere Pro's official documentation and tutorials\n- YouTube channels like Premiere Bro, Video Copilot, and Adobe Creative Cloud\n- Online courses on platforms like Udemy, LinkedIn Learning, and Skillshare\n- Premiere Pro communities and forums, such as Reddit's r/premierepro and Adobe's Premiere Pro forum",
+      "bleu": 0.12121212121212123,
+      "coverage": 0.6536027580213647,
+      "covered": false,
+      "efficiency_tokens": 1599,
+      "f1": 0.16842105263157894,
+      "latency_seconds": 1.1312887920066714,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because every sentence in the expected output is perfectly aligned with the nodes in the retrieval context, specifically focusing on Adobe Premiere Pro's advanced settings, as highlighted by the 2nd node. Great job!",
+        "Coverage [GEval]": "The actual output includes several resources specifically related to Adobe Premiere Pro, such as its official documentation, YouTube channels, and forums, which align with the expected output's preference for Premiere Pro resources. However, it also mentions general video editing platforms like Udemy and Skillshare, which are not specifically tailored to Premiere Pro, slightly deviating from the expected focus."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.6536027580213647
+      },
+      "name": "8a2466db",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 4279,
+      "f1": 0.0,
+      "latency_seconds": 0.6519294590107165,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence 'Transcriptionist.' in the expected output does not match any node(s) in the retrieval context.",
+        "Coverage [GEval]": "The actual output does not contain any of the facts present in the expected output. The expected output was 'Transcriptionist,' but the actual output was 'not in memory,' which does not provide the required information. This results in a complete failure to meet the evaluation criteria."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0020964238983072698
+      },
+      "name": "1903aded",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 896,
+      "f1": 0.0,
+      "latency_seconds": 0.6150750830420293,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because none of the sentences in the expected output align with any nodes in the retrieval context, indicating a complete mismatch.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain any of the expected facts '9 days ago' or '10 days (including the last day)'. There are no additional details to verify for contradictions, but the absence of expected facts results in a failure to meet the evaluation criteria."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0
+      },
+      "name": "gpt4_468eb063",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "not in memory",
+      "bleu": 0,
+      "coverage": 0.0,
+      "covered": false,
+      "efficiency_tokens": 2987,
+      "f1": 0.0,
+      "latency_seconds": 0.5933672910323367,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 0.00 because the sentence 'Serenity Yoga' from the expected output does not match any node(s) in the retrieval context.",
+        "Coverage [GEval]": "The actual output 'not in memory' does not contain the expected fact 'Serenity Yoga'. This indicates a complete failure to align with the expected output, as the required information is entirely missing."
+      },
+      "metric_scores": {
+        "Contextual Recall": 0.0,
+        "Coverage [GEval]": 0.0015424552591012772
+      },
+      "name": "6ade9755",
+      "tier": 1
+    },
+    {
+      "abstention": false,
+      "answer": "Marketing specialist at a small startup.",
+      "bleu": 0.8571428571428571,
+      "coverage": 0.9262841831596939,
+      "covered": true,
+      "efficiency_tokens": 2206,
+      "f1": 1.0,
+      "latency_seconds": 0.7359689169679768,
+      "metric_reasons": {
+        "Contextual Recall": "The score is 1.00 because the expected output perfectly aligns with the information from the 1st node in the retrieval context, showcasing a flawless match. Great job!",
+        "Coverage [GEval]": "The actual output closely matches the expected output with only a minor discrepancy in punctuation. All facts are present and there are no contradictions or missing information."
+      },
+      "metric_scores": {
+        "Contextual Recall": 1.0,
+        "Coverage [GEval]": 0.9262841831596939
+      },
+      "name": "5d3d2817",
+      "tier": 1
+    }
+  ]
+}
