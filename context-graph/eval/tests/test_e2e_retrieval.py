@@ -29,6 +29,7 @@ def _fixture(session_id: str, content: str) -> SessionFixture:
         date="2023/05/20 (Sat) 14:03",
         turns=[Turn(role="user", content=content)],
         holds_evidence=True,
+        user_id="u1",
     )
 
 
@@ -381,7 +382,7 @@ def test_the_schema_still_describes_domain_entities(populated: ReadOnlyGraph):
 def test_schema_shows_relationship_properties_with_their_types(populated: ReadOnlyGraph):
     """An extracted fact's valid_at is only usable if the agent can see it is a datetime (#364)."""
     populated._db.query(
-        "CREATE (:User {user_id: 'u1'})-[:visited {chunk: 'c1', confidence: 0.9, "
+        "MERGE (u:User {user_id: 'u1'}) CREATE (u)-[:visited {chunk: 'c1', confidence: 0.9, "
         "valid_at: datetime('2023-05-30T17:27:00+00:00')}]->(:gliner2:Location {text: 'Paris', entity_type: 'Location'})"
     )
 

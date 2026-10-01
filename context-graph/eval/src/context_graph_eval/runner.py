@@ -299,8 +299,15 @@ async def _retrieve_all(
             today = (golden.additional_metadata or {}).get("question_date") if plan.question_date else None
             try:
                 if plan.retrieval_strategy == "hybrid":
+                    # Each question is its own user's history (to_session_fixtures).
                     return await retrieve_hybrid(
-                        golden.input, graph=graph, llm=llm, index=index, config=plan.hybrid, today=today
+                        golden.input,
+                        graph=graph,
+                        llm=llm,
+                        index=index,
+                        config=plan.hybrid,
+                        today=today,
+                        user_id=golden.name,
                     )
                 if plan.retrieval_strategy == "text-search":
                     return await retrieve_by_text_search(

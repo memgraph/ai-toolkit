@@ -14,6 +14,12 @@ then pulls the source turns of the facts it found. The answering LLM gets
 facts (with ``valid_at``) and turn text, through the same ``answer_prompt``
 every strategy uses.
 
+Given a ``user_id``, every lane searches only that user's history: their
+sessions' turns, the entities mentioned in them, and the edges extracted from
+them. Entities with a global identity are shared between users, so an entity
+is the user's when one of its mentions is, and the edges it leads to are
+filtered by their own source turn.
+
 Extraction stores what the facts lane follows: each edge's source turn
 (``r.source_id``), its speaker (``r.role``) and the sentence it was read from
 (``r.text``). Embeddings are computed on the host and cached beside the run,
@@ -93,6 +99,15 @@ class Embedder:
         return np.concatenate(out) if out else np.zeros((0, 384), dtype="float32")
 
 
+@dataclass(frozen=True)
+class Scope:
+    """Index positions one user may retrieve from."""
+
+    turns: list[int]
+    entities: list[int]
+    edges: list[int]
+
+
 @dataclass
 class HybridIndex:
     """What retrieval searches: ids and texts per lane, with their embedding matrices."""
@@ -107,7 +122,23 @@ class HybridIndex:
     #: Per edge, aligned with edge_ids: its relationship type, and whether it starts at a (:User).
     edge_types: list[str] = field(default_factory=list)
     edge_from_user: list[bool] = field(default_factory=list)
+    #: Who each turn, entity and edge belongs to, aligned with their ids: a
+    #: turn's and an edge's one user (None if unowned), every user an entity is mentioned by.
+    turn_users: list[str | None] = field(default_factory=list)
+    entity_users: list[frozenset[str]] = field(default_factory=list)
+    edge_users: list[str | None] = field(default_factory=list)
     _type_vecs: dict[str, Any] = field(default_factory=dict, repr=False)
+    _scopes: dict[str, Scope] = field(default_factory=dict, repr=False)
+
+    def scope(self, user_id: str) -> Scope:
+        """The positions of ``user_id``'s turns, entities and edges in this index."""
+        if user_id not in self._scopes:
+            self._scopes[user_id] = Scope(
+                turns=[i for i, u in enumerate(self.turn_users) if u == user_id],
+                entities=[i for i, us in enumerate(self.entity_users) if user_id in us],
+                edges=[i for i, u in enumerate(self.edge_users) if u == user_id],
+            )
+        return self._scopes[user_id]
 
     def relation_types(self, query: Any, k: int) -> list[str]:
         """The k relationship types whose names are closest to the query."""
@@ -138,8 +169,25 @@ def build_index(db: Any, cache: Path, embedder: Any) -> HybridIndex:
     edges = db.query(
         "MATCH (a)-[r]->(b) WHERE r.chunk IS NOT NULL "
         "RETURN id(r) AS id, type(r) AS type, coalesce(a.text, 'user') AS head, b.text AS tail, r.text AS text, "
-        "'User' IN labels(a) AS from_user ORDER BY id"
+        "'User' IN labels(a) AS from_user, r.source_id AS source ORDER BY id"
     )
+    owner = {
+        row["id"]: row["user"]
+        for row in db.query(
+            "MATCH (u:User)-[:HAD_SESSION]->(:Session)-[:HAS_ACTION]->(a:Action) WHERE a.text IS NOT NULL "
+            "RETURN a.action_id AS id, u.user_id AS user"
+        )
+    }
+    mentioned_by = {
+        row["id"]: frozenset(owner[s] for s in row["sources"] if s in owner)
+        for row in db.query(
+            "MATCH (n:gliner2)-[m:MENTIONED_IN]->() UNWIND coalesce(m.sources, []) AS source "
+            "RETURN n.entity_id AS id, collect(DISTINCT source) AS sources"
+        )
+    }
+    turn_users = [owner.get(t["id"]) for t in turns]
+    entity_users = [mentioned_by.get(e["id"], frozenset()) for e in entities]
+    edge_users = [owner.get(e["source"]) for e in edges]
     key = hashlib.sha256(
         json.dumps([len(turns), len(entities), len(edges), EMBEDDING_MODEL, "v3"]).encode()
     ).hexdigest()[:16]
@@ -158,6 +206,9 @@ def build_index(db: Any, cache: Path, embedder: Any) -> HybridIndex:
                 embedder,
                 edge_types,
                 edge_from_user,
+                turn_users=turn_users,
+                entity_users=entity_users,
+                edge_users=edge_users,
             )
     turn_vecs = embedder([t["text"][:2000] for t in turns])
     entity_vecs = embedder([e["text"] or "" for e in entities])
@@ -183,6 +234,9 @@ def build_index(db: Any, cache: Path, embedder: Any) -> HybridIndex:
         embedder,
         edge_types,
         edge_from_user,
+        turn_users=turn_users,
+        entity_users=entity_users,
+        edge_users=edge_users,
     )
 
 
@@ -192,15 +246,17 @@ def ensure_hybrid_index(graph: ActionsGraph, cache: Path, embedder: Any | None =
     return build_index(graph.db, cache, embedder or Embedder())
 
 
-def _top(vecs: Any, query: Any, k: int) -> list[int]:
+def _top(vecs: Any, query: Any, k: int, among: list[int] | None = None) -> list[int]:
+    """Positions of the k rows of ``vecs`` nearest ``query``, best first; only rows in ``among`` when given."""
     import numpy as np
 
-    if k <= 0 or len(vecs) == 0:
+    rows = np.arange(len(vecs)) if among is None else np.asarray(among, dtype=int)
+    if k <= 0 or len(rows) == 0:
         return []
-    scores = vecs @ query
+    scores = vecs[rows] @ query
     k = min(k, len(scores))
     top = np.argpartition(-scores, k - 1)[:k]
-    return [int(i) for i in top[np.argsort(-scores[top])]]
+    return [int(rows[i]) for i in top[np.argsort(-scores[top])]]
 
 
 def _turn_rows(graph: ReadOnlyGraph, turn_ids: list[str], chars: int) -> list[str]:
@@ -235,37 +291,56 @@ async def retrieve_hybrid(
     index: HybridIndex,
     config: HybridConfig | None = None,
     today: str | None = None,
+    user_id: str | None = None,
 ) -> Retrieved:
     """Answer ``question`` from turns found by text and vector search, plus the typed facts and
-    source turns the graph leads to. Same ``answer_prompt`` as every other strategy."""
+    source turns the graph leads to. Same ``answer_prompt`` as every other strategy.
+
+    With ``user_id``, everything retrieved comes from that user's sessions; without, from the whole graph.
+    """
     config = config or HybridConfig()
     started = time.monotonic()
     query = index.embedder([QUERY_INSTRUCTION + question])[0]
+    scope = index.scope(user_id) if user_id is not None else None
+    own_turns = [index.turn_ids[i] for i in scope.turns] if scope else None
     turn_ids: list[str] = []
     facts: dict[int, dict[str, Any]] = {}
     queries: list[str] = []
 
     if "turns" in config.lanes:
-        turn_ids += [index.turn_ids[i] for i in _top(index.turn_vecs, query, config.turns_k)]
+        turn_ids += [
+            index.turn_ids[i] for i in _top(index.turn_vecs, query, config.turns_k, scope.turns if scope else None)
+        ]
     if "text" in config.lanes and (text := _safe_query(question)):
         queries.append(text)
+        # search_all stops at 1,000 hits unless given a limit, which would
+        # filter a user's turns out before the scope below sees them.
         hits = graph.query(
-            f"CALL text_search.search_all('{TEXT_INDEX_NAME}', $query) YIELD node, score "
+            f"CALL text_search.search_all('{TEXT_INDEX_NAME}', $query, {{limit: $pool}}) YIELD node, score "
+            "WITH node, score WHERE $own IS NULL OR node.action_id IN $own "
             "WITH node, score ORDER BY score DESC LIMIT $limit RETURN node.action_id AS id",
-            {"query": text, "limit": config.text_k},
+            {"query": text, "limit": config.text_k, "pool": max(len(index.turn_ids), 1), "own": own_turns},
         )
         turn_ids += [h["id"] for h in hits]
     if "entities" in config.lanes:
-        entity_ids = list(dict.fromkeys(index.entity_ids[i] for i in _top(index.entity_vecs, query, config.entities_k)))
+        entity_ids = list(
+            dict.fromkeys(
+                index.entity_ids[i]
+                for i in _top(index.entity_vecs, query, config.entities_k, scope.entities if scope else None)
+            )
+        )
         for row in graph.query(
-            "MATCH (n:gliner2) WHERE n.entity_id IN $ids MATCH (n)-[r]-() WHERE r.chunk IS NOT NULL "
+            "MATCH (n:gliner2) WHERE n.entity_id IN $ids MATCH (n)-[r]-() "
+            "WHERE r.chunk IS NOT NULL AND ($own IS NULL OR r.source_id IN $own) "
             "WITH n, r ORDER BY r.confidence DESC WITH n, collect(r) AS rs UNWIND rs[0..$per] AS r "
             "WITH DISTINCT r WITH startNode(r) AS a, r, endNode(r) AS b " + _EDGE_RETURN,
-            {"ids": entity_ids, "per": config.edges_per_entity},
+            {"ids": entity_ids, "per": config.edges_per_entity, "own": own_turns},
         ):
             facts.setdefault(row["id"], row)
     if "facts" in config.lanes:
-        edge_ids = [index.edge_ids[i] for i in _top(index.edge_vecs, query, config.facts_k)]
+        edge_ids = [
+            index.edge_ids[i] for i in _top(index.edge_vecs, query, config.facts_k, scope.edges if scope else None)
+        ]
         for row in graph.query("MATCH (a)-[r]->(b) WHERE id(r) IN $ids " + _EDGE_RETURN, {"ids": edge_ids}):
             facts.setdefault(row["id"], row)
     if "user_facts" in config.lanes and index.edge_types:
@@ -275,7 +350,10 @@ async def retrieve_hybrid(
         # gather. Ranked by similarity to keep the context bounded.
         import numpy as np
 
-        user_edges = [i for i, u in enumerate(index.edge_from_user) if u]
+        candidates_of = set(scope.edges) if scope else None
+        user_edges = [
+            i for i, u in enumerate(index.edge_from_user) if u and (candidates_of is None or i in candidates_of)
+        ]
         if config.user_fact_types_from == "names":
             wanted = set(index.relation_types(query, config.user_fact_types))
         else:

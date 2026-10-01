@@ -147,6 +147,7 @@ def _one_session_fixture(session_id: str):
         date="2023/05/20 (Sat) 14:03",
         turns=[Turn(role="user", content=f"I adopted a beagle named Max, in {session_id}")],
         holds_evidence=True,
+        user_id="u1",
     )
 
 

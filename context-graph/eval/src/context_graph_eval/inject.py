@@ -4,9 +4,10 @@ Injection stages content only. It does not distil anything -- reconciliation is
 a separate, LLM-backed pass the runner triggers afterwards, exactly as it would
 run over a real harness session.
 
-Isolation is per **batch**, not per question: a batch-wide graph is what gives
-retrieval distractors to get wrong, and without distractors both precision and
-the payload-size efficiency metric would score well by construction.
+A batch is one graph holding many people: each question's haystack is its
+own user's history (``SessionFixture.user_id``), and retrieval is scoped to the
+asking user. The distractors a question has to get past are its own
+haystack's, as LongMemEval frames them -- not other people's sessions.
 
 The eval instance is cleared before each batch so every run starts from known,
 fixed state -- otherwise a question could be answered from a previous run's
@@ -27,12 +28,6 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
 
 #: Marks the Session as awaiting distillation. Reconciliation sweeps for this.
 PENDING = "pending"
-
-#: The one user every injected session belongs to. LongMemEval frames each
-#: haystack as a single user's chat history, so the batch has one person: with
-#: none recorded, reconciliation minted one per session (#354), and a question
-#: spanning three sessions had no single user to gather facts across.
-EVAL_USER_ID = "longmemeval-user"
 
 #: LongMemEval's session date format, e.g. '2023/05/30 (Tue) 17:27'.
 CORPUS_DATE_FORMAT = "%Y/%m/%d (%a) %H:%M"
@@ -61,12 +56,9 @@ class Written:
 def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph") -> Written:
     """Clear the eval graph, then load ``fixtures`` into it.
 
-    Fixtures are deduplicated by ``session_id``. Upstream reuses distractor
-    sessions across questions, and a repeated id carries identical content --
-    verified across the whole dataset -- so a repeat is the *same* session, not
-    a new one. Writing it per occurrence would append its turns again on every
-    reuse, duplicating content in the graph and paying to reconcile each copy
-    (about 4,600 redundant LLM-backed reconciliations over a full run).
+    Each session is linked to its fixture's ``(:User)``. Fixtures are
+    deduplicated by ``session_id``: writing a repeat again would append its
+    turns a second time.
 
     Returns counts of what was written, so a caller can assert the batch landed
     rather than inferring it from the absence of an exception.
@@ -121,7 +113,7 @@ def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph")
         graph.db.query(
             "MERGE (u:User {user_id: $user_id}) WITH u MATCH (s:Session {session_id: $session_id}) "
             "MERGE (u)-[:HAD_SESSION]->(s)",
-            {"user_id": EVAL_USER_ID, "session_id": fixture.session_id},
+            {"user_id": fixture.user_id, "session_id": fixture.session_id},
         )
         _mark_pending(graph, fixture.session_id)
 

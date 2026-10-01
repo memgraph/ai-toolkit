@@ -146,3 +146,43 @@ async def test_user_facts_gathers_the_users_facts_of_a_relation_type_across_sess
     facts = [row for row in result.retrieval_context if row.startswith("FACT:")]
     assert len(facts) == 3
     assert all(row.startswith("FACT: user -[attended]-> wedding of") for row in facts)
+
+
+def _plant_two_users(graph: ActionsGraph) -> None:
+    """Two people who both visited Paris: one global Paris entity, each user's own session, turn and edge."""
+    db = graph.db
+    db.query("CREATE (:gliner2:Location {entity_id: 'paris', entity_type: 'Location', text: 'Paris'})")
+    for user, session, companion in (("u1", "s1", "Anna"), ("u2", "s2", "Bob")):
+        graph.ensure_session(Session(session_id=session, started_at="2023-05-30T17:27:00+00:00"))
+        graph.record_message(
+            session_id=session,
+            role=MessageRole.USER,
+            content=f"I visited Paris with {companion}.",
+            timestamp="2023-05-30T17:27:00+00:00",
+        )
+        db.query(
+            "MATCH (s:Session {session_id: $s})-[:HAS_ACTION]->(a:Action), (n:gliner2 {entity_id: 'paris'}) "
+            "MERGE (u:User {user_id: $u}) MERGE (u)-[:HAD_SESSION]->(s) "
+            "CREATE (a)-[:HAS_CHUNK]->(c:Chunk {hash: $s, text: a.text}) "
+            "CREATE (n)-[:MENTIONED_IN {sources: [a.action_id]}]->(c) "
+            "CREATE (u)-[:visited {chunk: $s, source_id: a.action_id, role: 'user', confidence: 0.9, text: a.text}]->(n)",
+            {"s": session, "u": user},
+        )
+
+
+@pytest.mark.asyncio
+async def test_scoped_to_a_user_every_lane_retrieves_only_that_users_history(eval_graph: ActionsGraph, tmp_path):
+    _plant_two_users(eval_graph)
+    index = ensure_hybrid_index(eval_graph, tmp_path / "index.npz", embedder=_BagOfWords())
+    question = "Who did I visit Paris with?"
+
+    async def context(user_id):
+        result = await retrieve_hybrid(
+            question, graph=ReadOnlyGraph(eval_graph.db), llm=_EchoLLM(), index=index, user_id=user_id
+        )
+        return "\n".join(result.retrieval_context)
+
+    scoped = await context("u1")
+    assert "Anna" in scoped
+    assert "Bob" not in scoped
+    assert "Bob" in await context(None)
