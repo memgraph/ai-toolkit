@@ -33,6 +33,11 @@ The typed relation model (map #344) this backend implements:
 - A relationship carries the source chunk, the source turn's timestamp as
   `valid_at` (#364) and the model's confidence. Self-loops left after identity
   resolution are dropped (#355).
+- Provenance is exact, from the spans the model returns (#392): a segment's
+  `source_id` (the turn) is recorded in `MENTIONED_IN.sources` for every
+  entity it mentions, and each relationship extracted from it is its own edge
+  carrying `source_id`, the speaker as `role`, and the sentence covering both
+  endpoints as `text`.
 """
 
 import asyncio
@@ -220,6 +225,34 @@ def _word_windows(text: str, start: int, end: int, size: int, overlap: int) -> l
         if last == len(words) - 1:
             break
     return ranges
+
+
+#: A sentence ends at terminal punctuation followed by whitespace, or at a line break.
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+")
+
+#: The longest source text a relationship carries; the full turn is one hop
+#: away through its source_id.
+SOURCE_TEXT_CAP = 300
+
+
+def _source_text(text: str, bounds: tuple[int, int], head: tuple[int, int], tail: tuple[int, int]) -> str:
+    """The sentence or sentences of text[bounds] covering both endpoint spans, at most SOURCE_TEXT_CAP characters.
+
+    Past the cap the text is trimmed around the spans, keeping both whole.
+    """
+    lo, hi = min(head[0], tail[0]), max(head[1], tail[1])
+    start, end = bounds
+    for boundary in _SENTENCE_END.finditer(text, bounds[0], bounds[1]):
+        if boundary.end() <= lo:
+            start = boundary.end()
+        elif boundary.start() >= hi:
+            end = boundary.start()
+            break
+    if end - start > SOURCE_TEXT_CAP:
+        slack = max(SOURCE_TEXT_CAP - (hi - lo), 0)
+        start = max(start, lo - slack // 2)
+        end = min(end, max(hi, start + SOURCE_TEXT_CAP))
+    return text[start:end].strip()
 
 
 class GLiNER2Backend:
@@ -427,8 +460,8 @@ class GLiNER2Backend:
         self.stats.infeasible_windows += extracted.infeasible
 
         endpoints: list[Endpoint | None] = []
-        valid_at: list[str | None] = []
         nodes: dict[str, dict[str, Any]] = {}
+        sources: dict[str, set[str]] = {}
         for mention, segment in extracted.mentions:
             self.stats.mentions += 1
             if (
@@ -437,7 +470,6 @@ class GLiNER2Backend:
                 and mention.confidence < self.entity_confidence_threshold
             ):
                 endpoints.append(None)
-                valid_at.append(None)
                 continue
             resolution = self._resolve(mention, segment, chunk)
             if resolution.action == "drop":
@@ -448,15 +480,24 @@ class GLiNER2Backend:
                 self.stats.mentions_retyped += 1
             resolved = self._endpoint(mention, resolution, chunk)
             endpoints.append(resolved[0] if resolved else None)
-            valid_at.append(segment.valid_at if segment is not None else None)
             if resolved and resolved[1] is not None:
-                nodes.setdefault(resolved[1]["entity_id"], resolved[1])
+                entity_id = resolved[1]["entity_id"]
+                nodes.setdefault(entity_id, resolved[1])
+                mentioned_in = sources.setdefault(entity_id, set())
+                if segment is not None and segment.source_id is not None:
+                    mentioned_in.add(segment.source_id)
 
         if nodes:
             create_nodes_from_list(memgraph, list(nodes.values()), self._workspace, 100, merge_key="entity_id")
-            link_mentions(memgraph, self._workspace, "entity_id", chunk.hash, list(nodes))
+            link_mentions(
+                memgraph,
+                self._workspace,
+                "entity_id",
+                chunk.hash,
+                {entity_id: list(ids) for entity_id, ids in sources.items()},
+            )
 
-        merged: dict[tuple[str, Endpoint, Endpoint], dict[str, Any]] = {}
+        merged: dict[tuple[str, Endpoint, Endpoint, str | None], dict[str, Any]] = {}
         for relation_type, head_index, tail_index, confidence in extracted.relations:
             head, tail = endpoints[head_index], endpoints[tail_index]
             if head is None or tail is None:
@@ -472,8 +513,18 @@ class GLiNER2Backend:
                 # resolution then makes them one node (#355).
                 self.stats.self_loops_dropped += 1
                 continue
-            when = valid_at[head_index]
-            key = (relation_type, head, tail)
+            head_mention, segment = extracted.mentions[head_index]
+            tail_mention = extracted.mentions[tail_index][0]
+            # Relations never cross windows, so both endpoints share the head's segment.
+            when = segment.valid_at if segment is not None else None
+            source_id = segment.source_id if segment is not None else None
+            key = (relation_type, head, tail, source_id)
+            text = _source_text(
+                chunk.text,
+                (segment.start, segment.end) if segment is not None else (0, len(chunk.text)),
+                (head_mention.start, head_mention.end),
+                (tail_mention.start, tail_mention.end),
+            )
             previous = merged.get(key)
             if previous is None:
                 merged[key] = {
@@ -481,13 +532,16 @@ class GLiNER2Backend:
                     "head": head,
                     "tail": tail,
                     "chunk": chunk.hash,
+                    "source_id": source_id,
                     "valid_at": when,
                     "confidence": confidence,
+                    "text": text,
+                    "role": segment.role if segment is not None else None,
                 }
                 continue
-            # The same fact twice in one chunk: when it was first said, how sure the model ever was.
+            # The same fact twice under one key: when and where it was first said, how sure the model ever was.
             if when is not None and (previous["valid_at"] is None or when < previous["valid_at"]):
-                previous["valid_at"] = when
+                previous.update(valid_at=when, text=text, role=segment.role if segment is not None else None)
             if confidence is not None and (previous["confidence"] is None or confidence > previous["confidence"]):
                 previous["confidence"] = confidence
 

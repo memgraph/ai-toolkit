@@ -64,7 +64,9 @@ class _PreparedSession:
 
     def document(self, user_id: str) -> Document:
         """combined_text as an unstructured2graph Document: one segment per deduped
-        source, carrying its speaker and timestamp, and the session's user."""
+        source, carrying its speaker, timestamp and node id, and the session's user.
+
+        A text repeated across sources is one segment, attributed to its first source."""
         from unstructured2graph import Document, Segment
 
         first: dict[str, ReconciliationSource] = {}
@@ -73,7 +75,7 @@ class _PreparedSession:
         segments, cursor = [], 0
         for digest, text in self.unique_texts.items():
             source = first[digest]
-            segments.append(Segment(cursor, cursor + len(text), source.role, source.valid_at))
+            segments.append(Segment(cursor, cursor + len(text), source.role, source.valid_at, source.node_id))
             cursor += len(text) + 2
         return Document(text=self.combined_text, segments=tuple(segments), user_id=user_id)
 

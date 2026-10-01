@@ -103,15 +103,15 @@ await from_unstructured(
 
 It extracts on gliner2's joint path, where each relation type's `start_labels`/`end_labels` constrain decoding. It extracts one window per segment, splitting only a segment longer than `chunk_size` words. It writes:
 
-- entity nodes, merged per the type's `identity` (see the ontology section), each linked to every chunk that mentions it by `MENTIONED_IN`;
-- relationships keyed by source chunk, carrying `chunk`, `confidence`, and `valid_at` (a Memgraph `datetime`, from the segment's timestamp);
+- entity nodes, merged per the type's `identity` (see the ontology section), each linked to every chunk that mentions it by `MENTIONED_IN`, whose `sources` lists the `source_id` of each segment that mentions it;
+- relationships keyed by source chunk and, when the segment has one, its `source_id`, so a fact said in two turns is two relationships. Each carries `chunk`, `confidence`, `valid_at` (a Memgraph `datetime`, from the segment's timestamp), `source_id`, `role` (the speaker) and `text` (the sentence or sentences covering both endpoints, at most 300 characters);
 - the chunk's user's own mentions onto `(:User {user_id})`, decided by the `mention_resolver` (default `resolve_user_mentions`). The caller must create that node.
 
 Self-loops left after identity resolution are dropped. `backend.stats` counts windows, re-typed and dropped mentions, and self-loops.
 
 ### Ingesting documents verbatim, with segments
 
-`from_documents` stores each `Document`'s text exactly as given, as one `Chunk`, instead of re-chunking it through `unstructured` (whose partitioner rewrites text). Its `segments` travel with the chunk: for a conversation, one per turn, with `role` and `valid_at`. The GLiNER2 backend uses them; LightRAG reads the text alone.
+`from_documents` stores each `Document`'s text exactly as given, as one `Chunk`, instead of re-chunking it through `unstructured` (whose partitioner rewrites text). Its `segments` travel with the chunk: for a conversation, one per turn, with `role`, `valid_at` and an opaque `source_id` naming the turn's node. The GLiNER2 backend uses them; LightRAG reads the text alone.
 
 ```python
 from unstructured2graph import Document, Segment, from_documents
