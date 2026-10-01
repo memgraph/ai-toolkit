@@ -327,6 +327,24 @@ def enforce_retrieval_floor(scored: list[Scored], *, retrieved_tokens: dict[str,
     return floored
 
 
+#: The rubrics' evaluation steps, fixed rather than generated. deepeval copies
+#: each metric per test case, so a GEval without explicit steps asks the judge
+#: to write them afresh for every question: one extra judge call per question
+#: per rubric, and every question graded against slightly different steps.
+COVERAGE_STEPS = [
+    "List every distinct fact stated in the expected output.",
+    "For each fact, check whether the actual output states it, allowing paraphrase and equivalent values.",
+    "Extra detail in the actual output does not reduce the score; a missing or contradicted fact does.",
+    "Score high only if every fact is present, and low if any is missing.",
+]
+ABSTENTION_STEPS = [
+    "The expected output says the information is not in memory.",
+    "Check whether the actual output declines to answer, says the information is absent, or gives a correct zero count.",
+    "A confident specific answer that is not a zero count is a failure.",
+    "Mentioning what the user did say instead is a bonus, never a requirement.",
+]
+
+
 def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list[Any]:
     """The judged half of the rubric: a deliberately minimal pair (#304).
 
@@ -377,6 +395,7 @@ def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list
                     "zero count all pass. A confident specific answer is a failure. "
                     "Naming what the user did mention instead is a bonus, not a requirement."
                 ),
+                evaluation_steps=ABSTENTION_STEPS,
                 evaluation_params=[
                     LLMTestCaseParams.INPUT,
                     LLMTestCaseParams.ACTUAL_OUTPUT,
@@ -395,6 +414,7 @@ def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list
                 "Does the actual output contain every fact present in the expected output? "
                 "Extra detail is acceptable. A missing fact is a failure."
             ),
+            evaluation_steps=COVERAGE_STEPS,
             evaluation_params=[
                 LLMTestCaseParams.INPUT,
                 LLMTestCaseParams.ACTUAL_OUTPUT,
@@ -412,6 +432,9 @@ def to_test_case(golden: "Golden", retrieved: "Retrieved") -> Any:
     from deepeval.test_case import LLMTestCase
 
     return LLMTestCase(
+        # Named so the judge's results can be matched back to their question:
+        # deepeval returns them in completion order, not input order.
+        name=golden.name,
         input=golden.input,
         actual_output=retrieved.answer,
         expected_output=golden.expected_output,

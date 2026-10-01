@@ -7,6 +7,7 @@ and is not committed -- only the converted corpus is (see #302).
 
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -406,7 +407,7 @@ def _run(args) -> int:
 
     judge_provider, judge_model_id = _parse_model_spec(args.judge_model, default_provider=DEFAULT_JUDGE_PROVIDER)
     agent_provider, agent_model_id = _parse_model_spec(args.agent_model, default_provider=DEFAULT_AGENT_PROVIDER)
-    judge = _build_model(judge_provider, judge_model_id)
+    judge = _build_model(judge_provider, judge_model_id, minimal_effort=True)
     agent = _build_model(agent_provider, agent_model_id)
     if agent is None:
         print("no agent model configured: set --agent-model or an OPENAI_API_KEY", file=sys.stderr)
@@ -588,7 +589,31 @@ def _clear_deepeval_anthropic_secret() -> None:
         pass
 
 
-def _build_model(provider: str, model_id: str | None):
+#: Anthropic model families that accept output_config.effort. Older ones
+#: (Sonnet 4.5, Haiku 4.5) reject it -- and run without extended thinking
+#: unless it is requested, which is already their minimum.
+_ANTHROPIC_EFFORT_MODELS = re.compile(r"^claude-(opus|sonnet|fable|mythos)-(4-[6-9]|[5-9])")
+#: OpenAI reasoning models, and the lowest reasoning_effort each accepts.
+_OPENAI_REASONING_MODELS = ((re.compile(r"^gpt-5"), "minimal"), (re.compile(r"^o[1-9]"), "low"))
+
+
+def minimal_effort_kwargs(provider: str, model_id: str) -> dict:
+    """Generation kwargs that run ``model_id`` at its lowest reasoning effort, or {} when it has no such knob.
+
+    Every model here is built at its minimum: a judge grades a short answer
+    against a key, and the eval's cost is dominated by judge calls. Effort is
+    set only where the model accepts it, since passing it elsewhere is a 400.
+    """
+    if provider == "anthropic" and _ANTHROPIC_EFFORT_MODELS.match(model_id):
+        return {"output_config": {"effort": "low"}}
+    if provider == "openai":
+        for pattern, effort in _OPENAI_REASONING_MODELS:
+            if pattern.match(model_id):
+                return {"reasoning_effort": effort}
+    return {}
+
+
+def _build_model(provider: str, model_id: str | None, *, minimal_effort: bool = False):
     """Instantiate a deepeval model for ``provider``, or None when nothing is
     configured (no matching API key -- via ADR 0002's config-file resolution
     or the environment directly -- present for it).
@@ -611,10 +636,13 @@ def _build_model(provider: str, model_id: str | None):
             from deepeval.models import AnthropicModel
 
             _clear_deepeval_anthropic_secret()
-            return AnthropicModel(model=model_id or DEFAULT_JUDGE_MODEL, _anthropic_api_key=key)
+            model = model_id or DEFAULT_JUDGE_MODEL
+            kwargs = minimal_effort_kwargs(provider, model) if minimal_effort else {}
+            return AnthropicModel(model=model, _anthropic_api_key=key, generation_kwargs=kwargs)
         from deepeval.models import GPTModel
 
-        return GPTModel(model=model_id) if model_id else GPTModel()
+        kwargs = minimal_effort_kwargs(provider, model_id or "") if minimal_effort else {}
+        return GPTModel(model=model_id, generation_kwargs=kwargs) if model_id else GPTModel(generation_kwargs=kwargs)
     except Exception as exc:
         print(f"could not build {provider} model {model_id!r}: {exc}", file=sys.stderr)
         return None

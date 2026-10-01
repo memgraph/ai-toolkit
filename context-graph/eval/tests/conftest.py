@@ -66,6 +66,7 @@ def eval_graph():
     except Exception as exc:
         pytest.skip(f"no eval Memgraph at {EVAL_MEMGRAPH_URL}: {exc}")
 
+    _drop_entity_type_constraints(db)
     graph = ActionsGraph(memgraph=db)
     with contextlib.suppress(Exception):
         graph.setup()  # constraints may already exist
@@ -78,6 +79,25 @@ def eval_graph():
     _wipe(graph)
     yield graph
     _wipe(graph)
+
+
+def _drop_entity_type_constraints(db) -> None:
+    """Drop the entity_type existence/type constraints extraction leaves behind.
+
+    Wiping nodes leaves schema. unstructured2graph ingestion (e.g. the
+    reconciliation tests' GLiNER2 path) constrains `:base`/`:gliner2` nodes to
+    carry a string entity_type, and a later test that plants one without it --
+    as the retrieval tests do for LightRAG-shaped nodes -- then fails on a
+    constraint an earlier test created. Order-dependent failures, gone here.
+    """
+    for row in db.query("SHOW CONSTRAINT INFO"):
+        kind, label, prop = row["constraint type"], row["label"], row["properties"]
+        if prop != "entity_type":
+            continue
+        if kind == "exists":
+            db.query(f"DROP CONSTRAINT ON (n:{label}) ASSERT EXISTS (n.entity_type);")
+        elif kind == "data_type":
+            db.query(f"DROP CONSTRAINT ON (n:{label}) ASSERT n.entity_type IS TYPED STRING;")
 
 
 def _wipe(graph) -> None:

@@ -437,3 +437,49 @@ async def test_reusing_a_graph_with_no_recorded_backend_is_not_refused(eval_grap
         llm=_StubLLM(),
         plan=RunPlan(reconcile=False, reuse_graph=True, judge=None, extraction_backend="gliner2"),
     )
+
+
+def test_judge_results_are_matched_to_their_own_question(monkeypatch):
+    """deepeval returns results in completion order under concurrency. Matching
+    them by position handed every question another question's scores."""
+    import asyncio
+    import random
+
+    from context_graph_eval import scoring
+    from context_graph_eval.retrieval import Retrieved
+    from context_graph_eval.runner import RunPlan, _judge_group
+    from deepeval.dataset import Golden
+    from deepeval.metrics import BaseMetric
+
+    class _Slow(BaseMetric):
+        """Scores each case by the number in its input, after a random delay."""
+
+        threshold = 0.5
+
+        def __init__(self):
+            self.async_mode = True
+
+        def measure(self, test_case, *args, **kwargs):
+            raise NotImplementedError
+
+        async def a_measure(self, test_case, *args, **kwargs):
+            await asyncio.sleep(random.random() / 20)
+            self.score = int(test_case.input.split("-")[1]) / 100
+            self.reason = test_case.input
+            self.success = True
+            return self.score
+
+        def is_successful(self):
+            return True
+
+        @property
+        def __name__(self):
+            return "Slow"
+
+    monkeypatch.setattr(scoring, "build_metrics", lambda judge, abstention=False: [_Slow()])
+    goldens = [Golden(name=f"n{i}", input=f"q-{i}", expected_output="e") for i in range(12)]
+    group = [(g, Retrieved(answer="a")) for g in goldens]
+
+    judged = _judge_group(group, RunPlan(judge=object(), max_concurrent=4), abstention=False)
+
+    assert {name: j.reasons["Slow"] for name, j in judged.items()} == {f"n{i}": f"q-{i}" for i in range(12)}

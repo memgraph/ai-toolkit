@@ -6,6 +6,7 @@ test the printer at its seam by capturing stdout, rather than reaching into the
 branch structure.
 """
 
+import pytest
 from context_graph_eval.cli import (
     DEFAULT_JUDGE_MODEL,
     _build_model,
@@ -174,3 +175,22 @@ def test_no_model_is_built_without_a_matching_api_key(monkeypatch):
 
     assert _build_model("anthropic", None) is None
     assert _build_model("openai", None) is None
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "expected"),
+    [
+        ("anthropic", "claude-sonnet-4-5-20250929", {}),  # no effort knob; no thinking unless asked
+        ("anthropic", "claude-haiku-4-5", {}),
+        ("anthropic", "claude-sonnet-4-6", {"output_config": {"effort": "low"}}),
+        ("anthropic", "claude-sonnet-5-5", {"output_config": {"effort": "low"}}),
+        ("anthropic", "claude-opus-5-5", {"output_config": {"effort": "low"}}),
+        ("openai", "gpt-4o", {}),
+        ("openai", "gpt-5-mini", {"reasoning_effort": "minimal"}),
+        ("openai", "o4-mini", {"reasoning_effort": "low"}),
+    ],
+)
+def test_judges_run_at_their_lowest_effort(provider, model, expected):
+    from context_graph_eval.cli import minimal_effort_kwargs
+
+    assert minimal_effort_kwargs(provider, model) == expected
