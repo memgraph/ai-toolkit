@@ -19,6 +19,7 @@ from unstructured2graph.gliner2_backend import (
     Resolution,
     _entity_id,
     _normalize_text,
+    _source_text,
     _word_windows,
     resolve_user_mentions,
 )
@@ -46,14 +47,16 @@ def _backend(**engine_kwargs):
 
 
 def _session(*turns, user_id="u1"):
-    """A Document shaped like sessions-graph builds one: turns joined by a blank line."""
+    """A Document shaped like sessions-graph builds one: turns joined by a blank line.
+
+    Each turn is (role, body, when) or (role, body, when, source_id)."""
     text, segments, cursor = "", [], 0
-    for role, body, when in turns:
+    for role, body, when, *source in turns:
         turn = f"{role}: {body}"
         if text:
             text += "\n\n"
             cursor += 2
-        segments.append(Segment(cursor, cursor + len(turn), role, when))
+        segments.append(Segment(cursor, cursor + len(turn), role, when, *source))
         text += turn
         cursor += len(turn)
     return Document(text=text, segments=tuple(segments), user_id=user_id)
@@ -329,6 +332,81 @@ async def test_reingesting_a_chunk_is_idempotent(memgraph):
     await from_documents([document], memgraph, backend)
     assert memgraph.query("MATCH ()-[r:visited]->() RETURN count(r) AS n") == [{"n": 1}]
     assert memgraph.query("MATCH (n:gliner2) RETURN count(n) AS n") == [{"n": 1}]
+
+
+def test_source_text_is_the_sentences_covering_both_spans():
+    text = "user: Hello there. I flew to Paris on Monday. It rained!"
+    head, tail = (text.index("I"), text.index("I") + 1), (text.index("Paris"), text.index("Paris") + 5)
+    assert _source_text(text, (0, len(text)), head, tail) == "I flew to Paris on Monday."
+    assert _source_text(text, (0, len(text)), (6, 11), tail) == "user: Hello there. I flew to Paris on Monday."
+
+
+def test_source_text_is_capped_around_the_spans():
+    text = "x " * 400 + "I flew to Paris" + " y" * 400
+    head, tail = (text.index("I"), text.index("I") + 1), (text.index("Paris"), text.index("Paris") + 5)
+    source = _source_text(text, (0, len(text)), head, tail)
+    assert "I flew to Paris" in source
+    assert len(source) <= 300
+
+
+@pytest.mark.asyncio
+async def test_mentions_record_which_turns_they_came_from(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"Paris": "Location", "Rome": "Location"})
+    document = _session(
+        ("user", "Paris first", None, "turn-1"),
+        ("assistant", "Paris and Rome", None, "turn-2"),
+    )
+    await from_documents([document], memgraph, backend)
+    rows = memgraph.query(
+        "MATCH (n:gliner2)-[m:MENTIONED_IN]->(:Chunk) RETURN n.text AS text, m.sources AS sources ORDER BY text"
+    )
+    assert rows == [{"text": "Paris", "sources": ["turn-1", "turn-2"]}, {"text": "Rome", "sources": ["turn-2"]}]
+
+
+@pytest.mark.asyncio
+async def test_an_edge_carries_its_turn_speaker_and_sentence(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"I": "User", "Paris": "Location"}, relations=[("visited", "I", "Paris", 0.8)])
+    document = _session(("user", "Hi. I visited Paris last week. It was great.", "2023-05-30T17:27:00+00:00", "turn-1"))
+    await from_documents([document], memgraph, backend)
+    rows = memgraph.query("MATCH ()-[r:visited]->() RETURN r.source_id AS source_id, r.role AS role, r.text AS text")
+    assert rows == [{"source_id": "turn-1", "role": "user", "text": "I visited Paris last week."}]
+
+
+@pytest.mark.asyncio
+async def test_the_same_fact_in_two_turns_is_two_edges_with_their_own_times(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"I": "User", "Paris": "Location"}, relations=[("visited", "I", "Paris", 0.8)])
+    document = _session(
+        ("user", "I saw Paris", "2023-05-30T09:00:00+00:00", "turn-1"),
+        ("user", "I loved Paris", "2023-05-30T10:00:00+00:00", "turn-2"),
+    )
+    await from_documents([document], memgraph, backend)
+    rows = memgraph.query(
+        "MATCH ()-[r:visited]->() RETURN r.source_id AS source_id, toString(r.valid_at) AS valid_at, r.text AS text "
+        "ORDER BY source_id"
+    )
+    assert rows == [
+        {"source_id": "turn-1", "valid_at": "2023-05-30T09:00:00.000000+00:00", "text": "user: I saw Paris"},
+        {"source_id": "turn-2", "valid_at": "2023-05-30T10:00:00.000000+00:00", "text": "user: I loved Paris"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reingesting_a_chunk_with_turn_provenance_is_idempotent(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"I": "User", "Paris": "Location"}, relations=[("visited", "I", "Paris", 0.8)])
+    document = _session(
+        ("user", "I saw Paris", "2023-05-30T09:00:00+00:00", "turn-1"),
+        ("user", "I loved Paris", "2023-05-30T10:00:00+00:00", "turn-2"),
+    )
+    await from_documents([document], memgraph, backend)
+    await from_documents([document], memgraph, backend)
+    assert memgraph.query("MATCH ()-[r:visited]->() RETURN count(r) AS n") == [{"n": 2}]
+    assert memgraph.query("MATCH (:gliner2)-[m:MENTIONED_IN]->() RETURN m.sources AS sources") == [
+        {"sources": ["turn-1", "turn-2"]}
+    ]
 
 
 @pytest.mark.asyncio

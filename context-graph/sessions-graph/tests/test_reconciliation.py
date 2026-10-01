@@ -794,7 +794,8 @@ async def test_reconcile_session_with_gliner2_binds_the_user_and_stamps_the_turn
 ):
     """The typed relation model end to end: turns become segments, the user's
     own "I" binds to a synthesized (:User), the edge carries the turn's
-    timestamp as a datetime, and the integrity counts are zero."""
+    timestamp as a datetime and the turn it came from, mentions record their
+    turns, and the integrity counts are zero."""
     from actions_graph import Session
     from unstructured2graph import load_ontology
     from unstructured2graph.gliner2_backend import GLiNER2Backend
@@ -844,3 +845,15 @@ async def test_reconcile_session_with_gliner2_binds_the_user_and_stamps_the_turn
     )
     assert rows == [{"user_id": "anon-s-1", "place": "Paris", "valid_at": "2023-05-30T17:27:00.000000+00:00"}]
     assert backend.stats.mentions_dropped == 1  # the assistant's "I"
+
+    turns = {
+        row["role"]: row["id"]
+        for row in memgraph.query(
+            "MATCH (a:UserMessage) RETURN 'user' AS role, a.action_id AS id "
+            "UNION MATCH (a:AssistantMessage) RETURN 'assistant' AS role, a.action_id AS id"
+        )
+    }
+    edge = memgraph.query("MATCH ()-[r:visited]->() RETURN r.source_id AS source_id, r.role AS role, r.text AS text")
+    assert edge == [{"source_id": turns["user"], "role": "user", "text": "user: I visited Paris."}]
+    sources = memgraph.query("MATCH (:Location {text: 'Paris'})-[m:MENTIONED_IN]->(:Chunk) RETURN m.sources AS sources")
+    assert sources == [{"sources": sorted(turns.values())}]

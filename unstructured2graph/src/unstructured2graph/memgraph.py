@@ -143,25 +143,44 @@ def _entities(workspace_label: str, chunk_hashes: list[str] | None) -> str:
     )
 
 
-def link_mentions(memgraph: Memgraph, entity_label: str, match_key: str, chunk_hash: str, entity_ids: list[str]):
-    """MERGE (entity)-[:MENTIONED_IN]->(:Chunk {hash: chunk_hash}) for each id, at ingest.
+def link_mentions(
+    memgraph: Memgraph,
+    entity_label: str,
+    match_key: str,
+    chunk_hash: str,
+    sources_by_entity: dict[str, list[str]],
+):
+    """MERGE (entity)-[:MENTIONED_IN]->(:Chunk {hash: chunk_hash}) for each entity id, at ingest.
 
     Needed once an entity's identity outlives its chunk (#346): a merged node
     keeps only its first chunk's file_path, so connect_chunks_to_entities alone
     would link it to that one chunk and lose every later mention.
+
+    Args:
+        sources_by_entity: entity id -> the `Segment.source_id`s of the
+            segments mentioning it in this chunk, unioned into
+            `MENTIONED_IN.sources` so re-ingesting adds nothing. An empty list
+            links the entity without touching `sources`.
     """
     _require_valid_identifier(entity_label, "entity_label")
     _require_valid_identifier(match_key, "match_key")
-    if not entity_ids:
+    if not sources_by_entity:
         return
+    rows = [
+        {"id": entity_id, "sources": sorted(set(sources))} for entity_id, sources in sorted(sources_by_entity.items())
+    ]
     memgraph.query(
         f"""
         MATCH (c:Chunk {{hash: $chunk_hash}})
-        UNWIND $ids AS id
-        MATCH (n:{entity_label} {{{match_key}: id}})
-        MERGE (n)-[:MENTIONED_IN]->(c)
+        UNWIND $rows AS row
+        MATCH (n:{entity_label} {{{match_key}: row.id}})
+        MERGE (n)-[r:MENTIONED_IN]->(c)
+        SET r.sources = CASE
+            WHEN size(row.sources) = 0 THEN r.sources
+            ELSE [s IN coalesce(r.sources, []) WHERE NOT s IN row.sources] + row.sources
+        END
         """,
-        params={"chunk_hash": chunk_hash, "ids": sorted(set(entity_ids))},
+        params={"chunk_hash": chunk_hash, "rows": rows},
     )
 
 
@@ -472,35 +491,42 @@ class Endpoint:
 
 def upsert_extracted_relationships(memgraph: Memgraph, relationships: list[dict[str, Any]]) -> None:
     """
-    MERGE extracted relationships, one per (type, head, tail, source chunk).
+    MERGE extracted relationships, one per (type, head, tail, source chunk, source_id).
 
     Keyed on the source chunk as well as the endpoints, so a fact asserted in
     two sessions is two relationships with their own valid_at: superseded
     facts are retained, timestamps only (#347), and a question asking for the
-    *initial* value still has it. Re-ingesting a chunk is idempotent.
+    *initial* value still has it. With a `source_id` the key also takes the
+    source turn, so a fact said in two turns of one session is two
+    relationships too (#392). Re-ingesting a chunk is idempotent.
 
     Args:
         relationships: dicts with `type`, `head`/`tail` (Endpoint), `chunk`
             (the source chunk hash), `valid_at` (ISO-8601 string or None, stored
-            as a Memgraph datetime so date arithmetic is a subtraction, #364)
-            and `confidence` (float or None).
+            as a Memgraph datetime so date arithmetic is a subtraction, #364),
+            `confidence` (float or None), and optionally `source_id`, `text`
+            (the source sentence) and `role` (the speaker), each str or None.
 
     Raises:
         ValueError: if a relationship type, endpoint label or key isn't a valid Cypher identifier.
     """
-    groups: dict[tuple[str, str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    groups: dict[tuple[str, str, str, str, str, bool], list[dict[str, Any]]] = defaultdict(list)
     for rel in relationships:
         head, tail = rel["head"], rel["tail"]
-        groups[(rel["type"], head.label, head.key, tail.label, tail.key)].append(
+        has_source = rel.get("source_id") is not None
+        groups[(rel["type"], head.label, head.key, tail.label, tail.key, has_source)].append(
             {
                 "from": head.value,
                 "to": tail.value,
                 "chunk": rel["chunk"],
+                "source_id": rel.get("source_id"),
                 "valid_at": rel.get("valid_at"),
                 "confidence": rel.get("confidence"),
+                "text": rel.get("text"),
+                "role": rel.get("role"),
             }
         )
-    for (relation_type, head_label, head_key, tail_label, tail_key), rows in groups.items():
+    for (relation_type, head_label, head_key, tail_label, tail_key, has_source), rows in groups.items():
         for value, role in (
             (relation_type, "relation type"),
             (head_label, "endpoint label"),
@@ -509,14 +535,19 @@ def upsert_extracted_relationships(memgraph: Memgraph, relationships: list[dict[
             (tail_key, "endpoint key"),
         ):
             _require_valid_identifier(value, role)
+        # MERGE can't key on a null property, so a relationship with no source
+        # turn keeps the chunk-only key.
+        key = "{chunk: rel.chunk, source_id: rel.source_id}" if has_source else "{chunk: rel.chunk}"
         memgraph.query(
             f"""
             UNWIND $rows AS rel
             MATCH (a:{head_label} {{{head_key}: rel.from}})
             MATCH (b:{tail_label} {{{tail_key}: rel.to}})
-            MERGE (a)-[r:{relation_type} {{chunk: rel.chunk}}]->(b)
+            MERGE (a)-[r:{relation_type} {key}]->(b)
             SET r.valid_at = CASE WHEN rel.valid_at IS NULL THEN null ELSE datetime(rel.valid_at) END,
-                r.confidence = rel.confidence
+                r.confidence = rel.confidence,
+                r.text = rel.text,
+                r.role = rel.role
             """,
             params={"rows": rows},
         )

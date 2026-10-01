@@ -45,12 +45,17 @@ class Segment:
             that is nobody's utterance (a tool result).
         valid_at: ISO-8601 timestamp of when it was produced. Relationships
             extracted from it carry this as `valid_at` (#364).
+        source_id: Opaque id of the node the segment's text came from (e.g. a
+            conversation turn), never interpreted here. When set, mentions
+            record it in `MENTIONED_IN.sources` and each relationship extracted
+            from the segment is its own edge carrying it as `source_id` (#392).
     """
 
     start: int
     end: int
     role: str | None = None
     valid_at: str | None = None
+    source_id: str | None = None
 
 
 @dataclass
