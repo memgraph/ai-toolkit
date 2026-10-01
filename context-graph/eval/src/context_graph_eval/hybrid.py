@@ -14,19 +14,16 @@ then pulls the source turns of the facts it found. The answering LLM gets
 facts (with ``valid_at``) and turn text, through the same ``answer_prompt``
 every strategy uses.
 
-Indexing (``ensure_hybrid_index``) derives what extraction did not store:
-which turn each entity and edge came from, and each edge's source sentence.
-An edge's source turn is exact -- its ``valid_at`` is that turn's timestamp
-(#364) -- while entity-to-turn links match mention text within the session.
-Embeddings are computed on the host and cached beside the run, not written
-into Memgraph.
+Extraction stores what the facts lane follows: each edge's source turn
+(``r.source_id``), its speaker (``r.role``) and the sentence it was read from
+(``r.text``). Embeddings are computed on the host and cached beside the run,
+not written into Memgraph.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import re
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -45,7 +42,6 @@ EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 #: bge's retrieval instruction, prepended to queries only (not to passages).
 QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
 LANES = ("turns", "text", "entities", "facts", "user_facts")
-_SENTENCE = re.compile(r"[^.!?\n]+[.!?]?")
 
 
 @dataclass(frozen=True)
@@ -126,68 +122,10 @@ class HybridIndex:
         return [names[i] for i in np.argsort(-scores)[:k]]
 
 
-def _sentence_with(text: str, needle: str) -> str:
-    lowered = needle.lower()
-    for sentence in _SENTENCE.findall(text):
-        if lowered in sentence.lower():
-            return sentence.strip()[:300]
-    return ""
-
-
-def link_turns(db: Any) -> dict[str, int]:
-    """Write entity -[:MENTIONED_IN_TURN]-> turn links, and each extracted edge's
-    source turn (``r.turn``) and source sentence (``r.text``). Idempotent."""
-    turns_by_chunk: dict[str, list[dict[str, Any]]] = {}
-    for row in db.query(
-        "MATCH (a:Action)-[:HAS_CHUNK]->(c:Chunk) WHERE a.text IS NOT NULL "
-        "RETURN c.hash AS chunk, a.action_id AS id, a.text AS text, a.timestamp AS ts"
-    ):
-        turns_by_chunk.setdefault(row["chunk"], []).append(row)
-
-    links = []
-    for row in db.query(
-        "MATCH (n:gliner2)-[:MENTIONED_IN]->(c:Chunk) RETURN c.hash AS chunk, n.entity_id AS id, n.text AS text"
-    ):
-        needle = (row["text"] or "").lower()
-        if len(needle) < 2:
-            continue
-        for turn in turns_by_chunk.get(row["chunk"], []):
-            if needle in turn["text"].lower():
-                links.append({"entity": row["id"], "turn": turn["id"]})
-    for start in range(0, len(links), 5000):
-        db.query(
-            "UNWIND $rows AS row MATCH (n:gliner2 {entity_id: row.entity}) MATCH (a:Action {action_id: row.turn}) "
-            "MERGE (n)-[:MENTIONED_IN_TURN]->(a)",
-            {"rows": links[start : start + 5000]},
-        )
-
-    sourced = []
-    for row in db.query(
-        "MATCH (a)-[r]->(b) WHERE r.chunk IS NOT NULL "
-        "RETURN id(r) AS id, r.chunk AS chunk, toString(r.valid_at) AS valid_at, b.text AS tail"
-    ):
-        candidates = turns_by_chunk.get(row["chunk"], [])
-        # valid_at is the source turn's timestamp; Memgraph renders it with
-        # microseconds, the stored turn timestamp without.
-        stamp = (row["valid_at"] or "").replace(".000000", "")
-        turn = next((t for t in candidates if t["ts"] and t["ts"] == stamp), None)
-        if turn is None:
-            turn = next((t for t in candidates if (row["tail"] or "").lower() in t["text"].lower()), None)
-        if turn is not None:
-            sourced.append(
-                {"id": row["id"], "turn": turn["id"], "text": _sentence_with(turn["text"], row["tail"] or "")}
-            )
-    for start in range(0, len(sourced), 5000):
-        db.query(
-            "UNWIND $rows AS row MATCH ()-[r]->() WHERE id(r) = row.id SET r.turn = row.turn, r.text = row.text",
-            {"rows": sourced[start : start + 5000]},
-        )
-    return {"entity_turn_links": len(links), "edges_sourced": len(sourced)}
-
-
 def _fact(row: dict[str, Any]) -> str:
     when = f" @ {row['valid_at'][:10]}" if row.get("valid_at") else ""
-    said = f' -- "{row["text"]}"' if row.get("text") else ""
+    speaker = f"{row['role']}: " if row.get("role") else ""
+    said = f' -- {speaker}"{row["text"]}"' if row.get("text") else ""
     return f"FACT: {row['head']} -[{row['type']}{when}]-> {row['tail']}{said}"
 
 
@@ -203,7 +141,7 @@ def build_index(db: Any, cache: Path, embedder: Any) -> HybridIndex:
         "'User' IN labels(a) AS from_user ORDER BY id"
     )
     key = hashlib.sha256(
-        json.dumps([len(turns), len(entities), len(edges), EMBEDDING_MODEL, "v2"]).encode()
+        json.dumps([len(turns), len(entities), len(edges), EMBEDDING_MODEL, "v3"]).encode()
     ).hexdigest()[:16]
     edge_types = [e["type"] for e in edges]
     edge_from_user = [bool(e["from_user"]) for e in edges]
@@ -249,9 +187,8 @@ def build_index(db: Any, cache: Path, embedder: Any) -> HybridIndex:
 
 
 def ensure_hybrid_index(graph: ActionsGraph, cache: Path, embedder: Any | None = None) -> HybridIndex:
-    """Materialize turn text (as text search does), link entities and edges to turns, and embed."""
+    """Materialize turn text (as text search does) and embed."""
     ensure_turn_text_index(graph)
-    link_turns(graph.db)
     return build_index(graph.db, cache, embedder or Embedder())
 
 
@@ -286,7 +223,7 @@ def _turn_rows(graph: ReadOnlyGraph, turn_ids: list[str], chars: int) -> list[st
 
 _EDGE_RETURN = (
     "RETURN id(r) AS id, type(r) AS type, coalesce(a.text, 'user') AS head, coalesce(b.text, 'user') AS tail, "
-    "toString(r.valid_at) AS valid_at, r.text AS text, r.turn AS turn"
+    "toString(r.valid_at) AS valid_at, r.text AS text, r.role AS role, r.source_id AS turn"
 )
 
 
