@@ -124,6 +124,28 @@ def test_a_failure_with_no_reason_recorded_prints_no_example_line(capsys):
     assert "e.g." not in out
 
 
+def test_a_failure_says_whether_retrieval_had_found_the_evidence(capsys):
+    """Contextual Recall no longer gates, but it is what tells an answering
+    failure from a retrieval one."""
+    rows = [
+        Scored(
+            name=name,
+            tier=1,
+            coverage=0.2,
+            covered=False,
+            efficiency_tokens=100,
+            metric_scores={"Contextual Recall": recall, "Coverage [GEval]": 0.2},
+        )
+        for name, recall in (("q1", 0.1), ("q2", 0.9), ("q3", 1.0))
+    ]
+    _print_report(_report(rows), judged=True)
+
+    out = capsys.readouterr().out
+    assert "failed on     Coverage [GEval]: 3" in out
+    assert "retrieval missed the evidence on 1, found it on 2" in out
+    assert "contextual recall passed on 2/3 (reported, not gated)" in out
+
+
 def test_a_run_without_a_judge_does_not_cry_outage(capsys):
     """No judge configured is an ordinary efficiency-only run, not a failure.
     Sharing the unscored warning with the outage case would fire it every

@@ -173,6 +173,30 @@ async def test_judge_reasons_are_kept_alongside_scores(eval_graph: ActionsGraph,
     assert report.scored[0].metric_scores == {"Coverage": 0.4}
 
 
+async def test_a_correct_computed_answer_is_covered_though_no_row_states_it(eval_graph: ActionsGraph, monkeypatch):
+    """Contextual Recall finds no retrieved row stating "17 days" when the turns
+    say 7 and 10; the answer rubric decides, and recall is kept to report (#397)."""
+    import context_graph_eval.runner as runner_module
+    from context_graph_eval.runner import _Judged
+
+    monkeypatch.setattr(
+        runner_module,
+        "_judge",
+        lambda goldens, retrieved, plan: {"q1": _Judged(scores={"Contextual Recall": 0.0, "Coverage [GEval]": 0.9})},
+    )
+
+    report = await run_batch(
+        [to_golden(_record("q1"))],
+        records=[_record("q1")],
+        graph=eval_graph,
+        llm=_StubLLM(),
+        plan=RunPlan(reconcile=False, judge=object()),
+    )
+
+    assert report.scored[0].covered
+    assert report.scored[0].metric_scores["Contextual Recall"] == 0.0
+
+
 async def test_reconciliation_is_told_which_graph_to_write_to(eval_graph: ActionsGraph, monkeypatch):
     """LightRAG's storage backends resolve their connection from the environment
     rather than the client passed in, so a run that does not plumb the URL

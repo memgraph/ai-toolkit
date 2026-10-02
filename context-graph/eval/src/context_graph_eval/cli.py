@@ -460,7 +460,7 @@ def _run(args) -> int:
 
     if args.save:
         from .report import RunMeta, SavedRun, save_run
-        from .scoring import tokenizer_in_use
+        from .scoring import COVERAGE_GATE, tokenizer_in_use
 
         saved = save_run(
             SavedRun(
@@ -495,6 +495,7 @@ def _run(args) -> int:
                     # that value rather than treating it as a mismatch.
                     extraction_backend=args.extraction_backend if args.retrieval_strategy == "graph-agent" else "none",
                     retrieval_strategy=args.retrieval_strategy,
+                    coverage_gate=COVERAGE_GATE,
                 ),
                 scored=report.scored,
             ),
@@ -649,19 +650,26 @@ def _build_model(provider: str, model_id: str | None, *, minimal_effort: bool = 
 
 
 def _print_attribution(failures) -> None:
-    """Say which metric was the weakest link across the failures, and show one
-    example of why -- the judge's own reason for its worst-scoring question on
-    that metric, not just a count. The count says something moved; the reason
-    is what tells a reader whether it is a retrieval problem or an answering
-    one without rerunning the question by hand.
+    """Say which answer rubric the failures failed, and whether retrieval had
+    found their evidence, with one example of why -- the judge's own reason for
+    its worst-scoring question, not just a count. The count says something
+    moved; the reason and the retrieval split are what tell a reader whether it
+    is a retrieval problem or an answering one without rerunning the question
+    by hand.
     """
+    from .scoring import DEFAULT_COVERAGE_THRESHOLD, RETRIEVAL_SIGNAL
+
     blamed: dict[str, list] = {}
     for row in failures:
-        if row.metric_scores:
-            worst = min(row.metric_scores, key=lambda name: row.metric_scores[name])
-            blamed.setdefault(worst, []).append(row)
+        answer = {name: score for name, score in row.metric_scores.items() if name != RETRIEVAL_SIGNAL}
+        if answer:
+            blamed.setdefault(min(answer, key=lambda name: answer[name]), []).append(row)
     for metric, rows in sorted(blamed.items(), key=lambda kv: -len(kv[1])):
         print(f"  failed on     {metric}: {len(rows)}")
+        recall = [row.metric_scores[RETRIEVAL_SIGNAL] for row in rows if RETRIEVAL_SIGNAL in row.metric_scores]
+        if recall:
+            missed = sum(1 for score in recall if score < DEFAULT_COVERAGE_THRESHOLD)
+            print(f"                retrieval missed the evidence on {missed}, found it on {len(recall) - missed}")
         example = min(rows, key=lambda row: row.metric_scores[metric])
         reason = example.metric_reasons.get(metric)
         if reason:
@@ -712,6 +720,11 @@ def _print_report(report, *, judged: bool) -> None:
                 print(f"  payload       median {payloads[len(payloads) // 2]} tokens returned (UNGATED)")
         if summary.abstention_total:
             print(f"  abstention    {summary.abstention_correct}/{summary.abstention_total} correct")
+        if summary.retrieval_judged:
+            print(
+                f"  retrieval     contextual recall passed on {summary.retrieval_supported}/"
+                f"{summary.retrieval_judged} (reported, not gated)"
+            )
 
         # Judge-free cross-checks (no LLM call needed, so printed regardless
         # of whether a judge ran) -- standard NLP metrics other memory

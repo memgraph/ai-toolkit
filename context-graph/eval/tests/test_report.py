@@ -356,3 +356,13 @@ def test_a_report_says_when_efficiency_could_not_be_compared(capsys):
     print(render(compare(baseline, candidate)))
 
     assert "no question cleared coverage in both runs" in capsys.readouterr().out
+
+
+def test_runs_gated_differently_are_refused():
+    """A run gated on the weakest of every metric and one gated on the answer
+    rubric alone count different questions as covered for the same answers."""
+    before = _run(_meta(coverage_gate="min"), [_scored("q1")])
+    after = _run(_meta(coverage_gate="answer"), [_scored("q1")])
+
+    with pytest.raises(ValueError, match="coverage gate"):
+        compare(before, after)
