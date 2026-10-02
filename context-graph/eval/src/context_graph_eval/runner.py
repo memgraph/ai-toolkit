@@ -102,9 +102,6 @@ class RunPlan:
     #: and where its embeddings are cached between runs over the same graph.
     hybrid: HybridConfig = field(default_factory=HybridConfig)
     hybrid_cache: Path = Path(".cache/context-graph-eval/hybrid-index.npz")
-    #: Tell the answering LLM when each question is asked (#367). Off by
-    #: default so runs stay comparable with those scored without it.
-    question_date: bool = False
 
 
 @dataclass(frozen=True)
@@ -296,7 +293,10 @@ async def _retrieve_all(
     async def one(golden: "Golden") -> Retrieved:
         async with limiter:
             started = time.monotonic()
-            today = (golden.additional_metadata or {}).get("question_date") if plan.question_date else None
+            # When the question is asked -- the corpus's question_date, as a
+            # real session's "now" -- without which "how many days ago" and
+            # "this year" have nothing to count from (#367).
+            today = (golden.additional_metadata or {}).get("question_date")
             try:
                 if plan.retrieval_strategy == "hybrid":
                     # Each question is its own user's history (to_session_fixtures).
