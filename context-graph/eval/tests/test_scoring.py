@@ -17,6 +17,7 @@ from context_graph_eval.scoring import (
     efficiency_tokens,
     enforce_retrieval_floor,
     gate_and_rank,
+    gate_score,
     token_f1_score,
     tokenizer_in_use,
 )
@@ -417,3 +418,29 @@ def test_rubrics_carry_fixed_evaluation_steps_so_the_judge_never_writes_them():
     abstention = build_metrics(judge, abstention=True)[0]
     assert coverage.evaluation_steps == COVERAGE_STEPS
     assert abstention.evaluation_steps == ABSTENTION_STEPS
+
+
+def test_the_answer_rubric_gates_and_contextual_recall_does_not():
+    """A computed answer ("17 days") has no single retrieved row stating it, so
+    Contextual Recall scored correct answers 0 and failed them (#397)."""
+    assert gate_score({"Contextual Recall": 0.0, "Coverage [GEval]": 0.9}) == 0.9
+    assert gate_score({"Contextual Recall": 1.0, "Coverage [GEval]": 0.2}) == 0.2
+    assert gate_score({"Abstention [GEval]": 0.8}) == 0.8
+
+
+def test_a_judge_that_returned_only_the_retrieval_signal_gates_nothing_through():
+    assert gate_score({"Contextual Recall": 1.0}) == 0.0
+    assert gate_score({}) == 0.0
+
+
+def test_retrieval_is_reported_per_tier_without_gating():
+    report = aggregate(
+        [
+            _scored("q1", covered=True, metric_scores={"Contextual Recall": 0.0, "Coverage [GEval]": 1.0}),
+            _scored("q2", covered=True, metric_scores={"Contextual Recall": 1.0, "Coverage [GEval]": 1.0}),
+            _scored("q3", covered=True, abstention=True, metric_scores={"Abstention [GEval]": 1.0}),
+        ]
+    ).by_tier[1]
+
+    assert report.covered == 3
+    assert (report.retrieval_supported, report.retrieval_judged) == (1, 2)

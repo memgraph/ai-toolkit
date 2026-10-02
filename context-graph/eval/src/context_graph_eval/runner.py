@@ -29,6 +29,7 @@ from .scoring import (
     bleu_score,
     efficiency_tokens,
     enforce_retrieval_floor,
+    gate_score,
     token_f1_score,
 )
 from .text_search import DEFAULT_LIMIT as DEFAULT_TEXT_SEARCH_LIMIT
@@ -329,10 +330,9 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
     for golden, result in zip(goldens, retrieved, strict=True):
         metadata = golden.additional_metadata or {}
         outcome = judged.get(golden.name, _Judged())
-        # The weakest metric gates: passing one check while failing another is
-        # not a pass. The individual scores are kept alongside so a failure can
-        # still be attributed to retrieval or to the answer.
-        coverage = min(outcome.scores.values()) if outcome.scores else 0.0
+        # The answer rubric gates; Contextual Recall rides along in
+        # metric_scores as the retrieval signal (scoring.RETRIEVAL_SIGNAL).
+        coverage = gate_score(outcome.scores)
         scored.append(
             Scored(
                 name=golden.name or golden.input,
@@ -408,10 +408,9 @@ def _judge_group(group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, abst
         test_result = by_name.get(golden.name)
         if test_result is None:
             continue
-        # Kept per metric, not collapsed. The weakest still decides the gate --
-        # passing one check while failing another is not a pass -- but which
-        # one failed is what tells you whether retrieval or the answer was at
-        # fault, and #304 pointed out that attribution is free here.
+        # Kept per metric, not collapsed: the answer rubric decides the gate,
+        # and the retrieval signal beside it tells you whether retrieval or the
+        # answer was at fault -- #304 pointed out that attribution is free here.
         # run_batch has already rejected nameless goldens; asserted rather than
         # re-checked so the type narrows and the invariant stays stated once.
         assert golden.name is not None

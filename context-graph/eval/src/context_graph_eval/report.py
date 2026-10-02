@@ -68,6 +68,10 @@ class RunMeta:
     #: Defaults to "graph-agent" for runs saved before this field existed,
     #: which is the only strategy that existed then.
     retrieval_strategy: str = "graph-agent"
+    #: Which judge scores decided ``covered`` -- see scoring.COVERAGE_GATE.
+    #: Defaults to "min" for runs saved before this field existed, which gated
+    #: on the weakest of every metric, Contextual Recall included.
+    coverage_gate: str = "min"
 
 
 @dataclass(frozen=True)
@@ -141,6 +145,7 @@ def compare(baseline: SavedRun, candidate: SavedRun, noise_floor_pp: float | Non
     if "none" not in (baseline.meta.extraction_backend, candidate.meta.extraction_backend):
         _require_same(baseline.meta, candidate.meta, "extraction_backend", "extraction backend")
     _require_same(baseline.meta, candidate.meta, "tokenizer", "tokenizer")
+    _require_same(baseline.meta, candidate.meta, "coverage_gate", "coverage gate")
     # Question count too: coverage is reported as a rate, so a 20-question
     # baseline and a 60-question candidate produce comparable-looking
     # percentages over different corpora. That is the same "measures the

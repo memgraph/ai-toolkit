@@ -30,6 +30,17 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
 #: visible rather than buried in metric configuration.
 DEFAULT_COVERAGE_THRESHOLD = 0.7
 
+#: deepeval's name for ContextualRecallMetric: the retrieval signal. Reported
+#: per question, never gating -- it asks whether one retrieved row supports the
+#: expected answer, so a correct computed answer ("17 days", "3") has no row to
+#: point at and scored 0. 11 of 52 misses in a 100-question hybrid run were
+#: correct answers failed this way (#397).
+RETRIEVAL_SIGNAL = "Contextual Recall"
+
+#: Which judge scores decide ``covered``, recorded on every saved run so
+#: compare() refuses across a gate change: "answer" -- the answer rubric alone.
+COVERAGE_GATE = "answer"
+
 #: Tokenizer for the efficiency count. Pinned for the same reason #304 pins the
 #: judge model: a tokenizer change silently shifts every efficiency number, and
 #: two runs measured differently are not comparable.
@@ -47,12 +58,10 @@ class Scored:
     efficiency_tokens: int
     abstention: bool = False
     answer: str = ""
-    #: Per-metric scores behind ``coverage``. Kept because ``coverage`` is
-    #: min() of them, which gates correctly but discards which stage failed --
-    #: ContextualRecall scores retrieval, the GEval rubric scores the answer.
-    #: #304 noted that attribution "falls out for nothing"; collapsing to one
-    #: number was throwing it away. Absent for abstention questions, which are
-    #: judged on the rubric alone.
+    #: Every judge score, keyed by metric name. ``coverage`` is the answer
+    #: rubric's (see gate_score); RETRIEVAL_SIGNAL is kept beside it so a
+    #: failure can still be attributed to retrieval or to the answer.
+    #: Abstention questions carry no retrieval signal.
     metric_scores: dict[str, float] = field(default_factory=dict)
     #: The judge's own explanation behind each metric_scores entry, same keys.
     #: deepeval generates this whether or not anyone keeps it -- it cost
@@ -95,6 +104,10 @@ class TierReport:
     abstention_correct: int = 0
     #: Questions with no metric scores at all. A judge failure, not a low score.
     unscored: int = 0
+    #: Of the judge-scored questions carrying a retrieval signal, how many had
+    #: Contextual Recall at the threshold. Reported, not gated.
+    retrieval_supported: int = 0
+    retrieval_judged: int = 0
     #: Mean, not median: unlike efficiency_tokens (#309's gate, deliberately
     #: robust to one pathological payload), these are the blog-comparison
     #: metrics themselves -- a single outlier answer should show up in the
@@ -249,6 +262,16 @@ def _encoding(tokenizer: str = DEFAULT_TOKENIZER):
     return tiktoken.get_encoding(tokenizer)
 
 
+def gate_score(scores: dict[str, float]) -> float:
+    """A question's coverage: its answer rubric's score, or 0.0 when the judge returned none.
+
+    Every score but RETRIEVAL_SIGNAL is an answer rubric (Coverage, or
+    Abstention), and the weakest of them gates.
+    """
+    answer = [score for name, score in scores.items() if name != RETRIEVAL_SIGNAL]
+    return min(answer) if answer else 0.0
+
+
 def gate_and_rank(scored: list[Scored]) -> list[Scored]:
     """Questions that cleared coverage, cheapest payload first.
 
@@ -274,6 +297,7 @@ def aggregate(scored: list[Scored]) -> RunReport:
         unscored = len(all_rows) - len(judge_scored_rows)
         covered = [s for s in judge_scored_rows if s.covered]
         abstentions = [s for s in judge_scored_rows if s.abstention]
+        recall = [s.metric_scores[RETRIEVAL_SIGNAL] for s in judge_scored_rows if RETRIEVAL_SIGNAL in s.metric_scores]
         by_tier[tier] = TierReport(
             unscored=unscored,
             questions=len(judge_scored_rows),
@@ -284,6 +308,8 @@ def aggregate(scored: list[Scored]) -> RunReport:
             median_efficiency_tokens=(int(median([s.efficiency_tokens for s in covered])) if covered else None),
             abstention_total=len(abstentions),
             abstention_correct=sum(1 for s in abstentions if s.covered),
+            retrieval_supported=sum(1 for score in recall if score >= DEFAULT_COVERAGE_THRESHOLD),
+            retrieval_judged=len(recall),
             # Over all_rows, not judge_scored_rows: BLEU/F1/latency need no
             # judge, so a judge-free run (or one where the judge errored on
             # some questions) must still aggregate them over everything that
@@ -348,11 +374,12 @@ ABSTENTION_STEPS = [
 def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list[Any]:
     """The judged half of the rubric: a deliberately minimal pair (#304).
 
-    ``ContextualRecallMetric`` scores retrieval-side coverage -- its required
-    params are exactly the Golden fields #302 locked -- and one ``GEval`` rubric
-    scores the answer itself, since no built-in asks whether ``actual_output``
-    contains every fact in ``expected_output``, which is the real question when
-    an answer key exists.
+    One ``GEval`` rubric scores the answer itself, since no built-in asks
+    whether ``actual_output`` contains every fact in ``expected_output``, which
+    is the real question when an answer key exists; it alone gates (see
+    gate_score). ``ContextualRecallMetric`` scores retrieval-side coverage --
+    its required params are exactly the Golden fields #302 locked -- and is
+    reported beside it.
 
     ``Faithfulness`` and ``AnswerRelevancy`` are deliberately omitted: both
     exist mainly for the no-ground-truth case, and every extra metric is another
@@ -363,8 +390,8 @@ def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list
     whether the retrieved context supports the expected output -- but for a
     question whose correct answer is "that isn't in memory", the correct
     retrieved context is *empty*. It therefore scores near zero by
-    construction, and since coverage takes the weakest metric, it made every
-    abstention question unpassable however well the agent behaved. Measured
+    construction, and back when coverage took the weakest of every metric, it
+    made every abstention question unpassable however well the agent behaved. Measured
     before this fix: abstention scored 0/8 while the agent had correctly
     declined on at least four. Only the rubric, which knows to require a
     refusal, applies to these.
