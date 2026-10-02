@@ -122,12 +122,6 @@ def main(argv: list[str] | None = None) -> int:
         "search and uses the typed graph to find facts and more turns (see hybrid.py).",
     )
     run.add_argument(
-        "--question-date",
-        action="store_true",
-        help="tell the answering LLM the date each question is asked (#367). Off by default, so runs "
-        "stay comparable with ones scored without it; compare only runs that agree on it.",
-    )
-    run.add_argument(
         "--hybrid-user-fact-types-from",
         choices=("facts", "names"),
         default="names",
@@ -478,7 +472,6 @@ def _run(args) -> int:
                     lanes=tuple(lane for lane in args.hybrid_lanes.split(",") if lane),
                     user_fact_types_from=args.hybrid_user_fact_types_from,
                 ),
-                question_date=args.question_date,
             ),
         )
     )

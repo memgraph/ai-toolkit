@@ -190,7 +190,7 @@ def test_safe_query_keeps_meaningful_short_words():
 
 @pytest.mark.asyncio
 async def test_the_question_date_reaches_the_answer_prompt_only_when_given(eval_graph: ActionsGraph):
-    """#367: 'how many days ago' needs the day the question is asked; opt-in so default runs stay comparable."""
+    """#367: 'how many days ago' needs the day the question is asked."""
     _plant(eval_graph, "s1", role=MessageRole.USER, content="I adopted a beagle named Max")
     ensure_turn_text_index(eval_graph)
     llm = _EchoLLM()
@@ -202,3 +202,14 @@ async def test_the_question_date_reaches_the_answer_prompt_only_when_given(eval_
 
     assert "is being asked on" not in llm.prompts[0]
     assert "The question is being asked on 2023/06/15 (Thu) 09:12." in llm.prompts[1]
+
+
+def test_a_recommendation_question_is_never_refused_for_lack_of_a_specific_item():
+    """'Recommend a conference' names no conference in memory; declining it under
+    the false-premise rule threw away the user's stated interests (#404)."""
+    from context_graph_eval.retrieval import answer_prompt
+
+    prompt = answer_prompt("Can you recommend a conference?", ["TURN [...]: I work on medical imaging."])
+
+    assert 'Never answer one with "not in memory"' in prompt
+    assert prompt.index("recommendation or suggestion") < prompt.index("Any other question")

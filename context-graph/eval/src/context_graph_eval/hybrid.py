@@ -267,13 +267,11 @@ def _turn_rows(graph: ReadOnlyGraph, turn_ids: list[str], chars: int) -> list[st
         "RETURN a.action_id AS id, s.session_id AS session, a.timestamp AS ts, a.action_type AS kind, a.text AS text",
         {"ids": turn_ids},
     )
-    by_id = {r["id"]: r for r in rows}
     out = []
-    for turn_id in turn_ids:
-        r = by_id.get(turn_id)
-        if r:
-            speaker = "user" if r["kind"] == "user_message" else "assistant"
-            out.append(f"TURN [session {r['session']}, {str(r['ts'])[:16]}, {speaker}]: {r['text'][:chars]}")
+    # In time order, like the facts: "which came first" and "what is current" read off the sequence.
+    for r in sorted(rows, key=lambda r: (str(r["ts"]), r["id"])):
+        speaker = "user" if r["kind"] == "user_message" else "assistant"
+        out.append(f"TURN [session {r['session']}, {str(r['ts'])[:16]}, {speaker}]: {r['text'][:chars]}")
     return out
 
 
@@ -375,10 +373,12 @@ async def retrieve_hybrid(
     if facts:
         turn_ids += [f["turn"] for f in facts.values() if f.get("turn")][: config.fact_turns_k]
 
-    # Facts in time order: a knowledge-update question wants the latest value,
-    # a temporal one the sequence.
+    # Turns first: they are the answer store and the facts an index into them.
+    # Placed after ~45 fact rows, a turn's evidence was read past (#398). Both
+    # in time order: a knowledge-update question wants the latest value, a
+    # temporal one the sequence.
     ordered = sorted(facts.values(), key=lambda f: f.get("valid_at") or "")
-    seen = [_fact(f) for f in ordered] + _turn_rows(graph, list(dict.fromkeys(turn_ids)), config.turn_chars)
+    seen = _turn_rows(graph, list(dict.fromkeys(turn_ids)), config.turn_chars) + [_fact(f) for f in ordered]
     answer = await llm.complete(answer_prompt(question, seen, today))
     return Retrieved(
         answer=answer.strip(), retrieval_context=seen, queries=queries, latency_seconds=time.monotonic() - started
