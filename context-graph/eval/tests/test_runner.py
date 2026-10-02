@@ -222,6 +222,48 @@ async def test_a_correct_computed_answer_is_covered_though_no_row_states_it(eval
     assert report.scored[0].metric_scores["Contextual Recall"] == 0.0
 
 
+async def test_longmemevals_judge_decides_coverage_when_it_runs(eval_graph: ActionsGraph, monkeypatch):
+    """Our rubric passed q1 and failed q2; the official judge says the opposite
+    and decides. A failed official call leaves q3 unjudged -- never a fallback to
+    our rubric (#409)."""
+    import context_graph_eval.runner as runner_module
+    from context_graph_eval import official_judge
+    from context_graph_eval.runner import _Judged
+
+    monkeypatch.setattr(
+        runner_module,
+        "_judge",
+        lambda goldens, retrieved, plan: {
+            "q1": _Judged(scores={"Coverage [GEval]": 0.9}),
+            "q2": _Judged(scores={"Coverage [GEval]": 0.1}),
+            "q3": _Judged(scores={"Coverage [GEval]": 0.9}),
+        },
+    )
+    asked: dict[str, str] = {}
+
+    async def _fake_official(prompts, *, model, max_concurrent):
+        asked.update(prompts)
+        return {"q1": False, "q2": True, "q3": None}
+
+    monkeypatch.setattr(official_judge, "judge_all", _fake_official)
+    records = [_record("q1"), _record("q2"), _record("q3")]
+
+    report = await run_batch(
+        [to_golden(r) for r in records],
+        records=records,
+        graph=eval_graph,
+        llm=_StubLLM(),
+        plan=RunPlan(reconcile=False, judge=object(), official_judge_model="gpt-4o-2024-08-06"),
+    )
+
+    by_name = {s.name: s for s in report.scored}
+    assert (by_name["q1"].covered, by_name["q2"].covered) == (False, True)
+    assert by_name["q3"].official_correct is None and not by_name["q3"].judged
+    tier = report.by_tier[1]
+    assert (tier.covered, tier.questions, tier.unscored, tier.rubric_covered) == (1, 2, 1, 1)
+    assert "Correct Answer: A beagle." in asked["q1"]
+
+
 async def test_reconciliation_is_told_which_graph_to_write_to(eval_graph: ActionsGraph, monkeypatch):
     """LightRAG's storage backends resolve their connection from the environment
     rather than the client passed in, so a run that does not plumb the URL

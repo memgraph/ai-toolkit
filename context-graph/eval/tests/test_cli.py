@@ -219,3 +219,37 @@ def test_judges_run_at_their_lowest_effort(provider, model, expected):
     from context_graph_eval.cli import minimal_effort_kwargs
 
     assert minimal_effort_kwargs(provider, model) == expected
+
+
+def test_the_official_judge_runs_only_when_judging_and_an_openai_key_exists(monkeypatch, capsys):
+    from context_graph_eval.cli import _official_judge_model
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    assert _official_judge_model("gpt-4o-2024-08-06", judging=True) == "gpt-4o-2024-08-06"
+    assert _official_judge_model("gpt-4o-2024-08-06", judging=False) is None
+    assert _official_judge_model("none", judging=True) is None
+
+    monkeypatch.delenv("OPENAI_API_KEY")
+    assert _official_judge_model("gpt-4o-2024-08-06", judging=True) is None
+    assert "falls back to the deepeval answer rubrics" in capsys.readouterr().err
+
+
+def test_the_official_judges_coverage_is_the_headline_with_the_rubrics_beside_it(capsys):
+    rows = [
+        Scored(
+            name=name,
+            tier=1,
+            coverage=rubric,
+            covered=official,
+            efficiency_tokens=100,
+            metric_scores={"Coverage [GEval]": rubric},
+            judged_by="official",
+            official_correct=official,
+        )
+        for name, official, rubric in (("q1", True, 0.9), ("q2", True, 0.2), ("q3", False, 0.1))
+    ]
+    _print_report(_report(rows), judged=True)
+
+    out = capsys.readouterr().out
+    assert "coverage      2/3 (67%) -- LongMemEval judge" in out
+    assert "rubrics       1/3 (deepeval answer rubrics)" in out

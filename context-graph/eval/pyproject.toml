@@ -24,6 +24,9 @@ dependencies = [
     # BLEU actually runs, not at import time. Declared explicitly here so a
     # missing nltk is a normal dependency-resolution error instead.
     "nltk>=3.9.4",
+    # LongMemEval's own judge (official_judge.py) calls the OpenAI API
+    # directly, as the upstream script does; also deepeval's transitively.
+    "openai>=1.0",
 ]
 
 [project.optional-dependencies]

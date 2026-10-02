@@ -15,6 +15,7 @@ from .convert.longmemeval import DEFAULT_REVISION, build_corpus, fetch, haystack
 from .corpus import write_corpus
 from .hybrid import LANES as HYBRID_LANES
 from .hybrid import HybridConfig
+from .official_judge import OFFICIAL_JUDGE_MODEL
 from .reconcile import EXTRACTION_BACKENDS
 from .runner import RETRIEVAL_STRATEGIES
 from .text_search import DEFAULT_LIMIT as DEFAULT_TEXT_SEARCH_LIMIT
@@ -83,6 +84,13 @@ def main(argv: list[str] | None = None) -> int:
         "for it again. Refuses if the graph does not already hold this run's sessions, distilled "
         "-- reusing the wrong graph would score every question as a miss and report it as a "
         "result (#322).",
+    )
+    run.add_argument(
+        "--official-judge-model",
+        default=OFFICIAL_JUDGE_MODEL,
+        help=f"OpenAI model for LongMemEval's own judge, which decides coverage whenever judging runs "
+        f"(default {OFFICIAL_JUDGE_MODEL}, the upstream script's). 'none' leaves the deepeval answer "
+        "rubrics deciding it; they're reported either way.",
     )
     run.add_argument(
         "--judge-model",
@@ -428,6 +436,7 @@ def _run(args) -> int:
         print("no agent model configured: set --agent-model or an OPENAI_API_KEY", file=sys.stderr)
         return 1
 
+    official_model = _official_judge_model(args.official_judge_model, judging=judge is not None)
     same_provider = judge is not None and judge_provider == agent_provider
     if same_provider:
         # #304's independence property (judge decorrelated from the pipeline's
@@ -472,6 +481,7 @@ def _run(args) -> int:
                     lanes=tuple(lane for lane in args.hybrid_lanes.split(",") if lane),
                     user_fact_types_from=args.hybrid_user_fact_types_from,
                 ),
+                official_judge_model=official_model,
             ),
         )
     )
@@ -479,7 +489,7 @@ def _run(args) -> int:
 
     if args.save:
         from .report import RunMeta, SavedRun, save_run
-        from .scoring import COVERAGE_GATE, tokenizer_in_use
+        from .scoring import COVERAGE_GATE, RUBRIC_GATE, tokenizer_in_use
 
         saved = save_run(
             SavedRun(
@@ -514,7 +524,8 @@ def _run(args) -> int:
                     # that value rather than treating it as a mismatch.
                     extraction_backend=args.extraction_backend if args.retrieval_strategy == "graph-agent" else "none",
                     retrieval_strategy=args.retrieval_strategy,
-                    coverage_gate=COVERAGE_GATE,
+                    coverage_gate=COVERAGE_GATE if official_model else RUBRIC_GATE,
+                    official_judge_model=official_model or "none",
                 ),
                 scored=report.scored,
             ),
@@ -668,6 +679,23 @@ def _build_model(provider: str, model_id: str | None, *, minimal_effort: bool = 
         return None
 
 
+def _official_judge_model(requested: str, *, judging: bool) -> str | None:
+    """The model LongMemEval's judge runs on, or None when judging is off, it was turned off, or no OpenAI key exists.
+
+    Without a key the run says so and falls back to the answer rubrics; the
+    saved run records which gate decided, so compare() refuses to mix them.
+    """
+    if not judging or requested == "none":
+        return None
+    if not os.environ.get("OPENAI_API_KEY"):
+        print(
+            "WARNING: no OPENAI_API_KEY for LongMemEval's judge -- coverage falls back to the deepeval answer rubrics.",
+            file=sys.stderr,
+        )
+        return None
+    return requested
+
+
 def _print_attribution(failures) -> None:
     """Say which answer rubric the failures failed, and whether retrieval had
     found their evidence, with one example of why -- the judge's own reason for
@@ -726,7 +754,12 @@ def _print_report(report, *, judged: bool) -> None:
             print("                Not counted as failures. Check judge credentials/credit.")
         if judged:
             if summary.coverage_rate is not None:
-                print(f"  coverage      {summary.covered}/{summary.questions} ({summary.coverage_rate:.0%})")
+                judge_name = " -- LongMemEval judge" if summary.rubric_covered is not None else ""
+                print(
+                    f"  coverage      {summary.covered}/{summary.questions} ({summary.coverage_rate:.0%}){judge_name}"
+                )
+                if summary.rubric_covered is not None:
+                    print(f"  rubrics       {summary.rubric_covered}/{summary.questions} (deepeval answer rubrics)")
             else:
                 print("  coverage      n/a -- nothing in this tier could be scored")
             median = summary.median_efficiency_tokens

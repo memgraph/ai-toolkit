@@ -72,6 +72,8 @@ class RunMeta:
     #: Defaults to "min" for runs saved before this field existed, which gated
     #: on the weakest of every metric, Contextual Recall included.
     coverage_gate: str = "min"
+    #: LongMemEval's judge model when it decided ``covered`` (#409), else "none".
+    official_judge_model: str = "none"
 
 
 @dataclass(frozen=True)
@@ -146,6 +148,7 @@ def compare(baseline: SavedRun, candidate: SavedRun, noise_floor_pp: float | Non
         _require_same(baseline.meta, candidate.meta, "extraction_backend", "extraction backend")
     _require_same(baseline.meta, candidate.meta, "tokenizer", "tokenizer")
     _require_same(baseline.meta, candidate.meta, "coverage_gate", "coverage gate")
+    _require_same(baseline.meta, candidate.meta, "official_judge_model", "official judge")
     # Question count too: coverage is reported as a rate, so a 20-question
     # baseline and a 60-question candidate produce comparable-looking
     # percentages over different corpora. That is the same "measures the
