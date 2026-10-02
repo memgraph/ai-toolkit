@@ -688,7 +688,14 @@ def _print_attribution(failures) -> None:
         recall = [row.metric_scores[RETRIEVAL_SIGNAL] for row in rows if RETRIEVAL_SIGNAL in row.metric_scores]
         if recall:
             missed = sum(1 for score in recall if score < DEFAULT_COVERAGE_THRESHOLD)
-            print(f"                retrieval missed the evidence on {missed}, found it on {len(recall) - missed}")
+            print(f"                contextual recall low on {missed}, passed on {len(recall) - missed}")
+        evidence = [row.evidence_recall for row in rows if row.evidence_recall is not None]
+        if evidence:
+            complete = sum(1 for share in evidence if share == 1.0)
+            print(
+                f"                evidence: all retrieved on {complete}, some on "
+                f"{sum(1 for share in evidence if 0 < share < 1)}, none on {sum(1 for share in evidence if share == 0)}"
+            )
         example = min(rows, key=lambda row: row.metric_scores[metric])
         reason = example.metric_reasons.get(metric)
         if reason:
@@ -755,6 +762,11 @@ def _print_report(report, *, judged: bool) -> None:
             print(f"  bleu          mean {summary.mean_bleu:.2f}")
         if summary.mean_f1 is not None:
             print(f"  f1            mean {summary.mean_f1:.2f}")
+        if summary.mean_evidence_recall is not None:
+            print(
+                f"  evidence      every evidence turn retrieved on {summary.evidence_complete}/"
+                f"{summary.evidence_judged} (mean recall {summary.mean_evidence_recall:.2f})"
+            )
         if summary.mean_latency_seconds is not None:
             print(f"  latency       mean {summary.mean_latency_seconds:.1f}s per question")
 

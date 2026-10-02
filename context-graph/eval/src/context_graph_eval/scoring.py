@@ -84,6 +84,10 @@ class Scored:
     #: the attempt itself in that case, since retrieve() has no Retrieved to
     #: report the elapsed time through when it never returns.
     latency_seconds: float = 0.0
+    #: Share of the question's evidence turns (LongMemEval's ``has_answer``)
+    #: found in what retrieval returned -- deterministic, no judge (#403).
+    #: None when the question marks no evidence, as abstention questions don't.
+    evidence_recall: float | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +123,10 @@ class TierReport:
     mean_bleu: float | None = None
     mean_f1: float | None = None
     mean_latency_seconds: float | None = None
+    #: Questions with marked evidence, and how many had every evidence turn retrieved.
+    evidence_judged: int = 0
+    evidence_complete: int = 0
+    mean_evidence_recall: float | None = None
 
 
 @dataclass(frozen=True)
@@ -214,6 +222,35 @@ def bleu_score(expected_output: str | None, answer: str) -> float:
         return Scorer.sentence_bleu_score(references=expected_output, prediction=answer, bleu_type="bleu1")
 
 
+#: How much of an evidence turn must appear in a retrieved row for it to count
+#: as found: its opening, whitespace-collapsed. Rows truncate long turns
+#: (hybrid's turn_chars), so the whole turn can't be required.
+EVIDENCE_MATCH_CHARS = 200
+
+
+def _collapsed(text: str) -> str:
+    return " ".join(text.split())
+
+
+def evidence_recall(evidence: list[str] | None, retrieved: list[str]) -> float | None:
+    """The share of ``evidence`` turns whose opening appears in a ``retrieved`` row, or None without evidence.
+
+    Evidence turns are the corpus's ``"role: content"`` strings (see
+    ``convert.longmemeval._evidence_turns``). Unlike Contextual Recall this
+    checks the turns an answer is built from, not the answer itself, so a
+    computed answer ("17 days") whose parts were all retrieved scores 1.0.
+    """
+    if not evidence:
+        return None
+    haystack = _collapsed("\n".join(retrieved))
+    found = 0
+    for turn in evidence:
+        _, _, content = turn.partition(": ")
+        if _collapsed(content)[:EVIDENCE_MATCH_CHARS] in haystack:
+            found += 1
+    return found / len(evidence)
+
+
 def token_f1_score(expected_output: str | None, answer: str) -> float:
     """Token-level F1 between the retrieved answer and the expected output --
     precision and recall over shared tokens, the same formula LongMemEval's
@@ -298,6 +335,7 @@ def aggregate(scored: list[Scored]) -> RunReport:
         covered = [s for s in judge_scored_rows if s.covered]
         abstentions = [s for s in judge_scored_rows if s.abstention]
         recall = [s.metric_scores[RETRIEVAL_SIGNAL] for s in judge_scored_rows if RETRIEVAL_SIGNAL in s.metric_scores]
+        evidence = [s.evidence_recall for s in all_rows if s.evidence_recall is not None]
         by_tier[tier] = TierReport(
             unscored=unscored,
             questions=len(judge_scored_rows),
@@ -318,6 +356,10 @@ def aggregate(scored: list[Scored]) -> RunReport:
             mean_bleu=(mean(s.bleu for s in all_rows) if all_rows else None),
             mean_f1=(mean(s.f1 for s in all_rows) if all_rows else None),
             mean_latency_seconds=(mean(s.latency_seconds for s in all_rows) if all_rows else None),
+            # Judge-free like BLEU/F1, so over all_rows too.
+            evidence_judged=len(evidence),
+            evidence_complete=sum(1 for share in evidence if share == 1.0),
+            mean_evidence_recall=(mean(evidence) if evidence else None),
         )
     return RunReport(by_tier=by_tier)
 

@@ -135,15 +135,18 @@ def test_a_failure_says_whether_retrieval_had_found_the_evidence(capsys):
             covered=False,
             efficiency_tokens=100,
             metric_scores={"Contextual Recall": recall, "Coverage [GEval]": 0.2},
+            evidence_recall=evidence,
         )
-        for name, recall in (("q1", 0.1), ("q2", 0.9), ("q3", 1.0))
+        for name, recall, evidence in (("q1", 0.1, 0.0), ("q2", 0.9, 0.5), ("q3", 1.0, 1.0))
     ]
     _print_report(_report(rows), judged=True)
 
     out = capsys.readouterr().out
     assert "failed on     Coverage [GEval]: 3" in out
-    assert "retrieval missed the evidence on 1, found it on 2" in out
+    assert "contextual recall low on 1, passed on 2" in out
+    assert "evidence: all retrieved on 1, some on 1, none on 1" in out
     assert "contextual recall passed on 2/3 (reported, not gated)" in out
+    assert "every evidence turn retrieved on 1/3 (mean recall 0.50)" in out
 
 
 def test_a_run_without_a_judge_does_not_cry_outage(capsys):

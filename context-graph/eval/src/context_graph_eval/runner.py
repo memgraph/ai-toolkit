@@ -32,6 +32,7 @@ from .scoring import (
     bleu_score,
     efficiency_tokens,
     enforce_retrieval_floor,
+    evidence_recall,
     gate_score,
     rubric_for,
     token_f1_score,
@@ -372,6 +373,9 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
                 bleu=bleu_score(golden.expected_output, result.answer),
                 f1=token_f1_score(golden.expected_output, result.answer),
                 latency_seconds=result.latency_seconds,
+                evidence_recall=(
+                    None if metadata.get("abstention") else evidence_recall(golden.context, result.retrieval_context)
+                ),
             )
         )
     # Applied after judging, not before: the per-metric scores are kept as the

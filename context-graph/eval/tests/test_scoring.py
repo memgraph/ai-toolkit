@@ -17,6 +17,7 @@ from context_graph_eval.scoring import (
     build_metrics,
     efficiency_tokens,
     enforce_retrieval_floor,
+    evidence_recall,
     gate_and_rank,
     gate_score,
     rubric_for,
@@ -466,3 +467,39 @@ def test_preference_questions_are_judged_on_using_the_users_preferences_not_on_e
     assert preference.name == "Preference"
     assert preference.evaluation_steps == PREFERENCE_STEPS
     assert "need not reflect every point" in preference.criteria
+
+
+def test_evidence_recall_is_the_share_of_evidence_turns_retrieved():
+    evidence = ["user: I took a week-long break in January.", "user: Then a 10-day break in February."]
+
+    assert evidence_recall(evidence, ["TURN [s1, 2023-01-20, user]: I took a week-long break in January."]) == 0.5
+    assert evidence_recall(evidence, ["FACT: unrelated"]) == 0.0
+    assert evidence_recall(evidence, [f"TURN [...]: {turn.split(': ', 1)[1]}" for turn in evidence]) == 1.0
+
+
+def test_a_question_without_marked_evidence_has_no_evidence_recall():
+    """Abstention questions mark no evidence: there is nothing to retrieve, not a miss."""
+    assert evidence_recall([], ["anything"]) is None
+    assert evidence_recall(None, ["anything"]) is None
+
+
+def test_a_long_evidence_turn_counts_when_its_opening_was_retrieved():
+    """Rows truncate long turns (hybrid's turn_chars), so the whole turn can't be required;
+    whitespace differences from rendering don't count either."""
+    turn = "user: " + "I visited the museum. " * 200
+    row = "TURN [...]: " + " ".join(turn.split(": ", 1)[1].split())[:1500]
+
+    assert evidence_recall([turn], [row.replace(" ", "  ", 3)]) == 1.0
+
+
+def test_evidence_recall_is_reported_per_tier():
+    report = aggregate(
+        [
+            Scored(name="q1", tier=1, coverage=1.0, covered=True, efficiency_tokens=1, evidence_recall=1.0),
+            Scored(name="q2", tier=1, coverage=0.0, covered=False, efficiency_tokens=1, evidence_recall=0.5),
+            Scored(name="q3", tier=1, coverage=1.0, covered=True, efficiency_tokens=1, abstention=True),
+        ]
+    ).by_tier[1]
+
+    assert (report.evidence_complete, report.evidence_judged) == (1, 2)
+    assert report.mean_evidence_recall == 0.75
