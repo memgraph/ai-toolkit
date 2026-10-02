@@ -186,3 +186,19 @@ def test_safe_query_keeps_meaningful_short_words():
     the expected answer IS a number. Must not be dropped as if it were a
     near-universal word just because it is short."""
     assert _safe_query("Was it 5 or 6 days?") == "5 6 days"
+
+
+@pytest.mark.asyncio
+async def test_the_question_date_reaches_the_answer_prompt_only_when_given(eval_graph: ActionsGraph):
+    """#367: 'how many days ago' needs the day the question is asked; opt-in so default runs stay comparable."""
+    _plant(eval_graph, "s1", role=MessageRole.USER, content="I adopted a beagle named Max")
+    ensure_turn_text_index(eval_graph)
+    llm = _EchoLLM()
+
+    await retrieve_by_text_search("When did I adopt Max?", graph=ReadOnlyGraph(eval_graph.db), llm=llm)
+    await retrieve_by_text_search(
+        "When did I adopt Max?", graph=ReadOnlyGraph(eval_graph.db), llm=llm, today="2023/06/15 (Thu) 09:12"
+    )
+
+    assert "is being asked on" not in llm.prompts[0]
+    assert "The question is being asked on 2023/06/15 (Thu) 09:12." in llm.prompts[1]

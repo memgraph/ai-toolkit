@@ -147,6 +147,7 @@ def _one_session_fixture(session_id: str):
         date="2023/05/20 (Sat) 14:03",
         turns=[Turn(role="user", content=f"I adopted a beagle named Max, in {session_id}")],
         holds_evidence=True,
+        user_id="u1",
     )
 
 
@@ -160,7 +161,7 @@ def _session_row(eval_graph, session_id: str) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_reconcile_batch_gliner2_mode_reconciles_one_session_at_a_time(eval_graph, monkeypatch):
+async def test_reconcile_batch_gliner2_mode_reconciles_through_reconcile_session(eval_graph, monkeypatch):
     """No batch/queue pipeline exists for a backend with no shared busy-lock
     to fan out over -- gliner2 mode must go through reconcile_session, not
     reconcile_sessions_batch (map #322's pipeline is LightRAG-specific)."""

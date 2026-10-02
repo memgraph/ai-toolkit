@@ -108,7 +108,7 @@ async def test_fixtures_are_injected_before_retrieval_runs(eval_graph: ActionsGr
         plan=RunPlan(reconcile=False, judge=None),
     )
 
-    assert eval_graph.get_session("q1-s1") is not None
+    assert eval_graph.get_session("q1--q1-s1") is not None
 
 
 async def test_retrieval_payload_is_measured_even_without_a_judge(eval_graph: ActionsGraph):

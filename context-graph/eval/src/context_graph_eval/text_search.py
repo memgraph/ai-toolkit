@@ -206,6 +206,7 @@ async def retrieve_by_text_search(
     graph: "ReadOnlyGraph",
     llm: "LLM",
     limit: int = DEFAULT_LIMIT,
+    today: str | None = None,
 ) -> Retrieved:
     """Answer ``question`` from Memgraph's own full-text search over raw turns.
 
@@ -229,7 +230,7 @@ async def retrieve_by_text_search(
     seen = [f"session={row['session_id']} content={row['content']}" for row in rows]
     errors = [f"text_search.search_all({query!r}): returned 0 rows"] if query and not rows else []
 
-    answer = await llm.complete(answer_prompt(question, seen))
+    answer = await llm.complete(answer_prompt(question, seen, today))
     return Retrieved(
         answer=answer.strip(),
         retrieval_context=seen,

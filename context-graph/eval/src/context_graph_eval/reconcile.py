@@ -11,6 +11,7 @@ slow, and running it per-injection would make staging a batch cost as much as
 scoring one.
 """
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -226,6 +227,7 @@ async def reconcile_batch(
     extraction_backend: ExtractionBackendName = "lightrag",
     progress: bool = True,
     sessions_per_call: int = 20,
+    gliner2_concurrency: int = 4,
 ) -> Reconciled:
     """Reconcile pending sessions in the eval graph.
 
@@ -269,20 +271,24 @@ async def reconcile_batch(
     GLiNER2 cannot do at all, so it always runs through the LightRAG wrapper's
     own LLM regardless of which backend extracts entities. GLiNER2 extracts
     against :data:`GLINER2_ONTOLOGY_PATH`, and a session whose output is not
-    ontology-conformant is reported in ``errors``, since that is a bug. "gliner2" sessions
-    reconcile one at a time via ``reconcile_session`` rather than through
+    ontology-conformant is reported in ``errors``, since that is a bug.
+    "gliner2" sessions go through ``reconcile_session``,
+    ``gliner2_concurrency`` at a time, rather than through
     ``reconcile_sessions_batch``: map #322's batch/queue pipeline exists to
     give LightRAG's own worker pool more than one document at a time, which
     is meaningless for a backend with no shared busy-lock or worker pool to
     fan out over in the first place.
 
     Raises:
-        ValueError: if ``sessions_per_call`` is less than 1, or
-            ``extraction_backend`` is not one of :data:`EXTRACTION_BACKENDS` --
-            both checked up front, before querying for pending sessions at all.
+        ValueError: if ``sessions_per_call`` or ``gliner2_concurrency`` is
+            less than 1, or ``extraction_backend`` is not one of
+            :data:`EXTRACTION_BACKENDS` -- all checked up front, before
+            querying for pending sessions at all.
     """
     if sessions_per_call < 1:
         raise ValueError(f"sessions_per_call must be >= 1, got {sessions_per_call}")
+    if gliner2_concurrency < 1:
+        raise ValueError(f"gliner2_concurrency must be >= 1, got {gliner2_concurrency}")
     if extraction_backend not in EXTRACTION_BACKENDS:
         raise ValueError(f"extraction_backend must be one of {EXTRACTION_BACKENDS}, got {extraction_backend!r}")
 
@@ -353,19 +359,28 @@ async def reconcile_batch(
 
     try:
         if gliner2_backend is not None:
-            # One session at a time (see docstring): there is no batch/queue
-            # pipeline to fan out over for a backend with no shared busy-lock,
-            # unlike the LightRAG branch below.
-            for index, session_id in enumerate(session_ids, start=1):
-                summary = await graph.reconcile_session(
-                    session_id,
-                    lightrag_wrapper=lightrag_wrapper,
-                    extraction_backend=gliner2_backend,
-                    enforce_ontology=True,
-                    # The same file the backend extracts against, so label
-                    # promotion and the domain/range check can't drift from it.
-                    ontology_path=GLINER2_ONTOLOGY_PATH,
-                )
+            # Several sessions at once, sharing one backend: extraction runs in
+            # a worker thread per session (GLiNER2Backend.aingest_chunk uses
+            # asyncio.to_thread) and each session's summary is an awaited LLM
+            # call, so both overlap. Measured on 8 real sessions: 109 s serially,
+            # 70 s over 4 threads, identical mentions -- torch already uses
+            # several intra-op threads, so returns flatten past 4. Memgraph
+            # writes stay on the event loop thread, so no two MERGEs race.
+            semaphore = asyncio.Semaphore(gliner2_concurrency)
+            done = 0
+
+            async def _one(session_id: str) -> None:
+                nonlocal done
+                async with semaphore:
+                    summary = await graph.reconcile_session(
+                        session_id,
+                        lightrag_wrapper=lightrag_wrapper,
+                        extraction_backend=gliner2_backend,
+                        enforce_ontology=True,
+                        # The same file the backend extracts against, so label
+                        # promotion and the domain/range check can't drift from it.
+                        ontology_path=GLINER2_ONTOLOGY_PATH,
+                    )
                 if summary.nonconformant_entities or summary.nonconformant_relations:
                     # Zero by construction on GLiNER2 output (#355): nonzero is a bug.
                     errors.append(
@@ -373,7 +388,10 @@ async def reconcile_batch(
                         f"{summary.nonconformant_relations} non-conformant relationships"
                     )
                 _tally([summary])
-                _report(index)
+                done += 1
+                _report(done)
+
+            await asyncio.gather(*(_one(session_id) for session_id in session_ids))
         else:
             for start in range(0, len(session_ids), sessions_per_call):
                 chunk = session_ids[start : start + sessions_per_call]

@@ -16,9 +16,11 @@ import asyncio
 import os
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from .convert.longmemeval import to_session_fixtures
+from .hybrid import HybridConfig, ensure_hybrid_index, retrieve_hybrid
 from .inject import PENDING, inject_batch
 from .reconcile import BACKEND_CLASS_NAMES, ExtractionBackendName, reconcile_batch
 from .retrieval import ReadOnlyGraph, Retrieved, retrieve
@@ -47,8 +49,8 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
 #: comparison point: Memgraph's own full-text index over raw, unreconciled
 #: turns -- see text_search.py). Deliberately the one axis report.compare()
 #: does NOT pin: it is usually the thing a run using this field is measuring.
-RetrievalStrategyName = Literal["graph-agent", "text-search"]
-RETRIEVAL_STRATEGIES: tuple[RetrievalStrategyName, ...] = ("graph-agent", "text-search")
+RetrievalStrategyName = Literal["graph-agent", "text-search", "hybrid"]
+RETRIEVAL_STRATEGIES: tuple[RetrievalStrategyName, ...] = ("graph-agent", "text-search", "hybrid")
 
 
 @dataclass(frozen=True)
@@ -96,6 +98,13 @@ class RunPlan:
     #: How many text-search hits to hand the answering LLM. Ignored for
     #: "graph-agent". See text_search.DEFAULT_LIMIT for why this is not tuned.
     text_search_limit: int = DEFAULT_TEXT_SEARCH_LIMIT
+    #: "hybrid" only: which lanes run and how wide (see hybrid.HybridConfig),
+    #: and where its embeddings are cached between runs over the same graph.
+    hybrid: HybridConfig = field(default_factory=HybridConfig)
+    hybrid_cache: Path = Path(".cache/context-graph-eval/hybrid-index.npz")
+    #: Tell the answering LLM when each question is asked (#367). Off by
+    #: default so runs stay comparable with those scored without it.
+    question_date: bool = False
 
 
 @dataclass(frozen=True)
@@ -255,7 +264,8 @@ async def run_batch(
         reconciled, failures = outcome.reconciled, outcome.failed
 
     read_only = ReadOnlyGraph(graph.db)
-    retrieved = await _retrieve_all(goldens, read_only, llm, plan)
+    index = ensure_hybrid_index(graph, plan.hybrid_cache) if plan.retrieval_strategy == "hybrid" else None
+    retrieved = await _retrieve_all(goldens, read_only, llm, plan, index)
 
     scored = _score(goldens, retrieved, plan)
     report = aggregate(scored)
@@ -273,6 +283,7 @@ async def _retrieve_all(
     graph: ReadOnlyGraph,
     llm: "LLM",
     plan: RunPlan,
+    index: Any = None,
 ) -> list[Retrieved]:
     """Retrieve for every question, bounded so a batch cannot stampede the model.
 
@@ -285,12 +296,24 @@ async def _retrieve_all(
     async def one(golden: "Golden") -> Retrieved:
         async with limiter:
             started = time.monotonic()
+            today = (golden.additional_metadata or {}).get("question_date") if plan.question_date else None
             try:
+                if plan.retrieval_strategy == "hybrid":
+                    # Each question is its own user's history (to_session_fixtures).
+                    return await retrieve_hybrid(
+                        golden.input,
+                        graph=graph,
+                        llm=llm,
+                        index=index,
+                        config=plan.hybrid,
+                        today=today,
+                        user_id=golden.name,
+                    )
                 if plan.retrieval_strategy == "text-search":
                     return await retrieve_by_text_search(
-                        golden.input, graph=graph, llm=llm, limit=plan.text_search_limit
+                        golden.input, graph=graph, llm=llm, limit=plan.text_search_limit, today=today
                     )
-                return await retrieve(golden.input, graph=graph, llm=llm)
+                return await retrieve(golden.input, graph=graph, llm=llm, today=today)
             except Exception as exc:
                 # retrieve() times itself, but that timing rides out on the
                 # Retrieved it returns -- a raise never produces one, so the

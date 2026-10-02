@@ -252,7 +252,40 @@ def _detailed_schema(graph: ReadOnlyGraph) -> str | None:
             start = ":".join(edge.get("start_labels") or ["?"])
             end = ":".join(edge.get("end_labels") or ["?"])
             lines.append(f"  (:{start})-[:{edge.get('edge_type')}]->(:{end})")
+        edge_types = sorted({str(e["edge_type"]) for e in edges if e.get("edge_type")})
+        properties = _describe_relationship_properties(graph, edge_types)
+        if properties:
+            lines.append("")
+            lines.append("Relationship properties:")
+            lines.extend(properties)
     return "\n".join(lines)
+
+
+#: Memgraph's valueType() names for temporal values, rendered as what they are.
+_TEMPORAL_TYPES = {"ZONED_DATE_TIME": "datetime", "LOCAL_DATE_TIME": "datetime", "DATE": "date", "DURATION": "duration"}
+
+
+def _describe_relationship_properties(graph: ReadOnlyGraph, edge_types: list[str]) -> list[str]:
+    """One line per relationship type that carries properties: each key and its value type.
+
+    Without it the agent cannot see what an edge carries -- e.g. that an
+    extracted fact's `valid_at` is a datetime it can compare or subtract (#364)
+    -- and goes looking for date nodes instead. Only keys and types are shown,
+    never values, for the same reason node properties hide free text.
+    """
+    described: list[str] = []
+    for edge_type in edge_types:
+        rows = graph.query(
+            f"MATCH ()-[r:`{edge_type}`]->() WITH r LIMIT 200 "
+            "UNWIND keys(r) AS key RETURN DISTINCT key, valueType(r[key]) AS type ORDER BY key"
+        )
+        if not rows:
+            continue
+        fields = ", ".join(
+            f"{row['key']} ({_TEMPORAL_TYPES.get(row['type'], str(row['type']).lower())})" for row in rows
+        )
+        described.append(f"  :{edge_type} -- {fields}")
+    return described
 
 
 def _label_sets(graph: ReadOnlyGraph) -> list[list[str]]:
@@ -351,6 +384,7 @@ async def retrieve(
     graph: ReadOnlyGraph,
     llm: LLM,
     max_steps: int = DEFAULT_MAX_STEPS,
+    today: str | None = None,
 ) -> Retrieved:
     """Answer ``question`` by letting ``llm`` query ``graph``.
 
@@ -407,7 +441,7 @@ async def retrieve(
             continue
         seen.extend(rendered)
 
-    answer = await llm.complete(answer_prompt(question, seen))
+    answer = await llm.complete(answer_prompt(question, seen, today))
     return Retrieved(
         answer=answer.strip(),
         retrieval_context=seen,
@@ -500,7 +534,7 @@ def _query_prompt(question: str, schema: str, seen: list[str], errors: list[str]
     return "\n".join(parts)
 
 
-def answer_prompt(question: str, seen: list[str]) -> str:
+def answer_prompt(question: str, seen: list[str], today: str | None = None) -> str:
     """The final-answer prompt, shared by every retrieval strategy.
 
     Public rather than private: ``text_search.py``'s baseline uses this exact
@@ -509,8 +543,11 @@ def answer_prompt(question: str, seen: list[str]) -> str:
     different answering prompts.
     """
     rows = "\n".join(seen[:200]) if seen else "(nothing was retrieved)"
+    # Opt-in (--question-date, #367): "how many days ago" is unanswerable
+    # without knowing when the question is asked, whatever the graph holds.
+    asked = f"The question is being asked on {today}.\n" if today else ""
     return (
         "Answer the question using only the rows below. Be concise. "
         'If the rows do not contain the answer, say exactly "not in memory".\n\n'
-        f"Rows:\n{rows}\n\nQuestion: {question}\nAnswer:"
+        f"Rows:\n{rows}\n\n{asked}Question: {question}\nAnswer:"
     )

@@ -100,7 +100,7 @@ def test_ordinary_questions_are_not_marked_as_abstention():
 def test_every_haystack_session_becomes_an_injectable_fixture():
     fixtures = to_session_fixtures(_record())
 
-    assert [f.session_id for f in fixtures] == ["answer_1", "distractor_1"]
+    assert [f.session_id for f in fixtures] == ["gpt4_1a2b3c--answer_1", "gpt4_1a2b3c--distractor_1"]
 
 
 def test_session_ids_satisfy_the_actions_graph_constraint():
@@ -113,20 +113,16 @@ def test_session_ids_satisfy_the_actions_graph_constraint():
         assert re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", fixture.session_id)
 
 
-def test_session_ids_are_kept_verbatim_so_shared_sessions_stay_shared():
-    """Upstream draws distractors from a shared pool and reuses them across
-    questions -- 3,942 of 23,867 haystack ids in the real dataset repeat.
-
-    Verified: *zero* of those repeats carry differing content, so a repeated id
-    genuinely is the same session. Keeping the id verbatim lets it become one
-    node, as it would be in a real organizational graph. Namespacing per
-    question would instead store byte-identical copies and pay to reconcile
-    each one -- about 4,600 redundant LLM-backed reconciliations over a full
-    run."""
+def test_each_question_is_its_own_user_with_its_own_copy_of_a_shared_session():
+    """Upstream reuses distractor sessions across questions, but each haystack
+    is a different person's history: a session in two of them is two sessions,
+    each owned by its question's user."""
     first = to_session_fixtures(_record(question_id="q1"))
     second = to_session_fixtures(_record(question_id="q2"))
 
-    assert [f.session_id for f in first] == [f.session_id for f in second]
+    assert {f.user_id for f in first} == {"q1"}
+    assert {f.user_id for f in second} == {"q2"}
+    assert not {f.session_id for f in first} & {f.session_id for f in second}
 
 
 def test_a_fixture_carries_its_session_date_and_turns():
@@ -187,7 +183,7 @@ def test_distractor_sessions_are_kept_not_filtered_out():
     fixtures = to_session_fixtures(_record())
 
     distractor = fixtures[1]
-    assert distractor.session_id == "distractor_1"
+    assert distractor.session_id == "gpt4_1a2b3c--distractor_1"
     assert distractor.holds_evidence is False
 
 
@@ -231,7 +227,7 @@ def test_the_session_cap_never_trims_evidence():
     fixtures = to_session_fixtures(record, max_sessions=1)
     kept = {f.session_id for f in fixtures}
 
-    assert kept == {"evidence-old", "evidence-new"}
+    assert kept == {"q1--evidence-old", "q1--evidence-new"}
 
 
 def test_the_session_cap_still_trims_distractors():

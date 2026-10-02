@@ -13,6 +13,8 @@ from pathlib import Path
 
 from .convert.longmemeval import DEFAULT_REVISION, build_corpus, fetch, haystack_path, load_raw
 from .corpus import write_corpus
+from .hybrid import LANES as HYBRID_LANES
+from .hybrid import HybridConfig
 from .reconcile import EXTRACTION_BACKENDS
 from .runner import RETRIEVAL_STRATEGIES
 from .text_search import DEFAULT_LIMIT as DEFAULT_TEXT_SEARCH_LIMIT
@@ -116,7 +118,26 @@ def main(argv: list[str] | None = None) -> int:
         "memory) or 'text-search' (the cheap comparison point this exists to enable: Memgraph's own "
         "full-text index over raw, UNRECONCILED turns -- no distillation, no LLM extraction cost). "
         "'text-search' forces reconciliation off regardless of --skip-reconcile: there is no memory "
-        "for it to build that this strategy would read.",
+        "for it to build that this strategy would read. 'hybrid' finds turns by vector and text "
+        "search and uses the typed graph to find facts and more turns (see hybrid.py).",
+    )
+    run.add_argument(
+        "--question-date",
+        action="store_true",
+        help="tell the answering LLM the date each question is asked (#367). Off by default, so runs "
+        "stay comparable with ones scored without it; compare only runs that agree on it.",
+    )
+    run.add_argument(
+        "--hybrid-user-fact-types-from",
+        choices=("facts", "names"),
+        default="names",
+        help="how the hybrid user_facts lane picks relation types (see hybrid.HybridConfig).",
+    )
+    run.add_argument(
+        "--hybrid-lanes",
+        default=",".join(HYBRID_LANES),
+        help=f"comma-separated lanes for --retrieval-strategy hybrid, from {', '.join(HYBRID_LANES)}. "
+        "Dropping 'entities' and 'facts' measures what the graph adds over turns alone.",
     )
     run.add_argument(
         "--text-search-limit",
@@ -453,6 +474,11 @@ def _run(args) -> int:
                 extraction_backend=args.extraction_backend,
                 retrieval_strategy=args.retrieval_strategy,
                 text_search_limit=args.text_search_limit,
+                hybrid=HybridConfig(
+                    lanes=tuple(lane for lane in args.hybrid_lanes.split(",") if lane),
+                    user_fact_types_from=args.hybrid_user_fact_types_from,
+                ),
+                question_date=args.question_date,
             ),
         )
     )
