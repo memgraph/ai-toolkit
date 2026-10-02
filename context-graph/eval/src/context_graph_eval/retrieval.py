@@ -553,10 +553,11 @@ def answer_prompt(question: str, seen: list[str], today: str | None = None) -> s
         "- For a count, a total, or the time between events: list each matching item or value with its "
         "date, count an item mentioned in several rows once, then compute.\n"
         "- When rows disagree about the same thing, the most recent one is current.\n"
-        "- When the question asks for a recommendation or suggestion, recommend things that fit the "
-        "preferences, interests and possessions the rows show, and name which ones you used.\n"
-        "- When the question asks about something the rows never mention, or assumes something they do "
-        'not show, say exactly "not in memory" -- do not answer a related question instead.\n'
+        "- When the question asks for a recommendation or suggestion, always recommend: use the "
+        "preferences, interests and possessions the rows show, add your own knowledge where they name "
+        'nothing specific, and say which preferences you used. Never answer one with "not in memory".\n'
+        "- Any other question about something the rows never mention, or that assumes something they do "
+        'not show: say exactly "not in memory" -- do not answer a related question instead.\n'
         '- Otherwise, if the rows do not contain the answer, say exactly "not in memory".\n'
         "Keep the working short and put the final answer last.\n\n"
         f"Rows:\n{rows}\n\n{asked}Question: {question}\nAnswer:"
