@@ -97,6 +97,31 @@ async def test_bleu_f1_and_latency_are_scored_without_a_judge(eval_graph: Action
     assert scored.latency_seconds > 0.0
 
 
+async def test_every_question_is_answered_knowing_when_it_is_asked(eval_graph: ActionsGraph):
+    """'How many days ago' has nothing to count from without the question date,
+    so the runner always passes it -- there is no run that should go without (#367)."""
+
+    class _Recording(_StubLLM):
+        def __init__(self):
+            super().__init__()
+            self.prompts: list[str] = []
+
+        async def complete(self, prompt: str) -> str:
+            self.prompts.append(prompt)
+            return await super().complete(prompt)
+
+    llm = _Recording()
+    await run_batch(
+        [to_golden(_record("q1"))],
+        records=[_record("q1")],
+        graph=eval_graph,
+        llm=llm,
+        plan=RunPlan(reconcile=False, judge=None),
+    )
+
+    assert "The question is being asked on 2023/06/15 (Thu) 09:12." in llm.prompts[-1]
+
+
 async def test_fixtures_are_injected_before_retrieval_runs(eval_graph: ActionsGraph):
     """Ordering is the runner's whole job: retrieving before injection would
     query an empty graph and score every question as a miss."""

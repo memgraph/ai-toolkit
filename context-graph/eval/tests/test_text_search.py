@@ -190,7 +190,7 @@ def test_safe_query_keeps_meaningful_short_words():
 
 @pytest.mark.asyncio
 async def test_the_question_date_reaches_the_answer_prompt_only_when_given(eval_graph: ActionsGraph):
-    """#367: 'how many days ago' needs the day the question is asked; opt-in so default runs stay comparable."""
+    """#367: 'how many days ago' needs the day the question is asked."""
     _plant(eval_graph, "s1", role=MessageRole.USER, content="I adopted a beagle named Max")
     ensure_turn_text_index(eval_graph)
     llm = _EchoLLM()

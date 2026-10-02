@@ -186,3 +186,32 @@ async def test_scoped_to_a_user_every_lane_retrieves_only_that_users_history(eva
     assert "Anna" in scoped
     assert "Bob" not in scoped
     assert "Bob" in await context(None)
+
+
+@pytest.mark.asyncio
+async def test_turns_come_before_facts_and_both_in_time_order(eval_graph: ActionsGraph, tmp_path):
+    """Turns are the answer store: after ~45 fact rows their evidence was read past.
+    Time order lets "which came first" and "what is current" read off the sequence."""
+    _plant(eval_graph)
+    eval_graph.ensure_session(Session(session_id="s0", started_at="2023-01-02T09:00:00+00:00"))
+    eval_graph.record_message(
+        session_id="s0",
+        role=MessageRole.USER,
+        content="I went to the Museum of Modern Art with Anna.",
+        timestamp="2023-01-02T09:00:00+00:00",
+    )
+    index = ensure_hybrid_index(eval_graph, tmp_path / "index.npz", embedder=_BagOfWords())
+
+    result = await retrieve_hybrid(
+        "Museum of Modern Art",
+        graph=ReadOnlyGraph(eval_graph.db),
+        llm=_EchoLLM(),
+        index=index,
+        config=HybridConfig(lanes=("turns", "facts")),
+    )
+
+    kinds = [row.split(" ", 1)[0] for row in result.retrieval_context]
+    assert kinds == sorted(kinds, key=lambda kind: kind != "TURN")
+    turns = [row for row in result.retrieval_context if row.startswith("TURN")]
+    assert turns[0].startswith("TURN [session s0, 2023-01-02T09:00")
+    assert turns == sorted(turns, key=lambda row: row.split(", ")[1])
