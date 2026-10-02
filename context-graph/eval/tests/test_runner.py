@@ -488,6 +488,31 @@ async def test_reusing_a_graph_with_no_recorded_backend_is_not_refused(eval_grap
     )
 
 
+def test_each_answer_rubric_is_judged_in_its_own_pass(monkeypatch):
+    """Abstention, preference and ordinary questions need different metrics,
+    so each group goes to the judge with its own (scoring.build_metrics)."""
+    import context_graph_eval.runner as runner_module
+    from context_graph_eval.retrieval import Retrieved
+    from context_graph_eval.runner import _judge
+
+    seen: dict[str, list[str]] = {}
+
+    def _fake_group(group, plan, *, rubric):
+        seen[rubric] = [g.name for g, _ in group]
+        return {}
+
+    monkeypatch.setattr(runner_module, "_judge_group", _fake_group)
+    goldens = [
+        to_golden(_record("q1")),
+        to_golden({**_record("q2"), "question_type": "single-session-preference"}),
+        to_golden(_record("q3_abs")),
+    ]
+
+    _judge(goldens, [Retrieved(answer="x") for _ in goldens], RunPlan(judge=object()))
+
+    assert seen == {"answer": ["q1"], "preference": ["q2"], "abstention": ["q3_abs"]}
+
+
 def test_judge_results_are_matched_to_their_own_question(monkeypatch):
     """deepeval returns results in completion order under concurrency. Matching
     them by position handed every question another question's scores."""
@@ -525,10 +550,10 @@ def test_judge_results_are_matched_to_their_own_question(monkeypatch):
         def __name__(self):
             return "Slow"
 
-    monkeypatch.setattr(scoring, "build_metrics", lambda judge, abstention=False: [_Slow()])
+    monkeypatch.setattr(scoring, "build_metrics", lambda judge, rubric="answer": [_Slow()])
     goldens = [Golden(name=f"n{i}", input=f"q-{i}", expected_output="e") for i in range(12)]
     group = [(g, Retrieved(answer="a")) for g in goldens]
 
-    judged = _judge_group(group, RunPlan(judge=object(), max_concurrent=4), abstention=False)
+    judged = _judge_group(group, RunPlan(judge=object(), max_concurrent=4), rubric="answer")
 
     assert {name: j.reasons["Slow"] for name, j in judged.items()} == {f"n{i}": f"q-{i}" for i in range(12)}

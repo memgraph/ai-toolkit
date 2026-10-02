@@ -363,6 +363,17 @@ COVERAGE_STEPS = [
     "Extra detail in the actual output does not reduce the score; a missing or contradicted fact does.",
     "Score high only if every fact is present, and low if any is missing.",
 ]
+#: LongMemEval's own preference judge accepts a response that "recalls and
+#: utilizes the user's personal information correctly" without reflecting every
+#: point of the rubric; these steps follow it so scores stay comparable (#404).
+PREFERENCE_STEPS = [
+    "The expected output is a rubric describing a desired personalized response, not a list of facts.",
+    "Check whether the actual output recalls the user's personal information the rubric points to "
+    "and uses it to shape its answer.",
+    "The actual output need not reflect every point of the rubric.",
+    "A generic answer, one that ignores or contradicts the user's stated preferences, "
+    'or "not in memory" is a failure.',
+]
 ABSTENTION_STEPS = [
     "The expected output says the information is not in memory.",
     "Check whether the actual output declines to answer, says the information is absent, or gives a correct zero count.",
@@ -371,7 +382,22 @@ ABSTENTION_STEPS = [
 ]
 
 
-def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list[Any]:
+#: LongMemEval's question type whose expected output is a rubric for a personalized answer.
+PREFERENCE_QUESTION_TYPE = "single-session-preference"
+#: Which answer rubric judges a question; see build_metrics.
+RUBRICS = ("answer", "abstention", "preference")
+
+
+def rubric_for(metadata: dict[str, Any]) -> str:
+    """The answer rubric a golden is judged by, from its ``additional_metadata``."""
+    if metadata.get("abstention"):
+        return "abstention"
+    if metadata.get("question_type") == PREFERENCE_QUESTION_TYPE:
+        return "preference"
+    return "answer"
+
+
+def build_metrics(judge: Any | None = None, *, rubric: str = "answer") -> list[Any]:
     """The judged half of the rubric: a deliberately minimal pair (#304).
 
     One ``GEval`` rubric scores the answer itself, since no built-in asks
@@ -385,6 +411,11 @@ def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list
     exist mainly for the no-ground-truth case, and every extra metric is another
     judge call per question, multiplied again by re-running per schema
     candidate.
+
+    **Preference questions swap Coverage for a Preference rubric.** Their
+    expected output describes a good personalized answer rather than stating
+    facts, so they are judged on whether the answer uses the user's stated
+    preferences, as LongMemEval's own judge does.
 
     **Abstention questions drop ContextualRecall entirely.** That metric asks
     whether the retrieved context supports the expected output -- but for a
@@ -400,7 +431,7 @@ def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list
     from deepeval.test_case import LLMTestCaseParams
 
     metrics: list[Any] = []
-    if abstention:
+    if rubric == "abstention":
         # Its own rubric, because these questions measure a different thing.
         # Upstream pairs the refusal with a contrastive fact -- "You mentioned
         # your cat Luna but not your hamster" -- so the Coverage rubric below,
@@ -434,6 +465,29 @@ def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list
         ]
 
     metrics.append(ContextualRecallMetric(threshold=DEFAULT_COVERAGE_THRESHOLD, model=judge))
+    if rubric == "preference":
+        # The expected output describes a good recommendation ("would prefer
+        # Sony-compatible accessories"), so Coverage's every-fact check failed
+        # answers that did exactly that: 0/6, scoring 0.2-0.6 (#404).
+        metrics.append(
+            GEval(
+                name="Preference",
+                criteria=(
+                    "The expected output is a rubric for a desired personalized response. Does the actual "
+                    "output satisfy it? It need not reflect every point of the rubric; it is correct as long "
+                    "as it recalls and uses the user's personal information correctly."
+                ),
+                evaluation_steps=PREFERENCE_STEPS,
+                evaluation_params=[
+                    LLMTestCaseParams.INPUT,
+                    LLMTestCaseParams.ACTUAL_OUTPUT,
+                    LLMTestCaseParams.EXPECTED_OUTPUT,
+                ],
+                threshold=DEFAULT_COVERAGE_THRESHOLD,
+                model=judge,
+            )
+        )
+        return metrics
     metrics.append(
         GEval(
             name="Coverage",

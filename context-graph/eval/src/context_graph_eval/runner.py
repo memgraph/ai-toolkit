@@ -26,12 +26,14 @@ from .reconcile import BACKEND_CLASS_NAMES, ExtractionBackendName, reconcile_bat
 from .retrieval import ReadOnlyGraph, Retrieved, retrieve
 from .scoring import (
     DEFAULT_COVERAGE_THRESHOLD,
+    RUBRICS,
     Scored,
     aggregate,
     bleu_score,
     efficiency_tokens,
     enforce_retrieval_floor,
     gate_score,
+    rubric_for,
     token_f1_score,
 )
 from .text_search import DEFAULT_LIMIT as DEFAULT_TEXT_SEARCH_LIMIT
@@ -384,9 +386,10 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
 def _judge(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -> dict[str, _Judged]:
     """Score answer quality with deepeval, returning per-metric scores per question.
 
-    Abstention and ordinary questions are judged in **separate passes**, because
-    they need different metrics: ContextualRecall is structurally inapplicable
-    to a question whose correct retrieved context is empty (see
+    Each answer rubric is judged in its **own pass** (``scoring.rubric_for``),
+    because the metrics differ: ContextualRecall is structurally inapplicable
+    to an abstention question, whose correct retrieved context is empty, and a
+    preference question's expected output is a rubric rather than facts (see
     ``scoring.build_metrics``). Scoring them together made every abstention
     question unpassable.
 
@@ -395,14 +398,14 @@ def _judge(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
     """
     paired = list(zip(goldens, retrieved, strict=True))
     judged: dict[str, _Judged] = {}
-    for abstention in (False, True):
-        group = [(g, r) for g, r in paired if bool((g.additional_metadata or {}).get("abstention")) is abstention]
+    for rubric in RUBRICS:
+        group = [(g, r) for g, r in paired if rubric_for(g.additional_metadata or {}) == rubric]
         if group:
-            judged.update(_judge_group(group, plan, abstention=abstention))
+            judged.update(_judge_group(group, plan, rubric=rubric))
     return judged
 
 
-def _judge_group(group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, abstention: bool) -> dict[str, _Judged]:
+def _judge_group(group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, rubric: str) -> dict[str, _Judged]:
     from deepeval import evaluate
     from deepeval.evaluate.configs import AsyncConfig, DisplayConfig, ErrorConfig
 
@@ -412,7 +415,7 @@ def _judge_group(group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, abst
     cases = [to_test_case(g, r) for g, r in group]
     result = evaluate(
         test_cases=cases,
-        metrics=build_metrics(plan.judge, abstention=abstention),
+        metrics=build_metrics(plan.judge, rubric=rubric),
         async_config=AsyncConfig(max_concurrent=plan.max_concurrent),
         display_config=DisplayConfig(print_results=False, show_indicator=False),
         # One question the judge cannot score should not abandon the batch --
