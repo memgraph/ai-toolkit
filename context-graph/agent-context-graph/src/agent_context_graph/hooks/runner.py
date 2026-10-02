@@ -10,6 +10,7 @@ of env var names. This collapses that into one implementation driven by a
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import sys
@@ -60,6 +61,31 @@ def create_link(connector_names: Iterable[str] = (), *, memgraph_env: dict[str, 
     return link
 
 
+_SCHEMA_COMPONENTS = {
+    "skills_graph": ("skills_graph", "SkillGraph"),
+    "actions_graph": ("actions_graph", "ActionsGraph"),
+    "sessions_graph": ("sessions_graph", "SessionsGraph"),
+}
+
+
+def setup_connector_schemas(connector_names: Iterable[str], *, memgraph_env: dict[str, str] | None = None) -> None:
+    """Create the Memgraph schema (indexes, constraints) for each named connector.
+
+    Raises:
+        ValueError: if a connector name is not supported.
+    """
+    kwargs = _memgraph_kwargs(memgraph_env)
+    for connector_name in connector_names:
+        normalized = connector_name.strip().replace("-", "_")
+        if not normalized:
+            continue
+        if normalized not in _SCHEMA_COMPONENTS:
+            raise ValueError(f"Unsupported connector: {connector_name}")
+        module_name, class_name = _SCHEMA_COMPONENTS[normalized]
+        component_class = getattr(importlib.import_module(module_name), class_name)
+        component_class(**kwargs).setup()
+
+
 def _env_prefix(runtime_name: str) -> str:
     return "AGENT_CONTEXT_GRAPH_" + runtime_name.strip().replace("-", "_").upper()
 
@@ -94,6 +120,11 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
         default=None,
         help="Override the session id from the hook payload.",
     )
+    parser.add_argument(
+        "--event-name",
+        default=None,
+        help="Supply the event name when the runtime payload omits it.",
+    )
     parser.add_argument("--memgraph-url", default=None, help="Memgraph Bolt URL. Overrides config file value.")
     parser.add_argument("--memgraph-user", default=None, help="Memgraph username. Overrides config file value.")
     parser.add_argument("--memgraph-password", default=None, help="Memgraph password. Overrides config file value.")
@@ -121,6 +152,8 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
     payload: dict[str, Any] = {}
     try:
         payload = load_payload()
+        if args.event_name is not None:
+            payload.setdefault("hook_event_name", args.event_name)
         link = create_link(connector_names, memgraph_env=memgraph_env)
         adapter = plugin.adapter_class(link, session_id=args.session_id)
         adapter.handle_payload(payload)
