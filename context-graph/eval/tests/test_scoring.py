@@ -10,6 +10,7 @@ import pytest
 from context_graph_eval.retrieval import Retrieved
 from context_graph_eval.scoring import (
     DEFAULT_TOKENIZER,
+    PREFERENCE_STEPS,
     Scored,
     aggregate,
     bleu_score,
@@ -18,6 +19,7 @@ from context_graph_eval.scoring import (
     enforce_retrieval_floor,
     gate_and_rank,
     gate_score,
+    rubric_for,
     token_f1_score,
     tokenizer_in_use,
 )
@@ -69,7 +71,7 @@ class _StubJudge(DeepEvalBaseLLM):
 
 
 def test_an_ordinary_question_is_scored_on_retrieval_and_answer():
-    names = [type(m).__name__ for m in build_metrics(_StubJudge(), abstention=False)]
+    names = [type(m).__name__ for m in build_metrics(_StubJudge())]
 
     assert "ContextualRecallMetric" in names
     assert "GEval" in names
@@ -85,7 +87,7 @@ def test_an_abstention_question_is_not_scored_on_contextual_recall():
     Measured before this fix: abstention scored 0/8, while the agent had
     correctly answered "not in memory" on at least four of them.
     """
-    names = [type(m).__name__ for m in build_metrics(_StubJudge(), abstention=True)]
+    names = [type(m).__name__ for m in build_metrics(_StubJudge(), rubric="abstention")]
 
     assert "ContextualRecallMetric" not in names
     assert "GEval" in names
@@ -400,7 +402,7 @@ def test_abstention_is_judged_on_refusing_not_on_reciting_the_near_miss():
     Abstention exists to measure not fabricating an answer, so that is what it
     scores.
     """
-    (metric,) = build_metrics(_StubJudge(), abstention=True)
+    (metric,) = build_metrics(_StubJudge(), rubric="abstention")
 
     assert metric.name == "Abstention"
     criteria = metric.criteria.lower()
@@ -415,7 +417,7 @@ def test_rubrics_carry_fixed_evaluation_steps_so_the_judge_never_writes_them():
 
     judge = _StubJudge()
     coverage = next(m for m in build_metrics(judge) if getattr(m, "name", "") == "Coverage")
-    abstention = build_metrics(judge, abstention=True)[0]
+    abstention = build_metrics(judge, rubric="abstention")[0]
     assert coverage.evaluation_steps == COVERAGE_STEPS
     assert abstention.evaluation_steps == ABSTENTION_STEPS
 
@@ -444,3 +446,23 @@ def test_retrieval_is_reported_per_tier_without_gating():
 
     assert report.covered == 3
     assert (report.retrieval_supported, report.retrieval_judged) == (1, 2)
+
+
+def test_each_question_is_routed_to_its_answer_rubric():
+    assert rubric_for({"question_type": "multi-session"}) == "answer"
+    assert rubric_for({"question_type": "single-session-preference"}) == "preference"
+    assert rubric_for({"question_type": "single-session-preference", "abstention": True}) == "abstention"
+    assert rubric_for({}) == "answer"
+
+
+def test_preference_questions_are_judged_on_using_the_users_preferences_not_on_every_fact():
+    """Their expected output is a rubric for a personalized answer, so Coverage's
+    every-fact check failed recommendations that did what the rubric asked:
+    0/6 at 0.2-0.6 (#404). Retrieval is still reported beside it."""
+    metrics = build_metrics(_StubJudge(), rubric="preference")
+
+    assert [type(m).__name__ for m in metrics] == ["ContextualRecallMetric", "GEval"]
+    preference = metrics[1]
+    assert preference.name == "Preference"
+    assert preference.evaluation_steps == PREFERENCE_STEPS
+    assert "need not reflect every point" in preference.criteria
