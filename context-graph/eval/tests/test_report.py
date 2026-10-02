@@ -366,3 +366,11 @@ def test_runs_gated_differently_are_refused():
 
     with pytest.raises(ValueError, match="coverage gate"):
         compare(before, after)
+
+
+def test_runs_with_different_official_judges_are_refused():
+    before = _run(_meta(official_judge_model="gpt-4o-2024-08-06"), [_scored("q1")])
+    after = _run(_meta(official_judge_model="gpt-4o-mini-2024-07-18"), [_scored("q1")])
+
+    with pytest.raises(ValueError, match="official judge"):
+        compare(before, after)

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from . import official_judge
 from .convert.longmemeval import to_session_fixtures
 from .hybrid import HybridConfig, ensure_hybrid_index, retrieve_hybrid
 from .inject import PENDING, inject_batch
@@ -76,6 +77,9 @@ class RunPlan:
     reconcile_limit: int | None = None
     max_concurrent: int = 4
     coverage_threshold: float = DEFAULT_COVERAGE_THRESHOLD
+    #: LongMemEval's own judge (official_judge.py), which decides ``covered``
+    #: when set; None leaves the deepeval answer rubrics deciding it.
+    official_judge_model: str | None = None
     #: Trim each question's haystack. Reconciliation cost scales with sessions
     #: while coverage needs questions, and upstream couples them ~47:1. Any
     #: score measured with this set is an UPPER BOUND: fewer distractors make
@@ -267,7 +271,8 @@ async def run_batch(
     index = ensure_hybrid_index(graph, plan.hybrid_cache) if plan.retrieval_strategy == "hybrid" else None
     retrieved = await _retrieve_all(goldens, read_only, llm, plan, index)
 
-    scored = _score(goldens, retrieved, plan)
+    official = await _official_labels(goldens, retrieved, plan)
+    scored = _score(goldens, retrieved, plan, official)
     report = aggregate(scored)
     return BatchReport(
         by_tier=report.by_tier,
@@ -341,7 +346,30 @@ class _Judged:
     reasons: dict[str, str] = field(default_factory=dict)
 
 
-def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -> list[Scored]:
+async def _official_labels(
+    goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan
+) -> dict[str, bool | None]:
+    """LongMemEval's judge's verdict per question it has a template for; {} when it isn't configured."""
+    if plan.official_judge_model is None:
+        return {}
+    prompts = {}
+    for golden, result in zip(goldens, retrieved, strict=True):
+        metadata = golden.additional_metadata or {}
+        abstention = bool(metadata.get("abstention"))
+        if golden.name and official_judge.judges(metadata.get("question_type"), abstention=abstention):
+            prompts[golden.name] = official_judge.anscheck_prompt(
+                metadata.get("question_type", ""),
+                golden.input,
+                golden.expected_output or "",
+                result.answer,
+                abstention=abstention,
+            )
+    return await official_judge.judge_all(prompts, model=plan.official_judge_model, max_concurrent=plan.max_concurrent)
+
+
+def _score(
+    goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan, official: dict[str, bool | None] | None = None
+) -> list[Scored]:
     """Turn retrieval results into per-question scores.
 
     Efficiency, BLEU, F1 and latency are all computed regardless of whether a
@@ -356,15 +384,22 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
     for golden, result in zip(goldens, retrieved, strict=True):
         metadata = golden.additional_metadata or {}
         outcome = judged.get(golden.name, _Judged())
-        # The answer rubric gates; Contextual Recall rides along in
-        # metric_scores as the retrieval signal (scoring.RETRIEVAL_SIGNAL).
+        # The answer rubric's score -- the gate when LongMemEval's judge didn't
+        # run; Contextual Recall rides along in metric_scores as the retrieval
+        # signal (scoring.RETRIEVAL_SIGNAL).
         coverage = gate_score(outcome.scores)
+        # LongMemEval's judge decides when it judged this question (#409); its
+        # failed call is unjudged, never a fallback to our own rubrics.
+        judged_by = "official" if official and golden.name in official else "answer"
+        verdict = official.get(golden.name) if official and golden.name else None
         scored.append(
             Scored(
                 name=golden.name or golden.input,
                 tier=metadata.get("tier", 1),
                 coverage=coverage,
-                covered=coverage >= plan.coverage_threshold,
+                covered=bool(verdict) if judged_by == "official" else coverage >= plan.coverage_threshold,
+                judged_by=judged_by,
+                official_correct=verdict,
                 efficiency_tokens=efficiency_tokens(result),
                 abstention=bool(metadata.get("abstention")),
                 answer=result.answer,

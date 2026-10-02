@@ -37,9 +37,11 @@ DEFAULT_COVERAGE_THRESHOLD = 0.7
 #: correct answers failed this way (#397).
 RETRIEVAL_SIGNAL = "Contextual Recall"
 
-#: Which judge scores decide ``covered``, recorded on every saved run so
-#: compare() refuses across a gate change: "answer" -- the answer rubric alone.
-COVERAGE_GATE = "answer"
+#: Which judge decides ``covered``, recorded on every saved run so compare()
+#: refuses across a gate change: "official" -- LongMemEval's own judge (#409) --
+#: or, when it isn't configured, "answer" -- the deepeval answer rubric alone.
+COVERAGE_GATE = "official"
+RUBRIC_GATE = "answer"
 
 #: Tokenizer for the efficiency count. Pinned for the same reason #304 pins the
 #: judge model: a tokenizer change silently shifts every efficiency number, and
@@ -88,6 +90,16 @@ class Scored:
     #: found in what retrieval returned -- deterministic, no judge (#403).
     #: None when the question marks no evidence, as abstention questions don't.
     evidence_recall: float | None = None
+    #: Who decided ``covered``: "official" (LongMemEval's judge) or "answer"
+    #: (the deepeval answer rubric, whose score is ``coverage`` either way).
+    judged_by: str = "answer"
+    #: LongMemEval's judge's verdict; None when it didn't run or its call failed.
+    official_correct: bool | None = None
+
+    @property
+    def judged(self) -> bool:
+        """Whether the judge that decides ``covered`` produced a verdict -- not an outage."""
+        return self.official_correct is not None if self.judged_by == "official" else bool(self.metric_scores)
 
 
 @dataclass(frozen=True)
@@ -123,6 +135,9 @@ class TierReport:
     mean_bleu: float | None = None
     mean_f1: float | None = None
     mean_latency_seconds: float | None = None
+    #: The deepeval answer rubrics' own coverage count, shown beside the
+    #: official judge's when that decides ``covered``; None when it doesn't.
+    rubric_covered: int | None = None
     #: Questions with marked evidence, and how many had every evidence turn retrieved.
     evidence_judged: int = 0
     evidence_complete: int = 0
@@ -330,7 +345,8 @@ def aggregate(scored: list[Scored]) -> RunReport:
         # score, so it is excluded from the rate and surfaced separately.
         # Coverage and (gated) efficiency need a judge's verdict, so they are
         # aggregated over this judge-scored subset only, not over all_rows.
-        judge_scored_rows = [s for s in all_rows if s.metric_scores]
+        judge_scored_rows = [s for s in all_rows if s.judged]
+        official = any(s.judged_by == "official" for s in all_rows)
         unscored = len(all_rows) - len(judge_scored_rows)
         covered = [s for s in judge_scored_rows if s.covered]
         abstentions = [s for s in judge_scored_rows if s.abstention]
@@ -356,6 +372,11 @@ def aggregate(scored: list[Scored]) -> RunReport:
             mean_bleu=(mean(s.bleu for s in all_rows) if all_rows else None),
             mean_f1=(mean(s.f1 for s in all_rows) if all_rows else None),
             mean_latency_seconds=(mean(s.latency_seconds for s in all_rows) if all_rows else None),
+            rubric_covered=(
+                sum(1 for s in judge_scored_rows if s.metric_scores and s.coverage >= DEFAULT_COVERAGE_THRESHOLD)
+                if official
+                else None
+            ),
             # Judge-free like BLEU/F1, so over all_rows too.
             evidence_judged=len(evidence),
             evidence_complete=sum(1 for share in evidence if share == 1.0),

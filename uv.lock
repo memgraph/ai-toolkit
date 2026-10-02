@@ -1162,6 +1162,7 @@ source = { editable = "context-graph/eval" }
 dependencies = [
     { name = "deepeval" },
     { name = "nltk" },
+    { name = "openai" },
     { name = "tiktoken" },
 ]
 
@@ -1185,6 +1186,7 @@ requires-dist = [
     { name = "deepeval", specifier = ">=3.5.2" },
     { name = "lightrag-memgraph", marker = "extra == 'pipeline'", editable = "integrations/lightrag-memgraph" },
     { name = "nltk", specifier = ">=3.9.4" },
+    { name = "openai", specifier = ">=1.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
     { name = "sessions-graph", marker = "extra == 'pipeline'", editable = "context-graph/sessions-graph" },
