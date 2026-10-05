@@ -14,7 +14,7 @@ from pathlib import Path
 from .convert.longmemeval import DEFAULT_REVISION, build_corpus, fetch, haystack_path, load_raw
 from .corpus import write_corpus
 from .hybrid import LANES as HYBRID_LANES
-from .hybrid import HybridConfig
+from .hybrid import RecallConfig
 from .official_judge import OFFICIAL_JUDGE_MODEL
 from .reconcile import EXTRACTION_BACKENDS
 from .runner import RETRIEVAL_STRATEGIES
@@ -127,13 +127,8 @@ def main(argv: list[str] | None = None) -> int:
         "full-text index over raw, UNRECONCILED turns -- no distillation, no LLM extraction cost). "
         "'text-search' forces reconciliation off regardless of --skip-reconcile: there is no memory "
         "for it to build that this strategy would read. 'hybrid' finds turns by vector and text "
-        "search and uses the typed graph to find facts and more turns (see hybrid.py).",
-    )
-    run.add_argument(
-        "--hybrid-user-fact-types-from",
-        choices=("facts", "names"),
-        default="names",
-        help="how the hybrid user_facts lane picks relation types (see hybrid.HybridConfig).",
+        "search and uses the typed graph to find facts and more turns: sessions-graph's recall, the "
+        "product read path (see hybrid.py).",
     )
     run.add_argument(
         "--hybrid-lanes",
@@ -477,10 +472,7 @@ def _run(args) -> int:
                 extraction_backend=args.extraction_backend,
                 retrieval_strategy=args.retrieval_strategy,
                 text_search_limit=args.text_search_limit,
-                hybrid=HybridConfig(
-                    lanes=tuple(lane for lane in args.hybrid_lanes.split(",") if lane),
-                    user_fact_types_from=args.hybrid_user_fact_types_from,
-                ),
+                hybrid=RecallConfig.from_mapping({"lanes": args.hybrid_lanes}),
                 official_judge_model=official_model,
             ),
         )

@@ -16,6 +16,25 @@ from sessions_graph import SessionsGraph
 from memgraph_toolbox.api.memgraph import Memgraph
 
 
+@pytest.fixture(autouse=True)
+def _isolated_context_graph_config(monkeypatch, tmp_path):
+    """Point context-graph's config lookup at an empty file, never the host's.
+
+    The CLI fills its environment from that file (Memgraph connection, LLM
+    keys) and reads the embedding model from it, so without this a test run
+    would pick up whatever the developer's machine has configured.
+    """
+    try:
+        from agent_context_graph.adapters import _identity
+    except ImportError:
+        yield
+        return
+    monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "context-graph" / "config.toml"))
+    _identity._reset_cache()
+    yield
+    _identity._reset_cache()
+
+
 @pytest.fixture
 def memgraph():
     """A real Memgraph client, wiped clean before and after each test.
