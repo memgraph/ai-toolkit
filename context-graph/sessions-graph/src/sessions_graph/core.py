@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from memgraph_toolbox.api.memgraph import Memgraph
 
+from .embeddings import DEFAULT_EMBEDDING_MODEL, Embedded, EmbeddingUnavailableError, embed_session
 from .models import Memory, validate_content, validate_memory_id, validate_user_id
 from .reconciliation import (
     MAX_SESSION_BATCH_CHARS,
@@ -89,6 +90,7 @@ class SessionsGraph:
     - :meth:`search_memories` — full-text search over Memory content
     - :meth:`update_memory` — replace the content of an existing Memory
     - :meth:`delete_memory` — remove a Memory by ID
+    - :meth:`embed_session` — embed a session's messages, entities and edges for recall
     """
 
     def __init__(self, memgraph: Memgraph | None = None, **kwargs: Any) -> None:
@@ -113,6 +115,7 @@ class SessionsGraph:
         self._db.query("CREATE INDEX ON :Memory(created_at);")
         self._db.query(f"CREATE TEXT INDEX {_FULLTEXT_INDEX} ON :Memory(content);")
         self._db.query("CREATE INDEX ON :Session(reconciliation_status);")
+        self._db.query("CREATE INDEX ON :Session(embedding_status);")
         # Shared with unstructured2graph's Chunk.hash convention; ensured here
         # too so reconcile_session() works even without a prior unstructured2graph call.
         self._db.query("CREATE CONSTRAINT ON (c:Chunk) ASSERT c.hash IS UNIQUE;")
@@ -400,6 +403,7 @@ class SessionsGraph:
         promote_labels: bool = False,
         enforce_ontology: bool = False,
         ontology_path: str | Path | None = None,
+        embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     ) -> ReconciliationSummary:
         """Batch-extract entities and a narrative summary from a session's content.
 
@@ -461,6 +465,10 @@ class SessionsGraph:
                 precedence over promote_labels.
             ontology_path: Passed through to ``unstructured2graph.from_texts``. Only
                 consulted when enforce_ontology=True.
+            embedding_model: The model the session's messages, entities and
+                edges are embedded with once extraction completes (see
+                :meth:`embed_session`). An embedding failure is recorded on the
+                Session and never fails the reconciliation.
 
         Returns:
             An :class:`ReconciliationSummary` describing what happened. Never
@@ -537,6 +545,7 @@ class SessionsGraph:
                 summary_text = await summarize_session_texts(lightrag_wrapper, list(prepared.unique_texts.values()))
 
             self._write_completed(session_id, summary_text=summary_text, extraction_backend=used_backend)
+            self._embed_after_reconcile(session_id, embedding_model)
             return ReconciliationSummary(
                 session_id=session_id,
                 status="completed",
@@ -567,6 +576,7 @@ class SessionsGraph:
         enforce_ontology: bool = False,
         ontology_path: str | Path | None = None,
         summary_concurrency: int = 4,
+        embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     ) -> list[ReconciliationSummary]:
         """Reconcile many sessions as ONE LightRAG processing pass, not one per session.
 
@@ -638,6 +648,7 @@ class SessionsGraph:
                 calls during finalize. Independent of LightRAG's own
                 ``MAX_ASYNC_LLM``, since this call never enters its pipeline.
                 Must be at least 1.
+            embedding_model: Passed through; see ``reconcile_session``.
 
         Returns:
             One :class:`ReconciliationSummary` per input session_id, in the
@@ -756,6 +767,7 @@ class SessionsGraph:
                 self._write_completed(
                     prepared_session.session_id, summary_text=summary_text, extraction_backend="LightRAGBackend"
                 )
+                self._embed_after_reconcile(prepared_session.session_id, embedding_model)
                 results[prepared_session.session_id] = ReconciliationSummary(
                     session_id=prepared_session.session_id,
                     status="completed",
@@ -781,6 +793,58 @@ class SessionsGraph:
         )
 
         return [results[sid] for sid in session_ids]
+
+    def embed_session(self, session_id: str, *, model: str = DEFAULT_EMBEDDING_MODEL) -> Embedded:
+        """Embed *session_id*'s messages, entities and edges that have no vector from *model*.
+
+        Records the outcome on the Session: ``embedding_status`` is
+        ``'completed'`` with ``embedding_model``, or ``'failed'`` with
+        ``embedding_error``, which :meth:`get_pending_embedding_sessions`
+        picks up again.
+
+        Raises:
+            EmbeddingUnavailableError: Memgraph can't embed (no MAGE, or the model
+                can't load). Recorded on the Session before it propagates.
+        """
+        try:
+            embedded = embed_session(self._db, session_id, model)
+        except EmbeddingUnavailableError as exc:
+            self._db.query(
+                "MATCH (s:Session {session_id: $session_id}) "
+                "SET s.embedding_status = 'failed', s.embedding_error = $error",
+                params={"session_id": session_id, "error": str(exc)},
+            )
+            raise
+        self._db.query(
+            "MATCH (s:Session {session_id: $session_id}) "
+            "SET s.embedding_status = 'completed', s.embedding_model = $model, s.embedding_error = null",
+            params={"session_id": session_id, "model": model},
+        )
+        return embedded
+
+    def get_pending_embedding_sessions(self, *, model: str = DEFAULT_EMBEDDING_MODEL, limit: int = 100) -> list[str]:
+        """Session ids whose embedding failed, never ran, or ran with a model other than *model*."""
+        rows = self._db.query(
+            """
+            MATCH (s:Session)
+            WHERE s.embedding_status IS NULL OR s.embedding_status <> 'completed' OR s.embedding_model <> $model
+            RETURN s.session_id AS session_id
+            ORDER BY s.session_id
+            LIMIT $limit
+            """,
+            params={"model": model, "limit": limit},
+        )
+        return [row["session_id"] for row in rows]
+
+    def _embed_after_reconcile(self, session_id: str, model: str) -> None:
+        """Embed what reconciliation just wrote, without failing the reconciliation.
+
+        A failure is recorded on the Session by :meth:`embed_session`, and
+        ``sessions-graph embed --pending`` retries it; the extracted graph is
+        valid without vectors.
+        """
+        with contextlib.suppress(EmbeddingUnavailableError):
+            self.embed_session(session_id, model=model)
 
     def get_pending_reconciliation_sessions(self, *, limit: int = 100) -> list[str]:
         """Return session_ids marked ``reconciliation_status = 'pending'``."""

@@ -236,6 +236,51 @@ sweep over already-processed content never re-bills it. Each reconcilable unit
 has many units, so the first run can be substantial. Consider this before
 enabling `auto_reconcile` broadly.
 
+## Embeddings for recall
+
+Recall searches a user's history by vector as well as by text, so three
+units get an `embedding` property, computed **inside Memgraph** by MAGE's
+`embeddings` module (no model runs on the host):
+
+| Unit | Text embedded |
+|---|---|
+| user and assistant messages (`:Action`) | `text`, the plain message text Actions Graph writes |
+| entities | their `text`, for every entity mentioned in one of the session's chunks |
+| extracted edges | `r.text`, the sentence the edge was read from |
+
+Each vector also records its `embedding_model`. A vector from a different
+model counts as missing and is replaced, so vectors from two models never
+mix. The default model is `BAAI/bge-small-en-v1.5` (384 dimensions); change
+it with:
+
+```bash
+agent-context-graph config set recall.embedding_model <huggingface-model-name>
+```
+
+When it runs:
+
+- **Session end:** `SessionsGraphConnector` always spawns a detached
+  `sessions-graph embed --session <id>`, whether or not `auto_reconcile` is
+  on. Embedding needs no LLM, and the hook never waits on the model.
+- **Reconciliation:** after extraction, the session's new entities and edges
+  are embedded. An embedding failure never fails the reconciliation.
+- **Catch-up:** `sessions-graph embed --pending` embeds every session whose
+  embedding failed, never ran, or used another model.
+
+The outcome is on the Session: `embedding_status` is `completed` (with
+`embedding_model`) or `failed` (with `embedding_error`).
+
+This needs Memgraph with MAGE (`memgraph/memgraph-mage`), with 2 GiB of
+memory or more for the default model. The model downloads inside Memgraph on
+first use. On plain `memgraph/memgraph` every session records `failed`, and
+`agent-context-graph doctor --connector sessions-graph` reports the
+`embeddings` check as failing.
+
+```bash
+sessions-graph embed --session s-abc123
+sessions-graph embed --pending --limit 50 --model BAAI/bge-small-en-v1.5
+```
+
 ## API reference
 
 | Method | Description |
@@ -248,5 +293,7 @@ enabling `auto_reconcile` broadly.
 | `search_memories(user_id, query, *, limit=10)` | Full-text search over Memory content. |
 | `update_memory(memory_id, content)` | Replace the content of an existing Memory. Returns `None` if not found. |
 | `delete_memory(memory_id)` | Remove a Memory and all its relationships. |
-| `async reconcile_session(session_id, *, lightrag_wrapper, extraction_backend=None, actions_graph=None, entity_workspace=None, promote_labels=False, enforce_ontology=False, ontology_path=None)` | Run session reconciliation for one session. `extraction_backend` overrides entity extraction to another `ExtractionBackend` (e.g. GLiNER2); `lightrag_wrapper` is always required regardless, since the narrative summary is always produced via its LLM. `promote_labels`/`enforce_ontology`/`ontology_path` control entity-type label promotion (see above). Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
+| `async reconcile_session(session_id, *, lightrag_wrapper, extraction_backend=None, actions_graph=None, entity_workspace=None, promote_labels=False, enforce_ontology=False, ontology_path=None, embedding_model=DEFAULT_EMBEDDING_MODEL)` | Run session reconciliation for one session, then embed what it wrote (see [Embeddings for recall](#embeddings-for-recall)). `extraction_backend` overrides entity extraction to another `ExtractionBackend` (e.g. GLiNER2); `lightrag_wrapper` is always required regardless, since the narrative summary is always produced via its LLM. `promote_labels`/`enforce_ontology`/`ontology_path` control entity-type label promotion (see above). Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
 | `get_pending_reconciliation_sessions(*, limit=100)` | Return session IDs marked `reconciliation_status = 'pending'`. |
+| `embed_session(session_id, *, model=DEFAULT_EMBEDDING_MODEL)` | Embed the session's messages, entities and edges that lack a vector from `model`, inside Memgraph. Returns counts as `Embedded`; records the outcome on the Session. Raises `EmbeddingUnavailableError` without MAGE or when the model can't load. |
+| `get_pending_embedding_sessions(*, model=DEFAULT_EMBEDDING_MODEL, limit=100)` | Session IDs whose embedding failed, never ran, or used another model. |

@@ -90,6 +90,8 @@ class HookConfig:
     openai_api_key: str = _LLM_DEFAULTS["openai_api_key"]
     anthropic_api_key: str = _LLM_DEFAULTS["anthropic_api_key"]
     auto_reconcile: bool | None = _RECONCILE_DEFAULTS["auto_reconcile"]
+    #: The model recall embeds with; None means the consumer's own default.
+    embedding_model: str | None = None
 
 
 def load_config() -> HookConfig:
@@ -170,6 +172,15 @@ def resolve_auto_reconcile() -> bool:
     return bool(load_config().auto_reconcile)
 
 
+def resolve_embedding_model() -> str | None:
+    """The configured ``[recall] embedding_model``, or None when unset.
+
+    Config file only, like :func:`resolve_auto_reconcile`. None leaves the
+    choice to sessions-graph's own default rather than duplicating it here.
+    """
+    return load_config().embedding_model
+
+
 def parse_bool_flag(value: str | bool) -> bool:
     """Parse a TOML/CLI boolean flag string. Truthy: "1"/"true"/"yes"/"on" (case-insensitive).
 
@@ -191,6 +202,7 @@ def write_config(
     openai_api_key: str | None = None,
     anthropic_api_key: str | None = None,
     auto_reconcile: bool | None = None,
+    embedding_model: str | None = None,
 ) -> Path:
     """Write or update the config file. Returns the path written to.
 
@@ -210,6 +222,7 @@ def write_config(
     final_openai_api_key = openai_api_key if openai_api_key is not None else existing.openai_api_key
     final_anthropic_api_key = anthropic_api_key if anthropic_api_key is not None else existing.anthropic_api_key
     final_auto_reconcile = auto_reconcile if auto_reconcile is not None else existing.auto_reconcile
+    final_embedding_model = embedding_model if embedding_model is not None else existing.embedding_model
 
     content = _render_config(
         user_id=final_user_id or "",
@@ -220,6 +233,7 @@ def write_config(
         openai_api_key=final_openai_api_key,
         anthropic_api_key=final_anthropic_api_key,
         auto_reconcile=final_auto_reconcile,
+        embedding_model=final_embedding_model,
     )
 
     path = config_file()
@@ -245,18 +259,20 @@ def write_full_config(
 ) -> Path:
     """Write a complete config file with all sections (used by bootstrap).
 
-    Overwrites every section except ``[reconcile]``: unlike identity/Memgraph/LLM
+    Overwrites every section except ``[reconcile]`` and ``[recall]``: unlike identity/Memgraph/LLM
     settings, ``auto_reconcile`` has no legitimate ambient-env source for
     ``bootstrap`` to capture (nobody has ``SESSIONS_GRAPH_AUTO_RECONCILE``
     exported for an unrelated reason the way they might already have
     ``OPENAI_API_KEY``/`MEMGRAPH_PASSWORD` set) — it is only ever set via
     ``config set reconcile.auto_reconcile``. Re-running bootstrap must not
     silently revert it to off, so ``auto_reconcile`` is preserved from the
-    existing file unless explicitly given here.
+    existing file unless explicitly given here. ``embedding_model`` is
+    preserved the same way: it, too, is only ever set via ``config set``.
     """
     global _cached_config
 
-    final_auto_reconcile = auto_reconcile if auto_reconcile is not None else _read_config_file().auto_reconcile
+    existing = _read_config_file()
+    final_auto_reconcile = auto_reconcile if auto_reconcile is not None else existing.auto_reconcile
 
     content = _render_config(
         user_id=user_id,
@@ -267,6 +283,7 @@ def write_full_config(
         openai_api_key=openai_api_key,
         anthropic_api_key=anthropic_api_key,
         auto_reconcile=final_auto_reconcile,
+        embedding_model=existing.embedding_model,
     )
 
     path = config_file()
@@ -305,6 +322,7 @@ def _read_config_file() -> HookConfig:
     memgraph = sections.get("memgraph", {})
     llm = sections.get("llm", {})
     reconcile = sections.get("reconcile", {})
+    recall = sections.get("recall", {})
     auto_reconcile_raw = reconcile.get("auto_reconcile")
 
     return HookConfig(
@@ -316,6 +334,7 @@ def _read_config_file() -> HookConfig:
         openai_api_key=llm.get("openai_api_key", _LLM_DEFAULTS["openai_api_key"]),
         anthropic_api_key=llm.get("anthropic_api_key", _LLM_DEFAULTS["anthropic_api_key"]),
         auto_reconcile=parse_bool_flag(auto_reconcile_raw) if auto_reconcile_raw is not None else None,
+        embedding_model=recall.get("embedding_model") or None,
     )
 
 
@@ -358,6 +377,7 @@ def _render_config(
     openai_api_key: str,
     anthropic_api_key: str,
     auto_reconcile: bool | None,
+    embedding_model: str | None = None,
 ) -> str:
     """Render the full config file content.
 
@@ -365,6 +385,7 @@ def _render_config(
     ``None`` (never configured), so a fresh read of the file resolves it back
     to ``None`` rather than a concrete ``false`` — see
     :func:`resolve_auto_reconcile` for why that distinction matters.
+    ``[recall]`` is likewise omitted while ``embedding_model`` is unset.
     """
     lines = [
         "# Context Graph hook configuration",
@@ -386,6 +407,8 @@ def _render_config(
     ]
     if auto_reconcile is not None:
         lines += ["", "[reconcile]", f"auto_reconcile = {'true' if auto_reconcile else 'false'}"]
+    if embedding_model:
+        lines += ["", "[recall]", f'embedding_model = "{embedding_model}"']
     lines.append("")
     return "\n".join(lines)
 

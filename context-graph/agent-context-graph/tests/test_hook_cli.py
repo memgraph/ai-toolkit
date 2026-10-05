@@ -96,6 +96,34 @@ def test_top_level_cli_doctor_fails_when_check_fails(monkeypatch, capsys):
     assert "FAIL connector:skills-graph" in capsys.readouterr().out
 
 
+def test_top_level_cli_doctor_checks_embeddings_only_with_sessions_graph(monkeypatch, capsys):
+    for name, result in {
+        "_check_cli": {"name": "agent-context-graph executable", "ok": True, "detail": "/bin/agent-context-graph"},
+        "_check_config": {"name": "config", "ok": True, "detail": "ok"},
+        "_check_memgraph": {"name": "memgraph", "ok": True, "detail": "reachable"},
+        "_check_embeddings": {"name": "embeddings", "ok": False, "detail": "no MAGE"},
+    }.items():
+        monkeypatch.setattr(f"agent_context_graph.cli.{name}", lambda result=result: result)
+    monkeypatch.setattr(
+        "agent_context_graph.cli._check_package",
+        lambda package_name: {"name": package_name, "ok": True, "detail": "1.2.3"},
+    )
+    monkeypatch.setattr(
+        "agent_context_graph.cli._check_connector",
+        lambda connector: {"name": f"connector:{connector}", "ok": True, "detail": "installed"},
+    )
+    monkeypatch.setattr(
+        "agent_context_graph.cli._check_runtime",
+        lambda runtime, connectors: {"name": f"runtime:{runtime}", "ok": True, "detail": "ok"},
+    )
+
+    assert top_level_main(["doctor", "--connector", "skills-graph"]) == 0
+    assert "embeddings" not in capsys.readouterr().out
+
+    assert top_level_main(["doctor", "--connector", "sessions-graph"]) == 1
+    assert "FAIL embeddings: no MAGE" in capsys.readouterr().out
+
+
 def test_top_level_cli_bootstrap_installs_and_runs_doctor(monkeypatch, capsys):
     commands = []
     doctor_args = []
@@ -202,7 +230,7 @@ def test_top_level_cli_bootstrap_reports_memgraph_start_command(monkeypatch, cap
 
     error = capsys.readouterr().err
     assert "FAIL memgraph: bolt://localhost:7687 is not reachable" in error
-    assert "docker run --rm -p 7687:7687 memgraph/memgraph" in error
+    assert "docker run --rm -p 7687:7687 memgraph/memgraph-mage" in error
 
 
 def test_top_level_cli_bootstrap_reports_missing_uv(monkeypatch, capsys):

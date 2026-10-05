@@ -27,7 +27,7 @@ The plugin installs hook wiring, while the runtime package is installed by the C
 Bootstrap expects `uv` and a reachable Memgraph instance. If Memgraph is not running, start it and rerun bootstrap:
 
 ```bash
-docker run --rm -p 7687:7687 memgraph/memgraph
+docker run --rm -p 7687:7687 memgraph/memgraph-mage
 ```
 
 `uv` manages Python for the tool. If uv-managed Python downloads are blocked in your environment, install Python 3.10+ and rerun bootstrap.
