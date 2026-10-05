@@ -107,7 +107,7 @@ Actions Graph should consume runtime activity through Agent Context Graph when p
 
 - **Action**: Individual actions with type-specific labels
   - Labels: `ToolCall`, `ToolResult`, `Message` (plus a role label `UserMessage`/`AssistantMessage`/`SystemMessage`), `StructuredOutput`, `SubagentEvent`, `PermissionRequest`, `ErrorEvent`, `RateLimitEvent`
-  - Properties: `action_id`, `action_type`, `timestamp`, `status`, `duration_ms`, `parent_action_id`, `tool_name`, `is_error`, `is_mcp`, `properties` (type-specific), `metadata`
+  - Properties: `action_id`, `action_type`, `timestamp`, `status`, `duration_ms`, `parent_action_id`, `tool_name`, `is_error`, `is_mcp`, `text` (user and assistant messages only: the plain message text), `properties` (type-specific), `metadata`
   - The session link is the `HAS_ACTION` edge, not a property — there is no `session_id` on `(:Action)`.
 
 - **Tool**: Tool definitions

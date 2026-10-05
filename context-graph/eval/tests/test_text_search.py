@@ -33,8 +33,8 @@ class _EchoLLM:
 
 
 def test_indexing_skips_actions_with_no_content(eval_graph: ActionsGraph):
-    """A tool-call Action's properties has no 'content' key -- materializing a
-    'text' property for it would index noise the question was never about."""
+    """A tool call has no turn text, so it is never indexed: it would be noise
+    the question was never about."""
     _plant(eval_graph, "s1", role=MessageRole.USER, content="I adopted a beagle named Max")
     eval_graph.record_tool_call(session_id="s1", tool_name="Read", tool_input={"file_path": "notes.md"})
 

@@ -221,6 +221,9 @@ def graph_schema(graph: ReadOnlyGraph) -> str:
 #: into the agent's prompt. Length is what separates an enum from a sentence.
 _MAX_DISTINCT_VALUES = 6
 _MAX_SCHEMA_VALUE_LENGTH = 40
+#: Properties that hold content by definition: a turn's message text, an entity's
+#: name. Never sampled, however short and few their values are.
+_CONTENT_KEYS = frozenset({"text"})
 
 #: Bounds the introspection itself, so describing the graph cannot become more
 #: expensive than querying it.
@@ -328,7 +331,7 @@ def _describe_properties(graph: ReadOnlyGraph, labels: list[str]) -> list[str]:
             described.append(f"    {key}: JSON string, keys: {', '.join(json_keys)} (values are free text)")
             continue
 
-        if _is_enumerable(sample):
+        if key not in _CONTENT_KEYS and _is_enumerable(sample):
             described.append(f"    {key}: {', '.join(sorted(str(v) for v in sample))}")
         else:
             described.append(f"    {key}: free text (search it, do not match it exactly)")
