@@ -12,6 +12,7 @@ from agent_context_graph.events import (
     SessionEndEvent,
     ToolEndEvent,
     ToolStartEvent,
+    TurnEndEvent,
 )
 from agent_context_graph.hooks.runner import run_hook
 from agent_context_graph.protocols import GraphConnector
@@ -80,7 +81,7 @@ def test_copilot_init_writes_versioned_project_hook_file(tmp_path):
         "timeoutSec": 9,
         "matcher": ".*",
     }
-    assert "agentStop" not in config["hooks"]
+    assert "agentStop" in config["hooks"]
 
 
 def test_copilot_only_ends_session_for_session_end():
@@ -89,7 +90,11 @@ def test_copilot_only_ends_session_for_session_end():
     link.add_connector(connector)
     adapter = CopilotCLIHooksAdapter(link)
 
-    assert adapter.handle_payload({"hook_event_name": "agentStop", "sessionId": "copilot-1"}) == []
+    (turn_end,) = adapter.handle_payload(
+        {"hook_event_name": "agentStop", "sessionId": "copilot-1", "stopReason": "end_turn"}
+    )
+    assert isinstance(turn_end, TurnEndEvent)
+    assert turn_end.reason == "end_turn"
 
     events = adapter.handle_payload({"hook_event_name": "sessionEnd", "sessionId": "copilot-1", "reason": "complete"})
     assert len(events) == 1

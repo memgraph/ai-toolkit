@@ -3,6 +3,8 @@
 These tests require a running Memgraph instance.
 """
 
+import json
+
 import pytest
 
 from actions_graph import (
@@ -283,8 +285,6 @@ _RUNTIME_CASES = [
                 "tool_use_id": "t1",
             },
         ],
-        # Claude Code passes structured results through; ActionsGraph stores them as text.
-        expected_result=str({"stdout": "README.md", "stderr": "", "interrupted": False}),
     ),
     _runtime_case(
         CopilotCLIHooksAdapter,
@@ -456,6 +456,13 @@ def test_runtime_hook_tool_events_persist_as_actions(
     assert tool_result.content == expected_result
     assert tool_result.is_error is False
     assert all(action.metadata["source_sdk"] == source_sdk for action in actions)
+    # The result must be linked to its call even when the runtime sends no
+    # tool-call id (Copilot).
+    linked = graph._db.query(
+        "MATCH (c:ToolCall {action_id: $call})-[:PARENT_OF]->(r:ToolResult {action_id: $result}) RETURN count(*) AS n",
+        params={"call": tool_call.action_id, "result": tool_result.action_id},
+    )
+    assert linked[0]["n"] == 1
 
 
 class TestAnalytics:
@@ -739,3 +746,92 @@ class TestMCPTools:
         assert len(stats) == 1
         assert stats[0]["is_mcp"] is True
         assert stats[0]["mcp_server"] == "playwright"
+
+
+def _connector(graph: ActionsGraph) -> AgentLink:
+    link = AgentLink()
+    link.add_connector(ActionsGraphConnector(graph))
+    return link
+
+
+def test_session_start_after_the_first_event_still_records_start_fields(graph: ActionsGraph):
+    """Copilot delivers the first prompt before sessionStart (#368)."""
+    from agent_context_graph.events import MessageEvent, SessionStartEvent
+
+    link = _connector(graph)
+    link.emit(MessageEvent(session_id="late-start", role="user", content="hi", source_sdk="copilot-cli"))
+    link.emit(
+        SessionStartEvent(session_id="late-start", working_directory=_CWD, model="gpt-5", source_sdk="copilot-cli")
+    )
+
+    session = graph.get_session("late-start")
+    assert session is not None
+    assert session.working_directory == _CWD
+    assert session.model == "gpt-5"
+
+
+def test_concurrent_first_events_create_one_session_and_keep_every_event():
+    """OpenCode runs hooks in parallel; each hook is its own process and connection (#370)."""
+    import threading
+
+    from agent_context_graph.events import MessageEvent, SessionStartEvent, ToolStartEvent
+
+    setup_graph = ActionsGraph()
+    setup_graph.clear()
+    sessions = [f"race-{index}" for index in range(10)]
+
+    def emit(event) -> None:
+        # A fresh graph per event, like one hook subprocess per event.
+        _connector(ActionsGraph()).emit(event)
+
+    threads = []
+    for session_id in sessions:
+        for event in (
+            SessionStartEvent(session_id=session_id, working_directory=_CWD, source_sdk="opencode"),
+            MessageEvent(session_id=session_id, role="user", content="go", source_sdk="opencode"),
+            ToolStartEvent(session_id=session_id, tool_name="bash", tool_use_id="t1", source_sdk="opencode"),
+        ):
+            threads.append(threading.Thread(target=emit, args=(event,)))
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    for session_id in sessions:
+        rows = setup_graph._db.query(
+            "MATCH (s:Session {session_id: $sid}) RETURN count(s) AS n", params={"sid": session_id}
+        )
+        assert rows[0]["n"] == 1
+        assert len(setup_graph.get_session_actions(session_id)) == 2
+    setup_graph.clear()
+
+
+def test_results_without_ids_pair_with_the_oldest_open_call_of_the_same_tool(graph: ActionsGraph):
+    """Copilot sends no tool-call id; parallel calls of one tool pair in start order."""
+    from agent_context_graph.events import ToolEndEvent, ToolStartEvent
+
+    link = _connector(graph)
+    for tool_name, tool_input in (
+        ("bash", {"command": "ls"}),
+        ("view", {"path": "README.md"}),
+        ("bash", {"command": "pwd"}),
+    ):
+        link.emit(
+            ToolStartEvent(session_id="no-ids", source_sdk="copilot-cli", tool_name=tool_name, tool_input=tool_input)
+        )
+    for tool_name, result in (("bash", "README.md"), ("view", "# Demo"), ("bash", "/work")):
+        link.emit(ToolEndEvent(session_id="no-ids", source_sdk="copilot-cli", tool_name=tool_name, result=result))
+
+    pairs = graph._db.query(
+        """
+        MATCH (s:Session {session_id: 'no-ids'})-[:HAS_ACTION]->(c:ToolCall)-[:PARENT_OF]->(r:ToolResult)
+        RETURN c.properties AS call, r.properties AS result
+        """
+    )
+    linked = sorted(
+        ((json.loads(row["call"])["tool_input"], json.loads(row["result"])["content"]) for row in pairs), key=str
+    )
+    assert linked == sorted(
+        [({"command": "ls"}, "README.md"), ({"path": "README.md"}, "# Demo"), ({"command": "pwd"}, "/work")],
+        key=str,
+    )

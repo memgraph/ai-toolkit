@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent_context_graph.adapters._spec import (
     EventContext,
@@ -16,6 +16,7 @@ from agent_context_graph.adapters._spec import (
     json_hook_installer,
     session_start,
     tool_start,
+    turn_end,
 )
 from agent_context_graph.events import (
     AgentEndEvent,
@@ -26,6 +27,9 @@ from agent_context_graph.events import (
     ToolEndEvent,
     ToolStartEvent,
 )
+
+if TYPE_CHECKING:
+    from agent_context_graph.events import Event
 
 
 def _session_end(context: EventContext) -> SessionEndEvent:
@@ -127,6 +131,12 @@ def _agent_end(context: EventContext) -> AgentEndEvent:
     )
 
 
+def _turn_end(context: EventContext) -> list[Event]:
+    # agentStop ends one turn; sessionEnd ends the session. Its payload carries
+    # no reply text.
+    return turn_end(context, reason=context.payload.get("stopReason", context.payload.get("stop_reason")))
+
+
 def _error(context: EventContext) -> ErrorOccurredEvent:
     error = context.payload.get("error")
     error_dict = error if isinstance(error, dict) else {}
@@ -153,6 +163,7 @@ _HOOKS = (
     "permissionRequest",
     "subagentStart",
     "subagentStop",
+    "agentStop",
     "errorOccurred",
 )
 SPEC = RuntimeSpec(
@@ -170,6 +181,7 @@ SPEC = RuntimeSpec(
         "permissionRequest": _permission,
         "subagentStart": _agent_start,
         "subagentStop": _agent_end,
+        "agentStop": _turn_end,
         "errorOccurred": _error,
     },
     # VS Code-compatible hook files use PascalCase event names.

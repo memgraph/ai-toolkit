@@ -196,16 +196,67 @@ def test_subagent_payloads_emit_agent_events():
     assert agent_end.output == "Done"
 
 
-def test_stop_payload_emits_session_end_and_json_response():
+def test_session_end_hook_ends_the_session():
     link = AgentLink()
     rec = _RecordingConnector()
     link.add_connector(rec)
 
-    payload = {"hook_event_name": "Stop", "session_id": "s1"}
+    ClaudeCodeHooksAdapter(link).handle_payload({"hook_event_name": "SessionEnd", "session_id": "s1", "reason": "exit"})
+
+    (session_end,) = rec.events
+    assert session_end.event_type == EventType.SESSION_END
+
+
+def test_tool_results_record_their_text():
+    link = AgentLink()
+    rec = _RecordingConnector()
+    link.add_connector(rec)
+    adapter = ClaudeCodeHooksAdapter(link)
+    base = {"hook_event_name": "PostToolUse", "session_id": "s1"}
+
+    adapter.handle_payload(
+        {
+            **base,
+            "tool_name": "Bash",
+            "tool_use_id": "t1",
+            "tool_response": {"stdout": "a.py", "stderr": "", "interrupted": False},
+        }
+    )
+    adapter.handle_payload(
+        {
+            **base,
+            "tool_name": "Read",
+            "tool_use_id": "t2",
+            "tool_response": {"type": "text", "file": {"filePath": "a.py", "content": "print(1)"}},
+        }
+    )
+    adapter.handle_payload({**base, "tool_name": "Glob", "tool_use_id": "t3", "tool_response": {"filenames": ["a.py"]}})
+
+    bash, read, glob = rec.events
+    assert isinstance(bash, ToolEndEvent)
+    assert isinstance(read, ToolEndEvent)
+    assert isinstance(glob, ToolEndEvent)
+    assert bash.result == "a.py"
+    assert read.result == "print(1)"
+    assert glob.result == {"filenames": ["a.py"]}
+
+
+def test_stop_ends_the_turn_with_the_reply_and_keeps_the_session_open():
+    link = AgentLink()
+    rec = _RecordingConnector()
+    link.add_connector(rec)
+
+    # Stop fires after every turn, so it must never end the session.
+    payload = {"hook_event_name": "Stop", "session_id": "s1", "last_assistant_message": "Done."}
     adapter = ClaudeCodeHooksAdapter(link)
     adapter.handle_payload(payload)
 
-    assert rec.events[0].event_type == EventType.SESSION_END
+    reply, turn_end = rec.events
+    assert isinstance(reply, MessageEvent)
+    assert reply.role == "assistant"
+    assert reply.content == "Done."
+    assert turn_end.event_type == EventType.TURN_END
+    assert all(event.event_type != EventType.SESSION_END for event in rec.events)
     assert PLUGIN.response_for_payload(payload) == {"continue": True}
 
 

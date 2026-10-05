@@ -18,6 +18,7 @@ class EventType(str, Enum):
 
     SESSION_START = "session_start"
     SESSION_END = "session_end"
+    TURN_END = "turn_end"
     TOOL_START = "tool_start"
     TOOL_END = "tool_end"
     AGENT_START = "agent_start"
@@ -72,6 +73,19 @@ class SessionEndEvent(Event):
     total_cost_usd: float | None = None
     total_input_tokens: int | None = None
     total_output_tokens: int | None = None
+
+
+@dataclass
+class TurnEndEvent(Event):
+    """Fired when the agent finishes one turn and the session stays open.
+
+    Runtimes without a session-end hook (Codex, Antigravity, ``opencode run``)
+    only ever signal this, so connectors must not treat it as the session
+    ending. ``reason`` is the runtime's own stop reason, when it gives one.
+    """
+
+    event_type: EventType = field(default=EventType.TURN_END, init=False)
+    reason: str | None = None
 
 
 # ------------------------------------------------------------------

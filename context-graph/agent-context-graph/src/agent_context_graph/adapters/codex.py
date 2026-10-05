@@ -13,12 +13,15 @@ from agent_context_graph.adapters._spec import (
     session_start,
     tool_end,
     tool_start,
+    turn_end,
     write_hook_config,
 )
-from agent_context_graph.events import MessageEvent, SessionEndEvent
+from agent_context_graph.events import MessageEvent
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from agent_context_graph.events import Event
 
 
 def _user_prompt(context: EventContext) -> MessageEvent:
@@ -34,8 +37,10 @@ def _permission(context: EventContext) -> MessageEvent:
     return MessageEvent(**context.base(), role="system", content=context.text("tool_name", "permission_request"))
 
 
-def _session_end(context: EventContext) -> SessionEndEvent:
-    return SessionEndEvent(**context.base(), status="completed")
+def _turn_end(context: EventContext) -> list[Event]:
+    # Codex has no session-end hook, and Stop fires after every turn, so it is
+    # only ever a turn end.
+    return turn_end(context, reply=context.payload.get("last_assistant_message"))
 
 
 _HOOKS_PATH = ".codex/hooks.json"
@@ -50,7 +55,7 @@ SPEC = RuntimeSpec(
         "PreToolUse": tool_start,
         "PostToolUse": tool_end,
         "PermissionRequest": _permission,
-        "Stop": _session_end,
+        "Stop": _turn_end,
     },
     metadata_keys=(
         "cwd",

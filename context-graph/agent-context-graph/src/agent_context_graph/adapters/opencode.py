@@ -16,11 +16,14 @@ from agent_context_graph.adapters._spec import (
     hook_command_argv,
     session_start,
     tool_start,
+    turn_end,
 )
 from agent_context_graph.events import ErrorOccurredEvent, MessageEvent, SessionEndEvent, ToolEndEvent
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from agent_context_graph.events import Event
 
 
 def _session_end(context: EventContext) -> SessionEndEvent:
@@ -67,17 +70,24 @@ def _tool_result(tool_result: Any) -> tuple[Any, Any]:
     return tool_result, exit_code
 
 
-def _execution_failed(context: EventContext) -> ErrorOccurredEvent:
+def _execution_succeeded(context: EventContext) -> list[Event]:
+    # One prompt's execution finished; `opencode run` never deletes its
+    # session, so this is the only end signal it gives.
+    return turn_end(context)
+
+
+def _execution_failed(context: EventContext) -> list[Event]:
     error = context.payload.get("error")
     error_dict = error if isinstance(error, dict) else {}
     details = {"status": error_dict["status"]} if error_dict.get("status") is not None else {}
-    return ErrorOccurredEvent(
+    failure = ErrorOccurredEvent(
         **context.base(),
         error_type=str(error_dict.get("type") or "opencode_error"),
         error_message=str(error_dict.get("message") or error or "OpenCode session execution failed"),
         error_details=details,
         recoverable=True,
     )
+    return [failure, *turn_end(context)]
 
 
 def _permission(context: EventContext) -> MessageEvent:
@@ -105,6 +115,7 @@ SPEC = RuntimeSpec(
         "session.text.ended": _assistant_text,
         "tool.execute.before": tool_start,
         "tool.execute.after": _tool_end,
+        "session.execution.succeeded": _execution_succeeded,
         "session.execution.failed": _execution_failed,
         "permission.asked": _permission,
     },

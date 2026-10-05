@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from agent_context_graph.adapters._spec import (
     EventContext,
     HookConfig,
     RuntimeSpec,
     SpecAdapter,
     SpecPlugin,
-    event_user_id,
+    session_start,
     tool_start,
+    turn_end,
 )
 from agent_context_graph.events import (
     AgentEndEvent,
@@ -17,17 +20,11 @@ from agent_context_graph.events import (
     ErrorOccurredEvent,
     MessageEvent,
     SessionEndEvent,
-    SessionStartEvent,
     ToolEndEvent,
 )
 
-
-def _session_start(context: EventContext) -> SessionStartEvent:
-    return SessionStartEvent(
-        **context.base(),
-        working_directory=context.optional_text("cwd"),
-        user_id=event_user_id(context),
-    )
+if TYPE_CHECKING:
+    from agent_context_graph.events import Event
 
 
 def _user_prompt(context: EventContext) -> MessageEvent:
@@ -39,12 +36,29 @@ def _user_prompt(context: EventContext) -> MessageEvent:
     )
 
 
+def _tool_result_text(tool_response: Any) -> Any:
+    """Return the text of a Claude Code tool response, or the response unchanged.
+
+    Bash responses carry ``stdout``/``stderr``, and Read responses carry
+    ``file.content``; other tools' structured responses are kept whole.
+    """
+    if not isinstance(tool_response, dict):
+        return tool_response
+    if isinstance(tool_response.get("stdout"), str):
+        stderr = tool_response.get("stderr")
+        return f"{tool_response['stdout']}\n{stderr}" if stderr else tool_response["stdout"]
+    file = tool_response.get("file")
+    if isinstance(file, dict) and isinstance(file.get("content"), str):
+        return file["content"]
+    return tool_response
+
+
 def _tool_end(context: EventContext) -> ToolEndEvent:
     return ToolEndEvent(
         **context.base(),
         tool_name=context.text("tool_name"),
         tool_use_id=context.optional_text("tool_use_id"),
-        result=context.value("tool_result"),
+        result=_tool_result_text(context.value("tool_result")),
         agent_name=context.optional_text("agent_id"),
     )
 
@@ -97,6 +111,11 @@ def _agent_end(context: EventContext) -> AgentEndEvent:
     )
 
 
+def _turn_end(context: EventContext) -> list[Event]:
+    # Stop ends one turn; SessionEnd, registered separately, ends the session.
+    return turn_end(context, reply=context.payload.get("last_assistant_message"))
+
+
 def _session_end(context: EventContext) -> SessionEndEvent:
     return SessionEndEvent(**context.base(), status="completed")
 
@@ -124,6 +143,7 @@ _HOOKS = (
     "SubagentStop",
     "Stop",
     "StopFailure",
+    "SessionEnd",
 )
 SPEC = RuntimeSpec(
     name="claude-code",
@@ -131,7 +151,7 @@ SPEC = RuntimeSpec(
     event_key="hook_event_name",
     hooks=_HOOKS,
     rules={
-        "SessionStart": _session_start,
+        "SessionStart": session_start,
         "UserPromptSubmit": _user_prompt,
         "UserPromptExpansion": _user_prompt,
         "PreToolUse": tool_start,
@@ -141,8 +161,9 @@ SPEC = RuntimeSpec(
         "PermissionDenied": _permission_denied,
         "SubagentStart": _agent_start,
         "SubagentStop": _agent_end,
-        "Stop": _session_end,
+        "Stop": _turn_end,
         "StopFailure": _stop_failure,
+        "SessionEnd": _session_end,
     },
     metadata_keys=(
         "cwd",

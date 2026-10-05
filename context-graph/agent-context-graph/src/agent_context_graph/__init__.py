@@ -37,6 +37,7 @@ from .events import (
     SessionStartEvent,
     ToolEndEvent,
     ToolStartEvent,
+    TurnEndEvent,
 )
 from .link import AgentLink
 from .protocols import GraphConnector, RuntimeAdapter
@@ -65,5 +66,6 @@ __all__ = [
     "SessionStartEvent",
     "ToolEndEvent",
     "ToolStartEvent",
+    "TurnEndEvent",
     "__version__",
 ]

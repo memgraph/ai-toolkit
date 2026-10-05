@@ -104,16 +104,15 @@ on `agentName`, the only field both payloads share. Capture hooks write no
 output, which Copilot treats as its default behavior.
 
 See the [GitHub Copilot hooks reference](https://docs.github.com/en/copilot/reference/hooks-configuration).
-`agentStop` is deliberately not installed: it marks the end of one turn,
-whereas `sessionEnd` is the durable session boundary represented by the Event
-Protocol.
+`agentStop` ends one turn and `sessionEnd` ends the session; see
+[Turns and sessions](#turns-and-sessions).
 
 ### Cursor
 
 Cursor stores flat command entries in `.cursor/hooks.json`. The stable Agent
 Session key is `conversation_id`; `generation_id` is recorded as per-turn
-metadata. The per-turn `stop` hook is not treated as `SessionEnd`; Cursor's
-separate `sessionEnd` hook closes the conversation. Cursor blocks a permission
+metadata. The per-turn `stop` hook is a turn end; Cursor's separate
+`sessionEnd` hook closes the conversation. Cursor blocks a permission
 hook (`preToolUse`, `subagentStart`) whose output does not match its schema, so
 those hooks answer `{"permission": "allow"}`. That is the weakest vote: any
 other hook's `deny` or `ask` still wins. See the
@@ -126,14 +125,14 @@ dependency-free V2 plugin that registers prompt and tool hooks, subscribes to
 the public event stream, and pipes normalized JSON to the Python runtime
 registration. It captures `session.created`, `session.deleted`,
 `session.text.ended` (one completed assistant text part, not the streamed
-deltas), `session.execution.failed`, and `permission.asked`. The hook command
+deltas), `session.execution.succeeded` and `session.execution.failed` (turn
+ends), and `permission.asked`. The hook command
 is embedded as an argv array and spawned directly with `node:child_process`:
 no shell or login profile sits in between, and the shim never injects Memgraph
 or LLM credentials. See the
 [OpenCode V2 plugin reference](https://opencode.ai/v2/docs/build/plugins).
-`session.idle` is a reusable-session idle boundary and is not translated into
-`SessionEnd`; deletion is the terminal lifecycle event available on the public
-event stream.
+`session.deleted` is the only session end OpenCode reports; `opencode run`
+never deletes its session, so those sessions only ever see turn ends.
 
 ### Antigravity CLI
 
@@ -163,8 +162,9 @@ hook: each turn's first model invocation (`invocationNum` resets to `0` per
 turn) records the session with `modelName` and `workspacePaths[0]`, and repeats
 are ignored. There is no tool-call id either;
 `stepIdx`, shared by a call's `PreToolUse` and `PostToolUse`, pairs them.
-`Stop` ends one execution loop rather than the conversation, so only a failed
-execution is recorded, as an error.
+`Stop` ends one execution loop rather than the conversation; a loop that
+leaves the agent `fullyIdle` is a turn end, and a failed one is also recorded
+as an error. `agy` has no session-end hook.
 
 Antigravity hooks carry no tool results, prompts, assistant text, or token
 usage, so an Antigravity session records which tools ran and whether they
@@ -186,9 +186,9 @@ Payloads repeat every field in camelCase and Claude Code's snake_case
 `tool_use_id`), so tool calls pair on a real id. Tool results are typed:
 shell results record `output_for_prompt` and a non-zero `exit_code` marks an
 error; file reads record `FileContent.content`. `Stop` fires at the end of
-every turn (`reason: end_turn`) and again at shutdown, so it records
-`lastAssistantMessage` as the assistant reply and never ends the session;
-`SessionEnd` does.
+every turn (`reason: end_turn`) and again at shutdown; the former is a turn
+end that records `lastAssistantMessage` as the assistant reply, and
+`SessionEnd` ends the session.
 
 Grok also runs hooks from a project's `.claude/settings.json` and
 `.cursor/hooks.json`, passing its own payloads. The `claude-code` and `cursor`
@@ -196,6 +196,30 @@ registrations ignore payloads carrying Grok's camelCase `hookEventName`, which
 those runtimes never send, so a project wired for several runtimes records a
 Grok session once, as `grok`. See the
 [Grok Build hooks reference](https://docs.x.ai/build/features/hooks).
+
+### Turns and sessions
+
+Most runtimes fire a stop hook after every turn, and only some report a real
+session end, so adapters emit two different events:
+
+| Runtime | Turn end | Session end |
+|---|---|---|
+| Claude Code | `Stop` (records `last_assistant_message`) | `SessionEnd` |
+| Codex | `Stop` (records `last_assistant_message`) | none |
+| Copilot CLI | `agentStop` | `sessionEnd` |
+| Cursor | `stop` | `sessionEnd` |
+| OpenCode | `session.execution.succeeded` / `.failed` | `session.deleted` |
+| Antigravity CLI | idle `Stop` | none |
+| Grok Build | `Stop` with `reason: end_turn` (records `lastAssistantMessage`) | `SessionEnd` |
+
+A turn end marks the session `reconciliation_status: pending` in
+sessions-graph without spawning reconciliation. Only a session end spawns it
+(when `reconcile.auto_reconcile` is on). Sessions from runtimes with no
+session-end hook are reconciled by the sweep:
+
+```bash
+sessions-graph reconcile --pending
+```
 
 ## Persistent hook configuration
 

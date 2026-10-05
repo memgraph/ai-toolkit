@@ -4,7 +4,7 @@ import json
 
 from agent_context_graph import AgentLink
 from agent_context_graph.adapters.cursor import CursorHooksAdapter, init
-from agent_context_graph.events import AgentEndEvent, MessageEvent, SessionEndEvent, ToolEndEvent
+from agent_context_graph.events import AgentEndEvent, MessageEvent, SessionEndEvent, ToolEndEvent, TurnEndEvent
 from agent_context_graph.protocols import GraphConnector
 
 
@@ -70,7 +70,7 @@ def test_cursor_init_writes_versioned_hooks_file(tmp_path):
         "timeout": 7,
         "matcher": "*",
     }
-    assert "stop" not in config["hooks"]
+    assert "stop" in config["hooks"]
 
 
 def test_cursor_init_preserves_unrelated_settings_and_hooks(tmp_path):
@@ -92,7 +92,10 @@ def test_cursor_only_ends_session_for_session_end():
     link.add_connector(connector)
     adapter = CursorHooksAdapter(link)
 
-    assert adapter.handle_payload({"hook_event_name": "stop", "conversation_id": "cursor-1"}) == []
+    (turn_end,) = adapter.handle_payload(
+        {"hook_event_name": "stop", "conversation_id": "cursor-1", "status": "completed"}
+    )
+    assert isinstance(turn_end, TurnEndEvent)
 
     events = adapter.handle_payload({"hook_event_name": "sessionEnd", "session_id": "cursor-1", "reason": "completed"})
     assert len(events) == 1

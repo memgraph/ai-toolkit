@@ -39,7 +39,7 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING
 
-from agent_context_graph.events import Event, EventType, SessionEndEvent, SessionStartEvent
+from agent_context_graph.events import Event, EventType, SessionEndEvent, SessionStartEvent, TurnEndEvent
 from agent_context_graph.protocols import GraphConnector
 
 if TYPE_CHECKING:
@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_EVENTS = {EventType.SESSION_START, EventType.SESSION_END}
+_SUPPORTED_EVENTS = {EventType.SESSION_START, EventType.SESSION_END, EventType.TURN_END}
 
 
 class SessionsGraphConnector(GraphConnector):
@@ -65,6 +65,12 @@ class SessionsGraphConnector(GraphConnector):
         background process to run the actual (slow, LLM-backed) reconciliation,
         so this hook call itself never waits on it. The reliable path if that
         detached process dies is the ``sessions-graph reconcile --pending`` CLI.
+
+    On ``TURN_END``:
+      - Marks the Session node ``reconciliation_status = 'pending'`` only, and
+        never spawns reconciliation: the session is still open, and runtimes
+        without a session-end hook signal nothing else. The ``--pending``
+        sweep reconciles it, and a later turn marks it pending again.
 
     Args:
         graph: An initialised :class:`SessionsGraph` instance.
@@ -97,6 +103,8 @@ class SessionsGraphConnector(GraphConnector):
             self._on_session_start(event)
         elif isinstance(event, SessionEndEvent):
             self._on_session_end(event)
+        elif isinstance(event, TurnEndEvent):
+            self._mark_pending_reconciliation(event.session_id)
 
     # ------------------------------------------------------------------
     # Active session context (convenience for callers)

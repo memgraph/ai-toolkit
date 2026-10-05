@@ -79,9 +79,7 @@ class ActionsGraphConnector(GraphConnector):
             self._on_error(event)
 
     def _on_session_start(self, event: SessionStartEvent) -> None:
-        if self._graph.get_session(event.session_id) is not None:
-            return
-        self._graph.create_session(
+        self._graph.record_session_start(
             Session(
                 session_id=event.session_id,
                 started_at=event.timestamp,
@@ -125,7 +123,7 @@ class ActionsGraphConnector(GraphConnector):
                 session_id=event.session_id,
                 timestamp=event.timestamp,
                 status=ActionStatus.FAILED if event.is_error else ActionStatus.COMPLETED,
-                parent_action_id=self._tool_start_action_id(event) if event.tool_use_id else None,
+                parent_action_id=self._tool_call_for(event),
                 tool_use_id=event.tool_use_id or "",
                 tool_name=event.tool_name,
                 content=self._content(event.result),
@@ -260,6 +258,13 @@ class ActionsGraphConnector(GraphConnector):
         if isinstance(event, (ToolStartEvent, ToolEndEvent)) and event.tool_use_id:
             return cls._stable_id(event.session_id, event.event_type.value, event.tool_use_id)
         return cls._stable_id(event.session_id, event.event_type.value, event.timestamp)
+
+    def _tool_call_for(self, event: ToolEndEvent) -> str | None:
+        if event.tool_use_id:
+            return self._tool_start_action_id(event)
+        # No tool-call id (e.g. Copilot CLI): pair with the oldest unanswered
+        # call of the same tool in this session.
+        return self._graph.find_unanswered_tool_call(event.session_id, event.tool_name)
 
     @classmethod
     def _tool_start_action_id(cls, event: ToolEndEvent) -> str:

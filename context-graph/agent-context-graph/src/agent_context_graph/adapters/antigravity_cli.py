@@ -8,7 +8,7 @@ records what ran but not what came back.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent_context_graph.adapters._spec import (
     EventContext,
@@ -20,8 +20,12 @@ from agent_context_graph.adapters._spec import (
     event_user_id,
     json_hook_installer,
     string_or_none,
+    turn_end,
 )
 from agent_context_graph.events import ErrorOccurredEvent, SessionStartEvent, ToolEndEvent, ToolStartEvent
+
+if TYPE_CHECKING:
+    from agent_context_graph.events import Event
 
 
 def _workspace(context: EventContext) -> str | None:
@@ -76,18 +80,24 @@ def _tool_end(context: EventContext) -> ToolEndEvent:
     )
 
 
-def _stop(context: EventContext) -> ErrorOccurredEvent | None:
-    # Stop ends one execution loop, not the conversation, so only a failed
-    # execution is recorded.
+def _stop(context: EventContext) -> list[Event]:
+    # Stop ends one execution loop. agy has no session-end hook, so a loop that
+    # leaves the agent fully idle is the turn end; a failed one is also an error.
+    events: list[Event] = []
     error = context.payload.get("error")
-    if not error:
-        return None
-    return ErrorOccurredEvent(
-        **context.base(),
-        error_type=str(context.payload.get("terminationReason") or "antigravity_error"),
-        error_message=str(error),
-        recoverable=True,
-    )
+    reason = context.payload.get("terminationReason")
+    if error:
+        events.append(
+            ErrorOccurredEvent(
+                **context.base(),
+                error_type=str(reason or "antigravity_error"),
+                error_message=str(error),
+                recoverable=True,
+            )
+        )
+    if context.payload.get("fullyIdle"):
+        events.extend(turn_end(context, reason=reason))
+    return events
 
 
 _HOOKS = ("PreInvocation", "PreToolUse", "PostToolUse", "Stop")

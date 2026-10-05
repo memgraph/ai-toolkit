@@ -2,7 +2,7 @@
 
 from agent_context_graph import AgentLink
 from agent_context_graph.adapters.opencode import OpenCodeHooksAdapter, init
-from agent_context_graph.events import ErrorOccurredEvent, MessageEvent, SessionEndEvent, ToolEndEvent
+from agent_context_graph.events import ErrorOccurredEvent, MessageEvent, SessionEndEvent, ToolEndEvent, TurnEndEvent
 from agent_context_graph.protocols import GraphConnector
 
 
@@ -45,7 +45,7 @@ def test_opencode_shim_payloads_emit_events():
         }
     )
 
-    message, tool_end, error = connector.events
+    message, tool_end, error, failed_turn_end = connector.events
     assert isinstance(message, MessageEvent)
     assert message.role == "user"
     assert isinstance(tool_end, ToolEndEvent)
@@ -53,6 +53,7 @@ def test_opencode_shim_payloads_emit_events():
     assert isinstance(error, ErrorOccurredEvent)
     assert error.error_type == "ProviderError"
     assert error.error_details == {"status": 503}
+    assert isinstance(failed_turn_end, TurnEndEvent)
 
 
 def test_opencode_init_installs_v2_plugin_with_capture_command(tmp_path):
@@ -117,3 +118,15 @@ def test_opencode_tool_result_records_model_text_and_flags_nonzero_exit():
     assert isinstance(tool_end, ToolEndEvent)
     assert tool_end.result == "<exited with code 1>"
     assert tool_end.is_error is True
+
+
+def test_execution_succeeded_ends_the_turn_without_ending_the_session():
+    link = AgentLink()
+    connector = _RecordingConnector()
+    link.add_connector(connector)
+
+    (turn_end,) = OpenCodeHooksAdapter(link).handle_payload(
+        {"hook_event_name": "session.execution.succeeded", "session_id": "open-1"}
+    )
+
+    assert isinstance(turn_end, TurnEndEvent)

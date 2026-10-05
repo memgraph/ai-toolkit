@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from agent_context_graph.adapters._spec import (
     EventContext,
     FieldMap,
@@ -13,6 +15,7 @@ from agent_context_graph.adapters._spec import (
     json_hook_installer,
     tool_end,
     tool_start,
+    turn_end,
 )
 from agent_context_graph.events import (
     AgentEndEvent,
@@ -22,6 +25,9 @@ from agent_context_graph.events import (
     SessionStartEvent,
     ToolEndEvent,
 )
+
+if TYPE_CHECKING:
+    from agent_context_graph.events import Event
 
 
 def _session_start(context: EventContext) -> SessionStartEvent:
@@ -88,6 +94,11 @@ def _agent_end(context: EventContext) -> AgentEndEvent:
     )
 
 
+def _turn_end(context: EventContext) -> list[Event]:
+    # stop ends one agent loop; sessionEnd ends the conversation.
+    return turn_end(context, reason=context.payload.get("status"))
+
+
 SPEC = RuntimeSpec(
     name="cursor",
     source_sdk="cursor",
@@ -102,6 +113,7 @@ SPEC = RuntimeSpec(
         "subagentStart",
         "subagentStop",
         "afterAgentResponse",
+        "stop",
     ),
     rules={
         "sessionStart": _session_start,
@@ -113,6 +125,7 @@ SPEC = RuntimeSpec(
         "subagentStart": _agent_start,
         "subagentStop": _agent_end,
         "afterAgentResponse": _assistant_message,
+        "stop": _turn_end,
     },
     metadata_keys=(
         "generation_id",

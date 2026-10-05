@@ -130,16 +130,22 @@ def test_post_tool_use_error_result_marks_error():
     assert event.error_message == "nope"
 
 
-def test_stop_payload_emits_session_end_and_json_response():
+def test_stop_ends_the_turn_with_the_reply_and_keeps_the_session_open():
     link = AgentLink()
     rec = _RecordingConnector()
     link.add_connector(rec)
 
-    payload = {"hook_event_name": "Stop", "session_id": "s1"}
+    # Stop fires after every turn, so it must never end the session.
+    payload = {"hook_event_name": "Stop", "session_id": "s1", "last_assistant_message": "Done."}
     adapter = CodexHooksAdapter(link)
     adapter.handle_payload(payload)
 
-    assert rec.events[0].event_type == EventType.SESSION_END
+    reply, turn_end = rec.events
+    assert isinstance(reply, MessageEvent)
+    assert reply.role == "assistant"
+    assert reply.content == "Done."
+    assert turn_end.event_type == EventType.TURN_END
+    assert all(event.event_type != EventType.SESSION_END for event in rec.events)
     assert PLUGIN.response_for_payload(payload) == {"continue": True}
 
 

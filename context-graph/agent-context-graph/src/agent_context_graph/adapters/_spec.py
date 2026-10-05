@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 from agent_context_graph.adapters._identity import resolve_user_id
-from agent_context_graph.events import SessionStartEvent, ToolEndEvent, ToolStartEvent
+from agent_context_graph.events import MessageEvent, SessionStartEvent, ToolEndEvent, ToolStartEvent, TurnEndEvent
 from agent_context_graph.protocols import RuntimeAdapter
 
 if TYPE_CHECKING:
@@ -392,3 +392,16 @@ def tool_end(context: EventContext) -> ToolEndEvent:
         error_message=error_message,
         agent_name=context.optional_text("agent_id"),
     )
+
+
+def turn_end(context: EventContext, *, reply: Any = None, reason: Any = None) -> list[Event]:
+    """Default turn-end rule: the assistant's final reply, if any, then the turn end.
+
+    A turn end never ends the session; runtimes with a session-end hook map
+    that separately.
+    """
+    events: list[Event] = []
+    if reply:
+        events.append(MessageEvent(**context.base(), role="assistant", content=reply))
+    events.append(TurnEndEvent(**context.base(), reason=string_or_none(reason)))
+    return events

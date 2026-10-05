@@ -10,7 +10,14 @@ from agent_context_graph import AgentLink
 from agent_context_graph.adapters.claude_code import ClaudeCodeHooksAdapter
 from agent_context_graph.adapters.cursor import CursorHooksAdapter
 from agent_context_graph.adapters.grok import PLUGIN, GrokHooksAdapter, init
-from agent_context_graph.events import MessageEvent, SessionEndEvent, SessionStartEvent, ToolEndEvent, ToolStartEvent
+from agent_context_graph.events import (
+    MessageEvent,
+    SessionEndEvent,
+    SessionStartEvent,
+    ToolEndEvent,
+    ToolStartEvent,
+    TurnEndEvent,
+)
 from agent_context_graph.protocols import GraphConnector
 
 _LS = {"command": "ls", "description": "List files in the workspace"}
@@ -112,10 +119,12 @@ def test_stop_is_a_turn_boundary_and_session_end_closes_the_session():
     assert adapter.handle_payload(_payload("Stop", reason="shutdown", stopHookActive=False)) == []
     adapter.handle_payload(_payload("SessionEnd", reason="shutdown"))
 
-    reply, session_end = connector.events
+    reply, turn_end, session_end = connector.events
     assert isinstance(reply, MessageEvent)
     assert reply.role == "assistant"
     assert reply.content == "Two files."
+    assert isinstance(turn_end, TurnEndEvent)
+    assert turn_end.reason == "end_turn"
     assert isinstance(session_end, SessionEndEvent)
 
 

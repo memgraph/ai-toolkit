@@ -25,8 +25,11 @@ Graph Schema:
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timezone
 from typing import Any, TypedDict
+
+from neo4j.exceptions import ClientError
 
 from memgraph_toolbox.api.memgraph import Memgraph
 
@@ -206,7 +209,7 @@ class ActionsGraph:
         This is used by event connectors where concurrent first events for a
         session can arrive before an explicit session-start event.
         """
-        self._db.query(
+        self._query_session_merge(
             """
             MERGE (s:Session {session_id: $session_id})
             ON CREATE SET
@@ -236,6 +239,89 @@ class ActionsGraph:
             },
         )
         return session
+
+    def record_session_start(self, session: Session) -> Session:
+        """Create a session, or fill in its start fields if it already exists.
+
+        A runtime can deliver a session's first prompt or tool event before
+        its start event, and those events create the session without start
+        details. Existing values win, except ``started_at``, which keeps the
+        earliest timestamp seen.
+        """
+        self._query_session_merge(
+            """
+            MERGE (s:Session {session_id: $session_id})
+            ON CREATE SET
+                s.started_at = $started_at,
+                s.ended_at = $ended_at,
+                s.status = $status,
+                s.model = $model,
+                s.total_cost_usd = $total_cost_usd,
+                s.total_input_tokens = $total_input_tokens,
+                s.total_output_tokens = $total_output_tokens,
+                s.working_directory = $working_directory,
+                s.git_branch = $git_branch,
+                s.metadata = $metadata
+            ON MATCH SET
+                s.started_at = CASE
+                    WHEN s.started_at IS NULL OR $started_at < s.started_at THEN $started_at
+                    ELSE s.started_at
+                END,
+                s.model = coalesce(s.model, $model),
+                s.working_directory = coalesce(s.working_directory, $working_directory),
+                s.git_branch = coalesce(s.git_branch, $git_branch)
+            """,
+            params={
+                "session_id": session.session_id,
+                "started_at": session.started_at,
+                "ended_at": session.ended_at,
+                "status": session.status.value,
+                "model": session.model,
+                "total_cost_usd": session.total_cost_usd,
+                "total_input_tokens": session.total_input_tokens,
+                "total_output_tokens": session.total_output_tokens,
+                "working_directory": session.working_directory,
+                "git_branch": session.git_branch,
+                "metadata": json.dumps(session.metadata),
+            },
+        )
+        return session
+
+    def _query_session_merge(self, query: str, params: dict[str, Any], *, attempts: int = 3) -> None:
+        # Hook runtimes run one subprocess per event, often concurrently, so two
+        # MERGEs of a new session can both try to create it; the loser fails the
+        # unique constraint. Retrying lets its MERGE match the winner's node.
+        for attempt in range(attempts):
+            try:
+                self._db.query(query, params=params)
+                return
+            except ClientError as exc:
+                if "unique constraint" not in str(exc) or attempt == attempts - 1:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
+
+    def find_unanswered_tool_call(self, session_id: str, tool_name: str) -> str | None:
+        """Return the oldest ToolCall of *tool_name* in a session that has no result yet.
+
+        Used to link a ToolResult to its call when the runtime sends no
+        tool-call id. Oldest-first pairs parallel calls of one tool in the
+        order they started.
+        """
+        rows = self._db.query(
+            """
+            MATCH (s:Session {session_id: $session_id})
+            OPTIONAL MATCH (s)-[:HAS_ACTION]->(direct:Action:ToolCall {tool_name: $tool_name})
+            OPTIONAL MATCH (s)-[:HAS_AGENT]->(:Agent)-[:HAS_ACTION]->(nested:Action:ToolCall {tool_name: $tool_name})
+            WITH collect(direct) + collect(nested) AS calls
+            UNWIND calls AS call
+            WITH call WHERE NOT (call)-[:PARENT_OF]->(:ToolResult)
+            RETURN call.action_id AS action_id
+            ORDER BY call.timestamp ASC
+            LIMIT 1
+            """,
+            params={"session_id": session_id, "tool_name": tool_name},
+        )
+        return rows[0]["action_id"] if rows else None
 
     def get_session(self, session_id: str) -> Session | None:
         """Retrieve a session by ID.

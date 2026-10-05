@@ -7,7 +7,14 @@ import json
 
 from agent_context_graph import AgentLink
 from agent_context_graph.adapters.antigravity_cli import PLUGIN, AntigravityCLIHooksAdapter, init
-from agent_context_graph.events import ErrorOccurredEvent, SessionStartEvent, ToolEndEvent, ToolStartEvent
+from agent_context_graph.events import (
+    ErrorOccurredEvent,
+    SessionEndEvent,
+    SessionStartEvent,
+    ToolEndEvent,
+    ToolStartEvent,
+    TurnEndEvent,
+)
 from agent_context_graph.protocols import GraphConnector
 
 _COMMON = {
@@ -70,17 +77,24 @@ def test_tool_start_and_end_pair_on_step_index():
     assert failed_end.error_message == "exit status 1"
 
 
-def test_stop_records_only_failed_executions():
+def test_idle_stop_ends_the_turn_and_a_failed_one_is_also_an_error():
     adapter, connector = _adapter()
-    stop = {"hook_event_name": "Stop", **_COMMON, "executionNum": 0, "fullyIdle": True}
+    stop = {"hook_event_name": "Stop", **_COMMON, "executionNum": 0}
 
-    assert adapter.handle_payload({**stop, "terminationReason": "NO_TOOL_CALL", "error": ""}) == []
-    adapter.handle_payload({**stop, "terminationReason": "ERROR", "error": "model unavailable"})
+    # Background tasks still running: the turn has not ended yet.
+    assert adapter.handle_payload({**stop, "fullyIdle": False, "terminationReason": "NO_TOOL_CALL", "error": ""}) == []
+    (turn_end,) = adapter.handle_payload({**stop, "fullyIdle": True, "terminationReason": "NO_TOOL_CALL", "error": ""})
+    error, failed_turn_end = adapter.handle_payload(
+        {**stop, "fullyIdle": True, "terminationReason": "ERROR", "error": "model unavailable"}
+    )
 
-    (error,) = connector.events
+    assert isinstance(turn_end, TurnEndEvent)
+    assert turn_end.reason == "NO_TOOL_CALL"
     assert isinstance(error, ErrorOccurredEvent)
     assert error.error_type == "ERROR"
     assert error.error_message == "model unavailable"
+    assert isinstance(failed_turn_end, TurnEndEvent)
+    assert not any(isinstance(event, SessionEndEvent) for event in connector.events)
 
 
 def test_responses_never_answer_a_permission_decision():

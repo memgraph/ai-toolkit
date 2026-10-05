@@ -7,7 +7,7 @@ and per-turn ``Stop`` need Grok-specific rules.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent_context_graph.adapters._spec import (
     EventContext,
@@ -19,6 +19,7 @@ from agent_context_graph.adapters._spec import (
     json_hook_installer,
     session_start,
     tool_start,
+    turn_end,
 )
 from agent_context_graph.events import (
     AgentEndEvent,
@@ -28,6 +29,9 @@ from agent_context_graph.events import (
     SessionEndEvent,
     ToolEndEvent,
 )
+
+if TYPE_CHECKING:
+    from agent_context_graph.events import Event
 
 
 def _user_prompt(context: EventContext) -> MessageEvent:
@@ -83,13 +87,14 @@ def _permission_denied(context: EventContext) -> ErrorOccurredEvent:
     )
 
 
-def _turn_end(context: EventContext) -> MessageEvent | None:
-    # Stop fires at the end of every turn (reason "end_turn") and again at
-    # shutdown, so it is a turn boundary: record the reply, never end the session.
+def _turn_end(context: EventContext) -> list[Event]:
+    # Stop fires at the end of every turn (reason "end_turn") and once more at
+    # shutdown, right after SessionEnd; only the former ends a turn.
+    reason = context.payload.get("reason")
+    if reason == "shutdown":
+        return []
     reply = context.payload.get("lastAssistantMessage", context.payload.get("last_assistant_message"))
-    if not reply:
-        return None
-    return MessageEvent(**context.base(), role="assistant", content=reply)
+    return turn_end(context, reply=reply, reason=reason)
 
 
 def _stop_failure(context: EventContext) -> ErrorOccurredEvent:

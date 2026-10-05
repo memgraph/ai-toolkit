@@ -12,6 +12,7 @@ const CAPTURED_EVENTS = new Set([
   "session.created",
   "session.deleted",
   "session.text.ended",
+  "session.execution.succeeded",
   "session.execution.failed",
   "permission.asked",
 ])

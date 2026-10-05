@@ -13,6 +13,8 @@ classifiers = [
 ]
 dependencies = [
     "memgraph-toolbox",
+    # Imported directly to retry concurrent-MERGE constraint conflicts.
+    "neo4j>=5.28.1",
 ]
 
 [project.optional-dependencies]
