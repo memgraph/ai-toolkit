@@ -266,6 +266,19 @@ For live integration tests, use the repository-owned disposable Memgraph:
 ./scripts/dev-memgraph.sh test-down
 ```
 
+To check the hooks against the real agent CLIs, run one headless session per
+installed runtime. Each runs in its own scratch project, against a disposable
+Memgraph and a throwaway config file, and the graph each one produced is
+printed afterwards. Grant each runtime's project trust once first; the
+script's header lists which runtimes need it.
+
+```bash
+./context-graph/scripts/live-hooks-e2e/live-hooks-e2e.sh up ~/tmp/live-hooks 7699
+./context-graph/scripts/live-hooks-e2e/live-hooks-e2e.sh run ~/tmp/live-hooks
+./context-graph/scripts/live-hooks-e2e/live-hooks-e2e.sh verify ~/tmp/live-hooks
+./context-graph/scripts/live-hooks-e2e/live-hooks-e2e.sh down ~/tmp/live-hooks
+```
+
 ## Adding a runtime
 
 Command-hook runtimes declare a `RuntimeSpec` and subclass `SpecAdapter`.
