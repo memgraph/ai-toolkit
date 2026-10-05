@@ -26,6 +26,7 @@ from memgraph_toolbox.api.memgraph import Memgraph
 
 from .embeddings import DEFAULT_EMBEDDING_MODEL, Embedded, EmbeddingUnavailableError, embed_session
 from .models import Memory, validate_content, validate_memory_id, validate_user_id
+from .recall import TURN_TEXT_INDEX, RecallConfig, Recalled, recall
 from .reconciliation import (
     MAX_SESSION_BATCH_CHARS,
     NODE_LABELS,
@@ -91,6 +92,7 @@ class SessionsGraph:
     - :meth:`update_memory` — replace the content of an existing Memory
     - :meth:`delete_memory` — remove a Memory by ID
     - :meth:`embed_session` — embed a session's messages, entities and edges for recall
+    - :meth:`recall` — what a user's past sessions hold about a question
     """
 
     def __init__(self, memgraph: Memgraph | None = None, **kwargs: Any) -> None:
@@ -116,6 +118,7 @@ class SessionsGraph:
         self._db.query(f"CREATE TEXT INDEX {_FULLTEXT_INDEX} ON :Memory(content);")
         self._db.query("CREATE INDEX ON :Session(reconciliation_status);")
         self._db.query("CREATE INDEX ON :Session(embedding_status);")
+        self._db.query(f"CREATE TEXT INDEX {TURN_TEXT_INDEX} ON :Action(text);")
         # Shared with unstructured2graph's Chunk.hash convention; ensured here
         # too so reconcile_session() works even without a prior unstructured2graph call.
         self._db.query("CREATE CONSTRAINT ON (c:Chunk) ASSERT c.hash IS UNIQUE;")
@@ -821,6 +824,22 @@ class SessionsGraph:
             params={"session_id": session_id, "model": model},
         )
         return embedded
+
+    def recall(
+        self,
+        user_id: str,
+        question: str,
+        *,
+        config: RecallConfig | None = None,
+        model: str = DEFAULT_EMBEDDING_MODEL,
+    ) -> Recalled:
+        """What *user_id*'s own sessions hold about *question*; see :mod:`sessions_graph.recall`.
+
+        Needs :meth:`setup` (the message text index) and vectors from
+        :meth:`embed_session` made with *model*; without MAGE the result
+        comes from text search alone and says so.
+        """
+        return recall(self._db, validate_user_id(user_id), question, config=config, model=model)
 
     def get_pending_embedding_sessions(self, *, model: str = DEFAULT_EMBEDDING_MODEL, limit: int = 100) -> list[str]:
         """Session ids whose embedding failed, never ran, or ran with a model other than *model*."""

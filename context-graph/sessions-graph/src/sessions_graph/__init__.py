@@ -35,6 +35,7 @@ Integration with Agent Context Graph::
 
 from .core import SessionsGraph
 from .models import Memory, MemoryValidationError
+from .recall import RecallConfig, Recalled
 from .reconciliation import ReconciliationSummary
 
-__all__ = ["Memory", "MemoryValidationError", "ReconciliationSummary", "SessionsGraph"]
+__all__ = ["Memory", "MemoryValidationError", "RecallConfig", "Recalled", "ReconciliationSummary", "SessionsGraph"]

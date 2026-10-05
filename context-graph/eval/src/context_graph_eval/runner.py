@@ -16,12 +16,11 @@ import asyncio
 import os
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from . import official_judge
 from .convert.longmemeval import to_session_fixtures
-from .hybrid import HybridConfig, ensure_hybrid_index, retrieve_hybrid
+from .hybrid import RecallConfig, ensure_recall_ready, retrieve_hybrid
 from .inject import PENDING, inject_batch
 from .reconcile import BACKEND_CLASS_NAMES, ExtractionBackendName, reconcile_batch
 from .retrieval import ReadOnlyGraph, Retrieved, retrieve
@@ -105,10 +104,8 @@ class RunPlan:
     #: How many text-search hits to hand the answering LLM. Ignored for
     #: "graph-agent". See text_search.DEFAULT_LIMIT for why this is not tuned.
     text_search_limit: int = DEFAULT_TEXT_SEARCH_LIMIT
-    #: "hybrid" only: which lanes run and how wide (see hybrid.HybridConfig),
-    #: and where its embeddings are cached between runs over the same graph.
-    hybrid: HybridConfig = field(default_factory=HybridConfig)
-    hybrid_cache: Path = Path(".cache/context-graph-eval/hybrid-index.npz")
+    #: "hybrid" only: which recall lanes run and how wide (sessions_graph.RecallConfig).
+    hybrid: RecallConfig = field(default_factory=RecallConfig)
 
 
 @dataclass(frozen=True)
@@ -268,8 +265,9 @@ async def run_batch(
         reconciled, failures = outcome.reconciled, outcome.failed
 
     read_only = ReadOnlyGraph(graph.db)
-    index = ensure_hybrid_index(graph, plan.hybrid_cache) if plan.retrieval_strategy == "hybrid" else None
-    retrieved = await _retrieve_all(goldens, read_only, llm, plan, index)
+    if plan.retrieval_strategy == "hybrid":
+        ensure_recall_ready(graph.db)
+    retrieved = await _retrieve_all(goldens, read_only, llm, plan)
 
     official = await _official_labels(goldens, retrieved, plan)
     scored = _score(goldens, retrieved, plan, official)
@@ -288,7 +286,6 @@ async def _retrieve_all(
     graph: ReadOnlyGraph,
     llm: "LLM",
     plan: RunPlan,
-    index: Any = None,
 ) -> list[Retrieved]:
     """Retrieve for every question, bounded so a batch cannot stampede the model.
 
@@ -308,11 +305,12 @@ async def _retrieve_all(
             try:
                 if plan.retrieval_strategy == "hybrid":
                     # Each question is its own user's history (to_session_fixtures).
+                    if golden.name is None:
+                        raise ValueError("hybrid recall needs the question's user, carried as the golden's name")
                     return await retrieve_hybrid(
                         golden.input,
                         graph=graph,
                         llm=llm,
-                        index=index,
                         config=plan.hybrid,
                         today=today,
                         user_id=golden.name,

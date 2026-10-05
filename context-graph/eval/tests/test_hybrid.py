@@ -1,29 +1,16 @@
-"""Tests for the hybrid retrieval strategy, against the real eval Memgraph.
+"""Tests for the hybrid strategy's own part: preparing the graph for recall and answering from it.
 
-The embedder is a deterministic bag-of-words stand-in, so no model is
-downloaded; everything the strategy reads from and writes to the graph is
-real.
+What recall retrieves is tested where it lives, in sessions-graph's
+``test_e2e_recall.py``. These run against the real eval Memgraph, which has
+MAGE in CI, so the vectors are real.
 """
 
-import hashlib
-import re
-
-import numpy as np
 import pytest
-from context_graph_eval.hybrid import HybridConfig, ensure_hybrid_index, retrieve_hybrid
+from context_graph_eval.hybrid import RecallConfig, ensure_recall_ready, retrieve_hybrid
 from context_graph_eval.retrieval import ReadOnlyGraph
+from sessions_graph.embeddings import EmbeddingUnavailableError, check_available
 
 from actions_graph import ActionsGraph, MessageRole, Session
-
-
-class _BagOfWords:
-    def __call__(self, texts):
-        out = np.zeros((len(texts), 64), dtype="float32")
-        for row, text in enumerate(texts):
-            for word in re.findall(r"\w+", text.lower()):
-                out[row, int(hashlib.md5(word.encode()).hexdigest(), 16) % 64] += 1
-        norms = np.linalg.norm(out, axis=1, keepdims=True)
-        return out / np.where(norms == 0, 1, norms)
 
 
 class _EchoLLM:
@@ -31,187 +18,46 @@ class _EchoLLM:
         return prompt
 
 
-def _plant(graph: ActionsGraph) -> None:
-    """One reconciled-looking session: two turns, their chunk, an entity and a typed fact
-    carrying the provenance extraction writes (source turn, speaker, sentence)."""
-    graph.ensure_session(Session(session_id="s1", started_at="2023-05-30T17:27:00+00:00"))
-    graph.record_message(
+@pytest.fixture
+def owned_session(eval_graph: ActionsGraph):
+    try:
+        check_available(eval_graph.db)
+    except EmbeddingUnavailableError as exc:
+        pytest.skip(f"eval Memgraph can't embed (needs MAGE): {exc}")
+    eval_graph.ensure_session(Session(session_id="s1", started_at="2023-05-30T17:27:00+00:00"))
+    eval_graph.record_message(
         session_id="s1",
         role=MessageRole.USER,
         content="I went to the Museum of Modern Art. It was wonderful.",
         timestamp="2023-05-30T17:27:00+00:00",
     )
-    graph.record_message(
-        session_id="s1",
-        role=MessageRole.ASSISTANT,
-        content="Glad you enjoyed it!",
-        timestamp="2023-05-30T17:27:01+00:00",
+    eval_graph.db.query(
+        "MERGE (u:User {user_id: 'u1'}) WITH u MATCH (s:Session {session_id: 's1'}) MERGE (u)-[:HAD_SESSION]->(s)"
     )
-    db = graph.db
-    user_turn = db.query("MATCH (a:UserMessage) RETURN a.action_id AS id")[0]["id"]
-    db.query("MATCH (a:Action) MERGE (c:Chunk {hash: 'c1', text: 'session'}) MERGE (a)-[:HAS_CHUNK]->(c)")
-    db.query(
-        "MATCH (c:Chunk {hash: 'c1'}) "
-        "CREATE (n:gliner2:Location {entity_id: 'moma', entity_type: 'Location', text: 'Museum of Modern Art'})"
-        "-[:MENTIONED_IN {sources: [$turn]}]->(c) "
-        "CREATE (u:User {user_id: 'u1'}) "
-        "CREATE (u)-[:visited {chunk: 'c1', source_id: $turn, role: 'user', confidence: 0.9, "
-        "valid_at: datetime('2023-05-30T17:27:00+00:00'), text: 'I went to the Museum of Modern Art.'}]->(n)",
-        {"turn": user_turn},
-    )
+    return eval_graph
+
+
+def test_ensure_recall_ready_embeds_what_is_missing_once(owned_session: ActionsGraph):
+    assert ensure_recall_ready(owned_session.db) == 1
+    assert ensure_recall_ready(owned_session.db) == 0
 
 
 @pytest.mark.asyncio
-async def test_hybrid_hands_the_answerer_facts_and_their_source_turn(eval_graph: ActionsGraph, tmp_path):
-    """The facts lane alone reaches the turn: through the edge's source_id, not a turn search."""
-    _plant(eval_graph)
-    index = ensure_hybrid_index(eval_graph, tmp_path / "index.npz", embedder=_BagOfWords())
+async def test_the_answerer_reads_exactly_the_rows_recall_found(owned_session: ActionsGraph):
+    ensure_recall_ready(owned_session.db)
 
     result = await retrieve_hybrid(
-        "When did I visit the Museum of Modern Art?",
-        graph=ReadOnlyGraph(eval_graph.db),
+        "When did I go to the Museum of Modern Art?",
+        graph=ReadOnlyGraph(owned_session.db),
         llm=_EchoLLM(),
-        index=index,
-        config=HybridConfig(lanes=("facts",)),
+        user_id="u1",
+        config=RecallConfig(lanes=("turns", "text")),
+        today="2023-06-01",
     )
 
-    assert (
-        'FACT: user -[visited @ 2023-05-30]-> Museum of Modern Art -- user: "I went to the Museum of Modern Art."'
-        in result.retrieval_context
-    )
-    assert any(row.startswith("TURN [session s1, 2023-05-30T17:27, user]") for row in result.retrieval_context)
-
-
-@pytest.mark.asyncio
-async def test_dropping_the_graph_lanes_leaves_turns_only(eval_graph: ActionsGraph, tmp_path):
-    _plant(eval_graph)
-    index = ensure_hybrid_index(eval_graph, tmp_path / "index.npz", embedder=_BagOfWords())
-
-    result = await retrieve_hybrid(
-        "Museum of Modern Art",
-        graph=ReadOnlyGraph(eval_graph.db),
-        llm=_EchoLLM(),
-        index=index,
-        config=HybridConfig(lanes=("turns", "text")),
-    )
-
-    assert result.retrieval_context
-    assert not any(row.startswith("FACT:") for row in result.retrieval_context)
-
-
-def test_index_is_cached_between_runs_over_the_same_graph(eval_graph: ActionsGraph, tmp_path):
-    _plant(eval_graph)
-    calls = []
-
-    class _Counting(_BagOfWords):
-        def __call__(self, texts):
-            calls.append(len(texts))
-            return super().__call__(texts)
-
-    ensure_hybrid_index(eval_graph, tmp_path / "index.npz", embedder=_Counting())
-    embedded = len(calls)
-    ensure_hybrid_index(eval_graph, tmp_path / "index.npz", embedder=_Counting())
-    assert len(calls) == embedded
-
-
-@pytest.mark.asyncio
-async def test_user_facts_gathers_the_users_facts_of_a_relation_type_across_sessions(
-    eval_graph: ActionsGraph, tmp_path
-):
-    """The aggregation a counting question needs: every wedding the user attended, whichever session it was in."""
-    db = eval_graph.db
-    db.query("CREATE (:User {user_id: 'u1'})")
-    for session, couple in (("s1", "Rachel and Mike"), ("s2", "Emily and Sarah"), ("s3", "Jen and Tom")):
-        eval_graph.ensure_session(Session(session_id=session, started_at="2023-05-30T17:27:00+00:00"))
-        eval_graph.record_message(
-            session_id=session, role=MessageRole.USER, content=f"I attended the wedding of {couple}."
-        )
-        db.query(
-            "MATCH (a:Action) WHERE NOT (a)-[:HAS_CHUNK]->() MERGE (c:Chunk {hash: $s, text: 'x'}) MERGE (a)-[:HAS_CHUNK]->(c) "
-            "WITH c MATCH (u:User {user_id: 'u1'}) "
-            "CREATE (n:gliner2:Event {entity_id: $s, entity_type: 'Event', text: $w})-[:MENTIONED_IN]->(c) "
-            "CREATE (u)-[:attended {chunk: $s, confidence: 0.9}]->(n)",
-            {"s": session, "w": f"wedding of {couple}"},
-        )
-    index = ensure_hybrid_index(eval_graph, tmp_path / "index.npz", embedder=_BagOfWords())
-
-    result = await retrieve_hybrid(
-        "How many weddings have I attended?",
-        graph=ReadOnlyGraph(db),
-        llm=_EchoLLM(),
-        index=index,
-        config=HybridConfig(lanes=("user_facts",), user_fact_types=1),
-    )
-
-    facts = [row for row in result.retrieval_context if row.startswith("FACT:")]
-    assert len(facts) == 3
-    assert all(row.startswith("FACT: user -[attended]-> wedding of") for row in facts)
-
-
-def _plant_two_users(graph: ActionsGraph) -> None:
-    """Two people who both visited Paris: one global Paris entity, each user's own session, turn and edge."""
-    db = graph.db
-    db.query("CREATE (:gliner2:Location {entity_id: 'paris', entity_type: 'Location', text: 'Paris'})")
-    for user, session, companion in (("u1", "s1", "Anna"), ("u2", "s2", "Bob")):
-        graph.ensure_session(Session(session_id=session, started_at="2023-05-30T17:27:00+00:00"))
-        graph.record_message(
-            session_id=session,
-            role=MessageRole.USER,
-            content=f"I visited Paris with {companion}.",
-            timestamp="2023-05-30T17:27:00+00:00",
-        )
-        db.query(
-            "MATCH (s:Session {session_id: $s})-[:HAS_ACTION]->(a:Action), (n:gliner2 {entity_id: 'paris'}) "
-            "MERGE (u:User {user_id: $u}) MERGE (u)-[:HAD_SESSION]->(s) "
-            "CREATE (a)-[:HAS_CHUNK]->(c:Chunk {hash: $s, text: a.text}) "
-            "CREATE (n)-[:MENTIONED_IN {sources: [a.action_id]}]->(c) "
-            "CREATE (u)-[:visited {chunk: $s, source_id: a.action_id, role: 'user', confidence: 0.9, text: a.text}]->(n)",
-            {"s": session, "u": user},
-        )
-
-
-@pytest.mark.asyncio
-async def test_scoped_to_a_user_every_lane_retrieves_only_that_users_history(eval_graph: ActionsGraph, tmp_path):
-    _plant_two_users(eval_graph)
-    index = ensure_hybrid_index(eval_graph, tmp_path / "index.npz", embedder=_BagOfWords())
-    question = "Who did I visit Paris with?"
-
-    async def context(user_id):
-        result = await retrieve_hybrid(
-            question, graph=ReadOnlyGraph(eval_graph.db), llm=_EchoLLM(), index=index, user_id=user_id
-        )
-        return "\n".join(result.retrieval_context)
-
-    scoped = await context("u1")
-    assert "Anna" in scoped
-    assert "Bob" not in scoped
-    assert "Bob" in await context(None)
-
-
-@pytest.mark.asyncio
-async def test_turns_come_before_facts_and_both_in_time_order(eval_graph: ActionsGraph, tmp_path):
-    """Turns are the answer store: after ~45 fact rows their evidence was read past.
-    Time order lets "which came first" and "what is current" read off the sequence."""
-    _plant(eval_graph)
-    eval_graph.ensure_session(Session(session_id="s0", started_at="2023-01-02T09:00:00+00:00"))
-    eval_graph.record_message(
-        session_id="s0",
-        role=MessageRole.USER,
-        content="I went to the Museum of Modern Art with Anna.",
-        timestamp="2023-01-02T09:00:00+00:00",
-    )
-    index = ensure_hybrid_index(eval_graph, tmp_path / "index.npz", embedder=_BagOfWords())
-
-    result = await retrieve_hybrid(
-        "Museum of Modern Art",
-        graph=ReadOnlyGraph(eval_graph.db),
-        llm=_EchoLLM(),
-        index=index,
-        config=HybridConfig(lanes=("turns", "facts")),
-    )
-
-    kinds = [row.split(" ", 1)[0] for row in result.retrieval_context]
-    assert kinds == sorted(kinds, key=lambda kind: kind != "TURN")
-    turns = [row for row in result.retrieval_context if row.startswith("TURN")]
-    assert turns[0].startswith("TURN [session s0, 2023-01-02T09:00")
-    assert turns == sorted(turns, key=lambda row: row.split(", ")[1])
+    assert result.retrieval_context == [
+        "TURN [session s1, 2023-05-30T17:27, user]: I went to the Museum of Modern Art. It was wonderful."
+    ]
+    assert result.retrieval_context[0] in result.answer
+    assert "The question is being asked on 2023-06-01." in result.answer
+    assert not result.errors

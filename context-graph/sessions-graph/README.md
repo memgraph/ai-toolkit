@@ -236,6 +236,40 @@ sweep over already-processed content never re-bills it. Each reconcilable unit
 has many units, so the first run can be substantial. Consider this before
 enabling `auto_reconcile` broadly.
 
+## Recall
+
+`recall(user_id, question)` returns what one user's own past sessions hold
+about a question: the evidence, not an answer. The caller's model answers
+from it.
+
+```python
+recalled = graph.recall("alice", "Which database did we pick for the cache?")
+print(recalled.render(today="2026-10-05"))  # header with reading rules, then the rows
+recalled.to_json()  # the same turns and facts as data
+```
+
+Five lanes, each over the user's own history only:
+
+| Lane | Finds |
+|---|---|
+| `turns` | messages nearest the question by vector |
+| `text` | messages matching it by full-text search |
+| `entities` | entities nearest it by vector, and each one's facts |
+| `facts` | extracted facts nearest it by vector |
+| `user_facts` | the user's facts of the relation types nearest it, across all sessions |
+
+Then the turns the facts were read from are added. Turns come first, then
+facts, each group in time order. This is the hybrid retrieval
+`context-graph-eval run --retrieval-strategy hybrid` benchmarks, through
+this same code: 89/100 on LongMemEval's own judge (run `g417-recall-r1`,
+100 questions, map #390).
+
+Widths default to the benchmarked setup; `RecallConfig.from_mapping(...)`
+overrides them (e.g. from a config file's `[recall]` section). Similarity is
+computed exactly over the user's own vectors, which costs time linear in
+their history: about 0.6 s for a few hundred messages, 0.7 s at 10k, 6.7 s at
+100k. Without MAGE, recall runs text search alone and says so in its result.
+
 ## Embeddings for recall
 
 Recall searches a user's history by vector as well as by text, so three
@@ -246,7 +280,7 @@ units get an `embedding` property, computed **inside Memgraph** by MAGE's
 |---|---|
 | user and assistant messages (`:Action`) | `text`, the plain message text Actions Graph writes |
 | entities | their `text`, for every entity mentioned in one of the session's chunks |
-| extracted edges | `r.text`, the sentence the edge was read from |
+| extracted edges | `"<head> <type> <tail>. <r.text>"`: the fact and the sentence it was read from |
 
 Each vector also records its `embedding_model`. A vector from a different
 model counts as missing and is replaced, so vectors from two models never
@@ -295,5 +329,6 @@ sessions-graph embed --pending --limit 50 --model BAAI/bge-small-en-v1.5
 | `delete_memory(memory_id)` | Remove a Memory and all its relationships. |
 | `async reconcile_session(session_id, *, lightrag_wrapper, extraction_backend=None, actions_graph=None, entity_workspace=None, promote_labels=False, enforce_ontology=False, ontology_path=None, embedding_model=DEFAULT_EMBEDDING_MODEL)` | Run session reconciliation for one session, then embed what it wrote (see [Embeddings for recall](#embeddings-for-recall)). `extraction_backend` overrides entity extraction to another `ExtractionBackend` (e.g. GLiNER2); `lightrag_wrapper` is always required regardless, since the narrative summary is always produced via its LLM. `promote_labels`/`enforce_ontology`/`ontology_path` control entity-type label promotion (see above). Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
 | `get_pending_reconciliation_sessions(*, limit=100)` | Return session IDs marked `reconciliation_status = 'pending'`. |
+| `recall(user_id, question, *, config=None, model=DEFAULT_EMBEDDING_MODEL)` | What the user's own sessions hold about `question`, as `Recalled` (turns and facts; `lines()`, `render(today)`, `to_json()`). See [Recall](#recall). |
 | `embed_session(session_id, *, model=DEFAULT_EMBEDDING_MODEL)` | Embed the session's messages, entities and edges that lack a vector from `model`, inside Memgraph. Returns counts as `Embedded`; records the outcome on the Session. Raises `EmbeddingUnavailableError` without MAGE or when the model can't load. |
 | `get_pending_embedding_sessions(*, model=DEFAULT_EMBEDDING_MODEL, limit=100)` | Session IDs whose embedding failed, never ran, or used another model. |

@@ -4,7 +4,9 @@ Three units carry an ``embedding``:
 
 - user and assistant messages: ``Action.text``, which actions-graph writes;
 - entities: the ``text`` of a node mentioned in one of the session's chunks;
-- extracted edges: ``r.text``, the sentence the edge was read from.
+- extracted edges: the fact and the sentence it was read from, as
+  ``"<head> <type> <tail>. <r.text>"`` -- what the hybrid retrieval
+  benchmark embedded, so a question can match the relation as well as the words.
 
 Each also carries ``embedding_model``, the model that produced it. A vector
 from another model is found by the same query as a missing one and replaced,
@@ -48,7 +50,9 @@ _ENTITIES = (
 _EDGES = (
     _SESSION_ACTIONS + "MATCH (a)-[:HAS_CHUNK]->(c:Chunk)<-[:MENTIONED_IN]-(n)-[x]-() "
     "WHERE x.chunk = c.hash AND x.text IS NOT NULL AND " + _STALE + " "
-    "WITH DISTINCT x RETURN id(startNode(x)) AS head, id(x) AS id, x.text AS text"
+    "WITH DISTINCT x RETURN id(startNode(x)) AS head, id(x) AS id, "
+    "coalesce(startNode(x).text, 'user') + ' ' + replace(type(x), '_', ' ') + ' ' "
+    "+ coalesce(endNode(x).text, 'user') + '. ' + x.text AS text"
 )
 
 _SET_NODES = (
