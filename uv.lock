@@ -183,7 +183,7 @@ wheels = [
 
 [[package]]
 name = "actions-graph"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "context-graph/actions-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -213,7 +213,7 @@ provides-extras = ["agent-context-graph", "claude-agent", "test"]
 
 [[package]]
 name = "agent-context-graph"
-version = "0.2.1"
+version = "0.3.0"
 source = { editable = "context-graph/agent-context-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -8401,7 +8401,7 @@ wheels = [
 
 [[package]]
 name = "sessions-graph"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "context-graph/sessions-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
