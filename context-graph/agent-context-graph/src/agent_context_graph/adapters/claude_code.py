@@ -189,12 +189,13 @@ class ClaudeCodeHooksAdapter(RuntimeAdapter):
 
         if hook_event_name == "Stop":
             return [
+                *_assistant_reply(session_id, payload, metadata),
                 SessionEndEvent(
                     session_id=session_id,
                     source_sdk=_SOURCE,
                     status="completed",
                     metadata=metadata,
-                )
+                ),
             ]
 
         if hook_event_name == "StopFailure":
@@ -306,6 +307,21 @@ def _metadata_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
         if key in payload and payload.get(key) is not None:
             metadata[key] = payload.get(key)
     return metadata
+
+
+def _assistant_reply(session_id: str, payload: dict[str, Any], metadata: dict[str, Any]) -> list[Event]:
+    """The turn's final assistant message, which only ``Stop`` carries.
+
+    Claude Code fires ``Stop`` at the end of every turn, so this records each
+    reply the user saw. Text the model wrote before a tool call in the same
+    turn isn't in any hook payload; it is narration, not the answer.
+    """
+    text = _string_or_none(payload.get("last_assistant_message"))
+    if text is None or not text.strip():
+        return []
+    # The reply is the message's content; a second copy in its metadata would only double what is stored.
+    metadata = {key: value for key, value in metadata.items() if key != "last_assistant_message"}
+    return [MessageEvent(session_id=session_id, source_sdk=_SOURCE, role="assistant", content=text, metadata=metadata)]
 
 
 def _string_or_none(value: Any) -> str | None:
