@@ -23,7 +23,11 @@ SERVER_NAME = "context-graph"
 
 
 def build_server(tools: dict[str, Tool] | None = None) -> Server:
-    """An MCP server exposing ``tools``, all registered tools by default."""
+    """An MCP server exposing ``tools``, all registered tools by default.
+
+    Supports mcp 1.x, which registers handlers through decorators, and 2.x,
+    which takes them as constructor arguments; the protocol is the same.
+    """
     import mcp.types as types
     from anyio import to_thread
     from mcp.server.lowlevel import Server
@@ -31,28 +35,37 @@ def build_server(tools: dict[str, Tool] | None = None) -> Server:
     from agent_context_graph.adapters._identity import load_config
 
     tools = load_tools() if tools is None else tools
-    server: Server = Server(SERVER_NAME)
 
-    @server.list_tools()
     async def list_tools() -> list[types.Tool]:
         return [
             types.Tool(name=tool.name, description=tool.description, inputSchema=tool.input_schema)
             for tool in tools.values()
         ]
 
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict[str, Any]) -> types.CallToolResult:
+    async def call_tool(name: str, arguments: dict[str, Any] | None) -> types.CallToolResult:
         tool = tools.get(name)
         if tool is None:
             return _error(f"Unknown tool: {name}")
         try:
             # Tools query Memgraph synchronously; a thread keeps the server responsive.
-            result = await to_thread.run_sync(tool.call, arguments, load_config())
+            result = await to_thread.run_sync(tool.call, arguments or {}, load_config())
         except ToolError as exc:
             return _error(str(exc))
         return types.CallToolResult(content=[types.TextContent(type="text", text=result.text)])
 
-    return server
+    if hasattr(Server, "call_tool"):  # mcp 1.x
+        server: Server = Server(SERVER_NAME)
+        server.list_tools()(list_tools)
+        server.call_tool()(call_tool)
+        return server
+
+    async def on_list_tools(ctx: Any, params: Any) -> types.ListToolsResult:
+        return types.ListToolsResult(tools=await list_tools())
+
+    async def on_call_tool(ctx: Any, params: Any) -> types.CallToolResult:
+        return await call_tool(params.name, params.arguments)
+
+    return Server(SERVER_NAME, on_list_tools=on_list_tools, on_call_tool=on_call_tool)
 
 
 def serve() -> int:

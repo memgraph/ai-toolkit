@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
@@ -58,38 +59,55 @@ def tools(monkeypatch):
     return registered
 
 
+@asynccontextmanager
+async def _connected(server):
+    """A client session talking to ``server`` in memory, the same way under mcp 1.x and 2.x."""
+    import anyio
+    from mcp import ClientSession
+    from mcp.shared.memory import create_client_server_memory_streams
+
+    async with (
+        create_client_server_memory_streams() as (client_streams, server_streams),
+        anyio.create_task_group() as tg,
+    ):
+        tg.start_soon(lambda: server.run(*server_streams, server.create_initialization_options()))
+        async with ClientSession(*client_streams) as client:
+            await client.initialize()
+            yield client
+        tg.cancel_scope.cancel()
+
+
+def _wire(model) -> dict:
+    """A result as the harness receives it: mcp 2.x renamed the Python fields, not the JSON."""
+    return model.model_dump(by_alias=True, exclude_none=True)
+
+
 @pytest.mark.asyncio
 async def test_mcp_lists_tools_and_returns_only_the_text(tools):
     """Text only: Claude Code and Codex both show structuredContent instead of the text when both are sent."""
     pytest.importorskip("mcp")
-    from mcp.shared.memory import create_connected_server_and_client_session
-    from mcp.types import TextContent
-
     from agent_context_graph.mcp_server import build_server
 
-    async with create_connected_server_and_client_session(build_server(tools)) as client:
-        listed = await client.list_tools()
-        result = await client.call_tool("recall", {"question": "deploy day"})
+    async with _connected(build_server(tools)) as client:
+        listed = _wire(await client.list_tools())
+        result = _wire(await client.call_tool("recall", {"question": "deploy day"}))
 
-    assert [(tool.name, tool.inputSchema["required"]) for tool in listed.tools] == [("recall", ["question"])]
-    assert not result.isError
-    assert result.content == [TextContent(type="text", text="rows for deploy day of ante")]
-    assert result.structuredContent is None
+    assert [(tool["name"], tool["inputSchema"]["required"]) for tool in listed["tools"]] == [("recall", ["question"])]
+    assert not result.get("isError")
+    assert result["content"] == [{"type": "text", "text": "rows for deploy day of ante"}]
+    assert "structuredContent" not in result
 
 
 @pytest.mark.asyncio
 async def test_mcp_reports_a_tool_error_to_the_model(tools):
     pytest.importorskip("mcp")
-    from mcp.shared.memory import create_connected_server_and_client_session
-    from mcp.types import TextContent
-
     from agent_context_graph.mcp_server import build_server
 
-    async with create_connected_server_and_client_session(build_server(tools)) as client:
-        result = await client.call_tool("recall", {"question": "fail"})
+    async with _connected(build_server(tools)) as client:
+        result = _wire(await client.call_tool("recall", {"question": "fail"}))
 
-    assert result.isError
-    assert result.content == [TextContent(type="text", text="no user configured")]
+    assert result["isError"]
+    assert result["content"] == [{"type": "text", "text": "no user configured"}]
 
 
 def test_recall_cli_prints_the_text_or_the_json(tools, capsys):
