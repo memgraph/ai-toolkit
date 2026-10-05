@@ -73,10 +73,33 @@ class CodexHooksAdapter(RuntimeAdapter):
         """
         hook_event_name = payload.get("hook_event_name")
         event = self._event_from_payload(hook_event_name, payload)
-        if event is None:
+        events = self._assistant_reply(payload) if hook_event_name == "Stop" else []
+        if event is not None:
+            events.append(event)
+        for emitted in events:
+            self._link.emit(emitted)
+        return events
+
+    def _assistant_reply(self, payload: dict[str, Any]) -> list[Event]:
+        """The turn's final assistant message, which only ``Stop`` carries; emitted before the session end.
+
+        Codex fires ``Stop`` at the end of every turn, so this records each
+        reply the user saw. Text written before a tool call in the same turn
+        isn't in any hook payload; it is narration, not the answer.
+        """
+        text = _string_or_none(payload.get("last_assistant_message"))
+        if text is None or not text.strip():
             return []
-        self._link.emit(event)
-        return [event]
+        session_id = self._session_id or str(payload.get("session_id") or "")
+        return [
+            MessageEvent(
+                session_id=session_id,
+                source_sdk=_SOURCE,
+                role="assistant",
+                content=text,
+                metadata=_metadata_from_payload(payload),
+            )
+        ]
 
     def _event_from_payload(self, hook_event_name: Any, payload: dict[str, Any]) -> Event | None:
         session_id = self._session_id or str(payload.get("session_id") or "")
