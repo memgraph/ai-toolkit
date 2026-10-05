@@ -15,13 +15,14 @@ EOF
   exit 1
 fi
 
-uv tool install "agent-context-graph[mcp]>=0.1.9" \
+uv tool install "agent-context-graph[mcp]>=0.3.0" \
   --with "skills-graph[agent-context-graph]>=0.1.3" \
-  --with "actions-graph[agent-context-graph]>=0.1.1" \
-  --with "sessions-graph[agent-context-graph]>=0.1.2" \
+  --with "actions-graph[agent-context-graph]>=0.3.0" \
+  --with "sessions-graph[agent-context-graph]>=0.6.0" \
   --upgrade \
   --refresh-package agent-context-graph \
   --refresh-package skills-graph \
-  --refresh-package actions-graph
+  --refresh-package actions-graph \
+  --refresh-package sessions-graph
 
 exec agent-context-graph bootstrap --runtime claude-code --connector skills-graph --connector actions-graph --connector sessions-graph --no-reinstall "$@"
