@@ -322,10 +322,10 @@ there is no distilled memory for it to read.
 context-graph-eval run --retrieval-strategy text-search --judge-model anthropic:claude-sonnet-4-5-20250929
 ```
 
-Mechanically: `text_search.ensure_turn_text_index` materializes a plain
-`text` property on every `Action` (turn text lives inside `properties` as a
-JSON string that Memgraph — no APOC here — cannot unpack in Cypher, so this
-is done in Python), then creates a Memgraph `TEXT INDEX` over it. Each
+Mechanically: `text_search.ensure_turn_text_index` creates a Memgraph
+`TEXT INDEX` over `Action.text`, the plain message text `actions-graph` writes
+on user and assistant messages (the full content stays inside `properties` as
+a JSON string, which Cypher can't unpack). Each
 question calls `text_search.search_all` directly — no agent, no Cypher
 generation, no query loop — and hands the top matches to the **exact same
 `answer_prompt`** the graph-agent baseline uses, so a quality difference

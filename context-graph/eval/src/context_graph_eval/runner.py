@@ -119,7 +119,7 @@ class BatchReport:
     scored: list[Scored] = field(default_factory=list)
     reconciled: int = 0
     reconcile_failures: int = 0
-    #: Turns text_search.ensure_turn_text_index materialized and indexed.
+    #: Turns text_search.ensure_turn_text_index indexed.
     #: Always 0 for retrieval_strategy="graph-agent", which never calls it.
     indexed_turns: int = 0
 

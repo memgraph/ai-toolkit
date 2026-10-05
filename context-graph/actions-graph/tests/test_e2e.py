@@ -142,6 +142,47 @@ class TestActionOperations:
         assert message.role == MessageRole.USER
         assert message.action_type == ActionType.USER_MESSAGE
 
+    def test_only_turns_carry_plain_text(self, graph: ActionsGraph):
+        """User and assistant messages get a plain ``text`` property the text and
+        vector indexes can cover; tool traffic and system prompts get none."""
+        graph.create_session(Session(session_id="text-session"))
+        user = graph.record_message(session_id="text-session", role=MessageRole.USER, content="Use uv, not pip")
+        assistant = graph.record_message(
+            session_id="text-session",
+            role=MessageRole.ASSISTANT,
+            content=[
+                {"type": "text", "text": "Switching to uv."},
+                {"type": "tool_use", "name": "Bash", "input": {"command": "uv sync"}},
+                {"type": "text", "text": "Done."},
+            ],
+        )
+        system = graph.record_message(session_id="text-session", role=MessageRole.SYSTEM, content="You are helpful")
+        call = graph.record_tool_call(session_id="text-session", tool_name="Bash", tool_input={"command": "uv sync"})
+        result = graph.record_tool_result(
+            session_id="text-session", tool_use_id="t1", tool_name="Bash", content="Resolved 12 packages"
+        )
+
+        texts = {
+            row["id"]: row["text"]
+            for row in graph.db.query("MATCH (a:Action) RETURN a.action_id AS id, a.text AS text")
+        }
+        assert texts[user.action_id] == "Use uv, not pip"
+        assert texts[assistant.action_id] == "Switching to uv.\nDone."
+        assert texts[system.action_id] is None
+        assert texts[call.action_id] is None
+        assert texts[result.action_id] is None
+
+    def test_an_empty_message_has_no_text(self, graph: ActionsGraph):
+        graph.create_session(Session(session_id="empty-session"))
+        message = graph.record_message(
+            session_id="empty-session",
+            role=MessageRole.ASSISTANT,
+            content=[{"type": "tool_use", "name": "Read", "input": {}}],
+        )
+
+        rows = graph.db.query("MATCH (a:Action {action_id: $id}) RETURN a.text AS text", {"id": message.action_id})
+        assert rows[0]["text"] is None
+
     def test_action_sequence(self, graph: ActionsGraph):
         """Test that actions form a sequence with FOLLOWED_BY."""
         session = Session(session_id="sequence-session")

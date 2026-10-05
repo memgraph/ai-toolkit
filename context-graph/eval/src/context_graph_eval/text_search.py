@@ -15,7 +15,6 @@ answers is "what does the *existing*, zero-effort tool give you", not "what is
 the best possible text-search baseline".
 """
 
-import json
 import re
 import time
 from dataclasses import dataclass
@@ -50,18 +49,16 @@ DEFAULT_LIMIT = 10
 
 @dataclass(frozen=True)
 class Indexed:
-    """What indexing wrote."""
+    """What indexing covered."""
 
     turns: int
 
 
 def ensure_turn_text_index(graph: "ActionsGraph") -> Indexed:
-    """Materialize a plain-text ``text`` property on every turn, index it, and prove search runs.
+    """Index every turn's ``text``, and prove search runs.
 
-    Turn text lives inside ``Action.properties`` as a JSON string, which
-    Memgraph (no APOC) cannot unpack in Cypher -- so ``content`` is extracted
-    in Python and written back as a plain property the index can cover.
-    Actions with no ``content`` string, such as tool calls, are skipped.
+    ``actions-graph`` writes ``text`` on user and assistant messages when it
+    records them, so tool calls and other actions are never indexed.
 
     Ends with a probe through the same :func:`_search` call retrieval makes.
     A search that cannot run fails every question the same way, and the
@@ -73,22 +70,7 @@ def ensure_turn_text_index(graph: "ActionsGraph") -> Indexed:
             rejects the query retrieval would send.
     """
     db = graph.db
-    rows = db.query("MATCH (a:Action) WHERE a.text IS NULL RETURN a.action_id AS action_id, a.properties AS properties")
-
-    materialized = []
-    for row in rows:
-        try:
-            content = json.loads(row["properties"] or "{}").get("content")
-        except ValueError:
-            content = None
-        if isinstance(content, str) and content:
-            materialized.append({"action_id": row["action_id"], "text": content})
-
-    if materialized:
-        db.query(
-            "UNWIND $rows AS row MATCH (a:Action {action_id: row.action_id}) SET a.text = row.text",
-            {"rows": materialized},
-        )
+    turns = db.query("MATCH (a:Action) WHERE a.text IS NOT NULL RETURN count(a) AS n")[0]["n"]
 
     if not _index_exists(db):
         db.query(f"CREATE TEXT INDEX {TEXT_INDEX_NAME} ON :Action(text);")
@@ -99,7 +81,7 @@ def ensure_turn_text_index(graph: "ActionsGraph") -> Indexed:
         _search(db, "probe", limit=1)
     except Exception as exc:
         raise RuntimeError(f"text search cannot run on this Memgraph: {exc}") from exc
-    return Indexed(turns=len(materialized))
+    return Indexed(turns=turns)
 
 
 def _index_exists(db: _Queryable) -> bool:
