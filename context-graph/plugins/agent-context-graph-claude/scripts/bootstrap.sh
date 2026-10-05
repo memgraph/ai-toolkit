@@ -15,7 +15,7 @@ EOF
   exit 1
 fi
 
-uv tool install "agent-context-graph[mcp]>=0.3.0" \
+uv tool install "agent-context-graph[mcp]>=0.3.1" \
   --with "skills-graph[agent-context-graph]>=0.1.3" \
   --with "actions-graph[agent-context-graph]>=0.3.0" \
   --with "sessions-graph[agent-context-graph]>=0.6.0" \
