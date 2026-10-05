@@ -7,7 +7,7 @@ ADR 0002 made `~/.config/context-graph/config.toml` sole runtime source for hook
 Decided:
 
 1. Extend `HookConfig`/`config.toml` with `[llm]` section (`openai_api_key`, `anthropic_api_key`), resolved via `resolve_llm_env()`, mirroring `resolve_memgraph_env()`. `bootstrap` captures these from `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` in env at write time, same as Memgraph credentials — env vars stay write-time convenience only, never consulted at hook runtime.
-2. Spawn site (`SessionsGraphConnector._spawn_reconciliation`) builds **explicit `env=`** for child: copy of current `os.environ` overlaid with non-empty `resolve_memgraph_env()`/`resolve_llm_env()` values. Guarantees detached subprocess gets what hook process resolved, regardless of harness's own ambient environment.
+2. Spawn site (`sessions_graph.connector._spawn_detached`, env from `_child_env`) builds **explicit `env=`** for child: copy of current `os.environ` overlaid with non-empty `resolve_memgraph_env()`/`resolve_llm_env()` values. Guarantees detached subprocess gets what hook process resolved, regardless of harness's own ambient environment.
 3. Defense in depth: `sessions-graph reconcile` (standalone via cron/manual, not only hook-spawned) also best-effort fills same config-file values via `os.environ.setdefault` at startup — consistent whether invoked by hook or by hand. Optional import of `agent_context_graph`, no-op if not installed (sessions-graph's `reconciliation` extra doesn't require it).
 
 Same philosophy as ADR 0002 (config file canonical), closes the gap it missed: subprocesses spawned *by* a hook process, not just the hook process itself.

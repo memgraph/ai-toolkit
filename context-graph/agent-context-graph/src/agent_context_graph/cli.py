@@ -86,6 +86,7 @@ def _config(argv: list[str]) -> int:
         "llm.openai_api_key": "openai_api_key",
         "llm.anthropic_api_key": "anthropic_api_key",
         "reconcile.auto_reconcile": "auto_reconcile",
+        "recall.embedding_model": "embedding_model",
     }
     _SECRET_KEYS = {"memgraph.password", "llm.openai_api_key", "llm.anthropic_api_key"}
     _BOOL_KEYS = {"reconcile.auto_reconcile"}
@@ -117,6 +118,10 @@ def _config(argv: list[str]) -> int:
             print("reconcile.auto_reconcile = unset (defaults to false)")
         else:
             print(f"reconcile.auto_reconcile = {'true' if config.auto_reconcile else 'false'}")
+        if config.embedding_model is None:
+            print("recall.embedding_model = unset (defaults to sessions-graph's model)")
+        else:
+            print(f"recall.embedding_model = {config.embedding_model!r}")
         return 0
 
     if action == "set":
@@ -372,6 +377,8 @@ def _doctor(argv: list[str]) -> int:
     ]
     for connector in connectors:
         checks.append(_check_connector(connector))
+    if any(connector.strip().replace("_", "-") == "sessions-graph" for connector in connectors):
+        checks.append(_check_embeddings())
     checks.append(_check_runtime(args.runtime, connectors))
 
     ok = all(check["ok"] for check in checks)
@@ -526,6 +533,45 @@ def _check_connector(connector_name: str) -> _CheckResult:
         return {"name": f"connector:{connector_name}", "ok": False, "detail": "unsupported connector"}
 
 
+def _check_embeddings() -> _CheckResult:
+    """Whether Memgraph can embed for recall: MAGE's ``embeddings`` module, with the configured model loading.
+
+    The first run downloads the model inside Memgraph, so this can take a while once.
+    """
+    from agent_context_graph.adapters._identity import resolve_embedding_model, resolve_memgraph_env
+
+    try:
+        from sessions_graph.embeddings import DEFAULT_EMBEDDING_MODEL, check_available
+
+        from memgraph_toolbox.api.memgraph import Memgraph
+    except ImportError as exc:
+        return {"name": "embeddings", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+
+    model = resolve_embedding_model() or DEFAULT_EMBEDDING_MODEL
+    env = resolve_memgraph_env()
+    db = None
+    try:
+        db = Memgraph(
+            url=env["MEMGRAPH_URL"],
+            username=env["MEMGRAPH_USER"],
+            password=env["MEMGRAPH_PASSWORD"],
+            database=env["MEMGRAPH_DATABASE"],
+        )
+        dimension = check_available(db, model)
+        return {"name": "embeddings", "ok": True, "detail": f"{model} ({dimension} dimensions) inside Memgraph"}
+    except Exception as exc:
+        return {
+            "name": "embeddings",
+            "ok": False,
+            "detail": f"{model} — {exc}. Recall needs Memgraph with MAGE (memgraph/memgraph-mage, 2 GiB or more); "
+            "without it, recall's vector lanes are off",
+        }
+    finally:
+        driver = getattr(getattr(db, "driver", None), "driver", None)
+        if driver is not None:
+            driver.close()
+
+
 def _check_runtime(runtime: str, connectors: list[str]) -> _CheckResult:
     try:
         from agent_context_graph.hooks.runner import create_link
@@ -563,7 +609,8 @@ def _memgraph_reachable(host: str, port: int) -> bool:
 
 def _memgraph_command(port: int) -> str:
     published = f"{port}:7687"
-    return f"docker run --rm -p {published} memgraph/memgraph"
+    # MAGE, not plain memgraph: sessions-graph embeds for recall with its embeddings module.
+    return f"docker run --rm -p {published} memgraph/memgraph-mage"
 
 
 def _connector_requirement(connector: str) -> str | None:

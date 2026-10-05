@@ -23,7 +23,7 @@ For first-time setup, run the plugin bootstrap once. It delegates to the CLI boo
 If bootstrap says Memgraph is not reachable, tell the user to start Memgraph:
 
 ```bash
-docker run --rm -p 7687:7687 memgraph/memgraph
+docker run --rm -p 7687:7687 memgraph/memgraph-mage
 ```
 
 Run the single CLI doctor first. It checks the same Python environment that the hook command uses:

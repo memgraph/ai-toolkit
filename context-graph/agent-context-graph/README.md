@@ -155,7 +155,7 @@ Prerequisites:
 - Memgraph running and reachable over Bolt. Defaults are `bolt://localhost:7687`, empty user/password, database `memgraph`. If it isn't running locally:
 
   ```bash
-  docker run --rm -p 7687:7687 memgraph/memgraph
+  docker run --rm -p 7687:7687 memgraph/memgraph-mage
   ```
 
 **1. Bootstrap all three connectors** (this is what the installed plugin wires into its hooks):

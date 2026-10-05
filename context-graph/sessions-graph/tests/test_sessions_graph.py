@@ -182,17 +182,19 @@ class TestSessionsGraphConnector:
         assert connector.active_user_id is None
         assert connector.active_session_id is None
 
-    def test_auto_reconcile_defaults_off_and_does_not_spawn_process(self):
+    def test_session_end_always_spawns_embedding_but_not_reconciliation_by_default(self):
         connector, _graph, _db, SessionStartEvent, SessionEndEvent = self._make()
 
         with patch("sessions_graph.connector.subprocess.Popen") as mock_popen:
             connector.on_event(SessionStartEvent(session_id="s-1", user_id="alice"))
             connector.on_event(SessionEndEvent(session_id="s-1"))
 
-        # call_count, not assert_not_called(): the latter's failure message
-        # renders the full call args -- including env=dict(os.environ), real
-        # secrets and all -- which is exactly how this got flagged in review.
-        assert mock_popen.call_count == 0
+        # call_count and the commands only, never the whole call: its args
+        # include env=dict(os.environ), real secrets and all -- which is
+        # exactly how rendering it in a failure message got flagged in review.
+        assert mock_popen.call_count == 1
+        assert mock_popen.call_args.args[0][-3:] == ["embed", "--session", "s-1"]
+        assert mock_popen.call_args.kwargs["start_new_session"] is True
 
     def test_auto_reconcile_true_spawns_detached_process(self, context_graph_config):
         from sessions_graph.connector import SessionsGraphConnector
@@ -213,11 +215,12 @@ class TestSessionsGraphConnector:
             connector.on_event(SessionStartEvent(session_id="s-1", user_id="alice"))
             connector.on_event(SessionEndEvent(session_id="s-1"))
 
-        mock_popen.assert_called_once()
-        command = mock_popen.call_args.args[0]
-        assert command[-3:] == ["reconcile", "--session", "s-1"]
-        assert mock_popen.call_args.kwargs["start_new_session"] is True
-        env = mock_popen.call_args.kwargs["env"]
+        assert mock_popen.call_count == 2
+        embed, reconcile = mock_popen.call_args_list
+        assert embed.args[0][-3:] == ["embed", "--session", "s-1"]
+        assert reconcile.args[0][-3:] == ["reconcile", "--session", "s-1"]
+        assert reconcile.kwargs["start_new_session"] is True
+        env = reconcile.kwargs["env"]
         assert env["MEMGRAPH_URL"] == "bolt://remote:7687"
         assert env["MEMGRAPH_USER"] == "admin"
         assert env["MEMGRAPH_PASSWORD"] == "secret"
@@ -234,8 +237,8 @@ class TestSessionsGraphConnector:
 
 
 class TestReconciliationEnv:
-    """Unit tests for connector._reconciliation_env(), the fix for the detached
-    ``sessions-graph reconcile`` subprocess never seeing resolved Memgraph/LLM config.
+    """Unit tests for connector._child_env(), the fix for the detached
+    ``sessions-graph`` subprocesses never seeing resolved Memgraph/LLM config.
     """
 
     @pytest.fixture()
@@ -254,24 +257,37 @@ class TestReconciliationEnv:
         _identity._reset_cache()
 
     def test_merges_config_onto_ambient_env(self, context_graph_config, monkeypatch):
-        from sessions_graph.connector import _reconciliation_env
+        from sessions_graph.connector import _child_env
 
         monkeypatch.setenv("PATH", "/usr/bin")
         context_graph_config.write_full_config(memgraph_url="bolt://remote:7687", openai_api_key="sk-test")
         context_graph_config._reset_cache()
 
-        env = _reconciliation_env()
+        env = _child_env(llm=True)
 
         assert env["PATH"] == "/usr/bin"  # ambient env preserved
         assert env["MEMGRAPH_URL"] == "bolt://remote:7687"
         assert env["OPENAI_API_KEY"] == "sk-test"
 
     def test_ambient_llm_key_preserved_when_config_empty(self, context_graph_config, monkeypatch):
-        from sessions_graph.connector import _reconciliation_env
+        from sessions_graph.connector import _child_env
 
         monkeypatch.setenv("OPENAI_API_KEY", "ambient-key")
 
-        env = _reconciliation_env()
+        env = _child_env(llm=True)
 
         # config.toml has no openai_api_key set -> must not clobber the ambient value
         assert env["OPENAI_API_KEY"] == "ambient-key"
+
+    def test_embedding_env_gets_memgraph_but_not_configured_llm_keys(self, context_graph_config, monkeypatch):
+        """Embedding runs inside Memgraph; the child needs the connection, not the keys."""
+        from sessions_graph.connector import _child_env
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        context_graph_config.write_full_config(memgraph_url="bolt://remote:7687", openai_api_key="sk-test")
+        context_graph_config._reset_cache()
+
+        env = _child_env(llm=False)
+
+        assert env["MEMGRAPH_URL"] == "bolt://remote:7687"
+        assert "OPENAI_API_KEY" not in env
