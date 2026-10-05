@@ -67,6 +67,30 @@ class _BaseActionKwargs(TypedDict):
     metadata: dict[str, Any]
 
 
+#: The conversation turns: what the user and the assistant said, not tool traffic or system prompts.
+_TURN_TYPES = (ActionType.USER_MESSAGE, ActionType.ASSISTANT_MESSAGE)
+
+
+def _message_text(action: Action) -> str | None:
+    """A turn's plain text, or None for anything that isn't a user or assistant message.
+
+    Stored as its own property because ``properties`` is a JSON string that
+    Cypher can't unpack, and both the full-text and the vector index need a
+    plain property to cover. Content blocks contribute their ``text`` blocks only.
+    """
+    if not isinstance(action, Message) or action.action_type not in _TURN_TYPES:
+        return None
+    if isinstance(action.content, str):
+        text = action.content
+    else:
+        text = "\n".join(
+            block["text"]
+            for block in action.content
+            if block.get("type") == "text" and isinstance(block.get("text"), str)
+        )
+    return text or None
+
+
 class ActionsGraph:
     """Store and query LLM actions and sessions in Memgraph.
 
@@ -721,6 +745,7 @@ class ActionsGraph:
         _tool_name: str | None = props.get("tool_name") or getattr(action, "tool_name", None)
         _is_error: bool = bool(props.get("is_error", False))
         _is_mcp: bool = bool(props.get("is_mcp", False))
+        text = _message_text(action)
 
         # Create the action node
         self._db.query(
@@ -736,6 +761,7 @@ class ActionsGraph:
                 tool_name: $tool_name,
                 is_error: $is_error,
                 is_mcp: $is_mcp,
+                text: $text,
                 properties: $properties
             }})
             """,
@@ -750,6 +776,7 @@ class ActionsGraph:
                 "tool_name": _tool_name,
                 "is_error": _is_error,
                 "is_mcp": _is_mcp,
+                "text": text,
                 "properties": json.dumps(props),
             },
         )

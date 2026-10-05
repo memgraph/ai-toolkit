@@ -61,16 +61,24 @@ class SessionsGraphConnector(GraphConnector):
       - Clears the tracked active session context.
       - Marks the Session node ``reconciliation_status = 'pending'`` (cheap,
         synchronous, no LLM calls -- safe inside a hook runtime timeout).
+      - Always spawns a **detached** ``sessions-graph embed`` process that
+        embeds the session's messages inside Memgraph for recall. It costs no
+        LLM, so it doesn't wait on ``auto_reconcile``; the hook never waits on
+        the model. ``sessions-graph embed --pending`` retries what fails.
       - If ``auto_reconcile`` is enabled, best-effort spawns a **detached**
         background process to run the actual (slow, LLM-backed) reconciliation,
         so this hook call itself never waits on it. The reliable path if that
         detached process dies is the ``sessions-graph reconcile --pending`` CLI.
 
     On ``TURN_END``:
-      - Marks the Session node ``reconciliation_status = 'pending'`` only, and
-        never spawns reconciliation: the session is still open, and runtimes
-        without a session-end hook signal nothing else. The ``--pending``
-        sweep reconciles it, and a later turn marks it pending again.
+      - Marks the Session node ``reconciliation_status = 'pending'``.
+      - Spawns the same detached ``sessions-graph embed`` as a session end:
+        it needs no LLM, so recall covers each turn as soon as it ends, and
+        runtimes without a session-end hook (Codex, Antigravity,
+        ``opencode run``) get embedded at all.
+      - Never spawns reconciliation: the session is still open and that step
+        costs LLM calls. The ``--pending`` sweep reconciles it, and a later
+        turn marks it pending again.
 
     Args:
         graph: An initialised :class:`SessionsGraph` instance.
@@ -104,7 +112,7 @@ class SessionsGraphConnector(GraphConnector):
         elif isinstance(event, SessionEndEvent):
             self._on_session_end(event)
         elif isinstance(event, TurnEndEvent):
-            self._mark_pending_reconciliation(event.session_id)
+            self._on_turn_end(event)
 
     # ------------------------------------------------------------------
     # Active session context (convenience for callers)
@@ -151,8 +159,13 @@ class SessionsGraphConnector(GraphConnector):
         self._active_user_id = None
         self._active_session_id = None
         self._mark_pending_reconciliation(event.session_id)
+        _spawn_detached(["embed", "--session", event.session_id], env=_child_env(llm=False))
         if self._auto_reconcile:
-            self._spawn_reconciliation(event.session_id)
+            _spawn_detached(["reconcile", "--session", event.session_id], env=_child_env(llm=True))
+
+    def _on_turn_end(self, event: TurnEndEvent) -> None:
+        self._mark_pending_reconciliation(event.session_id)
+        _spawn_detached(["embed", "--session", event.session_id], env=_child_env(llm=False))
 
     def _mark_pending_reconciliation(self, session_id: str) -> None:
         self._graph._db.query(
@@ -160,26 +173,27 @@ class SessionsGraphConnector(GraphConnector):
             params={"session_id": session_id},
         )
 
-    @staticmethod
-    def _spawn_reconciliation(session_id: str) -> None:
-        executable = shutil.which("sessions-graph")
-        command = [executable] if executable else [sys.executable, "-m", "sessions_graph.cli"]
-        command += ["reconcile", "--session", session_id]
-        try:
-            subprocess.Popen(
-                command,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-                env=_reconciliation_env(),
-            )
-        except OSError as e:
-            logger.warning(f"Could not spawn detached reconciliation process for session {session_id}: {e}")
+
+def _spawn_detached(args: list[str], *, env: dict[str, str]) -> None:
+    """Start ``sessions-graph <args>`` in its own session, never waited on; a failure to start is logged."""
+    executable = shutil.which("sessions-graph")
+    command = [executable] if executable else [sys.executable, "-m", "sessions_graph.cli"]
+    command += args
+    try:
+        subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            env=env,
+        )
+    except OSError as e:
+        logger.warning(f"Could not spawn detached `sessions-graph {' '.join(args)}`: {e}")
 
 
-def _reconciliation_env() -> dict[str, str]:
-    """Build the environment for the detached ``sessions-graph reconcile`` subprocess.
+def _child_env(*, llm: bool) -> dict[str, str]:
+    """Build the environment for a detached ``sessions-graph`` subprocess.
 
     This hook process resolves Memgraph connection settings from
     ``~/.config/context-graph/config.toml`` (per ADR 0002) purely as constructor
@@ -190,10 +204,14 @@ def _reconciliation_env() -> dict[str, str]:
     resolution onto a copy of the ambient environment so the child gets what this
     process would have used, without discarding real ambient values (e.g. an
     OPENAI_API_KEY already exported) when config-file values are unset.
+
+    ``llm`` adds the configured LLM keys: reconciliation needs them, embedding
+    runs inside Memgraph and doesn't.
     """
     from agent_context_graph.adapters._identity import resolve_llm_env, resolve_memgraph_env
 
     env = dict(os.environ)
     env.update({k: v for k, v in resolve_memgraph_env().items() if v})
-    env.update({k: v for k, v in resolve_llm_env().items() if v})
+    if llm:
+        env.update({k: v for k, v in resolve_llm_env().items() if v})
     return env

@@ -16,7 +16,7 @@ from actions_graph import ActionsGraph
 from actions_graph.models import Message
 
 
-def _fixture(session_id: str, *, holds_evidence: bool = False) -> SessionFixture:
+def _fixture(session_id: str, *, holds_evidence: bool = False, user_id: str = "u1") -> SessionFixture:
     return SessionFixture(
         session_id=session_id,
         date="2023/05/20 (Sat) 14:03",
@@ -25,6 +25,7 @@ def _fixture(session_id: str, *, holds_evidence: bool = False) -> SessionFixture
             Turn(role="assistant", content=f"an assistant reply in {session_id}"),
         ],
         holds_evidence=holds_evidence,
+        user_id=user_id,
     )
 
 
@@ -157,3 +158,32 @@ def test_a_stale_vector_index_does_not_survive_a_wipe(eval_graph: ActionsGraph):
 
     names = {row["index_name"] for row in eval_graph._db.query("SHOW VECTOR INDEX INFO")}
     assert "stale_test_index" not in names
+
+
+def test_turns_are_stamped_with_the_session_date_in_order(eval_graph: ActionsGraph):
+    """An extracted fact's valid_at is its source turn's timestamp (#364), so a
+    turn must carry its session's date, not the time the eval ran."""
+    inject_batch([_fixture("s1")], graph=eval_graph)
+
+    session = eval_graph.get_session("s1")
+    assert session is not None
+    assert session.started_at == "2023-05-20T14:03:00+00:00"
+    assert [a.timestamp for a in eval_graph.get_session_actions("s1")] == [
+        "2023-05-20T14:03:00+00:00",
+        "2023-05-20T14:03:01+00:00",
+    ]
+
+
+def test_every_session_belongs_to_its_questions_user(eval_graph: ActionsGraph):
+    """A haystack is one person's history: one question's sessions share a
+    (:User), so its facts are gatherable across them, and another question's
+    sessions belong to someone else."""
+    inject_batch(
+        [_fixture("s1", user_id="q1"), _fixture("s2", user_id="q1"), _fixture("s3", user_id="q2")],
+        graph=eval_graph,
+    )
+
+    rows = eval_graph.db.query(
+        "MATCH (u:User)-[:HAD_SESSION]->(s:Session) RETURN u.user_id AS user, count(s) AS sessions ORDER BY user"
+    )
+    assert rows == [{"user": "q1", "sessions": 2}, {"user": "q2", "sessions": 1}]

@@ -30,6 +30,19 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
 #: visible rather than buried in metric configuration.
 DEFAULT_COVERAGE_THRESHOLD = 0.7
 
+#: deepeval's name for ContextualRecallMetric: the retrieval signal. Reported
+#: per question, never gating -- it asks whether one retrieved row supports the
+#: expected answer, so a correct computed answer ("17 days", "3") has no row to
+#: point at and scored 0. 11 of 52 misses in a 100-question hybrid run were
+#: correct answers failed this way (#397).
+RETRIEVAL_SIGNAL = "Contextual Recall"
+
+#: Which judge decides ``covered``, recorded on every saved run so compare()
+#: refuses across a gate change: "official" -- LongMemEval's own judge (#409) --
+#: or, when it isn't configured, "answer" -- the deepeval answer rubric alone.
+COVERAGE_GATE = "official"
+RUBRIC_GATE = "answer"
+
 #: Tokenizer for the efficiency count. Pinned for the same reason #304 pins the
 #: judge model: a tokenizer change silently shifts every efficiency number, and
 #: two runs measured differently are not comparable.
@@ -47,12 +60,10 @@ class Scored:
     efficiency_tokens: int
     abstention: bool = False
     answer: str = ""
-    #: Per-metric scores behind ``coverage``. Kept because ``coverage`` is
-    #: min() of them, which gates correctly but discards which stage failed --
-    #: ContextualRecall scores retrieval, the GEval rubric scores the answer.
-    #: #304 noted that attribution "falls out for nothing"; collapsing to one
-    #: number was throwing it away. Absent for abstention questions, which are
-    #: judged on the rubric alone.
+    #: Every judge score, keyed by metric name. ``coverage`` is the answer
+    #: rubric's (see gate_score); RETRIEVAL_SIGNAL is kept beside it so a
+    #: failure can still be attributed to retrieval or to the answer.
+    #: Abstention questions carry no retrieval signal.
     metric_scores: dict[str, float] = field(default_factory=dict)
     #: The judge's own explanation behind each metric_scores entry, same keys.
     #: deepeval generates this whether or not anyone keeps it -- it cost
@@ -75,6 +86,20 @@ class Scored:
     #: the attempt itself in that case, since retrieve() has no Retrieved to
     #: report the elapsed time through when it never returns.
     latency_seconds: float = 0.0
+    #: Share of the question's evidence turns (LongMemEval's ``has_answer``)
+    #: found in what retrieval returned -- deterministic, no judge (#403).
+    #: None when the question marks no evidence, as abstention questions don't.
+    evidence_recall: float | None = None
+    #: Who decided ``covered``: "official" (LongMemEval's judge) or "answer"
+    #: (the deepeval answer rubric, whose score is ``coverage`` either way).
+    judged_by: str = "answer"
+    #: LongMemEval's judge's verdict; None when it didn't run or its call failed.
+    official_correct: bool | None = None
+
+    @property
+    def judged(self) -> bool:
+        """Whether the judge that decides ``covered`` produced a verdict -- not an outage."""
+        return self.official_correct is not None if self.judged_by == "official" else bool(self.metric_scores)
 
 
 @dataclass(frozen=True)
@@ -95,6 +120,10 @@ class TierReport:
     abstention_correct: int = 0
     #: Questions with no metric scores at all. A judge failure, not a low score.
     unscored: int = 0
+    #: Of the judge-scored questions carrying a retrieval signal, how many had
+    #: Contextual Recall at the threshold. Reported, not gated.
+    retrieval_supported: int = 0
+    retrieval_judged: int = 0
     #: Mean, not median: unlike efficiency_tokens (#309's gate, deliberately
     #: robust to one pathological payload), these are the blog-comparison
     #: metrics themselves -- a single outlier answer should show up in the
@@ -106,6 +135,13 @@ class TierReport:
     mean_bleu: float | None = None
     mean_f1: float | None = None
     mean_latency_seconds: float | None = None
+    #: The deepeval answer rubrics' own coverage count, shown beside the
+    #: official judge's when that decides ``covered``; None when it doesn't.
+    rubric_covered: int | None = None
+    #: Questions with marked evidence, and how many had every evidence turn retrieved.
+    evidence_judged: int = 0
+    evidence_complete: int = 0
+    mean_evidence_recall: float | None = None
 
 
 @dataclass(frozen=True)
@@ -201,6 +237,35 @@ def bleu_score(expected_output: str | None, answer: str) -> float:
         return Scorer.sentence_bleu_score(references=expected_output, prediction=answer, bleu_type="bleu1")
 
 
+#: How much of an evidence turn must appear in a retrieved row for it to count
+#: as found: its opening, whitespace-collapsed. Rows truncate long turns
+#: (hybrid's turn_chars), so the whole turn can't be required.
+EVIDENCE_MATCH_CHARS = 200
+
+
+def _collapsed(text: str) -> str:
+    return " ".join(text.split())
+
+
+def evidence_recall(evidence: list[str] | None, retrieved: list[str]) -> float | None:
+    """The share of ``evidence`` turns whose opening appears in a ``retrieved`` row, or None without evidence.
+
+    Evidence turns are the corpus's ``"role: content"`` strings (see
+    ``convert.longmemeval._evidence_turns``). Unlike Contextual Recall this
+    checks the turns an answer is built from, not the answer itself, so a
+    computed answer ("17 days") whose parts were all retrieved scores 1.0.
+    """
+    if not evidence:
+        return None
+    haystack = _collapsed("\n".join(retrieved))
+    found = 0
+    for turn in evidence:
+        _, _, content = turn.partition(": ")
+        if _collapsed(content)[:EVIDENCE_MATCH_CHARS] in haystack:
+            found += 1
+    return found / len(evidence)
+
+
 def token_f1_score(expected_output: str | None, answer: str) -> float:
     """Token-level F1 between the retrieved answer and the expected output --
     precision and recall over shared tokens, the same formula LongMemEval's
@@ -249,6 +314,16 @@ def _encoding(tokenizer: str = DEFAULT_TOKENIZER):
     return tiktoken.get_encoding(tokenizer)
 
 
+def gate_score(scores: dict[str, float]) -> float:
+    """A question's coverage: its answer rubric's score, or 0.0 when the judge returned none.
+
+    Every score but RETRIEVAL_SIGNAL is an answer rubric (Coverage, or
+    Abstention), and the weakest of them gates.
+    """
+    answer = [score for name, score in scores.items() if name != RETRIEVAL_SIGNAL]
+    return min(answer) if answer else 0.0
+
+
 def gate_and_rank(scored: list[Scored]) -> list[Scored]:
     """Questions that cleared coverage, cheapest payload first.
 
@@ -270,10 +345,13 @@ def aggregate(scored: list[Scored]) -> RunReport:
         # score, so it is excluded from the rate and surfaced separately.
         # Coverage and (gated) efficiency need a judge's verdict, so they are
         # aggregated over this judge-scored subset only, not over all_rows.
-        judge_scored_rows = [s for s in all_rows if s.metric_scores]
+        judge_scored_rows = [s for s in all_rows if s.judged]
+        official = any(s.judged_by == "official" for s in all_rows)
         unscored = len(all_rows) - len(judge_scored_rows)
         covered = [s for s in judge_scored_rows if s.covered]
         abstentions = [s for s in judge_scored_rows if s.abstention]
+        recall = [s.metric_scores[RETRIEVAL_SIGNAL] for s in judge_scored_rows if RETRIEVAL_SIGNAL in s.metric_scores]
+        evidence = [s.evidence_recall for s in all_rows if s.evidence_recall is not None]
         by_tier[tier] = TierReport(
             unscored=unscored,
             questions=len(judge_scored_rows),
@@ -284,6 +362,8 @@ def aggregate(scored: list[Scored]) -> RunReport:
             median_efficiency_tokens=(int(median([s.efficiency_tokens for s in covered])) if covered else None),
             abstention_total=len(abstentions),
             abstention_correct=sum(1 for s in abstentions if s.covered),
+            retrieval_supported=sum(1 for score in recall if score >= DEFAULT_COVERAGE_THRESHOLD),
+            retrieval_judged=len(recall),
             # Over all_rows, not judge_scored_rows: BLEU/F1/latency need no
             # judge, so a judge-free run (or one where the judge errored on
             # some questions) must still aggregate them over everything that
@@ -292,6 +372,15 @@ def aggregate(scored: list[Scored]) -> RunReport:
             mean_bleu=(mean(s.bleu for s in all_rows) if all_rows else None),
             mean_f1=(mean(s.f1 for s in all_rows) if all_rows else None),
             mean_latency_seconds=(mean(s.latency_seconds for s in all_rows) if all_rows else None),
+            rubric_covered=(
+                sum(1 for s in judge_scored_rows if s.metric_scores and s.coverage >= DEFAULT_COVERAGE_THRESHOLD)
+                if official
+                else None
+            ),
+            # Judge-free like BLEU/F1, so over all_rows too.
+            evidence_judged=len(evidence),
+            evidence_complete=sum(1 for share in evidence if share == 1.0),
+            mean_evidence_recall=(mean(evidence) if evidence else None),
         )
     return RunReport(by_tier=by_tier)
 
@@ -327,26 +416,76 @@ def enforce_retrieval_floor(scored: list[Scored], *, retrieved_tokens: dict[str,
     return floored
 
 
-def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list[Any]:
+#: The rubrics' evaluation steps, fixed rather than generated. deepeval copies
+#: each metric per test case, so a GEval without explicit steps asks the judge
+#: to write them afresh for every question: one extra judge call per question
+#: per rubric, and every question graded against slightly different steps.
+COVERAGE_STEPS = [
+    "List every distinct fact stated in the expected output.",
+    "For each fact, check whether the actual output states it, allowing paraphrase and equivalent values.",
+    "Extra detail in the actual output does not reduce the score; a missing or contradicted fact does.",
+    "Score high only if every fact is present, and low if any is missing.",
+]
+#: LongMemEval's own preference judge accepts a response that "recalls and
+#: utilizes the user's personal information correctly" without reflecting every
+#: point of the rubric; these steps follow it so scores stay comparable (#404).
+PREFERENCE_STEPS = [
+    "The expected output is a rubric describing a desired personalized response, not a list of facts.",
+    "Check whether the actual output recalls the user's personal information the rubric points to "
+    "and uses it to shape its answer.",
+    "The actual output need not reflect every point of the rubric.",
+    "A generic answer, one that ignores or contradicts the user's stated preferences, "
+    'or "not in memory" is a failure.',
+]
+ABSTENTION_STEPS = [
+    "The expected output says the information is not in memory.",
+    "Check whether the actual output declines to answer, says the information is absent, or gives a correct zero count.",
+    "A confident specific answer that is not a zero count is a failure.",
+    "Mentioning what the user did say instead is a bonus, never a requirement.",
+]
+
+
+#: LongMemEval's question type whose expected output is a rubric for a personalized answer.
+PREFERENCE_QUESTION_TYPE = "single-session-preference"
+#: Which answer rubric judges a question; see build_metrics.
+RUBRICS = ("answer", "abstention", "preference")
+
+
+def rubric_for(metadata: dict[str, Any]) -> str:
+    """The answer rubric a golden is judged by, from its ``additional_metadata``."""
+    if metadata.get("abstention"):
+        return "abstention"
+    if metadata.get("question_type") == PREFERENCE_QUESTION_TYPE:
+        return "preference"
+    return "answer"
+
+
+def build_metrics(judge: Any | None = None, *, rubric: str = "answer") -> list[Any]:
     """The judged half of the rubric: a deliberately minimal pair (#304).
 
-    ``ContextualRecallMetric`` scores retrieval-side coverage -- its required
-    params are exactly the Golden fields #302 locked -- and one ``GEval`` rubric
-    scores the answer itself, since no built-in asks whether ``actual_output``
-    contains every fact in ``expected_output``, which is the real question when
-    an answer key exists.
+    One ``GEval`` rubric scores the answer itself, since no built-in asks
+    whether ``actual_output`` contains every fact in ``expected_output``, which
+    is the real question when an answer key exists; it alone gates (see
+    gate_score). ``ContextualRecallMetric`` scores retrieval-side coverage --
+    its required params are exactly the Golden fields #302 locked -- and is
+    reported beside it.
 
     ``Faithfulness`` and ``AnswerRelevancy`` are deliberately omitted: both
     exist mainly for the no-ground-truth case, and every extra metric is another
     judge call per question, multiplied again by re-running per schema
     candidate.
 
+    **Preference questions swap Coverage for a Preference rubric.** Their
+    expected output describes a good personalized answer rather than stating
+    facts, so they are judged on whether the answer uses the user's stated
+    preferences, as LongMemEval's own judge does.
+
     **Abstention questions drop ContextualRecall entirely.** That metric asks
     whether the retrieved context supports the expected output -- but for a
     question whose correct answer is "that isn't in memory", the correct
     retrieved context is *empty*. It therefore scores near zero by
-    construction, and since coverage takes the weakest metric, it made every
-    abstention question unpassable however well the agent behaved. Measured
+    construction, and back when coverage took the weakest of every metric, it
+    made every abstention question unpassable however well the agent behaved. Measured
     before this fix: abstention scored 0/8 while the agent had correctly
     declined on at least four. Only the rubric, which knows to require a
     refusal, applies to these.
@@ -355,7 +494,7 @@ def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list
     from deepeval.test_case import LLMTestCaseParams
 
     metrics: list[Any] = []
-    if abstention:
+    if rubric == "abstention":
         # Its own rubric, because these questions measure a different thing.
         # Upstream pairs the refusal with a contrastive fact -- "You mentioned
         # your cat Luna but not your hamster" -- so the Coverage rubric below,
@@ -377,6 +516,7 @@ def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list
                     "zero count all pass. A confident specific answer is a failure. "
                     "Naming what the user did mention instead is a bonus, not a requirement."
                 ),
+                evaluation_steps=ABSTENTION_STEPS,
                 evaluation_params=[
                     LLMTestCaseParams.INPUT,
                     LLMTestCaseParams.ACTUAL_OUTPUT,
@@ -388,6 +528,29 @@ def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list
         ]
 
     metrics.append(ContextualRecallMetric(threshold=DEFAULT_COVERAGE_THRESHOLD, model=judge))
+    if rubric == "preference":
+        # The expected output describes a good recommendation ("would prefer
+        # Sony-compatible accessories"), so Coverage's every-fact check failed
+        # answers that did exactly that: 0/6, scoring 0.2-0.6 (#404).
+        metrics.append(
+            GEval(
+                name="Preference",
+                criteria=(
+                    "The expected output is a rubric for a desired personalized response. Does the actual "
+                    "output satisfy it? It need not reflect every point of the rubric; it is correct as long "
+                    "as it recalls and uses the user's personal information correctly."
+                ),
+                evaluation_steps=PREFERENCE_STEPS,
+                evaluation_params=[
+                    LLMTestCaseParams.INPUT,
+                    LLMTestCaseParams.ACTUAL_OUTPUT,
+                    LLMTestCaseParams.EXPECTED_OUTPUT,
+                ],
+                threshold=DEFAULT_COVERAGE_THRESHOLD,
+                model=judge,
+            )
+        )
+        return metrics
     metrics.append(
         GEval(
             name="Coverage",
@@ -395,6 +558,7 @@ def build_metrics(judge: Any | None = None, *, abstention: bool = False) -> list
                 "Does the actual output contain every fact present in the expected output? "
                 "Extra detail is acceptable. A missing fact is a failure."
             ),
+            evaluation_steps=COVERAGE_STEPS,
             evaluation_params=[
                 LLMTestCaseParams.INPUT,
                 LLMTestCaseParams.ACTUAL_OUTPUT,
@@ -412,6 +576,9 @@ def to_test_case(golden: "Golden", retrieved: "Retrieved") -> Any:
     from deepeval.test_case import LLMTestCase
 
     return LLMTestCase(
+        # Named so the judge's results can be matched back to their question:
+        # deepeval returns them in completion order, not input order.
+        name=golden.name,
         input=golden.input,
         actual_output=retrieved.answer,
         expected_output=golden.expected_output,

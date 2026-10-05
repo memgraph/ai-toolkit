@@ -21,6 +21,7 @@ Memgraph graph.
 | `integrations/langchain-memgraph/` | LangChain graph store, QA chain, toolkit. |
 | `integrations/mcp-memgraph/` | MCP server exposing Memgraph to LLMs. |
 | `integrations/lightrag-memgraph/` | LightRAG storage backends (KV/vector/doc-status/graph) on Memgraph. |
+| `hygm/` | Shared graph schema/ontology model (`NodeType`, `RelationType` with `start_labels`/`end_labels`, `identity`), its validation gate, and the strategies that produce one (`ManualStrategy` YAML; `LlmRecommendationStrategy` interface only). Pure Python, no Memgraph. Not the same package as `agents/sql2graph`'s HyGM. |
 | `unstructured2graph/` | Chunks unstructured input (files/URLs/text) and runs entity/relation extraction through a pluggable `ExtractionBackend` (`LightRAGBackend` by default; `GLiNER2Backend` for local, LLM-free extraction, manual-install only -- see its module docstring). Outside the Context Graph family but shares its testing conventions. |
 | `agents/sql2graph/` | MySQL/Postgres → Memgraph migration agent. Has its own `uv.lock`/`.python-version`; run it with `cd agents/sql2graph && uv run main.py`. |
 | `context-graph/` | The Context Graph family — see below. |
@@ -31,7 +32,7 @@ Memgraph graph.
 
 | Package | Role |
 |---|---|
-| `agent-context-graph` | Event hub. Normalizes runtime hooks / SDK activity into a shared Event Protocol and routes it to graph connectors. |
+| `agent-context-graph` | Event hub. Normalizes runtime hooks / SDK activity into a shared Event Protocol and routes it to graph connectors. Also serves components' read tools (e.g. sessions-graph's `recall`) to the harness's model over stdio MCP (`agent-context-graph mcp`). |
 | `actions-graph` | Records tool calls/results/messages/subagent activity as `(:Action)`/`(:Agent)` nodes — observability, not memory. |
 | `skills-graph` | Tracks Agent-Skills-spec `(:Skill)` usage per session. |
 | `sessions-graph` | Owns `(:User)`/`(:Session)`, durable `(:Memory)` writes/recall, and session reconciliation into `(:Episode)` + extracted entities. |

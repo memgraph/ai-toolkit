@@ -6,6 +6,7 @@ test the printer at its seam by capturing stdout, rather than reaching into the
 branch structure.
 """
 
+import pytest
 from context_graph_eval.cli import (
     DEFAULT_JUDGE_MODEL,
     _build_model,
@@ -18,8 +19,10 @@ from context_graph_eval.runner import BatchReport
 from context_graph_eval.scoring import Scored, aggregate
 
 
-def _report(scored: list[Scored]) -> BatchReport:
-    return BatchReport(by_tier=aggregate(scored).by_tier, scored=scored)
+def _report(scored: list[Scored], *, indexed_turns: int = 0, reconciled: int = 0) -> BatchReport:
+    return BatchReport(
+        by_tier=aggregate(scored).by_tier, scored=scored, indexed_turns=indexed_turns, reconciled=reconciled
+    )
 
 
 def _scored(name, *, covered=True, tokens=100, judged=True, metric_reasons=None):
@@ -66,6 +69,17 @@ def test_a_judged_run_reports_both_coverage_and_efficiency(capsys):
     assert "efficiency    median 120 tokens" in out
 
 
+def test_a_text_search_run_reports_the_index_not_reconciliation(capsys):
+    """The text-search baseline never reconciles anything -- printing
+    "reconciled 0 sessions" would read as an outage rather than as the
+    strategy's whole point."""
+    _print_report(_report([_scored("q1", covered=True)], indexed_turns=7, reconciled=0), judged=True)
+
+    out = capsys.readouterr().out
+    assert "text-search index: 7 turns indexed" in out
+    assert "reconciled" not in out
+
+
 def test_a_judge_outage_is_reported_as_unscored_not_as_zero(capsys):
     """Observed live: the judge's provider ran out of credit, every metric
     errored, and the run printed "coverage 0/2 (0%)" -- an outage rendered as a
@@ -108,6 +122,31 @@ def test_a_failure_with_no_reason_recorded_prints_no_example_line(capsys):
     out = capsys.readouterr().out
     assert "failed on     Coverage: 1" in out
     assert "e.g." not in out
+
+
+def test_a_failure_says_whether_retrieval_had_found_the_evidence(capsys):
+    """Contextual Recall no longer gates, but it is what tells an answering
+    failure from a retrieval one."""
+    rows = [
+        Scored(
+            name=name,
+            tier=1,
+            coverage=0.2,
+            covered=False,
+            efficiency_tokens=100,
+            metric_scores={"Contextual Recall": recall, "Coverage [GEval]": 0.2},
+            evidence_recall=evidence,
+        )
+        for name, recall, evidence in (("q1", 0.1, 0.0), ("q2", 0.9, 0.5), ("q3", 1.0, 1.0))
+    ]
+    _print_report(_report(rows), judged=True)
+
+    out = capsys.readouterr().out
+    assert "failed on     Coverage [GEval]: 3" in out
+    assert "contextual recall low on 1, passed on 2" in out
+    assert "evidence: all retrieved on 1, some on 1, none on 1" in out
+    assert "contextual recall passed on 2/3 (reported, not gated)" in out
+    assert "every evidence turn retrieved on 1/3 (mean recall 0.50)" in out
 
 
 def test_a_run_without_a_judge_does_not_cry_outage(capsys):
@@ -161,3 +200,56 @@ def test_no_model_is_built_without_a_matching_api_key(monkeypatch):
 
     assert _build_model("anthropic", None) is None
     assert _build_model("openai", None) is None
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "expected"),
+    [
+        ("anthropic", "claude-sonnet-4-5-20250929", {}),  # no effort knob; no thinking unless asked
+        ("anthropic", "claude-haiku-4-5", {}),
+        ("anthropic", "claude-sonnet-4-6", {"output_config": {"effort": "low"}}),
+        ("anthropic", "claude-sonnet-5-5", {"output_config": {"effort": "low"}}),
+        ("anthropic", "claude-opus-5-5", {"output_config": {"effort": "low"}}),
+        ("openai", "gpt-4o", {}),
+        ("openai", "gpt-5-mini", {"reasoning_effort": "minimal"}),
+        ("openai", "o4-mini", {"reasoning_effort": "low"}),
+    ],
+)
+def test_judges_run_at_their_lowest_effort(provider, model, expected):
+    from context_graph_eval.cli import minimal_effort_kwargs
+
+    assert minimal_effort_kwargs(provider, model) == expected
+
+
+def test_the_official_judge_runs_only_when_judging_and_an_openai_key_exists(monkeypatch, capsys):
+    from context_graph_eval.cli import _official_judge_model
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    assert _official_judge_model("gpt-4o-2024-08-06", judging=True) == "gpt-4o-2024-08-06"
+    assert _official_judge_model("gpt-4o-2024-08-06", judging=False) is None
+    assert _official_judge_model("none", judging=True) is None
+
+    monkeypatch.delenv("OPENAI_API_KEY")
+    assert _official_judge_model("gpt-4o-2024-08-06", judging=True) is None
+    assert "falls back to the deepeval answer rubrics" in capsys.readouterr().err
+
+
+def test_the_official_judges_coverage_is_the_headline_with_the_rubrics_beside_it(capsys):
+    rows = [
+        Scored(
+            name=name,
+            tier=1,
+            coverage=rubric,
+            covered=official,
+            efficiency_tokens=100,
+            metric_scores={"Coverage [GEval]": rubric},
+            judged_by="official",
+            official_correct=official,
+        )
+        for name, official, rubric in (("q1", True, 0.9), ("q2", True, 0.2), ("q3", False, 0.1))
+    ]
+    _print_report(_report(rows), judged=True)
+
+    out = capsys.readouterr().out
+    assert "coverage      2/3 (67%) -- LongMemEval judge" in out
+    assert "rubrics       1/3 (deepeval answer rubrics)" in out

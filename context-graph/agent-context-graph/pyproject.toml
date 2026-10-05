@@ -31,10 +31,14 @@ grok = "agent_context_graph.adapters.grok:PLUGIN"
 claude = [
     "claude-agent-sdk>=0.1.0",
 ]
+mcp = [
+    "mcp>=1.23.0",
+]
 openai = [
     "openai-agents>=0.1.0",
 ]
 test = [
+    "mcp>=1.23.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=0.24.0",
 ]

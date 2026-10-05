@@ -23,6 +23,8 @@ Commands:
   doctor           Check runtime hook dependencies and Memgraph connectivity.
   setup <runtime>  Configure an agent runtime.
   hook <command>  Configure or run command hooks.
+  mcp              Serve the registered tools (recall, ...) over stdio MCP.
+  recall <question>  Search your own past sessions; --json for the data.
 """
 
 
@@ -48,6 +50,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "doctor":
         return _doctor(args[1:])
+
+    if command == "mcp":
+        return _mcp(args[1:])
+
+    if command == "recall":
+        return _recall(args[1:])
 
     if command == "hook":
         from agent_context_graph.hooks.cli import main as hook_main
@@ -86,6 +94,7 @@ def _config(argv: list[str]) -> int:
         "llm.openai_api_key": "openai_api_key",
         "llm.anthropic_api_key": "anthropic_api_key",
         "reconcile.auto_reconcile": "auto_reconcile",
+        "recall.embedding_model": "embedding_model",
     }
     _SECRET_KEYS = {"memgraph.password", "llm.openai_api_key", "llm.anthropic_api_key"}
     _BOOL_KEYS = {"reconcile.auto_reconcile"}
@@ -117,6 +126,10 @@ def _config(argv: list[str]) -> int:
             print("reconcile.auto_reconcile = unset (defaults to false)")
         else:
             print(f"reconcile.auto_reconcile = {'true' if config.auto_reconcile else 'false'}")
+        if config.embedding_model is None:
+            print("recall.embedding_model = unset (defaults to sessions-graph's model)")
+        else:
+            print(f"recall.embedding_model = {config.embedding_model!r}")
         return 0
 
     if action == "set":
@@ -186,6 +199,43 @@ def _config(argv: list[str]) -> int:
 
     print(f"Unknown config action: {action}", file=sys.stderr)
     return 2
+
+
+def _mcp(argv: list[str]) -> int:
+    argparse.ArgumentParser(
+        prog="agent-context-graph mcp", description="Serve the registered tools over stdio MCP."
+    ).parse_args(argv)
+    try:
+        from agent_context_graph.mcp_server import serve
+    except ImportError as exc:
+        print(f"agent-context-graph mcp needs the mcp extra: uv tool install 'agent-context-graph[mcp]' ({exc})",
+              file=sys.stderr)  # fmt: skip
+        return 1
+    return serve()
+
+
+def _recall(argv: list[str]) -> int:
+    from agent_context_graph.adapters._identity import load_config
+    from agent_context_graph.tools import ToolError, load_tools
+
+    parser = argparse.ArgumentParser(
+        prog="agent-context-graph recall", description="Search your own past sessions, as the recall tool does."
+    )
+    parser.add_argument("question", nargs="+", help="What to look for, as you would ask it.")
+    parser.add_argument("--json", action="store_true", help="Print the turns and facts as JSON.")
+    args = parser.parse_args(argv)
+
+    tool = load_tools().get("recall")
+    if tool is None:
+        print("No recall tool is installed: it comes with sessions-graph[agent-context-graph].", file=sys.stderr)
+        return 1
+    try:
+        result = tool.call({"question": " ".join(args.question)}, load_config())
+    except ToolError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(json.dumps(result.structured, indent=2) if args.json else result.text)
+    return 0
 
 
 def _bootstrap(argv: list[str]) -> int:
@@ -265,7 +315,7 @@ def _bootstrap(argv: list[str]) -> int:
     print(f"OK uv: {uv}")
     print(f"OK memgraph: bolt://{host}:{port} reachable")
 
-    install_cmd = [uv, "tool", "install", "agent-context-graph"]
+    install_cmd = [uv, "tool", "install", "agent-context-graph[mcp]"]
     for connector in connectors:
         requirement = _connector_requirement(connector)
         if requirement is None:
@@ -372,6 +422,9 @@ def _doctor(argv: list[str]) -> int:
     ]
     for connector in connectors:
         checks.append(_check_connector(connector))
+    if any(connector.strip().replace("_", "-") == "sessions-graph" for connector in connectors):
+        checks.append(_check_embeddings())
+        checks.append(_check_mcp())
     checks.append(_check_runtime(args.runtime, connectors))
 
     ok = all(check["ok"] for check in checks)
@@ -526,6 +579,64 @@ def _check_connector(connector_name: str) -> _CheckResult:
         return {"name": f"connector:{connector_name}", "ok": False, "detail": "unsupported connector"}
 
 
+def _check_embeddings() -> _CheckResult:
+    """Whether Memgraph can embed for recall: MAGE's ``embeddings`` module, with the configured model loading.
+
+    The first run downloads the model inside Memgraph, so this can take a while once.
+    """
+    from agent_context_graph.adapters._identity import resolve_embedding_model, resolve_memgraph_env
+
+    try:
+        from sessions_graph.embeddings import DEFAULT_EMBEDDING_MODEL, check_available
+
+        from memgraph_toolbox.api.memgraph import Memgraph
+    except ImportError as exc:
+        return {"name": "embeddings", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+
+    model = resolve_embedding_model() or DEFAULT_EMBEDDING_MODEL
+    env = resolve_memgraph_env()
+    db = None
+    try:
+        db = Memgraph(
+            url=env["MEMGRAPH_URL"],
+            username=env["MEMGRAPH_USER"],
+            password=env["MEMGRAPH_PASSWORD"],
+            database=env["MEMGRAPH_DATABASE"],
+        )
+        dimension = check_available(db, model)
+        return {"name": "embeddings", "ok": True, "detail": f"{model} ({dimension} dimensions) inside Memgraph"}
+    except Exception as exc:
+        return {
+            "name": "embeddings",
+            "ok": False,
+            "detail": f"{model} — {exc}. Recall needs Memgraph with MAGE (memgraph/memgraph-mage, 2 GiB or more); "
+            "without it, recall's vector lanes are off",
+        }
+    finally:
+        driver = getattr(getattr(db, "driver", None), "driver", None)
+        if driver is not None:
+            driver.close()
+
+
+def _check_mcp() -> _CheckResult:
+    """Whether ``agent-context-graph mcp`` can start and serves recall."""
+    from agent_context_graph.tools import load_tools
+
+    try:
+        import mcp  # noqa: F401 -- only whether the extra is installed
+    except ImportError:
+        return {
+            "name": "mcp",
+            "ok": False,
+            "detail": "the mcp extra is missing, so the recall tool can't be served — "
+            "run: uv tool install 'agent-context-graph[mcp]' --with 'sessions-graph[agent-context-graph]'",
+        }
+    names = sorted(load_tools())
+    if "recall" not in names:
+        return {"name": "mcp", "ok": False, "detail": f"no recall tool registered (tools: {names or 'none'})"}
+    return {"name": "mcp", "ok": True, "detail": f"serves {', '.join(names)}"}
+
+
 def _check_runtime(runtime: str, connectors: list[str]) -> _CheckResult:
     try:
         from agent_context_graph.hooks.runner import create_link
@@ -563,7 +674,8 @@ def _memgraph_reachable(host: str, port: int) -> bool:
 
 def _memgraph_command(port: int) -> str:
     published = f"{port}:7687"
-    return f"docker run --rm -p {published} memgraph/memgraph"
+    # MAGE, not plain memgraph: sessions-graph embeds for recall with its embeddings module.
+    return f"docker run --rm -p {published} memgraph/memgraph-mage"
 
 
 def _connector_requirement(connector: str) -> str | None:

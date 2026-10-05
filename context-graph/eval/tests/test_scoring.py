@@ -10,13 +10,17 @@ import pytest
 from context_graph_eval.retrieval import Retrieved
 from context_graph_eval.scoring import (
     DEFAULT_TOKENIZER,
+    PREFERENCE_STEPS,
     Scored,
     aggregate,
     bleu_score,
     build_metrics,
     efficiency_tokens,
     enforce_retrieval_floor,
+    evidence_recall,
     gate_and_rank,
+    gate_score,
+    rubric_for,
     token_f1_score,
     tokenizer_in_use,
 )
@@ -68,7 +72,7 @@ class _StubJudge(DeepEvalBaseLLM):
 
 
 def test_an_ordinary_question_is_scored_on_retrieval_and_answer():
-    names = [type(m).__name__ for m in build_metrics(_StubJudge(), abstention=False)]
+    names = [type(m).__name__ for m in build_metrics(_StubJudge())]
 
     assert "ContextualRecallMetric" in names
     assert "GEval" in names
@@ -84,7 +88,7 @@ def test_an_abstention_question_is_not_scored_on_contextual_recall():
     Measured before this fix: abstention scored 0/8, while the agent had
     correctly answered "not in memory" on at least four of them.
     """
-    names = [type(m).__name__ for m in build_metrics(_StubJudge(), abstention=True)]
+    names = [type(m).__name__ for m in build_metrics(_StubJudge(), rubric="abstention")]
 
     assert "ContextualRecallMetric" not in names
     assert "GEval" in names
@@ -399,10 +403,103 @@ def test_abstention_is_judged_on_refusing_not_on_reciting_the_near_miss():
     Abstention exists to measure not fabricating an answer, so that is what it
     scores.
     """
-    (metric,) = build_metrics(_StubJudge(), abstention=True)
+    (metric,) = build_metrics(_StubJudge(), rubric="abstention")
 
     assert metric.name == "Abstention"
     criteria = metric.criteria.lower()
     assert "decline" in criteria or "refus" in criteria
     # The failure mode being fixed: demanding the expected output's facts back.
     assert "every fact" not in criteria
+
+
+def test_rubrics_carry_fixed_evaluation_steps_so_the_judge_never_writes_them():
+    """Without them deepeval generates steps per question: an extra judge call each, and drifting rubrics."""
+    from context_graph_eval.scoring import ABSTENTION_STEPS, COVERAGE_STEPS, build_metrics
+
+    judge = _StubJudge()
+    coverage = next(m for m in build_metrics(judge) if getattr(m, "name", "") == "Coverage")
+    abstention = build_metrics(judge, rubric="abstention")[0]
+    assert coverage.evaluation_steps == COVERAGE_STEPS
+    assert abstention.evaluation_steps == ABSTENTION_STEPS
+
+
+def test_the_answer_rubric_gates_and_contextual_recall_does_not():
+    """A computed answer ("17 days") has no single retrieved row stating it, so
+    Contextual Recall scored correct answers 0 and failed them (#397)."""
+    assert gate_score({"Contextual Recall": 0.0, "Coverage [GEval]": 0.9}) == 0.9
+    assert gate_score({"Contextual Recall": 1.0, "Coverage [GEval]": 0.2}) == 0.2
+    assert gate_score({"Abstention [GEval]": 0.8}) == 0.8
+
+
+def test_a_judge_that_returned_only_the_retrieval_signal_gates_nothing_through():
+    assert gate_score({"Contextual Recall": 1.0}) == 0.0
+    assert gate_score({}) == 0.0
+
+
+def test_retrieval_is_reported_per_tier_without_gating():
+    report = aggregate(
+        [
+            _scored("q1", covered=True, metric_scores={"Contextual Recall": 0.0, "Coverage [GEval]": 1.0}),
+            _scored("q2", covered=True, metric_scores={"Contextual Recall": 1.0, "Coverage [GEval]": 1.0}),
+            _scored("q3", covered=True, abstention=True, metric_scores={"Abstention [GEval]": 1.0}),
+        ]
+    ).by_tier[1]
+
+    assert report.covered == 3
+    assert (report.retrieval_supported, report.retrieval_judged) == (1, 2)
+
+
+def test_each_question_is_routed_to_its_answer_rubric():
+    assert rubric_for({"question_type": "multi-session"}) == "answer"
+    assert rubric_for({"question_type": "single-session-preference"}) == "preference"
+    assert rubric_for({"question_type": "single-session-preference", "abstention": True}) == "abstention"
+    assert rubric_for({}) == "answer"
+
+
+def test_preference_questions_are_judged_on_using_the_users_preferences_not_on_every_fact():
+    """Their expected output is a rubric for a personalized answer, so Coverage's
+    every-fact check failed recommendations that did what the rubric asked:
+    0/6 at 0.2-0.6 (#404). Retrieval is still reported beside it."""
+    metrics = build_metrics(_StubJudge(), rubric="preference")
+
+    assert [type(m).__name__ for m in metrics] == ["ContextualRecallMetric", "GEval"]
+    preference = metrics[1]
+    assert preference.name == "Preference"
+    assert preference.evaluation_steps == PREFERENCE_STEPS
+    assert "need not reflect every point" in preference.criteria
+
+
+def test_evidence_recall_is_the_share_of_evidence_turns_retrieved():
+    evidence = ["user: I took a week-long break in January.", "user: Then a 10-day break in February."]
+
+    assert evidence_recall(evidence, ["TURN [s1, 2023-01-20, user]: I took a week-long break in January."]) == 0.5
+    assert evidence_recall(evidence, ["FACT: unrelated"]) == 0.0
+    assert evidence_recall(evidence, [f"TURN [...]: {turn.split(': ', 1)[1]}" for turn in evidence]) == 1.0
+
+
+def test_a_question_without_marked_evidence_has_no_evidence_recall():
+    """Abstention questions mark no evidence: there is nothing to retrieve, not a miss."""
+    assert evidence_recall([], ["anything"]) is None
+    assert evidence_recall(None, ["anything"]) is None
+
+
+def test_a_long_evidence_turn_counts_when_its_opening_was_retrieved():
+    """Rows truncate long turns (hybrid's turn_chars), so the whole turn can't be required;
+    whitespace differences from rendering don't count either."""
+    turn = "user: " + "I visited the museum. " * 200
+    row = "TURN [...]: " + " ".join(turn.split(": ", 1)[1].split())[:1500]
+
+    assert evidence_recall([turn], [row.replace(" ", "  ", 3)]) == 1.0
+
+
+def test_evidence_recall_is_reported_per_tier():
+    report = aggregate(
+        [
+            Scored(name="q1", tier=1, coverage=1.0, covered=True, efficiency_tokens=1, evidence_recall=1.0),
+            Scored(name="q2", tier=1, coverage=0.0, covered=False, efficiency_tokens=1, evidence_recall=0.5),
+            Scored(name="q3", tier=1, coverage=1.0, covered=True, efficiency_tokens=1, abstention=True),
+        ]
+    ).by_tier[1]
+
+    assert (report.evidence_complete, report.evidence_judged) == (1, 2)
+    assert report.mean_evidence_recall == 0.75

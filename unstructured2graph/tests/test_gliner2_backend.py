@@ -1,307 +1,431 @@
-"""Unit tests for GLiNER2Backend, run entirely against an injected fake model
--- no real `gliner2` install or model download needed.
-"""
+"""GLiNER2Backend against a fake joint engine (tests/gliner2_fakes.py).
 
-from unittest.mock import MagicMock, patch
+Pure logic -- schema, windows, the mention resolver, identity -- is tested
+directly. What the backend writes is tested against a real Memgraph (the
+`memgraph` fixture skips without one), per the repo's prefer-real-Memgraph
+testing policy.
+"""
 
 import pytest
 
-from unstructured2graph import Chunk, EntityType, Ontology, RelationType
-from unstructured2graph.gliner2_backend import GLiNER2Backend, _entity_id, _normalize_text
+from unstructured2graph import Chunk, Document, EntityType, Ontology, RelationType, Segment, from_documents
+from unstructured2graph.gliner2_backend import (
+    BIND_USER,
+    DEFAULT_CANDIDATE_CAP,
+    DROP,
+    KEEP,
+    GLiNER2Backend,
+    Mention,
+    Resolution,
+    _entity_id,
+    _normalize_text,
+    _source_text,
+    _word_windows,
+    resolve_user_mentions,
+)
 
-ENTITY_ONLY_ONTOLOGY = Ontology(entity_types=(EntityType(label="person", description="A human"),))
+from .gliner2_fakes import FakeEngine
 
-ENTITY_AND_RELATION_ONTOLOGY = Ontology(
+ONTOLOGY = Ontology(
     entity_types=(
-        EntityType(label="person", description="A human"),
-        EntityType(label="company", description="A business"),
+        EntityType("User", "the person speaking in the first person", "global"),
+        EntityType("Person", "another named individual", "global"),
+        EntityType("Location", "a place", "global"),
+        EntityType("Product", "an item", "chunk"),
+        EntityType("Quantity", "a count", "span"),
     ),
-    relation_types=(RelationType(label="works_for", description="Employment relationship"),),
+    relation_types=(
+        RelationType("visited", "travelled to", ("User", "Person"), ("Location",)),
+        RelationType("owns_count", "has this many", ("User", "Person"), ("Quantity",)),
+        RelationType("mentions"),
+    ),
 )
 
 
-class _FakeSchema:
-    """Mirrors the real gliner2 schema builder's chainable .entities()/
-    .relations(), recording what was passed so tests can assert on it."""
-
-    def __init__(self):
-        self.entity_schema = None
-        self.relation_schema = None
-
-    def entities(self, schema):
-        self.entity_schema = schema
-        return self
-
-    def relations(self, schema):
-        self.relation_schema = schema
-        return self
+def _backend(**engine_kwargs):
+    return GLiNER2Backend(ontology=ONTOLOGY, model=FakeEngine(**engine_kwargs))
 
 
-class _FakeModel:
-    """Records every call so tests can assert on what schema was passed, and
-    returns whatever canned result the test configured -- merged into the
-    single {"entities": ..., "relation_extraction": ...} shape the real
-    model.extract_long() returns from one combined call (gliner2_backend.py's
-    _extract_sync no longer calls extract_entities()/extract_relations()
-    separately, and uses extract_long() rather than plain extract() -- see
-    #336: extract() silently undercounts entities on text longer than
-    GLiNER2's effective context)."""
+def _session(*turns, user_id="u1"):
+    """A Document shaped like sessions-graph builds one: turns joined by a blank line.
 
-    def __init__(self, entities_result=None, relations_result=None):
-        self.result: dict = dict(entities_result or {"entities": {}})
-        self.result.update(relations_result or {})
-        self.extract_calls: list[tuple[str, _FakeSchema]] = []
-
-    def create_schema(self):
-        return _FakeSchema()
-
-    def extract_long(self, text, schema, **kwargs):
-        self.extract_calls.append((text, schema))
-        return self.result
+    Each turn is (role, body, when) or (role, body, when, source_id)."""
+    text, segments, cursor = "", [], 0
+    for role, body, when, *source in turns:
+        turn = f"{role}: {body}"
+        if text:
+            text += "\n\n"
+            cursor += 2
+        segments.append(Segment(cursor, cursor + len(turn), role, when, *source))
+        text += turn
+        cursor += len(turn)
+    return Document(text=text, segments=tuple(segments), user_id=user_id)
 
 
-def test_entity_schema_built_from_ontology():
-    model = _FakeModel()
-    backend = GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=model)
-
-    assert backend._entity_schema == {"person": "A human"}
-    assert backend._relation_schema == {}
+# --- schema and configuration -------------------------------------------------
 
 
-def test_chunk_size_and_overlap_default_and_are_configurable():
-    default_backend = GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=_FakeModel())
-    assert default_backend._chunk_size == 384
-    assert default_backend._chunk_overlap == 64
-
-    custom_backend = GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=_FakeModel(), chunk_size=128, chunk_overlap=32)
-    assert custom_backend._chunk_size == 128
-    assert custom_backend._chunk_overlap == 32
-
-
-@pytest.mark.asyncio
-async def test_extract_long_is_called_with_the_configured_chunk_size_and_overlap():
-    """Regression test for #336: _extract_sync must call extract_long(),
-    not extract() -- extract() silently undercounts entities on text longer
-    than GLiNER2's effective context, with no error to catch the regression
-    otherwise."""
-    model = MagicMock()
-    model.create_schema.return_value = _FakeSchema()
-    model.extract_long.return_value = {"entities": {}}
-    backend = GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=model, chunk_size=128, chunk_overlap=32)
-
-    with patch("unstructured2graph.gliner2_backend.create_nodes_from_list"):
-        await backend.aingest_chunk(MagicMock(), Chunk(text="Alice works here.", hash="h1"))
-
-    model.extract_long.assert_called_once()
-    model.extract.assert_not_called()
-    _text, _schema = model.extract_long.call_args.args
-    kwargs = model.extract_long.call_args.kwargs
-    assert kwargs["chunk_size"] == 128
-    assert kwargs["chunk_overlap"] == 32
-    assert kwargs["include_spans"] is True
-    assert kwargs["include_confidence"] is True
+def test_schema_is_typed_from_the_ontology_and_compiled_once():
+    backend = _backend()
+    engine = backend.engine
+    assert len(engine.compiled) == 1
+    schema = engine.compiled[0]
+    assert [name for name, _ in schema.entities] == ["User", "Person", "Location", "Product", "Quantity"]
+    assert schema.relations[0] == ("visited", ("User", "Person"), ("Location",))
+    everything = ("User", "Person", "Location", "Product", "Quantity")
+    assert schema.relations[2] == ("mentions", everything, everything)  # JointSchema rejects an empty endpoint
 
 
-def test_workspace_label_defaults_and_is_configurable():
-    model = _FakeModel()
-    assert GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=model).workspace_label == "gliner2"
-    assert GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=model, workspace="custom").workspace_label == "custom"
+def test_candidate_caps_default_high_enough_that_user_edges_survive():
+    config = _backend()._config
+    assert config.relation_pair_cap == config.max_edges_per_type == DEFAULT_CANDIDATE_CAP == 4096
+    assert GLiNER2Backend(ontology=ONTOLOGY, model=FakeEngine(), candidate_cap=10)._config.relation_pair_cap == 10
 
 
 def test_invalid_workspace_raises():
-    model = _FakeModel()
-    with pytest.raises(ValueError, match="Invalid workspace"):
-        GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=model, workspace="not a valid label!")
+    with pytest.raises(ValueError, match="workspace"):
+        GLiNER2Backend(ontology=ONTOLOGY, model=FakeEngine(), workspace="bad-name")
+
+
+@pytest.mark.asyncio
+async def test_every_window_extracts_against_the_one_held_compiled_schema():
+    backend = _backend()
+    document = _session(("user", "hello", None), ("assistant", "hi", None))
+    chunk = Chunk(document.text, "h", document.segments, "u1")
+    backend._extract_sync(chunk)
+    backend._extract_sync(chunk)
+    schemas = {id(schema) for _, schema, _ in backend.engine.calls}
+    assert len(schemas) == 1
+    assert len(backend.engine.compiled) == 1
+
+
+# --- windows ---------------------------------------------------------------------
+
+
+def test_one_window_per_segment():
+    backend = _backend()
+    document = _session(("user", "I went to Paris", None), ("assistant", "Nice", None))
+    windows = backend._windows(Chunk(document.text, "h", document.segments))
+    assert [document.text[w.start : w.end] for w in windows] == ["user: I went to Paris", "assistant: Nice"]
+    assert [w.segment.role for w in windows] == ["user", "assistant"]
+
+
+def test_a_segment_longer_than_chunk_size_is_split_with_overlap():
+    text = " ".join(f"w{i}" for i in range(10))
+    ranges = _word_windows(text, 0, len(text), size=4, overlap=1)
+    assert [text[a:b] for a, b in ranges] == ["w0 w1 w2 w3", "w3 w4 w5 w6", "w6 w7 w8 w9"]
+    assert _word_windows(text, 0, len(text), size=10, overlap=1) == [(0, len(text))]
+
+
+def test_windows_of_a_later_segment_stay_inside_it():
+    """Offsets are the chunk's, not the segment's: a later turn's windows must not drift into the next one."""
+    first, second, third = "user: hi", "assistant: " + " ".join(f"w{i}" for i in range(10)), "user: bye"
+    text = f"{first}\n\n{second}\n\n{third}"
+    start = len(first) + 2
+    ranges = _word_windows(text, start, start + len(second), size=4, overlap=1)
+    assert [text[a:b] for a, b in ranges] == ["assistant: w0 w1", "w1 w2 w3 w4", "w4 w5 w6 w7", "w7 w8 w9"]
+    assert all(start <= a < b <= start + len(second) for a, b in ranges)
+
+
+def test_punctuation_counts_as_a_word_as_gliner2_counts_it():
+    assert _word_windows("a, b. c!", 0, 8, size=3, overlap=0) == [(0, 4), (4, 8)]  # "a , b" then ". c !"
+
+
+def test_without_segments_the_whole_text_is_word_windowed():
+    backend = GLiNER2Backend(ontology=ONTOLOGY, model=FakeEngine(), chunk_size=3, chunk_overlap=0)
+    windows = backend._windows(Chunk("a b c d e", "h"))
+    assert [(w.start, w.end, w.segment) for w in windows] == [(0, 5, None), (6, 9, None)]
+
+
+# --- the mention resolver -------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("entity_type", "surface", "role", "expected"),
+    [
+        ("User", "I", "user", BIND_USER),
+        ("User", "user", "user", BIND_USER),  # the "user: " role prefix
+        ("User", "my", "user", BIND_USER),
+        ("User", "you", "assistant", BIND_USER),
+        ("User", "I", "assistant", DROP),  # first person in the assistant's mouth
+        ("User", "assistant", "assistant", DROP),
+        ("User", "you", "user", DROP),  # the user addressing the assistant
+        ("User", "I", None, DROP),  # a tool result is nobody's utterance
+        ("User", "Kahlo", "user", Resolution("keep", "Person")),  # a third party
+        ("User", "Kahlo", "assistant", Resolution("keep", "Person")),
+        ("Location", "I", "user", KEEP),  # only User and Person mentions are resolved
+        ("Person", "I", "user", BIND_USER),  # the model types pronouns Person too
+        ("Person", "you", "assistant", BIND_USER),
+        ("Person", "I", "assistant", DROP),
+        ("Person", "Frida", "user", KEEP),  # a named third party stays as extracted
+    ],
+)
+def test_resolve_user_mentions(entity_type, surface, role, expected):
+    mention = Mention(entity_type, surface, 0, len(surface), 0.9)
+    assert resolve_user_mentions(mention, Segment(0, 10, role), Chunk("x", "h", user_id="u1")) == expected
+
+
+def test_resolve_user_mentions_keeps_everything_when_the_chunk_has_no_user():
+    mention = Mention("User", "I", 0, 1, 0.9)
+    assert resolve_user_mentions(mention, Segment(0, 10, "user"), Chunk("x", "h")) == KEEP
+
+
+# --- identity --------------------------------------------------------------------
 
 
 def test_normalize_text_collapses_whitespace_and_case():
-    assert _normalize_text("  Alice   Johnson\n") == "alice johnson"
+    assert _normalize_text("  Alice   JOHNSON ") == "alice johnson"
 
 
-def test_entity_id_is_deterministic_and_scoped_to_chunk_and_type():
-    id_a = _entity_id("hash1", "person", "alice")
-    id_b = _entity_id("hash1", "person", "alice")
-    id_diff_chunk = _entity_id("hash2", "person", "alice")
-    id_diff_type = _entity_id("hash1", "company", "alice")
-
-    assert id_a == id_b
-    assert id_a != id_diff_chunk
-    assert id_a != id_diff_type
-
-
-@pytest.mark.asyncio
-async def test_entity_only_ontology_never_requests_relations_schema():
-    model = _FakeModel(entities_result={"entities": {"person": [{"text": "Alice", "start": 0, "end": 5}]}})
-    backend = GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=model)
-
-    with patch("unstructured2graph.gliner2_backend.create_nodes_from_list") as mock_create_nodes:
-        await backend.aingest_chunk(MagicMock(), Chunk(text="Alice works here.", hash="h1"))
-
-    assert len(model.extract_calls) == 1
-    _text, schema = model.extract_calls[0]
-    assert schema.entity_schema == {"person": "A human"}
-    assert schema.relation_schema is None
-    mock_create_nodes.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_entity_and_relation_ontology_requests_combined_schema_in_one_call():
-    """The whole point of the joint pass: one model.extract_long() call
-    carries both schemas, not two separate extract_entities()/
-    extract_relations() calls."""
-    model = _FakeModel()
-    backend = GLiNER2Backend(ontology=ENTITY_AND_RELATION_ONTOLOGY, model=model)
-
-    with patch("unstructured2graph.gliner2_backend.create_nodes_from_list"):
-        await backend.aingest_chunk(MagicMock(), Chunk(text="Alice works at Acme Corp.", hash="h1"))
-
-    assert len(model.extract_calls) == 1
-    _text, schema = model.extract_calls[0]
-    assert schema.entity_schema == {"person": "A human", "company": "A business"}
-    assert schema.relation_schema == {"works_for": "Employment relationship"}
-
-
-@pytest.mark.asyncio
-async def test_entities_are_written_with_file_path_and_entity_type():
-    model = _FakeModel(
-        entities_result={
-            "entities": {"person": [{"text": "Alice", "start": 0, "end": 5, "confidence": 0.9}]},
-        }
+def test_entity_id_scopes():
+    assert _entity_id("c1", "Location", "paris", "global", (0, 5)) == _entity_id(
+        "c2", "Location", "paris", "global", (9, 14)
     )
-    backend = GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=model)
-    chunk = Chunk(text="Alice works here.", hash="h1")
+    assert _entity_id("c1", "Product", "shoes", "chunk", (0, 5)) == _entity_id(
+        "c1", "Product", "shoes", "chunk", (9, 14)
+    )
+    assert _entity_id("c1", "Product", "shoes", "chunk", (0, 5)) != _entity_id(
+        "c2", "Product", "shoes", "chunk", (0, 5)
+    )
+    assert _entity_id("c1", "Quantity", "3", "span", (0, 1)) != _entity_id("c1", "Quantity", "3", "span", (5, 6))
+    assert _entity_id("c1", "Location", "paris", "global", (0, 5)) != _entity_id(
+        "c1", "Person", "paris", "global", (0, 5)
+    )
 
-    with patch("unstructured2graph.gliner2_backend.create_nodes_from_list") as mock_create_nodes:
-        await backend.aingest_chunk(MagicMock(), chunk)
 
-    mock_create_nodes.assert_called_once()
-    _memgraph, node_dicts, workspace, _batch_size = mock_create_nodes.call_args.args
-    kwargs = mock_create_nodes.call_args.kwargs
-    assert workspace == "gliner2"
-    assert kwargs["merge_key"] == "entity_id"
-    assert len(node_dicts) == 1
-    node = node_dicts[0]
-    assert node["entity_type"] == "person"
-    assert node["file_path"] == "h1"
-    assert node["entity_id"] == _entity_id("h1", "person", "alice")
+# --- what gets written (real Memgraph) ---------------------------------------
+
+
+def _user(memgraph, user_id="u1"):
+    memgraph.query("MERGE (:User {user_id: $user_id})", params={"user_id": user_id})
 
 
 @pytest.mark.asyncio
-async def test_entity_confidence_threshold_filters_low_confidence_entities():
-    model = _FakeModel(
-        entities_result={
-            "entities": {
-                "person": [
-                    {"text": "Alice", "start": 0, "end": 5, "confidence": 0.95},
-                    {"text": "Bob", "start": 10, "end": 13, "confidence": 0.2},
-                ]
-            }
-        }
+async def test_user_mentions_bind_to_the_users_node_with_the_turns_timestamp(memgraph):
+    _user(memgraph)
+    backend = _backend(
+        surfaces={"I": "User", "Paris": "Location", "Kahlo": "User"},
+        relations=[("visited", "I", "Paris", 0.8), ("visited", "Kahlo", "Paris", 0.7)],
     )
-    backend = GLiNER2Backend(ontology=ENTITY_ONLY_ONTOLOGY, model=model, entity_confidence_threshold=0.5)
-    chunk = Chunk(text="Alice and Bob work here.", hash="h1")
+    document = _session(
+        ("user", "I visited Paris", "2023-05-30T17:27:00+00:00"),
+        ("assistant", "Kahlo visited Paris. I think so.", "2023-05-30T17:27:01+00:00"),
+    )
+    await from_documents([document], memgraph, backend)
 
-    with patch("unstructured2graph.gliner2_backend.create_nodes_from_list") as mock_create_nodes:
-        await backend.aingest_chunk(MagicMock(), chunk)
-
-    node_dicts = mock_create_nodes.call_args.args[1]
-    assert [n["text"] for n in node_dicts] == ["Alice"]
+    rows = memgraph.query(
+        """
+        MATCH (a)-[r:visited]->(b:gliner2)
+        RETURN labels(a) AS head, coalesce(a.user_id, a.text) AS who, b.text AS place,
+               toString(r.valid_at) AS valid_at, r.confidence AS confidence, r.chunk IS NOT NULL AS has_chunk
+        ORDER BY who
+        """
+    )
+    assert [(row["who"], row["place"], row["valid_at"]) for row in rows] == [
+        ("Kahlo", "Paris", "2023-05-30T17:27:01.000000+00:00"),
+        ("u1", "Paris", "2023-05-30T17:27:00.000000+00:00"),
+    ]
+    assert "User" in rows[1]["head"]
+    assert all(row["has_chunk"] for row in rows)
+    kahlo = memgraph.query("MATCH (n:gliner2 {text: 'Kahlo'}) RETURN n.entity_type AS entity_type")
+    assert kahlo == [{"entity_type": "Person"}]  # re-typed, not a User node
+    assert memgraph.query("MATCH (n:gliner2 {entity_type: 'User'}) RETURN count(n) AS n") == [{"n": 0}]
+    assert backend.stats.mentions_bound_to_user == 1
+    assert backend.stats.mentions_retyped == 1
+    assert backend.stats.mentions_dropped == 1  # the assistant's "I"
 
 
 @pytest.mark.asyncio
-async def test_relations_are_matched_to_entities_by_span_and_written_as_typed_edges():
-    model = _FakeModel(
-        entities_result={
-            "entities": {
-                "person": [{"text": "Alice", "start": 0, "end": 5, "confidence": 0.9}],
-                "company": [{"text": "Acme Corp", "start": 15, "end": 24, "confidence": 0.9}],
-            }
-        },
-        relations_result={
-            "relation_extraction": {
-                "works_for": [
-                    {
-                        "head": {"text": "Alice", "start": 0, "end": 5, "confidence": 0.9},
-                        "tail": {"text": "Acme Corp", "start": 15, "end": 24, "confidence": 0.9},
-                    }
-                ]
-            }
-        },
+async def test_relations_never_cross_turns(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"I": "User", "Paris": "Location"}, relations=[("visited", "I", "Paris", 0.8)])
+    await from_documents(
+        [_session(("user", "I am home", None), ("assistant", "Paris is nice", None))], memgraph, backend
     )
-    backend = GLiNER2Backend(ontology=ENTITY_AND_RELATION_ONTOLOGY, model=model)
-    chunk = Chunk(text="Alice works at Acme Corp.", hash="h1")
-
-    with (
-        patch("unstructured2graph.gliner2_backend.create_nodes_from_list"),
-        patch("unstructured2graph.gliner2_backend.upsert_typed_relationships") as mock_upsert_rel,
-    ):
-        await backend.aingest_chunk(MagicMock(), chunk)
-
-    mock_upsert_rel.assert_called_once()
-    _memgraph, workspace, match_key, relationships_by_type = mock_upsert_rel.call_args.args
-    assert workspace == "gliner2"
-    assert match_key == "entity_id"
-    assert list(relationships_by_type.keys()) == ["works_for"]
-    [relationship] = relationships_by_type["works_for"]
-    assert relationship["from"] == _entity_id("h1", "person", "alice")
-    assert relationship["to"] == _entity_id("h1", "company", "acme corp")
+    assert memgraph.query("MATCH ()-[r:visited]->() RETURN count(r) AS n") == [{"n": 0}]
 
 
 @pytest.mark.asyncio
-async def test_relation_with_unmatched_endpoint_is_skipped_and_logged(caplog):
-    model = _FakeModel(
-        entities_result={"entities": {"person": [{"text": "Alice", "start": 0, "end": 5, "confidence": 0.9}]}},
-        relations_result={
-            "relation_extraction": {
-                "works_for": [
-                    {
-                        "head": {"text": "Alice", "start": 0, "end": 5, "confidence": 0.9},
-                        "tail": {"text": "Someone Else", "start": 99, "end": 111, "confidence": 0.9},
-                    }
-                ]
-            }
-        },
+async def test_global_identity_merges_across_chunks_and_links_every_mention(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"Paris": "Location", "shoes": "Product"})
+    await from_documents(
+        [
+            _session(("user", "Paris and shoes", None)),
+            _session(("user", "Paris again, other shoes", None)),
+        ],
+        memgraph,
+        backend,
     )
-    backend = GLiNER2Backend(ontology=ENTITY_AND_RELATION_ONTOLOGY, model=model)
-    chunk = Chunk(text="Alice works at an unmentioned company.", hash="h1")
-
-    with (
-        patch("unstructured2graph.gliner2_backend.create_nodes_from_list"),
-        patch("unstructured2graph.gliner2_backend.upsert_typed_relationships") as mock_upsert_rel,
-    ):
-        await backend.aingest_chunk(MagicMock(), chunk)
-
-    mock_upsert_rel.assert_not_called()
-    assert "Skipping 'works_for' relation" in caplog.text
+    paris = memgraph.query(
+        "MATCH (n:gliner2 {text: 'Paris'})-[:MENTIONED_IN]->(c:Chunk) RETURN count(DISTINCT n) AS nodes, count(c) AS chunks"
+    )
+    assert paris == [{"nodes": 1, "chunks": 2}]
+    shoes = memgraph.query("MATCH (n:gliner2 {text: 'shoes'}) RETURN count(n) AS nodes")
+    assert shoes == [{"nodes": 2}]  # chunk identity: one per session
 
 
 @pytest.mark.asyncio
-async def test_relation_confidence_threshold_filters_low_confidence_relations():
-    model = _FakeModel(
-        entities_result={
-            "entities": {
-                "person": [{"text": "Alice", "start": 0, "end": 5, "confidence": 0.9}],
-                "company": [{"text": "Acme Corp", "start": 15, "end": 24, "confidence": 0.9}],
-            }
-        },
-        relations_result={
-            "relation_extraction": {
-                "works_for": [
-                    {
-                        "head": {"text": "Alice", "start": 0, "end": 5, "confidence": 0.9},
-                        "tail": {"text": "Acme Corp", "start": 15, "end": 24, "confidence": 0.1},
-                    }
-                ]
-            }
-        },
+async def test_a_lowercase_mention_of_a_global_type_stays_per_chunk(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"home": "Location", "Paris": "Location"})
+    await from_documents(
+        [_session(("user", "home and Paris", None)), _session(("user", "home again, Paris again", None))],
+        memgraph,
+        backend,
     )
-    backend = GLiNER2Backend(ontology=ENTITY_AND_RELATION_ONTOLOGY, model=model, relation_confidence_threshold=0.5)
-    chunk = Chunk(text="Alice works at Acme Corp.", hash="h1")
+    counts = {row["text"]: row["n"] for row in memgraph.query("MATCH (n:gliner2) RETURN n.text AS text, count(n) AS n")}
+    assert counts == {"home": 2, "Paris": 1}
 
-    with (
-        patch("unstructured2graph.gliner2_backend.create_nodes_from_list"),
-        patch("unstructured2graph.gliner2_backend.upsert_typed_relationships") as mock_upsert_rel,
-    ):
-        await backend.aingest_chunk(MagicMock(), chunk)
 
-    mock_upsert_rel.assert_not_called()
+@pytest.mark.asyncio
+async def test_span_identity_gives_every_value_mention_its_own_node(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"I": "User", "3": "Quantity"}, relations=[("owns_count", "I", "3", 0.9)])
+    await from_documents([_session(("user", "I have 3 cats and 3 dogs", None))], memgraph, backend)
+    assert memgraph.query("MATCH (n:gliner2 {text: '3'}) RETURN count(n) AS n") == [{"n": 2}]
+
+
+@pytest.mark.asyncio
+async def test_a_self_loop_left_by_identity_is_dropped_and_counted(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"I": "User", "my": "User"}, relations=[("mentions", "I", "my", 0.9)])
+    await from_documents([_session(("user", "I love my life", None))], memgraph, backend)
+    assert memgraph.query("MATCH (:User)-[r]->(:User) RETURN count(r) AS n") == [{"n": 0}]
+    assert backend.stats.self_loops_dropped == 1
+
+
+@pytest.mark.asyncio
+async def test_the_same_fact_twice_in_a_chunk_is_one_edge_at_its_earliest_time(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"I": "User", "Paris": "Location"}, relations=[("visited", "I", "Paris", 0.8)])
+    document = _session(
+        ("user", "I saw Paris", "2023-05-30T10:00:00+00:00"),
+        ("user", "I loved Paris", "2023-05-30T09:00:00+00:00"),
+    )
+    await from_documents([document], memgraph, backend)
+    rows = memgraph.query("MATCH ()-[r:visited]->() RETURN toString(r.valid_at) AS valid_at")
+    assert rows == [{"valid_at": "2023-05-30T09:00:00.000000+00:00"}]
+
+
+@pytest.mark.asyncio
+async def test_the_same_fact_in_two_chunks_keeps_both_timestamps(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"I": "User", "Paris": "Location"}, relations=[("visited", "I", "Paris", 0.8)])
+    await from_documents(
+        [
+            _session(("user", "I saw Paris", "2023-01-01T00:00:00+00:00")),
+            _session(("user", "I saw Paris again", "2023-06-01T00:00:00+00:00")),
+        ],
+        memgraph,
+        backend,
+    )
+    assert memgraph.query("MATCH ()-[r:visited]->() RETURN count(r) AS n") == [{"n": 2}]
+
+
+@pytest.mark.asyncio
+async def test_reingesting_a_chunk_is_idempotent(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"I": "User", "Paris": "Location"}, relations=[("visited", "I", "Paris", 0.8)])
+    document = _session(("user", "I saw Paris", "2023-01-01T00:00:00+00:00"))
+    await from_documents([document], memgraph, backend)
+    await from_documents([document], memgraph, backend)
+    assert memgraph.query("MATCH ()-[r:visited]->() RETURN count(r) AS n") == [{"n": 1}]
+    assert memgraph.query("MATCH (n:gliner2) RETURN count(n) AS n") == [{"n": 1}]
+
+
+def test_source_text_is_the_sentences_covering_both_spans():
+    text = "user: Hello there. I flew to Paris on Monday. It rained!"
+    head, tail = (text.index("I"), text.index("I") + 1), (text.index("Paris"), text.index("Paris") + 5)
+    assert _source_text(text, (0, len(text)), head, tail) == "I flew to Paris on Monday."
+    assert _source_text(text, (0, len(text)), (6, 11), tail) == "user: Hello there. I flew to Paris on Monday."
+
+
+def test_source_text_is_capped_around_the_spans():
+    text = "x " * 400 + "I flew to Paris" + " y" * 400
+    head, tail = (text.index("I"), text.index("I") + 1), (text.index("Paris"), text.index("Paris") + 5)
+    source = _source_text(text, (0, len(text)), head, tail)
+    assert "I flew to Paris" in source
+    assert len(source) <= 300
+
+
+@pytest.mark.asyncio
+async def test_mentions_record_which_turns_they_came_from(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"Paris": "Location", "Rome": "Location"})
+    document = _session(
+        ("user", "Paris first", None, "turn-1"),
+        ("assistant", "Paris and Rome", None, "turn-2"),
+    )
+    await from_documents([document], memgraph, backend)
+    rows = memgraph.query(
+        "MATCH (n:gliner2)-[m:MENTIONED_IN]->(:Chunk) RETURN n.text AS text, m.sources AS sources ORDER BY text"
+    )
+    assert rows == [{"text": "Paris", "sources": ["turn-1", "turn-2"]}, {"text": "Rome", "sources": ["turn-2"]}]
+
+
+@pytest.mark.asyncio
+async def test_an_edge_carries_its_turn_speaker_and_sentence(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"I": "User", "Paris": "Location"}, relations=[("visited", "I", "Paris", 0.8)])
+    document = _session(("user", "Hi. I visited Paris last week. It was great.", "2023-05-30T17:27:00+00:00", "turn-1"))
+    await from_documents([document], memgraph, backend)
+    rows = memgraph.query("MATCH ()-[r:visited]->() RETURN r.source_id AS source_id, r.role AS role, r.text AS text")
+    assert rows == [{"source_id": "turn-1", "role": "user", "text": "I visited Paris last week."}]
+
+
+@pytest.mark.asyncio
+async def test_the_same_fact_in_two_turns_is_two_edges_with_their_own_times(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"I": "User", "Paris": "Location"}, relations=[("visited", "I", "Paris", 0.8)])
+    document = _session(
+        ("user", "I saw Paris", "2023-05-30T09:00:00+00:00", "turn-1"),
+        ("user", "I loved Paris", "2023-05-30T10:00:00+00:00", "turn-2"),
+    )
+    await from_documents([document], memgraph, backend)
+    rows = memgraph.query(
+        "MATCH ()-[r:visited]->() RETURN r.source_id AS source_id, toString(r.valid_at) AS valid_at, r.text AS text "
+        "ORDER BY source_id"
+    )
+    assert rows == [
+        {"source_id": "turn-1", "valid_at": "2023-05-30T09:00:00.000000+00:00", "text": "user: I saw Paris"},
+        {"source_id": "turn-2", "valid_at": "2023-05-30T10:00:00.000000+00:00", "text": "user: I loved Paris"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reingesting_a_chunk_with_turn_provenance_is_idempotent(memgraph):
+    _user(memgraph)
+    backend = _backend(surfaces={"I": "User", "Paris": "Location"}, relations=[("visited", "I", "Paris", 0.8)])
+    document = _session(
+        ("user", "I saw Paris", "2023-05-30T09:00:00+00:00", "turn-1"),
+        ("user", "I loved Paris", "2023-05-30T10:00:00+00:00", "turn-2"),
+    )
+    await from_documents([document], memgraph, backend)
+    await from_documents([document], memgraph, backend)
+    assert memgraph.query("MATCH ()-[r:visited]->() RETURN count(r) AS n") == [{"n": 2}]
+    assert memgraph.query("MATCH (:gliner2)-[m:MENTIONED_IN]->() RETURN m.sources AS sources") == [
+        {"sources": ["turn-1", "turn-2"]}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_an_infeasible_window_is_counted_as_a_bug(memgraph, caplog):
+    backend = _backend(surfaces={"Paris": "Location"}, feasible=False)
+    await from_documents([_session(("user", "Paris", None), user_id=None)], memgraph, backend)
+    assert backend.stats.infeasible_windows == 1
+    assert "infeasible" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_confidence_thresholds_filter_mentions_and_relations(memgraph):
+    _user(memgraph)
+    engine = FakeEngine(surfaces={"I": "User", "Paris": "Location"}, relations=[("visited", "I", "Paris", 0.4)])
+    backend = GLiNER2Backend(ontology=ONTOLOGY, model=engine, relation_confidence_threshold=0.5)
+    await from_documents([_session(("user", "I saw Paris", None))], memgraph, backend)
+    assert memgraph.query("MATCH ()-[r:visited]->() RETURN count(r) AS n") == [{"n": 0}]
+
+    memgraph.query("MATCH (n) DETACH DELETE n")
+    backend = GLiNER2Backend(ontology=ONTOLOGY, model=engine, entity_confidence_threshold=0.95)
+    await from_documents([_session(("user", "I saw Paris", None))], memgraph, backend)
+    assert memgraph.query("MATCH (n:gliner2) RETURN count(n) AS n") == [{"n": 0}]

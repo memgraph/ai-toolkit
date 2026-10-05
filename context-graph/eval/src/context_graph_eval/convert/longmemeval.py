@@ -267,14 +267,16 @@ def to_golden(record: dict) -> Golden:
 class SessionFixture:
     """One haystack session, ready to be injected into an eval database.
 
-    ``holds_evidence`` is bookkeeping, not a scoring input -- retrieval must
-    never get to see which sessions carry the answer.
+    ``user_id`` is the person whose history the session is: the question it
+    came from. ``holds_evidence`` is bookkeeping, not a scoring input --
+    retrieval must never get to see which sessions carry the answer.
     """
 
     session_id: str
     date: str
     turns: list["Turn"]
     holds_evidence: bool
+    user_id: str
 
 
 @dataclass(frozen=True)
@@ -308,22 +310,24 @@ def to_session_fixtures(record: dict, max_sessions: int | None = None) -> list[S
     bound and is not comparable to a full-haystack run. Off by default: the full
     haystack is the honest difficulty, and flattering it must be asked for.
 
-    Session ids are kept verbatim. Upstream draws distractors from a shared pool
-    and reuses them across questions -- 3,942 of 23,867 haystack ids in the real
-    dataset repeat -- but *zero* of those repeats carry differing content, so a
-    repeated id genuinely is the same session. Letting it become one node
-    matches how a real organizational graph would hold it; namespacing per
-    question would store byte-identical copies and pay to reconcile each. The
-    duplicate-turns hazard that suggests is handled by deduplicating at
-    injection instead (see ``inject.inject_batch``).
+    Each question's haystack is one person's history, so every fixture belongs
+    to the question's user and its session id is namespaced by the question.
+    Upstream draws distractors from a shared pool and reuses them across
+    questions -- 205 of the 4,804 haystack sessions behind the first 100
+    questions, 1 of 502 at five sessions per question -- but a session in two
+    people's histories is two sessions: one node shared between two users
+    would hand its extracted facts to only one of them, since reconciliation
+    resolves a single user per session.
     """
+    question_id = record["question_id"]
     evidence_ids = set(record["answer_session_ids"])
     fixtures = [
         SessionFixture(
-            session_id=session_id,
+            session_id=f"{question_id}--{session_id}",
             date=date,
             turns=[Turn(role=turn["role"], content=turn["content"]) for turn in session],
             holds_evidence=session_id in evidence_ids,
+            user_id=question_id,
         )
         # strict: these three are parallel arrays upstream. If they ever
         # disagree, fail loudly -- silently truncating would drop haystack

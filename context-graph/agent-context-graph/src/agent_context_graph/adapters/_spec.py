@@ -397,11 +397,23 @@ def tool_end(context: EventContext) -> ToolEndEvent:
 def turn_end(context: EventContext, *, reply: Any = None, reason: Any = None) -> list[Event]:
     """Default turn-end rule: the assistant's final reply, if any, then the turn end.
 
-    A turn end never ends the session; runtimes with a session-end hook map
-    that separately.
+    Only the turn's final reply reaches a stop hook; text written before a tool
+    call in the same turn is narration and is in no payload. A turn end never
+    ends the session; runtimes with a session-end hook map that separately.
     """
     events: list[Event] = []
-    if reply:
-        events.append(MessageEvent(**context.base(), role="assistant", content=reply))
+    text = string_or_none(reply)
+    if text is not None and text.strip():
+        # The reply is the message's content; a copy in its metadata would only double what is stored.
+        metadata = {key: value for key, value in context.metadata.items() if value != reply}
+        events.append(
+            MessageEvent(
+                session_id=context.session_id,
+                source_sdk=context.spec.source_sdk,
+                metadata=metadata,
+                role="assistant",
+                content=text,
+            )
+        )
     events.append(TurnEndEvent(**context.base(), reason=string_or_none(reason)))
     return events

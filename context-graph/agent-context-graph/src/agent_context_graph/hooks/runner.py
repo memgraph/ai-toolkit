@@ -157,18 +157,39 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
         link = create_link(connector_names, memgraph_env=memgraph_env)
         adapter = plugin.adapter_class(link, session_id=args.session_id)
         adapter.handle_payload(payload)
-        response = plugin.response_for_payload(payload)
-        if response is not None:
-            print(json.dumps(response))
+        _print_response(plugin, payload, connector_names)
     except Exception as exc:
         strict_env = os.environ.get(f"{_env_prefix(plugin.name)}_STRICT") == "1"
         if args.strict or strict_env:
             raise
-        response = plugin.response_for_payload(payload)
-        if response is not None:
-            print(json.dumps(response))
+        _print_response(plugin, payload, connector_names)
         _debug_log(plugin.name, f"agent-context-graph {plugin.name} hook skipped: {exc}")
     return 0
+
+
+def _print_response(plugin: RuntimeCLIPlugin, payload: dict[str, Any], connector_names: list[str]) -> None:
+    response = plugin.response_for_payload(payload) or {}
+    if payload.get("hook_event_name") == "SessionStart":
+        response.update(session_start_context(connector_names))
+    if response:
+        print(json.dumps(response))
+
+
+def session_start_context(connector_names: list[str]) -> dict[str, Any]:
+    """The SessionStart output telling the model which memory tools it has; empty when none.
+
+    One line per tool, never retrieved content: the model calls the tool when
+    a question needs memory (#394). Claude Code and Codex read the same shape.
+    """
+    from agent_context_graph.tools import session_hints
+
+    try:
+        hints = session_hints(connector_names)
+    except Exception:  # A tool that fails to load must not fail the hook.
+        return {}
+    if not hints:
+        return {}
+    return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "\n".join(hints)}}
 
 
 def _add_skills_graph_connector(link: AgentLink, memgraph_env: dict[str, str] | None = None) -> None:

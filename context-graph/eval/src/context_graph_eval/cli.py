@@ -7,12 +7,18 @@ and is not committed -- only the converted corpus is (see #302).
 
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 
 from .convert.longmemeval import DEFAULT_REVISION, build_corpus, fetch, haystack_path, load_raw
 from .corpus import write_corpus
+from .hybrid import LANES as HYBRID_LANES
+from .hybrid import RecallConfig
+from .official_judge import OFFICIAL_JUDGE_MODEL
 from .reconcile import EXTRACTION_BACKENDS
+from .runner import RETRIEVAL_STRATEGIES
+from .text_search import DEFAULT_LIMIT as DEFAULT_TEXT_SEARCH_LIMIT
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -80,6 +86,13 @@ def main(argv: list[str] | None = None) -> int:
         "result (#322).",
     )
     run.add_argument(
+        "--official-judge-model",
+        default=OFFICIAL_JUDGE_MODEL,
+        help=f"OpenAI model for LongMemEval's own judge, which decides coverage whenever judging runs "
+        f"(default {OFFICIAL_JUDGE_MODEL}, the upstream script's). 'none' leaves the deepeval answer "
+        "rubrics deciding it; they're reported either way.",
+    )
+    run.add_argument(
         "--judge-model",
         default=None,
         help="'provider:model_id' for the judge, e.g. 'anthropic:claude-sonnet-4-5-20250929' or "
@@ -104,6 +117,30 @@ def main(argv: list[str] | None = None) -> int:
         "unstructured2graph.gliner2_backend's module docstring). Narrative summarization always "
         "runs via a LightRAG wrapper's own LLM regardless of this choice -- GLiNER2 has no "
         "generative capability -- so an LLM key is still needed either way.",
+    )
+    run.add_argument(
+        "--retrieval-strategy",
+        choices=RETRIEVAL_STRATEGIES,
+        default="graph-agent",
+        help="'graph-agent' (default, #300: an agent writes its own Cypher against the reconciled "
+        "memory) or 'text-search' (the cheap comparison point this exists to enable: Memgraph's own "
+        "full-text index over raw, UNRECONCILED turns -- no distillation, no LLM extraction cost). "
+        "'text-search' forces reconciliation off regardless of --skip-reconcile: there is no memory "
+        "for it to build that this strategy would read. 'hybrid' finds turns by vector and text "
+        "search and uses the typed graph to find facts and more turns: sessions-graph's recall, the "
+        "product read path (see hybrid.py).",
+    )
+    run.add_argument(
+        "--hybrid-lanes",
+        default=",".join(HYBRID_LANES),
+        help=f"comma-separated lanes for --retrieval-strategy hybrid, from {', '.join(HYBRID_LANES)}. "
+        "Dropping 'entities' and 'facts' measures what the graph adds over turns alone.",
+    )
+    run.add_argument(
+        "--text-search-limit",
+        type=int,
+        default=DEFAULT_TEXT_SEARCH_LIMIT,
+        help="how many text-search hits to hand the answering LLM. Ignored for --retrieval-strategy graph-agent.",
     )
     run.add_argument(
         "--max-sessions-per-question",
@@ -388,12 +425,13 @@ def _run(args) -> int:
 
     judge_provider, judge_model_id = _parse_model_spec(args.judge_model, default_provider=DEFAULT_JUDGE_PROVIDER)
     agent_provider, agent_model_id = _parse_model_spec(args.agent_model, default_provider=DEFAULT_AGENT_PROVIDER)
-    judge = _build_model(judge_provider, judge_model_id)
+    judge = _build_model(judge_provider, judge_model_id, minimal_effort=True)
     agent = _build_model(agent_provider, agent_model_id)
     if agent is None:
         print("no agent model configured: set --agent-model or an OPENAI_API_KEY", file=sys.stderr)
         return 1
 
+    official_model = _official_judge_model(args.official_judge_model, judging=judge is not None)
     same_provider = judge is not None and judge_provider == agent_provider
     if same_provider:
         # #304's independence property (judge decorrelated from the pipeline's
@@ -432,6 +470,10 @@ def _run(args) -> int:
                 max_sessions_per_question=args.max_sessions_per_question,
                 memgraph_url=args.memgraph_url,
                 extraction_backend=args.extraction_backend,
+                retrieval_strategy=args.retrieval_strategy,
+                text_search_limit=args.text_search_limit,
+                hybrid=RecallConfig.from_mapping({"lanes": args.hybrid_lanes}),
+                official_judge_model=official_model,
             ),
         )
     )
@@ -439,7 +481,7 @@ def _run(args) -> int:
 
     if args.save:
         from .report import RunMeta, SavedRun, save_run
-        from .scoring import tokenizer_in_use
+        from .scoring import COVERAGE_GATE, RUBRIC_GATE, tokenizer_in_use
 
         saved = save_run(
             SavedRun(
@@ -468,8 +510,14 @@ def _run(args) -> int:
                     # systems under test (different entities, no cross-chunk
                     # coreference for GLiNER2, a different workspace label) --
                     # compare() below refuses across them for the same reason
-                    # it refuses across judges or tokenizers.
-                    extraction_backend=args.extraction_backend,
+                    # it refuses across judges or tokenizers. "none" for
+                    # text-search: that strategy never reconciles, so no
+                    # backend built anything -- compare() exempts the pin for
+                    # that value rather than treating it as a mismatch.
+                    extraction_backend=args.extraction_backend if args.retrieval_strategy == "graph-agent" else "none",
+                    retrieval_strategy=args.retrieval_strategy,
+                    coverage_gate=COVERAGE_GATE if official_model else RUBRIC_GATE,
+                    official_judge_model=official_model or "none",
                 ),
                 scored=report.scored,
             ),
@@ -564,7 +612,31 @@ def _clear_deepeval_anthropic_secret() -> None:
         pass
 
 
-def _build_model(provider: str, model_id: str | None):
+#: Anthropic model families that accept output_config.effort. Older ones
+#: (Sonnet 4.5, Haiku 4.5) reject it -- and run without extended thinking
+#: unless it is requested, which is already their minimum.
+_ANTHROPIC_EFFORT_MODELS = re.compile(r"^claude-(opus|sonnet|fable|mythos)-(4-[6-9]|[5-9])")
+#: OpenAI reasoning models, and the lowest reasoning_effort each accepts.
+_OPENAI_REASONING_MODELS = ((re.compile(r"^gpt-5"), "minimal"), (re.compile(r"^o[1-9]"), "low"))
+
+
+def minimal_effort_kwargs(provider: str, model_id: str) -> dict:
+    """Generation kwargs that run ``model_id`` at its lowest reasoning effort, or {} when it has no such knob.
+
+    Every model here is built at its minimum: a judge grades a short answer
+    against a key, and the eval's cost is dominated by judge calls. Effort is
+    set only where the model accepts it, since passing it elsewhere is a 400.
+    """
+    if provider == "anthropic" and _ANTHROPIC_EFFORT_MODELS.match(model_id):
+        return {"output_config": {"effort": "low"}}
+    if provider == "openai":
+        for pattern, effort in _OPENAI_REASONING_MODELS:
+            if pattern.match(model_id):
+                return {"reasoning_effort": effort}
+    return {}
+
+
+def _build_model(provider: str, model_id: str | None, *, minimal_effort: bool = False):
     """Instantiate a deepeval model for ``provider``, or None when nothing is
     configured (no matching API key -- via ADR 0002's config-file resolution
     or the environment directly -- present for it).
@@ -587,29 +659,63 @@ def _build_model(provider: str, model_id: str | None):
             from deepeval.models import AnthropicModel
 
             _clear_deepeval_anthropic_secret()
-            return AnthropicModel(model=model_id or DEFAULT_JUDGE_MODEL, _anthropic_api_key=key)
+            model = model_id or DEFAULT_JUDGE_MODEL
+            kwargs = minimal_effort_kwargs(provider, model) if minimal_effort else {}
+            return AnthropicModel(model=model, _anthropic_api_key=key, generation_kwargs=kwargs)
         from deepeval.models import GPTModel
 
-        return GPTModel(model=model_id) if model_id else GPTModel()
+        kwargs = minimal_effort_kwargs(provider, model_id or "") if minimal_effort else {}
+        return GPTModel(model=model_id, generation_kwargs=kwargs) if model_id else GPTModel(generation_kwargs=kwargs)
     except Exception as exc:
         print(f"could not build {provider} model {model_id!r}: {exc}", file=sys.stderr)
         return None
 
 
-def _print_attribution(failures) -> None:
-    """Say which metric was the weakest link across the failures, and show one
-    example of why -- the judge's own reason for its worst-scoring question on
-    that metric, not just a count. The count says something moved; the reason
-    is what tells a reader whether it is a retrieval problem or an answering
-    one without rerunning the question by hand.
+def _official_judge_model(requested: str, *, judging: bool) -> str | None:
+    """The model LongMemEval's judge runs on, or None when judging is off, it was turned off, or no OpenAI key exists.
+
+    Without a key the run says so and falls back to the answer rubrics; the
+    saved run records which gate decided, so compare() refuses to mix them.
     """
+    if not judging or requested == "none":
+        return None
+    if not os.environ.get("OPENAI_API_KEY"):
+        print(
+            "WARNING: no OPENAI_API_KEY for LongMemEval's judge -- coverage falls back to the deepeval answer rubrics.",
+            file=sys.stderr,
+        )
+        return None
+    return requested
+
+
+def _print_attribution(failures) -> None:
+    """Say which answer rubric the failures failed, and whether retrieval had
+    found their evidence, with one example of why -- the judge's own reason for
+    its worst-scoring question, not just a count. The count says something
+    moved; the reason and the retrieval split are what tell a reader whether it
+    is a retrieval problem or an answering one without rerunning the question
+    by hand.
+    """
+    from .scoring import DEFAULT_COVERAGE_THRESHOLD, RETRIEVAL_SIGNAL
+
     blamed: dict[str, list] = {}
     for row in failures:
-        if row.metric_scores:
-            worst = min(row.metric_scores, key=lambda name: row.metric_scores[name])
-            blamed.setdefault(worst, []).append(row)
+        answer = {name: score for name, score in row.metric_scores.items() if name != RETRIEVAL_SIGNAL}
+        if answer:
+            blamed.setdefault(min(answer, key=lambda name: answer[name]), []).append(row)
     for metric, rows in sorted(blamed.items(), key=lambda kv: -len(kv[1])):
         print(f"  failed on     {metric}: {len(rows)}")
+        recall = [row.metric_scores[RETRIEVAL_SIGNAL] for row in rows if RETRIEVAL_SIGNAL in row.metric_scores]
+        if recall:
+            missed = sum(1 for score in recall if score < DEFAULT_COVERAGE_THRESHOLD)
+            print(f"                contextual recall low on {missed}, passed on {len(recall) - missed}")
+        evidence = [row.evidence_recall for row in rows if row.evidence_recall is not None]
+        if evidence:
+            complete = sum(1 for share in evidence if share == 1.0)
+            print(
+                f"                evidence: all retrieved on {complete}, some on "
+                f"{sum(1 for share in evidence if 0 < share < 1)}, none on {sum(1 for share in evidence if share == 0)}"
+            )
         example = min(rows, key=lambda row: row.metric_scores[metric])
         reason = example.metric_reasons.get(metric)
         if reason:
@@ -619,7 +725,9 @@ def _print_attribution(failures) -> None:
 def _print_report(report, *, judged: bool) -> None:
     from .scoring import gate_and_rank
 
-    if report.reconciled or report.reconcile_failures:
+    if report.indexed_turns:
+        print(f"text-search index: {report.indexed_turns} turns indexed (no reconciliation)")
+    elif report.reconciled or report.reconcile_failures:
         print(f"reconciled {report.reconciled} sessions ({report.reconcile_failures} failed)")
 
     if not report.by_tier:
@@ -638,7 +746,12 @@ def _print_report(report, *, judged: bool) -> None:
             print("                Not counted as failures. Check judge credentials/credit.")
         if judged:
             if summary.coverage_rate is not None:
-                print(f"  coverage      {summary.covered}/{summary.questions} ({summary.coverage_rate:.0%})")
+                judge_name = " -- LongMemEval judge" if summary.rubric_covered is not None else ""
+                print(
+                    f"  coverage      {summary.covered}/{summary.questions} ({summary.coverage_rate:.0%}){judge_name}"
+                )
+                if summary.rubric_covered is not None:
+                    print(f"  rubrics       {summary.rubric_covered}/{summary.questions} (deepeval answer rubrics)")
             else:
                 print("  coverage      n/a -- nothing in this tier could be scored")
             median = summary.median_efficiency_tokens
@@ -658,6 +771,11 @@ def _print_report(report, *, judged: bool) -> None:
                 print(f"  payload       median {payloads[len(payloads) // 2]} tokens returned (UNGATED)")
         if summary.abstention_total:
             print(f"  abstention    {summary.abstention_correct}/{summary.abstention_total} correct")
+        if summary.retrieval_judged:
+            print(
+                f"  retrieval     contextual recall passed on {summary.retrieval_supported}/"
+                f"{summary.retrieval_judged} (reported, not gated)"
+            )
 
         # Judge-free cross-checks (no LLM call needed, so printed regardless
         # of whether a judge ran) -- standard NLP metrics other memory
@@ -669,6 +787,11 @@ def _print_report(report, *, judged: bool) -> None:
             print(f"  bleu          mean {summary.mean_bleu:.2f}")
         if summary.mean_f1 is not None:
             print(f"  f1            mean {summary.mean_f1:.2f}")
+        if summary.mean_evidence_recall is not None:
+            print(
+                f"  evidence      every evidence turn retrieved on {summary.evidence_complete}/"
+                f"{summary.evidence_judged} (mean recall {summary.mean_evidence_recall:.2f})"
+            )
         if summary.mean_latency_seconds is not None:
             print(f"  latency       mean {summary.mean_latency_seconds:.1f}s per question")
 

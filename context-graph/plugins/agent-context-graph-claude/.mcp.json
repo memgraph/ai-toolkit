@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "context-graph": {
+      "command": "agent-context-graph",
+      "args": ["mcp"]
+    }
+  }
+}

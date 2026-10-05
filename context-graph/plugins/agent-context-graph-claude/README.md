@@ -27,7 +27,7 @@ The plugin installs hook wiring, while the runtime package is installed by the C
 Bootstrap expects `uv` and a reachable Memgraph instance. If Memgraph is not running, start it and rerun bootstrap:
 
 ```bash
-docker run --rm -p 7687:7687 memgraph/memgraph
+docker run --rm -p 7687:7687 memgraph/memgraph-mage
 ```
 
 `uv` manages Python for the tool. If uv-managed Python downloads are blocked in your environment, install Python 3.10+ and rerun bootstrap.
@@ -37,6 +37,10 @@ Bootstrap installs and verifies:
 ```bash
 agent-context-graph bootstrap --runtime claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
+
+## Recall
+
+The plugin also bundles an MCP server, `agent-context-graph mcp` (see `.mcp.json`), which gives the model a `recall` tool (`mcp__plugin_context-graph_context-graph__recall`) over the user's own past sessions. At session start the hook adds one line telling the model the tool is there; the model calls it when a question needs memory. Recall needs the `mcp` extra, which `bootstrap.sh` installs, and Memgraph with MAGE for its vector search. See [agent-context-graph § Recall](../../agent-context-graph/README.md#recall-memory-for-the-harnesss-model).
 
 ## Configure
 

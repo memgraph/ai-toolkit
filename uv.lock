@@ -57,6 +57,7 @@ members = [
     "actions-graph",
     "agent-context-graph",
     "context-graph-eval",
+    "hygm",
     "langchain-memgraph",
     "lightrag-memgraph",
     "mcp-memgraph",
@@ -224,10 +225,14 @@ dependencies = [
 claude = [
     { name = "claude-agent-sdk" },
 ]
+mcp = [
+    { name = "mcp" },
+]
 openai = [
     { name = "openai-agents" },
 ]
 test = [
+    { name = "mcp" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
@@ -235,12 +240,14 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "claude-agent-sdk", marker = "extra == 'claude'", specifier = ">=0.1.0" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.23.0" },
+    { name = "mcp", marker = "extra == 'test'", specifier = ">=1.23.0" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.1.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
 ]
-provides-extras = ["claude", "openai", "test"]
+provides-extras = ["claude", "mcp", "openai", "test"]
 
 [[package]]
 name = "aiofile"
@@ -1163,6 +1170,7 @@ source = { editable = "context-graph/eval" }
 dependencies = [
     { name = "deepeval" },
     { name = "nltk" },
+    { name = "openai" },
     { name = "tiktoken" },
 ]
 
@@ -1186,6 +1194,7 @@ requires-dist = [
     { name = "deepeval", specifier = ">=3.5.2" },
     { name = "lightrag-memgraph", marker = "extra == 'pipeline'", editable = "integrations/lightrag-memgraph" },
     { name = "nltk", specifier = ">=3.9.4" },
+    { name = "openai", specifier = ">=1.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
     { name = "sessions-graph", marker = "extra == 'pipeline'", editable = "context-graph/sessions-graph" },
@@ -2591,6 +2600,32 @@ wheels = [
 ]
 
 [[package]]
+name = "hygm"
+version = "0.1.0"
+source = { editable = "hygm" }
+dependencies = [
+    { name = "pyyaml" },
+]
+
+[package.optional-dependencies]
+owl = [
+    { name = "rdflib" },
+]
+test = [
+    { name = "pytest" },
+    { name = "rdflib" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "rdflib", marker = "extra == 'owl'", specifier = ">=7.0.0" },
+    { name = "rdflib", marker = "extra == 'test'", specifier = ">=7.0.0" },
+]
+provides-extras = ["owl", "test"]
+
+[[package]]
 name = "idna"
 version = "3.10"
 source = { registry = "https://pypi.org/simple" }
@@ -2627,6 +2662,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/05/18/ceeb4e3ab3aa54495775775b38ae42b10a92f42ce42dfa44da684289b8c8/installer-0.7.0.tar.gz", hash = "sha256:a26d3e3116289bb08216e0d0f7d925fcef0b0194eedfa0c944bcaaa106c4b631", size = 474349, upload-time = "2023-03-17T20:39:38.871Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/ca/1172b6638d52f2d6caa2dd262ec4c811ba59eee96d54a7701930726bce18/installer-0.7.0-py3-none-any.whl", hash = "sha256:05d1933f0a5ba7d8d6296bb6d5018e7c94fa473ceb10cf198a92ccea19c27b53", size = 453838, upload-time = "2023-03-17T20:39:36.219Z" },
+]
+
+[[package]]
+name = "isodate"
+version = "0.7.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/54/4d/e940025e2ce31a8ce1202635910747e5a87cc3a6a6bb2d00973375014749/isodate-0.7.2.tar.gz", hash = "sha256:4cd1aa0f43ca76f4a6c6c0292a85f40b35ec2e43e315b59f06e6d32171a953e6", size = 29705, upload-time = "2024-10-08T23:04:11.5Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/aa/0aca39a37d3c7eb941ba736ede56d689e7be91cab5d9ca846bde3999eba6/isodate-0.7.2-py3-none-any.whl", hash = "sha256:28009937d8031054830160fce6d409ed342816b543597cece116d966c6d99e15", size = 22320, upload-time = "2024-10-08T23:04:09.501Z" },
 ]
 
 [[package]]
@@ -7636,6 +7680,19 @@ wheels = [
 ]
 
 [[package]]
+name = "rdflib"
+version = "7.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "isodate", marker = "python_full_version < '3.11'" },
+    { name = "pyparsing" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/98/f5/18bb77b7af9526add0c727a3b2048959847dc5fb030913e2918bf384fec3/rdflib-7.6.0.tar.gz", hash = "sha256:6c831288d5e4a5a7ece85d0ccde9877d512a3d0f02d7c06455d00d6d0ea379df", size = 4943826, upload-time = "2026-02-13T07:15:55.938Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/10/c2/6604a71269e0c1bd75656d5a001432d16f2cc5b8c057140ec797155c295e/rdflib-7.6.0-py3-none-any.whl", hash = "sha256:30c0a3ebf4c0e09215f066be7246794b6492e054e782d7ac2a34c9f70a15e0dd", size = 615416, upload-time = "2026-02-13T07:15:46.487Z" },
+]
+
+[[package]]
 name = "referencing"
 version = "0.36.2"
 source = { registry = "https://pypi.org/simple" }
@@ -9837,6 +9894,7 @@ name = "unstructured2graph"
 version = "0.6.0"
 source = { editable = "unstructured2graph" }
 dependencies = [
+    { name = "hygm" },
     { name = "lightrag-memgraph" },
     { name = "memgraph-toolbox" },
     { name = "nltk" },
@@ -9858,6 +9916,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "hygm", editable = "hygm" },
     { name = "lightrag-memgraph", editable = "integrations/lightrag-memgraph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "nltk", specifier = "<3.11" },

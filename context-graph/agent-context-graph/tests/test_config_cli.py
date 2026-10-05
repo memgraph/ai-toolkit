@@ -67,3 +67,26 @@ def test_config_show_includes_explicit_reconcile_auto_reconcile(config_dir, caps
 
     assert top_level_main(["config", "show"]) == 0
     assert "reconcile.auto_reconcile = true" in capsys.readouterr().out
+
+
+def test_config_set_recall_embedding_model_round_trips(config_dir, capsys):
+    assert top_level_main(["config", "set", "recall.embedding_model", "BAAI/bge-m3"]) == 0
+    assert "Wrote recall.embedding_model = 'BAAI/bge-m3'" in capsys.readouterr().out
+    assert _identity.resolve_embedding_model() == "BAAI/bge-m3"
+
+
+def test_recall_embedding_model_is_unset_by_default(config_dir, capsys):
+    assert _identity.resolve_embedding_model() is None
+    assert top_level_main(["config", "show"]) == 0
+    assert "recall.embedding_model = unset" in capsys.readouterr().out
+
+
+def test_bootstrap_rewrite_keeps_recall_embedding_model(config_dir):
+    """Like auto_reconcile, the model is only ever set by hand; re-running bootstrap must not drop it."""
+    _identity.write_config(embedding_model="BAAI/bge-m3")
+    _identity._reset_cache()
+
+    _identity.write_full_config(user_id="alice")
+    _identity._reset_cache()
+
+    assert _identity.resolve_embedding_model() == "BAAI/bge-m3"

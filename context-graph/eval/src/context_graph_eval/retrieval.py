@@ -157,7 +157,7 @@ class ReadOnlyGraph:
         """
         return self._db
 
-    def query(self, cypher: str) -> list[dict[str, Any]]:
+    def query(self, cypher: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         if is_write_query(cypher):
             raise WriteRefusedError(f"retrieval may not write to the graph under test: {cypher!r}")
         internal = internal_labels_in(cypher)
@@ -168,7 +168,7 @@ class ReadOnlyGraph:
                 "the answers. Query the model instead (Session, Action, Chunk, Episode, and the "
                 "entity labels)."
             )
-        return self._db.query(cypher)
+        return self._db.query(cypher, params)
 
 
 def is_write_query(cypher: str) -> bool:
@@ -221,6 +221,9 @@ def graph_schema(graph: ReadOnlyGraph) -> str:
 #: into the agent's prompt. Length is what separates an enum from a sentence.
 _MAX_DISTINCT_VALUES = 6
 _MAX_SCHEMA_VALUE_LENGTH = 40
+#: Properties that hold content by definition: a turn's message text, an entity's
+#: name. Never sampled, however short and few their values are.
+_CONTENT_KEYS = frozenset({"text"})
 
 #: Bounds the introspection itself, so describing the graph cannot become more
 #: expensive than querying it.
@@ -252,7 +255,40 @@ def _detailed_schema(graph: ReadOnlyGraph) -> str | None:
             start = ":".join(edge.get("start_labels") or ["?"])
             end = ":".join(edge.get("end_labels") or ["?"])
             lines.append(f"  (:{start})-[:{edge.get('edge_type')}]->(:{end})")
+        edge_types = sorted({str(e["edge_type"]) for e in edges if e.get("edge_type")})
+        properties = _describe_relationship_properties(graph, edge_types)
+        if properties:
+            lines.append("")
+            lines.append("Relationship properties:")
+            lines.extend(properties)
     return "\n".join(lines)
+
+
+#: Memgraph's valueType() names for temporal values, rendered as what they are.
+_TEMPORAL_TYPES = {"ZONED_DATE_TIME": "datetime", "LOCAL_DATE_TIME": "datetime", "DATE": "date", "DURATION": "duration"}
+
+
+def _describe_relationship_properties(graph: ReadOnlyGraph, edge_types: list[str]) -> list[str]:
+    """One line per relationship type that carries properties: each key and its value type.
+
+    Without it the agent cannot see what an edge carries -- e.g. that an
+    extracted fact's `valid_at` is a datetime it can compare or subtract (#364)
+    -- and goes looking for date nodes instead. Only keys and types are shown,
+    never values, for the same reason node properties hide free text.
+    """
+    described: list[str] = []
+    for edge_type in edge_types:
+        rows = graph.query(
+            f"MATCH ()-[r:`{edge_type}`]->() WITH r LIMIT 200 "
+            "UNWIND keys(r) AS key RETURN DISTINCT key, valueType(r[key]) AS type ORDER BY key"
+        )
+        if not rows:
+            continue
+        fields = ", ".join(
+            f"{row['key']} ({_TEMPORAL_TYPES.get(row['type'], str(row['type']).lower())})" for row in rows
+        )
+        described.append(f"  :{edge_type} -- {fields}")
+    return described
 
 
 def _label_sets(graph: ReadOnlyGraph) -> list[list[str]]:
@@ -295,7 +331,7 @@ def _describe_properties(graph: ReadOnlyGraph, labels: list[str]) -> list[str]:
             described.append(f"    {key}: JSON string, keys: {', '.join(json_keys)} (values are free text)")
             continue
 
-        if _is_enumerable(sample):
+        if key not in _CONTENT_KEYS and _is_enumerable(sample):
             described.append(f"    {key}: {', '.join(sorted(str(v) for v in sample))}")
         else:
             described.append(f"    {key}: free text (search it, do not match it exactly)")
@@ -351,6 +387,7 @@ async def retrieve(
     graph: ReadOnlyGraph,
     llm: LLM,
     max_steps: int = DEFAULT_MAX_STEPS,
+    today: str | None = None,
 ) -> Retrieved:
     """Answer ``question`` by letting ``llm`` query ``graph``.
 
@@ -407,7 +444,7 @@ async def retrieve(
             continue
         seen.extend(rendered)
 
-    answer = await llm.complete(_answer_prompt(question, seen))
+    answer = await llm.complete(answer_prompt(question, seen, today))
     return Retrieved(
         answer=answer.strip(),
         retrieval_context=seen,
@@ -500,10 +537,31 @@ def _query_prompt(question: str, schema: str, seen: list[str], errors: list[str]
     return "\n".join(parts)
 
 
-def _answer_prompt(question: str, seen: list[str]) -> str:
+def answer_prompt(question: str, seen: list[str], today: str | None = None) -> str:
+    """The final-answer prompt, shared by every retrieval strategy.
+
+    Public rather than private: ``text_search.py``'s baseline uses this exact
+    prompt too, deliberately -- a quality difference between two retrieval
+    strategies should be attributable to what was retrieved, not to two
+    different answering prompts.
+    """
     rows = "\n".join(seen[:200]) if seen else "(nothing was retrieved)"
+    # "How many days ago" is unanswerable without knowing when the question is
+    # asked, whatever the graph holds (#367).
+    asked = f"The question is being asked on {today}.\n" if today else ""
     return (
-        "Answer the question using only the rows below. Be concise. "
-        'If the rows do not contain the answer, say exactly "not in memory".\n\n'
-        f"Rows:\n{rows}\n\nQuestion: {question}\nAnswer:"
+        "Answer the user's question from their memory: the rows below, retrieved from their past "
+        "conversations. Each row carries the date it was said or became true.\n"
+        '- "Today", "yesterday", "last week" inside a row are relative to that row\'s date, not to now.\n'
+        "- For a count, a total, or the time between events: list each matching item or value with its "
+        "date, count an item mentioned in several rows once, then compute.\n"
+        "- When rows disagree about the same thing, the most recent one is current.\n"
+        "- When the question asks for a recommendation or suggestion, always recommend: use the "
+        "preferences, interests and possessions the rows show, add your own knowledge where they name "
+        'nothing specific, and say which preferences you used. Never answer one with "not in memory".\n'
+        "- Any other question about something the rows never mention, or that assumes something they do "
+        'not show: say exactly "not in memory" -- do not answer a related question instead.\n'
+        '- Otherwise, if the rows do not contain the answer, say exactly "not in memory".\n'
+        "Keep the working short and put the final answer last.\n\n"
+        f"Rows:\n{rows}\n\n{asked}Question: {question}\nAnswer:"
     )

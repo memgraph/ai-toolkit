@@ -16,21 +16,29 @@ import asyncio
 import os
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
+from . import official_judge
 from .convert.longmemeval import to_session_fixtures
+from .hybrid import RecallConfig, ensure_recall_ready, retrieve_hybrid
 from .inject import PENDING, inject_batch
 from .reconcile import BACKEND_CLASS_NAMES, ExtractionBackendName, reconcile_batch
 from .retrieval import ReadOnlyGraph, Retrieved, retrieve
 from .scoring import (
     DEFAULT_COVERAGE_THRESHOLD,
+    RUBRICS,
     Scored,
     aggregate,
     bleu_score,
     efficiency_tokens,
     enforce_retrieval_floor,
+    evidence_recall,
+    gate_score,
+    rubric_for,
     token_f1_score,
 )
+from .text_search import DEFAULT_LIMIT as DEFAULT_TEXT_SEARCH_LIMIT
+from .text_search import ensure_turn_text_index, retrieve_by_text_search
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
     from deepeval.dataset import Golden
@@ -38,6 +46,14 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
     from actions_graph import ActionsGraph
 
     from .retrieval import LLM
+
+#: "graph-agent" (default, #300's existing baseline: an agent writes its own
+#: Cypher against the reconciled memory) or "text-search" (this eval's cheaper
+#: comparison point: Memgraph's own full-text index over raw, unreconciled
+#: turns -- see text_search.py). Deliberately the one axis report.compare()
+#: does NOT pin: it is usually the thing a run using this field is measuring.
+RetrievalStrategyName = Literal["graph-agent", "text-search", "hybrid"]
+RETRIEVAL_STRATEGIES: tuple[RetrievalStrategyName, ...] = ("graph-agent", "text-search", "hybrid")
 
 
 @dataclass(frozen=True)
@@ -60,6 +76,9 @@ class RunPlan:
     reconcile_limit: int | None = None
     max_concurrent: int = 4
     coverage_threshold: float = DEFAULT_COVERAGE_THRESHOLD
+    #: LongMemEval's own judge (official_judge.py), which decides ``covered``
+    #: when set; None leaves the deepeval answer rubrics deciding it.
+    official_judge_model: str | None = None
     #: Trim each question's haystack. Reconciliation cost scales with sessions
     #: while coverage needs questions, and upstream couples them ~47:1. Any
     #: score measured with this set is an UPPER BOUND: fewer distractors make
@@ -73,8 +92,20 @@ class RunPlan:
     #: evaluated, silently.
     memgraph_url: str | None = None
     #: "lightrag" (default) or "gliner2" -- see reconcile.EXTRACTION_BACKENDS
-    #: and reconcile_batch's docstring for what each implies.
+    #: and reconcile_batch's docstring for what each implies. Meaningless when
+    #: retrieval_strategy="text-search" (nothing reconciles), and ignored then.
     extraction_backend: ExtractionBackendName = "lightrag"
+    #: "graph-agent" (default) or "text-search" -- see RETRIEVAL_STRATEGIES
+    #: above. "text-search" forces reconciliation off regardless of
+    #: ``reconcile`` above: the whole point of that baseline is to skip the
+    #: dominant cost, and running reconciliation anyway would just discard its
+    #: output unused.
+    retrieval_strategy: RetrievalStrategyName = "graph-agent"
+    #: How many text-search hits to hand the answering LLM. Ignored for
+    #: "graph-agent". See text_search.DEFAULT_LIMIT for why this is not tuned.
+    text_search_limit: int = DEFAULT_TEXT_SEARCH_LIMIT
+    #: "hybrid" only: which recall lanes run and how wide (sessions_graph.RecallConfig).
+    hybrid: RecallConfig = field(default_factory=RecallConfig)
 
 
 @dataclass(frozen=True)
@@ -85,6 +116,9 @@ class BatchReport:
     scored: list[Scored] = field(default_factory=list)
     reconciled: int = 0
     reconcile_failures: int = 0
+    #: Turns text_search.ensure_turn_text_index indexed.
+    #: Always 0 for retrieval_strategy="graph-agent", which never calls it.
+    indexed_turns: int = 0
 
 
 def _require_reconciled(fixtures: list, *, graph: "ActionsGraph", extraction_backend: ExtractionBackendName) -> None:
@@ -205,13 +239,23 @@ async def run_batch(
         for record in records
         for fixture in to_session_fixtures(record, max_sessions=plan.max_sessions_per_question)
     ]
-    if plan.reuse_graph:
+    # reuse_graph exists to skip reconciliation's dominant LLM cost (#322) --
+    # text-search has no such cost to skip (indexing is deterministic and
+    # cheap), and _require_reconciled's pending-status check is meaningless
+    # for a strategy that never reconciles anything, so text-search always
+    # re-injects rather than reusing.
+    if plan.reuse_graph and plan.retrieval_strategy != "text-search":
         _require_reconciled(fixtures, graph=graph, extraction_backend=plan.extraction_backend)
     else:
         inject_batch(fixtures, graph=graph)
 
-    reconciled = failures = 0
-    if plan.reconcile:
+    reconciled = failures = indexed_turns = 0
+    if plan.retrieval_strategy == "text-search":
+        # No reconciliation regardless of plan.reconcile: this baseline's
+        # whole point is to skip the dominant cost, and reconciling anyway
+        # would just build memory this strategy never reads.
+        indexed_turns = ensure_turn_text_index(graph).turns
+    elif plan.reconcile:
         outcome = await reconcile_batch(
             graph.db,
             limit=plan.reconcile_limit,
@@ -221,15 +265,19 @@ async def run_batch(
         reconciled, failures = outcome.reconciled, outcome.failed
 
     read_only = ReadOnlyGraph(graph.db)
-    retrieved = await _retrieve_all(goldens, read_only, llm, plan.max_concurrent)
+    if plan.retrieval_strategy == "hybrid":
+        ensure_recall_ready(graph.db)
+    retrieved = await _retrieve_all(goldens, read_only, llm, plan)
 
-    scored = _score(goldens, retrieved, plan)
+    official = await _official_labels(goldens, retrieved, plan)
+    scored = _score(goldens, retrieved, plan, official)
     report = aggregate(scored)
     return BatchReport(
         by_tier=report.by_tier,
         scored=scored,
         reconciled=reconciled,
         reconcile_failures=failures,
+        indexed_turns=indexed_turns,
     )
 
 
@@ -237,7 +285,7 @@ async def _retrieve_all(
     goldens: list["Golden"],
     graph: ReadOnlyGraph,
     llm: "LLM",
-    max_concurrent: int,
+    plan: RunPlan,
 ) -> list[Retrieved]:
     """Retrieve for every question, bounded so a batch cannot stampede the model.
 
@@ -245,13 +293,33 @@ async def _retrieve_all(
     propagating: a coverage rate computed over a silently shortened corpus is
     wrong, not merely noisy, so a failure has to be reported as a miss.
     """
-    limiter = asyncio.Semaphore(max_concurrent)
+    limiter = asyncio.Semaphore(plan.max_concurrent)
 
     async def one(golden: "Golden") -> Retrieved:
         async with limiter:
             started = time.monotonic()
+            # When the question is asked -- the corpus's question_date, as a
+            # real session's "now" -- without which "how many days ago" and
+            # "this year" have nothing to count from (#367).
+            today = (golden.additional_metadata or {}).get("question_date")
             try:
-                return await retrieve(golden.input, graph=graph, llm=llm)
+                if plan.retrieval_strategy == "hybrid":
+                    # Each question is its own user's history (to_session_fixtures).
+                    if golden.name is None:
+                        raise ValueError("hybrid recall needs the question's user, carried as the golden's name")
+                    return await retrieve_hybrid(
+                        golden.input,
+                        graph=graph,
+                        llm=llm,
+                        config=plan.hybrid,
+                        today=today,
+                        user_id=golden.name,
+                    )
+                if plan.retrieval_strategy == "text-search":
+                    return await retrieve_by_text_search(
+                        golden.input, graph=graph, llm=llm, limit=plan.text_search_limit, today=today
+                    )
+                return await retrieve(golden.input, graph=graph, llm=llm, today=today)
             except Exception as exc:
                 # retrieve() times itself, but that timing rides out on the
                 # Retrieved it returns -- a raise never produces one, so the
@@ -276,7 +344,30 @@ class _Judged:
     reasons: dict[str, str] = field(default_factory=dict)
 
 
-def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -> list[Scored]:
+async def _official_labels(
+    goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan
+) -> dict[str, bool | None]:
+    """LongMemEval's judge's verdict per question it has a template for; {} when it isn't configured."""
+    if plan.official_judge_model is None:
+        return {}
+    prompts = {}
+    for golden, result in zip(goldens, retrieved, strict=True):
+        metadata = golden.additional_metadata or {}
+        abstention = bool(metadata.get("abstention"))
+        if golden.name and official_judge.judges(metadata.get("question_type"), abstention=abstention):
+            prompts[golden.name] = official_judge.anscheck_prompt(
+                metadata.get("question_type", ""),
+                golden.input,
+                golden.expected_output or "",
+                result.answer,
+                abstention=abstention,
+            )
+    return await official_judge.judge_all(prompts, model=plan.official_judge_model, max_concurrent=plan.max_concurrent)
+
+
+def _score(
+    goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan, official: dict[str, bool | None] | None = None
+) -> list[Scored]:
     """Turn retrieval results into per-question scores.
 
     Efficiency, BLEU, F1 and latency are all computed regardless of whether a
@@ -291,16 +382,22 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
     for golden, result in zip(goldens, retrieved, strict=True):
         metadata = golden.additional_metadata or {}
         outcome = judged.get(golden.name, _Judged())
-        # The weakest metric gates: passing one check while failing another is
-        # not a pass. The individual scores are kept alongside so a failure can
-        # still be attributed to retrieval or to the answer.
-        coverage = min(outcome.scores.values()) if outcome.scores else 0.0
+        # The answer rubric's score -- the gate when LongMemEval's judge didn't
+        # run; Contextual Recall rides along in metric_scores as the retrieval
+        # signal (scoring.RETRIEVAL_SIGNAL).
+        coverage = gate_score(outcome.scores)
+        # LongMemEval's judge decides when it judged this question (#409); its
+        # failed call is unjudged, never a fallback to our own rubrics.
+        judged_by = "official" if official and golden.name in official else "answer"
+        verdict = official.get(golden.name) if official and golden.name else None
         scored.append(
             Scored(
                 name=golden.name or golden.input,
                 tier=metadata.get("tier", 1),
                 coverage=coverage,
-                covered=coverage >= plan.coverage_threshold,
+                covered=bool(verdict) if judged_by == "official" else coverage >= plan.coverage_threshold,
+                judged_by=judged_by,
+                official_correct=verdict,
                 efficiency_tokens=efficiency_tokens(result),
                 abstention=bool(metadata.get("abstention")),
                 answer=result.answer,
@@ -309,6 +406,9 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
                 bleu=bleu_score(golden.expected_output, result.answer),
                 f1=token_f1_score(golden.expected_output, result.answer),
                 latency_seconds=result.latency_seconds,
+                evidence_recall=(
+                    None if metadata.get("abstention") else evidence_recall(golden.context, result.retrieval_context)
+                ),
             )
         )
     # Applied after judging, not before: the per-metric scores are kept as the
@@ -323,9 +423,10 @@ def _score(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
 def _judge(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -> dict[str, _Judged]:
     """Score answer quality with deepeval, returning per-metric scores per question.
 
-    Abstention and ordinary questions are judged in **separate passes**, because
-    they need different metrics: ContextualRecall is structurally inapplicable
-    to a question whose correct retrieved context is empty (see
+    Each answer rubric is judged in its **own pass** (``scoring.rubric_for``),
+    because the metrics differ: ContextualRecall is structurally inapplicable
+    to an abstention question, whose correct retrieved context is empty, and a
+    preference question's expected output is a rubric rather than facts (see
     ``scoring.build_metrics``). Scoring them together made every abstention
     question unpassable.
 
@@ -334,14 +435,14 @@ def _judge(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -
     """
     paired = list(zip(goldens, retrieved, strict=True))
     judged: dict[str, _Judged] = {}
-    for abstention in (False, True):
-        group = [(g, r) for g, r in paired if bool((g.additional_metadata or {}).get("abstention")) is abstention]
+    for rubric in RUBRICS:
+        group = [(g, r) for g, r in paired if rubric_for(g.additional_metadata or {}) == rubric]
         if group:
-            judged.update(_judge_group(group, plan, abstention=abstention))
+            judged.update(_judge_group(group, plan, rubric=rubric))
     return judged
 
 
-def _judge_group(group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, abstention: bool) -> dict[str, _Judged]:
+def _judge_group(group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, rubric: str) -> dict[str, _Judged]:
     from deepeval import evaluate
     from deepeval.evaluate.configs import AsyncConfig, DisplayConfig, ErrorConfig
 
@@ -351,7 +452,7 @@ def _judge_group(group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, abst
     cases = [to_test_case(g, r) for g, r in group]
     result = evaluate(
         test_cases=cases,
-        metrics=build_metrics(plan.judge, abstention=abstention),
+        metrics=build_metrics(plan.judge, rubric=rubric),
         async_config=AsyncConfig(max_concurrent=plan.max_concurrent),
         display_config=DisplayConfig(print_results=False, show_indicator=False),
         # One question the judge cannot score should not abandon the batch --
@@ -360,11 +461,19 @@ def _judge_group(group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, abst
     )
 
     judged: dict[str, _Judged] = {}
-    for golden, test_result in zip(goldens, result.test_results, strict=False):
-        # Kept per metric, not collapsed. The weakest still decides the gate --
-        # passing one check while failing another is not a pass -- but which
-        # one failed is what tells you whether retrieval or the answer was at
-        # fault, and #304 pointed out that attribution is free here.
+    # Matched by name, never by position: deepeval returns test results in
+    # completion order under async concurrency, so zipping them with the input
+    # order handed every question another question's scores -- verified with a
+    # fake metric of random latency, and visible in saved runs as Contextual
+    # Recall reasons quoting a different question's expected answer.
+    by_name = {test_result.name: test_result for test_result in result.test_results}
+    for golden in goldens:
+        test_result = by_name.get(golden.name)
+        if test_result is None:
+            continue
+        # Kept per metric, not collapsed: the answer rubric decides the gate,
+        # and the retrieval signal beside it tells you whether retrieval or the
+        # answer was at fault -- #304 pointed out that attribution is free here.
         # run_batch has already rejected nameless goldens; asserted rather than
         # re-checked so the type narrows and the invariant stays stated once.
         assert golden.name is not None

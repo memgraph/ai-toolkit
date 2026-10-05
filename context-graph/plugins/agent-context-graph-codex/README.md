@@ -27,7 +27,7 @@ The plugin installs hook wiring, while the runtime package is installed by the C
 Bootstrap expects `uv` and a reachable Memgraph instance. If Memgraph is not running, start it and rerun bootstrap:
 
 ```bash
-docker run --rm -p 7687:7687 memgraph/memgraph
+docker run --rm -p 7687:7687 memgraph/memgraph-mage
 ```
 
 `uv` manages Python for the tool. If uv-managed Python downloads are blocked in your environment, install Python 3.10+ and rerun bootstrap.
@@ -37,6 +37,22 @@ Bootstrap installs and verifies:
 ```bash
 agent-context-graph bootstrap --runtime codex --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
+
+## Recall
+
+The plugin also bundles an MCP server, `agent-context-graph mcp` (see `.mcp.json`), which gives the model a `recall` tool (`recall` on the `context-graph` MCP server) over the user's own past sessions. At session start the hook adds one line telling the model the tool is there; the model calls it when a question needs memory. Recall needs the `mcp` extra, which `bootstrap.sh` installs, and Memgraph with MAGE for its vector search. See [agent-context-graph § Recall](../../agent-context-graph/README.md#recall-memory-for-the-harnesss-model).
+
+Two Codex specifics:
+
+- **Hooks need trust.** Codex runs a plugin's hooks only after you trust them in the startup review (or `/hooks`); until then nothing is recorded and the session-start line isn't added. `codex exec` never asks, so for unattended runs pass `--dangerously-bypass-hook-trust` or trust them once interactively.
+- **Recall asks for approval** on each call, like any MCP tool. To allow it without asking, add to `~/.codex/config.toml`:
+
+  ```toml
+  [plugins."context-graph@context-graph-plugins".mcp_servers.context-graph]
+  default_tools_approval_mode = "approve"
+  ```
+
+Codex hands MCP servers only selected environment variables, so `.mcp.json` forwards `CONTEXT_GRAPH_CONFIG`: a session pointed at another config file recalls from the same graph its hooks write to.
 
 ## Configure
 

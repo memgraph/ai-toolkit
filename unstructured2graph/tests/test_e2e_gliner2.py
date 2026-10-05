@@ -24,7 +24,18 @@ import importlib.util
 
 import pytest
 
-from unstructured2graph import EntityType, Ontology, RelationType, from_texts
+from unstructured2graph import (
+    Document,
+    EntityType,
+    Ontology,
+    RelationType,
+    Segment,
+    enforce_relation_domain_range,
+    from_documents,
+    from_texts,
+    ontology_report,
+    promote_entity_types_to_labels,
+)
 
 requires_gliner2 = pytest.mark.skipif(
     importlib.util.find_spec("gliner2") is None,
@@ -66,18 +77,75 @@ async def test_from_texts_extracts_typed_relation_with_custom_ontology(memgraph)
 
     ontology = Ontology(
         entity_types=(
-            EntityType(label="person", description="Human individuals"),
-            EntityType(label="organization", description="Companies, institutions, groups"),
+            EntityType(label="Person", description="Human individuals"),
+            EntityType(label="Organization", description="Companies, institutions, groups"),
         ),
-        relation_types=(RelationType(label="works_for", description="Employment relationship"),),
+        relation_types=(
+            RelationType(
+                label="works_for",
+                description="Employment relationship",
+                start_labels=("Person",),
+                end_labels=("Organization",),
+            ),
+        ),
     )
     backend = GLiNER2Backend(ontology=ontology)
 
-    await from_texts(
-        ["Alice Johnson works for Acme Corp."],
-        memgraph,
-        backend,
-    )
+    await from_texts(["Alice Johnson works for Acme Corp."], memgraph, backend)
 
-    rows = memgraph.query("MATCH (:gliner2)-[r:works_for]->(:gliner2) RETURN count(r) AS count")
-    assert rows[0]["count"] > 0
+    rows = memgraph.query(
+        "MATCH (a:gliner2)-[r:works_for]->(b:gliner2) RETURN a.entity_type AS head, b.entity_type AS tail"
+    )
+    assert rows
+    assert all((row["head"], row["tail"]) == ("Person", "Organization") for row in rows)
+
+
+@requires_gliner2
+@pytest.mark.asyncio
+async def test_a_conversation_binds_the_users_facts_to_their_node_conformantly(memgraph):
+    """The typed relation model on the real model: one turn per window, the
+    user's own mentions bound to (:User), valid_at from the turn, and nothing
+    non-conformant after the post-hoc check (#355)."""
+    from unstructured2graph.gliner2_backend import GLiNER2Backend
+
+    ontology = Ontology(
+        entity_types=(
+            EntityType("User", "the person speaking in the first person -- I, me, my, myself", "global"),
+            EntityType("Person", "another named individual: a family member, friend, colleague", "global"),
+            EntityType("Location", "a place: a city, country, neighbourhood, venue or building", "global"),
+            EntityType("Duration", "a length of time: 25:50, 45 minutes, three weeks", "span"),
+        ),
+        relation_types=(
+            RelationType("visited", "", ("User", "Person"), ("Location",)),
+            RelationType("personal_best", "", ("User", "Person"), ("Duration",)),
+        ),
+    )
+    turns = [
+        (
+            "user",
+            "I just got back from Paris, and yesterday I ran my best 5K ever: 25:50.",
+            "2023-05-30T17:27:00+00:00",
+        ),
+        ("assistant", "Congratulations! Paris is a great city for running.", "2023-05-30T17:27:01+00:00"),
+    ]
+    text, segments = "", []
+    for role, body, when in turns:
+        turn = f"{role}: {body}"
+        start = len(text) + (2 if text else 0)
+        text = f"{text}\n\n{turn}" if text else turn
+        segments.append(Segment(start, start + len(turn), role, when))
+    memgraph.query("MERGE (:User {user_id: 'u1'})")
+    backend = GLiNER2Backend(ontology=ontology)
+
+    grouped = await from_documents([Document(text, tuple(segments), "u1")], memgraph, backend)
+    promote_entity_types_to_labels(memgraph, "gliner2", ontology)
+    assert enforce_relation_domain_range(memgraph, "gliner2", ontology) == []
+
+    rows = memgraph.query(
+        "MATCH (:User {user_id: 'u1'})-[r]->(b:gliner2) RETURN type(r) AS type, b.text AS tail, toString(r.valid_at) AS valid_at"
+    )
+    assert rows, "expected at least one of the user's own facts on (:User)"
+    assert all(row["valid_at"] == "2023-05-30T17:27:00.000000+00:00" for row in rows)
+    report = ontology_report(memgraph, "gliner2", ontology, chunk_hashes=[grouped[0][0].hash])
+    assert (report.nonconformant_entities, report.nonconformant_relations) == (0, 0)
+    assert memgraph.query("MATCH (n:gliner2 {entity_type: 'User'}) RETURN count(n) AS n") == [{"n": 0}]

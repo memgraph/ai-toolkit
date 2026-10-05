@@ -97,6 +97,31 @@ async def test_bleu_f1_and_latency_are_scored_without_a_judge(eval_graph: Action
     assert scored.latency_seconds > 0.0
 
 
+async def test_every_question_is_answered_knowing_when_it_is_asked(eval_graph: ActionsGraph):
+    """'How many days ago' has nothing to count from without the question date,
+    so the runner always passes it -- there is no run that should go without (#367)."""
+
+    class _Recording(_StubLLM):
+        def __init__(self):
+            super().__init__()
+            self.prompts: list[str] = []
+
+        async def complete(self, prompt: str) -> str:
+            self.prompts.append(prompt)
+            return await super().complete(prompt)
+
+    llm = _Recording()
+    await run_batch(
+        [to_golden(_record("q1"))],
+        records=[_record("q1")],
+        graph=eval_graph,
+        llm=llm,
+        plan=RunPlan(reconcile=False, judge=None),
+    )
+
+    assert "The question is being asked on 2023/06/15 (Thu) 09:12." in llm.prompts[-1]
+
+
 async def test_fixtures_are_injected_before_retrieval_runs(eval_graph: ActionsGraph):
     """Ordering is the runner's whole job: retrieving before injection would
     query an empty graph and score every question as a miss."""
@@ -108,7 +133,7 @@ async def test_fixtures_are_injected_before_retrieval_runs(eval_graph: ActionsGr
         plan=RunPlan(reconcile=False, judge=None),
     )
 
-    assert eval_graph.get_session("q1-s1") is not None
+    assert eval_graph.get_session("q1--q1-s1") is not None
 
 
 async def test_retrieval_payload_is_measured_even_without_a_judge(eval_graph: ActionsGraph):
@@ -173,6 +198,72 @@ async def test_judge_reasons_are_kept_alongside_scores(eval_graph: ActionsGraph,
     assert report.scored[0].metric_scores == {"Coverage": 0.4}
 
 
+async def test_a_correct_computed_answer_is_covered_though_no_row_states_it(eval_graph: ActionsGraph, monkeypatch):
+    """Contextual Recall finds no retrieved row stating "17 days" when the turns
+    say 7 and 10; the answer rubric decides, and recall is kept to report (#397)."""
+    import context_graph_eval.runner as runner_module
+    from context_graph_eval.runner import _Judged
+
+    monkeypatch.setattr(
+        runner_module,
+        "_judge",
+        lambda goldens, retrieved, plan: {"q1": _Judged(scores={"Contextual Recall": 0.0, "Coverage [GEval]": 0.9})},
+    )
+
+    report = await run_batch(
+        [to_golden(_record("q1"))],
+        records=[_record("q1")],
+        graph=eval_graph,
+        llm=_StubLLM(),
+        plan=RunPlan(reconcile=False, judge=object()),
+    )
+
+    assert report.scored[0].covered
+    assert report.scored[0].metric_scores["Contextual Recall"] == 0.0
+
+
+async def test_longmemevals_judge_decides_coverage_when_it_runs(eval_graph: ActionsGraph, monkeypatch):
+    """Our rubric passed q1 and failed q2; the official judge says the opposite
+    and decides. A failed official call leaves q3 unjudged -- never a fallback to
+    our rubric (#409)."""
+    import context_graph_eval.runner as runner_module
+    from context_graph_eval import official_judge
+    from context_graph_eval.runner import _Judged
+
+    monkeypatch.setattr(
+        runner_module,
+        "_judge",
+        lambda goldens, retrieved, plan: {
+            "q1": _Judged(scores={"Coverage [GEval]": 0.9}),
+            "q2": _Judged(scores={"Coverage [GEval]": 0.1}),
+            "q3": _Judged(scores={"Coverage [GEval]": 0.9}),
+        },
+    )
+    asked: dict[str, str] = {}
+
+    async def _fake_official(prompts, *, model, max_concurrent):
+        asked.update(prompts)
+        return {"q1": False, "q2": True, "q3": None}
+
+    monkeypatch.setattr(official_judge, "judge_all", _fake_official)
+    records = [_record("q1"), _record("q2"), _record("q3")]
+
+    report = await run_batch(
+        [to_golden(r) for r in records],
+        records=records,
+        graph=eval_graph,
+        llm=_StubLLM(),
+        plan=RunPlan(reconcile=False, judge=object(), official_judge_model="gpt-4o-2024-08-06"),
+    )
+
+    by_name = {s.name: s for s in report.scored}
+    assert (by_name["q1"].covered, by_name["q2"].covered) == (False, True)
+    assert by_name["q3"].official_correct is None and not by_name["q3"].judged
+    tier = report.by_tier[1]
+    assert (tier.covered, tier.questions, tier.unscored, tier.rubric_covered) == (1, 2, 1, 1)
+    assert "Correct Answer: A beagle." in asked["q1"]
+
+
 async def test_reconciliation_is_told_which_graph_to_write_to(eval_graph: ActionsGraph, monkeypatch):
     """LightRAG's storage backends resolve their connection from the environment
     rather than the client passed in, so a run that does not plumb the URL
@@ -216,6 +307,50 @@ async def test_an_empty_corpus_runs_without_error(eval_graph: ActionsGraph):
     assert report.by_tier == {}
 
 
+class _FixedAnswerLLM:
+    """Answers every call the same way -- text-search only ever makes one
+    LLM call per question (the final answer), unlike the graph-agent
+    baseline's query/observe loop, so there is no call-parity to script."""
+
+    async def complete(self, prompt: str) -> str:
+        return "A beagle."
+
+
+async def test_text_search_strategy_skips_reconciliation(eval_graph: ActionsGraph):
+    """The whole point of this baseline is to skip reconciliation's dominant
+    LLM cost, so retrieval_strategy="text-search" must not pay for it even
+    when reconcile defaults to True."""
+    report = await run_batch(
+        [to_golden(_record("q1"))],
+        records=[_record("q1")],
+        graph=eval_graph,
+        llm=_FixedAnswerLLM(),
+        plan=RunPlan(reconcile=True, judge=None, retrieval_strategy="text-search"),
+    )
+
+    assert report.reconciled == 0
+    assert report.reconcile_failures == 0
+    # The turn planted by _record's "fact" is real content, so indexing found
+    # something to index -- 0 here would mean indexing silently no-opped.
+    assert report.indexed_turns > 0
+
+
+async def test_text_search_strategy_still_scores_questions(eval_graph: ActionsGraph):
+    """Skipping reconciliation must not mean skipping scoring: efficiency and
+    the rest of the judge-free rubric apply to this baseline exactly as they
+    do to the graph-agent one."""
+    report = await run_batch(
+        [to_golden(_record("q1"))],
+        records=[_record("q1")],
+        graph=eval_graph,
+        llm=_FixedAnswerLLM(),
+        plan=RunPlan(reconcile=False, judge=None, retrieval_strategy="text-search"),
+    )
+
+    assert report.scored[0].name == "q1"
+    assert report.scored[0].answer == "A beagle."
+
+
 async def test_a_question_whose_retrieval_fails_is_still_reported(eval_graph: ActionsGraph):
     """A batch must report a miss rather than losing the question: a coverage
     rate computed over a silently shortened corpus is wrong, not just noisy."""
@@ -255,7 +390,10 @@ async def test_a_failed_retrieval_preserves_the_time_it_spent_before_raising(mon
 
     golden = to_golden(_record("q1"))
     retrieved = await runner_module._retrieve_all(
-        [golden], graph=cast("ReadOnlyGraph", object()), llm=cast("LLM", object()), max_concurrent=1
+        [golden],
+        graph=cast("ReadOnlyGraph", object()),
+        llm=cast("LLM", object()),
+        plan=RunPlan(max_concurrent=1),
     )
 
     assert retrieved[0].latency_seconds >= 0.05
@@ -390,3 +528,74 @@ async def test_reusing_a_graph_with_no_recorded_backend_is_not_refused(eval_grap
         llm=_StubLLM(),
         plan=RunPlan(reconcile=False, reuse_graph=True, judge=None, extraction_backend="gliner2"),
     )
+
+
+def test_each_answer_rubric_is_judged_in_its_own_pass(monkeypatch):
+    """Abstention, preference and ordinary questions need different metrics,
+    so each group goes to the judge with its own (scoring.build_metrics)."""
+    import context_graph_eval.runner as runner_module
+    from context_graph_eval.retrieval import Retrieved
+    from context_graph_eval.runner import _judge
+
+    seen: dict[str, list[str]] = {}
+
+    def _fake_group(group, plan, *, rubric):
+        seen[rubric] = [g.name for g, _ in group]
+        return {}
+
+    monkeypatch.setattr(runner_module, "_judge_group", _fake_group)
+    goldens = [
+        to_golden(_record("q1")),
+        to_golden({**_record("q2"), "question_type": "single-session-preference"}),
+        to_golden(_record("q3_abs")),
+    ]
+
+    _judge(goldens, [Retrieved(answer="x") for _ in goldens], RunPlan(judge=object()))
+
+    assert seen == {"answer": ["q1"], "preference": ["q2"], "abstention": ["q3_abs"]}
+
+
+def test_judge_results_are_matched_to_their_own_question(monkeypatch):
+    """deepeval returns results in completion order under concurrency. Matching
+    them by position handed every question another question's scores."""
+    import asyncio
+    import random
+
+    from context_graph_eval import scoring
+    from context_graph_eval.retrieval import Retrieved
+    from context_graph_eval.runner import RunPlan, _judge_group
+    from deepeval.dataset import Golden
+    from deepeval.metrics import BaseMetric
+
+    class _Slow(BaseMetric):
+        """Scores each case by the number in its input, after a random delay."""
+
+        threshold = 0.5
+
+        def __init__(self):
+            self.async_mode = True
+
+        def measure(self, test_case, *args, **kwargs):
+            raise NotImplementedError
+
+        async def a_measure(self, test_case, *args, **kwargs):
+            await asyncio.sleep(random.random() / 20)
+            self.score = int(test_case.input.split("-")[1]) / 100
+            self.reason = test_case.input
+            self.success = True
+            return self.score
+
+        def is_successful(self):
+            return True
+
+        @property
+        def __name__(self):
+            return "Slow"
+
+    monkeypatch.setattr(scoring, "build_metrics", lambda judge, rubric="answer": [_Slow()])
+    goldens = [Golden(name=f"n{i}", input=f"q-{i}", expected_output="e") for i in range(12)]
+    group = [(g, Retrieved(answer="a")) for g in goldens]
+
+    judged = _judge_group(group, RunPlan(judge=object(), max_concurrent=4), rubric="answer")
+
+    assert {name: j.reasons["Slow"] for name, j in judged.items()} == {f"n{i}": f"q-{i}" for i in range(12)}

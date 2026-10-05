@@ -4,9 +4,10 @@ Injection stages content only. It does not distil anything -- reconciliation is
 a separate, LLM-backed pass the runner triggers afterwards, exactly as it would
 run over a real harness session.
 
-Isolation is per **batch**, not per question: a batch-wide graph is what gives
-retrieval distractors to get wrong, and without distractors both precision and
-the payload-size efficiency metric would score well by construction.
+A batch is one graph holding many people: each question's haystack is its
+own user's history (``SessionFixture.user_id``), and retrieval is scoped to the
+asking user. The distractors a question has to get past are its own
+haystack's, as LongMemEval frames them -- not other people's sessions.
 
 The eval instance is cleared before each batch so every run starts from known,
 fixed state -- otherwise a question could be answered from a previous run's
@@ -17,6 +18,7 @@ this must never point at a shared or development database.
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
@@ -26,6 +28,21 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
 
 #: Marks the Session as awaiting distillation. Reconciliation sweeps for this.
 PENDING = "pending"
+
+#: LongMemEval's session date format, e.g. '2023/05/30 (Tue) 17:27'.
+CORPUS_DATE_FORMAT = "%Y/%m/%d (%a) %H:%M"
+
+
+def corpus_time(date: str) -> datetime | None:
+    """A corpus session date as a UTC datetime, or None if it isn't in CORPUS_DATE_FORMAT.
+
+    The corpus gives no timezone; UTC is assumed, which only matters for
+    arithmetic across sessions, and there every session shares it.
+    """
+    try:
+        return datetime.strptime(date, CORPUS_DATE_FORMAT).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
 
 
 @dataclass(frozen=True)
@@ -39,12 +56,9 @@ class Written:
 def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph") -> Written:
     """Clear the eval graph, then load ``fixtures`` into it.
 
-    Fixtures are deduplicated by ``session_id``. Upstream reuses distractor
-    sessions across questions, and a repeated id carries identical content --
-    verified across the whole dataset -- so a repeat is the *same* session, not
-    a new one. Writing it per occurrence would append its turns again on every
-    reuse, duplicating content in the graph and paying to reconcile each copy
-    (about 4,600 redundant LLM-backed reconciliations over a full run).
+    Each session is linked to its fixture's ``(:User)``. Fixtures are
+    deduplicated by ``session_id``: writing a repeat again would append its
+    turns a second time.
 
     Returns counts of what was written, so a caller can assert the batch landed
     rather than inferring it from the absence of an exception.
@@ -69,10 +83,11 @@ def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph")
 
     turns = 0
     for fixture in deduped.values():
+        started = corpus_time(fixture.date)
         graph.ensure_session(
             Session(
                 session_id=fixture.session_id,
-                started_at=fixture.date,
+                started_at=started.isoformat() if started else fixture.date,
                 # Deliberately not written: SessionFixture.holds_evidence. That
                 # is corpus-side bookkeeping, and putting it in the graph would
                 # hand retrieval the answer's location -- telling the thing
@@ -80,14 +95,26 @@ def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph")
                 metadata={"origin": "eval-fixture"},
             )
         )
-        for turn in fixture.turns:
+        for index, turn in enumerate(fixture.turns):
+            # Stamped with the session's own date, not left at ingest time:
+            # an extracted fact's valid_at is its source turn's timestamp
+            # (#364), and ingest time would date every fact to the eval run.
+            # One second apart because get_session_actions orders by
+            # timestamp, so identical stamps would lose the turn order.
+            stamp = {"timestamp": (started + timedelta(seconds=index)).isoformat()} if started else {}
             graph.record_message(
                 session_id=fixture.session_id,
                 role=MessageRole(turn.role),
                 content=turn.content,
+                **stamp,
             )
             turns += 1
 
+        graph.db.query(
+            "MERGE (u:User {user_id: $user_id}) WITH u MATCH (s:Session {session_id: $session_id}) "
+            "MERGE (u)-[:HAD_SESSION]->(s)",
+            {"user_id": fixture.user_id, "session_id": fixture.session_id},
+        )
         _mark_pending(graph, fixture.session_id)
 
     return Written(sessions=len(deduped), turns=turns)

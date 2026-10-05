@@ -24,7 +24,9 @@ from typing import TYPE_CHECKING, Any
 
 from memgraph_toolbox.api.memgraph import Memgraph
 
+from .embeddings import DEFAULT_EMBEDDING_MODEL, Embedded, EmbeddingUnavailableError, embed_session
 from .models import Memory, validate_content, validate_memory_id, validate_user_id
+from .recall import TURN_TEXT_INDEX, RecallConfig, Recalled, recall
 from .reconciliation import (
     MAX_SESSION_BATCH_CHARS,
     NODE_LABELS,
@@ -39,7 +41,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from actions_graph import ActionsGraph
-    from unstructured2graph import ExtractionBackend
+    from unstructured2graph import Document, ExtractionBackend
 
 _FULLTEXT_INDEX = "memory_content_index"
 
@@ -62,6 +64,23 @@ class _PreparedSession:
         """The session's deduped texts joined into the one document LightRAG sees."""
         return "\n\n".join(self.unique_texts.values())
 
+    def document(self, user_id: str) -> Document:
+        """combined_text as an unstructured2graph Document: one segment per deduped
+        source, carrying its speaker, timestamp and node id, and the session's user.
+
+        A text repeated across sources is one segment, attributed to its first source."""
+        from unstructured2graph import Document, Segment
+
+        first: dict[str, ReconciliationSource] = {}
+        for source in self.sources:
+            first.setdefault(content_hash(source.text), source)
+        segments, cursor = [], 0
+        for digest, text in self.unique_texts.items():
+            source = first[digest]
+            segments.append(Segment(cursor, cursor + len(text), source.role, source.valid_at, source.node_id))
+            cursor += len(text) + 2
+        return Document(text=self.combined_text, segments=tuple(segments), user_id=user_id)
+
 
 class SessionsGraph:
     """Store and recall agent memories in Memgraph.
@@ -72,6 +91,8 @@ class SessionsGraph:
     - :meth:`search_memories` — full-text search over Memory content
     - :meth:`update_memory` — replace the content of an existing Memory
     - :meth:`delete_memory` — remove a Memory by ID
+    - :meth:`embed_session` — embed a session's messages, entities and edges for recall
+    - :meth:`recall` — what a user's past sessions hold about a question
     """
 
     def __init__(self, memgraph: Memgraph | None = None, **kwargs: Any) -> None:
@@ -96,6 +117,8 @@ class SessionsGraph:
         self._db.query("CREATE INDEX ON :Memory(created_at);")
         self._db.query(f"CREATE TEXT INDEX {_FULLTEXT_INDEX} ON :Memory(content);")
         self._db.query("CREATE INDEX ON :Session(reconciliation_status);")
+        self._db.query("CREATE INDEX ON :Session(embedding_status);")
+        self._db.query(f"CREATE TEXT INDEX {TURN_TEXT_INDEX} ON :Action(text);")
         # Shared with unstructured2graph's Chunk.hash convention; ensured here
         # too so reconcile_session() works even without a prior unstructured2graph call.
         self._db.query("CREATE CONSTRAINT ON (c:Chunk) ASSERT c.hash IS UNIQUE;")
@@ -383,6 +406,7 @@ class SessionsGraph:
         promote_labels: bool = False,
         enforce_ontology: bool = False,
         ontology_path: str | Path | None = None,
+        embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     ) -> ReconciliationSummary:
         """Batch-extract entities and a narrative summary from a session's content.
 
@@ -444,6 +468,10 @@ class SessionsGraph:
                 precedence over promote_labels.
             ontology_path: Passed through to ``unstructured2graph.from_texts``. Only
                 consulted when enforce_ontology=True.
+            embedding_model: The model the session's messages, entities and
+                edges are embedded with once extraction completes (see
+                :meth:`embed_session`). An embedding failure is recorded on the
+                Session and never fails the reconciliation.
 
         Returns:
             An :class:`ReconciliationSummary` describing what happened. Never
@@ -461,7 +489,7 @@ class SessionsGraph:
         actions_graph = self._default_actions_graph(actions_graph, "reconcile_session")
 
         try:
-            from unstructured2graph import LightRAGBackend, from_texts
+            from unstructured2graph import LightRAGBackend, from_documents
         except ImportError as exc:
             msg = "unstructured2graph is required for reconcile_session; install sessions-graph[reconciliation]"
             raise ImportError(msg) from exc
@@ -471,16 +499,13 @@ class SessionsGraph:
         try:
             summary_text: str | None = None
             used_backend: str | None = None
+            integrity: tuple[int, int] | None = None
             if prepared.unique_texts:
                 # The whole session's deduped texts as ONE document, not one
-                # per turn. A turn is still never split mid-utterance (that's
-                # what #327 fixed, and MAX_SESSION_BATCH_CHARS stays well
-                # above MAX_RECONCILABLE_CHARS so a turn's own truncation
-                # bound is always the tighter one) -- but today each turn was
-                # also extracted in total isolation from every other turn in
-                # the same session, one independent LightRAG document (and
-                # therefore two LLM calls) each. That undercounts the real
-                # unit worth extracting from: a session's entities and
+                # per turn. Each turn used to be extracted in total isolation
+                # from every other turn in the same session, one independent
+                # LightRAG document (and therefore two LLM calls) each. That
+                # undercounts the real unit worth extracting from: a session's entities and
                 # relations often span turns (coreference, a fact stated in
                 # one turn and referenced in another), invisible to an
                 # extractor that never sees more than one turn at a time.
@@ -497,29 +522,41 @@ class SessionsGraph:
                 # the win is real but modest -- measured on 5 real sessions,
                 # 106 -> 70 extraction+gleaning calls (1.51x), not the 4x+ a
                 # naive CHUNK_SIZE=1200 assumption would predict.
+                #
+                # Handed over verbatim, as one Document with a segment per
+                # source, rather than re-chunked through `unstructured`, whose
+                # partitioner rewrites text and would invalidate the turn
+                # offsets. The segments are what the GLiNER2 backend windows on
+                # (one turn each, #352) and resolves the user's own mentions
+                # with (#358); LightRAG reads the text alone.
                 backend = extraction_backend or LightRAGBackend(lightrag_wrapper)
-                grouped_chunks = await from_texts(
-                    [prepared.combined_text],
+                user_id = self._session_user(session_id)
+                grouped_chunks = await from_documents(
+                    [prepared.document(user_id)],
                     memgraph=self._db,
                     extraction_backend=backend,
                     entity_workspace=entity_workspace,
                     promote_labels=promote_labels,
                     enforce_ontology=enforce_ontology,
                     ontology_path=ontology_path,
-                    chunk_kwargs={"max_characters": MAX_SESSION_BATCH_CHARS},
                 )
                 used_backend = type(backend).__name__
                 session_chunks = grouped_chunks[0] if grouped_chunks else []
                 self._link_chunks_to_sources(prepared.sources, session_chunks)
+                if enforce_ontology and session_chunks:
+                    integrity = self._integrity(backend.workspace_label, ontology_path, session_chunks)
                 summary_text = await summarize_session_texts(lightrag_wrapper, list(prepared.unique_texts.values()))
 
             self._write_completed(session_id, summary_text=summary_text, extraction_backend=used_backend)
+            self._embed_after_reconcile(session_id, embedding_model)
             return ReconciliationSummary(
                 session_id=session_id,
                 status="completed",
                 texts_considered=len(prepared.sources),
                 texts_deduped=len(prepared.unique_texts),
                 summary_written=summary_text is not None,
+                nonconformant_entities=integrity[0] if integrity else None,
+                nonconformant_relations=integrity[1] if integrity else None,
             )
         except Exception as e:
             self._write_failed(session_id, str(e))
@@ -542,6 +579,7 @@ class SessionsGraph:
         enforce_ontology: bool = False,
         ontology_path: str | Path | None = None,
         summary_concurrency: int = 4,
+        embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     ) -> list[ReconciliationSummary]:
         """Reconcile many sessions as ONE LightRAG processing pass, not one per session.
 
@@ -613,6 +651,7 @@ class SessionsGraph:
                 calls during finalize. Independent of LightRAG's own
                 ``MAX_ASYNC_LLM``, since this call never enters its pipeline.
                 Must be at least 1.
+            embedding_model: Passed through; see ``reconcile_session``.
 
         Returns:
             One :class:`ReconciliationSummary` per input session_id, in the
@@ -731,6 +770,7 @@ class SessionsGraph:
                 self._write_completed(
                     prepared_session.session_id, summary_text=summary_text, extraction_backend="LightRAGBackend"
                 )
+                self._embed_after_reconcile(prepared_session.session_id, embedding_model)
                 results[prepared_session.session_id] = ReconciliationSummary(
                     session_id=prepared_session.session_id,
                     status="completed",
@@ -757,6 +797,74 @@ class SessionsGraph:
 
         return [results[sid] for sid in session_ids]
 
+    def embed_session(self, session_id: str, *, model: str = DEFAULT_EMBEDDING_MODEL) -> Embedded:
+        """Embed *session_id*'s messages, entities and edges that have no vector from *model*.
+
+        Records the outcome on the Session: ``embedding_status`` is
+        ``'completed'`` with ``embedding_model``, or ``'failed'`` with
+        ``embedding_error``, which :meth:`get_pending_embedding_sessions`
+        picks up again.
+
+        Raises:
+            EmbeddingUnavailableError: Memgraph can't embed (no MAGE, or the model
+                can't load). Recorded on the Session before it propagates.
+        """
+        try:
+            embedded = embed_session(self._db, session_id, model)
+        except EmbeddingUnavailableError as exc:
+            self._db.query(
+                "MATCH (s:Session {session_id: $session_id}) "
+                "SET s.embedding_status = 'failed', s.embedding_error = $error",
+                params={"session_id": session_id, "error": str(exc)},
+            )
+            raise
+        self._db.query(
+            "MATCH (s:Session {session_id: $session_id}) "
+            "SET s.embedding_status = 'completed', s.embedding_model = $model, s.embedding_error = null",
+            params={"session_id": session_id, "model": model},
+        )
+        return embedded
+
+    def recall(
+        self,
+        user_id: str,
+        question: str,
+        *,
+        config: RecallConfig | None = None,
+        model: str = DEFAULT_EMBEDDING_MODEL,
+    ) -> Recalled:
+        """What *user_id*'s own sessions hold about *question*; see :mod:`sessions_graph.recall`.
+
+        Needs :meth:`setup` (the message text index) and vectors from
+        :meth:`embed_session` made with *model*; without MAGE the result
+        comes from text search alone and says so.
+        """
+        return recall(self._db, validate_user_id(user_id), question, config=config, model=model)
+
+    def get_pending_embedding_sessions(self, *, model: str = DEFAULT_EMBEDDING_MODEL, limit: int = 100) -> list[str]:
+        """Session ids whose embedding failed, never ran, or ran with a model other than *model*."""
+        rows = self._db.query(
+            """
+            MATCH (s:Session)
+            WHERE s.embedding_status IS NULL OR s.embedding_status <> 'completed' OR s.embedding_model <> $model
+            RETURN s.session_id AS session_id
+            ORDER BY s.session_id
+            LIMIT $limit
+            """,
+            params={"model": model, "limit": limit},
+        )
+        return [row["session_id"] for row in rows]
+
+    def _embed_after_reconcile(self, session_id: str, model: str) -> None:
+        """Embed what reconciliation just wrote, without failing the reconciliation.
+
+        A failure is recorded on the Session by :meth:`embed_session`, and
+        ``sessions-graph embed --pending`` retries it; the extracted graph is
+        valid without vectors.
+        """
+        with contextlib.suppress(EmbeddingUnavailableError):
+            self.embed_session(session_id, model=model)
+
     def get_pending_reconciliation_sessions(self, *, limit: int = 100) -> list[str]:
         """Return session_ids marked ``reconciliation_status = 'pending'``."""
         rows = self._db.query(
@@ -769,6 +877,40 @@ class SessionsGraph:
             params={"limit": limit},
         )
         return [row["session_id"] for row in rows]
+
+    def _session_user(self, session_id: str) -> str:
+        """The user_id of *session_id*'s (:User), synthesizing ``anon-<session_id>`` if it has none.
+
+        Processing, never collection, supplies the missing user (#347): every
+        session needs a (:User) for the GLiNER2 backend to bind the user's own
+        mentions onto. Collection records one only when the harness reports a
+        user, and the eval injector never does (#354). ``anon-`` rather than
+        ``anon:`` because ``validate_user_id`` does not accept a colon.
+        """
+        rows = self._db.query(
+            "MATCH (u:User)-[:HAD_SESSION]->(:Session {session_id: $session_id}) RETURN u.user_id AS user_id LIMIT 1",
+            params={"session_id": session_id},
+        )
+        if rows:
+            return rows[0]["user_id"]
+        user_id = f"anon-{session_id}"
+        self._db.query(
+            """
+            MERGE (u:User {user_id: $user_id})
+            MERGE (s:Session {session_id: $session_id})
+            MERGE (u)-[:HAD_SESSION]->(s)
+            """,
+            params={"user_id": user_id, "session_id": session_id},
+        )
+        return user_id
+
+    def _integrity(self, workspace: str, ontology_path: str | Path | None, chunks: list[Any]) -> tuple[int, int]:
+        """(non-conformant entities, non-conformant relationships) over *chunks*, for ReconciliationSummary."""
+        from unstructured2graph import DEFAULT_ONTOLOGY, load_ontology, ontology_report
+
+        ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
+        report = ontology_report(self._db, workspace, ontology, chunk_hashes=[chunk.hash for chunk in chunks])
+        return report.nonconformant_entities, report.nonconformant_relations
 
     def _link_chunks_to_sources(
         self,

@@ -149,6 +149,35 @@ def test_stop_ends_the_turn_with_the_reply_and_keeps_the_session_open():
     assert PLUGIN.response_for_payload(payload) == {"continue": True}
 
 
+def test_stop_records_the_turns_reply_before_the_turn_end():
+    """The reply is the answer recall needs; the turn end that follows spawns its embedding."""
+    link = AgentLink()
+    rec = _RecordingConnector()
+    link.add_connector(rec)
+
+    CodexHooksAdapter(link).handle_payload(
+        {"hook_event_name": "Stop", "session_id": "s1", "last_assistant_message": "We deploy on Thursdays."}
+    )
+
+    assert [event.event_type for event in rec.events] == [EventType.MESSAGE, EventType.TURN_END]
+    reply = rec.events[0]
+    assert isinstance(reply, MessageEvent)
+    assert (reply.session_id, reply.role, reply.content) == ("s1", "assistant", "We deploy on Thursdays.")
+    assert "last_assistant_message" not in reply.metadata
+
+
+def test_stop_without_a_reply_records_only_the_turn_end():
+    link = AgentLink()
+    rec = _RecordingConnector()
+    link.add_connector(rec)
+
+    CodexHooksAdapter(link).handle_payload(
+        {"hook_event_name": "Stop", "session_id": "s1", "last_assistant_message": "  "}
+    )
+
+    assert [event.event_type for event in rec.events] == [EventType.TURN_END]
+
+
 def test_build_hooks_config_uses_command_for_supported_hooks():
     config = PLUGIN.build_hooks_config("python hook.py")
 

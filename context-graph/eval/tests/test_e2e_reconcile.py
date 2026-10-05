@@ -30,6 +30,7 @@ def _fixture(session_id: str) -> SessionFixture:
             Turn(role="assistant", content="Congratulations on Max!"),
         ],
         holds_evidence=True,
+        user_id="u1",
     )
 
 

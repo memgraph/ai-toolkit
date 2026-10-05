@@ -85,20 +85,21 @@ def test_connector_session_end_marks_reconciliation_pending(graph, memgraph):
     assert "s-1" in pending
 
 
-def test_connector_turn_end_marks_pending_without_spawning_reconciliation(graph, memgraph, monkeypatch):
+def test_connector_turn_end_embeds_and_marks_pending_without_reconciling(graph, memgraph, monkeypatch):
     pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
+    from sessions_graph import connector as connector_module
     from sessions_graph.connector import SessionsGraphConnector
 
     from agent_context_graph.events import SessionStartEvent, TurnEndEvent
 
     spawned = []
-    monkeypatch.setattr(SessionsGraphConnector, "_spawn_reconciliation", staticmethod(spawned.append))
+    monkeypatch.setattr(connector_module, "_spawn_detached", lambda args, *, env: spawned.append(args[0]))
     connector = SessionsGraphConnector(graph, auto_reconcile=True)
     connector.on_event(SessionStartEvent(session_id="s-turn", user_id="alice"))
     connector.on_event(TurnEndEvent(session_id="s-turn", reason="end_turn"))
 
     rows = memgraph.query("MATCH (s:Session {session_id: 's-turn'}) RETURN s.reconciliation_status AS status")
     assert rows[0]["status"] == "pending"
-    # The session is still open: only SessionEnd may start reconciliation.
-    assert spawned == []
+    # Embedding needs no LLM and keeps recall current; reconciliation waits for the session end.
+    assert spawned == ["embed"]
     assert "s-turn" in graph.get_pending_reconciliation_sessions()

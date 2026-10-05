@@ -185,3 +185,30 @@ def test_load_ontology_two_calls_on_same_path_produce_equal_ontologies(tmp_path)
     )
 
     assert load_ontology(ontology_file) == load_ontology(ontology_file)
+
+
+def test_load_ontology_parses_identity_and_relation_endpoints(tmp_path):
+    path = tmp_path / "ontology.yaml"
+    path.write_text(
+        "entity_types:\n"
+        "  - {label: Person, description: someone, identity: global}\n"
+        "  - {label: Organization, description: a company}\n"
+        "relation_types:\n"
+        "  - {label: works_for, description: employment, start_labels: [Person], end_labels: [Organization]}\n",
+        encoding="utf-8",
+    )
+    ontology = load_ontology(path)
+    assert [(t.label, t.identity) for t in ontology.entity_types] == [("Person", "global"), ("Organization", "chunk")]
+    assert ontology.relation_types[0].start_labels == ("Person",)
+    assert ontology.relation_types[0].end_labels == ("Organization",)
+
+
+def test_load_ontology_rejects_an_endpoint_naming_an_undeclared_type(tmp_path):
+    path = tmp_path / "ontology.yaml"
+    path.write_text(
+        "entity_types: [{label: Person, description: someone}]\n"
+        "relation_types: [{label: works_for, description: employment, end_labels: [Organization]}]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="undeclared"):
+        load_ontology(path)
