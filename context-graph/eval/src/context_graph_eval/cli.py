@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .convert.longmemeval import DEFAULT_REVISION, build_corpus, fetch, haystack_path, load_raw
 from .corpus import write_corpus
+from .graph_quality import CALIBRATION_SIZE, DEFAULT_SAMPLE, DEFAULT_SEED
 from .hybrid import LANES as HYBRID_LANES
 from .hybrid import HybridConfig
 from .official_judge import OFFICIAL_JUDGE_MODEL
@@ -185,6 +186,34 @@ def main(argv: list[str] | None = None) -> int:
     )
     cal.add_argument("runs", type=Path, nargs="+", help="two or more saved runs of the SAME questions")
 
+    quality = subcommands.add_parser(
+        "graph-quality",
+        help="measure how correct the extracted graph is: judged sample labels plus deterministic counts (#411)",
+    )
+    quality.add_argument("--memgraph-url", default="bolt://localhost:7689", help="the eval instance to read")
+    quality.add_argument("--sample", type=int, default=DEFAULT_SAMPLE, help="edges to label, half per speaker")
+    quality.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    quality.add_argument(
+        "--judge-model",
+        default=None,
+        help="'provider:model_id' for the labelling judge; defaults to the run judge (Anthropic), a "
+        "different provider from GLiNER2 and the answering model",
+    )
+    quality.add_argument("--no-judge", action="store_true", help="deterministic counts only")
+    quality.add_argument("--save", type=Path, default=None, help="write the report as JSON")
+    quality.add_argument(
+        "--export-hand-labels",
+        type=Path,
+        default=None,
+        help=f"write the {CALIBRATION_SIZE} calibration edges as JSONL to label by hand, then exit",
+    )
+    quality.add_argument(
+        "--hand-labels",
+        type=Path,
+        default=None,
+        help="JSONL of hand labels ({key, label}); report the judge's agreement with them",
+    )
+
     cmp_ = subcommands.add_parser("compare", help="compare two saved runs and print the report")
     cmp_.add_argument("baseline", type=Path)
     cmp_.add_argument("candidate", type=Path)
@@ -209,7 +238,66 @@ def main(argv: list[str] | None = None) -> int:
         return _calibrate(args)
     if args.command == "gold-slice":
         return _gold_slice(args)
+    if args.command == "graph-quality":
+        return _graph_quality(args)
     return 1
+
+
+def _graph_quality(args) -> int:
+    import asyncio
+    import json
+    from dataclasses import asdict
+
+    from memgraph_toolbox.api.memgraph import Memgraph
+
+    from . import graph_quality as gq
+    from .reconcile import _resolve_llm_credentials
+
+    db = Memgraph(url=args.memgraph_url, username="", password="")
+    all_edges = gq.edges(db)
+    sampled = gq.sample(all_edges, args.sample, args.seed)
+
+    if args.export_hand_labels:
+        args.export_hand_labels.parent.mkdir(parents=True, exist_ok=True)
+        with args.export_hand_labels.open("w", encoding="utf-8") as out:
+            for edge in gq.calibration_set(sampled):
+                out.write(json.dumps({"key": edge.key, **asdict(edge), "label": ""}, ensure_ascii=False) + "\n")
+        print(f"wrote {gq.CALIBRATION_SIZE} edges to label: {args.export_hand_labels} (labels: {', '.join(gq.LABELS)})")
+        return 0
+
+    report = gq.QualityReport(counts=gq.counts(db, all_edges))
+    if not args.no_judge:
+        _resolve_llm_credentials()
+        provider, model_id = _parse_model_spec(args.judge_model, default_provider=DEFAULT_JUDGE_PROVIDER)
+        judge = _build_model(provider, model_id, minimal_effort=True)
+        if judge is None:
+            print("no judge model configured: set --judge-model and its API key, or pass --no-judge", file=sys.stderr)
+            return 1
+        report.labels = asyncio.run(gq.label(sampled, judge))
+
+    print("graph quality")
+    for name, value in report.counts.items():
+        print(f"  {name:40} {value:.2f}" if isinstance(value, float) else f"  {name:40} {value}")
+    if report.labels:
+        judged = sum(1 for item in report.labels if item.label is not None)
+        print(f"\n  labels over {judged}/{len(report.labels)} sampled edges")
+        for role, shares in sorted(report.label_shares().items()):
+            print(f"  {role:10} " + "  ".join(f"{label} {share:.0%}" for label, share in shares.items()))
+    if args.hand_labels and report.labels:
+        hand = {}
+        for line in args.hand_labels.read_text(encoding="utf-8").splitlines():
+            if line.strip() and (row := json.loads(line)).get("label"):
+                hand[row["key"]] = row["label"]
+        agreeing, compared, disagreements = gq.agreement(report.labels, hand)
+        trusted = agreeing >= gq.CALIBRATION_AGREEMENT
+        print(f"\n  calibration   judge agrees on {agreeing}/{compared} ({'trusted' if trusted else 'NOT trusted'})")
+        for key, mine, theirs in disagreements:
+            print(f"                {key}: hand {mine}, judge {theirs}")
+    if args.save:
+        args.save.parent.mkdir(parents=True, exist_ok=True)
+        args.save.write_text(json.dumps(report.to_json(), indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"\nsaved to {args.save}")
+    return 0
 
 
 def _gold_slice(args) -> int:
