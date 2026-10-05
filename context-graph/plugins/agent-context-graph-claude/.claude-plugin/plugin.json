@@ -1,6 +1,6 @@
 {
   "name": "context-graph",
-  "description": "Capture Claude Code runtime activity through Agent Context Graph hooks.",
+  "description": "Capture Claude Code runtime activity through Agent Context Graph hooks, and recall past sessions.",
   "version": "0.1.12",
   "author": {
     "name": "Memgraph"

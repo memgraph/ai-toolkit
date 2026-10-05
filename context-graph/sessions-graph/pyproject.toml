@@ -31,6 +31,9 @@ test = [
 [project.scripts]
 sessions-graph = "sessions_graph.cli:main"
 
+[project.entry-points."agent_context_graph.tools"]
+recall = "sessions_graph.tool:RECALL"
+
 [tool.uv.sources]
 agent-context-graph = { workspace = true }
 memgraph-toolbox = { workspace = true }
