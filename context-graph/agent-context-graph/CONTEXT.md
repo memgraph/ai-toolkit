@@ -54,6 +54,10 @@ Python object implementing `RuntimeCLIPlugin`. Package publishes it via `agent_c
 Not a **Runtime Plugin**: plugin installs host-facing files; registration lets Agent Context Graph discover runtime support via `importlib.metadata.entry_points()`. Adding one needs no central registry change.
 _Avoid_: Runtime Plugin (already means distribution package), Runtime Adapter (a Runtime Registration *references* one via `adapter_class`, isn't one)
 
+**Tool Registration**:
+Object implementing `Tool` (`tools.py`): a name, a description the model reads, an input schema, the connector whose graph it reads, an optional session-start hint, and `call(arguments, config)`. A graph component publishes it via the `agent_context_graph.tools` entry-point group; `agent-context-graph mcp` serves every registered tool, and the CLI runs one by name. Identity + connection come from **Hook Configuration**, never from tool arguments.
+_Avoid_: MCP tool (the protocol it is served over, not the thing), Graph Connector (writes events; a tool reads)
+
 ## Relationships
 
 - **Agent Context Graph** belongs to broader **Context Graph** family.

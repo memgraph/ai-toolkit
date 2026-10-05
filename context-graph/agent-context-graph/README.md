@@ -19,8 +19,10 @@ Runtime plugins are the distribution layer for host-specific hook wiring. They i
 For command-hook runtimes such as Codex and Claude Code, prefer a user-level tool install:
 
 ```bash
-uv tool install agent-context-graph --with "skills-graph[agent-context-graph]"
+uv tool install "agent-context-graph[mcp]" --with "skills-graph[agent-context-graph]"
 ```
+
+The `mcp` extra is what `agent-context-graph mcp` serves [recall](#recall-memory-for-the-harnesss-model) with.
 
 Or use the plugin bootstrap scripts; they fall back to `uvx` if the tool is not installed yet.
 
@@ -209,6 +211,8 @@ OK memgraph: reachable
 OK connector:skills-graph: installed=...; memgraph=reachable
 OK connector:actions-graph: installed=...; memgraph=reachable
 OK connector:sessions-graph: installed=...; memgraph=reachable
+OK embeddings: BAAI/bge-small-en-v1.5 (384 dimensions) inside Memgraph
+OK mcp: serves recall
 OK runtime:claude-code: strict hook smoke passed
 ```
 
@@ -234,6 +238,10 @@ anthropic_api_key = ""
 
 [reconcile]
 auto_reconcile = true
+
+[recall]
+embedding_model = "BAAI/bge-small-en-v1.5"
+turns_k = "8"
 ```
 
 `[llm]` and `[reconcile]` are only relevant if you enable sessions-graph's
@@ -241,6 +249,8 @@ auto-trigger reconciliation (see
 [sessions-graph § reconciliation](../sessions-graph/README.md#session-reconciliation)).
 `[reconcile]` is omitted entirely from a freshly-bootstrapped file — absent
 means "never configured," distinct from an explicit `auto_reconcile = false`.
+`[recall]` is optional too: without it, recall runs with the widths the
+benchmark measured; see [Recall](#recall-memory-for-the-harnesss-model).
 
 Manage it with:
 
@@ -249,7 +259,8 @@ agent-context-graph config show
 agent-context-graph config get memgraph.url
 agent-context-graph config set <key> <value>
 # keys: identity.user_id, memgraph.{url,user,password,database},
-#       llm.{openai_api_key,anthropic_api_key}, reconcile.auto_reconcile
+#       llm.{openai_api_key,anthropic_api_key}, reconcile.auto_reconcile,
+#       recall.embedding_model
 ```
 
 Environment variables (`MEMGRAPH_URL`, `MEMGRAPH_USER`, `MEMGRAPH_PASSWORD`, `MEMGRAPH_DATABASE`, `AGENT_CONTEXT_GRAPH_USER_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) are consulted **only at bootstrap time** — if set, `bootstrap` persists them into the config file. Exporting them later has no effect on running hooks; use `config set` instead.
@@ -260,6 +271,50 @@ Environment variables (`MEMGRAPH_URL`, `MEMGRAPH_USER`, `MEMGRAPH_PASSWORD`, `ME
 Unlike the keys above, nobody has that env var exported for an unrelated
 reason — it's only ever set via `agent-context-graph config set
 reconcile.auto_reconcile true`.
+
+### Recall: memory for the harness's model
+
+The hooks write sessions into Memgraph; recall reads them back. With
+sessions-graph installed, `agent-context-graph mcp` serves a `recall(question)`
+tool over stdio MCP, and the Codex and Claude Code plugins bundle that server,
+so installing a plugin is all it takes. The tool returns context, not an answer:
+the dated messages and facts from the user's own sessions that match the
+question, behind a header with the rules for reading them. The harness's model
+answers from those rows.
+
+At session start the hook adds one line to the model's context saying the tool
+exists. It never pushes retrieved content; the model calls `recall` when a
+question needs memory.
+
+The same search from a shell:
+
+```bash
+agent-context-graph recall "what did we decide about the deploy window?"
+agent-context-graph recall --json "..."    # the turns and facts as JSON
+```
+
+Whose memory is searched comes from `identity.user_id` in the config file, never
+from the tool call, so a model can only read its own user's sessions.
+`[recall]` overrides the search's lanes and widths, all optional:
+
+| Key | Default | What it sets |
+|---|---|---|
+| `embedding_model` | `BAAI/bge-small-en-v1.5` | The model Memgraph embeds with; set with `config set recall.embedding_model` |
+| `lanes` | all five | Comma-separated subset of `turns,text,entities,facts,user_facts` |
+| `turns_k`, `text_k` | `8`, `8` | Messages found by vector and by text search |
+| `entities_k`, `edges_per_entity` | `15`, `6` | Entities matched, and facts read from each |
+| `facts_k`, `fact_turns_k` | `15`, `8` | Facts matched, and the messages they were read from |
+| `user_fact_types`, `user_facts_k` | `2`, `30` | Relation types gathered whole, for counting questions |
+| `turn_chars` | `1500` | Characters shown per message |
+
+Recall needs Memgraph with MAGE (`memgraph/memgraph-mage`) for its vector lanes;
+without it, it answers from text search and says so. `doctor` checks both
+(`embeddings` and `mcp`).
+
+**What the model sees.** A tool result carries the rendered text only. Claude
+Code and Codex both show the model a result's `structuredContent` JSON
+*instead of* its text when both are present, and the text is the form recall
+was benchmarked in; the JSON is what `--json` prints.
 
 ### OpenAI Codex Plugin
 

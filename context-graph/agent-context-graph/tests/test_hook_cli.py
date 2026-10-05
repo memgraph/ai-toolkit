@@ -102,6 +102,7 @@ def test_top_level_cli_doctor_checks_embeddings_only_with_sessions_graph(monkeyp
         "_check_config": {"name": "config", "ok": True, "detail": "ok"},
         "_check_memgraph": {"name": "memgraph", "ok": True, "detail": "reachable"},
         "_check_embeddings": {"name": "embeddings", "ok": False, "detail": "no MAGE"},
+        "_check_mcp": {"name": "mcp", "ok": True, "detail": "serves recall"},
     }.items():
         monkeypatch.setattr(f"agent_context_graph.cli.{name}", lambda result=result: result)
     monkeypatch.setattr(
@@ -157,7 +158,7 @@ def test_top_level_cli_bootstrap_installs_and_runs_doctor(monkeypatch, capsys):
             "/bin/uv",
             "tool",
             "install",
-            "agent-context-graph",
+            "agent-context-graph[mcp]",
             "--with",
             "skills-graph[agent-context-graph]",
             "--reinstall",

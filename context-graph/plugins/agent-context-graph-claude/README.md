@@ -38,6 +38,10 @@ Bootstrap installs and verifies:
 agent-context-graph bootstrap --runtime claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
+## Recall
+
+The plugin also bundles an MCP server, `agent-context-graph mcp` (see `.mcp.json`), which gives the model a `recall` tool (`mcp__plugin_context-graph_context-graph__recall`) over the user's own past sessions. At session start the hook adds one line telling the model the tool is there; the model calls it when a question needs memory. Recall needs the `mcp` extra, which `bootstrap.sh` installs, and Memgraph with MAGE for its vector search. See [agent-context-graph § Recall](../../agent-context-graph/README.md#recall-memory-for-the-harnesss-model).
+
 ## Configure
 
 Bootstrap writes `~/.config/context-graph/config.toml`; hooks read it at runtime (not environment variables). Set your identity — **required** for sessions-graph to attach sessions to a user:

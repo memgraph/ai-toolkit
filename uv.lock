@@ -223,10 +223,14 @@ dependencies = [
 claude = [
     { name = "claude-agent-sdk" },
 ]
+mcp = [
+    { name = "mcp" },
+]
 openai = [
     { name = "openai-agents" },
 ]
 test = [
+    { name = "mcp" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
@@ -234,12 +238,14 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "claude-agent-sdk", marker = "extra == 'claude'", specifier = ">=0.1.0" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.23.0" },
+    { name = "mcp", marker = "extra == 'test'", specifier = ">=1.23.0" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.1.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
 ]
-provides-extras = ["claude", "openai", "test"]
+provides-extras = ["claude", "mcp", "openai", "test"]
 
 [[package]]
 name = "aiofile"

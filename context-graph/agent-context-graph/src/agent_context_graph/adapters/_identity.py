@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import os
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -92,6 +92,9 @@ class HookConfig:
     auto_reconcile: bool | None = _RECONCILE_DEFAULTS["auto_reconcile"]
     #: The model recall embeds with; None means the consumer's own default.
     embedding_model: str | None = None
+    #: Every other ``[recall]`` key (lanes and widths), as written: the recall
+    #: tool validates them, this module only keeps them across rewrites.
+    recall_settings: dict[str, str] = field(default_factory=dict)
 
 
 def load_config() -> HookConfig:
@@ -234,6 +237,7 @@ def write_config(
         anthropic_api_key=final_anthropic_api_key,
         auto_reconcile=final_auto_reconcile,
         embedding_model=final_embedding_model,
+        recall_settings=existing.recall_settings,
     )
 
     path = config_file()
@@ -266,8 +270,8 @@ def write_full_config(
     ``OPENAI_API_KEY``/`MEMGRAPH_PASSWORD` set) — it is only ever set via
     ``config set reconcile.auto_reconcile``. Re-running bootstrap must not
     silently revert it to off, so ``auto_reconcile`` is preserved from the
-    existing file unless explicitly given here. ``embedding_model`` is
-    preserved the same way: it, too, is only ever set via ``config set``.
+    existing file unless explicitly given here. ``[recall]`` is preserved the
+    same way: it is only ever set via ``config set`` or by editing the file.
     """
     global _cached_config
 
@@ -284,6 +288,7 @@ def write_full_config(
         anthropic_api_key=anthropic_api_key,
         auto_reconcile=final_auto_reconcile,
         embedding_model=existing.embedding_model,
+        recall_settings=existing.recall_settings,
     )
 
     path = config_file()
@@ -335,6 +340,7 @@ def _read_config_file() -> HookConfig:
         anthropic_api_key=llm.get("anthropic_api_key", _LLM_DEFAULTS["anthropic_api_key"]),
         auto_reconcile=parse_bool_flag(auto_reconcile_raw) if auto_reconcile_raw is not None else None,
         embedding_model=recall.get("embedding_model") or None,
+        recall_settings={key: value for key, value in recall.items() if key != "embedding_model"},
     )
 
 
@@ -378,6 +384,7 @@ def _render_config(
     anthropic_api_key: str,
     auto_reconcile: bool | None,
     embedding_model: str | None = None,
+    recall_settings: dict[str, str] | None = None,
 ) -> str:
     """Render the full config file content.
 
@@ -385,7 +392,7 @@ def _render_config(
     ``None`` (never configured), so a fresh read of the file resolves it back
     to ``None`` rather than a concrete ``false`` — see
     :func:`resolve_auto_reconcile` for why that distinction matters.
-    ``[recall]`` is likewise omitted while ``embedding_model`` is unset.
+    ``[recall]`` is likewise omitted while it holds nothing.
     """
     lines = [
         "# Context Graph hook configuration",
@@ -407,8 +414,9 @@ def _render_config(
     ]
     if auto_reconcile is not None:
         lines += ["", "[reconcile]", f"auto_reconcile = {'true' if auto_reconcile else 'false'}"]
-    if embedding_model:
-        lines += ["", "[recall]", f'embedding_model = "{embedding_model}"']
+    recall = {"embedding_model": embedding_model, **(recall_settings or {})} if embedding_model else recall_settings
+    if recall:
+        lines += ["", "[recall]", *(f'{key} = "{value}"' for key, value in recall.items())]
     lines.append("")
     return "\n".join(lines)
 

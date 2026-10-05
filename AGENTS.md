@@ -32,7 +32,7 @@ Memgraph graph.
 
 | Package | Role |
 |---|---|
-| `agent-context-graph` | Event hub. Normalizes runtime hooks / SDK activity into a shared Event Protocol and routes it to graph connectors. |
+| `agent-context-graph` | Event hub. Normalizes runtime hooks / SDK activity into a shared Event Protocol and routes it to graph connectors. Also serves components' read tools (e.g. sessions-graph's `recall`) to the harness's model over stdio MCP (`agent-context-graph mcp`). |
 | `actions-graph` | Records tool calls/results/messages/subagent activity as `(:Action)`/`(:Agent)` nodes — observability, not memory. |
 | `skills-graph` | Tracks Agent-Skills-spec `(:Skill)` usage per session. |
 | `sessions-graph` | Owns `(:User)`/`(:Session)`, durable `(:Memory)` writes/recall, and session reconciliation into `(:Episode)` + extracted entities. |

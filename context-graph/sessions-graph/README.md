@@ -270,6 +270,12 @@ computed exactly over the user's own vectors, which costs time linear in
 their history: about 0.6 s for a few hundred messages, 0.7 s at 10k, 6.7 s at
 100k. Without MAGE, recall runs text search alone and says so in its result.
 
+Harnesses reach it as the `recall` tool: sessions-graph registers it under
+agent-context-graph's `agent_context_graph.tools` entry point
+(`sessions_graph.tool:RECALL`), and `agent-context-graph mcp` serves it, taking
+the user and the `[recall]` overrides from the config file. See
+[agent-context-graph § Recall](../agent-context-graph/README.md#recall-memory-for-the-harnesss-model).
+
 ## Embeddings for recall
 
 Recall searches a user's history by vector as well as by text, so three
