@@ -30,8 +30,12 @@ export default {
   id: "memgraph.agent-context-graph",
   async setup(ctx) {
     const registrations = []
+    // Sessions with a turn in flight. `opencode run` can exit before the bus
+    // delivers session.execution.succeeded, so shutdown closes these turns.
+    const openTurns = new Set()
 
     registrations.push(await ctx.session.hook("prompt", async (event) => {
+      openTurns.add(event.sessionID)
       await capture({
         hook_event_name: "session.prompt",
         session_id: event.sessionID,
@@ -68,6 +72,7 @@ export default {
       for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
         if (!CAPTURED_EVENTS.has(event.type)) continue
         const data = event.data ?? {}
+        if (event.type.startsWith("session.execution.")) openTurns.delete(data.sessionID)
         await capture({
           hook_event_name: event.type,
           session_id: data.sessionID,
@@ -82,6 +87,11 @@ export default {
 
     return async () => {
       controller.abort()
+      await Promise.all(
+        [...openTurns].map((sessionID) =>
+          capture({ hook_event_name: "session.execution.succeeded", session_id: sessionID }),
+        ),
+      )
       await Promise.all(registrations.map((registration) => registration.dispose()))
     }
   },

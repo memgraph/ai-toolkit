@@ -26,7 +26,10 @@
 #
 # Unattended use (CI), via environment:
 #   LIVE_HOOKS_TRUST_HOOKS=1      run Codex with --dangerously-bypass-hook-trust;
-#                                 the hooks are the ones `up` just generated
+#                                 the hooks are the ones `up` just generated. Codex
+#                                 also loads a project's .codex/ config only once
+#                                 the project itself is trusted in its config.toml
+#   LIVE_HOOKS_CODEX_SANDBOX      Codex sandbox (default read-only)
 #   LIVE_HOOKS_OPENCODE_MODEL     e.g. anthropic/claude-haiku-4-5; `up` writes an
 #                                 OpenCode provider config that reads the key
 #                                 from <PROVIDER>_API_KEY
@@ -134,8 +137,9 @@ run_one() {
     claude-code) cmd=(claude -p "$PROMPT" --settings "$WORK/claude-code-settings.json" --setting-sources project
                       --allowedTools "Bash(ls)" "Read" --output-format text) ;;
     codex)
-      cmd=(codex exec -s read-only "$PROMPT")
-      [ "${LIVE_HOOKS_TRUST_HOOKS:-}" = 1 ] && cmd=(codex exec -s read-only --dangerously-bypass-hook-trust "$PROMPT")
+      cmd=(codex exec -s "${LIVE_HOOKS_CODEX_SANDBOX:-read-only}")
+      [ "${LIVE_HOOKS_TRUST_HOOKS:-}" = 1 ] && cmd+=(--dangerously-bypass-hook-trust)
+      cmd+=("$PROMPT")
       ;;
     copilot-cli) cmd=(copilot -p "$PROMPT" --allow-tool 'shell(ls)') ;;
     # --standalone: a background OpenCode service started earlier would not see

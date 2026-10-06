@@ -39,6 +39,10 @@ jobs:
       # The harness generates these hooks itself, so skipping Codex's hook-trust prompt is safe here.
       LIVE_HOOKS_TRUST_HOOKS: "1"
       LIVE_HOOKS_OPENCODE_MODEL: anthropic/claude-haiku-4-5
+      # The runner cannot create bubblewrap's network namespace, which fails
+      # every sandboxed command; the runner is ephemeral and the prompt only lists
+      # and reads files.
+      LIVE_HOOKS_CODEX_SANDBOX: danger-full-access
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -63,6 +67,9 @@ jobs:
             codex)
               npm install -g @openai/codex
               printenv OPENAI_API_KEY | codex login --with-api-key
+              # Codex reads a project's .codex/ config (hooks included) only for trusted projects.
+              mkdir -p ~/.codex
+              printf '[projects."%s"]\ntrust_level = "trusted"\n' "$RUNNER_TEMP/live-hooks/proj-codex" >> ~/.codex/config.toml
               ;;
             opencode) npm install -g @opencode/cli ;;
           esac

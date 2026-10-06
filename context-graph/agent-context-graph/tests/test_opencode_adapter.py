@@ -70,6 +70,8 @@ def test_opencode_init_installs_v2_plugin_with_capture_command(tmp_path):
     assert "ctx.event.subscribe" in plugin
     assert "event.data" in plugin
     assert "tool_use_id: event.id" in plugin
+    # `opencode run` can exit before the bus delivers the turn end; shutdown sends it.
+    assert 'capture({ hook_event_name: "session.execution.succeeded", session_id: sessionID })' in plugin
     assert '"session.idle"' not in plugin
 
 
