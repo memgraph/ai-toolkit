@@ -206,17 +206,13 @@ _ENTITY_FACTS = (
     "WITH n, r ORDER BY r.confidence DESC WITH n, collect(DISTINCT r) AS rs UNWIND rs[0..$per] AS r "
     "WITH DISTINCT r WITH startNode(r) AS h, r, endNode(r) AS t " + _FACT_FIELDS
 )
-# Every relation type on a fact the user stated, whatever its head: a learned
-# domain relation (Project depends_on Library) needn't start at the User
-# (#439). "Stated" means said in a user turn, or headed by the User as before:
-# widened to the assistant's turns too, the lane filled its 30 slots with
-# advice ("meetings lasted 25 minutes") and dropped the user's own facts
-# (BEAM knowledge_update 0.70 -> 0.50). Types come from the data, not the
-# model, so facts under a type a later version retired stay reachable.
-_STATED = "AND (r.role = 'user' OR startNode(r):User) "
-_USER_FACT_TYPES = _OWN_FACTS + _STATED + "RETURN DISTINCT type(r) AS type"
+# Every relation type on a fact read from the user's turns, whatever its head:
+# a learned domain relation (Project depends_on Library) needn't start at the
+# User (#439). Types come from the data, not the model, so facts under a type
+# a later version retired stay reachable.
+_USER_FACT_TYPES = _OWN_FACTS + "RETURN DISTINCT type(r) AS type"
 _USER_FACTS = (
-    _OWN_FACTS + _STATED + "AND type(r) IN $types AND r.embedding_model = $model WITH DISTINCT r "
+    _OWN_FACTS + "AND type(r) IN $types AND r.embedding_model = $model WITH DISTINCT r "
     "WITH r, " + _SCORE.format(x="r") + " AS score ORDER BY score DESC LIMIT $k "
     "WITH startNode(r) AS h, r, endNode(r) AS t " + _FACT_FIELDS
 )
@@ -304,7 +300,7 @@ def _text_lane(db: Any, user_id: str, question: str, k: int) -> list[str]:
 
 
 def _user_facts(db: Any, user_id: str, query: list[float], model: str, config: RecallConfig) -> list[dict[str, Any]]:
-    """Facts the user stated, of the relation types nearest the question.
+    """Facts from the user's turns of the relation types nearest the question.
 
     What "how many weddings did I attend" needs and top-k similarity over
     turns can't gather: every fact of the right type, across all sessions.
