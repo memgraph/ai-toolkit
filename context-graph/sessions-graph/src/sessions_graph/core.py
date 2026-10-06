@@ -41,7 +41,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from actions_graph import ActionsGraph
+    from hygm import HygmModel
     from unstructured2graph import Document, ExtractionBackend, Ontology
+
+    from .ontology import Derive, OntologyVersion
 
 _FULLTEXT_INDEX = "memory_content_index"
 
@@ -104,7 +107,8 @@ class SessionsGraph:
             **kwargs: Forwarded to :class:`Memgraph` when *memgraph* is ``None``.
         """
         self._db = memgraph or Memgraph(**kwargs)
-        self._extraction_backend: ExtractionBackend | None = None
+        # One GLiNER2 backend per distinct model, all sharing the first one's loaded weights.
+        self._extraction_backends: dict[str, ExtractionBackend] = {}
 
     # ------------------------------------------------------------------
     # Schema setup
@@ -114,6 +118,7 @@ class SessionsGraph:
         """Create constraints, indexes, and the full-text index."""
         self._db.query("CREATE CONSTRAINT ON (u:User) ASSERT u.user_id IS UNIQUE;")
         self._db.query("CREATE CONSTRAINT ON (m:Memory) ASSERT m.memory_id IS UNIQUE;")
+        self._db.query("CREATE CONSTRAINT ON (v:OntologyVersion) ASSERT v.user_id, v.version IS UNIQUE;")
         self._db.query("CREATE INDEX ON :Memory(user_id);")
         self._db.query("CREATE INDEX ON :Memory(created_at);")
         self._db.query(f"CREATE TEXT INDEX {_FULLTEXT_INDEX} ON :Memory(content);")
@@ -132,6 +137,40 @@ class SessionsGraph:
             self._db.query("DROP CONSTRAINT ON (m:Memory) ASSERT m.memory_id IS UNIQUE;")
         with contextlib.suppress(Exception):
             self._db.query(f"DROP TEXT INDEX {_FULLTEXT_INDEX};")
+
+    # ------------------------------------------------------------------
+    # Ontology versions
+    # ------------------------------------------------------------------
+
+    def adopted_ontology(self, user_id: str) -> OntologyVersion:
+        """The ontology version *user_id*'s sessions are extracted under; see ``sessions_graph.ontology``."""
+        from .ontology import adopted
+
+        return adopted(self._db, user_id)
+
+    def supply_ontology_file(self, user_id: str, path: str | Path, *, derive: str = "extend") -> OntologyVersion:
+        """Adopt the schema at *path* as *user_id*'s next version; see ``ontology.supply``.
+
+        Raises:
+            ValueError: if the file can't be read or parsed, *derive* is not
+                "extend"/"off", or the model fails validation.
+        """
+        from .ontology import supply_file
+
+        return supply_file(self._db, user_id, path, derive=_derive_mode(derive))
+
+    def sync_ontology_file(self, user_id: str, path: str | Path, *, derive: str = "extend") -> OntologyVersion | None:
+        """Adopt *path* as a new version only if it changed since the adopted one came from it.
+
+        Returns:
+            The new version, or None when the file is unchanged.
+
+        Raises:
+            ValueError: as for :meth:`supply_ontology_file`.
+        """
+        from .ontology import sync_file
+
+        return sync_file(self._db, user_id, path, derive=_derive_mode(derive))
 
     # ------------------------------------------------------------------
     # Write
@@ -343,7 +382,12 @@ class SessionsGraph:
         return _PreparedSession(session_id=session_id, sources=sources, unique_texts=unique_texts)
 
     def _write_completed(
-        self, session_id: str, *, summary_text: str | None, extraction_backend: str | None = None
+        self,
+        session_id: str,
+        *,
+        summary_text: str | None,
+        extraction_backend: str | None = None,
+        ontology_version: int | None = None,
     ) -> str:
         """Mark *session_id* completed and, if a narrative summary was
         produced, MERGE its Episode -- both stamped with the SAME timestamp,
@@ -362,15 +406,23 @@ class SessionsGraph:
         added after a real bug where ``--skip-reconcile
         --extraction-backend gliner2`` against a LightRAG-built graph
         recorded ``gliner2`` in ``RunMeta`` despite every entity in the graph
-        coming from LightRAG."""
+        coming from LightRAG.
+
+        ``ontology_version`` is the user's model version the session was
+        extracted under, or ``None`` when the caller supplied its own backend."""
         reconciled_at = datetime.now(timezone.utc).isoformat()
         self._db.query(
             """
             MATCH (s:Session {session_id: $session_id})
             SET s.reconciliation_status = 'completed', s.reconciled_at = $reconciled_at,
-                s.extraction_backend = $extraction_backend
+                s.extraction_backend = $extraction_backend, s.ontology_version = $ontology_version
             """,
-            params={"session_id": session_id, "reconciled_at": reconciled_at, "extraction_backend": extraction_backend},
+            params={
+                "session_id": session_id,
+                "reconciled_at": reconciled_at,
+                "extraction_backend": extraction_backend,
+                "ontology_version": ontology_version,
+            },
         )
         if summary_text:
             # MERGE on the (Session)-[:HAS_EPISODE]->(Episode) pattern (not just CREATE)
@@ -414,8 +466,11 @@ class SessionsGraph:
         Pulls all reconcilable Message/ToolCall/ToolResult text recorded for
         *session_id* in Actions Graph, plus this session's Memories, dedupes
         by content hash, and runs the result through unstructured2graph's
-        chunk + entity-extraction pipeline -- GLiNER2 over hygm's default
-        model by default, or whatever ``extraction_backend`` overrides it to.
+        chunk + entity-extraction pipeline -- GLiNER2 over the session user's
+        adopted ontology version by default (see ``sessions_graph.ontology``;
+        ``hygm.default_model()`` until they have one), or whatever
+        ``extraction_backend`` overrides it to. The version used is recorded
+        on the Session as ``ontology_version``.
         Resulting Chunk nodes are linked back to their source Action/Memory
         node via ``HAS_CHUNK`` so entities trace back to the session that
         produced them.
@@ -446,9 +501,10 @@ class SessionsGraph:
                 (``summarize_session_texts``), since summarization is a
                 generative task no non-LLM backend (e.g. GLiNER2) can do.
             extraction_backend: Overrides what runs entity extraction (e.g.
-                ``LightRAGBackend(lightrag_wrapper)``). Defaults to a
-                ``GLiNER2Backend`` over ``hygm.default_model()``, built once per
-                SessionsGraph since loading the model is the slow part.
+                ``LightRAGBackend(lightrag_wrapper)``); the user's ontology
+                version is then not consulted. Defaults to a ``GLiNER2Backend``
+                over the user's adopted model, one per distinct model, all
+                sharing one loaded GLiNER2 checkpoint.
             actions_graph: An ``ActionsGraph`` instance sharing this graph's
                 Memgraph connection. Constructed automatically if omitted.
             entity_workspace: Passed through to ``unstructured2graph.from_texts``.
@@ -501,6 +557,7 @@ class SessionsGraph:
             summary_text: str | None = None
             used_backend: str | None = None
             integrity: tuple[int, int] | None = None
+            ontology_version: int | None = None
             if prepared.unique_texts:
                 # The whole session's deduped texts as ONE document, not one
                 # per turn. Each turn used to be extracted in total isolation
@@ -530,11 +587,18 @@ class SessionsGraph:
                 # offsets. The segments are what the GLiNER2 backend windows on
                 # (one turn each, #352) and resolves the user's own mentions
                 # with (#358); LightRAG reads the text alone.
-                backend = extraction_backend or self._default_extraction_backend()
+                user_id = self._session_user(session_id)
+                if extraction_backend is None:
+                    from .ontology import adopted
+
+                    version = adopted(self._db, user_id)
+                    backend = self._extraction_backend_for(version.model)
+                    ontology_version = version.version
+                else:
+                    backend = extraction_backend
                 # A backend that extracts against a vocabulary (GLiNER2) is
                 # enforced against that same vocabulary unless a file overrides it.
                 ontology = None if ontology_path else getattr(backend, "ontology", None)
-                user_id = self._session_user(session_id)
                 grouped_chunks = await from_documents(
                     [prepared.document(user_id)],
                     memgraph=self._db,
@@ -552,7 +616,12 @@ class SessionsGraph:
                     integrity = self._integrity(backend.workspace_label, ontology_path, ontology, session_chunks)
                 summary_text = await summarize_session_texts(lightrag_wrapper, list(prepared.unique_texts.values()))
 
-            self._write_completed(session_id, summary_text=summary_text, extraction_backend=used_backend)
+            self._write_completed(
+                session_id,
+                summary_text=summary_text,
+                extraction_backend=used_backend,
+                ontology_version=ontology_version,
+            )
             self._embed_after_reconcile(session_id, embedding_model)
             return ReconciliationSummary(
                 session_id=session_id,
@@ -909,15 +978,20 @@ class SessionsGraph:
         )
         return user_id
 
-    def _default_extraction_backend(self) -> ExtractionBackend:
-        """GLiNER2 over hygm's default model, built on first use and kept: loading the model is the slow part."""
-        if self._extraction_backend is None:
-            from hygm import default_model
-            from unstructured2graph import Ontology
-            from unstructured2graph.gliner2_backend import GLiNER2Backend
+    def _extraction_backend_for(self, model: HygmModel) -> ExtractionBackend:
+        """A GLiNER2 backend over `model`, kept for reuse: loading the checkpoint is the slow part, so it loads once."""
+        import json
 
-            self._extraction_backend = GLiNER2Backend(ontology=Ontology.from_model(default_model()))
-        return self._extraction_backend
+        from hygm import model_to_mapping
+        from unstructured2graph import Ontology
+        from unstructured2graph.gliner2_backend import GLiNER2Backend
+
+        key = json.dumps(model_to_mapping(model), sort_keys=True)
+        if key not in self._extraction_backends:
+            loaded = next(iter(self._extraction_backends.values()), None)
+            engine = loaded.engine if isinstance(loaded, GLiNER2Backend) else None
+            self._extraction_backends[key] = GLiNER2Backend(ontology=Ontology.from_model(model), model=engine)
+        return self._extraction_backends[key]
 
     def _integrity(
         self, workspace: str, ontology_path: str | Path | None, ontology: Ontology | None, chunks: list[Any]
@@ -978,3 +1052,10 @@ class SessionsGraph:
             created_at=row["created_at"],
             session_id=row.get("session_id"),
         )
+
+
+def _derive_mode(derive: str) -> Derive:
+    """*derive* as a mode, so a bad config value fails as ValueError like every other schema problem."""
+    if derive not in ("extend", "off"):
+        raise ValueError(f"derive must be 'extend' or 'off', got {derive!r}")
+    return "extend" if derive == "extend" else "off"

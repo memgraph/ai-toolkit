@@ -241,6 +241,46 @@ already-processed content never re-extracts it or re-bills the summary. Each rec
 has many units, so the first run can be substantial. Consider this before
 enabling `auto_reconcile` broadly.
 
+## Ontology versions
+
+Reconciliation extracts each session under its user's **adopted ontology
+version**, and records which one on the Session as `ontology_version`. A user
+with none is on version 0, `hygm.default_model()`: the fixed core (User,
+Person and the value types), Organization/Location/Event, and the catch-alls
+Topic and Artifact.
+
+Versions are graph nodes: one `(:OntologyVersion {user_id, version, status,
+source, derive, model, pinned, source_hash})` each, holding the model as JSON.
+`(:User)-[:ADOPTED]->` points at the current one, `NEXT` chains them, and
+adopting a version moves `ADOPTED` in one transaction.
+
+A user can supply their own schema (a `ManualStrategy` YAML, see
+[hygm](../../hygm/README.md)):
+
+```bash
+sessions-graph ontology load --file coding.yaml            # --user defaults to identity.user_id
+sessions-graph ontology load --file longmemeval.yaml --derive off
+sessions-graph ontology show
+```
+
+- `--derive extend` (the default) adds the fixed core to the schema and pins
+  its types: derivation may add types beside them, never merge, rename or
+  retire one.
+- `--derive off` uses the schema exactly as given, and nothing is derived.
+  That's how a benchmark stays on a fixed vocabulary.
+
+Or set it in the config file, so it follows edits:
+
+```bash
+agent-context-graph config set ontology.path ~/schemas/coding.yaml
+agent-context-graph config set ontology.derive extend
+```
+
+Each `sessions-graph reconcile` applies that file to the configured user
+whenever its content or `derive` changed since their adopted version came
+from it. A file that doesn't validate is reported and the adopted version
+kept. Removing the setting deletes nothing.
+
 ## Recall
 
 `recall(user_id, question)` returns what one user's own past sessions hold

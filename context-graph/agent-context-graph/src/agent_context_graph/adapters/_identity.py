@@ -95,6 +95,10 @@ class HookConfig:
     #: Every other ``[recall]`` key (lanes and widths), as written: the recall
     #: tool validates them, this module only keeps them across rewrites.
     recall_settings: dict[str, str] = field(default_factory=dict)
+    #: ``[ontology] path``: a schema file to extract this user's sessions under.
+    ontology_path: str | None = None
+    #: ``[ontology] derive``: "extend" (the default) or "off"; see sessions-graph's ontology module.
+    ontology_derive: str | None = None
 
 
 def load_config() -> HookConfig:
@@ -184,6 +188,16 @@ def resolve_embedding_model() -> str | None:
     return load_config().embedding_model
 
 
+def resolve_ontology() -> tuple[str | None, str | None]:
+    """The configured ``[ontology]`` (path, derive), each None when unset.
+
+    Config file only, like :func:`resolve_auto_reconcile`. sessions-graph owns
+    what the values mean and their defaults.
+    """
+    config = load_config()
+    return config.ontology_path, config.ontology_derive
+
+
 def parse_bool_flag(value: str | bool) -> bool:
     """Parse a TOML/CLI boolean flag string. Truthy: "1"/"true"/"yes"/"on" (case-insensitive).
 
@@ -206,6 +220,8 @@ def write_config(
     anthropic_api_key: str | None = None,
     auto_reconcile: bool | None = None,
     embedding_model: str | None = None,
+    ontology_path: str | None = None,
+    ontology_derive: str | None = None,
 ) -> Path:
     """Write or update the config file. Returns the path written to.
 
@@ -226,6 +242,8 @@ def write_config(
     final_anthropic_api_key = anthropic_api_key if anthropic_api_key is not None else existing.anthropic_api_key
     final_auto_reconcile = auto_reconcile if auto_reconcile is not None else existing.auto_reconcile
     final_embedding_model = embedding_model if embedding_model is not None else existing.embedding_model
+    final_ontology_path = ontology_path if ontology_path is not None else existing.ontology_path
+    final_ontology_derive = ontology_derive if ontology_derive is not None else existing.ontology_derive
 
     content = _render_config(
         user_id=final_user_id or "",
@@ -238,6 +256,8 @@ def write_config(
         auto_reconcile=final_auto_reconcile,
         embedding_model=final_embedding_model,
         recall_settings=existing.recall_settings,
+        ontology_path=final_ontology_path,
+        ontology_derive=final_ontology_derive,
     )
 
     path = config_file()
@@ -263,15 +283,16 @@ def write_full_config(
 ) -> Path:
     """Write a complete config file with all sections (used by bootstrap).
 
-    Overwrites every section except ``[reconcile]`` and ``[recall]``: unlike identity/Memgraph/LLM
+    Overwrites every section except ``[reconcile]``, ``[recall]`` and ``[ontology]``: unlike identity/Memgraph/LLM
     settings, ``auto_reconcile`` has no legitimate ambient-env source for
     ``bootstrap`` to capture (nobody has ``SESSIONS_GRAPH_AUTO_RECONCILE``
     exported for an unrelated reason the way they might already have
     ``OPENAI_API_KEY``/`MEMGRAPH_PASSWORD` set) — it is only ever set via
     ``config set reconcile.auto_reconcile``. Re-running bootstrap must not
     silently revert it to off, so ``auto_reconcile`` is preserved from the
-    existing file unless explicitly given here. ``[recall]`` is preserved the
-    same way: it is only ever set via ``config set`` or by editing the file.
+    existing file unless explicitly given here. ``[recall]`` and ``[ontology]``
+    are preserved the same way: they are only ever set via ``config set`` or by
+    editing the file.
     """
     global _cached_config
 
@@ -289,6 +310,8 @@ def write_full_config(
         auto_reconcile=final_auto_reconcile,
         embedding_model=existing.embedding_model,
         recall_settings=existing.recall_settings,
+        ontology_path=existing.ontology_path,
+        ontology_derive=existing.ontology_derive,
     )
 
     path = config_file()
@@ -328,6 +351,7 @@ def _read_config_file() -> HookConfig:
     llm = sections.get("llm", {})
     reconcile = sections.get("reconcile", {})
     recall = sections.get("recall", {})
+    ontology = sections.get("ontology", {})
     auto_reconcile_raw = reconcile.get("auto_reconcile")
 
     return HookConfig(
@@ -341,6 +365,8 @@ def _read_config_file() -> HookConfig:
         auto_reconcile=parse_bool_flag(auto_reconcile_raw) if auto_reconcile_raw is not None else None,
         embedding_model=recall.get("embedding_model") or None,
         recall_settings={key: value for key, value in recall.items() if key != "embedding_model"},
+        ontology_path=ontology.get("path") or None,
+        ontology_derive=ontology.get("derive") or None,
     )
 
 
@@ -385,6 +411,8 @@ def _render_config(
     auto_reconcile: bool | None,
     embedding_model: str | None = None,
     recall_settings: dict[str, str] | None = None,
+    ontology_path: str | None = None,
+    ontology_derive: str | None = None,
 ) -> str:
     """Render the full config file content.
 
@@ -392,7 +420,7 @@ def _render_config(
     ``None`` (never configured), so a fresh read of the file resolves it back
     to ``None`` rather than a concrete ``false`` — see
     :func:`resolve_auto_reconcile` for why that distinction matters.
-    ``[recall]`` is likewise omitted while it holds nothing.
+    ``[recall]`` and ``[ontology]`` are likewise omitted while they hold nothing.
     """
     lines = [
         "# Context Graph hook configuration",
@@ -417,6 +445,9 @@ def _render_config(
     recall = {"embedding_model": embedding_model, **(recall_settings or {})} if embedding_model else recall_settings
     if recall:
         lines += ["", "[recall]", *(f'{key} = "{value}"' for key, value in recall.items())]
+    ontology = {key: value for key, value in (("path", ontology_path), ("derive", ontology_derive)) if value}
+    if ontology:
+        lines += ["", "[ontology]", *(f'{key} = "{value}"' for key, value in ontology.items())]
     lines.append("")
     return "\n".join(lines)
 

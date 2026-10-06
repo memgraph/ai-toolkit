@@ -72,3 +72,18 @@ def test_llm_strategy_is_an_interface_until_its_evidence_run_passes():
     strategy = LlmRecommendationStrategy(llm=object(), observer=object())  # ty: ignore[invalid-argument-type]
     with pytest.raises(NotImplementedError, match="372"):
         strategy.create_model(["some text"])
+
+
+def test_a_model_round_trips_through_its_mapping():
+    from hygm import default_model, model_from_mapping, model_to_mapping
+
+    model = default_model()
+
+    assert model_from_mapping(model_to_mapping(model), "version 1") == model
+
+
+def test_a_mapping_error_names_its_source():
+    from hygm import model_from_mapping
+
+    with pytest.raises(ValueError, match="Ontology version 3 must be a mapping"):
+        model_from_mapping([], "version 3")

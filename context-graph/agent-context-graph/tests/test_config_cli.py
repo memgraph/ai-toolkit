@@ -90,3 +90,25 @@ def test_bootstrap_rewrite_keeps_recall_embedding_model(config_dir):
     _identity._reset_cache()
 
     assert _identity.resolve_embedding_model() == "BAAI/bge-m3"
+
+
+def test_config_set_ontology_round_trips_and_survives_bootstrap(config_dir, capsys):
+    assert top_level_main(["config", "set", "ontology.path", "/schemas/coding.yaml"]) == 0
+    assert top_level_main(["config", "set", "ontology.derive", "off"]) == 0
+    _identity.write_full_config(user_id="alice")
+    _identity._reset_cache()
+
+    assert _identity.resolve_ontology() == ("/schemas/coding.yaml", "off")
+
+
+def test_config_set_ontology_derive_rejects_other_values(config_dir, capsys):
+    assert top_level_main(["config", "set", "ontology.derive", "sometimes"]) == 2
+    assert "expected extend/off" in capsys.readouterr().err
+    assert _identity.resolve_ontology() == (None, None)
+
+
+def test_ontology_is_unset_by_default(config_dir, capsys):
+    assert top_level_main(["config", "show"]) == 0
+    out = capsys.readouterr().out
+    assert "ontology.path = unset" in out
+    assert "ontology.derive = unset (defaults to extend)" in out

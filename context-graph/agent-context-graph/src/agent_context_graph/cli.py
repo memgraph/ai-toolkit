@@ -95,6 +95,8 @@ def _config(argv: list[str]) -> int:
         "llm.anthropic_api_key": "anthropic_api_key",
         "reconcile.auto_reconcile": "auto_reconcile",
         "recall.embedding_model": "embedding_model",
+        "ontology.path": "ontology_path",
+        "ontology.derive": "ontology_derive",
     }
     _SECRET_KEYS = {"memgraph.password", "llm.openai_api_key", "llm.anthropic_api_key"}
     _BOOL_KEYS = {"reconcile.auto_reconcile"}
@@ -130,6 +132,11 @@ def _config(argv: list[str]) -> int:
             print("recall.embedding_model = unset (defaults to sessions-graph's model)")
         else:
             print(f"recall.embedding_model = {config.embedding_model!r}")
+        print(f"ontology.path = {config.ontology_path!r}" if config.ontology_path else "ontology.path = unset")
+        if config.ontology_derive is None:
+            print("ontology.derive = unset (defaults to extend)")
+        else:
+            print(f"ontology.derive = {config.ontology_derive!r}")
         return 0
 
     if action == "set":
@@ -161,6 +168,9 @@ def _config(argv: list[str]) -> int:
                 print(f"Invalid value for {key}: {value!r} (expected true/false)", file=sys.stderr)
                 return 2
             write_value = parse_bool_flag(normalized)
+        if key == "ontology.derive" and value not in {"extend", "off"}:
+            print(f"Invalid value for {key}: {value!r} (expected extend/off)", file=sys.stderr)
+            return 2
 
         # The key/value pairing is only known at runtime (bool iff key is in
         # _BOOL_KEYS, str otherwise); write_config's own parameters are precisely
