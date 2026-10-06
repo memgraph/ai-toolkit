@@ -1,0 +1,286 @@
+--- S1V value pass: ['Activity', 'Date', 'Duration', 'Event', 'Food', 'Money', 'Person', 'Product', 'Quantity', 'TimeWindow', 'User']
+   event_date            ['Event'] -> ['Date']
+   event_time            ['Event', 'Activity'] -> ['TimeWindow']
+   event_duration        ['Event', 'Activity'] -> ['Duration']
+   product_price         ['Product'] -> ['Money']
+   product_quantity      ['Product', 'Food'] -> ['Quantity']
+   spent_money           ['User', 'Person'] -> ['Money']
+   has_budget            ['User', 'Person'] -> ['Money']
+--- S2V value pass: ['Activity', 'CreativeWork', 'Date', 'Duration', 'Event', 'Food', 'Money', 'Organization', 'Person', 'Product', 'Quantity', 'Reward', 'TimeWindow', 'Topic', 'User']
+   has_points_balance    ['User', 'Person', 'Organization'] -> ['Quantity']
+   has_price             ['Product', 'Reward', 'Food'] -> ['Money']
+   has_frequency         ['Activity', 'Event'] -> ['Quantity']
+   has_duration          ['Activity', 'Event', 'Product'] -> ['Duration']
+   spent_time            ['User', 'Person'] -> ['Duration']
+   has_time_window       ['Activity', 'Event', 'Topic'] -> ['TimeWindow']
+   has_count             ['Product', 'Activity', 'CreativeWork', 'Food'] -> ['Quantity']
+   event_on_date         ['Event', 'Activity'] -> ['Date']
+   has_birthday_on       ['User', 'Person'] -> ['Date']
+
+=== hand: 895 raw, 393 distinct, 2509 mentions
+answer-bearing: 8
+   attended(User:'user' -> Event:'MoMA tour') 0.839
+   personal_best(User:'I' -> Duration:'25:50') 0.807
+   personal_best(User:'I' -> Duration:'25:50') 0.848
+   personal_best(User:'user' -> Duration:'25:50') 0.955
+   studied(User:'assistant' -> Organization:'Business Administration') 0.621
+   studied(User:'user' -> Topic:'Business Administration') 0.976
+   visited(User:'I' -> Location:'Museum of Modern Art') 0.655
+   visited(User:'user' -> Location:'Museum of Modern Art') 0.781
+edges into MoMA: ["attended(User:'user' -> Event:'MoMA tour') 0.839", "visited(User:'I' -> Location:'Museum of Modern Art') 0.655", "visited(User:'user' -> Location:'Museum of Modern Art') 0.781"]
+relations (raw, top pairs, examples):
+   studied                163  [('User->Topic', 72), ('Person->Topic', 55), ('User->Organization', 34)]  ['user -> work', 'Trello -> task management', 'user -> Business Administration', 'assistant -> Business Administration']
+   prefers                129  [('User->Product', 88), ('User->Topic', 23), ('Person->Activity', 6)]  ['user -> task management apps', 'user -> digital', 'user -> Trello', 'Trello -> task management']
+   happened_on             99  [('Event->Date', 99)]  ['winter clothes -> holidays', 'outdoor concert -> weekend', 'concert -> February 5th', 'dinner date -> last Friday']
+   purchased               85  [('User->Product', 72), ('Person->Product', 13)]  ['user -> planner', 'user -> groceries', 'user -> household items', 'I -> groceries']
+   works_for               69  [('Person->Organization', 60), ('User->Organization', 9)]  ['Evernote -> Google', 'Evernote -> Microsoft', 'manager -> new job', 'Clarity Money -> Toshl Finance']
+   owns                    55  [('User->Product', 48), ('Person->Product', 7)]  ['user -> navy blue blazer', 'I -> navy blue blazer', 'user -> tops', 'I -> tops']
+   practices               53  [('User->Activity', 35), ('Person->Activity', 18)]  ['user -> routine', 'assistant -> Washing', 'user -> video editing', 'I -> Practice']
+   located_in              45  [('Organization->Location', 35), ('Event->Location', 10)]  ['dry cleaning -> closet', 'Fauvism -> France', 'Tarim Basin Mummies -> Canary Islands', 'Tarim Basin Mummies -> Denmark']
+   lives_in                43  [('User->Location', 30), ('Person->Location', 13)]  ['user -> closet', 'I -> closet', 'jeans -> closet', 'user -> home']
+   visited                 41  [('User->Location', 39), ('Person->Location', 2)]  ['assistant -> closet', 'assistant -> dresser drawers', 'assistant -> Dresser Drawers', 'user -> closet']
+   knows                   31  [('User->Person', 29), ('Person->Person', 2)]  ['assistant -> Short-sleeve shirts', 'user -> sister', 'I -> sister', 'user -> Cubism']
+   costs                   23  [('Activity->Money', 13), ('Product->Money', 10)]  ['app -> subscription fees', 'SpendTracker -> subscription fees', 'Wash -> TLC', 'wash -> TLC']
+   lasted                  19  [('Activity->Duration', 10), ('Event->Duration', 9)]  ['routine -> some time', 'closet -> each week', 'laundry -> each week', 'mummification -> 70 days']
+   attended                15  [('User->Event', 11), ('Person->Event', 4)]  ['user -> meeting', 'user -> outdoor concert', 'user -> concert', 'I -> concert']
+   works_shift             15  [('Person->TimeWindow', 15)]  ['Agent -> Saturday', 'Agent -> Sunday', 'agent -> Sunday']
+   spent_time               5  [('User->Duration', 5)]  ['user -> a while', 'I -> a while', 'assistant -> a year']
+   personal_best            5  [('User->Duration', 3), ('Person->Duration', 2)]  ['Pablo Picasso -> influential artists', 'user -> 25:50', 'I -> 25:50']
+co-firing: 55/315 pairs multi-label; top [('prefers', '38/70'), ('purchased', '32/45'), ('owns', '26/27'), ('studied', '14/56')]
+   combos [(('owns', 'prefers', 'purchased'), 17), (('prefers', 'studied'), 9), (('owns', 'purchased'), 9), (('prefers', 'purchased'), 6)]
+User endpoints not first person: 198/502 (39.4%)  [('frida kahlo', 69), ('assistant', 58), ('frida', 55), ('raoul dufy', 7), ('curves panel', 3), ('follow through', 3)]
+
+##### S1V
+
+=== S1V alone: 1753 raw, 545 distinct, 2420 mentions
+answer-bearing: 15
+   event_location(Event:'guided tour' -> Place:'Museum of Modern Art') 0.888
+   participates_in_event(User:'I' -> Event:'MoMA tour') 0.511
+   participates_in_event(User:'I' -> Event:'MoMA tour') 0.535
+   participates_in_event(User:'user' -> Event:'MoMA tour') 0.564
+   studies_at(Person:'Albert Gleizes' -> Organization:'Museum of Modern Art') 0.343
+   studies_at(User:'assistant' -> Organization:'Business Administration') 0.758
+   studies_at(User:'user' -> Organization:'Business Administration') 0.975
+   visits_place(User:'I' -> Place:'Museum of Modern Art') 0.677
+   visits_place(User:'I' -> Place:'Museum of Modern Art') 0.837
+   visits_place(User:'user' -> Place:'Museum of Modern Art') 0.908
+   works_at(Person:'Georges Braque' -> Organization:'Museum of Modern Art') 0.555
+   works_at(Person:'Georges Braque' -> Organization:'Museum of Modern Art') 0.557
+   works_at(Person:'Pablo Picasso' -> Organization:'Museum of Modern Art') 0.411
+   works_at(User:'assistant' -> Organization:'Business Administration') 0.793
+   works_at(User:'user' -> Organization:'Business Administration') 0.958
+edges into MoMA: ["event_location(Event:'guided tour' -> Place:'Museum of Modern Art') 0.888", "participates_in_event(User:'I' -> Event:'MoMA tour') 0.511", "participates_in_event(User:'I' -> Event:'MoMA tour') 0.535", "participates_in_event(User:'user' -> Event:'MoMA tour') 0.564", "studies_at(Person:'Albert Gleizes' -> Organization:'Museum of Modern Art') 0.343", "visits_place(User:'I' -> Place:'Museum of Modern Art') 0.677", "visits_place(User:'I' -> Place:'Museum of Modern Art') 0.837", "visits_place(User:'user' -> Place:'Museum of Modern Art') 0.908", "works_at(Person:'Georges Braque' -> Organization:'Museum of Modern Art') 0.555", "works_at(Person:'Georges Braque' -> Organization:'Museum of Modern Art') 0.557", "works_at(Person:'Pablo Picasso' -> Organization:'Museum of Modern Art') 0.411"]
+relations (raw, top pairs, examples):
+   located_in             256  [('Place->Place', 219), ('Organization->Place', 37)]  ['Google Tasks -> Microsoft', 'Evernote -> Microsoft', 'closet -> closet', 'dresser drawers -> Dresser']
+   prefers                140  [('User->Topic', 59), ('User->Product', 53), ('User->Activity', 24)]  ['user -> planner', 'user -> Todoist', 'user -> Trello', 'I -> Todoist']
+   is_fan_of              138  [('User->Topic', 54), ('User->Product', 44), ('User->Activity', 30)]  ['user -> Todoist', 'user -> Trello', 'I -> Todoist', 'I -> Trello']
+   event_date             114  [('Event->Date', 114)]  ['Winter Clothes -> holidays', 'winter clothes -> holidays', 'last summer -> last summer', 'boots -> February 5th']
+   participates_in_event  110  [('User->Event', 84), ('Person->Event', 26)]  ['user -> meeting', 'I -> meeting', 'user -> outdoor concert', 'I -> outdoor concert']
+   lives_in                94  [('User->Place', 65), ('Person->Place', 29)]  ['user -> closet', 'I -> closet', 'assistant -> closet', 'user -> clothes']
+   interested_in           89  [('User->Topic', 75), ('Person->Topic', 11), ('User->Activity', 3)]  ['user -> meal prep', 'I -> meal prep', 'user -> Lumetri Color Panel', 'user -> modern art movements']
+   visits_place            89  [('User->Place', 82), ('Person->Place', 7)]  ['user -> closet', 'I -> closet', 'assistant -> closet', 'user -> clothes']
+   attended_event_with     81  [('User->Person', 73), ('Person->Person', 8)]  ['you -> team', 'user -> sister', 'I -> sister', 'you -> outfit']
+   has_occupation          78  [('Person->Occupation', 42), ('User->Occupation', 36)]  ['user -> new job', 'I -> new job', 'you -> new job', 'user -> new role']
+   event_duration          72  [('Event->Duration', 42), ('Activity->Duration', 30)]  ['Decluttering -> over a year', 'closet organizer -> each week', 'laundry -> 1-2 weeks', 'mummification -> 70 days']
+   has_friend              67  [('User->Person', 59), ('Person->Person', 8)]  ['user -> sister', 'I -> sister', 'Frida Kahlo -> Diego Rivera', 'Kahlo -> André Breton']
+   hosts_event             61  [('User->Event', 50), ('Organization->Event', 6), ('Person->Event', 5)]  ['user -> meeting', 'I -> meeting', 'user -> outdoor concert', 'I -> outdoor concert']
+   uses                    59  [('User->Product', 38), ('Organization->Product', 21)]  ['user -> planner', 'I -> planner', 'user -> boxes', 'user -> notes app']
+   has_family_member       59  [('User->Person', 46), ('Person->Person', 13)]  ['user -> sister', 'I -> sister', 'Georges Braque -> Georges Braque', 'Pablo Picasso -> Georges Braque']
+   event_location          58  [('Event->Place', 52), ('Event->Organization', 6)]  ['concert -> Zara', 'seasonal swap -> closet', 'color grading -> video', 'guided tour -> Museum of Modern Art']
+   product_quantity        54  [('Product->Quantity', 53), ('Food->Quantity', 1)]  ['task management app -> free', 'Spendee -> free', 'Wally -> free', 'Pocketbook -> free']
+   event_time              28  [('Event->TimeWindow', 28)]  ['concert -> evening', 'Shift Rotation -> 8 am till 4 pm - 12 pm', 'Shift Rotation -> 12 am - 12 am', 'Shift Rotation -> 8 am - 4 pm']
+   does_activity           27  [('User->Activity', 27)]  ['user -> soccer', 'user -> running', 'I -> running', 'I -> soccer']
+   buys_product            20  [('User->Product', 20)]  ['assistant -> Wunderlist', 'user -> black jeans', 'user -> white button-down shirt', 'I -> black jeans']
+   works_at                18  [('Person->Organization', 10), ('User->Organization', 8)]  ['user -> Business Administration', 'assistant -> Business Administration', 'assistant -> Zara', 'assistant -> Lumetri Color Panel']
+   product_bought_from     11  [('Product->Organization', 7), ('User->Organization', 4)]  ['assistant -> Microsoft', "black jeans -> Levi's", 'black jeans -> H&M', 'boots -> Zara']
+   studies_at               9  [('User->Organization', 8), ('Person->Organization', 1)]  ['user -> Business Administration', 'assistant -> Business Administration', 'Albert Gleizes -> Museum of Modern Art', 'Frida Kahlo -> Academy of San Carlos']
+   commutes_from            8  [('User->Place', 8)]  ['user -> last summer', 'I -> last summer', 'user -> gym', 'I -> gym']
+   owns_product             6  [('User->Product', 6)]  ['user -> navy blue blazer', 'I -> navy blue blazer']
+   gift_given_to            3  [('Product->User', 2), ('Product->Person', 1)]  ['Wunderlist -> assistant', 'green sweater -> sister']
+   sells                    2  [('User->Product', 1), ('Organization->Product', 1)]  ['user -> them', 'tennis shops -> stringing services']
+   learns_language          2  [('User->Language', 2)]  ['assistant -> French', 'ancient culture enthusiast -> Spanish']
+co-firing: 106/407 pairs multi-label; top [('prefers', '44/57'), ('is_fan_of', '43/48'), ('hosts_event', '21/24'), ('participates_in_event', '21/40')]
+   combos [(('is_fan_of', 'prefers'), 23), (('hosts_event', 'participates_in_event'), 21), (('lives_in', 'visits_place'), 17), (('interested_in', 'is_fan_of', 'prefers'), 11)]
+User endpoints not first person: 349/961 (36.3%)  [('frida kahlo', 155), ('frida', 80), ('kahlo', 51), ('assistant', 50), ('léger', 3), ('gm social media agents', 3)]
+   merge: 275 value spans from the value pass; 15 main mentions overridden, 12 main edges dropped, 156 value edges added
+
+=== S1V + value pass: 1897 raw, 620 distinct, 2689 mentions
+answer-bearing: 15
+   event_location(Event:'guided tour' -> Place:'Museum of Modern Art') 0.888
+   participates_in_event(User:'I' -> Event:'MoMA tour') 0.511
+   participates_in_event(User:'I' -> Event:'MoMA tour') 0.535
+   participates_in_event(User:'user' -> Event:'MoMA tour') 0.564
+   studies_at(Person:'Albert Gleizes' -> Organization:'Museum of Modern Art') 0.343
+   studies_at(User:'assistant' -> Organization:'Business Administration') 0.758
+   studies_at(User:'user' -> Organization:'Business Administration') 0.975
+   visits_place(User:'I' -> Place:'Museum of Modern Art') 0.677
+   visits_place(User:'I' -> Place:'Museum of Modern Art') 0.837
+   visits_place(User:'user' -> Place:'Museum of Modern Art') 0.908
+   works_at(Person:'Georges Braque' -> Organization:'Museum of Modern Art') 0.555
+   works_at(Person:'Georges Braque' -> Organization:'Museum of Modern Art') 0.557
+   works_at(Person:'Pablo Picasso' -> Organization:'Museum of Modern Art') 0.411
+   works_at(User:'assistant' -> Organization:'Business Administration') 0.793
+   works_at(User:'user' -> Organization:'Business Administration') 0.958
+edges into MoMA: ["event_location(Event:'guided tour' -> Place:'Museum of Modern Art') 0.888", "participates_in_event(User:'I' -> Event:'MoMA tour') 0.511", "participates_in_event(User:'I' -> Event:'MoMA tour') 0.535", "participates_in_event(User:'user' -> Event:'MoMA tour') 0.564", "studies_at(Person:'Albert Gleizes' -> Organization:'Museum of Modern Art') 0.343", "visits_place(User:'I' -> Place:'Museum of Modern Art') 0.677", "visits_place(User:'I' -> Place:'Museum of Modern Art') 0.837", "visits_place(User:'user' -> Place:'Museum of Modern Art') 0.908", "works_at(Person:'Georges Braque' -> Organization:'Museum of Modern Art') 0.555", "works_at(Person:'Georges Braque' -> Organization:'Museum of Modern Art') 0.557", "works_at(Person:'Pablo Picasso' -> Organization:'Museum of Modern Art') 0.411"]
+relations (raw, top pairs, examples):
+   located_in             256  [('Place->Place', 219), ('Organization->Place', 37)]  ['Google Tasks -> Microsoft', 'Evernote -> Microsoft', 'closet -> closet', 'dresser drawers -> Dresser']
+   event_date             162  [('Event->Date', 162)]  ['Winter Clothes -> holidays', 'winter clothes -> holidays', 'last summer -> last summer', 'boots -> February 5th']
+   prefers                140  [('User->Topic', 59), ('User->Product', 53), ('User->Activity', 24)]  ['user -> planner', 'user -> Todoist', 'user -> Trello', 'I -> Todoist']
+   is_fan_of              138  [('User->Topic', 54), ('User->Product', 44), ('User->Activity', 30)]  ['user -> Todoist', 'user -> Trello', 'I -> Todoist', 'I -> Trello']
+   event_duration         124  [('Activity->Duration', 63), ('Event->Duration', 61)]  ['Decluttering -> over a year', 'closet organizer -> each week', 'laundry -> 1-2 weeks', 'mummification -> 70 days']
+   participates_in_event  110  [('User->Event', 84), ('Person->Event', 26)]  ['user -> meeting', 'I -> meeting', 'user -> outdoor concert', 'I -> outdoor concert']
+   lives_in                94  [('User->Place', 65), ('Person->Place', 29)]  ['user -> closet', 'I -> closet', 'assistant -> closet', 'user -> clothes']
+   interested_in           89  [('User->Topic', 75), ('Person->Topic', 11), ('User->Activity', 3)]  ['user -> meal prep', 'I -> meal prep', 'user -> Lumetri Color Panel', 'user -> modern art movements']
+   visits_place            89  [('User->Place', 82), ('Person->Place', 7)]  ['user -> closet', 'I -> closet', 'assistant -> closet', 'user -> clothes']
+   attended_event_with     81  [('User->Person', 73), ('Person->Person', 8)]  ['you -> team', 'user -> sister', 'I -> sister', 'you -> outfit']
+   has_occupation          78  [('Person->Occupation', 42), ('User->Occupation', 36)]  ['user -> new job', 'I -> new job', 'you -> new job', 'user -> new role']
+   product_quantity        77  [('Product->Quantity', 76), ('Food->Quantity', 1)]  ['task management app -> free', 'Spendee -> free', 'Wally -> free', 'Pocketbook -> free']
+   has_friend              67  [('User->Person', 59), ('Person->Person', 8)]  ['user -> sister', 'I -> sister', 'Frida Kahlo -> Diego Rivera', 'Kahlo -> André Breton']
+   hosts_event             61  [('User->Event', 50), ('Organization->Event', 6), ('Person->Event', 5)]  ['user -> meeting', 'I -> meeting', 'user -> outdoor concert', 'I -> outdoor concert']
+   uses                    59  [('User->Product', 38), ('Organization->Product', 21)]  ['user -> planner', 'I -> planner', 'user -> boxes', 'user -> notes app']
+   has_family_member       59  [('User->Person', 46), ('Person->Person', 13)]  ['user -> sister', 'I -> sister', 'Georges Braque -> Georges Braque', 'Pablo Picasso -> Georges Braque']
+   event_location          58  [('Event->Place', 52), ('Event->Organization', 6)]  ['concert -> Zara', 'seasonal swap -> closet', 'color grading -> video', 'guided tour -> Museum of Modern Art']
+   event_time              49  [('Event->TimeWindow', 42), ('Activity->TimeWindow', 7)]  ['concert -> evening', 'Shift Rotation -> 8 am till 4 pm - 12 pm', 'Shift Rotation -> 12 am - 12 am', 'Shift Rotation -> 8 am - 4 pm']
+   does_activity           27  [('User->Activity', 27)]  ['user -> soccer', 'user -> running', 'I -> running', 'I -> soccer']
+   buys_product            20  [('User->Product', 20)]  ['assistant -> Wunderlist', 'user -> black jeans', 'user -> white button-down shirt', 'I -> black jeans']
+   works_at                18  [('Person->Organization', 10), ('User->Organization', 8)]  ['user -> Business Administration', 'assistant -> Business Administration', 'assistant -> Zara', 'assistant -> Lumetri Color Panel']
+   product_bought_from     11  [('Product->Organization', 7), ('User->Organization', 4)]  ['assistant -> Microsoft', "black jeans -> Levi's", 'black jeans -> H&M', 'boots -> Zara']
+   studies_at               9  [('User->Organization', 8), ('Person->Organization', 1)]  ['user -> Business Administration', 'assistant -> Business Administration', 'Albert Gleizes -> Museum of Modern Art', 'Frida Kahlo -> Academy of San Carlos']
+   owns_product             6  [('User->Product', 6)]  ['user -> navy blue blazer', 'I -> navy blue blazer']
+   product_price            5  [('Product->Money', 5)]  ['Evernote -> free', 'Google Tasks -> free', 'Toshl Finance -> free', 'Clarity Money -> free']
+   gift_given_to            3  [('Product->User', 2), ('Product->Person', 1)]  ['Wunderlist -> assistant', 'green sweater -> sister']
+   commutes_from            3  [('User->Place', 3)]  ['user -> gym', 'I -> gym']
+   sells                    2  [('User->Product', 1), ('Organization->Product', 1)]  ['user -> them', 'tennis shops -> stringing services']
+   learns_language          2  [('User->Language', 2)]  ['assistant -> French', 'ancient culture enthusiast -> Spanish']
+co-firing: 109/474 pairs multi-label; top [('prefers', '44/57'), ('is_fan_of', '43/48'), ('hosts_event', '22/24'), ('participates_in_event', '21/40')]
+   combos [(('is_fan_of', 'prefers'), 23), (('hosts_event', 'participates_in_event'), 21), (('lives_in', 'visits_place'), 17), (('interested_in', 'is_fan_of', 'prefers'), 11)]
+User endpoints not first person: 349/956 (36.5%)  [('frida kahlo', 155), ('frida', 80), ('kahlo', 51), ('assistant', 50), ('léger', 3), ('gm social media agents', 3)]
+
+##### S2V
+
+=== S2V alone: 1485 raw, 503 distinct, 2309 mentions
+answer-bearing: 14
+   attended_event(User:'user' -> Event:'MoMA tour') 0.573
+   cooks_food(User:'I' -> Food:'25:50') 0.615
+   cooks_food(User:'user' -> Food:'25:50') 0.779
+   event_located_at(Event:'guided tour' -> Place:'Museum of Modern Art') 0.947
+   traveled_to(User:'I' -> Place:'Museum of Modern Art') 0.774
+   traveled_to(User:'I' -> Place:'Museum of Modern Art') 0.88
+   traveled_to(User:'user' -> Event:'MoMA tour') 0.665
+   traveled_to(User:'user' -> Place:'Museum of Modern Art') 0.952
+   visited(User:'I' -> Event:'MoMA tour') 0.776
+   visited(User:'I' -> Event:'MoMA tour') 0.832
+   visited(User:'I' -> Place:'Museum of Modern Art') 0.754
+   visited(User:'I' -> Place:'Museum of Modern Art') 0.868
+   visited(User:'user' -> Event:'MoMA tour') 0.863
+   visited(User:'user' -> Place:'Museum of Modern Art') 0.947
+edges into MoMA: ["attended_event(User:'user' -> Event:'MoMA tour') 0.573", "event_located_at(Event:'guided tour' -> Place:'Museum of Modern Art') 0.947", "traveled_to(User:'I' -> Place:'Museum of Modern Art') 0.774", "traveled_to(User:'I' -> Place:'Museum of Modern Art') 0.88", "traveled_to(User:'user' -> Event:'MoMA tour') 0.665", "traveled_to(User:'user' -> Place:'Museum of Modern Art') 0.952", "visited(User:'I' -> Event:'MoMA tour') 0.776", "visited(User:'I' -> Event:'MoMA tour') 0.832", "visited(User:'I' -> Place:'Museum of Modern Art') 0.754", "visited(User:'I' -> Place:'Museum of Modern Art') 0.868", "visited(User:'user' -> Event:'MoMA tour') 0.863", "visited(User:'user' -> Place:'Museum of Modern Art') 0.947"]
+relations (raw, top pairs, examples):
+   interested_in          135  [('User->Topic', 90), ('User->Activity', 15), ('User->CreativeWork', 14)]  ['user -> meal prep', 'I -> meal prep', 'user -> video editing', 'I -> video editing']
+   likes                  132  [('User->Topic', 68), ('User->Product', 48), ('User->Activity', 8)]  ['assistant -> project management', 'assistant -> task management', 'user -> Mint and Personal Capital', 'I -> Mint and Personal Capital']
+   consumed_creative_work 121  [('User->CreativeWork', 93), ('Person->CreativeWork', 28)]  ['user -> Curves panel', 'user -> Cubism', 'I -> Cubism', "Albert Gleizes -> Les Demoiselles d'Avignon"]
+   has_duration           119  [('Activity->Duration', 113), ('Event->Duration', 5), ('Product->Duration', 1)]  ['routine -> some time', 'Decluttering -> over a year', 'Dresser Drawers -> a year', 'closet -> a year']
+   visited                 94  [('User->Place', 44), ('User->Event', 39), ('User->Organization', 11)]  ['user -> meeting', 'I -> meeting', 'user -> closet', 'assistant -> closet']
+   event_on_date           91  [('Event->Date', 47), ('Activity->Date', 44)]  ['concert -> February 5th', 'dinner date -> last Friday', 'marriage -> 1939', 'marriage -> 1940']
+   attended_event          64  [('User->Event', 49), ('Person->Event', 15)]  ['user -> meeting', 'I -> meeting', 'user -> outdoor concert', 'I -> outdoor concert']
+   has_friend              64  [('User->Person', 58), ('Person->Person', 6)]  ['user -> sister', 'I -> sister', 'assistant -> sister', 'Frida Kahlo -> Diego Rivera']
+   uses                    62  [('User->Product', 59), ('User->Organization', 3)]  ['user -> planner', 'I -> planner', 'user -> black jeans', 'I -> black jeans']
+   dislikes                61  [('User->Topic', 23), ('Person->Topic', 16), ('User->Activity', 8)]  ['assistant -> spending', 'assistant -> expenses', 'assistant -> budgeting', 'Premiere Pro -> effects']
+   bought_product          59  [('User->Product', 58), ('Person->Product', 1)]  ['user -> tools', 'I -> tools', 'Tops -> new top', 'user -> black jeans']
+   has_heritage            54  [('User->Heritage', 51), ('Person->Heritage', 3)]  ['Gleizes -> Futurism', 'Fernand Léger -> Futurism', 'Frida Kahlo -> Mexican folk art', 'Frida Kahlo -> Mexican']
+   traveled_to             50  [('User->Event', 25), ('User->Place', 22), ('Person->Place', 3)]  ['user -> meeting', 'I -> meeting', 'user -> outdoor concert', 'I -> outdoor concert']
+   has_family_member       49  [('User->Person', 40), ('Person->Person', 9)]  ['user -> sister', 'I -> sister', 'assistant -> sister', 'Albert Gleizes -> Georges Braque']
+   is_married_to           47  [('User->Person', 41), ('Person->Person', 6)]  ['user -> sister', 'I -> sister', 'Frida Kahlo -> Diego Rivera', 'Kahlo -> Diego Rivera']
+   does_activity           44  [('User->Activity', 40), ('Person->Activity', 3), ('User->Event', 1)]  ['assistant -> organizing', 'assistant -> Organizing', 'assistant -> decluttering', 'user -> soccer']
+   has_colleague           39  [('User->Person', 31), ('Person->Person', 8)]  ['Georges Braque -> Georges Braque', 'Kahlo -> André Breton', 'Frida Kahlo -> André Breton', 'Frida Kahlo -> Diego Rivera']
+   has_child               34  [('User->Person', 32), ('Person->Person', 2)]  ['user -> sister', 'I -> sister', 'assistant -> sister', 'Kahlo -> Diego Rivera']
+   has_frequency           30  [('Activity->Quantity', 30)]  ['routine -> Regularly', 'Strength Training -> 2-3 times a week', 'Plyometric Exercises -> 2-3 times a week', 'Cardiovascular Training -> 2-3 times a week']
+   hosted_event            21  [('Organization->Event', 16), ('User->Event', 3), ('Person->Event', 2)]  ['Frida Kahlo -> bus accident', 'Diego Rivera -> wedding', 'Diego Rivera -> marriage', 'The Brooklyn Museum -> events']
+   event_located_at        19  [('Event->Place', 17), ('Event->Organization', 2)]  ['concert -> Zara', 'guided tour -> Museum of Modern Art', 'Tournament -> Venue', 'Tournament -> venue']
+   is_from                 19  [('Person->Place', 10), ('User->Place', 9)]  ["user -> Levi's", "I -> Levi's", 'Kahlo -> Paris', 'Frida Kahlo -> Paris']
+   has_time_window         18  [('Activity->TimeWindow', 18)]  ['rotation -> 8 am till 4 pm - 12 pm till 8 pm - 4 pm till 12 am - 12 am till 8 am', 'rotation -> 12 pm - 8 pm', 'rotation -> 4 pm - 12 am', 'rotation -> 8 am - 4 pm']
+   spent_time              14  [('User->Duration', 14)]  ['user -> a while', 'I -> a while', 'assistant -> each week', 'assistant -> a year']
+   speaks_language         11  [('Person->Language', 9), ('User->Language', 2)]  ['Fauvism -> French', 'Raoul Dufy -> French', 'assistant -> large language model']
+   has_points_balance      10  [('User->Quantity', 6), ('Organization->Quantity', 4)]  ['user -> lot', 'I -> lot', 'Fauvism -> bold, vibrant colors']
+   traveled_from            8  [('User->Place', 5), ('Person->Place', 3)]  ['user -> last summer', 'I -> last summer', 'Diego Rivera -> Paris']
+   has_count                7  [('Activity->Quantity', 5), ('Product->Quantity', 1), ('CreativeWork->Quantity', 1)]  ['tops -> a bunch of them', 'closet -> three', 'self-portraits -> third', 'intervals -> 8-9']
+   flew_with_airline        3  [('User->Organization', 3)]  ['assistant -> Microsoft']
+   plays_for_team           2  [('User->Organization', 2)]  ['Raoul Dufy -> Fauvist']
+   cooks_food               2  [('User->Food', 2)]  ['user -> 25:50', 'I -> 25:50']
+   has_favorite_place       1  [('User->Place', 1)]  ['user -> closet']
+   has_birthday_on          1  [('User->Date', 1)]  ['user -> Sunday']
+co-firing: 95/366 pairs multi-label; top [('likes', '32/49'), ('interested_in', '32/41'), ('visited', '25/35'), ('traveled_to', '22/23')]
+   combos [(('interested_in', 'likes'), 19), (('attended_event', 'traveled_to', 'visited'), 11), (('traveled_to', 'visited'), 8), (('consumed_creative_work', 'interested_in'), 6)]
+User endpoints not first person: 513/1028 (49.9%)  [('frida kahlo', 177), ('frida', 163), ('kahlo', 58), ('assistant', 54), ('gleizes', 19), ('yellow sundress', 11)]
+   merge: 250 value spans from the value pass; 22 main mentions overridden, 21 main edges dropped, 260 value edges added
+
+=== S2V + value pass: 1724 raw, 600 distinct, 2545 mentions
+answer-bearing: 12
+   attended_event(User:'user' -> Event:'MoMA tour') 0.573
+   event_located_at(Event:'guided tour' -> Place:'Museum of Modern Art') 0.947
+   traveled_to(User:'I' -> Place:'Museum of Modern Art') 0.774
+   traveled_to(User:'I' -> Place:'Museum of Modern Art') 0.88
+   traveled_to(User:'user' -> Event:'MoMA tour') 0.665
+   traveled_to(User:'user' -> Place:'Museum of Modern Art') 0.952
+   visited(User:'I' -> Event:'MoMA tour') 0.776
+   visited(User:'I' -> Event:'MoMA tour') 0.832
+   visited(User:'I' -> Place:'Museum of Modern Art') 0.754
+   visited(User:'I' -> Place:'Museum of Modern Art') 0.868
+   visited(User:'user' -> Event:'MoMA tour') 0.863
+   visited(User:'user' -> Place:'Museum of Modern Art') 0.947
+edges into MoMA: ["attended_event(User:'user' -> Event:'MoMA tour') 0.573", "event_located_at(Event:'guided tour' -> Place:'Museum of Modern Art') 0.947", "traveled_to(User:'I' -> Place:'Museum of Modern Art') 0.774", "traveled_to(User:'I' -> Place:'Museum of Modern Art') 0.88", "traveled_to(User:'user' -> Event:'MoMA tour') 0.665", "traveled_to(User:'user' -> Place:'Museum of Modern Art') 0.952", "visited(User:'I' -> Event:'MoMA tour') 0.776", "visited(User:'I' -> Event:'MoMA tour') 0.832", "visited(User:'I' -> Place:'Museum of Modern Art') 0.754", "visited(User:'I' -> Place:'Museum of Modern Art') 0.868", "visited(User:'user' -> Event:'MoMA tour') 0.863", "visited(User:'user' -> Place:'Museum of Modern Art') 0.947"]
+relations (raw, top pairs, examples):
+   has_duration           207  [('Activity->Duration', 198), ('Event->Duration', 5), ('Product->Duration', 4)]  ['routine -> some time', 'Decluttering -> over a year', 'Dresser Drawers -> a year', 'closet -> a year']
+   event_on_date          140  [('Event->Date', 87), ('Activity->Date', 53)]  ['concert -> February 5th', 'dinner date -> last Friday', 'marriage -> 1939', 'marriage -> 1940']
+   interested_in          135  [('User->Topic', 90), ('User->Activity', 15), ('User->CreativeWork', 14)]  ['user -> meal prep', 'I -> meal prep', 'user -> video editing', 'I -> video editing']
+   likes                  132  [('User->Topic', 68), ('User->Product', 48), ('User->Activity', 8)]  ['assistant -> project management', 'assistant -> task management', 'user -> Mint and Personal Capital', 'I -> Mint and Personal Capital']
+   consumed_creative_work 121  [('User->CreativeWork', 93), ('Person->CreativeWork', 28)]  ['user -> Curves panel', 'user -> Cubism', 'I -> Cubism', "Albert Gleizes -> Les Demoiselles d'Avignon"]
+   visited                 92  [('User->Place', 42), ('User->Event', 39), ('User->Organization', 11)]  ['user -> meeting', 'I -> meeting', 'user -> closet', 'assistant -> closet']
+   has_time_window         73  [('Activity->TimeWindow', 52), ('Event->TimeWindow', 17), ('Topic->TimeWindow', 4)]  ['rotation -> 8 am till 4 pm - 12 pm till 8 pm - 4 pm till 12 am - 12 am till 8 am', 'rotation -> 12 pm - 8 pm', 'rotation -> 4 pm - 12 am', 'rotation -> 8 am - 4 pm']
+   attended_event          64  [('User->Event', 49), ('Person->Event', 15)]  ['user -> meeting', 'I -> meeting', 'user -> outdoor concert', 'I -> outdoor concert']
+   has_friend              64  [('User->Person', 58), ('Person->Person', 6)]  ['user -> sister', 'I -> sister', 'assistant -> sister', 'Frida Kahlo -> Diego Rivera']
+   uses                    62  [('User->Product', 59), ('User->Organization', 3)]  ['user -> planner', 'I -> planner', 'user -> black jeans', 'I -> black jeans']
+   dislikes                61  [('User->Topic', 23), ('Person->Topic', 16), ('User->Activity', 8)]  ['assistant -> spending', 'assistant -> expenses', 'assistant -> budgeting', 'Premiere Pro -> effects']
+   bought_product          59  [('User->Product', 58), ('Person->Product', 1)]  ['user -> tools', 'I -> tools', 'Tops -> new top', 'user -> black jeans']
+   has_heritage            54  [('User->Heritage', 51), ('Person->Heritage', 3)]  ['Gleizes -> Futurism', 'Fernand Léger -> Futurism', 'Frida Kahlo -> Mexican folk art', 'Frida Kahlo -> Mexican']
+   traveled_to             50  [('User->Event', 25), ('User->Place', 22), ('Person->Place', 3)]  ['user -> meeting', 'I -> meeting', 'user -> outdoor concert', 'I -> outdoor concert']
+   has_family_member       49  [('User->Person', 40), ('Person->Person', 9)]  ['user -> sister', 'I -> sister', 'assistant -> sister', 'Albert Gleizes -> Georges Braque']
+   is_married_to           47  [('User->Person', 41), ('Person->Person', 6)]  ['user -> sister', 'I -> sister', 'Frida Kahlo -> Diego Rivera', 'Kahlo -> Diego Rivera']
+   does_activity           44  [('User->Activity', 40), ('Person->Activity', 3), ('User->Event', 1)]  ['assistant -> organizing', 'assistant -> Organizing', 'assistant -> decluttering', 'user -> soccer']
+   has_colleague           39  [('User->Person', 31), ('Person->Person', 8)]  ['Georges Braque -> Georges Braque', 'Kahlo -> André Breton', 'Frida Kahlo -> André Breton', 'Frida Kahlo -> Diego Rivera']
+   has_frequency           37  [('Activity->Quantity', 37)]  ['routine -> Regularly', 'Strength Training -> 2-3 times a week', 'Plyometric Exercises -> 2-3 times a week', 'Cardiovascular Training -> 2-3 times a week']
+   has_child               34  [('User->Person', 32), ('Person->Person', 2)]  ['user -> sister', 'I -> sister', 'assistant -> sister', 'Kahlo -> Diego Rivera']
+   has_price               27  [('Product->Money', 27)]  ['Any.do -> free', 'Wunderlist -> free', 'Todoist -> free', 'Trello -> free']
+   has_count               22  [('Product->Quantity', 14), ('Activity->Quantity', 6), ('CreativeWork->Quantity', 2)]  ['tops -> a bunch of them', 'closet -> three', 'self-portraits -> third', 'intervals -> 8-9']
+   spent_time              21  [('User->Duration', 19), ('Person->Duration', 2)]  ['user -> a while', 'I -> a while', 'assistant -> each week', 'assistant -> a year']
+   hosted_event            21  [('Organization->Event', 16), ('User->Event', 3), ('Person->Event', 2)]  ['Frida Kahlo -> bus accident', 'Diego Rivera -> wedding', 'Diego Rivera -> marriage', 'The Brooklyn Museum -> events']
+   is_from                 19  [('Person->Place', 10), ('User->Place', 9)]  ["user -> Levi's", "I -> Levi's", 'Kahlo -> Paris', 'Frida Kahlo -> Paris']
+   event_located_at        15  [('Event->Place', 13), ('Event->Organization', 2)]  ['concert -> Zara', 'guided tour -> Museum of Modern Art', 'Tournament -> Venue', 'Tournament -> venue']
+   has_points_balance      13  [('User->Quantity', 9), ('Organization->Quantity', 4)]  ['user -> lot', 'I -> lot', 'Fauvism -> bold, vibrant colors', 'Frida Kahlo -> Naïve Folk Art']
+   speaks_language         11  [('Person->Language', 9), ('User->Language', 2)]  ['Fauvism -> French', 'Raoul Dufy -> French', 'assistant -> large language model']
+   flew_with_airline        3  [('User->Organization', 3)]  ['assistant -> Microsoft']
+   traveled_from            3  [('Person->Place', 3)]  ['Diego Rivera -> Paris']
+   plays_for_team           2  [('User->Organization', 2)]  ['Raoul Dufy -> Fauvist']
+   has_birthday_on          2  [('User->Date', 2)]  ['user -> Sunday', 'user -> Saturday']
+   has_favorite_place       1  [('User->Place', 1)]  ['user -> closet']
+co-firing: 96/461 pairs multi-label; top [('likes', '32/49'), ('interested_in', '32/41'), ('visited', '25/35'), ('traveled_to', '22/23')]
+   combos [(('interested_in', 'likes'), 19), (('attended_event', 'traveled_to', 'visited'), 11), (('traveled_to', 'visited'), 8), (('consumed_creative_work', 'interested_in'), 6)]
+User endpoints not first person: 520/1028 (50.6%)  [('frida kahlo', 185), ('frida', 163), ('kahlo', 58), ('assistant', 53), ('gleizes', 19), ('yellow sundress', 11)]
+
+=== stability: 1733 spans typed by both, 588 only by S1V, 475 only by S2V; agreement under best S1V->S2V type map 1463/1733 (84%)
+   S1V:Topic              -> S2V:Topic              269/292  also [('Activity', 7), ('Product', 7), ('Heritage', 4)]
+   S1V:Product            -> S2V:Product            224/253  also [('CreativeWork', 14), ('Organization', 11), ('Topic', 2)]
+   S1V:User               -> S2V:User               243/244  also [('Organization', 1)]
+   S1V:Activity           -> S2V:Activity           207/223  also [('Topic', 12), ('Product', 3), ('CreativeWork', 1)]
+   S1V:Event              -> S2V:Event              74/166  also [('Activity', 33), ('Topic', 25), ('Product', 13)]
+   S1V:Place              -> S2V:Place              83/127  also [('Topic', 34), ('Product', 3), ('Organization', 3)]
+   S1V:Person             -> S2V:Person             90/110  also [('User', 12), ('CreativeWork', 5), ('Organization', 1)]
+   S1V:Organization       -> S2V:Organization       83/96  also [('User', 5), ('Heritage', 2), ('Place', 2)]
+   S1V:Date               -> S2V:Date               84/89  also [('Event', 3), ('Duration', 2)]
+   S1V:Duration           -> S2V:Duration           40/41  also [('Quantity', 1)]
+   S1V:Quantity           -> S2V:Quantity           21/27  also [('Product', 4), ('Food', 1), ('Duration', 1)]
+   S1V:Food               -> S2V:Diet               10/23  also [('Food', 9), ('Product', 3), ('Topic', 1)]
+   S1V:TimeWindow         -> S2V:TimeWindow         22/22  also []
+   S1V:Occupation         -> S2V:Activity           6/12  also [('Person', 2), ('CreativeWork', 2), ('Language', 1)]
+   S1V:Language           -> S2V:Language           5/5  also []
+   S1V:Project            -> S2V:CreativeWork       2/3  also [('Product', 1)]
