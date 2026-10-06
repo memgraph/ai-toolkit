@@ -142,7 +142,7 @@ SYSTEM = (
 )
 
 _RULES = """- entity_types: CamelCase label, one-line description. The extractor DOES read entity descriptions.
-- relations: snake_case name. The extractor sees ONLY THE NAME, never a description, so the name alone must say what the relation means and which way it points. Give intended_head/intended_tail labels (existing or proposed) as documentation; the real endpoints are set later from observation. Relations are binary and directed; there are no symmetric or inverse relations.
+- relations: snake_case name. The extractor sees ONLY THE NAME, never a description, so the name alone must say what the relation means and which way it points. Give a one-line description of the fact it records (not read by the extractor; recall matches questions against it), and intended_head/intended_tail labels (existing or proposed) as documentation; the real endpoints are set later from observation. Relations are binary and directed; there are no symmetric or inverse relations.
 - Value facts: when the conversations state a fact about the user as a value (a time, a duration, an amount, a count, a price, a date, a time window: "my best 5K is 25:50", "I spent $400 on it"), propose a relation into the matching value type ({values}). A value type nothing points into is never extracted.
 - No modal or tense variants: one relation per kind of fact. Do not propose plans_to_X, wants_to_X, will_X, used_to_X or considering_X beside X; the fact's time is recorded separately.
 - Prefer the fewest types and relations that cover what the user says; every extra label costs the extractor recall on the others. Do not model the assistant, the conversation itself, or generic advice the assistant gives."""
@@ -204,10 +204,11 @@ _ADDITIONS = {
             "type": "object",
             "properties": {
                 "name": {"type": "string"},
+                "description": {"type": "string"},
                 "intended_head": {"type": "array", "items": {"type": "string"}},
                 "intended_tail": {"type": "array", "items": {"type": "string"}},
             },
-            "required": ["name", "intended_head", "intended_tail"],
+            "required": ["name", "description", "intended_head", "intended_tail"],
         },
     },
 }
@@ -524,7 +525,7 @@ def _additions(
         if name in model.relation_labels() or name in relations or not _RELATION_NAME.match(name):
             continue
         tail = tuple(dict.fromkeys(item.get("intended_tail", [])))
-        relations[name] = RelationType(name, end_labels=tail if _into_values(tail) else ())
+        relations[name] = RelationType(name, item.get("description", ""), end_labels=tail if _into_values(tail) else ())
     return tuple(nodes.values()), tuple(relations.values())
 
 
@@ -553,7 +554,7 @@ def _apply_prune(
                 changelog.append(Change("add", "node", t.label))
     declared = set(merged.node_labels()) | {t.label for t in kept_nodes}
 
-    proposed = {r.label for r in added_relations}
+    proposed = {r.label: r for r in added_relations}
     observed_relations = observation.get("relations", {})
     kept_relations = []
     for item in pruned.get("relations", []):
@@ -565,7 +566,7 @@ def _apply_prune(
         tail = _with_person(tuple(label for label in dict.fromkeys(item.get("tail", [])) if label in declared))
         if not any((h, t) in pairs for h in head for t in tail):
             continue
-        kept_relations.append(RelationType(name, item.get("reason", ""), head, tail))
+        kept_relations.append(RelationType(name, proposed[name].description, head, tail))
         changelog.append(Change("add", "relation", name))
     return HygmModel(
         node_types=merged.node_types + tuple(kept_nodes),

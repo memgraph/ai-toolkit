@@ -64,7 +64,12 @@ def _derive(llm, observer, current=None, **kwargs):
 
 
 LIBRARY = {"label": "Library", "description": "a code library"}
-MAINTAINS = {"name": "maintains", "intended_head": ["User"], "intended_tail": ["Library"]}
+MAINTAINS = {
+    "name": "maintains",
+    "description": "is responsible for a code library",
+    "intended_head": ["User"],
+    "intended_tail": ["Library"],
+}
 
 
 def test_an_observed_addition_joins_the_model_with_its_observed_endpoints():
@@ -82,6 +87,7 @@ def test_an_observed_addition_joins_the_model_with_its_observed_endpoints():
     assert derivation.model.node_type("Library") == NodeType("Library", "a code library", "global")
     maintains = next(r for r in derivation.model.relation_types if r.label == "maintains")
     assert (maintains.start_labels, maintains.end_labels) == (("User", "Person"), ("Library",))
+    assert maintains.description == "is responsible for a code library"  # what recall ranks it by, not prune's reason
     assert derivation.changelog == (Change("add", "node", "Library"), Change("add", "relation", "maintains"))
     assert derivation.counts["nodes"]["Library"] == 12
     assert derivation.llm_calls == 2 + 2  # two sessions make two propose batches, then consolidate and prune
