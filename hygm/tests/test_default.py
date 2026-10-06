@@ -24,8 +24,9 @@ def test_the_default_passes_the_gate_and_holds_the_core_and_catch_alls():
 def test_every_value_type_has_a_relation_into_it_and_is_one_node_per_mention():
     model = default_model()
 
+    identity = {t.label: t.identity for t in model.node_types}
     for label in VALUE_LABELS:
-        assert model.node_type(label).identity == "span"
+        assert identity[label] == "span"
         assert any(label in relation.end_labels for relation in model.relation_types), label
 
 
@@ -47,7 +48,7 @@ def test_with_core_adds_the_missing_core_after_the_supplied_types():
 
 
 def test_artifacts_merge_across_sessions_and_topics_stay_per_chunk():
-    model = default_model()
+    identity = {t.label: t.identity for t in default_model().node_types}
 
-    assert model.node_type("Artifact").identity == "global"
-    assert model.node_type("Topic").identity == "chunk"
+    assert identity["Artifact"] == "global"
+    assert identity["Topic"] == "chunk"
