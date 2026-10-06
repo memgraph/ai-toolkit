@@ -461,6 +461,37 @@ would hold it; namespacing per question would store byte-identical copies and
 pay to reconcile each. The duplicate-turns hazard that implies is handled by
 deduplicating at injection instead.
 
+## BEAM: a second benchmark
+
+`context-graph-eval beam` runs [BEAM](https://github.com/mohammadtavakoli78/BEAM)'s
+probing questions through the same read path as a hybrid LongMemEval run:
+injection, reconciliation, `sessions_graph.recall`, and the same answering
+prompt. BEAM's long multi-domain chats (coding, math, writing, advice) test
+whether recall holds beyond personal-assistant chat (#395).
+
+```bash
+context-graph-eval beam --size 100K --chats 1-20 --limit 100 \
+    --extraction-backend gliner2 --memgraph-url bolt://localhost:<port> \
+    --save runs/beam-100k-q100.json
+```
+
+- **One chat is one user.** Each of its time-anchored batches becomes one
+  dated session; every question of the chat is asked of the whole chat.
+- **Nothing converted is committed.** BEAM's data is CC BY-SA, so it is
+  fetched from a pinned upstream commit (`convert/beam.py`); the pin is what
+  keeps two runs comparable. `chat_trunecated.json` is used where upstream has
+  one, as upstream's own answering does.
+- **BEAM's judge decides every score** (`beam_judge.py`, vendored verbatim:
+  gpt-4.1-mini, temperature 0). Each rubric item scores 1, 0.5 or 0 and a
+  question scores their mean; event ordering is scored by normalised Kendall
+  tau, as upstream's report does. The headline is the mean over abilities.
+  The judge is noisy both ways and is never shown the question; read
+  per-question verdicts before trusting a small delta.
+- **`--limit`** asks a balanced subset: an equal share per ability, spread
+  evenly across the chats. Every chat is still loaded, so a limited run and a
+  full one use the same graph. `--skip-reconcile` reuses it.
+- **`--hybrid-lanes turns,text`** is the graph ablation.
+
 ## Building the Tier 1 corpus
 
 ```bash
