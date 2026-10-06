@@ -169,6 +169,37 @@ def test_an_empty_memory_says_so(graph, memgraph):
     assert "(nothing in memory matched)" in recalled.render()
 
 
+def test_a_fact_deep_in_a_long_reply_is_found_by_vector_and_shown(graph, memgraph, actions_graph):
+    """The embedder reads a message's opening only, and a turn shows only turn_chars: a passage carries both."""
+    filler = "".join(f"Step {i}: review the module and tidy its imports before the next sprint. " for i in range(60))
+    _session(
+        actions_graph,
+        memgraph,
+        user="u1",
+        session="s1",
+        when="2024-04-05T10:00:00+00:00",
+        said="Can you plan my onboarding?",
+        reply=filler + "\n\nYour onboarding modules must all be finished by April 22.",
+    )
+    _ready(graph, memgraph)
+
+    recalled = graph.recall(
+        "u1", "By what date must I finish my onboarding modules?", config=RecallConfig(lanes=("turns",), turns_k=2)
+    )
+
+    reply = next(line for line in recalled.lines() if ", assistant]" in line)
+    assert "April 22" in reply
+    assert len(reply) < len(filler)
+
+
+def test_a_session_embedded_under_another_passage_split_is_pending_again(graph, memgraph, moma):
+    assert graph.get_pending_embedding_sessions() == []
+
+    memgraph.query("MATCH (s:Session {session_id: 's1'}) SET s.embedding_scheme = 'whole-messages'")
+
+    assert graph.get_pending_embedding_sessions() == ["s1"]
+
+
 def test_config_overrides_widths_and_lanes_and_rejects_nonsense():
     config = RecallConfig.from_mapping({"turns_k": "4", "lanes": "turns,text", "unrelated": "x"})
 

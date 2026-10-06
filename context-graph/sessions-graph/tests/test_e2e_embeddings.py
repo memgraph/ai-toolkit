@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 from sessions_graph.cli import main
 from sessions_graph.embeddings import DEFAULT_EMBEDDING_MODEL, EmbeddingUnavailableError, check_available
+from sessions_graph.passages import split_passages
 
 pytest.importorskip("actions_graph")
 
@@ -50,8 +51,10 @@ def session(memgraph, actions_graph):
 def _vectors(memgraph):
     return memgraph.query(
         """
-        MATCH (x) WHERE x:Action OR x:Entity
-        RETURN coalesce(x.action_type, 'entity') AS kind, size(x.embedding) AS dims, x.embedding_model AS model
+        MATCH (x:Action)
+        RETURN x.action_type AS kind, size(x.passage_embeddings[0]) AS dims, x.embedding_model AS model
+        UNION ALL
+        MATCH (x:Entity) RETURN 'entity' AS kind, size(x.embedding) AS dims, x.embedding_model AS model
         UNION ALL
         MATCH ()-[x:adopted]->() RETURN 'edge' AS kind, size(x.embedding) AS dims, x.embedding_model AS model
         """
@@ -73,6 +76,18 @@ def test_embeds_messages_entities_and_edges_but_not_tool_calls(graph, memgraph, 
     )[0]
     assert status == {"status": "completed", "model": DEFAULT_EMBEDDING_MODEL}
     assert graph.get_pending_embedding_sessions() == []
+
+
+def test_a_long_message_gets_one_vector_per_passage(graph, memgraph, actions_graph):
+    actions_graph.ensure_session(Session(session_id="s2", started_at="2026-10-05T10:00:00"))
+    text = "A sentence about the plan. " * 120
+    actions_graph.record_message(session_id="s2", role=MessageRole.ASSISTANT, content=text)
+
+    graph.embed_session("s2")
+
+    rows = memgraph.query("MATCH (a:Action) RETURN size(a.passage_embeddings) AS n, a.passage_embeddings[1] AS v")
+    assert rows[0]["n"] == len(split_passages(text)) > 1
+    assert len(rows[0]["v"]) == BGE_SMALL_DIMENSION
 
 
 def test_embedding_twice_embeds_nothing_new(graph, session):

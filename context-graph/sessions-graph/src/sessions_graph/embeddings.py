@@ -1,8 +1,11 @@
 """Vectors for recall, computed inside Memgraph by MAGE's ``embeddings`` module (#393).
 
-Three units carry an ``embedding``:
+Three units carry vectors:
 
-- user and assistant messages: ``Action.text``, which actions-graph writes;
+- user and assistant messages: ``Action.text``, which actions-graph writes,
+  split into passages (:mod:`.passages`), one vector each in
+  ``passage_embeddings`` -- a long message's later facts are otherwise
+  beyond what the embedder reads;
 - entities: the ``text`` of a node mentioned in one of the session's chunks;
 - extracted edges: the fact and the sentence it was read from, as
   ``"<head> <type> <tail>. <r.text>"`` -- what the hybrid retrieval
@@ -24,6 +27,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .passages import split_passages
+
 #: What the hybrid retrieval benchmark was measured with (map #390).
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 
@@ -36,10 +41,9 @@ _SESSION_ACTIONS = "MATCH (s:Session {session_id: $session_id})-[:HAS_ACTION|HAS
 _STALE = "(x.embedding IS NULL OR x.embedding_model IS NULL OR x.embedding_model <> $model)"
 
 _MESSAGES = (
-    _SESSION_ACTIONS
-    + "WITH DISTINCT a AS x WHERE x.text IS NOT NULL AND "
-    + _STALE
-    + " RETURN id(x) AS id, x.text AS text"
+    _SESSION_ACTIONS + "WITH DISTINCT a AS x WHERE x.text IS NOT NULL AND "
+    "(x.passage_embeddings IS NULL OR x.embedding_model IS NULL OR x.embedding_model <> $model) "
+    "RETURN id(x) AS id, x.text AS text"
 )
 _ENTITIES = (
     _SESSION_ACTIONS + "MATCH (a)-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(n) "
@@ -55,6 +59,10 @@ _EDGES = (
     "+ coalesce(endNode(x).text, 'user') + '. ' + x.text AS text"
 )
 
+_SET_PASSAGES = (
+    "UNWIND $rows AS row MATCH (x) WHERE id(x) = row.id "
+    "SET x.passage_embeddings = row.vectors, x.embedding_model = $model"
+)
 _SET_NODES = (
     "UNWIND $rows AS row MATCH (x) WHERE id(x) = row.id SET x.embedding = row.vector, x.embedding_model = $model"
 )
@@ -121,10 +129,30 @@ def embed_session(db: Any, session_id: str, model: str = DEFAULT_EMBEDDING_MODEL
             the failure keep their vectors.
     """
     params = {"session_id": session_id, "model": model}
-    messages = _embed_rows(db, db.query(_MESSAGES, params), model, _SET_NODES)
+    messages = _embed_messages(db, db.query(_MESSAGES, params), model)
     entities = _embed_rows(db, db.query(_ENTITIES, params), model, _SET_NODES)
     edges = _embed_rows(db, db.query(_EDGES, params), model, _SET_EDGES)
     return Embedded(messages=messages, entities=entities, edges=edges)
+
+
+def _embed_messages(db: Any, rows: list[dict[str, Any]], model: str) -> int:
+    """Embed each message's passages, writing a message's vectors together so none is left half-embedded."""
+    for start in range(0, len(rows), BATCH_SIZE):
+        batch = rows[start : start + BATCH_SIZE]
+        split = [split_passages(row["text"]) for row in batch]
+        texts = [passage for passages in split for passage in passages]
+        vectors = [
+            vector
+            for begin in range(0, len(texts), BATCH_SIZE)
+            for vector in embed_texts(db, texts[begin : begin + BATCH_SIZE], model)
+        ]
+        written = []
+        offset = 0
+        for row, passages in zip(batch, split, strict=True):
+            written.append({"id": row["id"], "vectors": vectors[offset : offset + len(passages)]})
+            offset += len(passages)
+        db.query(_SET_PASSAGES, {"rows": written, "model": model})
+    return len(rows)
 
 
 def _embed_rows(db: Any, rows: list[dict[str, Any]], model: str, write: str) -> int:
