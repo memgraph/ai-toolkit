@@ -7,7 +7,7 @@ Five lanes, each over the user's own history only:
     text        messages matching it by full-text search
     entities    entities nearest it by vector, and each one's facts
     facts       extracted facts nearest it by vector
-    user_facts  the user's own facts of the relation types nearest it
+    user_facts  every fact of the relation types nearest it, from the user's turns
 
 then the turns the facts were read from. The result is the evidence, not an
 answer: the caller's model answers from it. This is the hybrid retrieval the
@@ -23,6 +23,7 @@ turns it found, and :attr:`Recalled.vector_lanes_off` says why.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import asdict, dataclass, field, fields
 from typing import Any
@@ -205,13 +206,18 @@ _ENTITY_FACTS = (
     "WITH n, r ORDER BY r.confidence DESC WITH n, collect(DISTINCT r) AS rs UNWIND rs[0..$per] AS r "
     "WITH DISTINCT r WITH startNode(r) AS h, r, endNode(r) AS t " + _FACT_FIELDS
 )
-_USER_FACT_TYPES = (
-    "MATCH (:User {user_id: $user})-[r]->() WHERE r.source_id IS NOT NULL RETURN DISTINCT type(r) AS type"
-)
+# Every relation type on a fact read from the user's turns, whatever its head:
+# a learned domain relation (Project depends_on Library) needn't start at the
+# User (#439). Types come from the data, not the model, so facts under a type
+# a later version retired stay reachable.
+_USER_FACT_TYPES = _OWN_FACTS + "RETURN DISTINCT type(r) AS type"
 _USER_FACTS = (
-    "MATCH (h:User {user_id: $user})-[r]->(t) WHERE r.source_id IS NOT NULL AND type(r) IN $types "
-    "AND r.embedding_model = $model "
-    "WITH h, r, t, " + _SCORE.format(x="r") + " AS score ORDER BY score DESC LIMIT $k " + _FACT_FIELDS
+    _OWN_FACTS + "AND type(r) IN $types AND r.embedding_model = $model WITH DISTINCT r "
+    "WITH r, " + _SCORE.format(x="r") + " AS score ORDER BY score DESC LIMIT $k "
+    "WITH startNode(r) AS h, r, endNode(r) AS t " + _FACT_FIELDS
+)
+_TYPE_DESCRIPTIONS = (
+    "MATCH (:User {user_id: $user})-[:ADOPTED]->(v:OntologyVersion) RETURN v.model AS model, v.pool AS pool"
 )
 _TEXT = (
     f"CALL text_search.search_all('{TURN_TEXT_INDEX}', $text, {{limit: $pool}}) YIELD node, score "
@@ -232,7 +238,7 @@ _FACTS_OF_TURNS = (
     "WITH startNode(r) AS h, r, endNode(r) AS t " + _FACT_FIELDS
 )
 
-#: Relation-type label vectors, per model: types are few and reused across questions.
+#: Relation-type vectors, per model and text embedded: types are few and reused across questions.
 _type_vectors: dict[tuple[str, str], list[float]] = {}
 
 
@@ -294,23 +300,56 @@ def _text_lane(db: Any, user_id: str, question: str, k: int) -> list[str]:
 
 
 def _user_facts(db: Any, user_id: str, query: list[float], model: str, config: RecallConfig) -> list[dict[str, Any]]:
-    """The user's facts of the relation types whose names are nearest the question.
+    """Facts from the user's turns of the relation types nearest the question.
 
     What "how many weddings did I attend" needs and top-k similarity over
     turns can't gather: every fact of the right type, across all sessions.
+    A type is ranked by its name and description (#439): a learned name can
+    be terse (`pins`), and the description is what a question matches.
     """
     types = sorted(row["type"] for row in db.query(_USER_FACT_TYPES, {"user": user_id}))
     if not types:
         return []
-    missing = [t for t in types if (model, t) not in _type_vectors]
+    descriptions = _type_descriptions(db, user_id)
+    texts = {t: _type_text(t, descriptions.get(t, "")) for t in types}
+    missing = sorted({text for text in texts.values() if (model, text) not in _type_vectors})
     if missing:
-        vectors = embed_texts(db, [t.replace("_", " ") for t in missing], model)
-        _type_vectors.update({(model, t): v for t, v in zip(missing, vectors, strict=True)})
-    ranked = sorted(types, key=lambda t: -_dot(_type_vectors[(model, t)], query))
+        vectors = embed_texts(db, missing, model)
+        _type_vectors.update({(model, text): v for text, v in zip(missing, vectors, strict=True)})
+    ranked = sorted(types, key=lambda t: -_dot(_type_vectors[(model, texts[t])], query))
     wanted = ranked[: config.user_fact_types]
     return db.query(
         _USER_FACTS, {"user": user_id, "types": wanted, "query": query, "model": model, "k": config.user_facts_k}
     )
+
+
+def _type_descriptions(db: Any, user_id: str) -> dict[str, str]:
+    """Relation descriptions from the user's adopted ontology version, then its pool of retired types.
+
+    A user with no stored version is on hygm's default model. Recall can run
+    without hygm (the MCP server needs only sessions-graph), and then a type
+    ranks by its name alone.
+    """
+    rows = db.query(_TYPE_DESCRIPTIONS, {"user": user_id})
+    if rows:
+        mappings = [json.loads(rows[0][key]) for key in ("model", "pool") if rows[0].get(key)]
+    else:
+        try:
+            from hygm import default_model, model_to_mapping
+        except ImportError:
+            return {}
+        mappings = [model_to_mapping(default_model())]
+    descriptions: dict[str, str] = {}
+    for mapping in mappings:
+        for relation in mapping.get("relation_types", []):
+            if relation.get("description"):
+                descriptions.setdefault(relation["label"], relation["description"])
+    return descriptions
+
+
+def _type_text(name: str, description: str) -> str:
+    words = name.replace("_", " ")
+    return f"{words}: {description}" if description else words
 
 
 def _text_only(db: Any, user_id: str, question: str, config: RecallConfig, *, reason: str) -> Recalled:
