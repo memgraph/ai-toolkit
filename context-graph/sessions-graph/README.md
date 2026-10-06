@@ -223,18 +223,19 @@ print(summary.status, summary.texts_considered, summary.texts_deduped, summary.s
 
 Label promotion is opt-in and mirrors unstructured2graph's flags: the default
 (`enforce_ontology=False, promote_labels=False`) leaves entities under the
-LightRAG workspace label with an `entity_type` property only; `enforce_ontology=True`
+backend's workspace label (`gliner2` by default) with an `entity_type` property only; `enforce_ontology=True`
 restricts promotion to an ontology (pass `ontology_path=` for a custom one);
 `promote_labels=True` promotes every `entity_type` with no vocabulary. See
 [unstructured2graph § entity typing](../../unstructured2graph/README.md#entity-typing--ontology).
 
-Extracted entities land in the same LightRAG workspace as any documents
-ingested via unstructured2graph by default, so a person or concept mentioned
-both in a session and in an ingested document merges into one node. Pass
-`entity_workspace=` explicitly to `reconcile_session()` to isolate them instead.
+Extracted entities land in the backend's workspace, the same one any
+documents ingested via unstructured2graph with that backend use, so a person
+or concept mentioned both in a session and in an ingested document merges
+into one node. Pass `entity_workspace=` explicitly to `reconcile_session()` to
+isolate them instead.
 
-Content is deduplicated by hash before ever reaching the LLM, so re-running a
-sweep over already-processed content never re-bills it. Each reconcilable unit
+Content is deduplicated by hash before extraction, so re-running a sweep over
+already-processed content never re-extracts it or re-bills the summary. Each reconcilable unit
 (a message, tool call, tool result, or memory) is truncated to
 `MAX_RECONCILABLE_CHARS` (8000) before extraction, but a chatty session still
 has many units, so the first run can be substantial. Consider this before
