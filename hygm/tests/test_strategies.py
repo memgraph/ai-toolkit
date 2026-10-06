@@ -2,7 +2,7 @@ import textwrap
 
 import pytest
 
-from hygm import LlmRecommendationStrategy, ManualStrategy, NodeType, RelationType
+from hygm import ManualStrategy, NodeType, RelationType
 
 
 def _write(tmp_path, body):
@@ -66,12 +66,6 @@ def test_manual_strategy_rejects_malformed_models(tmp_path, body, match):
 def test_manual_strategy_missing_file(tmp_path):
     with pytest.raises(ValueError, match="Could not read"):
         ManualStrategy().create_model(tmp_path / "missing.yaml")
-
-
-def test_llm_strategy_is_an_interface_until_its_evidence_run_passes():
-    strategy = LlmRecommendationStrategy(llm=object(), observer=object())  # ty: ignore[invalid-argument-type]
-    with pytest.raises(NotImplementedError, match="372"):
-        strategy.create_model(["some text"])
 
 
 def test_a_model_round_trips_through_its_mapping():
