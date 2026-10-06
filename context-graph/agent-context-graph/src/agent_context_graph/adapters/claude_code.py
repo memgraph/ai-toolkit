@@ -1,37 +1,136 @@
-"""Claude Code hooks adapter for agent-context-graph.
-
-Claude Code hooks are command-based: Claude Code invokes a configured command
-with the hook payload on stdin. This adapter translates those JSON payloads into
-the common Event protocol used by AgentLink.
-"""
+"""Claude Code command-hook runtime adapter."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from agent_context_graph.adapters._spec import (
+    EventContext,
+    HookConfig,
+    RuntimeSpec,
+    SpecAdapter,
+    SpecPlugin,
+    session_start,
+    tool_start,
+    turn_end,
+)
 from agent_context_graph.events import (
     AgentEndEvent,
     AgentStartEvent,
     ErrorOccurredEvent,
     MessageEvent,
     SessionEndEvent,
-    SessionStartEvent,
     ToolEndEvent,
-    ToolStartEvent,
 )
-from agent_context_graph.hooks.runner import create_link, load_payload  # noqa: F401 (re-exported for callers)
-from agent_context_graph.protocols import RuntimeAdapter
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from agent_context_graph.events import Event
-    from agent_context_graph.link import AgentLink
 
-_SOURCE = "claude-code"
-_DEFAULT_COMMAND = "agent-context-graph hook run claude-code"
-_SUPPORTED_HOOKS = (
+
+def _user_prompt(context: EventContext) -> MessageEvent:
+    return MessageEvent(
+        **context.base(),
+        role="user",
+        content=context.value("prompt", ""),
+        agent_name=context.optional_text("agent_id"),
+    )
+
+
+def _tool_result_text(tool_response: Any) -> Any:
+    """Return the text of a Claude Code tool response, or the response unchanged.
+
+    Bash responses carry ``stdout``/``stderr``, and Read responses carry
+    ``file.content``; other tools' structured responses are kept whole.
+    """
+    if not isinstance(tool_response, dict):
+        return tool_response
+    if isinstance(tool_response.get("stdout"), str):
+        stderr = tool_response.get("stderr")
+        return f"{tool_response['stdout']}\n{stderr}" if stderr else tool_response["stdout"]
+    file = tool_response.get("file")
+    if isinstance(file, dict) and isinstance(file.get("content"), str):
+        return file["content"]
+    return tool_response
+
+
+def _tool_end(context: EventContext) -> ToolEndEvent:
+    return ToolEndEvent(
+        **context.base(),
+        tool_name=context.text("tool_name"),
+        tool_use_id=context.optional_text("tool_use_id"),
+        result=_tool_result_text(context.value("tool_result")),
+        agent_name=context.optional_text("agent_id"),
+    )
+
+
+def _tool_failure(context: EventContext) -> ToolEndEvent:
+    return ToolEndEvent(
+        **context.base(),
+        tool_name=context.text("tool_name"),
+        tool_use_id=context.optional_text("tool_use_id"),
+        is_error=True,
+        error_message=context.optional_text("error"),
+        agent_name=context.optional_text("agent_id"),
+    )
+
+
+def _permission(context: EventContext) -> MessageEvent:
+    return MessageEvent(
+        **context.base(),
+        role="system",
+        content=context.text("tool_name", "permission_request"),
+        agent_name=context.optional_text("agent_id"),
+    )
+
+
+def _permission_denied(context: EventContext) -> ErrorOccurredEvent:
+    return ErrorOccurredEvent(
+        **context.base(),
+        error_type="permission_denied",
+        error_message=str(context.payload.get("reason") or "Permission denied"),
+        recoverable=True,
+    )
+
+
+def _agent_start(context: EventContext) -> AgentStartEvent:
+    agent_type = context.text("agent_type")
+    return AgentStartEvent(
+        **context.base(),
+        agent_name=context.text("agent_id", agent_type),
+        agent_type=agent_type,
+    )
+
+
+def _agent_end(context: EventContext) -> AgentEndEvent:
+    agent_type = context.text("agent_type")
+    return AgentEndEvent(
+        **context.base(),
+        agent_name=context.text("agent_id", agent_type),
+        agent_type=agent_type,
+        output=context.payload.get("last_assistant_message"),
+    )
+
+
+def _turn_end(context: EventContext) -> list[Event]:
+    # Stop ends one turn; SessionEnd, registered separately, ends the session.
+    return turn_end(context, reply=context.payload.get("last_assistant_message"))
+
+
+def _session_end(context: EventContext) -> SessionEndEvent:
+    return SessionEndEvent(**context.base(), status="completed")
+
+
+def _stop_failure(context: EventContext) -> ErrorOccurredEvent:
+    error = str(context.payload.get("error") or "unknown")
+    return ErrorOccurredEvent(
+        **context.base(),
+        error_type=error,
+        error_message=str(context.payload.get("error_details") or error or "Claude Code stop failure"),
+        recoverable=True,
+    )
+
+
+_HOOKS = (
     "SessionStart",
     "UserPromptSubmit",
     "UserPromptExpansion",
@@ -44,244 +143,29 @@ _SUPPORTED_HOOKS = (
     "SubagentStop",
     "Stop",
     "StopFailure",
+    "SessionEnd",
 )
-
-
-class ClaudeCodeHooksAdapter(RuntimeAdapter):
-    """Adapter that converts Claude Code hook payloads into graph events."""
-
-    def __init__(self, link: AgentLink, session_id: str | None = None) -> None:
-        self._link = link
-        self._session_id = session_id
-
-    def get_runtime_hooks(self) -> dict[str, list[dict[str, Any]]]:
-        """Return a hooks.json-compatible config skeleton."""
-        return build_hooks_config(_DEFAULT_COMMAND)
-
-    def handle_payload(self, payload: dict[str, Any]) -> list[Event]:
-        """Translate and emit a Claude Code hook payload."""
-        hook_event_name = payload.get("hook_event_name")
-        events = self._events_from_payload(hook_event_name, payload)
-        for event in events:
-            self._link.emit(event)
-        return events
-
-    def _events_from_payload(self, hook_event_name: Any, payload: dict[str, Any]) -> list[Event]:
-        session_id = self._session_id or str(payload.get("session_id") or "")
-        metadata = _metadata_from_payload(payload)
-
-        if hook_event_name == "SessionStart":
-            return [
-                SessionStartEvent(
-                    session_id=session_id,
-                    source_sdk=_SOURCE,
-                    working_directory=_string_or_none(payload.get("cwd")),
-                    user_id=_resolve_user_id(payload),
-                    metadata=metadata,
-                )
-            ]
-
-        if hook_event_name in {"UserPromptSubmit", "UserPromptExpansion"}:
-            return [
-                MessageEvent(
-                    session_id=session_id,
-                    source_sdk=_SOURCE,
-                    role="user",
-                    content=payload.get("prompt", ""),
-                    agent_name=_string_or_none(payload.get("agent_id")),
-                    metadata=metadata,
-                )
-            ]
-
-        if hook_event_name == "PreToolUse":
-            return [
-                ToolStartEvent(
-                    session_id=session_id,
-                    source_sdk=_SOURCE,
-                    tool_name=str(payload.get("tool_name") or ""),
-                    tool_input=payload.get("tool_input"),
-                    tool_use_id=_string_or_none(payload.get("tool_use_id")),
-                    agent_name=_string_or_none(payload.get("agent_id")),
-                    metadata=metadata,
-                )
-            ]
-
-        if hook_event_name == "PostToolUse":
-            tool_response = payload.get("tool_response")
-            if "tool_input" in payload:
-                metadata["tool_input"] = payload.get("tool_input")
-            return [
-                ToolEndEvent(
-                    session_id=session_id,
-                    source_sdk=_SOURCE,
-                    tool_name=str(payload.get("tool_name") or ""),
-                    tool_use_id=_string_or_none(payload.get("tool_use_id")),
-                    result=tool_response,
-                    agent_name=_string_or_none(payload.get("agent_id")),
-                    metadata=metadata,
-                )
-            ]
-
-        if hook_event_name == "PostToolUseFailure":
-            if "tool_input" in payload:
-                metadata["tool_input"] = payload.get("tool_input")
-            return [
-                ToolEndEvent(
-                    session_id=session_id,
-                    source_sdk=_SOURCE,
-                    tool_name=str(payload.get("tool_name") or ""),
-                    tool_use_id=_string_or_none(payload.get("tool_use_id")),
-                    is_error=True,
-                    error_message=_string_or_none(payload.get("error")),
-                    agent_name=_string_or_none(payload.get("agent_id")),
-                    metadata=metadata,
-                )
-            ]
-
-        if hook_event_name == "PermissionRequest":
-            return [
-                MessageEvent(
-                    session_id=session_id,
-                    source_sdk=_SOURCE,
-                    role="system",
-                    content=str(payload.get("tool_name") or "permission_request"),
-                    agent_name=_string_or_none(payload.get("agent_id")),
-                    metadata=metadata,
-                )
-            ]
-
-        if hook_event_name == "PermissionDenied":
-            return [
-                ErrorOccurredEvent(
-                    session_id=session_id,
-                    source_sdk=_SOURCE,
-                    error_type="permission_denied",
-                    error_message=str(payload.get("reason") or "Permission denied"),
-                    metadata=metadata,
-                    recoverable=True,
-                )
-            ]
-
-        if hook_event_name == "SubagentStart":
-            agent_name = str(payload.get("agent_id") or payload.get("agent_type") or "")
-            return [
-                AgentStartEvent(
-                    session_id=session_id,
-                    source_sdk=_SOURCE,
-                    agent_name=agent_name,
-                    agent_type=str(payload.get("agent_type") or ""),
-                    metadata=metadata,
-                )
-            ]
-
-        if hook_event_name == "SubagentStop":
-            agent_name = str(payload.get("agent_id") or payload.get("agent_type") or "")
-            return [
-                AgentEndEvent(
-                    session_id=session_id,
-                    source_sdk=_SOURCE,
-                    agent_name=agent_name,
-                    agent_type=str(payload.get("agent_type") or ""),
-                    output=payload.get("last_assistant_message"),
-                    metadata=metadata,
-                )
-            ]
-
-        if hook_event_name == "Stop":
-            return [
-                *_assistant_reply(session_id, payload, metadata),
-                SessionEndEvent(
-                    session_id=session_id,
-                    source_sdk=_SOURCE,
-                    status="completed",
-                    metadata=metadata,
-                ),
-            ]
-
-        if hook_event_name == "StopFailure":
-            return [
-                ErrorOccurredEvent(
-                    session_id=session_id,
-                    source_sdk=_SOURCE,
-                    error_type=str(payload.get("error") or "unknown"),
-                    error_message=str(
-                        payload.get("error_details") or payload.get("error") or "Claude Code stop failure"
-                    ),
-                    metadata=metadata,
-                    recoverable=True,
-                )
-            ]
-
-        return []
-
-
-ClaudeCodeAdapter = ClaudeCodeHooksAdapter
-
-
-def build_hooks_config(command: str, *, timeout: int = 30) -> dict[str, list[dict[str, Any]]]:
-    """Build a Claude Code hooks config using *command* for every supported hook."""
-    config: dict[str, list[dict[str, Any]]] = {}
-    for hook_name in _SUPPORTED_HOOKS:
-        entry: dict[str, Any] = {
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": command,
-                    "timeout": timeout,
-                }
-            ]
-        }
-        if hook_name in {
-            "PreToolUse",
-            "PostToolUse",
-            "PostToolUseFailure",
-            "PermissionRequest",
-            "PermissionDenied",
-        }:
-            entry["matcher"] = "*"
-        config[hook_name] = [entry]
-    return config
-
-
-def response_for_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """Return hook JSON response, when Claude Code benefits from one."""
-    hook_event_name = payload.get("hook_event_name")
-    if hook_event_name in {"Stop", "SubagentStop"}:
-        return {"continue": True}
-    return None
-
-
-@dataclass(frozen=True)
-class _ClaudeCodePlugin:
-    """Registered under the ``agent_context_graph.runtimes`` entry point as ``PLUGIN``.
-
-    No ``init`` -- Claude Code project-local hook setup isn't implemented yet
-    (see ``hooks/cli.py``'s generic ``_init`` dispatch, which reports that
-    clearly rather than assuming every runtime supports it).
-    """
-
-    name: str = "claude-code"
-    adapter_class: type[RuntimeAdapter] = ClaudeCodeHooksAdapter
-
-    def response_for_payload(self, payload: dict[str, Any]) -> dict[str, Any] | None:
-        return response_for_payload(payload)
-
-    def build_hooks_config(self, command: str, *, timeout: int = 30) -> dict[str, Any]:
-        return build_hooks_config(command, timeout=timeout)
-
-
-PLUGIN = _ClaudeCodePlugin()
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    from agent_context_graph.hooks.runner import run_hook
-
-    return run_hook(PLUGIN, argv)
-
-
-def _metadata_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    metadata: dict[str, Any] = {}
-    for key in (
+SPEC = RuntimeSpec(
+    name="claude-code",
+    source_sdk="claude-code",
+    event_key="hook_event_name",
+    hooks=_HOOKS,
+    rules={
+        "SessionStart": session_start,
+        "UserPromptSubmit": _user_prompt,
+        "UserPromptExpansion": _user_prompt,
+        "PreToolUse": tool_start,
+        "PostToolUse": _tool_end,
+        "PostToolUseFailure": _tool_failure,
+        "PermissionRequest": _permission,
+        "PermissionDenied": _permission_denied,
+        "SubagentStart": _agent_start,
+        "SubagentStop": _agent_end,
+        "Stop": _turn_end,
+        "StopFailure": _stop_failure,
+        "SessionEnd": _session_end,
+    },
+    metadata_keys=(
         "cwd",
         "transcript_path",
         "permission_mode",
@@ -303,44 +187,27 @@ def _metadata_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "command_args",
         "command_source",
         "expansion_type",
-    ):
-        if key in payload and payload.get(key) is not None:
-            metadata[key] = payload.get(key)
-    return metadata
+    ),
+    # Installed by the Claude Code plugin's hooks.json, not a project-local file.
+    config=HookConfig(
+        layout="nested",
+        matchers={
+            hook: "*"
+            for hook in ("PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "PermissionDenied")
+        },
+    ),
+    responses={"Stop": {"continue": True}, "SubagentStop": {"continue": True}},
+    # Grok Build also runs .claude/settings.json hooks, with its own payloads
+    # (camelCase duplicates of every field); its grok runtime records those.
+    foreign_payload_keys=frozenset({"hookEventName"}),
+    probe_payload={"hook_event_name": "Stop", "session_id": "doctor"},
+)
 
 
-def _assistant_reply(session_id: str, payload: dict[str, Any], metadata: dict[str, Any]) -> list[Event]:
-    """The turn's final assistant message, which only ``Stop`` carries.
+class ClaudeCodeHooksAdapter(SpecAdapter):
+    """Convert Claude Code command-hook payloads into Event Protocol events."""
 
-    Claude Code fires ``Stop`` at the end of every turn, so this records each
-    reply the user saw. Text the model wrote before a tool call in the same
-    turn isn't in any hook payload; it is narration, not the answer.
-    """
-    text = _string_or_none(payload.get("last_assistant_message"))
-    if text is None or not text.strip():
-        return []
-    # The reply is the message's content; a second copy in its metadata would only double what is stored.
-    metadata = {key: value for key, value in metadata.items() if key != "last_assistant_message"}
-    return [MessageEvent(session_id=session_id, source_sdk=_SOURCE, role="assistant", content=text, metadata=metadata)]
+    SPEC = SPEC
 
 
-def _string_or_none(value: Any) -> str | None:
-    if value is None:
-        return None
-    return str(value)
-
-
-def _resolve_user_id(payload: dict[str, Any]) -> str | None:
-    """Resolve a stable user identity for SessionStartEvent.
-
-    Resolution order:
-    1. ``user_id`` field in the hook payload (forward-compat).
-    2. Config file ``[identity] user_id`` at ``~/.config/context-graph/config.toml``.
-    """
-    from agent_context_graph.adapters._identity import resolve_user_id
-
-    return resolve_user_id(payload)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+PLUGIN = SpecPlugin(SPEC, ClaudeCodeHooksAdapter)

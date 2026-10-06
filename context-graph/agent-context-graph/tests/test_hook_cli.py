@@ -2,7 +2,6 @@
 
 import io
 import json
-import os
 import subprocess
 import sys
 from types import ModuleType
@@ -317,7 +316,7 @@ def test_top_level_cli_bootstrap_accepts_zero_port(monkeypatch, capsys):
 
 
 def test_top_level_cli_setup_aliases_codex_init(tmp_path, monkeypatch):
-    monkeypatch.setattr("agent_context_graph.adapters.codex.shutil.which", lambda _: "/bin/agent-context-graph")
+    monkeypatch.setattr("agent_context_graph.adapters._spec.shutil.which", lambda _: "/bin/agent-context-graph")
 
     assert top_level_main(["setup", "codex", "--project-dir", str(tmp_path)]) == 0
 
@@ -356,7 +355,7 @@ def test_init_codex_writes_private_config(tmp_path, capsys):
 
 
 def test_init_codex_does_not_bake_memgraph_connection_into_hook_command(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr("agent_context_graph.adapters.codex.shutil.which", lambda _: "/bin/agent-context-graph")
+    monkeypatch.setattr("agent_context_graph.adapters._spec.shutil.which", lambda _: "/bin/agent-context-graph")
 
     assert (
         main(
@@ -391,16 +390,16 @@ def test_init_codex_does_not_bake_memgraph_connection_into_hook_command(tmp_path
     assert "secret" not in capsys.readouterr().out
 
 
-def test_init_codex_uses_memgraph_env_only_for_setup_schema(tmp_path, monkeypatch):
-    monkeypatch.setattr("agent_context_graph.adapters.codex.shutil.which", lambda _: "/bin/agent-context-graph")
+def test_init_codex_uses_memgraph_flags_only_for_setup_schema(tmp_path, monkeypatch):
+    monkeypatch.setattr("agent_context_graph.adapters._spec.shutil.which", lambda _: "/bin/agent-context-graph")
     captured = {}
 
     class _SkillGraph:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
         def setup(self):
-            captured["url"] = os.environ.get("MEMGRAPH_URL")
-            captured["user"] = os.environ.get("MEMGRAPH_USER")
-            captured["password"] = os.environ.get("MEMGRAPH_PASSWORD")
-            captured["database"] = os.environ.get("MEMGRAPH_DATABASE")
+            captured["setup"] = True
 
     fake_skills_graph = ModuleType("skills_graph")
     fake_skills_graph.SkillGraph = _SkillGraph  # ty: ignore[unresolved-attribute] -- fake module double, no static attrs
@@ -434,20 +433,23 @@ def test_init_codex_uses_memgraph_env_only_for_setup_schema(tmp_path, monkeypatc
     assert "MEMGRAPH" not in command
     assert captured == {
         "url": "bolt://memgraph.example:7687",
-        "user": "neo",
+        "username": "neo",
         "password": "secret",
         "database": "skills",
+        "setup": True,
     }
 
 
 def test_init_codex_sets_up_actions_graph_schema(tmp_path, monkeypatch):
-    monkeypatch.setattr("agent_context_graph.adapters.codex.shutil.which", lambda _: "/bin/agent-context-graph")
+    monkeypatch.setattr("agent_context_graph.adapters._spec.shutil.which", lambda _: "/bin/agent-context-graph")
     captured = {}
 
     class _ActionsGraph:
+        def __init__(self, **kwargs):
+            captured.update(url=kwargs["url"], database=kwargs["database"])
+
         def setup(self):
-            captured["url"] = os.environ.get("MEMGRAPH_URL")
-            captured["database"] = os.environ.get("MEMGRAPH_DATABASE")
+            captured["setup"] = True
 
     fake_actions_graph = ModuleType("actions_graph")
     fake_actions_graph.ActionsGraph = _ActionsGraph  # ty: ignore[unresolved-attribute] -- fake module double, no static attrs
@@ -472,20 +474,7 @@ def test_init_codex_sets_up_actions_graph_schema(tmp_path, monkeypatch):
         == 0
     )
 
-    assert captured == {"url": "bolt://memgraph.example:7687", "database": "actions"}
-
-
-def test_init_codex_uses_memgraph_toolbox_env_helper(tmp_path, monkeypatch):
-    monkeypatch.setattr("agent_context_graph.adapters.codex.shutil.which", lambda _: "/bin/agent-context-graph")
-    monkeypatch.setenv("MEMGRAPH_URL", "bolt://env-memgraph:7687")
-    monkeypatch.setenv("MEMGRAPH_DATABASE", "env-skills")
-
-    assert main(["init", "codex", "--project-dir", str(tmp_path)]) == 0
-
-    hooks = json.loads((tmp_path / ".codex" / "hooks.json").read_text())
-    command = hooks["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-    assert "MEMGRAPH_URL" not in command
-    assert "MEMGRAPH_DATABASE" not in command
+    assert captured == {"url": "bolt://memgraph.example:7687", "database": "actions", "setup": True}
 
 
 def test_init_codex_refuses_to_overwrite_without_force(tmp_path, capsys):

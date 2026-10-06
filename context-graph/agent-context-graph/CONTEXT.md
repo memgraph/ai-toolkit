@@ -44,6 +44,10 @@ _Avoid_: Graph event, graph protocol, hook payload, callback data
 Runtime-side unit of agent activity grouping related events under shared session identifier.
 _Avoid_: Session node
 
+**Turn End**:
+Agent finished one turn (one prompt's work) inside a still-open **Agent Session**. Distinct from session end: most runtimes fire a stop hook after every turn, and several (Codex, Antigravity, `opencode run`) fire nothing at session end. Graph Connectors mark the session for later reconciliation on a Turn End but only start it on session end.
+_Avoid_: Stop (a runtime's hook name, not a protocol term), session end
+
 **Hook Configuration**:
 Persistent TOML file supplying identity + connection settings to hook subprocesses. Default path `~/.config/context-graph/config.toml`; `CONTEXT_GRAPH_CONFIG` may select another file. At hook runtime, config values come only from selected file. Env var selects file; never supplies a value from it.
 _Avoid_: env config, runtime config, shell config
@@ -71,7 +75,7 @@ _Avoid_: MCP tool (the protocol it is served over, not the thing), Graph Connect
 - **Agent Session** may be persisted as a session node by a graph component; **Event Protocol** only carries the session identifier.
 - Tool/message events carry `agent_name` when runtime identifies a subagent. Agent Context Graph only transports this id; Graph Connectors decide how to use it. Codex adapter doesn't yet handle subagent lifecycle/ids ([#275](https://github.com/memgraph/ai-toolkit/issues/275)).
 - Runtime Plugin's generated command calls `hook run <name>`. CLI resolves name via Runtime Registration; plugin never names an adapter class directly.
-- Built-in Runtime Registrations: `codex`, `claude-code`. Other packages may publish more.
+- Built-in Runtime Registrations: `codex`, `claude-code`, `copilot-cli`, `cursor`, `opencode`, `antigravity-cli`, and `grok`. Other packages may publish more.
 
 ## Example dialogue
 

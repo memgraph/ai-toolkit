@@ -39,7 +39,7 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING
 
-from agent_context_graph.events import Event, EventType, SessionEndEvent, SessionStartEvent
+from agent_context_graph.events import Event, EventType, SessionEndEvent, SessionStartEvent, TurnEndEvent
 from agent_context_graph.protocols import GraphConnector
 
 if TYPE_CHECKING:
@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_EVENTS = {EventType.SESSION_START, EventType.SESSION_END}
+_SUPPORTED_EVENTS = {EventType.SESSION_START, EventType.SESSION_END, EventType.TURN_END}
 
 
 class SessionsGraphConnector(GraphConnector):
@@ -69,6 +69,16 @@ class SessionsGraphConnector(GraphConnector):
         background process to run the actual (slow, LLM-backed) reconciliation,
         so this hook call itself never waits on it. The reliable path if that
         detached process dies is the ``sessions-graph reconcile --pending`` CLI.
+
+    On ``TURN_END``:
+      - Marks the Session node ``reconciliation_status = 'pending'``.
+      - Spawns the same detached ``sessions-graph embed`` as a session end:
+        it needs no LLM, so recall covers each turn as soon as it ends, and
+        runtimes without a session-end hook (Codex, Antigravity,
+        ``opencode run``) get embedded at all.
+      - Never spawns reconciliation: the session is still open and that step
+        costs LLM calls. The ``--pending`` sweep reconciles it, and a later
+        turn marks it pending again.
 
     Args:
         graph: An initialised :class:`SessionsGraph` instance.
@@ -101,6 +111,8 @@ class SessionsGraphConnector(GraphConnector):
             self._on_session_start(event)
         elif isinstance(event, SessionEndEvent):
             self._on_session_end(event)
+        elif isinstance(event, TurnEndEvent):
+            self._on_turn_end(event)
 
     # ------------------------------------------------------------------
     # Active session context (convenience for callers)
@@ -150,6 +162,10 @@ class SessionsGraphConnector(GraphConnector):
         _spawn_detached(["embed", "--session", event.session_id], env=_child_env(llm=False))
         if self._auto_reconcile:
             _spawn_detached(["reconcile", "--session", event.session_id], env=_child_env(llm=True))
+
+    def _on_turn_end(self, event: TurnEndEvent) -> None:
+        self._mark_pending_reconciliation(event.session_id)
+        _spawn_detached(["embed", "--session", event.session_id], env=_child_env(llm=False))
 
     def _mark_pending_reconciliation(self, session_id: str) -> None:
         self._graph._db.query(

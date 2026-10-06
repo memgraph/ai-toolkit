@@ -1,12 +1,12 @@
 # Context Graph
 
-**Turn your Claude Code and Codex sessions into a queryable knowledge graph in [Memgraph](https://memgraph.com/).**
+**Turn your coding-agent sessions (Claude Code, Codex, GitHub Copilot CLI, Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable knowledge graph in [Memgraph](https://memgraph.com/).**
 
 Context Graph is a family of components that capture what your coding agents actually do — the tools they call, the skills they use, the memories they record — and persist it into a single Memgraph graph you can query across every session. Install it as a plugin, and every session your agent runs quietly builds up a graph of your work.
 
 ```text
-Claude Code / Codex  ──hooks──▶  agent-context-graph  ──▶  Memgraph
-                                   (routes events)          (:User)-[:HAD_SESSION]->(:Session)
+Agent CLI hooks     ──────────▶  agent-context-graph  ──▶  Memgraph
+(Claude Code, Codex, …)            (routes events)          (:User)-[:HAD_SESSION]->(:Session)
                                                               ├─[:HAS_ACTION]->(:Action)   ← actions-graph
                                                               ├─[:USED_SKILL]->(:Skill)    ← skills-graph
                                                               └─[:PRODUCED_MEMORY]->(:Memory) ← sessions-graph
@@ -33,7 +33,7 @@ Everything is joined by a shared `(:Session {session_id})` node, so one graph an
 
 > `(:Session)` is a shared coordination point — every component `MERGE`s it idempotently, but only sessions-graph owns `(:User)` and the `HAD_SESSION` edge. Entity extraction is powered by [unstructured2graph](../unstructured2graph/), which lives outside this family.
 
-## Getting started (Claude Code or Codex)
+## Getting started
 
 One command does everything below: starts a local Memgraph if none is reachable, registers the plugin marketplace, installs the plugin (this is the step that actually wires hooks into the runtime — running `bootstrap` on its own does not), installs the `agent-context-graph` CLI with all three connectors, sets your identity, and verifies with `doctor`.
 
@@ -43,11 +43,12 @@ One command does everything below: starts a local Memgraph if none is reachable,
 curl -fsSL https://raw.githubusercontent.com/memgraph/ai-toolkit/main/context-graph/scripts/install.sh | bash
 ```
 
-Requires Docker (only if no Memgraph is already reachable) and the runtime's CLI (`claude` or `codex`) on `PATH`; it installs `uv` for you if missing. Everything else is optional — all env vars, all with sane defaults:
+Requires Docker (only if no Memgraph is already reachable) and the runtime's CLI (`claude`, `codex`, `copilot`, `cursor`/`cursor-agent`, `opencode`, `agy`, or `grok`) on `PATH`; it installs `uv` for you if missing. Claude Code and Codex are wired through their plugins, user-wide. The other runtimes get project-local hooks written into the current directory (or `CONTEXT_GRAPH_PROJECT_DIR`), so run the script from inside the project you want captured; it refuses to write into `$HOME`. Everything else is optional — all env vars, all with sane defaults:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `CONTEXT_GRAPH_RUNTIME` | `claude-code` | `claude-code` or `codex` |
+| `CONTEXT_GRAPH_RUNTIME` | `claude-code` | `claude-code`, `codex`, `copilot-cli`, `cursor`, `opencode`, `antigravity-cli`, or `grok` |
+| `CONTEXT_GRAPH_PROJECT_DIR` | current directory | Project to wire, for the runtimes with project-local hooks |
 | `AGENT_CONTEXT_GRAPH_USER_ID` | `git config user.name`, else `$USER` | Identity recorded on every session (`identity.user_id`) |
 | `MEMGRAPH_HOST` | `localhost` | Host to bootstrap against and, if starting one, to publish the container on |
 | `MEMGRAPH_PORT` | `7687` | Bolt port, same two uses as above |

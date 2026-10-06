@@ -13,7 +13,10 @@ No changes to agent-context-graph itself are needed to add a new runtime.
 from __future__ import annotations
 
 from importlib import metadata
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 _ENTRY_POINT_GROUP = "agent_context_graph.runtimes"
 
@@ -36,6 +39,9 @@ class RuntimeCLIPlugin(Protocol):
 
     @property
     def adapter_class(self) -> type[Any]: ...
+
+    @property
+    def probe_payload(self) -> Mapping[str, Any]: ...
 
     def response_for_payload(self, payload: dict[str, Any]) -> dict[str, Any] | None: ...
 

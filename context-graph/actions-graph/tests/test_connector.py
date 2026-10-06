@@ -30,6 +30,9 @@ class FakeActionsGraph:
     def get_session(self, session_id: str):
         return self.sessions.get(session_id)
 
+    def record_session_start(self, session: Session):
+        return self.create_session(session)
+
     def create_session(self, session: Session):
         self.sessions[session.session_id] = session
         return session

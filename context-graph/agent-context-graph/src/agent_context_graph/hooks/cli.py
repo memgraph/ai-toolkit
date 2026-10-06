@@ -91,9 +91,10 @@ def _init(argv: list[str]) -> int:
 def _run_generic_init(runtime_name: str, init: Any, argv: list[str]) -> int:
     """Parse the shared ``hook init`` flags and delegate to *init*.
 
-    The flag set (project dir, connectors, hook command override, Memgraph
-    overrides, schema setup, timeout, force) is generic across runtimes; each
-    plugin's own ``init`` interprets only the kwargs it needs.
+    The flag set is generic across runtimes. Each plugin's ``init`` writes its
+    own config from the project dir, connectors, hook command, timeout, and
+    force flag; ``--setup-schema`` (with the ``--memgraph-*`` overrides) is
+    handled here, identically for every runtime.
     """
     parser = argparse.ArgumentParser(description=f"Generate a private {runtime_name} hook config.")
     parser.add_argument(
@@ -112,12 +113,12 @@ def _run_generic_init(runtime_name: str, init: Any, argv: list[str]) -> int:
         default=None,
         help="Full command to place in the runtime's hook config. Defaults to this installed CLI.",
     )
-    parser.add_argument("--memgraph-url", default=None, help="Memgraph Bolt URL for the hook command.")
-    parser.add_argument("--memgraph-user", default=None, help="Memgraph username for the hook command.")
+    parser.add_argument("--memgraph-url", default=None, help="Memgraph Bolt URL for --setup-schema.")
+    parser.add_argument("--memgraph-user", default=None, help="Memgraph username for --setup-schema.")
     parser.add_argument(
         "--memgraph-password", default=None, help="Memgraph password for --setup-schema. Never written to disk."
     )
-    parser.add_argument("--memgraph-database", default=None, help="Memgraph database for the hook command.")
+    parser.add_argument("--memgraph-database", default=None, help="Memgraph database for --setup-schema.")
     parser.add_argument(
         "--setup-schema",
         action="store_true",
@@ -131,22 +132,24 @@ def _run_generic_init(runtime_name: str, init: Any, argv: list[str]) -> int:
     project_dir = Path(args.project_dir).expanduser().resolve()
 
     try:
-        init(
-            project_dir,
-            connectors,
-            hook_command=args.hook_command,
-            memgraph_url=args.memgraph_url,
-            memgraph_user=args.memgraph_user,
-            memgraph_password=args.memgraph_password,
-            memgraph_database=args.memgraph_database,
-            setup_schema=args.setup_schema,
-            timeout=args.timeout,
-            force=args.force,
-        )
+        init(project_dir, connectors, hook_command=args.hook_command, timeout=args.timeout, force=args.force)
     except FileExistsError as exc:
         print(str(exc), file=sys.stderr)
         print("Re-run with --force to replace generated files.", file=sys.stderr)
         return 1
+
+    if args.setup_schema:
+        from agent_context_graph.adapters._identity import resolve_memgraph_env
+        from agent_context_graph.hooks.runner import setup_connector_schemas
+
+        memgraph_env = resolve_memgraph_env(
+            url=args.memgraph_url,
+            user=args.memgraph_user,
+            password=args.memgraph_password,
+            database=args.memgraph_database,
+        )
+        setup_connector_schemas(connectors, memgraph_env=memgraph_env)
+        print(f"Initialized schema on {memgraph_env['MEMGRAPH_URL']} ({memgraph_env['MEMGRAPH_DATABASE']})")
     return 0
 
 

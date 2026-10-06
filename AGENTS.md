@@ -10,8 +10,8 @@ Memgraph AI Toolkit — a `uv` workspace of independently-versioned Python
 packages for building AI/agent applications on Memgraph: core DB utilities,
 framework integrations (LangChain, MCP, LightRAG), a document-to-graph
 pipeline, a SQL-to-graph migration agent, and **Context Graph**, a family of
-components that turn Claude Code / Codex agent sessions into a queryable
-Memgraph graph.
+components that turn coding-agent sessions (Claude Code, Codex, Copilot CLI,
+Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable Memgraph graph.
 
 ## Repository layout
 

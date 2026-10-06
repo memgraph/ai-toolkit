@@ -447,7 +447,7 @@ cmd_hooks_restore() {
 # concurrent-subagent disambiguation.
 #
 # Generates its own self-contained hooks config (via claude_code.py's
-# build_hooks_config, with the same --connector flags the installed
+# PLUGIN.build_hooks_config, with the same --connector flags the installed
 # marketplace plugin uses) rather than depending on that plugin already being
 # installed -- this needs to work unattended on a bare CI runner, not just a
 # dogfooding dev machine. Only the Memgraph *target* still goes through the
@@ -476,7 +476,7 @@ cmd_test_graph_model() {
 import json
 import sys
 
-from agent_context_graph.adapters.claude_code import build_hooks_config
+from agent_context_graph.adapters.claude_code import PLUGIN
 
 # `uv run --package agent-context-graph agent-context-graph ...` rather than a
 # bare `agent-context-graph` -- a real, discovered-the-hard-way ambiguity: a
@@ -493,7 +493,7 @@ command = (
     "--connector skills-graph --connector actions-graph --connector sessions-graph"
 )
 with open(sys.argv[1], "w") as f:
-    json.dump({"hooks": build_hooks_config(command)}, f)
+    json.dump({"hooks": PLUGIN.build_hooks_config(command)}, f)
 PYEOF
 
   # Only swap (and later restore) if hooks-local hasn't already been applied

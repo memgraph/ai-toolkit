@@ -1,0 +1,103 @@
+name: Live hooks e2e (real agent CLIs)
+
+# Runs real, billed agent CLI sessions through hooks from this checkout and
+# asserts the graph they produce, using live-hooks-e2e.sh. It runs only when a
+# change can affect capture: the Event Protocol, adapters, hook runner and
+# config, the connectors that consume events, the shipped plugins, or the
+# harness itself. Runtimes are limited to the repo's own keys: Claude Code
+# (Anthropic), Codex (OpenAI), and OpenCode (Anthropic). The other runtimes
+# need their own accounts and are covered by captured-payload tests.
+on:
+  pull_request:
+    paths:
+      - "context-graph/agent-context-graph/**"
+      - "context-graph/actions-graph/src/**"
+      - "context-graph/sessions-graph/src/**"
+      - "context-graph/plugins/**"
+      - "context-graph/scripts/live-hooks-e2e/**"
+      - "memgraph-toolbox/src/**"
+      - ".github/workflows/test-live-hooks.yaml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: live-hooks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-hooks:
+    # Secrets are not available to pull requests from forks.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [claude-code, codex, opencode]
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      # The harness generates these hooks itself, so skipping Codex's hook-trust prompt is safe here.
+      LIVE_HOOKS_TRUST_HOOKS: "1"
+      LIVE_HOOKS_OPENCODE_MODEL: anthropic/claude-haiku-4-5
+      # The runner cannot create bubblewrap's network namespace, which fails
+      # every sandboxed command; the runner is ephemeral and the prompt only lists
+      # and reads files.
+      LIVE_HOOKS_CODEX_SANDBOX: danger-full-access
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install the agent CLI
+        run: |
+          case "${{ matrix.runtime }}" in
+            claude-code) npm install -g @anthropic-ai/claude-code ;;
+            codex)
+              npm install -g @openai/codex
+              printenv OPENAI_API_KEY | codex login --with-api-key
+              # Codex reads a project's .codex/ config (hooks included) only for trusted projects.
+              mkdir -p ~/.codex
+              printf '[projects."%s"]\ntrust_level = "trusted"\n' "$RUNNER_TEMP/live-hooks/proj-codex" >> ~/.codex/config.toml
+              ;;
+            opencode) npm install -g @opencode/cli ;;
+          esac
+
+      # One `uv sync` with every --package flag: separate calls each reduce the
+      # venv to their own package's closure (see test-live-graph-model.yaml).
+      - name: Sync workspace environment
+        run: |
+          uv sync --package agent-context-graph --package actions-graph --package sessions-graph --extra agent-context-graph
+
+      - name: Start Memgraph and generate the hook wiring
+        run: ./context-graph/scripts/live-hooks-e2e/live-hooks-e2e.sh up "$RUNNER_TEMP/live-hooks" 7699
+
+      - name: Run a headless ${{ matrix.runtime }} session
+        run: ./context-graph/scripts/live-hooks-e2e/live-hooks-e2e.sh run "$RUNNER_TEMP/live-hooks" ${{ matrix.runtime }}
+
+      - name: Assert the captured graph
+        run: ./context-graph/scripts/live-hooks-e2e/live-hooks-e2e.sh verify "$RUNNER_TEMP/live-hooks" --check ${{ matrix.runtime }}
+
+      # The raw payloads show what the CLI actually sent, for diagnosing a
+      # failure or an upstream payload change.
+      - name: Upload payloads and session output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-hooks-${{ matrix.runtime }}
+          path: |
+            ${{ runner.temp }}/live-hooks/*.payloads.jsonl
+            ${{ runner.temp }}/live-hooks/*.stderr.log
+            ${{ runner.temp }}/live-hooks/run-*.out
+          if-no-files-found: ignore

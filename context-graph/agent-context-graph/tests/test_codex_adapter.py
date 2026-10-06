@@ -3,7 +3,7 @@
 import io
 
 from agent_context_graph import AgentLink
-from agent_context_graph.adapters.codex import CodexHooksAdapter, build_hooks_config, load_payload, response_for_payload
+from agent_context_graph.adapters.codex import PLUGIN, CodexHooksAdapter
 from agent_context_graph.events import (
     Event,
     EventType,
@@ -12,6 +12,7 @@ from agent_context_graph.events import (
     ToolEndEvent,
     ToolStartEvent,
 )
+from agent_context_graph.hooks.runner import load_payload
 from agent_context_graph.protocols import GraphConnector
 
 
@@ -129,21 +130,27 @@ def test_post_tool_use_error_result_marks_error():
     assert event.error_message == "nope"
 
 
-def test_stop_payload_emits_session_end_and_json_response():
+def test_stop_ends_the_turn_with_the_reply_and_keeps_the_session_open():
     link = AgentLink()
     rec = _RecordingConnector()
     link.add_connector(rec)
 
-    payload = {"hook_event_name": "Stop", "session_id": "s1"}
+    # Stop fires after every turn, so it must never end the session.
+    payload = {"hook_event_name": "Stop", "session_id": "s1", "last_assistant_message": "Done."}
     adapter = CodexHooksAdapter(link)
     adapter.handle_payload(payload)
 
-    assert rec.events[0].event_type == EventType.SESSION_END
-    assert response_for_payload(payload) == {"continue": True}
+    reply, turn_end = rec.events
+    assert isinstance(reply, MessageEvent)
+    assert reply.role == "assistant"
+    assert reply.content == "Done."
+    assert turn_end.event_type == EventType.TURN_END
+    assert all(event.event_type != EventType.SESSION_END for event in rec.events)
+    assert PLUGIN.response_for_payload(payload) == {"continue": True}
 
 
-def test_stop_records_the_turns_reply_before_the_session_end():
-    """The reply is the answer recall needs; the session end that follows spawns its embedding."""
+def test_stop_records_the_turns_reply_before_the_turn_end():
+    """The reply is the answer recall needs; the turn end that follows spawns its embedding."""
     link = AgentLink()
     rec = _RecordingConnector()
     link.add_connector(rec)
@@ -152,14 +159,14 @@ def test_stop_records_the_turns_reply_before_the_session_end():
         {"hook_event_name": "Stop", "session_id": "s1", "last_assistant_message": "We deploy on Thursdays."}
     )
 
-    assert [event.event_type for event in rec.events] == [EventType.MESSAGE, EventType.SESSION_END]
+    assert [event.event_type for event in rec.events] == [EventType.MESSAGE, EventType.TURN_END]
     reply = rec.events[0]
     assert isinstance(reply, MessageEvent)
     assert (reply.session_id, reply.role, reply.content) == ("s1", "assistant", "We deploy on Thursdays.")
     assert "last_assistant_message" not in reply.metadata
 
 
-def test_stop_without_a_reply_records_only_the_session_end():
+def test_stop_without_a_reply_records_only_the_turn_end():
     link = AgentLink()
     rec = _RecordingConnector()
     link.add_connector(rec)
@@ -168,11 +175,11 @@ def test_stop_without_a_reply_records_only_the_session_end():
         {"hook_event_name": "Stop", "session_id": "s1", "last_assistant_message": "  "}
     )
 
-    assert [event.event_type for event in rec.events] == [EventType.SESSION_END]
+    assert [event.event_type for event in rec.events] == [EventType.TURN_END]
 
 
 def test_build_hooks_config_uses_command_for_supported_hooks():
-    config = build_hooks_config("python hook.py")
+    config = PLUGIN.build_hooks_config("python hook.py")
 
     assert "SessionStart" in config
     assert "PreToolUse" in config

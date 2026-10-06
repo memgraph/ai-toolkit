@@ -187,6 +187,7 @@ version = "0.3.0"
 source = { editable = "context-graph/actions-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
+    { name = "neo4j" },
 ]
 
 [package.optional-dependencies]
@@ -206,6 +207,7 @@ requires-dist = [
     { name = "agent-context-graph", marker = "extra == 'agent-context-graph'", editable = "context-graph/agent-context-graph" },
     { name = "claude-agent-sdk", marker = "extra == 'claude-agent'", specifier = ">=0.1.0" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
+    { name = "neo4j", specifier = ">=5.28.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
 ]
