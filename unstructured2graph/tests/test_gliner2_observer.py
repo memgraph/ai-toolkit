@@ -75,3 +75,22 @@ def test_the_engine_is_reused_across_candidates():
 
     assert observer._model is engine
     assert len(engine.compiled) == 4  # each candidate's schema and value schema, one engine
+
+
+def test_measure_scores_catch_all_share_and_user_turn_coverage():
+    model = HygmModel(
+        node_types=(*MODEL.node_types, NodeType("Topic", "a subject", "chunk")),
+        relation_types=MODEL.relation_types,
+    )
+    engine = FakeEngine(
+        surfaces={"I": "User", "Paris": "Location", "jazz": "Topic"},
+        relations=[("visited", "I", "Paris", 0.9)],
+    )
+    sample = [_session(("user", "I visited Paris"), ("assistant", "jazz there?"), ("user", "I like jazz"))]
+
+    measured = GLiNER2Observer(model=engine).measure(model, sample, catch_alls=("Topic",))
+
+    assert (measured.mentions, measured.user_turns) == (5, 2)
+    assert measured.catch_all_share == 2 / 5
+    assert measured.coverage == 1 / 2  # only the first user turn yields a typed relation
+    assert measured.spans[(0, 10, 15)] == "Location"

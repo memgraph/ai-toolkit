@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from hygm import USER_LABEL, HygmModel
@@ -32,6 +33,41 @@ if TYPE_CHECKING:
 _PAIRS, _EXAMPLES = 8, 4
 #: Per type, the most frequent surfaces reported.
 _TOP_TEXTS = 10
+
+
+@dataclass(frozen=True)
+class _Resolved:
+    """One mention as the backend would write it: in which session and turn, typed as resolved."""
+
+    session: int
+    turn: int | None
+    role: str | None
+    label: str
+    text: str
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
+class Measurement:
+    """What the adoption gate compares between two models over one held-out sample (#435).
+
+    Attributes:
+        catch_all_share: Mentions typed into a catch-all, over all mentions:
+            how much the model fails to name.
+        coverage: User turns with at least one typed relation, over all user
+            turns: guards against a model that trades facts for tidy labels.
+        spans: Each mention's type by (session, start, end), for agreement
+            between two models' typings.
+        mentions: Mentions counted.
+        user_turns: User turns in the sample.
+    """
+
+    catch_all_share: float
+    coverage: float
+    spans: dict[tuple[int, int, int], str]
+    mentions: int
+    user_turns: int
 
 
 class GLiNER2Observer:
@@ -69,6 +105,33 @@ class GLiNER2Observer:
             the user resolver settles on (the user's own mentions as User,
             third parties as Person); dropped mentions aren't counted.
         """
+        mentions, edges = self._extract(model, sample)
+        return {
+            "relations": _relation_tables(model, [(r, h.label, h.text, t.label, t.text) for r, h, t in edges]),
+            "types": _type_tables(model, [(m.session, m.label, m.text) for m in mentions]),
+        }
+
+    def measure(self, model: HygmModel, sample: Sequence[Document], catch_alls: Sequence[str]) -> Measurement:
+        """Extract `sample` under `model` and score it for the adoption gate.
+
+        Args:
+            catch_alls: The labels counted as catch-alls (``hygm.CATCH_ALL_LABELS``).
+        """
+        mentions, edges = self._extract(model, sample)
+        user_turns = sum(segment.role == "user" for document in sample for segment in document.segments)
+        with_fact = {(h.session, h.turn) for _, h, _ in edges if h.role == "user" and h.turn is not None}
+        return Measurement(
+            catch_all_share=sum(m.label in catch_alls for m in mentions) / max(len(mentions), 1),
+            coverage=len(with_fact) / max(user_turns, 1),
+            spans={(m.session, m.start, m.end): m.label for m in mentions},
+            mentions=len(mentions),
+            user_turns=user_turns,
+        )
+
+    def _extract(
+        self, model: HygmModel, sample: Sequence[Document]
+    ) -> tuple[list[_Resolved], list[tuple[str, _Resolved, _Resolved]]]:
+        """Every resolved mention, and every relation between two kept, distinct mentions."""
         backend = GLiNER2Backend(
             model_name=self._model_name,
             ontology=Ontology.from_model(model),
@@ -76,8 +139,8 @@ class GLiNER2Observer:
             candidate_cap=self._candidate_cap,
         )
         self._model = backend.engine
-        mentions: list[tuple[int, str, str]] = []
-        edges: list[tuple[str, str, str, str, str]] = []
+        mentions: list[_Resolved] = []
+        edges: list[tuple[str, _Resolved, _Resolved]] = []
         for session, document in enumerate(sample):
             chunk = Chunk(
                 text=document.text,
@@ -86,24 +149,25 @@ class GLiNER2Observer:
                 user_id=document.user_id,
             )
             extracted = backend._extract_sync(chunk)
-            types: list[str | None] = []
+            resolved: list[_Resolved | None] = []
             for mention, segment in extracted.mentions:
                 resolution = backend._resolve(mention, segment, chunk)
                 if resolution.action == "drop":
-                    types.append(None)
+                    resolved.append(None)
                     continue
                 label = (
                     USER_LABEL if resolution.action == "bind_user" else resolution.entity_type or mention.entity_type
                 )
-                types.append(label)
-                mentions.append((session, label, mention.text))
+                turn = document.segments.index(segment) if segment is not None else None
+                role = segment.role if segment is not None else None
+                found = _Resolved(session, turn, role, label, mention.text, mention.start, mention.end)
+                resolved.append(found)
+                mentions.append(found)
             for relation, head, tail, _ in extracted.relations:
-                head_type, tail_type = types[head], types[tail]
-                if head_type is None or tail_type is None or head == tail:
-                    continue
-                head_text, tail_text = extracted.mentions[head][0].text, extracted.mentions[tail][0].text
-                edges.append((relation, head_type, head_text, tail_type, tail_text))
-        return {"relations": _relation_tables(model, edges), "types": _type_tables(model, mentions)}
+                head_mention, tail_mention = resolved[head], resolved[tail]
+                if head_mention is not None and tail_mention is not None and head != tail:
+                    edges.append((relation, head_mention, tail_mention))
+        return mentions, edges
 
 
 def _relation_tables(model: HygmModel, edges: list[tuple[str, str, str, str, str]]) -> dict[str, Any]:
