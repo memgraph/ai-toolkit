@@ -151,12 +151,15 @@ This requires the `sessions-graph[reconciliation]` extra and an LLM API key
 (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`) for LightRAG — see the
 [lightrag-memgraph README](../../integrations/lightrag-memgraph/README.md).
 
-**Reconciliation never runs inside the `SESSION_END` hook itself.** LightRAG
-entity extraction is LLM-backed and slow, and hook runtimes (Claude Code,
-Codex) enforce a timeout on hook commands. Instead:
+**Reconciliation never runs inside a hook itself.** LightRAG entity
+extraction is LLM-backed and slow, and hook runtimes enforce a timeout on hook
+commands. Instead:
 
-- On `SESSION_END`, `SessionsGraphConnector` cheaply marks the session
-  `reconciliation_status = 'pending'` — no LLM calls, safe inside the hook.
+- On `SESSION_END` and on `TURN_END`, `SessionsGraphConnector` cheaply marks
+  the session `reconciliation_status = 'pending'` — no LLM calls, safe inside
+  the hook. Turn ends matter because several runtimes (Codex, Antigravity
+  CLI, `opencode run`) never report a session end; their sessions are only
+  ever reconciled through the `--pending` sweep.
 - The actual reconciliation run happens out-of-band, via the CLI:
 
   ```bash
@@ -177,7 +180,7 @@ Codex) enforce a timeout on hook commands. Instead:
 
 - Or, if you want it triggered automatically without a manual/cron step, opt
   in to a **best-effort detached background process** spawned right after a
-  session ends. For hook-based runtimes (Claude Code, Codex), set this
+  session ends (never on a turn end). For hook-based runtimes, set this
   persistently:
 
   ```bash
@@ -299,9 +302,11 @@ agent-context-graph config set recall.embedding_model <huggingface-model-name>
 
 When it runs:
 
-- **Session end:** `SessionsGraphConnector` always spawns a detached
-  `sessions-graph embed --session <id>`, whether or not `auto_reconcile` is
-  on. Embedding needs no LLM, and the hook never waits on the model.
+- **Turn end and session end:** `SessionsGraphConnector` always spawns a
+  detached `sessions-graph embed --session <id>`, whether or not
+  `auto_reconcile` is on. Embedding needs no LLM, and the hook never waits on
+  the model. Embedding at every turn end keeps recall current mid-session,
+  and covers runtimes that never report a session end.
 - **Reconciliation:** after extraction, the session's new entities and edges
   are embedded. An embedding failure never fails the reconciliation.
 - **Catch-up:** `sessions-graph embed --pending` embeds every session whose

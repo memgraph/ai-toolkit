@@ -202,7 +202,7 @@ uv run main.py
 
 ### Context Graph — capture agent sessions
 
-A family of components that persist your Claude Code / Codex sessions into one Memgraph graph. See the [Context Graph guide](/context-graph/).
+A family of components that persist your coding-agent sessions (Claude Code, Codex, Copilot CLI, Cursor, OpenCode, Antigravity CLI, Grok Build) into one Memgraph graph. See the [Context Graph guide](/context-graph/).
 
 | Package                                                          | Description                                    | Install                             |
 | --------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------- |

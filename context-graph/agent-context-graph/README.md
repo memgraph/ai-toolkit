@@ -445,6 +445,7 @@ All runtime adapters emit runtime-agnostic `Event` dataclasses:
 |-------|------|
 | `SessionStartEvent` | Agent session begins |
 | `SessionEndEvent` | Agent session ends |
+| `TurnEndEvent` | Agent finished one turn; the session stays open |
 | `ToolStartEvent` | Before tool/function call |
 | `ToolEndEvent` | After tool/function returns |
 | `AgentStartEvent` | Agent/subagent begins |
@@ -461,7 +462,7 @@ All runtime adapters emit runtime-agnostic `Event` dataclasses:
 |---------|----------------|----------------|
 | `ClaudeAdapter` | Claude Agent SDK | Dict of `HookMatcher` callbacks |
 | `OpenAIAdapter` | OpenAI Agents SDK | `RunHooksBase` subclass |
-| `CodexHooksAdapter` | OpenAI Codex | Command hooks reading JSON from stdin |
+| Command-hook adapters | Claude Code, Codex, Copilot CLI, Cursor, OpenCode, Antigravity CLI, Grok Build | Command hooks reading JSON from stdin (see [Command Hook Runtimes](#command-hook-runtimes) and [docs/command-hooks.md](docs/command-hooks.md)) |
 
 ### Graph Connectors
 
@@ -469,7 +470,7 @@ All runtime adapters emit runtime-agnostic `Event` dataclasses:
 |-----------|----------------|----------------|
 | `SkillGraphConnector` | [skills-graph](../skills-graph/) | Tool/message events matching skill access/search operations |
 | `ActionsGraphConnector` | [actions-graph](../actions-graph/) | Session, tool, message, subagent, and error events → action nodes |
-| `SessionsGraphConnector` | [sessions-graph](../sessions-graph/) | `SessionStartEvent`/`SessionEndEvent` → `(:User)`, `(:Session)`, `HAD_SESSION`; marks sessions for reconciliation on end |
+| `SessionsGraphConnector` | [sessions-graph](../sessions-graph/) | `SessionStartEvent`/`SessionEndEvent`/`TurnEndEvent` → `(:User)`, `(:Session)`, `HAD_SESSION`; embeds each ended turn and marks it for reconciliation, which only a session end starts |
 
 The installed plugin wires **all three** (`--connector skills-graph --connector actions-graph --connector sessions-graph`). Each connector lives in the package that owns its graph schema; additional connectors should too.
 
