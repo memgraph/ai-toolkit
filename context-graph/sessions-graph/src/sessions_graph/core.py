@@ -438,6 +438,24 @@ class SessionsGraph:
             )
         return reconciled_at
 
+    def _write_reextracted(
+        self, session_id: str, *, extraction_backend: str | None, ontology_version: int | None
+    ) -> None:
+        """Record a re-extraction: what extracted the session now, leaving when it was reconciled alone."""
+        self._db.query(
+            """
+            MATCH (s:Session {session_id: $session_id})
+            SET s.reextracted_at = $now, s.extraction_backend = $extraction_backend,
+                s.ontology_version = $ontology_version
+            """,
+            params={
+                "session_id": session_id,
+                "now": datetime.now(timezone.utc).isoformat(),
+                "extraction_backend": extraction_backend,
+                "ontology_version": ontology_version,
+            },
+        )
+
     def _write_failed(self, session_id: str, error: str) -> None:
         """Mark *session_id* failed, recording *error* for later inspection."""
         self._db.query(
@@ -460,6 +478,7 @@ class SessionsGraph:
         enforce_ontology: bool = False,
         ontology_path: str | Path | None = None,
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
+        summarize: bool = True,
     ) -> ReconciliationSummary:
         """Batch-extract entities and a narrative summary from a session's content.
 
@@ -529,6 +548,11 @@ class SessionsGraph:
                 edges are embedded with once extraction completes (see
                 :meth:`embed_session`). An embedding failure is recorded on the
                 Session and never fails the reconciliation.
+            summarize: False re-extracts only: no summary LLM call (so
+                `lightrag_wrapper` may be None), and the Session keeps its
+                ``reconciled_at``, recording ``reextracted_at`` instead -- how
+                derivation re-reads its delta under a new model (#434) without
+                the delta counting as new sessions again.
 
         Returns:
             An :class:`ReconciliationSummary` describing what happened. Never
@@ -614,14 +638,18 @@ class SessionsGraph:
                 self._link_chunks_to_sources(prepared.sources, session_chunks)
                 if enforce_ontology and session_chunks:
                     integrity = self._integrity(backend.workspace_label, ontology_path, ontology, session_chunks)
-                summary_text = await summarize_session_texts(lightrag_wrapper, list(prepared.unique_texts.values()))
+                if summarize:
+                    summary_text = await summarize_session_texts(lightrag_wrapper, list(prepared.unique_texts.values()))
 
-            self._write_completed(
-                session_id,
-                summary_text=summary_text,
-                extraction_backend=used_backend,
-                ontology_version=ontology_version,
-            )
+            if summarize:
+                self._write_completed(
+                    session_id,
+                    summary_text=summary_text,
+                    extraction_backend=used_backend,
+                    ontology_version=ontology_version,
+                )
+            else:
+                self._write_reextracted(session_id, extraction_backend=used_backend, ontology_version=ontology_version)
             self._embed_after_reconcile(session_id, embedding_model)
             return ReconciliationSummary(
                 session_id=session_id,

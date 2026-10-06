@@ -12,7 +12,11 @@ A version comes from one of two places:
   *pinned*: derivation may add types beside them but never merge, rename or
   retire one. With ``derive = "extend"`` the fixed core is added to it;
   with ``"off"`` it is used exactly as given and nothing is derived.
-- **derived**: a learned run, adopted by the gate.
+- **derived**: a learned run (``sessions-graph derive``), adopted by the gate.
+  A derived version also holds the run's observation counts, the pool of
+  retired types, its changelog and the gate's report (#435). Candidates the
+  gate rejects are kept as ``status: 'rejected'`` versions the user points at
+  with ``REJECTED``, never ``ADOPTED``.
 
 Requires hygm, which the ``sessions-graph[reconciliation]`` extra installs.
 """
@@ -21,7 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -58,6 +62,10 @@ class OntologyVersion:
         pinned: Labels derivation never merges, renames or retires: a supplied schema's types.
         source_hash: SHA-256 of the supplied schema file this version descends from, if any.
         created_at: ISO timestamp; None for the default.
+        counts: Observation counts over every derivation run, ``{"nodes": {...}, "relations": {...}}``.
+        pool: Types and relations derivation retired, kept so they can return.
+        changelog: What the derivation run that made this version changed.
+        report: The gate's numbers and the run's reporting signals.
     """
 
     user_id: str
@@ -68,6 +76,10 @@ class OntologyVersion:
     pinned: tuple[str, ...] = ()
     source_hash: str | None = None
     created_at: str | None = None
+    counts: dict[str, dict[str, int]] = field(default_factory=dict)
+    pool: HygmModel = field(default_factory=lambda: HygmModel(node_types=()))
+    changelog: tuple[dict[str, Any], ...] = ()
+    report: dict[str, Any] = field(default_factory=dict)
 
 
 def default_version(user_id: str) -> OntologyVersion:
@@ -101,7 +113,7 @@ def supply(
     if derive not in DERIVE_MODES:
         raise ValueError(f"derive must be one of {DERIVE_MODES}, got {derive!r}")
     current = adopted(db, user_id)
-    pinned = model.node_labels()
+    pinned = model.node_labels() + model.relation_labels()
     if derive == "extend":
         model = _carry_learned(with_core(model), current)
     result = validate_model(model)
@@ -195,6 +207,50 @@ def _next_version(db: Memgraph, user_id: str) -> int:
     return (latest or 0) + 1
 
 
+def adopt(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
+    """Store `version` and make it the user's adopted one."""
+    return _adopt(db, version)
+
+
+def reject(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
+    """Store `version` as a candidate the gate rejected: kept with its numbers, never adopted."""
+    db.query(
+        """
+        MERGE (u:User {user_id: $user_id})
+        CREATE (v:OntologyVersion {
+            user_id: $user_id, version: $version, created_at: $created_at, status: 'rejected',
+            source: $source, derive: $derive, model: $model, pinned: $pinned, source_hash: $source_hash,
+            counts: $counts, pool: $pool, changelog: $changelog, report: $report
+        })
+        CREATE (u)-[:REJECTED]->(v)
+        """,
+        params=_params(version),
+    )
+    return version
+
+
+def next_version(db: Memgraph, user_id: str) -> int:
+    """The number the user's next stored version, adopted or rejected, takes."""
+    return _next_version(db, user_id)
+
+
+def _params(version: OntologyVersion) -> dict[str, Any]:
+    return {
+        "user_id": version.user_id,
+        "version": version.version,
+        "created_at": version.created_at,
+        "source": version.source,
+        "derive": version.derive,
+        "model": json.dumps(model_to_mapping(version.model)),
+        "pinned": list(version.pinned),
+        "source_hash": version.source_hash,
+        "counts": json.dumps(version.counts),
+        "pool": json.dumps(model_to_mapping(version.pool)),
+        "changelog": json.dumps(list(version.changelog)),
+        "report": json.dumps(version.report),
+    }
+
+
 def _adopt(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
     # One query is one transaction: readers see the old ADOPTED edge or the
     # new one, never a user with none or two.
@@ -205,7 +261,8 @@ def _adopt(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
         OPTIONAL MATCH (u)-[adopted:ADOPTED]->(previous:OntologyVersion)
         CREATE (v:OntologyVersion {
             user_id: $user_id, version: $version, created_at: $created_at, status: 'adopted',
-            source: $source, derive: $derive, model: $model, pinned: $pinned, source_hash: $source_hash
+            source: $source, derive: $derive, model: $model, pinned: $pinned, source_hash: $source_hash,
+            counts: $counts, pool: $pool, changelog: $changelog, report: $report
         })
         CREATE (u)-[:ADOPTED]->(v)
         FOREACH (_ IN CASE WHEN previous IS NULL THEN [] ELSE [1] END |
@@ -214,16 +271,7 @@ def _adopt(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
             DELETE adopted
         )
         """,
-        params={
-            "user_id": version.user_id,
-            "version": version.version,
-            "created_at": version.created_at,
-            "source": version.source,
-            "derive": version.derive,
-            "model": json.dumps(model_to_mapping(version.model)),
-            "pinned": list(version.pinned),
-            "source_hash": version.source_hash,
-        },
+        params=_params(version),
     )
     return version
 
@@ -239,4 +287,10 @@ def _from_properties(properties: dict[str, Any]) -> OntologyVersion:
         pinned=tuple(properties.get("pinned") or ()),
         source_hash=properties.get("source_hash"),
         created_at=properties.get("created_at"),
+        counts=json.loads(properties.get("counts") or "{}"),
+        pool=model_from_mapping(json.loads(properties["pool"]), f"version {version} pool")
+        if properties.get("pool")
+        else HygmModel(node_types=()),
+        changelog=tuple(json.loads(properties.get("changelog") or "[]")),
+        report=json.loads(properties.get("report") or "{}"),
     )

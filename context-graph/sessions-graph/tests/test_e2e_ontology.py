@@ -54,7 +54,7 @@ def test_extend_adds_the_core_and_pins_the_supplied_types(graph, memgraph, schem
     version = graph.supply_ontology_file("alice", schema)
 
     assert (version.version, version.source, version.derive) == (1, "supplied", "extend")
-    assert version.pinned == ("User", "Person", "Library")
+    assert version.pinned == ("User", "Person", "Library", "maintains")
     assert set(CORE_LABELS) <= set(version.model.node_labels())
     assert graph.adopted_ontology("alice") == version
     assert _chain(memgraph, "alice") == [{"version": 1, "status": "adopted", "adopted": True, "next": None}]

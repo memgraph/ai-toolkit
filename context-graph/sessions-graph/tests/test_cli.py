@@ -16,6 +16,12 @@ from sessions_graph.cli import main
 from sessions_graph.reconciliation import ReconciliationSummary
 
 
+@pytest.fixture(autouse=True)
+def _no_derive_spawn(monkeypatch):
+    """These tests mock the graph; spawning `derive` is tested against a real one in test_e2e_derivation.py."""
+    monkeypatch.setattr("sessions_graph.cli._spawn_due_derivations", lambda graph, session_ids: None)
+
+
 def test_main_no_args_prints_help_and_returns_2(capsys):
     assert main([]) == 2
     assert "usage" in capsys.readouterr().out
