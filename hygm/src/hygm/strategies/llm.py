@@ -9,10 +9,11 @@ returns a candidate N+1 (map #431). The stages follow the derivation contract
     consolidate  (LLM)      merges the K proposals, drops proposals that mean an
                             existing label, and may merge synonyms in N; the
                             only stage allowed to rename
-    observe      (Observer) one permissive extraction pass over every type and
-                            relation of the candidate, any endpoint allowed --
-                            except that a relation into value types keeps that
-                            tail, or it never fires into a value (#386)
+    observe      (Observer) one extraction pass over the candidate: N's relations
+                            with the endpoints they have (a run never changes
+                            them), each addition permissively -- any endpoint,
+                            except that one into value types keeps that tail, or
+                            it never fires into a value (#386)
     prune        (LLM)      sets each added relation's endpoints from the pairs
                             it was observed on, each added type's identity, and
                             drops additions with no real instances
@@ -353,14 +354,19 @@ class LlmRecommendationStrategy:
         candidate = HygmModel(
             node_types=merged.node_types + added_nodes, relation_types=merged.relation_types + added_relations
         )
-        permissive = replace(
+        # Only additions need open endpoints: prune picks theirs from what they
+        # fire on. Opening N's relations too multiplies the candidate pairs the
+        # extractor scores (a run on two sessions spent ~12 of its 15 minutes
+        # there) for endpoints a run may not change anyway.
+        opened = replace(
             candidate,
-            relation_types=tuple(
+            relation_types=merged.relation_types
+            + tuple(
                 replace(r, start_labels=(), end_labels=r.end_labels if _into_values(r.end_labels) else ())
-                for r in candidate.relation_types
+                for r in added_relations
             ),
         )
-        observation = self.observer.observe(permissive, observe_sample)
+        observation = self.observer.observe(opened, observe_sample)
 
         pruned = self.llm(
             SYSTEM,

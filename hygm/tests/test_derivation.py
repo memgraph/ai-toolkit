@@ -87,8 +87,8 @@ def test_an_observed_addition_joins_the_model_with_its_observed_endpoints():
     assert derivation.llm_calls == 2 + 2  # two sessions make two propose batches, then consolidate and prune
 
 
-def test_the_observer_sees_every_relation_unconstrained_but_value_tails():
-    """A relation into a value type that may end anywhere never fires into a value (#386)."""
+def test_the_observer_sees_additions_unconstrained_but_value_tails_and_n_as_it_is():
+    """Prune sets an addition's endpoints from what it fires on; one into a value must keep that tail (#386)."""
     best = {"name": "personal_best", "intended_head": ["User"], "intended_tail": ["Duration"]}
     llm = ScriptedLlm(consolidate={"relations": [MAINTAINS, best]}, prune={})
     observer = FixedObserver()
@@ -97,9 +97,9 @@ def test_the_observer_sees_every_relation_unconstrained_but_value_tails():
 
     seen = {r.label: r for r in observer.models[0].relation_types}
     assert observer.models[0].node_labels() == default_model().node_labels()
-    assert all(not r.start_labels for r in seen.values())
-    assert (seen["maintains"].end_labels, seen["works_for"].end_labels) == ((), ())
-    assert (seen["personal_best"].end_labels, seen["lasted"].end_labels) == (("Duration",), ("Duration",))
+    assert (seen["maintains"].start_labels, seen["maintains"].end_labels) == ((), ())
+    assert (seen["personal_best"].start_labels, seen["personal_best"].end_labels) == ((), ("Duration",))
+    assert {r.label: r for r in default_model().relation_types}["works_for"] == seen["works_for"]
 
 
 def test_additions_without_real_instances_are_dropped():
