@@ -179,7 +179,7 @@ def test_config_overrides_widths_and_lanes_and_rejects_nonsense():
         RecallConfig.from_mapping({"turns_k": -1})
 
 
-def _entity_fact(memgraph, *, turn, relation, head, tail, sentence):
+def _entity_fact(memgraph, *, turn, relation, head, tail, sentence, role="user"):
     """An extracted edge between two entities, read from ``turn``: a learned domain fact not headed by the User."""
     memgraph.query(
         "MATCH (a:Action {action_id: $turn}) "
@@ -187,9 +187,9 @@ def _entity_fact(memgraph, *, turn, relation, head, tail, sentence):
         "MERGE (h:Entity {text: $head}) MERGE (t:Entity {text: $tail}) "
         "MERGE (h)-[m:MENTIONED_IN]->(c) SET m.sources = [$turn] "
         "MERGE (t)-[n:MENTIONED_IN]->(c) SET n.sources = [$turn] "
-        f"CREATE (h)-[:{relation} {{chunk: $turn, source_id: $turn, role: 'user', confidence: 0.9, "
+        f"CREATE (h)-[:{relation} {{chunk: $turn, source_id: $turn, role: $role, confidence: 0.9, "
         "valid_at: datetime('2023-05-30T17:27:00+00:00'), text: $sentence}]->(t)",
-        {"turn": turn, "head": head, "tail": tail, "sentence": sentence},
+        {"turn": turn, "head": head, "tail": tail, "sentence": sentence, "role": role},
     )
 
 
@@ -209,6 +209,21 @@ def test_user_facts_reads_facts_whose_head_is_not_the_user(graph, memgraph, acti
     )
 
     assert sorted((fact.head, fact.tail) for fact in recalled.facts) == [("billing", "serde"), ("ingest", "tokio")]
+
+
+def test_user_facts_leaves_out_what_only_the_assistant_said(graph, memgraph, actions_graph):
+    """Advice in an assistant turn ("meetings lasted 25 minutes") is not a fact about the user."""
+    turn = _session(actions_graph, memgraph, user="u1", session="s1", when="2023-01-01T10:00:00+00:00",
+                    said="My standup lasted 15 minutes.")  # fmt: skip
+    _entity_fact(memgraph, turn=turn, relation="lasted", head="standup", tail="15 minutes",
+                 sentence="My standup lasted 15 minutes.")  # fmt: skip
+    _entity_fact(memgraph, turn=turn, relation="lasted", head="meetings", tail="25 minutes",
+                 sentence="Keep meetings to 25 minutes.", role="assistant")  # fmt: skip
+    _ready(graph, memgraph)
+
+    recalled = graph.recall("u1", "How long did my standup last?", config=RecallConfig(lanes=("user_facts",)))
+
+    assert [(fact.head, fact.tail) for fact in recalled.facts] == [("standup", "15 minutes")]
 
 
 def test_user_fact_types_rank_by_their_description_from_the_adopted_version(graph, memgraph, actions_graph, tmp_path):
