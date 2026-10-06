@@ -10,7 +10,9 @@ returns a candidate N+1 (map #431). The stages follow the derivation contract
                             existing label, and may merge synonyms in N; the
                             only stage allowed to rename
     observe      (Observer) one permissive extraction pass over every type and
-                            relation of the candidate, any endpoint allowed
+                            relation of the candidate, any endpoint allowed --
+                            except that a relation into value types keeps that
+                            tail, or it never fires into a value (#386)
     prune        (LLM)      sets each added relation's endpoints from the pairs
                             it was observed on, each added type's identity, and
                             drops additions with no real instances
@@ -353,7 +355,10 @@ class LlmRecommendationStrategy:
         )
         permissive = replace(
             candidate,
-            relation_types=tuple(replace(r, start_labels=(), end_labels=()) for r in candidate.relation_types),
+            relation_types=tuple(
+                replace(r, start_labels=(), end_labels=r.end_labels if _into_values(r.end_labels) else ())
+                for r in candidate.relation_types
+            ),
         )
         observation = self.observer.observe(permissive, observe_sample)
 
@@ -492,7 +497,9 @@ def _additions(
 ) -> tuple[tuple[NodeType, ...], tuple[RelationType, ...]]:
     """Consolidate's proposals that are new to `model`, as types with open endpoints.
 
-    A proposal naming a pooled node type restores it with its old definition.
+    A relation intended only into value types keeps that tail, so observe can
+    see it fire into a value. A proposal naming a pooled node type restores it
+    with its old definition.
     """
     pooled = {t.label: t for t in pool.node_types}
     nodes: dict[str, NodeType] = {}
@@ -510,8 +517,13 @@ def _additions(
         name = item.get("name", "")
         if name in model.relation_labels() or name in relations or not _RELATION_NAME.match(name):
             continue
-        relations[name] = RelationType(name)
+        tail = tuple(dict.fromkeys(item.get("intended_tail", [])))
+        relations[name] = RelationType(name, end_labels=tail if _into_values(tail) else ())
     return tuple(nodes.values()), tuple(relations.values())
+
+
+def _into_values(labels: Sequence[str]) -> bool:
+    return bool(labels) and set(labels) <= set(VALUE_LABELS)
 
 
 def _apply_prune(
