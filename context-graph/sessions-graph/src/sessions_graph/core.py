@@ -479,6 +479,7 @@ class SessionsGraph:
         ontology_path: str | Path | None = None,
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
         summarize: bool = True,
+        reextract: bool = False,
     ) -> ReconciliationSummary:
         """Batch-extract entities and a narrative summary from a session's content.
 
@@ -548,11 +549,14 @@ class SessionsGraph:
                 edges are embedded with once extraction completes (see
                 :meth:`embed_session`). An embedding failure is recorded on the
                 Session and never fails the reconciliation.
-            summarize: False re-extracts only: no summary LLM call (so
-                `lightrag_wrapper` may be None), and the Session keeps its
-                ``reconciled_at``, recording ``reextracted_at`` instead -- how
-                derivation re-reads its delta under a new model (#434) without
-                the delta counting as new sessions again.
+            summarize: False skips the summary LLM call, so no Episode is
+                written and `lightrag_wrapper` may be None. Recall never reads
+                Episodes, so a benchmark build can skip them.
+            reextract: True re-reads an already reconciled session: no summary,
+                and the Session keeps its ``reconciled_at``, recording
+                ``reextracted_at`` instead -- how derivation re-reads its delta
+                under a new model (#434) without the delta counting as new
+                sessions again.
 
         Returns:
             An :class:`ReconciliationSummary` describing what happened. Never
@@ -638,10 +642,10 @@ class SessionsGraph:
                 self._link_chunks_to_sources(prepared.sources, session_chunks)
                 if enforce_ontology and session_chunks:
                     integrity = self._integrity(backend.workspace_label, ontology_path, ontology, session_chunks)
-                if summarize:
+                if summarize and not reextract:
                     summary_text = await summarize_session_texts(lightrag_wrapper, list(prepared.unique_texts.values()))
 
-            if summarize:
+            if not reextract:
                 self._write_completed(
                     session_id,
                     summary_text=summary_text,

@@ -199,6 +199,8 @@ async def run(
         ]
         report = RunReport(user_id, milestone, "nothing to do", delta=len(delta))
         if not delta:
+            # Nothing new since the last run: the milestone is still spent, or due() would fire forever.
+            _set_state(db, user_id, milestone=milestone, watermark=state["watermark"])
             return report
         actions_graph = graph._default_actions_graph(actions_graph, "derive")
         rng = random.Random(f"{user_id}:{milestone}")
@@ -273,7 +275,7 @@ async def run(
         if chosen.added:
             for sid in delta:
                 summary = await graph.reconcile_session(
-                    sid, lightrag_wrapper=None, actions_graph=actions_graph, enforce_ontology=True, summarize=False
+                    sid, lightrag_wrapper=None, actions_graph=actions_graph, enforce_ontology=True, reextract=True
                 )
                 report.reextracted += summary.status == "completed"
         report.reextract_seconds = round(time.monotonic() - clock, 1)
