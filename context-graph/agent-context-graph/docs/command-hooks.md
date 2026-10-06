@@ -279,6 +279,11 @@ script's header lists which runtimes need it.
 ./context-graph/scripts/live-hooks-e2e/live-hooks-e2e.sh down ~/tmp/live-hooks
 ```
 
+`verify --check` asserts what each runtime is known to capture instead of
+just printing it. CI runs the same steps for Claude Code, Codex, and OpenCode
+(`.github/workflows/test-live-hooks.yaml`) on every pull request that touches
+the Event Protocol, adapters, hook runner, connectors, plugins, or the harness.
+
 ## Adding a runtime
 
 Command-hook runtimes declare a `RuntimeSpec` and subclass `SpecAdapter`.
