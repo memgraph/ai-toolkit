@@ -39,7 +39,6 @@ jobs:
       # The harness generates these hooks itself, so skipping Codex's hook-trust prompt is safe here.
       LIVE_HOOKS_TRUST_HOOKS: "1"
       LIVE_HOOKS_OPENCODE_MODEL: anthropic/claude-haiku-4-5
-      WORKDIR: ${{ runner.temp }}/live-hooks
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -75,13 +74,13 @@ jobs:
           uv sync --package agent-context-graph --package actions-graph --package sessions-graph --extra agent-context-graph
 
       - name: Start Memgraph and generate the hook wiring
-        run: ./context-graph/scripts/live-hooks-e2e/live-hooks-e2e.sh up "$WORKDIR" 7699
+        run: ./context-graph/scripts/live-hooks-e2e/live-hooks-e2e.sh up "$RUNNER_TEMP/live-hooks" 7699
 
       - name: Run a headless ${{ matrix.runtime }} session
-        run: ./context-graph/scripts/live-hooks-e2e/live-hooks-e2e.sh run "$WORKDIR" ${{ matrix.runtime }}
+        run: ./context-graph/scripts/live-hooks-e2e/live-hooks-e2e.sh run "$RUNNER_TEMP/live-hooks" ${{ matrix.runtime }}
 
       - name: Assert the captured graph
-        run: ./context-graph/scripts/live-hooks-e2e/live-hooks-e2e.sh verify "$WORKDIR" --check ${{ matrix.runtime }}
+        run: ./context-graph/scripts/live-hooks-e2e/live-hooks-e2e.sh verify "$RUNNER_TEMP/live-hooks" --check ${{ matrix.runtime }}
 
       # The raw payloads show what the CLI actually sent, for diagnosing a
       # failure or an upstream payload change.
@@ -91,7 +90,7 @@ jobs:
         with:
           name: live-hooks-${{ matrix.runtime }}
           path: |
-            ${{ env.WORKDIR }}/*.payloads.jsonl
-            ${{ env.WORKDIR }}/*.stderr.log
-            ${{ env.WORKDIR }}/run-*.out
+            ${{ runner.temp }}/live-hooks/*.payloads.jsonl
+            ${{ runner.temp }}/live-hooks/*.stderr.log
+            ${{ runner.temp }}/live-hooks/run-*.out
           if-no-files-found: ignore
