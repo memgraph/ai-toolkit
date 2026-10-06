@@ -339,6 +339,24 @@ async def test_a_value_span_the_value_pass_claims_wins_over_the_main_pass(memgra
 
 
 @pytest.mark.asyncio
+async def test_a_value_relation_keeps_its_own_head_when_the_main_pass_types_that_span_otherwise(memgraph):
+    """Aliased onto the main pass's Product, owns_count would leave its declared User/Person head."""
+    _user(memgraph)
+    backend = GLiNER2Backend(
+        ontology=ONTOLOGY,
+        model=FakeEngine(
+            surfaces={"Paris": "Product"},
+            value_surfaces={"Paris": "Person", "3": "Quantity"},
+            value_relations=[("owns_count", "Paris", "3", 0.9)],
+        ),
+    )
+    await from_documents([_session(("user", "Paris has 3 cats", None))], memgraph, backend)
+
+    edges = memgraph.query("MATCH (h:gliner2)-[:owns_count]->(t:gliner2) RETURN h.entity_type AS head, t.text AS tail")
+    assert edges == [{"head": "Person", "tail": "3"}]
+
+
+@pytest.mark.asyncio
 async def test_a_self_loop_left_by_identity_is_dropped_and_counted(memgraph):
     _user(memgraph)
     backend = _backend(surfaces={"I": "User", "my": "User"}, relations=[("mentions", "I", "my", 0.9)])

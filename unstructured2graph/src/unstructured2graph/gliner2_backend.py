@@ -214,8 +214,10 @@ def _with_value_pass(main: Any, values: Any) -> tuple[list[_Span], list[_Edge], 
     vocabulary the value types lose theirs to domain types (`25:50` typed
     Food). So a span the value pass types as a value type wins: a main-pass
     mention overlapping it with another type is dropped, with its relations,
-    and the value pass's relations into it are added. A value-pass head on the
-    exact span of a kept main mention is that mention.
+    and the value pass's relations into it are added. A value-pass mention on
+    the exact span of a kept main mention of the same type is that mention;
+    typed differently, it stays its own, so a value relation never lands on a
+    head type it doesn't allow.
 
     Returns:
         The window's spans and edges, and how many main mentions were claimed.
@@ -234,7 +236,7 @@ def _with_value_pass(main: Any, values: Any) -> tuple[list[_Span], list[_Edge], 
     alias: dict[str, str] = {}
     for e in values.entities:
         same = at.get((e.start, e.end))
-        if same is not None and (same.type == e.type or e.type not in VALUE_LABELS):
+        if same is not None and same.type == e.type:
             alias[e.id] = same.id
             continue
         span = _Span(f"value:{e.id}", e.type, e.text, e.start, e.end, e.confidence)
