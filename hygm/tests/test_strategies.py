@@ -87,3 +87,14 @@ def test_a_mapping_error_names_its_source():
 
     with pytest.raises(ValueError, match="Ontology version 3 must be a mapping"):
         model_from_mapping([], "version 3")
+
+
+def test_a_store_of_types_reads_back_without_the_model_gate():
+    """A pool of retired relations may name types it doesn't hold; it is never extracted against."""
+    from hygm import model_from_mapping
+
+    pool = {"entity_types": [], "relation_types": [{"label": "paid", "description": "", "start_labels": ["User"]}]}
+
+    with pytest.raises(ValueError, match="undeclared"):
+        model_from_mapping(pool, "pool")
+    assert model_from_mapping(pool, "pool", validate=False).relation_labels() == ("paid",)

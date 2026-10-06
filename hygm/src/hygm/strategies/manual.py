@@ -42,15 +42,19 @@ class ManualStrategy:
         return model_from_mapping(raw, f"file {resolved}")
 
 
-def model_from_mapping(raw: Any, source: str) -> HygmModel:
-    """A validated model from the ``entity_types``/``relation_types`` mapping ManualStrategy's YAML holds.
+def model_from_mapping(raw: Any, source: str, *, validate: bool = True) -> HygmModel:
+    """A model from the ``entity_types``/``relation_types`` mapping ManualStrategy's YAML holds.
 
     Args:
         raw: The parsed mapping.
         source: What it was read from, for error messages ("file schema.yaml", "version 3").
+        validate: False for a store of types that is not itself extracted
+            against, like a pool of retired ones, whose relations may name
+            types it doesn't hold. Each entry is still checked.
 
     Raises:
-        ValueError: if an entry is malformed or the model fails validate_model()'s hard gate.
+        ValueError: if an entry is malformed, or `validate` and the model
+            fails validate_model()'s hard gate.
     """
     where_from = f"Ontology {source}"
     if not isinstance(raw, dict) or not isinstance(raw.get("entity_types"), list):
@@ -83,6 +87,8 @@ def model_from_mapping(raw: Any, source: str) -> HygmModel:
         )
 
     model = HygmModel(node_types=tuple(node_types), relation_types=tuple(relation_types))
+    if not validate:
+        return model
     result = validate_model(model)
     if not result.success:
         problems = "; ".join(issue.message for issue in result.critical_issues)
