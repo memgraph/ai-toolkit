@@ -319,6 +319,26 @@ async def test_reconcile_session_without_a_summary_makes_no_llm_call_and_still_c
 
 
 @pytest.mark.asyncio
+async def test_a_failed_reextraction_leaves_the_session_reconciled(graph, memgraph, actions_graph):
+    """Derive re-reads sessions already reconciled; failing that must not mark them failed."""
+    from actions_graph import Session
+
+    actions_graph.create_session(Session(session_id="s-1"))
+    actions_graph.record_message(session_id="s-1", role=MessageRole.USER, content="I maintain pytest.")
+    memgraph.query("MATCH (s:Session {session_id: 's-1'}) SET s.reconciliation_status = 'completed'")
+    with patch("unstructured2graph.from_documents", new=AsyncMock(side_effect=RuntimeError("bad version"))):
+        summary = await graph.reconcile_session(
+            "s-1", lightrag_wrapper=None, actions_graph=actions_graph, reextract=True
+        )
+
+    assert summary.status == "failed"
+    rows = memgraph.query(
+        "MATCH (s:Session {session_id: 's-1'}) RETURN s.reconciliation_status AS status, s.reextraction_error AS error"
+    )
+    assert rows == [{"status": "completed", "error": "bad version"}]
+
+
+@pytest.mark.asyncio
 async def test_reconcile_session_extraction_backend_override_replaces_the_gliner2_default(graph, actions_graph):
     """An explicit backend (e.g. LightRAGBackend) must reach from_documents as-is;
     the GLiNER2 default applies only when extraction_backend is omitted."""

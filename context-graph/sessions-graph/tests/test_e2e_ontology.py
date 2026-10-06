@@ -154,3 +154,16 @@ def test_reconcile_applies_the_configured_file_and_survives_a_broken_one(graph, 
     _sync_configured_ontology(graph)
     assert "not applied, keeping the adopted version" in capsys.readouterr().err
     assert graph.adopted_ontology("alice").version == 1
+
+
+def test_a_version_whose_pool_names_types_it_does_not_hold_reads_back(graph, memgraph):
+    """Retiring `paid` pools it with its User -> Money endpoints; the pool holds neither type."""
+    pool = HygmModel(node_types=(), relation_types=(RelationType("paid", "", ("User", "Person"), ("Money",)),))
+    ontology._adopt(
+        memgraph,
+        ontology.OntologyVersion(
+            user_id="alice", version=1, model=default_model(), source="derived", created_at="t", pool=pool
+        ),
+    )
+
+    assert graph.adopted_ontology("alice").pool == pool

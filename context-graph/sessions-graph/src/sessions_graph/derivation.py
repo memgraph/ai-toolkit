@@ -258,15 +258,16 @@ async def run(
             report.llm = asdict(usage)
         report.seconds = round(time.monotonic() - started, 1)
         if best is None:
-            report.outcome = "rejected"
+            report.outcome = "rejected"  # set before the versions below record the report
             for derivation, candidate in candidates:
                 reject(db, _version(current, derivation, next_version(db, user_id), report, candidate))
             _set_state(db, user_id, milestone=milestone, watermark=state["watermark"])
             return report
 
         _, derivation, chosen = best
+        report.outcome = "adopted"
         version = adopt(db, _version(current, derivation, next_version(db, user_id), report, chosen))
-        report.outcome, report.adopted_version = "adopted", version.version
+        report.adopted_version = version.version
         for other, candidate in candidates:
             if other is not derivation:
                 reject(db, _version(current, other, next_version(db, user_id), report, candidate))

@@ -139,6 +139,7 @@ async def test_a_passing_candidate_is_adopted_and_the_schedule_moves_on(graph, m
     assert "Library" in version.model.node_labels()
     assert {"op": "add", "kind": "node", "label": "Library", "into": None, "reason": ""} in version.changelog
     assert version.report["base"] == {"catch_all_share": 0.3, "coverage": 0.5}
+    assert version.report["outcome"] == "adopted"
     assert version.counts["nodes"]["Library"] == 9
     assert report.reextracted == 2  # the run added types, so its delta is re-read under them
     rows = memgraph.query("MATCH (s:Session) RETURN collect(DISTINCT s.ontology_version) AS versions")

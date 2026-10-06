@@ -288,7 +288,8 @@ def _from_properties(properties: dict[str, Any]) -> OntologyVersion:
         source_hash=properties.get("source_hash"),
         created_at=properties.get("created_at"),
         counts=json.loads(properties.get("counts") or "{}"),
-        pool=model_from_mapping(json.loads(properties["pool"]), f"version {version} pool")
+        # A pool's relations may name types it doesn't hold: it is a store, never extracted against.
+        pool=model_from_mapping(json.loads(properties["pool"]), f"version {version} pool", validate=False)
         if properties.get("pool")
         else HygmModel(node_types=()),
         changelog=tuple(json.loads(properties.get("changelog") or "[]")),

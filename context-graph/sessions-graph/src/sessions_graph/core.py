@@ -556,7 +556,8 @@ class SessionsGraph:
                 and the Session keeps its ``reconciled_at``, recording
                 ``reextracted_at`` instead -- how derivation re-reads its delta
                 under a new model (#434) without the delta counting as new
-                sessions again.
+                sessions again. A failed re-read records ``reextraction_error``
+                and leaves the session reconciled as it was.
 
         Returns:
             An :class:`ReconciliationSummary` describing what happened. Never
@@ -665,7 +666,14 @@ class SessionsGraph:
                 nonconformant_relations=integrity[1] if integrity else None,
             )
         except Exception as e:
-            self._write_failed(session_id, str(e))
+            if reextract:
+                # The session stays reconciled under what it was extracted with before.
+                self._db.query(
+                    "MATCH (s:Session {session_id: $session_id}) SET s.reextraction_error = $error",
+                    params={"session_id": session_id, "error": str(e)},
+                )
+            else:
+                self._write_failed(session_id, str(e))
             return ReconciliationSummary(
                 session_id=session_id,
                 status="failed",
