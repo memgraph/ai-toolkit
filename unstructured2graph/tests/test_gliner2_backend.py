@@ -68,12 +68,24 @@ def _session(*turns, user_id="u1"):
 def test_schema_is_typed_from_the_ontology_and_compiled_once():
     backend = _backend()
     engine = backend.engine
-    assert len(engine.compiled) == 1
+    assert len(engine.compiled) == 2  # the schema, and the value-only one
     schema = engine.compiled[0]
     assert [name for name, _ in schema.entities] == ["User", "Person", "Location", "Product", "Quantity"]
     assert schema.relations[0] == ("visited", ("User", "Person"), ("Location",))
     everything = ("User", "Person", "Location", "Product", "Quantity")
     assert schema.relations[2] == ("mentions", everything, everything)  # JointSchema rejects an empty endpoint
+
+
+def test_the_value_only_schema_holds_the_value_relations_their_heads_and_tails():
+    values = _backend().engine.compiled[1]
+    assert [name for name, _ in values.entities] == ["User", "Person", "Quantity"]
+    assert values.relations == [("owns_count", ("User", "Person"), ("Quantity",))]
+
+
+def test_no_value_relation_means_no_value_pass():
+    ontology = Ontology(entity_types=ONTOLOGY.entity_types, relation_types=ONTOLOGY.relation_types[:1])
+    backend = GLiNER2Backend(ontology=ontology, model=FakeEngine())
+    assert len(backend.engine.compiled) == 1
 
 
 def test_candidate_caps_default_high_enough_that_user_edges_survive():
@@ -95,8 +107,8 @@ async def test_every_window_extracts_against_the_one_held_compiled_schema():
     backend._extract_sync(chunk)
     backend._extract_sync(chunk)
     schemas = {id(schema) for _, schema, _ in backend.engine.calls}
-    assert len(schemas) == 1
-    assert len(backend.engine.compiled) == 1
+    assert len(schemas) == 2
+    assert len(backend.engine.compiled) == 2
 
 
 # --- windows ---------------------------------------------------------------------
@@ -302,6 +314,28 @@ async def test_span_identity_gives_every_value_mention_its_own_node(memgraph):
     backend = _backend(surfaces={"I": "User", "3": "Quantity"}, relations=[("owns_count", "I", "3", 0.9)])
     await from_documents([_session(("user", "I have 3 cats and 3 dogs", None))], memgraph, backend)
     assert memgraph.query("MATCH (n:gliner2 {text: '3'}) RETURN count(n) AS n") == [{"n": 2}]
+
+
+@pytest.mark.asyncio
+async def test_a_value_span_the_value_pass_claims_wins_over_the_main_pass(memgraph):
+    """In a large vocabulary the main pass types a value as a domain type (`25:50` as Food, #386)."""
+    _user(memgraph)
+    backend = GLiNER2Backend(
+        ontology=ONTOLOGY,
+        model=FakeEngine(
+            surfaces={"I": "User", "3 cats": "Product"},
+            relations=[("visited", "I", "3 cats", 0.6)],
+            value_surfaces={"I": "User", "3": "Quantity"},
+            value_relations=[("owns_count", "I", "3", 0.9)],
+        ),
+    )
+    await from_documents([_session(("user", "I have 3 cats", None))], memgraph, backend)
+
+    rows = memgraph.query("MATCH (n:gliner2) RETURN n.entity_type AS type, n.text AS text")
+    assert rows == [{"type": "Quantity", "text": "3"}]
+    edges = memgraph.query("MATCH (:User)-[r]->(n:gliner2) RETURN type(r) AS type, n.text AS text")
+    assert edges == [{"type": "owns_count", "text": "3"}]
+    assert backend.stats.value_spans_claimed == 1
 
 
 @pytest.mark.asyncio
