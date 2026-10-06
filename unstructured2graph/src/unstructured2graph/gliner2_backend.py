@@ -187,16 +187,19 @@ def _entity_id(chunk_hash: str, entity_type: str, normalized_text: str, identity
     """
     A stable node key for one mention, scoped by its type's identity (#346, #361):
 
-    - global: (type, normalized text) -- one node across every chunk, so a
-      name mentioned in two sessions is one node. Its `file_path` keeps the
-      first chunk's hash (ON CREATE SET); MENTIONED_IN, written per chunk at
-      ingest, carries the rest.
+    - global: (normalized text) -- one node across every chunk, so a name
+      mentioned in two sessions is one node. The type is left out so that
+      merging two types in a learned model (#434) only relabels: a name keeps
+      its node whichever type it is extracted as later, and the node keeps the
+      type it was first seen with (ON CREATE SET), as it keeps the first
+      chunk's hash as `file_path`; MENTIONED_IN, written per chunk at ingest,
+      carries the rest.
     - chunk: (chunk hash, type, normalized text) -- one node per chunk.
     - span: (chunk hash, type, span offsets) -- one node per mention, for
       values, where every "3" in a session is a different fact.
     """
     if identity == "global":
-        key = f"global|{entity_type}|{normalized_text}"
+        key = f"global|{normalized_text}"
     elif identity == "span":
         key = f"{chunk_hash}|{entity_type}|{span[0]}:{span[1]}"
     else:
