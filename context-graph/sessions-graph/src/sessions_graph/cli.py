@@ -6,13 +6,14 @@
     sessions-graph embed --pending [--limit N] [--model MODEL]
 
 Batch-extracts entities from a session's Action/Memory content via
-unstructured2graph's chunk + LightRAG pipeline (see reconcile_session() in
-core.py). This is the intended way to run reconciliation — deliberately a
-separate process from the SESSION_END hook, since LLM-backed entity
-extraction is slow and hook subprocesses run under a runtime timeout.
+unstructured2graph's GLiNER2 backend over hygm's default model, and writes
+the session's summary with an LLM through LightRAG (see reconcile_session()
+in core.py). This is the intended way to run reconciliation — deliberately a
+separate process from the SESSION_END hook, since local extraction and the
+summary call are slow and hook subprocesses run under a runtime timeout.
 
 Requires the ``sessions-graph[reconciliation]`` extra and an LLM API key
-(``OPENAI_API_KEY`` or ``ANTHROPIC_API_KEY``) for LightRAG.
+(``OPENAI_API_KEY`` or ``ANTHROPIC_API_KEY``) for the summary.
 
 ``embed`` computes recall's vectors inside Memgraph (see ``embeddings.py``):
 no LLM and no extra, but a Memgraph with MAGE. The SESSION_END hook runs it
@@ -33,9 +34,9 @@ if TYPE_CHECKING:
 _HELP = """usage: sessions-graph reconcile (--session SESSION_ID | --pending) [--limit N] [--working-dir DIR]
        sessions-graph embed (--session SESSION_ID | --pending) [--limit N] [--model MODEL]
 
-reconcile: batch-extract entities from session Action/Memory content via
-unstructured2graph + LightRAG. Requires an LLM API key (OPENAI_API_KEY or
-ANTHROPIC_API_KEY) -- see the lightrag-memgraph README.
+reconcile: extract entities from session Action/Memory content with GLiNER2
+(local) and summarize the session with an LLM. Requires an LLM API key
+(OPENAI_API_KEY or ANTHROPIC_API_KEY) -- see the lightrag-memgraph README.
 
 embed: embed a session's messages, entities and edges for recall, inside
 Memgraph (needs MAGE). No LLM.

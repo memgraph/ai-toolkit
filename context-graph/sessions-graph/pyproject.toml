@@ -21,6 +21,7 @@ agent-context-graph = [
 ]
 reconciliation = [
     "actions-graph>=0.3.0",
+    "hygm>=0.1.0",
     "unstructured2graph>=0.6.0",
 ]
 test = [
@@ -38,6 +39,7 @@ recall = "sessions_graph.tool:RECALL"
 agent-context-graph = { workspace = true }
 memgraph-toolbox = { workspace = true }
 actions-graph = { workspace = true }
+hygm = { workspace = true }
 unstructured2graph = { workspace = true }
 
 [build-system]

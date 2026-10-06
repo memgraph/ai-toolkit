@@ -26,27 +26,21 @@ For full document support (PDF, DOCX, etc.):
 pip install -e ".[all-docs]"
 ```
 
-For the local, LLM-free GLiNER2 extraction backend, install `gliner2` manually
-(deliberately *not* a `pyproject.toml` extra of this package -- `gliner2[local]`
-hard-pins `transformers<5`, which conflicts with this monorepo's workspace-wide
-`transformers>=5.0.0rc3` security floor; see `gliner2_backend.py`'s module
-docstring for the full reasoning):
-
-```bash
-pip install 'gliner2[local]>=2.0.0'
-```
+GLiNER2, the default extraction backend, comes with the package. Its
+`gliner2[local]` dependency pins `transformers<5`, below the CVE-2026-1839
+floor the workspace used to hold; restoring it is tracked in #443.
 
 ## Choosing an extraction backend
 
 Entity/relation extraction is pluggable behind an `ExtractionBackend`. Two are provided:
 
-| | `LightRAGBackend` (default choice) | `GLiNER2Backend` |
+| | `GLiNER2Backend` (default) | `LightRAGBackend` |
 |---|---|---|
-| **Extraction** | LLM-based (via LightRAG) | Local model, no LLM |
-| **Cost / network** | Per-call LLM cost, needs `OPENAI_API_KEY` (or another configured LLM) | Free, fully offline after the model download |
-| **Cross-chunk coreference** | Yes — LightRAG's LLM normalizes mentions, so "Apple" in two chunks can merge into one entity | No — entity identity is scoped to `(chunk, entity_type, normalized text)`; the same entity mentioned in two chunks becomes two nodes |
-| **Relation edges** | One generic `:DIRECTED` edge type (LightRAG's own convention) | One Cypher edge type per relation label (e.g. `:works_for`), drawn from the ontology's `relation_types` |
-| **Relation vocabulary** | Open-ended (whatever the LLM extracts) | Closed — only extracts relations named in `Ontology.relation_types` |
+| **Extraction** | Local model, no LLM | LLM-based (via LightRAG) |
+| **Cost / network** | Free, fully offline after the model download | Per-call LLM cost, needs `OPENAI_API_KEY` (or another configured LLM) |
+| **Cross-chunk coreference** | By type identity — a `global` type (a name) merges across chunks by normalized text, a `chunk` type stays per chunk, a value is one node per mention; no LLM normalization of aliases | Yes — LightRAG's LLM normalizes mentions, so "Apple" in two chunks can merge into one entity |
+| **Relation edges** | One Cypher edge type per relation label (e.g. `:works_for`), drawn from the ontology's `relation_types` | One generic `:DIRECTED` edge type (LightRAG's own convention) |
+| **Relation vocabulary** | Closed — only extracts relations named in `Ontology.relation_types` | Open-ended (whatever the LLM extracts) |
 
 Both write entities under a **workspace** label with an `entity_type` property and a `file_path` property equal to the source chunk's hash — the rest of the pipeline (chunk-to-entity linking, ontology-gated label promotion) works identically regardless of backend.
 
@@ -55,25 +49,22 @@ Both write entities under a **workspace** label with an `entity_type` property a
 ```python
 import asyncio
 from memgraph_toolbox.api.memgraph import Memgraph
-from lightrag_memgraph import MemgraphLightRAGWrapper
-from unstructured2graph import LightRAGBackend, from_unstructured
+from unstructured2graph import from_unstructured
+from unstructured2graph.gliner2_backend import GLiNER2Backend
 
 
 async def main():
     memgraph = Memgraph(user_agent="unstructured2graph")
-
-    lightrag = MemgraphLightRAGWrapper()
-    await lightrag.initialize(working_dir="./lightrag_storage")
+    backend = GLiNER2Backend()  # downloads fastino/gliner2.5-base-v1 on first use
 
     # Ingest documents from URLs or local files
     await from_unstructured(
         sources=["https://example.com/doc.pdf", "./local_file.md"],
         memgraph=memgraph,
-        extraction_backend=LightRAGBackend(lightrag),
+        extraction_backend=backend,
         link_chunks=True,  # create NEXT relationships between chunks
         enforce_ontology=True,  # promote entity_type to real labels (:Person, :Organization, ...)
     )
-    await lightrag.afinalize()
 
 
 asyncio.run(main())
@@ -81,25 +72,25 @@ asyncio.run(main())
 
 The `Chunk.hash` uniqueness constraint is created for you inside `from_unstructured()` / `from_texts()` — no manual index step is needed.
 
-### Using GLiNER2 instead (local, no LLM)
+### Using LightRAG instead (LLM-based)
 
 ```python
-from memgraph_toolbox.api.memgraph import Memgraph
-from unstructured2graph import from_unstructured
-from unstructured2graph.gliner2_backend import GLiNER2Backend
+from lightrag_memgraph import MemgraphLightRAGWrapper
+from unstructured2graph import LightRAGBackend, from_unstructured
 
-memgraph = Memgraph(user_agent="unstructured2graph")
-backend = GLiNER2Backend()  # downloads fastino/gliner2.5-base-v1 on first use
+lightrag = MemgraphLightRAGWrapper()
+await lightrag.initialize(working_dir="./lightrag_storage")
 
 await from_unstructured(
     sources=["./local_file.md"],
     memgraph=memgraph,
-    extraction_backend=backend,
+    extraction_backend=LightRAGBackend(lightrag),
     enforce_ontology=True,
 )
+await lightrag.afinalize()
 ```
 
-`GLiNER2Backend` is not imported by `unstructured2graph`'s top-level package (which never requires the optional `gliner2` dependency) — import it from `unstructured2graph.gliner2_backend` directly.
+`GLiNER2Backend` is not imported by `unstructured2graph`'s top-level package, so `import unstructured2graph` doesn't load torch — import it from `unstructured2graph.gliner2_backend` directly.
 
 It extracts on gliner2's joint path, where each relation type's `start_labels`/`end_labels` constrain decoding. It extracts one window per segment, splitting only a segment longer than `chunk_size` words. It writes:
 
@@ -236,7 +227,7 @@ await from_unstructured(..., enforce_ontology=True, ontology_path="my_ontology.y
 
 - `ExtractionBackend` — the protocol both backends below satisfy; `workspace_label` (the Memgraph label entities are written under) and `async aingest_chunk(memgraph, chunk)`
 - `LightRAGBackend(wrapper)` — wraps an initialized `MemgraphLightRAGWrapper`
-- `unstructured2graph.gliner2_backend.GLiNER2Backend(model_name=..., ontology=None, workspace="gliner2", model=None, entity_confidence_threshold=None, relation_confidence_threshold=None, chunk_size=384, chunk_overlap=64, mention_resolver=resolve_user_mentions, candidate_cap=4096)` — local GLiNER2 model; requires `gliner2` installed manually (see Installation above), not exported from the top-level package
+- `unstructured2graph.gliner2_backend.GLiNER2Backend(model_name=..., ontology=None, workspace="gliner2", model=None, entity_confidence_threshold=None, relation_confidence_threshold=None, chunk_size=384, chunk_overlap=64, mention_resolver=resolve_user_mentions, candidate_cap=4096)` — local GLiNER2 model, the default backend; not exported from the top-level package, so `import unstructured2graph` stays light
 
 ### Ontology
 

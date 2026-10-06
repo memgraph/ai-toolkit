@@ -194,6 +194,20 @@ def _fake_lightrag_wrapper(summary_text: str = "A narrative summary of the sessi
     return wrapper
 
 
+@pytest.fixture(autouse=True)
+def _no_gliner2_checkpoint(monkeypatch):
+    """The default backend is real GLiNER2Backend over hygm's default model;
+    only the checkpoint (a large download) is stood in for."""
+    from unstructured2graph.gliner2_backend import GLiNER2Backend
+
+    real_engine = GLiNER2Backend._engine
+
+    def engine(model, model_name):
+        return real_engine(model, model_name) if model is not None else _SurfaceEngine({}, [])
+
+    monkeypatch.setattr(GLiNER2Backend, "_engine", staticmethod(engine))
+
+
 def _all_processed(grouped_chunks: list[list[Chunk]]) -> dict[str, dict[str, str]]:
     """process_enqueued_and_finalize's real return shape: every chunk's hash
     mapped to its doc_status record. AsyncMock()'s own default return value
@@ -225,10 +239,33 @@ async def test_reconcile_session_success_marks_completed_and_links_chunks(graph,
 
 
 @pytest.mark.asyncio
-async def test_reconcile_session_extraction_backend_override_replaces_the_lightrag_default(graph, actions_graph):
-    """A non-LightRAG backend (e.g. GLiNER2Backend) must reach from_documents as-is,
-    not get wrapped in LightRAGBackend(lightrag_wrapper) -- the default that
-    applies only when extraction_backend is omitted."""
+async def test_reconcile_session_defaults_to_gliner2_over_hygms_default_model(graph, actions_graph):
+    """Without an override, extraction runs on GLiNER2 over hygm.default_model(),
+    and that same vocabulary is what enforce_ontology gates on."""
+    from actions_graph import Session
+    from hygm import default_model
+    from unstructured2graph import Ontology
+    from unstructured2graph.gliner2_backend import GLiNER2Backend
+
+    actions_graph.create_session(Session(session_id="s-1"))
+    actions_graph.record_message(
+        session_id="s-1", role=MessageRole.ASSISTANT, content="Alice works on the graph engine."
+    )
+    fake_chunk = Chunk(text="Alice works on the graph engine.", hash=content_hash("Alice works on the graph engine."))
+    with patch("unstructured2graph.from_documents", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_documents:
+        await graph.reconcile_session(
+            "s-1", lightrag_wrapper=_fake_lightrag_wrapper(), actions_graph=actions_graph, enforce_ontology=True
+        )
+
+    call_kwargs = mock_from_documents.call_args.kwargs
+    assert isinstance(call_kwargs["extraction_backend"], GLiNER2Backend)
+    assert call_kwargs["ontology"] == Ontology.from_model(default_model())
+
+
+@pytest.mark.asyncio
+async def test_reconcile_session_extraction_backend_override_replaces_the_gliner2_default(graph, actions_graph):
+    """An explicit backend (e.g. LightRAGBackend) must reach from_documents as-is;
+    the GLiNER2 default applies only when extraction_backend is omitted."""
     from actions_graph import Session
 
     actions_graph.create_session(Session(session_id="s-1"))
@@ -304,6 +341,7 @@ async def test_reconcile_session_passes_promotion_and_ontology_kwargs_through_to
     assert call_kwargs["promote_labels"] is True
     assert call_kwargs["enforce_ontology"] is True
     assert call_kwargs["ontology_path"] == "/some/ontology.yaml"
+    assert call_kwargs["ontology"] is None
 
 
 @pytest.mark.asyncio

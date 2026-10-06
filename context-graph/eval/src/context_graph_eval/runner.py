@@ -91,10 +91,10 @@ class RunPlan:
     #: MEMGRAPH_URL happens to name -- a different graph than the one being
     #: evaluated, silently.
     memgraph_url: str | None = None
-    #: "lightrag" (default) or "gliner2" -- see reconcile.EXTRACTION_BACKENDS
+    #: "gliner2" (default) or "lightrag" -- see reconcile.EXTRACTION_BACKENDS
     #: and reconcile_batch's docstring for what each implies. Meaningless when
     #: retrieval_strategy="text-search" (nothing reconciles), and ignored then.
-    extraction_backend: ExtractionBackendName = "lightrag"
+    extraction_backend: ExtractionBackendName = "gliner2"
     #: "graph-agent" (default) or "text-search" -- see RETRIEVAL_STRATEGIES
     #: above. "text-search" forces reconciliation off regardless of
     #: ``reconcile`` above: the whole point of that baseline is to skip the

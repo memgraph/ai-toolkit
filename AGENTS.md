@@ -22,7 +22,7 @@ Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable Memgraph graph.
 | `integrations/mcp-memgraph/` | MCP server exposing Memgraph to LLMs. |
 | `integrations/lightrag-memgraph/` | LightRAG storage backends (KV/vector/doc-status/graph) on Memgraph. |
 | `hygm/` | Shared graph schema/ontology model (`NodeType`, `RelationType` with `start_labels`/`end_labels`, `identity`), its validation gate, the generic default model (`default_model()`, core and catch-all labels), and the strategies that produce one (`ManualStrategy` YAML; `LlmRecommendationStrategy` interface only). Pure Python, no Memgraph. Not the same package as `agents/sql2graph`'s HyGM. |
-| `unstructured2graph/` | Chunks unstructured input (files/URLs/text) and runs entity/relation extraction through a pluggable `ExtractionBackend` (`LightRAGBackend` by default; `GLiNER2Backend` for local, LLM-free extraction, manual-install only -- see its module docstring). Outside the Context Graph family but shares its testing conventions. |
+| `unstructured2graph/` | Chunks unstructured input (files/URLs/text) and runs entity/relation extraction through a pluggable `ExtractionBackend` (`GLiNER2Backend` by default -- local and LLM-free; `LightRAGBackend` retained -- LLM-based). Outside the Context Graph family but shares its testing conventions. |
 | `agents/sql2graph/` | MySQL/Postgres → Memgraph migration agent. Has its own `uv.lock`/`.python-version`; run it with `cd agents/sql2graph && uv run main.py`. |
 | `context-graph/` | The Context Graph family — see below. |
 | `scripts/dev-memgraph.sh` | Local dev lifecycle: exploration Memgraph + isolated test Memgraph for the context-graph family and unstructured2graph. |

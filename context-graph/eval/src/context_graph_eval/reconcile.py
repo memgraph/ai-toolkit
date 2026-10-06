@@ -224,7 +224,7 @@ async def reconcile_batch(
     memgraph_url: str | None = None,
     working_dir: str = DEFAULT_WORKING_DIR,
     lightrag_wrapper: Any = None,
-    extraction_backend: ExtractionBackendName = "lightrag",
+    extraction_backend: ExtractionBackendName = "gliner2",
     progress: bool = True,
     sessions_per_call: int = 20,
     gliner2_concurrency: int = 4,
