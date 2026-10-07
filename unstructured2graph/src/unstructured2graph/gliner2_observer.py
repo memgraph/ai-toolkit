@@ -7,6 +7,12 @@ they fired on. This runs the same extraction a GLiNER2Backend ingests with --
 one window per turn, the value-only pass, the user-mention resolver -- and
 tallies the result instead of writing it.
 
+Both read a sample of windows, not every one: an open-endpoint pass costs
+~5 s a window on CPU (relation decoding over every type pair), so a run over
+whole sessions took hours, and the tables and the gate's two numbers are
+statistics a spread sample estimates. The sample depends only on the
+documents, never the schema, so two models are measured on the same windows.
+
 Not imported by unstructured2graph/__init__.py, like gliner2_backend: importing
 it loads nothing heavy, constructing a backend does.
 """
@@ -33,6 +39,8 @@ if TYPE_CHECKING:
 _PAIRS, _EXAMPLES = 8, 4
 #: Per type, the most frequent surfaces reported.
 _TOP_TEXTS = 10
+#: Windows one observe() or measure() call extracts at most.
+DEFAULT_WINDOW_BUDGET = 100
 
 
 @dataclass(frozen=True)
@@ -60,7 +68,7 @@ class Measurement:
         spans: Each mention's type by (session, start, end), for agreement
             between two models' typings.
         mentions: Mentions counted.
-        user_turns: User turns in the sample.
+        user_turns: User turns the sampled windows cover.
     """
 
     catch_all_share: float
@@ -83,6 +91,8 @@ class GLiNER2Observer:
             permissive schema needs the high default most: every span ties
             once per type, and the cut at the library default drops every
             User edge (#371).
+        window_budget: The most windows one call extracts, evenly spaced over
+            the sample's sessions in order; None reads every window.
     """
 
     def __init__(
@@ -90,10 +100,12 @@ class GLiNER2Observer:
         model_name: str = "fastino/gliner2.5-base-v1",
         model: Any | None = None,
         candidate_cap: int = DEFAULT_CANDIDATE_CAP,
+        window_budget: int | None = DEFAULT_WINDOW_BUDGET,
     ) -> None:
         self._model_name = model_name
         self._model = model
         self._candidate_cap = candidate_cap
+        self._window_budget = window_budget
 
     def observe(self, model: HygmModel, sample: Sequence[Document]) -> dict[str, Any]:
         """Observation tables for `model` over `sample`, one session per Document.
@@ -105,7 +117,7 @@ class GLiNER2Observer:
             the user resolver settles on (the user's own mentions as User,
             third parties as Person); dropped mentions aren't counted.
         """
-        mentions, edges = self._extract(model, sample)
+        mentions, edges, _ = self._extract(model, sample)
         return {
             "relations": _relation_tables(model, [(r, h.label, h.text, t.label, t.text) for r, h, t in edges]),
             "types": _type_tables(model, [(m.session, m.label, m.text) for m in mentions]),
@@ -117,21 +129,21 @@ class GLiNER2Observer:
         Args:
             catch_alls: The labels counted as catch-alls (``hygm.CATCH_ALL_LABELS``).
         """
-        mentions, edges = self._extract(model, sample)
-        user_turns = sum(segment.role == "user" for document in sample for segment in document.segments)
+        mentions, edges, user_turns = self._extract(model, sample)
         with_fact = {(h.session, h.turn) for _, h, _ in edges if h.role == "user" and h.turn is not None}
         return Measurement(
             catch_all_share=sum(m.label in catch_alls for m in mentions) / max(len(mentions), 1),
-            coverage=len(with_fact) / max(user_turns, 1),
+            coverage=len(with_fact) / max(len(user_turns), 1),
             spans={(m.session, m.start, m.end): m.label for m in mentions},
             mentions=len(mentions),
-            user_turns=user_turns,
+            user_turns=len(user_turns),
         )
 
     def _extract(
         self, model: HygmModel, sample: Sequence[Document]
-    ) -> tuple[list[_Resolved], list[tuple[str, _Resolved, _Resolved]]]:
-        """Every resolved mention, and every relation between two kept, distinct mentions."""
+    ) -> tuple[list[_Resolved], list[tuple[str, _Resolved, _Resolved]], set[tuple[int, int]]]:
+        """Every resolved mention and relation between two kept, distinct mentions, in the sampled
+        windows; and the user turns those windows cover, as (session, turn)."""
         backend = GLiNER2Backend(
             model_name=self._model_name,
             ontology=Ontology.from_model(model),
@@ -141,14 +153,30 @@ class GLiNER2Observer:
         self._model = backend.engine
         mentions: list[_Resolved] = []
         edges: list[tuple[str, _Resolved, _Resolved]] = []
-        for session, document in enumerate(sample):
-            chunk = Chunk(
+        chunks = [
+            Chunk(
                 text=document.text,
                 hash=hashlib.sha256(document.text.encode()).hexdigest(),
                 segments=document.segments,
                 user_id=document.user_id,
             )
-            extracted = backend._extract_sync(chunk)
+            for document in sample
+        ]
+        chosen = _spread(
+            [(session, window) for session, chunk in enumerate(chunks) for window in backend._windows(chunk)],
+            self._window_budget,
+        )
+        user_turns = {
+            (session, sample[session].segments.index(window.segment))
+            for session, window in chosen
+            if window.segment is not None and window.segment.role == "user"
+        }
+        for session, document in enumerate(sample):
+            chunk = chunks[session]
+            windows = [window for at, window in chosen if at == session]
+            if not windows:
+                continue
+            extracted = backend._extract_sync(chunk, windows)
             resolved: list[_Resolved | None] = []
             for mention, segment in extracted.mentions:
                 resolution = backend._resolve(mention, segment, chunk)
@@ -167,7 +195,16 @@ class GLiNER2Observer:
                 head_mention, tail_mention = resolved[head], resolved[tail]
                 if head_mention is not None and tail_mention is not None and head != tail:
                     edges.append((relation, head_mention, tail_mention))
-        return mentions, edges
+        return mentions, edges, user_turns
+
+
+def _spread(items: list[Any], budget: int | None) -> list[Any]:
+    """At most `budget` of `items`, evenly spaced from first to last, in order."""
+    if budget is None or len(items) <= budget:
+        return items
+    if budget < 2:
+        return items[:budget]
+    return [items[round(i * (len(items) - 1) / (budget - 1))] for i in range(budget)]
 
 
 def _relation_tables(model: HygmModel, edges: list[tuple[str, str, str, str, str]]) -> dict[str, Any]:

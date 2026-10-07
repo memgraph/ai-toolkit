@@ -94,3 +94,21 @@ def test_measure_scores_catch_all_share_and_user_turn_coverage():
     assert measured.catch_all_share == 2 / 5
     assert measured.coverage == 1 / 2  # only the first user turn yields a typed relation
     assert measured.spans[(0, 10, 15)] == "Location"
+
+
+def test_a_window_budget_reads_an_even_spread_and_measures_only_what_it_read():
+    from unstructured2graph.gliner2_observer import _spread
+
+    assert _spread(list(range(10)), 4) == [0, 3, 6, 9]
+    assert _spread(list(range(3)), 4) == [0, 1, 2]
+    assert _spread(list(range(10)), None) == list(range(10))
+
+    engine = FakeEngine(surfaces={"I": "User", "Paris": "Location"}, relations=[("visited", "I", "Paris", 0.9)])
+    sample = [_session(("user", f"I visited Paris {i}"), ("assistant", "nice")) for i in range(5)]
+
+    measured = GLiNER2Observer(model=engine, window_budget=3).measure(MODEL, sample, catch_alls=())
+
+    main_calls = [call for call in engine.calls if not call[1][1].relations or call[1][1].relations[0][0] == "visited"]
+    assert len(main_calls) == 3  # three of the ten windows, not all of them
+    assert measured.user_turns == 2  # windows 0, 4 (user turns) and 9 (an assistant turn)
+    assert measured.coverage == 1.0

@@ -476,7 +476,7 @@ class GLiNER2Backend:
                     windows.append(_Window(lo, hi, segment))
         return windows
 
-    def _extract_sync(self, chunk: "Chunk") -> _Extracted:
+    def _extract_sync(self, chunk: "Chunk", windows: "list[_Window] | None" = None) -> _Extracted:
         """
         Run the joint extractor over each window of `chunk` and map everything
         back to chunk coordinates. Synchronous and CPU/GPU-bound (GLiNER2 has no
@@ -488,7 +488,7 @@ class GLiNER2Backend:
         """
         extracted = _Extracted()
         index_of: dict[tuple[str, int, int], int] = {}
-        for window in self._windows(chunk):
+        for window in self._windows(chunk) if windows is None else windows:
             text = chunk.text[window.start : window.end]
             result = self.engine.extract(text, self._schema, config=self._config)
             extracted.windows += 1
