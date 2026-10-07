@@ -229,3 +229,17 @@ session on the machine. Config *values* stay file-only.
 All release workflows are manual (`workflow_dispatch` from the Actions tab);
 bump the subproject's `pyproject.toml` version before dispatching. Full
 package-to-workflow mapping and required secrets: `skills/release/SKILL.md`.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues in `memgraph/ai-toolkit`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Multi-context: root `CONTEXT-MAP.md` points to per-package `CONTEXT.md` files and package-level `docs/adr/`. See `docs/agents/domain.md`.
