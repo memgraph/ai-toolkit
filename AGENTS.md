@@ -36,6 +36,7 @@ Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable Memgraph graph.
 | `actions-graph` | Records tool calls/results/messages/subagent activity as `(:Action)`/`(:Agent)` nodes — observability, not memory. |
 | `skills-graph` | Tracks Agent-Skills-spec `(:Skill)` usage per session. |
 | `sessions-graph` | Owns `(:User)`/`(:Session)`, durable `(:Memory)` writes/recall, and session reconciliation into `(:Episode)` + extracted entities. |
+| `resources-graph` | Remembers public GitHub resources the agent touched: hooks record private `(:Touch)` nodes, the out-of-band `resources-graph sweep` stores shared `(:Resource)`s, and the `resource` tool serves them from memory. |
 
 Everything joins on a shared, idempotently-`MERGE`d `(:Session {session_id})`
 node; only `sessions-graph` owns `(:User)` and `HAD_SESSION`.

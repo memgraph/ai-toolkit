@@ -1,0 +1,563 @@
+{
+ "Item:{\"number\": 2000, \"owner\": \"memgraph\", \"pageSize\": 2, \"repo\": \"memgraph\"}": {
+  "data": {
+   "repository": {
+    "issueOrPullRequest": {
+     "__typename": "Issue",
+     "assignees": {
+      "nodes": []
+     },
+     "author": {
+      "login": "antejavor"
+     },
+     "body": "The things we often recommend for faster import are IN_MEMORY ANALYTICAL, moving to ANALYTICAL for import, and then getting back to TRANSACTIONAL once the import is complete. \r\n\r\nTurns out that it affects the replication setup. Below is the script that simulate following: \r\n\r\n1. Setup the replication \r\n2. Move to ANALYTICAL \r\n3. Import the data \r\n4. Move back to TRANSACTIONAL\r\n5. There is no data in ASYNC and SYNC replicas. (bug) \r\n\r\nFull context and discussion: https://discord.com/channels/842007348272169002/1235670651403239425/1235918233429606451\r\n\r\n\r\n```\r\n#!/bin/bash\r\n\r\n# Start the MAIN instance\r\ndocker run -d --name memgraph-main -p 7687:7687 memgraph/memgraph:2.16.0\r\n\r\n# Start REPLICA instance 1 (SYNC mode)\r\ndocker run -d --name memgraph-replica1 -p 7688:7687 memgraph/memgraph:2.16.0\r\n\r\n# Start REPLICA instance 2 (ASYNC mode)\r\ndocker run -d --name memgraph-replica2 -p 7689:7687 memgraph/memgraph:2.16.0\r\n\r\n# Wait for instances to be ready\r\necho \"Waiting for instances to start up...\"\r\nsleep 5\r\n\r\n# Get IP addresses of the containers\r\nMAIN_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' memgraph-main)\r\nREPLICA1_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' memgraph-replica1)\r\nREPLICA2_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' memgraph-replica2)\r\n\r\necho \"MAIN instance IP: $MAIN_IP\"\r\necho \"REPLICA 1 IP: $REPLICA1_IP\"\r\necho \"REPLICA 2 IP: $REPLICA2_IP\"\r\n\r\n# Demote instances to REPLICA role and set replication port\r\necho \"Setting replication roles...\"\r\necho \"SET REPLICATION ROLE TO REPLICA WITH PORT 10000;\" | docker exec -i memgraph-replica1 mgconsole\r\necho \"SET REPLICATION ROLE TO REPLICA WITH PORT 10000;\" | docker exec -i memgraph-replica2 mgconsole\r\n\r\n# Register replicas on the MAIN instance\r\necho \"Registering replicas...\"\r\necho \"REGISTER REPLICA REP1 SYNC TO \\\"$REPLICA1_IP\\\";\" | docker exec -i memgraph-main mgconsole\r\necho \"REGISTER REPLICA REP2 ASYNC TO \\\"$REPLICA2_IP\\\";\" | docker exec -i memgraph-main mgconsole\r\n\r\n# Change MAIN instance to IN_MEMORY_ANALYTICAL mode\r\necho \"Changing MAIN instance to IN_MEMORY_ANALYTICAL mode...\"\r\necho \"STORAGE MODE IN_MEMORY_ANALYTICAL;\" | docker exec -i memgraph-main mgconsole\r\n\r\n# Create dummy nodes\r\necho \"Creating dummy nodes...\"\r\necho \"CREATE (n:Dummy {id: 1});\" | docker exec -i memgraph-main mgconsole\r\necho \"CREATE (n:Dummy {id: 2});\" | docker exec -i memgraph-main mgconsole\r\necho \"CREATE (n:Dummy {id: 3});\" | docker exec -i memgraph-main mgconsole\r\n\r\n# Revert MAIN instance to IN_MEMORY_TRANSACTIONAL mode\r\necho \"Reverting MAIN instance to IN_MEMORY_TRANSACTIONAL mode...\"\r\necho \"STORAGE MODE IN_MEMORY_TRANSACTIONAL;\" | docker exec -i memgraph-main mgconsole\r\n\r\n# Check the status of the registered replicas\r\necho \"Checking registered replicas...\"\r\necho \"SHOW REPLICAS;\" | docker exec -i memgraph-main mgconsole\r\n\r\necho \"Replication setup complete.\"\r\n\r\n# Wait for key press\r\necho \"Press any key to remove instances...\"\r\nread -n 1 -s\r\n\r\n# Remove instances\r\necho \"Removing instances...\"\r\ndocker stop memgraph-main\r\ndocker rm memgraph-main\r\ndocker stop memgraph-replica1\r\ndocker rm memgraph-replica1\r\ndocker stop memgraph-replica2\r\ndocker rm memgraph-replica2\r\n\r\necho \"Instances removed.\"\r\n```",
+     "closedAt": "2025-09-24T11:55:39Z",
+     "comments": {
+      "nodes": [
+       {
+        "author": {
+         "login": "katarinasupe"
+        },
+        "body": "Currently, the best flow is:\r\n\r\n1. Move to ANALYTICAL\r\n2. Import the data\r\n3. Move back to TRANSACTIONAL\r\n4. Setup the replication\r\n\r\n(Replication is not supported in in-memory analytical mode and probably that messes up with the flow stated in the issue)",
+        "createdAt": "2024-08-06T15:04:23Z",
+        "id": "IC_kwDOEbh4L86HZJyV",
+        "updatedAt": "2024-08-06T15:04:23Z",
+        "url": "https://github.com/memgraph/memgraph/issues/2000#issuecomment-2271517845"
+       },
+       {
+        "author": {
+         "login": "as51340"
+        },
+        "body": "@katarinasupe @antejavor does the flow you mentioned work now? Can we close the issue? (Trying to clean-up replication and HA issues)",
+        "createdAt": "2025-02-05T09:59:33Z",
+        "id": "IC_kwDOEbh4L86dIjVC",
+        "updatedAt": "2025-02-05T09:59:45Z",
+        "url": "https://github.com/memgraph/memgraph/issues/2000#issuecomment-2636264770"
+       }
+      ],
+      "pageInfo": {
+       "endCursor": "Y3Vyc29yOnYyOpHOnSI1Qg==",
+       "hasNextPage": true
+      },
+      "totalCount": 4
+     },
+     "createdAt": "2024-05-03T11:36:43Z",
+     "id": "I_kwDOEbh4L86Hv9cx",
+     "labels": {
+      "nodes": [
+       {
+        "name": "bug"
+       },
+       {
+        "name": "community"
+       },
+       {
+        "name": "Capability - high-availability"
+       },
+       {
+        "name": "Effort - Medium"
+       },
+       {
+        "name": "Severity - S2"
+       },
+       {
+        "name": "Priority - Later"
+       },
+       {
+        "name": "Frequency - EveryTime"
+       },
+       {
+        "name": "Reach - Some"
+       }
+      ]
+     },
+     "milestone": null,
+     "number": 2000,
+     "repository": {
+      "id": "MDEwOlJlcG9zaXRvcnkyOTczMDIwNjM=",
+      "nameWithOwner": "memgraph/memgraph",
+      "visibility": "PUBLIC"
+     },
+     "state": "CLOSED",
+     "title": "Memgraph replication IN_MEMORY_ANALYTICAL and IN_MEMORY_TRANSACTIONAL switch bug. ",
+     "updatedAt": "2025-09-24T11:55:39Z",
+     "url": "https://github.com/memgraph/memgraph/issues/2000"
+    },
+    "visibility": "PUBLIC"
+   }
+  }
+ },
+ "Item:{\"number\": 3600, \"owner\": \"memgraph\", \"pageSize\": 2, \"repo\": \"memgraph\"}": {
+  "data": {
+   "repository": {
+    "issueOrPullRequest": {
+     "__typename": "PullRequest",
+     "assignees": {
+      "nodes": [
+       {
+        "login": "mattkjames7"
+       }
+      ]
+     },
+     "author": {
+      "login": "mattkjames7"
+     },
+     "baseRefName": "master",
+     "body": "The `s2n` package seems to be finding OpenSSL from the toolchain, when it should be linking to the `conan` library. This PR modifies the `toolchain.cmake` file to ignore the toolchain's OpenSSL to fix the RPM distro builds broken by #3502 \r\n\r\nAs part of the toolchain build process, a static version of the OpenSSL library was built manually for the RPM Linux distributions. The result of this is that CMake will find the OpenSSL library from the toolchain under either `/opt/toolchain-v7/lib/cmake/OpenSSL` or `/opt/toolchain-v7/lib64/cmake/OpenSSL`, instead of linking to the library built by `conan`.  To stop this happening, both of those paths are added to `CMAKE_IGNORE_PATH`.\r\n\r\nThe Memgraph build would usually use the `toolchain.cmake` file that is distributed with the toolchain archives/Docker images (`/opt/toolchain-v7/toolchain.cmake` inside the build containers). Since updating this would require rebuilding all toolchain archives and mgbuild Docker images, the build will now use the updated copy of the toolchain file from within this repo (`environment/toolchain/v7/toolchain.cmake`).\r\n\r\nAlso included: a small fix to the build profile that tells `conan` to use the toolchain for building any build requirements, rather than relying on the system toolchain (I found that building everything without the cache resulted in `ninja-build` failing to build because `/usr/sbin/cc` being unable to create binaries on Fedora).",
+     "closedAt": "2026-01-02T13:48:59Z",
+     "comments": {
+      "nodes": [
+       {
+        "author": {
+         "login": "mattkjames7"
+        },
+        "body": "\r\n### Tracking\r\n- [ ] **[Link to Epic/Issue]**\r\n\r\n### Standard development\r\n- [ ] Update unit/E2E tests\r\n- [ ] Compare the [benchmarking results](https://bench-graph.memgraph.com/) between the master branch this branch\r\n\r\n### CI Testing Labels\r\n- [ ] Select the appropriate CI test labels _(CI -build=**build-name** -test=**test-suite**)_\r\n\r\n### Documentation checklist\r\n- [x] Add the documentation label\r\n- [ ] Add the bug / feature label\r\n- [x] Add the milestone for which this feature is intended\r\n    - If not known, set for a later milestone\r\n- [x] Write a release note, including added/changed clauses\r\n    - N/A\r\n- [ ] **[ Documentation PR link memgraph/documentation#XXXX ]**\r\n    - [ ] Is back linked to this development PR",
+        "createdAt": "2025-12-31T12:35:24Z",
+        "id": "IC_kwDOEbh4L87cqfgz",
+        "updatedAt": "2026-01-02T12:02:33Z",
+        "url": "https://github.com/memgraph/memgraph/pull/3600#issuecomment-3702126643"
+       },
+       {
+        "author": {
+         "login": "sonarqubecloud"
+        },
+        "body": "## [![Quality Gate Passed](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/checks/QualityGateBadge/qg-passed-20px.png 'Quality Gate Passed')](https://sonarcloud.io/dashboard?id=memgraph_memgraph&pullRequest=3600) **Quality Gate passed**  \nIssues  \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 New issues](https://sonarcloud.io/project/issues?id=memgraph_memgraph&pullRequest=3600&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true)  \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/accepted-16px.png '') [0 Accepted issues](https://sonarcloud.io/project/issues?id=memgraph_memgraph&pullRequest=3600&issueStatuses=ACCEPTED)\n\nMeasures  \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 Security Hotspots](https://sonarcloud.io/project/security_hotspots?id=memgraph_memgraph&pullRequest=3600&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true)  \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Coverage on New Code](https://sonarcloud.io/component_measures?id=memgraph_memgraph&pullRequest=3600&metric=new_coverage&view=list)  \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Duplication on New Code](https://sonarcloud.io/component_measures?id=memgraph_memgraph&pullRequest=3600&metric=new_duplicated_lines_density&view=list)  \n  \n[See analysis details on SonarQube Cloud](https://sonarcloud.io/dashboard?id=memgraph_memgraph&pullRequest=3600)\n\n",
+        "createdAt": "2026-01-02T12:07:38Z",
+        "id": "IC_kwDOEbh4L87c2Mn1",
+        "updatedAt": "2026-01-02T12:07:38Z",
+        "url": "https://github.com/memgraph/memgraph/pull/3600#issuecomment-3705194997"
+       }
+      ],
+      "pageInfo": {
+       "endCursor": "Y3Vyc29yOnYyOpHO3NjJ9Q==",
+       "hasNextPage": false
+      },
+      "totalCount": 2
+     },
+     "createdAt": "2025-12-31T12:35:16Z",
+     "files": {
+      "nodes": [
+       {
+        "path": "conan_config/profiles/memgraph_build_profile"
+       },
+       {
+        "path": "conan_config/profiles/memgraph_template_profile"
+       }
+      ],
+      "pageInfo": {
+       "endCursor": "Mg",
+       "hasNextPage": true
+      },
+      "totalCount": 3
+     },
+     "id": "PR_kwDOEbh4L867GdJy",
+     "labels": {
+      "nodes": [
+       {
+        "name": "infrastructure"
+       },
+       {
+        "name": "Docs unnecessary"
+       }
+      ]
+     },
+     "merged": true,
+     "milestone": {
+      "title": "mg-v3.8.0"
+     },
+     "number": 3600,
+     "repository": {
+      "id": "MDEwOlJlcG9zaXRvcnkyOTczMDIwNjM=",
+      "nameWithOwner": "memgraph/memgraph",
+      "visibility": "PUBLIC"
+     },
+     "reviewThreads": {
+      "nodes": [],
+      "pageInfo": {
+       "endCursor": null,
+       "hasNextPage": false
+      }
+     },
+     "state": "MERGED",
+     "title": "Modify toolchain file to ignore the toolchain OpenSSL library",
+     "updatedAt": "2026-01-02T13:49:00Z",
+     "url": "https://github.com/memgraph/memgraph/pull/3600"
+    },
+    "visibility": "PUBLIC"
+   }
+  }
+ },
+ "Item:{\"number\": 4962, \"owner\": \"memgraph\", \"pageSize\": 2, \"repo\": \"memgraph\"}": {
+  "data": {
+   "repository": {
+    "issueOrPullRequest": {
+     "__typename": "PullRequest",
+     "assignees": {
+      "nodes": [
+       {
+        "login": "as51340"
+       }
+      ]
+     },
+     "author": {
+      "login": "as51340"
+     },
+     "baseRefName": "master",
+     "body": "Follow-up to #4399. On a coordinator, a Bolt scheme that is not listed in `--auth-module-mappings` (and is not `basic`/`none`) was rejected outright as unsupported. In 3.12 the coordinator ignored auth entirely, so clients that send their data-instance SSO scheme to a coordinator without SSO configured started failing after the upgrade.\n\nThis unifies the rule in the Bolt `Init` state:\n\n- A scheme listed in `--auth-module-mappings` runs the coordinator SSO path (unchanged).\n- Every other scheme (`basic`, `none`, or an unlisted one) takes the passthrough path.\n  - Flag empty: accepted with credentials ignored and full `COORDINATOR_WRITE`, as before for basic/none. Restores 3.12 behaviour for unlisted schemes.\n  - Flag set: denied under the same license and writable-role conditions as basic/none, so an arbitrary scheme name can't bypass the SSO privilege model. Break-glass admits it the same way it admits basic.\n- The rejection message still names the unlisted scheme (distinct from the \"basic authentication is disabled\" message), minus the \"connect with basic auth\" hint since basic is denied in that state too.\n\nTests: `test_basic_auth_passthrough` now also connects with an `oidc` scheme on a no-SSO cluster; `test_basic_auth_break_glass_when_no_writable_role` asserts an unlisted scheme is admitted during break-glass; `test_sso_unknown_scheme_rejected` is unchanged in behaviour. Spec `specs/coordinator-sso-auth.md` updated.",
+     "closedAt": "2026-09-30T09:48:33Z",
+     "comments": {
+      "nodes": [
+       {
+        "author": {
+         "login": "as51340"
+        },
+        "body": "### Tracking\r\n- [ ] **[Link to Epic/Issue]**\r\n\r\n### Standard development\r\n- [x] Update unit/E2E tests\r\n- [ ] Compare the [benchmarking results](https://bench-graph.memgraph.com/) between the master branch this branch\r\n\r\n### CI Testing Labels\r\n- [x] Select the appropriate CI test labels _(CI -build=**build-name** -test=**test-suite**)_\r\n\r\n### Documentation checklist\r\n- [ ] Add the documentation label\r\n- [x] Add the bug / feature label\r\n- [x] Add the milestone for which this feature is intended\r\n    - If not known, set for a later milestone\r\n- [x] Write a release note, including added/changed clauses\r\n    - If SSO is not used on coordinators (--auth-module-mappings not defined), even logging in with the unknown scheme should succeed. [#4962](https://github.com/memgraph/memgraph/pull/4962)\r\n    - What has changed? What does it mean for a user? What should a user do with it? [#{{PR_number}}]({{link to the PR}})\r\n- [x] **[ Documentation PR link ](https://github.com/memgraph/documentation/pull/1792)**\r\n    - [x] Is back linked to this development PR",
+        "createdAt": "2026-09-29T09:07:45Z",
+        "id": "IC_kwDOEbh4L88AAAABXuaDTg",
+        "updatedAt": "2026-09-29T09:38:48Z",
+        "url": "https://github.com/memgraph/memgraph/pull/4962#issuecomment-5887132494"
+       },
+       {
+        "author": {
+         "login": "github-actions"
+        },
+        "body": "<!-- pr-conflicts -->\nThis PR has potential conflicts with the following other open pull requests which modify the same files:\n\n- [#4524](https://redirect.github.com/memgraph/memgraph/pull/4524): 1 file\n- [#4920](https://redirect.github.com/memgraph/memgraph/pull/4920): 1 file\n- [#4924](https://redirect.github.com/memgraph/memgraph/pull/4924): 1 file\n- [#4932](https://redirect.github.com/memgraph/memgraph/pull/4932): 1 file\n",
+        "createdAt": "2026-09-29T09:07:51Z",
+        "id": "IC_kwDOEbh4L88AAAABXuaIqA",
+        "updatedAt": "2026-09-29T11:08:36Z",
+        "url": "https://github.com/memgraph/memgraph/pull/4962#issuecomment-5887133864"
+       }
+      ],
+      "pageInfo": {
+       "endCursor": "Y3Vyc29yOnYyOpHPAAAAAV7miKg=",
+       "hasNextPage": false
+      },
+      "totalCount": 2
+     },
+     "createdAt": "2026-09-29T09:07:29Z",
+     "files": {
+      "nodes": [
+       {
+        "path": "specs/coordinator-sso-auth.md"
+       },
+       {
+        "path": "src/communication/bolt/v1/states/init.hpp"
+       }
+      ],
+      "pageInfo": {
+       "endCursor": "Mg",
+       "hasNextPage": true
+      },
+      "totalCount": 3
+     },
+     "id": "PR_kwDOEbh4L88AAAABFqdXLQ",
+     "labels": {
+      "nodes": [
+       {
+        "name": "bug"
+       },
+       {
+        "name": "Capability - high-availability"
+       },
+       {
+        "name": "Docs - changelog only"
+       },
+       {
+        "name": "CI -build=community -test=core"
+       },
+       {
+        "name": "CI -build=coverage -test=core"
+       },
+       {
+        "name": "CI -build=jepsen -test=core"
+       },
+       {
+        "name": "CI -build=debug -test=core"
+       },
+       {
+        "name": "CI -build=debug -test=integration"
+       },
+       {
+        "name": "CI -build=release -test=core"
+       },
+       {
+        "name": "CI -build=release -test=e2e"
+       },
+       {
+        "name": "CI -build=release -test=stress"
+       },
+       {
+        "name": "CI -build=coverage -test=clang_tidy"
+       }
+      ]
+     },
+     "merged": true,
+     "milestone": {
+      "title": "mg-v3.13.2"
+     },
+     "number": 4962,
+     "repository": {
+      "id": "MDEwOlJlcG9zaXRvcnkyOTczMDIwNjM=",
+      "nameWithOwner": "memgraph/memgraph",
+      "visibility": "PUBLIC"
+     },
+     "reviewThreads": {
+      "nodes": [
+       {
+        "comments": {
+         "nodes": [
+          {
+           "author": {
+            "login": "andrejtonev"
+           },
+           "body": "stale logic, now unlisted schema goes through the basic/none path",
+           "createdAt": "2026-09-29T11:38:37Z",
+           "id": "PRRC_kwDOEbh4L872V9b1",
+           "updatedAt": "2026-09-29T11:48:39Z",
+           "url": "https://github.com/memgraph/memgraph/pull/4962#discussion_r4132951797"
+          }
+         ],
+         "pageInfo": {
+          "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0wOS0yOVQxMTozODozN1rO9lfW9Q==",
+          "hasNextPage": false
+         }
+        },
+        "path": "specs/coordinator-sso-auth.md"
+       },
+       {
+        "comments": {
+         "nodes": [
+          {
+           "author": {
+            "login": "andrejtonev"
+           },
+           "body": "add the same assert sorted line as above",
+           "createdAt": "2026-09-29T11:39:32Z",
+           "id": "PRRC_kwDOEbh4L872V_S-",
+           "updatedAt": "2026-09-29T11:48:39Z",
+           "url": "https://github.com/memgraph/memgraph/pull/4962#discussion_r4132959422"
+          }
+         ],
+         "pageInfo": {
+          "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0wOS0yOVQxMTozOTozMlrO9lf0vg==",
+          "hasNextPage": false
+         }
+        },
+        "path": "tests/e2e/high_availability/auth.py"
+       }
+      ],
+      "pageInfo": {
+       "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0wOS0yOVQxMTozOTozMlrOpxZLxg==",
+       "hasNextPage": true
+      }
+     },
+     "state": "MERGED",
+     "title": "fix: Pass unlisted auth schemes through on coordinators without SSO",
+     "updatedAt": "2026-10-07T09:39:54Z",
+     "url": "https://github.com/memgraph/memgraph/pull/4962"
+    },
+    "visibility": "PUBLIC"
+   }
+  }
+ },
+ "Item:{\"number\": 999999, \"owner\": \"memgraph\", \"pageSize\": 2, \"repo\": \"memgraph\"}": {
+  "data": {
+   "repository": {
+    "issueOrPullRequest": null,
+    "visibility": "PUBLIC"
+   }
+  },
+  "errors": [
+   {
+    "locations": [
+     {
+      "column": 5,
+      "line": 4
+     }
+    ],
+    "message": "Could not resolve to an issue or pull request with the number of 999999.",
+    "path": [
+     "repository",
+     "issueOrPullRequest"
+    ],
+    "type": "NOT_FOUND"
+   }
+  ]
+ },
+ "MoreComments:{\"after\": \"Y3Vyc29yOnYyOpHOnSI1Qg==\", \"id\": \"I_kwDOEbh4L86Hv9cx\", \"pageSize\": 2}": {
+  "data": {
+   "node": {
+    "comments": {
+     "nodes": [
+      {
+       "author": {
+        "login": "katarinasupe"
+       },
+       "body": "The flow I mentioned as a workaround works. Still, the flow that @antejavor mentioned in the issue doesn't work.\n\nIf this is expected, then the issue can be closed.  \nAlso, if this is expected behavior, we should add this to our docs.\nWe have a warning in the docs on Replication page: \"Data replication currently works only in the in-memory transactional [storage mode](https://memgraph.com/docs/fundamentals/storage-memory-usage).\" It can be extended with an additional note stating something along the lines: \"if you're using in-memory analytical for the fast import, please first import your data, then set up the replication\". Similar should be added to the data migration best practices. ",
+       "createdAt": "2025-02-05T13:48:42Z",
+       "id": "IC_kwDOEbh4L86dK_aR",
+       "updatedAt": "2025-02-05T13:48:42Z",
+       "url": "https://github.com/memgraph/memgraph/issues/2000#issuecomment-2636904081"
+      },
+      {
+       "author": {
+        "login": "as51340"
+       },
+       "body": "Getting back to this. This is totally expected due to `--storage-wal-enabled` flag which is disabled in the analytical mode and enabled in the transactional mode. I will update the docs and close the issue.",
+       "createdAt": "2025-09-24T11:50:43Z",
+       "id": "IC_kwDOEbh4L87GXcPq",
+       "updatedAt": "2025-09-24T11:50:43Z",
+       "url": "https://github.com/memgraph/memgraph/issues/2000#issuecomment-3328033770"
+      }
+     ],
+     "pageInfo": {
+      "endCursor": "Y3Vyc29yOnYyOpHOxl3D6g==",
+      "hasNextPage": false
+     }
+    }
+   }
+  }
+ },
+ "MoreFiles:{\"after\": \"Mg\", \"id\": \"PR_kwDOEbh4L867GdJy\", \"pageSize\": 2}": {
+  "data": {
+   "node": {
+    "files": {
+     "nodes": [
+      {
+       "path": "environment/toolchain/v7/toolchain.cmake"
+      }
+     ],
+     "pageInfo": {
+      "endCursor": "Mw",
+      "hasNextPage": false
+     }
+    }
+   }
+  }
+ },
+ "MoreFiles:{\"after\": \"Mg\", \"id\": \"PR_kwDOEbh4L88AAAABFqdXLQ\", \"pageSize\": 2}": {
+  "data": {
+   "node": {
+    "files": {
+     "nodes": [
+      {
+       "path": "tests/e2e/high_availability/auth.py"
+      }
+     ],
+     "pageInfo": {
+      "endCursor": "Mw",
+      "hasNextPage": false
+     }
+    }
+   }
+  }
+ },
+ "MoreReviewThreads:{\"after\": \"Y3Vyc29yOnYyOpK0MjAyNi0wOS0yOVQxMTo0MzozMVrOpxamPA==\", \"id\": \"PR_kwDOEbh4L88AAAABFqdXLQ\", \"pageSize\": 2}": {
+  "data": {
+   "node": {
+    "reviewThreads": {
+     "nodes": [
+      {
+       "comments": {
+        "nodes": [
+         {
+          "author": {
+           "login": "andrejtonev"
+          },
+          "body": "if a client tries sso without sso configured will silently passthrough. maybe add a log here for such cases",
+          "createdAt": "2026-09-29T11:48:14Z",
+          "id": "PRRC_kwDOEbh4L872WT6R",
+          "updatedAt": "2026-09-29T11:48:39Z",
+          "url": "https://github.com/memgraph/memgraph/pull/4962#discussion_r4133043857"
+         }
+        ],
+        "pageInfo": {
+         "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0wOS0yOVQxMTo0ODoxNFrO9lk-kQ==",
+         "hasNextPage": false
+        }
+       },
+       "path": "src/communication/bolt/v1/states/init.hpp"
+      }
+     ],
+     "pageInfo": {
+      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0wOS0yOVQxMTo0ODoxNFrOpxceXQ==",
+      "hasNextPage": false
+     }
+    }
+   }
+  }
+ },
+ "MoreReviewThreads:{\"after\": \"Y3Vyc29yOnYyOpK0MjAyNi0wOS0yOVQxMTozOTozMlrOpxZLxg==\", \"id\": \"PR_kwDOEbh4L88AAAABFqdXLQ\", \"pageSize\": 2}": {
+  "data": {
+   "node": {
+    "reviewThreads": {
+     "nodes": [
+      {
+       "comments": {
+        "nodes": [
+         {
+          "author": {
+           "login": "andrejtonev"
+          },
+          "body": "should be simple && logic instead of the clunky code",
+          "createdAt": "2026-09-29T11:41:05Z",
+          "id": "PRRC_kwDOEbh4L872WCYB",
+          "updatedAt": "2026-09-29T11:48:39Z",
+          "url": "https://github.com/memgraph/memgraph/pull/4962#discussion_r4132972033"
+         }
+        ],
+        "pageInfo": {
+         "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0wOS0yOVQxMTo0MTowNVrO9lgmAQ==",
+         "hasNextPage": false
+        }
+       },
+       "path": "src/communication/bolt/v1/states/init.hpp"
+      },
+      {
+       "comments": {
+        "nodes": [
+         {
+          "author": {
+           "login": "andrejtonev"
+          },
+          "body": "different from the error message below. i think the HandleAuthFailure message is better as well",
+          "createdAt": "2026-09-29T11:43:31Z",
+          "id": "PRRC_kwDOEbh4L872WIMe",
+          "updatedAt": "2026-09-29T11:48:39Z",
+          "url": "https://github.com/memgraph/memgraph/pull/4962#discussion_r4132995870"
+         }
+        ],
+        "pageInfo": {
+         "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0wOS0yOVQxMTo0MzozMVrO9liDHg==",
+         "hasNextPage": false
+        }
+       },
+       "path": "src/communication/bolt/v1/states/init.hpp"
+      }
+     ],
+     "pageInfo": {
+      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0wOS0yOVQxMTo0MzozMVrOpxamPA==",
+      "hasNextPage": true
+     }
+    }
+   }
+  }
+ },
+ "Repository:{\"owner\": \"memgraph\", \"repo\": \"memgraph\"}": {
+  "data": {
+   "repository": {
+    "description": "High-performance open-source in-memory graph database for GraphRAG, AI memory, agentic AI, and real-time graph analytics. Cypher-compatible, built in C++.",
+    "id": "MDEwOlJlcG9zaXRvcnkyOTczMDIwNjM=",
+    "nameWithOwner": "memgraph/memgraph",
+    "pushedAt": "2026-10-07T14:16:00Z",
+    "readme": {
+     "text": "<p align=\"center\">\n<img alt=\"memgraph-repo-banner\" src=\"https://github.com/user-attachments/assets/9ab82a42-5b66-4091-bb7f-23f97d56bac4\" />\n</p>\n\n---\n\n<p align=\"center\">\n  <a href=\"https://github.com/memgraph/memgraph/blob/master/licenses/APL.txt\">\n    <img src=\"https://img.shields.io/badge/license-APL-green\" alt=\"license\" title=\"license\"/>\n  </a>\n  <a href=\"https://github.com/memgraph/memgraph/blob/master/licenses/BSL.txt\">\n    <img src=\"https://img.shields.io/badge/license-BSL-yellowgreen\" alt=\"license\" title=\"license\"/>\n  </a>\n  <a href=\"https://github.com/memgraph/memgraph/blob/master/licenses/MEL.pdf\" alt=\"Documentation\">\n    <img src=\"https://img.shields.io/badge/license-MEL-yellow\" alt=\"license\" title=\"license\"/>\n  </a>\n</p>\n\n<p align=\"center\">\n  <a href=\"https://memgraph.github.io/daily-builds/\">\n     <img src=\"https://img.shields.io/github/actions/workflow/status/memgraph/memgraph/daily_build.yml?branch=master&label=build%20and%20test&logo=github\"/>\n  </a>\n  <a href=\"https://memgraph.com/docs/\" alt=\"Documentation\">\n    <img src=\"https://img.shields.io/badge/documentation-Memgraph-orange\" />\n  </a>\n</p>\n\n<p align=\"center\">\n  <a href=\"https://memgr.ph/join-discord\">\n    <img src=\"https://img.shields.io/badge/Discord-7289DA?style=for-the-badge&logo=discord&logoColor=white\" alt=\"Discord\"/>\n  </a>\n</p>\n\n## :clipboard: Description\n\nMemgraph is a high-performance, in-memory graph database that powers real-time\nAI context and graph analytics. Built in C/C++, it serves as the graph engine\nfor GraphRAG pipelines, AI memory systems, and agentic workflows \u2014 delivering\nsub-millisecond multi-hop traversals for any system that needs structured,\nconnected context alongside semantic vector or text search.\n\nMemgraph provides both in a single query layer: built-in text and vector\nindexes for similarity search combined with full graph traversal, so retrieval\npipelines can run as a single atomic database operation instead of being\nscattered across multiple systems.\n\nThe same architecture drives real-time graph analytics for fraud detection,\nnetwork analysis, infrastructure monitoring, and other operational workloads\nwhere performance matters. Memgraph is fully compatible with Neo4j\u2019s Cypher\nquery language, ACID-compliant, and highly available.\n\n## :zap: Features\n\n#### AI & Graph Intelligence\n- **Indexes** - Built-in vector indexes power hybrid graph retrieval with\nsimilarity search in a single query, alongside text and geospatial indexes for\nkeyword and location-aware queries.\n- **[MAGE](src/mage/README.md) algorithm library** - 40+ graph algorithms in C++,\nPython, and CUDA including PageRank, community detection, GNN-based link\nprediction, temporal graph networks, embeddings, and native ML.\n- **Atomic GraphRAG** - Pivot search, graph expansion, ranking, and prompt\nassembly expressed as a single Cypher query.\n- **LLM utility module** - Graph-aware context formatting for large language\nmodels.\n- **[AI Toolkit](https://github.com/memgraph/ai-toolkit)** - Integrations with\npopular agentic frameworks, MCP server, and ready-made components for building\nGraphRAG, AI memory, and agent workflows on top of Memgraph.\n- **Real-time schema introspection** - `SHOW SCHEMA INFO` returns the full\ngraph ontology for Text2Cypher and AI agent integration.\n\n#### Performance & Query Power\n- **In-memory C/C++ engine** - Sub-millisecond traversals with [benchmarked\nperformance](https://memgraph.com/benchgraph).\n- **Deep-path traversals** - Accumulators and path filtering without additional\napplication logic.\n- **Custom query modules** - Extend with Python, Rust, and C/C++ code natively.\n- **Parallel query execution** - Concurrent query processing for\nhigh-throughput workloads.\n- **Native Parquet & JSONL loading** - Load data directly from Parquet and\nJSONL files on local disk, S3, or HTTP endpoints.\n- **Streaming support** - Ingest from Kafka, Pulsar, and RedPanda with dynamic\ngraph algorithms that react to changes in real time.\n\n#### Enterprise\n- **High availability** - Raft-based coordination with automatic failover.\n- **Multi-tenancy** - Isolated databases with per-tenant role assignments.\n- **Fine-grained access control** - Role-based and label-based permissions at\nthe node and edge level.\n- **Authentication & authorization** - SSO integration, user impersonation, and\n30+ granular permissions.\n- **Encryption in transit, monitoring, backup & restore.**\n\n## :video_game: Memgraph Playground\n\nYou don't need to install anything to try out Memgraph. Check out our\n**[Memgraph Playground](https://playground.memgraph.com/)** sandboxes in your\nbrowser.\n\n<p align=\"left\">\n  <a href=\"https://playground.memgraph.com/\">\n    <img width=\"450px\" alt=\"Memgraph Playground\" src=\"https://download.memgraph.com/asset/github/memgraph/memgraph-playground.png\">\n  </a>\n</p>\n\n## :floppy_disk: Download & Install\n\n### Windows\n\n[![Windows](https://img.shields.io/badge/Windows-Docker-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://memgraph.com/docs/memgraph/install-memgraph-on-windows-docker)\n[![Windows](https://img.shields.io/badge/Windows-WSL-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://memgraph.com/docs/memgraph/install-memgraph-on-windows-wsl)\n\n### macOS\n\n[![macOS](https://img.shields.io/badge/macOS-Docker-000000?style=for-the-badge&logo=macos&logoColor=F0F0F0)](https://memgraph.com/docs/memgraph/install-memgraph-on-macos-docker)\n[![macOS](https://img.shields.io/badge/lima-AACF41?style=for-the-badge&logo=macos&logoColor=F0F0F0)](https://memgraph.com/docs/memgraph/install-memgraph-on-ubuntu)\n\n### Linux\n\n[![Linux](https://img.shields.io/badge/Linux-Docker-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://memgraph.com/docs/memgraph/install-memgraph-on-linux-docker)\n[![Debian](https://img.shields.io/badge/Debian-D70A53?style=for-the-badge&logo=debian&logoColor=white)](https://memgraph.com/docs/memgraph/install-memgraph-on-debian)\n[![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)](https://memgraph.com/docs/memgraph/install-memgraph-on-ubuntu)\n[![Cent OS](https://img.shields.io/badge/cent%20os-002260?style=for-the-badge&logo=centos&logoColor=F0F0F0)](https://memgraph.com/docs/memgraph/install-memgraph-from-rpm)\n[![Fedora](https://img.shields.io/badge/fedora-0B57A4?style=for-the-badge&logo=fedora&logoColor=F0F0F0)](https://memgraph.com/docs/memgraph/install-memgraph-from-rpm)\n[![RedHat](https://img.shields.io/badge/redhat-EE0000?style=for-the-badge&logo=redhat&logoColor=F0F0F0)](https://memgraph.com/docs/memgraph/install-memgraph-from-rpm)\n\n### Kubernetes\n\n[![Helm](https://img.shields.io/badge/Helm_Charts-0F1689?style=for-the-badge&logo=helm&logoColor=white)](https://github.com/memgraph/helm-charts)\n\nDeploy Memgraph on Kubernetes using the official [Helm charts](https://github.com/memgraph/helm-charts),\nincluding charts for standalone and high-availability deployments:\n\n```bash\nhelm repo add memgraph https://memgraph.github.io/helm-charts\nhelm install my-memgraph memgraph/memgraph\n```\n\nYou can find the binaries and Docker images on the [Download\nHub](https://memgraph.com/download) and the installation instructions in the\n[official documentation](https://memgraph.com/docs/memgraph/installation).\n\n\n## :rocket: Daily Builds\nStay on the cutting edge with the latest features and improvements by using\n[Memgraph Daily Builds](https://memgraph.github.io/daily-builds/). Daily builds\nare updated frequently and allow you to test new capabilities before they reach\nstable releases.\n\n<p align=\"left\"> <a href=\"https://memgraph.github.io/daily-builds/\"> <img src=\"https://img.shields.io/badge/Daily%20Builds-latest-blue?style=for-the-badge\" alt=\"Daily Builds\" /> </a> </p>\n\n\n## :cloud: Memgraph Cloud\nCheck out [Memgraph Cloud](https://memgraph.com/docs/memgraph-cloud) - a cloud\nservice fully managed on AWS and available in 6 geographic regions around the\nworld. Memgraph Cloud allows you to create projects with Enterprise instances\nof MemgraphDB from your browser.\n\n<p align=\"left\">\n  <a href=\"https://memgraph.com/docs/memgraph-cloud\">\n    <img width=\"450px\" alt=\"Memgraph Cloud\" src=\"https://github.com/user-attachments/assets/32fd29aa-331e-4d54-bd0d-42d87d0ff1ff\" />\n  </a>\n</p>\n\n## :link: Connect to Memgraph\n[Connect to the\ndatabase](https://memgraph.com/docs/memgraph/connect-to-memgraph) using\nMemgraph Lab, mgconsole, various drivers (Python, C/C++ and others) and\nWebSocket.\n\n### :microscope: Memgraph Lab\nVisualize graphs and play with queries to understand your data. [Memgraph\nLab](https://memgraph.com/docs/memgraph-lab) is a user interface that helps you\nexplore and manipulate the data stored in Memgraph. Visualize graphs, execute\nad hoc queries, and optimize their performance.\n\n<p align=\"left\">\n  <a href=\"https://memgraph.com/docs/memgraph-lab\">\n    <img width=\"450px\" alt=\"Memgraph Lab\" src=\"https://github.com/user-attachments/assets/a83c14cf-e590-4247-9b91-9200db67c127\">\n  </a>\n</p>\n\n## :file_folder: Import data\n[Import data](https://memgraph.com/docs/memgraph/import-data) into Memgraph\nusing Kafka, RedPanda or Pulsar streams, CSV, JSON, Parquet, and JSONL files\n(from local disk, S3, or HTTP), or Cypher commands.\n\n## :bulb: Best Practices\nThe [memgraph/best-practices](https://github.com/memgraph/best-practices)\nrepository contains ready-to-use examples covering graph modeling, data import,\nquery optimization, GraphRAG, high-availability deployment, and more.\n\n## :world_map: Roadmap\nSee what's coming next on the\n[memgraph/roadmap](https://github.com/memgraph/roadmap).\n\n## :bookmark_tabs: Documentation\nThe Memgraph documentation is available at\n[memgraph.com/docs](https://memgraph.com/docs).\n\n## :question: Configuration\nCommand line options that Memgraph accepts are available in the [reference\nguide](https://memgraph.com/docs/memgraph/reference-guide/configuration).\n\n## :trophy: Contributing\nWelcome to the heart of Memgraph development! We're on a mission to supercharge\nMemgraph, making it faster, more user-friendly, and even more powerful. We owe\na big thanks to our fantastic community of contributors who help us fix bugs\nand bring incredible improvements to life. If you're passionate about databases\nand open source, here's your chance to make a difference!\n\n### Compile from Source\nLearn how to download, compile and run Memgraph from source with the [Quick\nStart](https://memgraph.notion.site/Quick-Start-82a99a85e62a4e3d89f6a9fb6d35626d)\nguide.\n\n### Explore Memgraph Internals\nInterested in the nuts and bolts of Memgraph? Our [internals\ndocumentation](https://memgraph.notion.site/Memgraph-Internals-12b69132d67a417898972927d6870bd2)\nis where you can uncover the inner workings of Memgraph's architecture, learn\nhow to build the project from scratch, and discover the secrets of effective\ncontributions. Dive deep into the database!\n\n### Dive into the Contributing Guide\nReady to jump into the action? Explore our [contributing\nguide](CONTRIBUTING.md) to get the inside scoop on how we develop Memgraph.\nIt's your roadmap for suggesting bug fixes and enhancements. Contribute your\nskills and ideas!\n\n### Code of Conduct\nOur commitment to a respectful and professional community is unwavering. Every\nparticipant in Memgraph is expected to adhere to a stringent Code of Conduct.\nPlease carefully review [the complete text](CODE_OF_CONDUCT.md) to gain a\ncomprehensive understanding of the behaviors that are both expected and\nexplicitly prohibited.\n\nWe maintain a zero-tolerance policy towards any violations. Our shared\ncommitment to this Code of Conduct ensures that Memgraph remains a place where\nintegrity and excellence are paramount.\n\n### :scroll: License\nMemgraph Community is available under the [BSL\nlicense](./licenses/BSL.txt).</br> Memgraph Enterprise is available under the\n[MEL license](./licenses/MEL.pdf).\n\n## :star: Special Thanks\nWe're grateful to all contributors, especially external ones, who have helped\nimprove Memgraph through bug fixes, features, and documentation. Thank you for\nmaking Memgraph better!\n\n<a href=\"https://github.com/memgraph/memgraph/graphs/contributors\">\n  <img src=\"https://contrib.rocks/image?repo=memgraph/memgraph\" alt=\"Memgraph contributors\" />\n</a>\n\n## :busts_in_silhouette: Community\n- :purple_heart: [**Discord**](https://discord.gg/memgraph)\n- :ocean: [**Stack Overflow**](https://stackoverflow.com/questions/tagged/memgraphdb)\n- :bird: [**Twitter**](https://twitter.com/memgraphdb)\n- :movie_camera:\n  [**YouTube**](https://www.youtube.com/channel/UCZ3HOJvHGxtQ_JHxOselBYg)\n\n<p align=\"center\">\n  <a href=\"#\">\n    <img src=\"https://img.shields.io/badge/\u2b06\ufe0f back_to_top_\u2b06\ufe0f-white\" alt=\"Back to top\" title=\"Back to top\"/>\n  </a>\n</p>\n"
+    },
+    "stargazerCount": 4599,
+    "updatedAt": "2026-10-07T10:02:08Z",
+    "url": "https://github.com/memgraph/memgraph",
+    "visibility": "PUBLIC"
+   }
+  }
+ }
+}

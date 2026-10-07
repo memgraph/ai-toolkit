@@ -99,6 +99,8 @@ class HookConfig:
     ontology_path: str | None = None
     #: ``[ontology] derive``: "extend" (the default) or "off"; see sessions-graph's ontology module.
     ontology_derive: str | None = None
+    #: ``[github] token``: what resources-graph's Sweep fetches public GitHub content with.
+    github_token: str | None = None
 
 
 def load_config() -> HookConfig:
@@ -222,6 +224,7 @@ def write_config(
     embedding_model: str | None = None,
     ontology_path: str | None = None,
     ontology_derive: str | None = None,
+    github_token: str | None = None,
 ) -> Path:
     """Write or update the config file. Returns the path written to.
 
@@ -244,6 +247,7 @@ def write_config(
     final_embedding_model = embedding_model if embedding_model is not None else existing.embedding_model
     final_ontology_path = ontology_path if ontology_path is not None else existing.ontology_path
     final_ontology_derive = ontology_derive if ontology_derive is not None else existing.ontology_derive
+    final_github_token = github_token if github_token is not None else existing.github_token
 
     content = _render_config(
         user_id=final_user_id or "",
@@ -258,6 +262,7 @@ def write_config(
         recall_settings=existing.recall_settings,
         ontology_path=final_ontology_path,
         ontology_derive=final_ontology_derive,
+        github_token=final_github_token,
     )
 
     path = config_file()
@@ -283,15 +288,15 @@ def write_full_config(
 ) -> Path:
     """Write a complete config file with all sections (used by bootstrap).
 
-    Overwrites every section except ``[reconcile]``, ``[recall]`` and ``[ontology]``: unlike identity/Memgraph/LLM
+    Overwrites every section except ``[reconcile]``, ``[recall]``, ``[ontology]`` and ``[github]``: unlike identity/Memgraph/LLM
     settings, ``auto_reconcile`` has no legitimate ambient-env source for
     ``bootstrap`` to capture (nobody has ``SESSIONS_GRAPH_AUTO_RECONCILE``
     exported for an unrelated reason the way they might already have
     ``OPENAI_API_KEY``/`MEMGRAPH_PASSWORD` set) — it is only ever set via
     ``config set reconcile.auto_reconcile``. Re-running bootstrap must not
     silently revert it to off, so ``auto_reconcile`` is preserved from the
-    existing file unless explicitly given here. ``[recall]`` and ``[ontology]``
-    are preserved the same way: they are only ever set via ``config set`` or by
+    existing file unless explicitly given here. ``[recall]``, ``[ontology]`` and
+    ``[github]`` are preserved the same way: they are only ever set via ``config set`` or by
     editing the file.
     """
     global _cached_config
@@ -312,6 +317,7 @@ def write_full_config(
         recall_settings=existing.recall_settings,
         ontology_path=existing.ontology_path,
         ontology_derive=existing.ontology_derive,
+        github_token=existing.github_token,
     )
 
     path = config_file()
@@ -352,6 +358,7 @@ def _read_config_file() -> HookConfig:
     reconcile = sections.get("reconcile", {})
     recall = sections.get("recall", {})
     ontology = sections.get("ontology", {})
+    github = sections.get("github", {})
     auto_reconcile_raw = reconcile.get("auto_reconcile")
 
     return HookConfig(
@@ -367,6 +374,7 @@ def _read_config_file() -> HookConfig:
         recall_settings={key: value for key, value in recall.items() if key != "embedding_model"},
         ontology_path=ontology.get("path") or None,
         ontology_derive=ontology.get("derive") or None,
+        github_token=github.get("token") or None,
     )
 
 
@@ -413,6 +421,7 @@ def _render_config(
     recall_settings: dict[str, str] | None = None,
     ontology_path: str | None = None,
     ontology_derive: str | None = None,
+    github_token: str | None = None,
 ) -> str:
     """Render the full config file content.
 
@@ -420,7 +429,7 @@ def _render_config(
     ``None`` (never configured), so a fresh read of the file resolves it back
     to ``None`` rather than a concrete ``false`` — see
     :func:`resolve_auto_reconcile` for why that distinction matters.
-    ``[recall]`` and ``[ontology]`` are likewise omitted while they hold nothing.
+    ``[recall]``, ``[ontology]`` and ``[github]`` are likewise omitted while they hold nothing.
     """
     lines = [
         "# Context Graph hook configuration",
@@ -448,6 +457,8 @@ def _render_config(
     ontology = {key: value for key, value in (("path", ontology_path), ("derive", ontology_derive)) if value}
     if ontology:
         lines += ["", "[ontology]", *(f'{key} = "{value}"' for key, value in ontology.items())]
+    if github_token:
+        lines += ["", "[github]", f'token = "{github_token}"']
     lines.append("")
     return "\n".join(lines)
 

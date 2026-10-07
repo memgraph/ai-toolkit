@@ -97,8 +97,9 @@ def _config(argv: list[str]) -> int:
         "recall.embedding_model": "embedding_model",
         "ontology.path": "ontology_path",
         "ontology.derive": "ontology_derive",
+        "github.token": "github_token",
     }
-    _SECRET_KEYS = {"memgraph.password", "llm.openai_api_key", "llm.anthropic_api_key"}
+    _SECRET_KEYS = {"memgraph.password", "llm.openai_api_key", "llm.anthropic_api_key", "github.token"}
     _BOOL_KEYS = {"reconcile.auto_reconcile"}
 
     if not argv or argv[0] in {"-h", "--help"}:
@@ -137,6 +138,7 @@ def _config(argv: list[str]) -> int:
             print("ontology.derive = unset (defaults to extend)")
         else:
             print(f"ontology.derive = {config.ontology_derive!r}")
+        print(f"github.token = {'***' if config.github_token else 'unset'}")
         return 0
 
     if action == "set":
@@ -585,6 +587,33 @@ def _check_connector(connector_name: str) -> _CheckResult:
             if driver is not None:
                 driver.close()
 
+    if normalized == "resources_graph":
+        try:
+            from agent_context_graph.adapters._identity import load_config, resolve_memgraph_env
+            from resources_graph import ResourcesGraph
+
+            env = resolve_memgraph_env()
+            graph = ResourcesGraph(
+                url=env["MEMGRAPH_URL"],
+                username=env["MEMGRAPH_USER"],
+                password=env["MEMGRAPH_PASSWORD"],
+                database=env["MEMGRAPH_DATABASE"],
+            )
+            version = _package_version("resources-graph")
+            # Touches are recorded without a token; only the Sweep needs one to fetch.
+            token = "set" if load_config().github_token else "unset (the Sweep can't fetch until github.token is set)"
+            return {
+                "name": "connector:resources-graph",
+                "ok": True,
+                "detail": f"installed={version}; memgraph=reachable; github.token {token}",
+            }
+        except Exception as exc:
+            return {"name": "connector:resources-graph", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        finally:
+            driver = getattr(getattr(locals().get("graph", None), "_db", None), "driver", None)
+            if driver is not None:
+                driver.close()
+
     else:
         return {"name": f"connector:{connector_name}", "ok": False, "detail": "unsupported connector"}
 
@@ -696,6 +725,8 @@ def _connector_requirement(connector: str) -> str | None:
         return "actions-graph[agent-context-graph]"
     if normalized == "sessions-graph":
         return "sessions-graph[agent-context-graph]"
+    if normalized == "resources-graph":
+        return "resources-graph[agent-context-graph]"
     return None
 
 
