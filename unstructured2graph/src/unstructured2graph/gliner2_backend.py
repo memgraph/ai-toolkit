@@ -41,7 +41,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from hygm import PERSON_LABEL, USER_LABEL, require_valid_identifier
+from hygm import PERSON_LABEL, USER_LABEL, VALUE_LABELS, require_valid_identifier
 from memgraph_toolbox.api.memgraph import Memgraph
 
 from .memgraph import Endpoint, create_nodes_from_list, link_mentions, upsert_extracted_relationships
@@ -58,6 +58,13 @@ logger = logging.getLogger(__name__)
 #: ties, so at the defaults `User`, sorting last, loses edges: ~4% on a
 #: constrained schema, all of them on a permissive one past 11 types (#371).
 DEFAULT_CANDIDATE_CAP = 4096
+
+#: gliner2's decoder: "greedy" picks the highest-scoring edges that satisfy the
+#: constraints; "beam" (gliner2's default) searches 32 partial graphs. On 16
+#: BEAM windows greedy kept 96% of beam's relations on a constrained schema and
+#: 99% on an open one, every User edge and the 25:50/MoMA facts, at 1.6x and 7x
+#: the speed (5.2 s -> 0.74 s a window open, where the candidate cap is large).
+DECODER = "greedy"
 
 #: Surfaces that are the speaker themself. `user` is here because every user
 #: turn carries a "user: " role prefix, which the model types User.
@@ -159,6 +166,9 @@ class GLiNER2Stats:
     #: A window whose decoding found no feasible solution. Unreachable under
     #: domain/range and cardinality constraints (#350, 0/109), so nonzero is a bug.
     infeasible_windows: int = 0
+    #: Main-pass mentions dropped because the value-only pass typed an
+    #: overlapping span as a value type.
+    value_spans_claimed: int = 0
     mentions: int = 0
     mentions_bound_to_user: int = 0
     mentions_retyped: int = 0
@@ -181,6 +191,71 @@ class _Extracted:
     relations: list[tuple[str, int, int, float | None]] = field(default_factory=list)
     infeasible: int = 0
     windows: int = 0
+    value_spans_claimed: int = 0
+
+
+@dataclass(frozen=True)
+class _Span:
+    """One entity of a window, in window coordinates, whichever pass found it."""
+
+    id: str
+    type: str
+    text: str
+    start: int
+    end: int
+    confidence: float | None
+
+
+@dataclass(frozen=True)
+class _Edge:
+    type: str
+    head: str
+    tail: str
+    confidence: float | None
+
+
+def _with_value_pass(main: Any, values: Any) -> tuple[list[_Span], list[_Edge], int]:
+    """A window's main-pass result with the value-only pass's value spans taking precedence (#386).
+
+    In one pass every label competes for a span, and in a large learned
+    vocabulary the value types lose theirs to domain types (`25:50` typed
+    Food). So a span the value pass types as a value type wins: a main-pass
+    mention overlapping it with another type is dropped, with its relations,
+    and the value pass's relations into it are added. A value-pass mention on
+    the exact span of a kept main mention of the same type is that mention;
+    typed differently, it stays its own, so a value relation never lands on a
+    head type it doesn't allow.
+
+    Returns:
+        The window's spans and edges, and how many main mentions were claimed.
+    """
+    claims = [e for e in values.entities if e.type in VALUE_LABELS]
+
+    def claimed(e: Any) -> bool:
+        return any(e.start < v.end and v.start < e.end and e.type != v.type for v in claims)
+
+    spans = [_Span(e.id, e.type, e.text, e.start, e.end, e.confidence) for e in main.entities if not claimed(e)]
+    dropped = len(main.entities) - len(spans)
+    kept = {span.id for span in spans}
+    edges = [_Edge(r.type, r.head, r.tail, r.confidence) for r in main.relations if r.head in kept and r.tail in kept]
+
+    at = {(span.start, span.end): span for span in spans}
+    alias: dict[str, str] = {}
+    for e in values.entities:
+        same = at.get((e.start, e.end))
+        if same is not None and same.type == e.type:
+            alias[e.id] = same.id
+            continue
+        span = _Span(f"value:{e.id}", e.type, e.text, e.start, e.end, e.confidence)
+        spans.append(span)
+        at.setdefault((e.start, e.end), span)
+        alias[e.id] = span.id
+    seen = {(edge.type, edge.head, edge.tail) for edge in edges}
+    for r in values.relations:
+        if r.head in alias and r.tail in alias and (r.type, alias[r.head], alias[r.tail]) not in seen:
+            edges.append(_Edge(r.type, alias[r.head], alias[r.tail], r.confidence))
+            seen.add((r.type, alias[r.head], alias[r.tail]))
+    return spans, edges, dropped
 
 
 def _entity_id(chunk_hash: str, entity_type: str, normalized_text: str, identity: str, span: tuple[int, int]) -> str:
@@ -265,6 +340,10 @@ class GLiNER2Backend:
     call can collide with a dead one's cache entry and silently extract
     against the wrong vocabulary (#365).
 
+    When the ontology has relations into value types, every window is also
+    run through a second, value-only schema whose value spans take precedence
+    (#386; see `_with_value_pass`).
+
     Relationships whose endpoint is the user are written onto
     (:User {user_id}), which this backend never creates: the caller (e.g.
     sessions-graph, which owns (:User)) must MERGE it before ingesting.
@@ -326,6 +405,8 @@ class GLiNER2Backend:
         self._identity = {t.label: t.identity for t in self.ontology.entity_types}
         self._config = self._make_config(candidate_cap)
         self._schema = self.engine.compile_schema(self._build_schema())
+        value_schema = self._build_value_schema()
+        self._value_schema = self.engine.compile_schema(value_schema) if value_schema is not None else None
         self.stats = GLiNER2Stats()
 
     @staticmethod
@@ -346,6 +427,7 @@ class GLiNER2Backend:
             include_confidence=True,
             relation_pair_cap=candidate_cap,
             max_edges_per_type=candidate_cap,
+            optimizer=DECODER,
         )
 
     def _build_schema(self) -> Any:
@@ -363,6 +445,32 @@ class GLiNER2Backend:
             )
         return schema
 
+    def _build_value_schema(self) -> Any | None:
+        """The value-only schema, or None when no relation points only into value types.
+
+        It holds the value types, User and Person, the value relations, and
+        the head types those relations declare; a relation with an
+        unconstrained head starts at User or Person here, so the value types
+        never compete with the whole vocabulary again.
+        """
+        declared = {t.label: t for t in self.ontology.entity_types}
+        relations = [r for r in self.ontology.relation_types if r.end_labels and set(r.end_labels) <= set(VALUE_LABELS)]
+        if not relations:
+            return None
+        people = tuple(label for label in (USER_LABEL, PERSON_LABEL) if label in declared)
+        heads = {r.label: tuple(r.start_labels) or people for r in relations}
+        labels = dict.fromkeys(
+            [*people, *(label for r in relations for label in r.end_labels), *(h for hs in heads.values() for h in hs)]
+        )
+        schema = self.engine.create_schema()
+        for label in labels:
+            if label in declared:
+                schema = schema.entity(label, declared[label].description or None)
+        for relation in relations:
+            if heads[relation.label]:
+                schema = schema.relation(relation.label, heads[relation.label], tuple(relation.end_labels))
+        return schema
+
     @property
     def workspace_label(self) -> str:
         return self._workspace
@@ -376,7 +484,7 @@ class GLiNER2Backend:
                     windows.append(_Window(lo, hi, segment))
         return windows
 
-    def _extract_sync(self, chunk: "Chunk") -> _Extracted:
+    def _extract_sync(self, chunk: "Chunk", windows: "list[_Window] | None" = None) -> _Extracted:
         """
         Run the joint extractor over each window of `chunk` and map everything
         back to chunk coordinates. Synchronous and CPU/GPU-bound (GLiNER2 has no
@@ -388,14 +496,21 @@ class GLiNER2Backend:
         """
         extracted = _Extracted()
         index_of: dict[tuple[str, int, int], int] = {}
-        for window in self._windows(chunk):
-            result = self.engine.extract(chunk.text[window.start : window.end], self._schema, config=self._config)
+        for window in self._windows(chunk) if windows is None else windows:
+            text = chunk.text[window.start : window.end]
+            result = self.engine.extract(text, self._schema, config=self._config)
             extracted.windows += 1
             if not getattr(result, "feasible", True):
                 extracted.infeasible += 1
                 logger.error(f"GLiNER2 decoding was infeasible for a window of chunk {chunk.hash[:12]}: a bug (#355)")
+            entities: list[Any] = list(result.entities)
+            relations: list[Any] = list(result.relations)
+            if self._value_schema is not None:
+                values = self.engine.extract(text, self._value_schema, config=self._config)
+                entities, relations, claimed = _with_value_pass(result, values)
+                extracted.value_spans_claimed += claimed
             local: dict[str, int] = {}
-            for entity in result.entities:
+            for entity in entities:
                 start, end = entity.start + window.start, entity.end + window.start
                 key = (entity.type, start, end)
                 if key not in index_of:
@@ -404,7 +519,7 @@ class GLiNER2Backend:
                         (Mention(entity.type, entity.text, start, end, entity.confidence), window.segment)
                     )
                 local[entity.id] = index_of[key]
-            for relation in result.relations:
+            for relation in relations:
                 if relation.head in local and relation.tail in local:
                     extracted.relations.append(
                         (relation.type, local[relation.head], local[relation.tail], relation.confidence)
@@ -440,6 +555,7 @@ class GLiNER2Backend:
         extracted = await asyncio.to_thread(self._extract_sync, chunk)
         self.stats.windows += extracted.windows
         self.stats.infeasible_windows += extracted.infeasible
+        self.stats.value_spans_claimed += extracted.value_spans_claimed
 
         endpoints: list[Endpoint | None] = []
         nodes: dict[str, dict[str, Any]] = {}

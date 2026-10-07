@@ -7,6 +7,8 @@ per-window scoping the real engine has.
 
 from types import SimpleNamespace
 
+from hygm import VALUE_LABELS
+
 
 class FakeSchema:
     def __init__(self):
@@ -24,11 +26,18 @@ class FakeSchema:
 
 class FakeEngine:
     """`surfaces` maps a literal surface to its entity type (case-sensitive, every
-    occurrence); `relations` lists (type, head surface, tail surface, confidence)."""
+    occurrence); `relations` lists (type, head surface, tail surface, confidence).
 
-    def __init__(self, surfaces=None, relations=(), feasible=True):
+    `value_surfaces`/`value_relations`, when given, answer the backend's
+    value-only pass instead: a schema whose relations all point into value
+    types (the test ontologies always give the main pass a relation that doesn't).
+    """
+
+    def __init__(self, surfaces=None, relations=(), feasible=True, value_surfaces=None, value_relations=()):
         self.surfaces = dict(surfaces or {})
         self.relations = list(relations)
+        self.value_surfaces = dict(value_surfaces or {})
+        self.value_relations = list(value_relations)
         self.feasible = feasible
         self.compiled: list[FakeSchema] = []
         self.calls: list[tuple[str, object, object]] = []
@@ -42,8 +51,12 @@ class FakeEngine:
 
     def extract(self, text, schema, config=None):
         self.calls.append((text, schema, config))
+        relations_in = schema[1].relations
+        value_pass = bool(relations_in) and all(set(tail) <= set(VALUE_LABELS) for _, _, tail in relations_in)
+        surfaces = self.value_surfaces if value_pass else self.surfaces
+        known = self.value_relations if value_pass else self.relations
         entities, first = [], {}
-        for surface, entity_type in self.surfaces.items():
+        for surface, entity_type in surfaces.items():
             start = text.find(surface)
             while start != -1:
                 entity = SimpleNamespace(
@@ -59,7 +72,7 @@ class FakeEngine:
                 start = text.find(surface, start + 1)
         relations = [
             SimpleNamespace(type=kind, head=first[head], tail=first[tail], confidence=confidence)
-            for kind, head, tail, confidence in self.relations
+            for kind, head, tail, confidence in known
             if head in first and tail in first
         ]
         return SimpleNamespace(entities=entities, relations=relations, feasible=self.feasible)

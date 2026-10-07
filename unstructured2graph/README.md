@@ -229,6 +229,10 @@ await from_unstructured(..., enforce_ontology=True, ontology_path="my_ontology.y
 - `LightRAGBackend(wrapper)` — wraps an initialized `MemgraphLightRAGWrapper`
 - `unstructured2graph.gliner2_backend.GLiNER2Backend(model_name=..., ontology=None, workspace="gliner2", model=None, entity_confidence_threshold=None, relation_confidence_threshold=None, chunk_size=384, chunk_overlap=64, mention_resolver=resolve_user_mentions, candidate_cap=4096)` — local GLiNER2 model, the default backend; not exported from the top-level package, so `import unstructured2graph` stays light
 
+- `unstructured2graph.gliner2_observer.GLiNER2Observer(model_name=..., model=None, candidate_cap=4096)` — `hygm.Observer` over GLiNER2: runs a candidate model over a sample of `Document`s exactly as the backend would extract it (windows, value-only pass, user resolver) and returns the observation tables `hygm.LlmRecommendationStrategy` prunes from; writes nothing
+
+When the ontology has relations into value types (Duration, Quantity, Money, Date, TimeWindow), `GLiNER2Backend` also runs every window through a small value-only schema, and its value spans take precedence over the main pass's typing of an overlapping span: in a large vocabulary the value types otherwise lose spans to domain types. `stats.value_spans_claimed` counts the overrides.
+
 ### Ontology
 
 - `load_ontology(path)` → `Ontology` — parse an ontology YAML file
