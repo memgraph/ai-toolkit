@@ -301,6 +301,11 @@ def _derive(argv: list[str]) -> int:
     parser.add_argument("--force", action="store_true", help="Derive now, without waiting for the next milestone.")
     parser.add_argument("--seeds", type=int, default=3, help="Candidates to derive and gate (default: 3).")
     parser.add_argument("--model", help="The LLM (default: claude-sonnet-5-5 with Anthropic, gpt-5 with OpenAI).")
+    parser.add_argument(
+        "--threads",
+        type=int,
+        help="CPU threads GLiNER2 may use (default: torch's own, ~6). Lower it when several derive at once.",
+    )
     parsed = parser.parse_args(argv)
 
     _fill_env_from_context_graph_config()
@@ -314,6 +319,10 @@ def _derive(argv: list[str]) -> int:
     from sessions_graph.derive_llm import DerivationLlm, NoLlmConfiguredError
     from unstructured2graph.gliner2_observer import GLiNER2Observer
 
+    if parsed.threads:
+        import torch
+
+        torch.set_num_threads(parsed.threads)
     try:
         llm = DerivationLlm(parsed.model)
     except NoLlmConfiguredError as exc:
