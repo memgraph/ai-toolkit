@@ -188,8 +188,8 @@ def test_entity_id_scopes():
         "c2", "Product", "shoes", "chunk", (0, 5)
     )
     assert _entity_id("c1", "Quantity", "3", "span", (0, 1)) != _entity_id("c1", "Quantity", "3", "span", (5, 6))
-    assert _entity_id("c1", "Location", "paris", "global", (0, 5)) != _entity_id(
-        "c1", "Person", "paris", "global", (0, 5)
+    assert _entity_id("c1", "Location", "paris", "global", (0, 5)) == _entity_id(
+        "c2", "Person", "paris", "global", (0, 5)
     )
 
 
@@ -263,6 +263,24 @@ async def test_global_identity_merges_across_chunks_and_links_every_mention(memg
     assert paris == [{"nodes": 1, "chunks": 2}]
     shoes = memgraph.query("MATCH (n:gliner2 {text: 'shoes'}) RETURN count(n) AS nodes")
     assert shoes == [{"nodes": 2}]  # chunk identity: one per session
+
+
+@pytest.mark.asyncio
+async def test_a_global_name_typed_differently_later_keeps_its_node_and_first_type(memgraph):
+    """What a merge in a learned model relies on: relabelling a type never splits a name's node."""
+    _user(memgraph)
+    await from_documents(
+        [_session(("user", "Paris was lovely", None))], memgraph, _backend(surfaces={"Paris": "Location"})
+    )
+    await from_documents(
+        [_session(("user", "Paris called me", None))], memgraph, _backend(surfaces={"Paris": "Person"})
+    )
+
+    paris = memgraph.query(
+        "MATCH (n:gliner2 {text: 'Paris'})-[:MENTIONED_IN]->(c:Chunk) "
+        "RETURN collect(DISTINCT n.entity_type) AS types, count(DISTINCT n) AS nodes, count(c) AS chunks"
+    )
+    assert paris == [{"types": ["Location"], "nodes": 1, "chunks": 2}]
 
 
 @pytest.mark.asyncio
