@@ -44,7 +44,7 @@ DEFAULT_WINDOW_BUDGET = 100
 
 
 @dataclass(frozen=True)
-class _Resolved:
+class ResolvedMention:
     """One mention as the backend would write it: in which session and turn, typed as resolved."""
 
     session: int
@@ -54,6 +54,23 @@ class _Resolved:
     text: str
     start: int
     end: int
+
+
+@dataclass(frozen=True)
+class Extraction:
+    """What a model extracted from a sample's windows, resolved as the backend would write it.
+
+    Attributes:
+        mentions: Every kept mention.
+        edges: Every relation between two kept, distinct mentions, as (type, head, tail).
+        user_turns: The user turns the windows cover, as (session, turn).
+        windows: How many windows were extracted.
+    """
+
+    mentions: list[ResolvedMention]
+    edges: list[tuple[str, ResolvedMention, ResolvedMention]]
+    user_turns: set[tuple[int, int]]
+    windows: int
 
 
 @dataclass(frozen=True)
@@ -117,7 +134,8 @@ class GLiNER2Observer:
             the user resolver settles on (the user's own mentions as User,
             third parties as Person); dropped mentions aren't counted.
         """
-        mentions, edges, _ = self._extract(model, sample)
+        extraction = self.extract(model, sample)
+        mentions, edges = extraction.mentions, extraction.edges
         return {
             "relations": _relation_tables(model, [(r, h.label, h.text, t.label, t.text) for r, h, t in edges]),
             "types": _type_tables(model, [(m.session, m.label, m.text) for m in mentions]),
@@ -129,7 +147,8 @@ class GLiNER2Observer:
         Args:
             catch_alls: The labels counted as catch-alls (``hygm.CATCH_ALL_LABELS``).
         """
-        mentions, edges, user_turns = self._extract(model, sample)
+        extraction = self.extract(model, sample)
+        mentions, edges, user_turns = extraction.mentions, extraction.edges, extraction.user_turns
         with_fact = {(h.session, h.turn) for _, h, _ in edges if h.role == "user" and h.turn is not None}
         return Measurement(
             catch_all_share=sum(m.label in catch_alls for m in mentions) / max(len(mentions), 1),
@@ -139,11 +158,12 @@ class GLiNER2Observer:
             user_turns=len(user_turns),
         )
 
-    def _extract(
-        self, model: HygmModel, sample: Sequence[Document]
-    ) -> tuple[list[_Resolved], list[tuple[str, _Resolved, _Resolved]], set[tuple[int, int]]]:
-        """Every resolved mention and relation between two kept, distinct mentions, in the sampled
-        windows; and the user turns those windows cover, as (session, turn)."""
+    def extract(self, model: HygmModel, sample: Sequence[Document]) -> Extraction:
+        """Extract the sampled windows of `sample` under `model`, resolved as the backend writes them.
+
+        The windows are at most `window_budget`, evenly spaced over the
+        sessions in order; a session is the document at that index.
+        """
         backend = GLiNER2Backend(
             model_name=self._model_name,
             ontology=Ontology.from_model(model),
@@ -151,8 +171,8 @@ class GLiNER2Observer:
             candidate_cap=self._candidate_cap,
         )
         self._model = backend.engine
-        mentions: list[_Resolved] = []
-        edges: list[tuple[str, _Resolved, _Resolved]] = []
+        mentions: list[ResolvedMention] = []
+        edges: list[tuple[str, ResolvedMention, ResolvedMention]] = []
         chunks = [
             Chunk(
                 text=document.text,
@@ -177,7 +197,7 @@ class GLiNER2Observer:
             if not windows:
                 continue
             extracted = backend._extract_sync(chunk, windows)
-            resolved: list[_Resolved | None] = []
+            resolved: list[ResolvedMention | None] = []
             for mention, segment in extracted.mentions:
                 resolution = backend._resolve(mention, segment, chunk)
                 if resolution.action == "drop":
@@ -188,14 +208,14 @@ class GLiNER2Observer:
                 )
                 turn = document.segments.index(segment) if segment is not None else None
                 role = segment.role if segment is not None else None
-                found = _Resolved(session, turn, role, label, mention.text, mention.start, mention.end)
+                found = ResolvedMention(session, turn, role, label, mention.text, mention.start, mention.end)
                 resolved.append(found)
                 mentions.append(found)
             for relation, head, tail, _ in extracted.relations:
                 head_mention, tail_mention = resolved[head], resolved[tail]
                 if head_mention is not None and tail_mention is not None and head != tail:
                     edges.append((relation, head_mention, tail_mention))
-        return mentions, edges, user_turns
+        return Extraction(mentions=mentions, edges=edges, user_turns=user_turns, windows=len(chosen))
 
 
 def _spread(items: list[Any], budget: int | None) -> list[Any]:

@@ -102,6 +102,13 @@ The same script also drives a disposable *exploration* Memgraph
 (`up`/`hooks-local`/`inspect`/`reconcile`/`down`) for dogfooding against your
 own real Claude Code session — see `./scripts/dev-memgraph.sh --help`.
 
+**Changing how the graph is built by default.** The GLiNER2 checkpoint,
+decoder or caps, hygm's default model, the value pass, the user resolver,
+windowing: any of these changes what every user's graph holds. Run
+`context-graph-eval kg --observe --baseline context-graph/eval/baselines/kg-beam-100k.json`
+before and after, put the comparison in the PR, and save a new baseline in the
+same PR when the change is intended. See the eval README's `kg` section.
+
 ## Code style
 
 - `ruff`, line length 120, target `py310`. Several naming-convention rules

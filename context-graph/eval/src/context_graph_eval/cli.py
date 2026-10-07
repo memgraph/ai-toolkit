@@ -247,8 +247,28 @@ def main(argv: list[str] | None = None) -> int:
     beam.add_argument("--save", type=Path, default=None, help="write every row and the report to this JSON file")
     beam.add_argument("--label", default="beam", help="name recorded in the saved run")
 
+    kg = subcommands.add_parser(
+        "kg",
+        help="measure the default knowledge-graph construction on BEAM, against the committed baseline",
+    )
+    kg.add_argument("--size", default="100K", choices=sorted(BEAM_CHAT_COUNTS), help="BEAM chat size")
+    kg.add_argument("--chats", default="1-20", help="which chats, e.g. '1-20' (the baseline's)")
+    kg.add_argument("--revision", default=BEAM_REVISION, help="pinned upstream BEAM commit")
+    kg.add_argument("--windows", type=int, default=200, help="windows sampled, evenly spread (default 200)")
+    kg.add_argument("--observe", action="store_true", help="also time the open-endpoint pass derivation runs")
+    kg.add_argument(
+        "--baseline",
+        type=Path,
+        default=None,
+        help="compare against this saved run (the committed one: context-graph/eval/baselines/kg-beam-100k.json)",
+    )
+    kg.add_argument("--save", type=Path, default=None, help="write the run (metrics and fingerprints) here")
+    kg.add_argument("--label", default="kg", help="name recorded in the saved run")
+
     args = parser.parse_args(argv)
 
+    if args.command == "kg":
+        return _kg(args)
     if args.command == "build-corpus":
         return _build_corpus(args)
     if args.command == "run":
@@ -353,6 +373,34 @@ def _beam(args) -> int:
             },
         )
         print(f"\nsaved run to {saved}")
+    return 0
+
+
+def _kg(args) -> int:
+    from .convert.beam import fetch_chat
+    from .kg import compare as compare_kg
+    from .kg import load, render, run_kg, save
+
+    chat_ids = parse_chat_ids(args.chats)
+    chats = [fetch_chat(args.size, chat_id, revision=args.revision) for chat_id in chat_ids]
+    print(f"kg: {len(chats)} BEAM {args.size} chats @ {args.revision[:12]}, {args.windows} windows", flush=True)
+    run = run_kg(
+        chats,
+        windows=args.windows,
+        observe=args.observe,
+        meta={
+            "label": args.label,
+            "benchmark": f"beam-{args.size}",
+            "revision": args.revision,
+            "chats": chat_ids,
+            "windows_requested": args.windows,
+        },
+    )
+    print(render(run))
+    if args.baseline:
+        print("\n" + "\n".join(compare_kg(run, load(args.baseline))))
+    if args.save:
+        print(f"\nsaved run to {save(run, args.save)}")
     return 0
 
 
