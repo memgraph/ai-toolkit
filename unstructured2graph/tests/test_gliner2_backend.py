@@ -91,6 +91,7 @@ def test_no_value_relation_means_no_value_pass():
 def test_candidate_caps_default_high_enough_that_user_edges_survive():
     config = _backend()._config
     assert config.relation_pair_cap == config.max_edges_per_type == DEFAULT_CANDIDATE_CAP == 4096
+    assert config.optimizer == "greedy"
     assert GLiNER2Backend(ontology=ONTOLOGY, model=FakeEngine(), candidate_cap=10)._config.relation_pair_cap == 10
 
 

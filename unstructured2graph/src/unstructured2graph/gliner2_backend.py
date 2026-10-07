@@ -59,6 +59,13 @@ logger = logging.getLogger(__name__)
 #: constrained schema, all of them on a permissive one past 11 types (#371).
 DEFAULT_CANDIDATE_CAP = 4096
 
+#: gliner2's decoder: "greedy" picks the highest-scoring edges that satisfy the
+#: constraints; "beam" (gliner2's default) searches 32 partial graphs. On 16
+#: BEAM windows greedy kept 96% of beam's relations on a constrained schema and
+#: 99% on an open one, every User edge and the 25:50/MoMA facts, at 1.6x and 7x
+#: the speed (5.2 s -> 0.74 s a window open, where the candidate cap is large).
+DECODER = "greedy"
+
 #: Surfaces that are the speaker themself. `user` is here because every user
 #: turn carries a "user: " role prefix, which the model types User.
 FIRST_PERSON = frozenset({"i", "me", "my", "myself", "mine", "user", "i'm", "i've"})
@@ -420,6 +427,7 @@ class GLiNER2Backend:
             include_confidence=True,
             relation_pair_cap=candidate_cap,
             max_edges_per_type=candidate_cap,
+            optimizer=DECODER,
         )
 
     def _build_schema(self) -> Any:
