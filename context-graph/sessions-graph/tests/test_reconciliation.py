@@ -263,6 +263,39 @@ async def test_reconcile_session_defaults_to_gliner2_over_hygms_default_model(gr
 
 
 @pytest.mark.asyncio
+async def test_reconcile_session_extracts_under_the_users_adopted_version_and_records_it(
+    graph, memgraph, actions_graph, tmp_path
+):
+    from actions_graph import Session
+    from unstructured2graph import Ontology
+
+    schema = tmp_path / "coding.yaml"
+    schema.write_text(
+        "entity_types:\n"
+        "  - {label: User, description: the user, identity: global}\n"
+        "  - {label: Person, description: someone else, identity: global}\n"
+        "  - {label: Library, description: a code library, identity: global}\n"
+    )
+    actions_graph.create_session(Session(session_id="s-1"))
+    actions_graph.record_message(session_id="s-1", role=MessageRole.USER, content="I maintain pytest.")
+    # What the connector writes when a harness reports the session's user.
+    memgraph.query(
+        "MERGE (u:User {user_id: 'alice'}) WITH u MATCH (s:Session {session_id: 's-1'}) MERGE (u)-[:HAD_SESSION]->(s)"
+    )
+    version = graph.supply_ontology_file("alice", schema)
+
+    fake_chunk = Chunk(text="I maintain pytest.", hash=content_hash("I maintain pytest."))
+    with patch("unstructured2graph.from_documents", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_documents:
+        await graph.reconcile_session(
+            "s-1", lightrag_wrapper=_fake_lightrag_wrapper(), actions_graph=actions_graph, enforce_ontology=True
+        )
+
+    assert mock_from_documents.call_args.kwargs["ontology"] == Ontology.from_model(version.model)
+    rows = memgraph.query("MATCH (s:Session {session_id: 's-1'}) RETURN s.ontology_version AS version")
+    assert rows == [{"version": 1}]
+
+
+@pytest.mark.asyncio
 async def test_reconcile_session_extraction_backend_override_replaces_the_gliner2_default(graph, actions_graph):
     """An explicit backend (e.g. LightRAGBackend) must reach from_documents as-is;
     the GLiNER2 default applies only when extraction_backend is omitted."""

@@ -2,7 +2,14 @@
 
 from .default import CATCH_ALL_LABELS, CORE_LABELS, VALUE_LABELS, default_model, with_core
 from .identifiers import CYPHER_IDENTIFIER_PATTERN, is_valid_identifier, require_valid_identifier
-from .strategies import LlmRecommendationStrategy, ManualStrategy, Observer, OwlImportStrategy
+from .strategies import (
+    LlmRecommendationStrategy,
+    ManualStrategy,
+    Observer,
+    OwlImportStrategy,
+    model_from_mapping,
+    model_to_mapping,
+)
 from .types import IDENTITIES, HygmModel, Identity, NodeType, RelationType
 from .validation import (
     PERSON_LABEL,
@@ -36,6 +43,8 @@ __all__ = [
     "ValidationSeverity",
     "default_model",
     "is_valid_identifier",
+    "model_from_mapping",
+    "model_to_mapping",
     "require_valid_identifier",
     "validate_model",
     "with_core",

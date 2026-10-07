@@ -270,6 +270,9 @@ auto-trigger reconciliation (see
 means "never configured," distinct from an explicit `auto_reconcile = false`.
 `[recall]` is optional too: without it, recall runs with the widths the
 benchmark measured; see [Recall](#recall-memory-for-the-harnesss-model).
+`[ontology]` is optional as well: `path` names a schema file the user's
+sessions are extracted under and `derive` is `extend` (the default) or
+`off`; see sessions-graph's [Ontology versions](../sessions-graph/README.md#ontology-versions).
 
 Manage it with:
 
@@ -279,7 +282,7 @@ agent-context-graph config get memgraph.url
 agent-context-graph config set <key> <value>
 # keys: identity.user_id, memgraph.{url,user,password,database},
 #       llm.{openai_api_key,anthropic_api_key}, reconcile.auto_reconcile,
-#       recall.embedding_model
+#       recall.embedding_model, ontology.{path,derive}
 ```
 
 Environment variables (`MEMGRAPH_URL`, `MEMGRAPH_USER`, `MEMGRAPH_PASSWORD`, `MEMGRAPH_DATABASE`, `AGENT_CONTEXT_GRAPH_USER_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) are consulted **only at bootstrap time** — if set, `bootstrap` persists them into the config file. Exporting them later has no effect on running hooks; use `config set` instead.
