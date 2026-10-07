@@ -54,7 +54,7 @@ def test_extend_adds_the_core_and_pins_the_supplied_types(graph, memgraph, schem
     version = graph.supply_ontology_file("alice", schema)
 
     assert (version.version, version.source, version.derive) == (1, "supplied", "extend")
-    assert version.pinned == ("User", "Person", "Library")
+    assert version.pinned == ("User", "Person", "Library", "maintains")
     assert set(CORE_LABELS) <= set(version.model.node_labels())
     assert graph.adopted_ontology("alice") == version
     assert _chain(memgraph, "alice") == [{"version": 1, "status": "adopted", "adopted": True, "next": None}]
@@ -154,3 +154,16 @@ def test_reconcile_applies_the_configured_file_and_survives_a_broken_one(graph, 
     _sync_configured_ontology(graph)
     assert "not applied, keeping the adopted version" in capsys.readouterr().err
     assert graph.adopted_ontology("alice").version == 1
+
+
+def test_a_version_whose_pool_names_types_it_does_not_hold_reads_back(graph, memgraph):
+    """Retiring `paid` pools it with its User -> Money endpoints; the pool holds neither type."""
+    pool = HygmModel(node_types=(), relation_types=(RelationType("paid", "", ("User", "Person"), ("Money",)),))
+    ontology._adopt(
+        memgraph,
+        ontology.OntologyVersion(
+            user_id="alice", version=1, model=default_model(), source="derived", created_at="t", pool=pool
+        ),
+    )
+
+    assert graph.adopted_ontology("alice").pool == pool

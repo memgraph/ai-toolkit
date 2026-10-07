@@ -281,6 +281,41 @@ whenever its content or `derive` changed since their adopted version came
 from it. A file that doesn't validate is reported and the adopted version
 kept. Removing the setting deletes nothing.
 
+### Learning the ontology from the user's sessions
+
+`sessions-graph derive` grows a user's model from their own sessions. You don't
+normally run it by hand: `sessions-graph reconcile` starts it, detached, when a
+user's count of qualifying sessions reaches 2, 4, 8, … 128, and then every 128.
+A qualifying session is a reconciled one with at least 2 user turns and 1,000
+characters of the user's own words.
+
+```bash
+sessions-graph derive                       # --user defaults to identity.user_id
+sessions-graph derive --force --seeds 1     # now, without waiting for a milestone
+```
+
+One run:
+
+1. Takes an expiring claim on the user, so only one run at a time.
+2. Reads the sessions since the last adopted run, sampled down to 64.
+3. Derives up to three candidates (`hygm.LlmRecommendationStrategy`, observed
+   with local GLiNER2).
+4. Gates each candidate against the current model. From the 16-session run on,
+   the gate uses a held-out quarter of the delta (at most 8 sessions); earlier
+   runs gate in-sample. A candidate passes when it is no worse on catch-all
+   share (mentions typed `Topic`/`Artifact`) and on coverage (user turns with a
+   typed relation).
+
+The best passing candidate becomes the next version. Merged types are then
+relabelled in place, and the run's delta is re-extracted when types were added.
+If nothing passes, the candidates are kept as rejected versions and the delta
+rolls into the next run.
+
+Every version records its changelog, observation counts, retired-type pool and
+the gate's numbers. The LLM is Anthropic when `llm.anthropic_api_key` is set
+(default `claude-sonnet-5-5`), else OpenAI (default `gpt-5`); `--model`
+overrides it. A version with `derive = off` is never derived from.
+
 ## Recall
 
 `recall(user_id, question)` returns what one user's own past sessions hold
