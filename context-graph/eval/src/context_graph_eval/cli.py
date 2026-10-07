@@ -120,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         "runs via a LightRAG wrapper's own LLM regardless of this choice -- GLiNER2 has no "
         "generative capability -- so an LLM key is still needed either way.",
     )
+    _learned_args(run)
     run.add_argument(
         "--retrieval-strategy",
         choices=RETRIEVAL_STRATEGIES,
@@ -219,6 +220,7 @@ def main(argv: list[str] | None = None) -> int:
         "unless the graph holds these chats' sessions, reconciled.",
     )
     beam.add_argument("--extraction-backend", choices=EXTRACTION_BACKENDS, default="lightrag")
+    _learned_args(beam)
     beam.add_argument(
         "--hybrid-lanes",
         default=",".join(HYBRID_LANES),
@@ -323,6 +325,10 @@ def _beam(args) -> int:
             hybrid=RecallConfig.from_mapping({"lanes": args.hybrid_lanes}),
             max_concurrent=args.max_concurrent,
             limit=args.limit,
+            summaries=not args.no_summaries,
+            ontology=args.ontology,
+            derive_seeds=args.derive_seeds,
+            derive_workers=args.derive_workers,
         )
     )
     print(render(run))
@@ -341,10 +347,32 @@ def _beam(args) -> int:
                 "agent_model": _resolved_spec(agent_provider, agent_model_id),
                 "extraction_backend": args.extraction_backend,
                 "hybrid_lanes": args.hybrid_lanes,
+                "ontology": args.ontology,
+                "derive_seeds": args.derive_seeds if args.ontology == "learned" else None,
+                "summaries": not args.no_summaries,
             },
         )
         print(f"\nsaved run to {saved}")
     return 0
+
+
+def _learned_args(parser) -> None:
+    """The reconcile options `run` and `beam` share: summaries, and a learned ontology (map #431)."""
+    parser.add_argument(
+        "--no-summaries",
+        action="store_true",
+        help="skip each session's summary LLM call when reconciling; recall never reads them",
+    )
+    parser.add_argument(
+        "--ontology",
+        choices=("fixed", "learned"),
+        default="fixed",
+        help="'fixed': extract against the LongMemEval vocabulary. 'learned': extract under hygm's default "
+        "model, then derive and adopt each user's own model (sessions-graph derive) before answering. "
+        "GLiNER2 only.",
+    )
+    parser.add_argument("--derive-seeds", type=int, default=1, help="candidates per user derivation (learned)")
+    parser.add_argument("--derive-workers", type=int, default=4, help="user derivations at once (learned)")
 
 
 def _gold_slice(args) -> int:
@@ -614,6 +642,10 @@ def _run(args) -> int:
                 text_search_limit=args.text_search_limit,
                 hybrid=RecallConfig.from_mapping({"lanes": args.hybrid_lanes}),
                 official_judge_model=official_model,
+                summaries=not args.no_summaries,
+                ontology=args.ontology,
+                derive_seeds=args.derive_seeds,
+                derive_workers=args.derive_workers,
             ),
         )
     )
@@ -656,6 +688,7 @@ def _run(args) -> int:
                     # that value rather than treating it as a mismatch.
                     extraction_backend=args.extraction_backend if args.retrieval_strategy == "graph-agent" else "none",
                     retrieval_strategy=args.retrieval_strategy,
+                    ontology=args.ontology,
                     coverage_gate=COVERAGE_GATE if official_model else RUBRIC_GATE,
                     official_judge_model=official_model or "none",
                 ),

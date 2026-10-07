@@ -228,6 +228,8 @@ async def reconcile_batch(
     progress: bool = True,
     sessions_per_call: int = 20,
     gliner2_concurrency: int = 4,
+    summaries: bool = True,
+    ontology: str = "fixed",
 ) -> Reconciled:
     """Reconcile pending sessions in the eval graph.
 
@@ -279,9 +281,17 @@ async def reconcile_batch(
     is meaningless for a backend with no shared busy-lock or worker pool to
     fan out over in the first place.
 
+    ``summaries=False`` skips each session's summary LLM call (no Episode,
+    and no LightRAG wrapper at all on the GLiNER2 path): recall never reads
+    Episodes, so a hybrid benchmark build needs no LLM until it answers.
+
+    ``ontology="learned"`` (GLiNER2 only) extracts each session under its
+    user's adopted ontology version instead of :data:`GLINER2_ONTOLOGY_PATH`
+    -- hygm's default model until ``learned.derive_users`` adopts one.
+
     Raises:
         ValueError: if ``sessions_per_call`` or ``gliner2_concurrency`` is
-            less than 1, or ``extraction_backend`` is not one of
+            less than 1, ``ontology`` is "learned" without GLiNER2, or ``extraction_backend`` is not one of
             :data:`EXTRACTION_BACKENDS` -- all checked up front, before
             querying for pending sessions at all.
     """
@@ -291,6 +301,8 @@ async def reconcile_batch(
         raise ValueError(f"gliner2_concurrency must be >= 1, got {gliner2_concurrency}")
     if extraction_backend not in EXTRACTION_BACKENDS:
         raise ValueError(f"extraction_backend must be one of {EXTRACTION_BACKENDS}, got {extraction_backend!r}")
+    if ontology not in ("fixed", "learned") or (ontology == "learned" and extraction_backend != "gliner2"):
+        raise ValueError(f"ontology must be 'fixed', or 'learned' with gliner2; got {ontology!r}")
 
     import os
 
@@ -303,7 +315,8 @@ async def reconcile_batch(
     _resolve_llm_credentials()
     _resolve_reconciliation_tuning()
 
-    owns_wrapper = lightrag_wrapper is None
+    # The GLiNER2 path needs LightRAG only for the summary; skip it with them.
+    owns_wrapper = lightrag_wrapper is None and (summaries or extraction_backend != "gliner2")
 
     if memgraph_url:
         # Set, not defaulted: this is what LightRAG's stores actually follow.
@@ -332,7 +345,7 @@ async def reconcile_batch(
         await lightrag_wrapper.initialize(working_dir=working_dir, embedding_func=_eval_embedding_func())
 
     gliner2_backend = None
-    if extraction_backend == "gliner2":
+    if extraction_backend == "gliner2" and ontology == "fixed":
         from unstructured2graph import load_ontology
         from unstructured2graph.gliner2_backend import GLiNER2Backend
 
@@ -358,7 +371,7 @@ async def reconcile_batch(
             print(f"  reconciled {done}/{len(session_ids)} ({reconciled} ok, {len(errors)} failed)", flush=True)
 
     try:
-        if gliner2_backend is not None:
+        if extraction_backend == "gliner2":
             # Several sessions at once, sharing one backend: extraction runs in
             # a worker thread per session (GLiNER2Backend.aingest_chunk uses
             # asyncio.to_thread) and each session's summary is an awaited LLM
@@ -375,11 +388,13 @@ async def reconcile_batch(
                     summary = await graph.reconcile_session(
                         session_id,
                         lightrag_wrapper=lightrag_wrapper,
+                        # None under a learned ontology: the user's adopted version.
                         extraction_backend=gliner2_backend,
                         enforce_ontology=True,
                         # The same file the backend extracts against, so label
                         # promotion and the domain/range check can't drift from it.
-                        ontology_path=GLINER2_ONTOLOGY_PATH,
+                        ontology_path=GLINER2_ONTOLOGY_PATH if gliner2_backend is not None else None,
+                        summarize=summaries,
                     )
                 if summary.nonconformant_entities or summary.nonconformant_relations:
                     # Zero by construction on GLiNER2 output (#355): nonzero is a bug.
@@ -395,12 +410,12 @@ async def reconcile_batch(
         else:
             for start in range(0, len(session_ids), sessions_per_call):
                 chunk = session_ids[start : start + sessions_per_call]
-                summaries = await graph.reconcile_sessions_batch(
+                outcomes = await graph.reconcile_sessions_batch(
                     chunk,
                     lightrag_wrapper=lightrag_wrapper,
                     enforce_ontology=True,
                 )
-                _tally(summaries)
+                _tally(outcomes)
                 # Reported per chunk, not per session: this loop still runs
                 # sequentially call-to-call, so a big batch runs for many
                 # minutes.

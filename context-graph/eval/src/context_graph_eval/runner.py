@@ -74,6 +74,13 @@ class RunPlan:
     reuse_graph: bool = False
     judge: Any | None = None
     reconcile_limit: int | None = None
+    #: False skips each session's summary LLM call; recall never reads Episodes.
+    summaries: bool = True
+    #: "fixed" extracts against the LongMemEval vocabulary; "learned" under each
+    #: user's adopted version, derived once per user after reconciling (learned.py).
+    ontology: str = "fixed"
+    derive_seeds: int = 1
+    derive_workers: int = 4
     max_concurrent: int = 4
     coverage_threshold: float = DEFAULT_COVERAGE_THRESHOLD
     #: LongMemEval's own judge (official_judge.py), which decides ``covered``
@@ -261,8 +268,18 @@ async def run_batch(
             limit=plan.reconcile_limit,
             memgraph_url=plan.memgraph_url,
             extraction_backend=plan.extraction_backend,
+            summaries=plan.summaries,
+            ontology=plan.ontology,
         )
         reconciled, failures = outcome.reconciled, outcome.failed
+        if plan.ontology == "learned":
+            from .learned import derive_users
+
+            assert plan.memgraph_url is not None, "a learned-ontology run derives through --memgraph-url"
+            derived = await derive_users(
+                graph.db, memgraph_url=plan.memgraph_url, seeds=plan.derive_seeds, workers=plan.derive_workers
+            )
+            print(f"derivation: {derived.counts()}", flush=True)
 
     read_only = ReadOnlyGraph(graph.db)
     if plan.retrieval_strategy == "hybrid":
