@@ -475,6 +475,16 @@ context-graph-eval beam --size 100K --chats 1-20 --limit 100 \
     --save runs/beam-100k-q100.json
 ```
 
+- **`--no-summaries`** (also on `run`) skips each session's summary LLM
+  call when reconciling. Recall never reads the summaries, so a GLiNER2 build
+  then needs no LLM until it answers.
+- **`--ontology learned`** (also on `run`, GLiNER2 only) measures map #431's
+  learned ontology instead of the fixed LongMemEval vocabulary. Sessions are
+  reconciled under hygm's default model, then each user's own model is
+  derived and adopted (`sessions-graph derive --user U --force --seeds
+  N`, `--derive-workers` users at a time), which re-extracts their sessions
+  under it before any question is asked. The default, `fixed`, keeps runs
+  comparable.
 - **One chat is one user.** Each of its time-anchored batches becomes one
   dated session; every question of the chat is asked of the whole chat.
 - **Nothing converted is committed.** BEAM's data is CC BY-SA, so it is

@@ -120,6 +120,10 @@ async def run_beam(
     hybrid: RecallConfig | None = None,
     max_concurrent: int = 4,
     limit: int | None = None,
+    summaries: bool = True,
+    ontology: str = "fixed",
+    derive_seeds: int = 1,
+    derive_workers: int = 4,
 ) -> BeamRun:
     """Run every probing question of ``chats`` end to end.
 
@@ -138,8 +142,21 @@ async def run_beam(
         _require_reconciled(fixtures, graph=graph, extraction_backend=extraction_backend)
     else:
         inject_batch(fixtures, graph=graph)
-        outcome = await reconcile_batch(graph.db, memgraph_url=memgraph_url, extraction_backend=extraction_backend)
+        outcome = await reconcile_batch(
+            graph.db,
+            memgraph_url=memgraph_url,
+            extraction_backend=extraction_backend,
+            summaries=summaries,
+            ontology=ontology,
+        )
         reconciled, failures = outcome.reconciled, outcome.failed
+        if ontology == "learned":
+            from .learned import derive_users
+
+            derived = await derive_users(
+                graph.db, memgraph_url=memgraph_url, seeds=derive_seeds, workers=derive_workers
+            )
+            print(f"derivation: {derived.counts()}", flush=True)
 
     ensure_recall_ready(graph.db)
     retrieved = await _retrieve_all(goldens, ReadOnlyGraph(graph.db), llm, hybrid or RecallConfig(), max_concurrent)

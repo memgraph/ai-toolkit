@@ -83,6 +83,18 @@ async def test_reconcile_batch_rejects_non_positive_sessions_per_call():
 
 
 @pytest.mark.asyncio
+async def test_reconcile_batch_needs_gliner2_for_a_learned_ontology_and_checks_before_querying():
+    db = MagicMock()
+
+    with pytest.raises(ValueError, match="ontology"):
+        await reconcile_batch(db, extraction_backend="lightrag", ontology="learned")
+    with pytest.raises(ValueError, match="ontology"):
+        await reconcile_batch(db, extraction_backend="gliner2", ontology="adaptive")
+
+    db.query.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_reconcile_batch_rejects_an_unknown_extraction_backend():
     """The Literal type catches this at the call sites we control; this
     guards the runtime path for a value that reached here anyway (a stale
