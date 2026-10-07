@@ -3,13 +3,16 @@
 Turns are the answer store and the extracted graph is an index into them.
 Five lanes, each over the user's own history only:
 
-    turns       messages nearest the question by vector
+    turns       message passages nearest the question by vector
     text        messages matching it by full-text search
     entities    entities nearest it by vector, and each one's facts
     facts       extracted facts nearest it by vector
     user_facts  every fact of the relation types nearest it, from the user's turns
 
-then the turns the facts were read from. The result is the evidence, not an
+then the turns the facts were read from. A turn too long to show whole is
+shown as the passages that matched (:mod:`.passages`): the one a vector
+hit, the one a fact was read from, the one sharing most words with the
+question. The result is the evidence, not an
 answer: the caller's model answers from it. This is the hybrid retrieval the
 eval benchmarks (``context-graph-eval run --retrieval-strategy hybrid``),
 which calls this same code.
@@ -25,10 +28,11 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from typing import Any
 
 from .embeddings import DEFAULT_EMBEDDING_MODEL, EmbeddingUnavailableError, embed_texts
+from .passages import best_passage, excerpt, split_passages
 
 LANES = ("turns", "text", "entities", "facts", "user_facts")
 
@@ -54,7 +58,7 @@ class RecallConfig:
     #: user_facts: how many relation types to pick, and facts to keep across them.
     user_fact_types: int = 2
     user_facts_k: int = 30
-    #: Characters of each turn shown.
+    #: Characters of each turn shown: a longer turn shows its matched passages instead of its opening.
     turn_chars: int = 1500
 
     @classmethod
@@ -92,9 +96,12 @@ class Turn:
     timestamp: str
     speaker: str
     text: str
+    #: Indices of the passages that matched, most relevant first; what a turn too long to show whole shows.
+    passages: tuple[int, ...] = ()
 
     def line(self, chars: int) -> str:
-        return f"TURN [session {self.session_id}, {self.timestamp[:16]}, {self.speaker}]: {self.text[:chars]}"
+        shown = excerpt(self.text, list(self.passages), chars)
+        return f"TURN [session {self.session_id}, {self.timestamp[:16]}, {self.speaker}]: {shown}"
 
 
 @dataclass(frozen=True)
@@ -174,8 +181,10 @@ _OWN_TURNS = (
 _SCORE = "vector_search.cosine_similarity({x}.embedding, $query)"
 
 _TURNS = (
-    _OWN_TURNS + "AND a.embedding_model = $model WITH DISTINCT a "
-    "WITH a, " + _SCORE.format(x="a") + " AS score ORDER BY score DESC LIMIT $k RETURN a.action_id AS id"
+    _OWN_TURNS + "AND a.embedding_model = $model AND a.passage_embeddings IS NOT NULL WITH DISTINCT a "
+    "UNWIND range(0, size(a.passage_embeddings) - 1) AS i "
+    "WITH a, i, vector_search.cosine_similarity(a.passage_embeddings[i], $query) AS score "
+    "ORDER BY score DESC LIMIT $k RETURN a.action_id AS id, i AS passage"
 )
 # An entity is the user's when one of its mentions is from the user's turn:
 # chunks are content-addressed, so another user's identical text shares the chunk.
@@ -270,9 +279,12 @@ def recall(
 
     params = {"user": user_id, "query": query, "model": model}
     turn_ids: list[str] = []
+    vector_hits: dict[str, list[int]] = {}
     facts: list[dict[str, Any]] = []
     if "turns" in config.lanes:
-        turn_ids += [row["id"] for row in db.query(_TURNS, {**params, "k": config.turns_k})]
+        for row in db.query(_TURNS, {**params, "k": config.turns_k}):
+            turn_ids.append(row["id"])
+            vector_hits.setdefault(row["id"], []).append(row["passage"])
     if "text" in config.lanes:
         turn_ids += _text_lane(db, user_id, question, config.text_k)
     if "entities" in config.lanes:
@@ -283,7 +295,7 @@ def recall(
         facts += db.query(_FACTS, {**params, "k": config.facts_k})
     if "user_facts" in config.lanes:
         facts += _user_facts(db, user_id, query, model, config)
-    return _assemble(db, question, turn_ids, facts, config)
+    return _assemble(db, question, turn_ids, facts, config, vector_hits)
 
 
 def _text_lane(db: Any, user_id: str, question: str, k: int) -> list[str]:
@@ -366,17 +378,46 @@ def _text_only(db: Any, user_id: str, question: str, config: RecallConfig, *, re
 
 
 def _assemble(
-    db: Any, question: str, turn_ids: list[str], fact_rows: list[dict[str, Any]], config: RecallConfig
+    db: Any,
+    question: str,
+    turn_ids: list[str],
+    fact_rows: list[dict[str, Any]],
+    config: RecallConfig,
+    vector_hits: dict[str, list[int]] | None = None,
 ) -> Recalled:
     unique: dict[tuple[Any, ...], dict[str, Any]] = {}
     for row in fact_rows:
         unique.setdefault((row["head"], row["type"], row["tail"], row["turn"], row["sentence"]), row)
     # The turns the facts were read from, in the order the lanes found them.
     turn_ids += [row["turn"] for row in unique.values() if row.get("turn")][: config.fact_turns_k]
-    turns = _turns(db, list(dict.fromkeys(turn_ids)))
+    sentences: dict[str, list[str]] = {}
+    for row in unique.values():
+        if row.get("turn") and row.get("sentence"):
+            sentences.setdefault(row["turn"], []).append(row["sentence"])
+    turns = [
+        _with_passages(
+            turn, question, (vector_hits or {}).get(turn.action_id, []), sentences.get(turn.action_id, []), config
+        )
+        for turn in _turns(db, list(dict.fromkeys(turn_ids)))
+    ]
     # Both in time order: a knowledge-update question wants the latest value, a temporal one the sequence.
     facts = sorted((Fact(**row) for row in unique.values()), key=lambda f: f.valid_at or "")
     return Recalled(question=question, turns=turns, facts=facts, turn_chars=config.turn_chars)
+
+
+def _with_passages(
+    turn: Turn, question: str, vector_hits: list[int], sentences: list[str], config: RecallConfig
+) -> Turn:
+    """``turn`` with the passages worth showing: vector hits, then each fact's sentence, then the question's words.
+
+    Only a turn too long to show whole needs them.
+    """
+    if len(turn.text) <= config.turn_chars:
+        return turn
+    passages = split_passages(turn.text)
+    found = [*vector_hits, *(best_passage(passages, sentence) for sentence in sentences)]
+    found.append(best_passage(passages, question, ignore=_STOPWORDS))
+    return replace(turn, passages=tuple(dict.fromkeys(found)))
 
 
 def _turns(db: Any, turn_ids: list[str]) -> list[Turn]:

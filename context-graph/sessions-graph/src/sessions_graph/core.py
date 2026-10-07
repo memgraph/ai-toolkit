@@ -26,6 +26,7 @@ from memgraph_toolbox.api.memgraph import Memgraph
 
 from .embeddings import DEFAULT_EMBEDDING_MODEL, Embedded, EmbeddingUnavailableError, embed_session
 from .models import Memory, validate_content, validate_memory_id, validate_user_id
+from .passages import PASSAGE_SCHEME
 from .recall import TURN_TEXT_INDEX, RecallConfig, Recalled, recall
 from .reconciliation import (
     MAX_SESSION_BATCH_CHARS,
@@ -934,8 +935,9 @@ class SessionsGraph:
             raise
         self._db.query(
             "MATCH (s:Session {session_id: $session_id}) "
-            "SET s.embedding_status = 'completed', s.embedding_model = $model, s.embedding_error = null",
-            params={"session_id": session_id, "model": model},
+            "SET s.embedding_status = 'completed', s.embedding_model = $model, s.embedding_scheme = $scheme, "
+            "s.embedding_error = null",
+            params={"session_id": session_id, "model": model, "scheme": PASSAGE_SCHEME},
         )
         return embedded
 
@@ -956,16 +958,17 @@ class SessionsGraph:
         return recall(self._db, validate_user_id(user_id), question, config=config, model=model)
 
     def get_pending_embedding_sessions(self, *, model: str = DEFAULT_EMBEDDING_MODEL, limit: int = 100) -> list[str]:
-        """Session ids whose embedding failed, never ran, or ran with a model other than *model*."""
+        """Session ids whose embedding failed, never ran, or ran with a model or passage split other than today's."""
         rows = self._db.query(
             """
             MATCH (s:Session)
             WHERE s.embedding_status IS NULL OR s.embedding_status <> 'completed' OR s.embedding_model <> $model
+               OR coalesce(s.embedding_scheme, '') <> $scheme
             RETURN s.session_id AS session_id
             ORDER BY s.session_id
             LIMIT $limit
             """,
-            params={"model": model, "limit": limit},
+            params={"model": model, "limit": limit, "scheme": PASSAGE_SCHEME},
         )
         return [row["session_id"] for row in rows]
 
