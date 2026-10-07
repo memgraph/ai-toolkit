@@ -1,0 +1,49 @@
+# The generic default model (#436): what a user's graph is extracted under
+# until derivation has learned from their sessions, and version 0 of every
+# learned model. Load it with hygm.default_model().
+#
+# - The fixed core (hygm.CORE_LABELS) is User, Person and the value types. It
+#   is never merged or retired and sits outside the active-type cap (#434).
+# - Organization, Location and Event are the generic layer: learned runs may
+#   merge or retire them like any domain type.
+# - Topic and Artifact are the catch-alls (hygm.CATCH_ALL_LABELS). The gate
+#   (#435) measures how much lands in them, so the flag never moves.
+# - Artifact is global, so a tool or library named in many sessions is one
+#   node; the backend keeps an all-lowercase mention of a global type per
+#   chunk, so generic nouns ("the file") don't become hubs. Topic stays per
+#   chunk: as the high-volume catch-all, capitalized subjects would hub.
+# - Every value type has a relation into it, so value facts are never dropped
+#   for want of a relation (#372).
+# - Relation descriptions are documentation: gliner2's joint compiler drops
+#   them, and the name is the only steering surface (#360).
+entity_types:
+  - {label: User, identity: global, description: "the person speaking in the first person -- I, me, my, myself"}
+  - {label: Person, identity: global, description: "another named individual: a family member, friend, colleague, doctor, teacher"}
+  - {label: Duration, identity: span, description: "a length of time: 25:50, 45 minutes, three weeks, 10-12 hours"}
+  - {label: Quantity, identity: span, description: "a count or amount of things: 3, four, 38 subjects, 5 pairs, 220 pages"}
+  - {label: Money, identity: span, description: "an amount of money: $185, $2,500, $400,000"}
+  - {label: Date, identity: span, description: "a calendar date or day: February 14th, Friday, last Thursday, May 6"}
+  - {label: TimeWindow, identity: span, description: "a span of clock time: 8 am - 4 pm, 2 AM, the day shift"}
+  - {label: Organization, identity: global, description: "a company, employer, school, university, team, club or institution"}
+  - {label: Location, identity: global, description: "a place: a city, country, neighbourhood, venue or building"}
+  - {label: Event, identity: chunk, description: "a dated happening: a trip, appointment, meeting, release, race, interview or move"}
+  - {label: Topic, identity: chunk, description: "a subject, idea or skill: a field of work or study, a language, a technique, a concept"}
+  - {label: Artifact, identity: global, description: "a thing made or used: a tool, library, file, document, product or device"}
+relation_types:
+  - {label: works_for, description: "is employed by or works at", start_labels: [User, Person], end_labels: [Organization]}
+  - {label: lives_in, description: "resides in or has moved to", start_labels: [User, Person], end_labels: [Location]}
+  - {label: visited, description: "travelled to or went to", start_labels: [User, Person], end_labels: [Location]}
+  - {label: knows, description: "is related to or acquainted with", start_labels: [User, Person], end_labels: [Person]}
+  - {label: attended, description: "took part in or was present at", start_labels: [User, Person], end_labels: [Event]}
+  - {label: works_on, description: "builds, writes or is responsible for", start_labels: [User, Person], end_labels: [Artifact, Topic]}
+  - {label: uses, description: "uses, owns or relies on", start_labels: [User, Person, Organization], end_labels: [Artifact]}
+  - {label: prefers, description: "likes, favours or chooses", start_labels: [User, Person], end_labels: [Artifact, Topic, Location]}
+  - {label: studied, description: "studied, learned or graduated in/from", start_labels: [User, Person], end_labels: [Topic, Organization]}
+  - {label: located_in, description: "is situated or takes place in", start_labels: [Organization, Event], end_labels: [Location]}
+  - {label: happened_on, description: "took place on this date", start_labels: [Event], end_labels: [Date]}
+  - {label: lasted, description: "took or went on for this much time", start_labels: [Event], end_labels: [Duration]}
+  - {label: spent_time, description: "spent this much time on something", start_labels: [User, Person], end_labels: [Duration]}
+  - {label: costs, description: "has this price", start_labels: [Artifact, Event], end_labels: [Money]}
+  - {label: paid, description: "paid or spent this amount", start_labels: [User, Person], end_labels: [Money]}
+  - {label: has_count, description: "has or needs this many of something", start_labels: [User, Person, Organization, Artifact, Event], end_labels: [Quantity]}
+  - {label: scheduled_at, description: "is scheduled for this time of day", start_labels: [User, Person, Event], end_labels: [TimeWindow]}
