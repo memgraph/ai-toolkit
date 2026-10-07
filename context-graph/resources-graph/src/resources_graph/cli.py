@@ -1,7 +1,8 @@
 """``resources-graph``: run the Sweep, or create the schema.
 
-Memgraph and the GitHub token come from the Context Graph config file
-(``agent-context-graph config set github.token <token>``), the same file hooks read.
+Memgraph comes from the Context Graph config file, the same file hooks read.
+The Sweep fetches with the user's own ``gh`` login, or ``github.token`` from
+that file when it is set.
 """
 
 from __future__ import annotations
@@ -44,7 +45,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "setup":
         print("resources-graph schema ready")
         return 0
-    return _sweep(graph, config.github_token, limit=args.limit, quiet=args.quiet)
+    from .github import resolve_token
+
+    return _sweep(graph, resolve_token(config.github_token), limit=args.limit, quiet=args.quiet)
 
 
 def _sweep(graph: ResourcesGraph, token: str | None, *, limit: int | None, quiet: bool) -> int:
@@ -53,8 +56,8 @@ def _sweep(graph: ResourcesGraph, token: str | None, *, limit: int | None, quiet
 
     if not token:
         print(
-            "No GitHub token configured, so nothing can be fetched; Touches stay pending.\n"
-            "Set one with: agent-context-graph config set github.token",
+            "No GitHub credentials, so nothing can be fetched; Touches stay pending.\n"
+            "Log in with `gh auth login`, or set a token: agent-context-graph config set github.token",
             file=sys.stderr,
         )
         return 1

@@ -28,9 +28,10 @@ Resources belong to no user and are shared; a Touch is private to the user whose
 
 ```bash
 pip install 'resources-graph[agent-context-graph]'
-agent-context-graph config set github.token   # prompts; any token that can read public repos
-resources-graph setup                          # indexes and constraints
+resources-graph setup   # indexes and constraints
 ```
+
+The Sweep fetches with your existing `gh` login (`gh auth login`) — the same access your agent reads GitHub with. GitHub's GraphQL API needs a token even for public data. On a machine without `gh`, set one instead: `agent-context-graph config set github.token` (it prompts; it also wins over the `gh` login when set).
 
 Enable the connector in your hooks with `--connector resources-graph`, then sweep whenever you like:
 
@@ -40,4 +41,4 @@ resources-graph sweep
 
 ## Not yet
 
-Listings (`gh issue list`), links between Resources and to the Actions that caused a Touch, refresh by conditional requests, a token-less path, and the pre-fetch nudge are the next slices of [PRD #464](https://github.com/memgraph/ai-toolkit/issues/464).
+Listings (`gh issue list`), links between Resources and to the Actions that caused a Touch, refresh by conditional requests, a path without any credentials, and the pre-fetch nudge are the next slices of [PRD #464](https://github.com/memgraph/ai-toolkit/issues/464).

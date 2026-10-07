@@ -99,7 +99,7 @@ class HookConfig:
     ontology_path: str | None = None
     #: ``[ontology] derive``: "extend" (the default) or "off"; see sessions-graph's ontology module.
     ontology_derive: str | None = None
-    #: ``[github] token``: what resources-graph's Sweep fetches public GitHub content with.
+    #: ``[github] token``: overrides the ``gh`` login resources-graph's Sweep otherwise fetches with.
     github_token: str | None = None
 
 

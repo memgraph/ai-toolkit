@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from resources_graph.address import Address
-from resources_graph.github import GitHubSource, UnresolvedError
+from resources_graph.github import GitHubSource, UnresolvedError, resolve_token
 
 
 def item(number: int) -> Address:
@@ -74,3 +76,36 @@ def test_rate_limit_is_an_unresolved_reason():
     with pytest.raises(UnresolvedError) as raised:
         GitHubSource(limited).fetch_item(item(1))
     assert raised.value.reason == "rate_limited"
+
+
+@pytest.fixture()
+def gh_on_path(monkeypatch, tmp_path):
+    """Put an executable ``gh`` that prints ``output`` and exits ``code`` first on PATH."""
+
+    def install(output: str, code: int = 0) -> None:
+        gh = tmp_path / "gh"
+        gh.write_text(f"#!/bin/sh\nprintf '%s' '{output}'\nexit {code}\n")
+        gh.chmod(0o755)
+        monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+
+    return install
+
+
+def test_token_defaults_to_the_users_gh_login(gh_on_path):
+    gh_on_path("gho_from_gh_login\n")
+    assert resolve_token(None) == "gho_from_gh_login"
+
+
+def test_configured_token_wins_over_the_gh_login(gh_on_path):
+    gh_on_path("gho_from_gh_login")
+    assert resolve_token("ghp_configured") == "ghp_configured"
+
+
+def test_no_token_when_gh_is_logged_out(gh_on_path):
+    gh_on_path("", code=1)
+    assert resolve_token(None) is None
+
+
+def test_no_token_without_gh(monkeypatch, tmp_path):
+    monkeypatch.setenv("PATH", str(tmp_path))
+    assert resolve_token(None) is None

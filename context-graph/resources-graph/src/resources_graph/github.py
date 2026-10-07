@@ -1,13 +1,13 @@
 """The Sweep's GitHub source: canonical, public-only content over GraphQL.
 
-Only the Sweep calls this — never a hook, never the ``resource`` tool. The
-token comes from the config file (``github.token``); GitHub's GraphQL API
-needs one.
+Only the Sweep calls this — never a hook, never the ``resource`` tool.
+GitHub's GraphQL API needs a token even for public data; see :func:`resolve_token`.
 """
 
 from __future__ import annotations
 
 import json
+import subprocess
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -89,6 +89,24 @@ class GitHubAuthError(Exception):
     """The configured token was rejected; no Touch can be resolved until it is fixed."""
 
 
+def resolve_token(configured: str | None) -> str | None:
+    """The token the Sweep fetches with: ``github.token`` when set, else the user's own ``gh`` login.
+
+    The ``gh`` login is the access the agent already reads GitHub with, so most
+    users configure nothing. Asking ``gh`` is fine here and would not be in a
+    hook: the Sweep is a command the user runs, never a hook subprocess.
+    Returns None when neither is available.
+    """
+    if configured:
+        return configured
+    try:
+        result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, subprocess.TimeoutExpired):  # gh not installed, or hung on a keyring prompt
+        return None
+    token = result.stdout.strip()
+    return token if result.returncode == 0 and token else None
+
+
 def http_transport(token: str, *, timeout: float = 30.0) -> Transport:
     """A transport that POSTs to GitHub's GraphQL endpoint with ``token``."""
 
@@ -107,7 +125,7 @@ def http_transport(token: str, *, timeout: float = 30.0) -> Transport:
                 return json.loads(response.read())
         except urllib.error.HTTPError as exc:
             if exc.code == 401:
-                raise GitHubAuthError("GitHub rejected the configured github.token") from exc
+                raise GitHubAuthError("GitHub rejected the token (github.token, or the gh login)") from exc
             if exc.code in (403, 429):
                 raise UnresolvedError("rate_limited", f"HTTP {exc.code}") from exc
             raise

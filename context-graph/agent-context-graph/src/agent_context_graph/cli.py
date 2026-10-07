@@ -600,8 +600,8 @@ def _check_connector(connector_name: str) -> _CheckResult:
                 database=env["MEMGRAPH_DATABASE"],
             )
             version = _package_version("resources-graph")
-            # Touches are recorded without a token; only the Sweep needs one to fetch.
-            token = "set" if load_config().github_token else "unset (the Sweep can't fetch until github.token is set)"
+            # Touches are recorded without a token; the Sweep falls back to the user's gh login.
+            token = "set" if load_config().github_token else "unset (the Sweep uses the gh login)"
             return {
                 "name": "connector:resources-graph",
                 "ok": True,
