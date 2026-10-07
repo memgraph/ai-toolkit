@@ -1,8 +1,14 @@
 """hygm: a shared graph schema/ontology model, and the strategies that produce one."""
 
-from .default import CATCH_ALL_LABELS, CORE_LABELS, VALUE_LABELS, default_model, with_core
+from .default import default_model, with_core
 from .identifiers import CYPHER_IDENTIFIER_PATTERN, is_valid_identifier, require_valid_identifier
+from .labels import CATCH_ALL_LABELS, CORE_LABELS, VALUE_LABELS
 from .strategies import (
+    Change,
+    Derivation,
+    DerivationError,
+    DerivationLimits,
+    Llm,
     LlmRecommendationStrategy,
     ManualStrategy,
     Observer,
@@ -29,8 +35,13 @@ __all__ = [
     "PERSON_LABEL",
     "USER_LABEL",
     "VALUE_LABELS",
+    "Change",
+    "Derivation",
+    "DerivationError",
+    "DerivationLimits",
     "HygmModel",
     "Identity",
+    "Llm",
     "LlmRecommendationStrategy",
     "ManualStrategy",
     "NodeType",

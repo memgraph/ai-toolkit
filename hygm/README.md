@@ -18,8 +18,21 @@ Strategies:
 - `OwlImportStrategy`: a standard OWL ontology. `owl:Class` becomes a node type,
   `owl:ObjectProperty` a relation type, and `rdfs:domain`/`rdfs:range` (one
   class or an `owl:unionOf`) the start/end labels. Needs `hygm[owl]` (rdflib).
-- `LlmRecommendationStrategy`: derives a model from a corpus sample. Interface
-  only for now.
+- `LlmRecommendationStrategy`: grows a model from a delta of new sessions. One
+  `derive()` run takes the current model and returns a candidate
+  (`Derivation`) with a changelog, observation counts and a pool of retired
+  types:
+  - LLM propose calls over batches of the delta, told what the model already has;
+  - one consolidate call that may merge synonyms (vetoed on protected labels,
+    differing identities or incompatible endpoints);
+  - a permissive observe pass through a caller-supplied `Observer`;
+  - an LLM prune that sets new relations' endpoints from what was observed;
+  - retirement to the pool below a share threshold (once there's enough
+    evidence) or past the active-type cap (~40 node, ~60 relation types).
+
+  The core, the catch-alls and pinned labels are never merged away or retired.
+  You supply the LLM as `llm(system, prompt, schema) -> reply`; hygm takes no
+  SDK.
 
 The generic default model ships with the package:
 
