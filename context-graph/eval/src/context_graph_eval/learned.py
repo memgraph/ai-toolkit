@@ -59,12 +59,14 @@ async def derive_users(db, *, memgraph_url: str, seeds: int, workers: int, progr
     env.setdefault("MEMGRAPH_DATABASE", "memgraph")
     derived, done = Derived(), 0
     limiter = asyncio.Semaphore(workers)
+    # Each process would take ~6 torch threads; several at once oversubscribe the cores.
+    threads = str(max(1, (os.cpu_count() or workers) // workers))
 
     async def _one(user_id: str) -> None:
         nonlocal done
         async with limiter:
             process = await asyncio.create_subprocess_exec(
-                *command, "derive", "--user", user_id, "--force", "--seeds", str(seeds),
+                *command, "derive", "--user", user_id, "--force", "--seeds", str(seeds), "--threads", threads,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env,
             )  # fmt: skip
             out, err = await process.communicate()
