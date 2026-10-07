@@ -1,5 +1,7 @@
 """GLiNER2Observer: the tables derivation prunes from, with the engine stood in for."""
 
+from typing import Any, cast
+
 from hygm import HygmModel, NodeType, RelationType
 from unstructured2graph import Document, Segment
 from unstructured2graph.gliner2_observer import GLiNER2Observer
@@ -108,7 +110,7 @@ def test_a_window_budget_reads_an_even_spread_and_measures_only_what_it_read():
 
     measured = GLiNER2Observer(model=engine, window_budget=3).measure(MODEL, sample, catch_alls=())
 
-    main_calls = [call for call in engine.calls if not call[1][1].relations or call[1][1].relations[0][0] == "visited"]
-    assert len(main_calls) == 3  # three of the ten windows, not all of them
+    main_schema = engine.compiled[0]  # the main pass's; the value-only pass compiles second
+    assert sum(schema[1] is main_schema for _, schema, _ in cast("list[Any]", engine.calls)) == 3  # 3 of 10 windows
     assert measured.user_turns == 2  # windows 0, 4 (user turns) and 9 (an assistant turn)
     assert measured.coverage == 1.0
