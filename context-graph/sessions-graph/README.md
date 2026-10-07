@@ -336,7 +336,7 @@ Five lanes, each over the user's own history only:
 | `text` | messages matching it by full-text search |
 | `entities` | entities nearest it by vector, and each one's facts |
 | `facts` | extracted facts nearest it by vector |
-| `user_facts` | the user's facts of the relation types nearest it, across all sessions |
+| `user_facts` | every fact of the relation types nearest it, read from the user's turns across all sessions, whatever its head. Types rank by name and description from the user's ontology version, and retired types stay readable |
 
 Then the turns the facts were read from are added. Turns come first, then
 facts, each group in time order. This is the hybrid retrieval
