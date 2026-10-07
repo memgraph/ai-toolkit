@@ -8785,7 +8785,7 @@ wheels = [
 
 [[package]]
 name = "structured2graph"
-version = "0.2.2"
+version = "0.3.0"
 source = { editable = "agents/sql2graph" }
 dependencies = [
     { name = "anthropic" },
