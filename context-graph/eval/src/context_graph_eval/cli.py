@@ -111,10 +111,9 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument(
         "--extraction-backend",
         choices=EXTRACTION_BACKENDS,
-        default="lightrag",
-        help="what reconciliation uses to extract entities: 'lightrag' (default, LLM-based) or "
-        "'gliner2' (local, LLM-free -- requires 'pip install gliner2[local]>=2.0.0' manually, see "
-        "unstructured2graph.gliner2_backend's module docstring). Narrative summarization always "
+        default="gliner2",
+        help="what reconciliation uses to extract entities: 'gliner2' (default, local and LLM-free, "
+        "over the LongMemEval vocabulary) or 'lightrag' (LLM-based). Narrative summarization always "
         "runs via a LightRAG wrapper's own LLM regardless of this choice -- GLiNER2 has no "
         "generative capability -- so an LLM key is still needed either way.",
     )

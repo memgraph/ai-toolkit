@@ -132,8 +132,9 @@ The query string follows [Tantivy query syntax](https://docs.rs/tantivy/latest/t
 A session's Actions Graph content (Messages, ToolCalls, ToolResults) and
 Memories are mostly opaque text today. Session reconciliation runs that content
 through [unstructured2graph](../../unstructured2graph/)'s chunk + entity-extraction
-pipeline -- LightRAG by default, overridable to another `ExtractionBackend`
-(e.g. GLiNER2) via `reconcile_session(..., extraction_backend=...)` -- turning
+pipeline -- GLiNER2 over `hygm`'s default model by default, overridable to
+another `ExtractionBackend` (e.g. LightRAG) via
+`reconcile_session(..., extraction_backend=...)` -- turning
 it into queryable graph entities linked
 back to the session that produced them — see
 [`CONTEXT.md`](./CONTEXT.md#language) for the **Session Reconciliation** /
@@ -222,18 +223,19 @@ print(summary.status, summary.texts_considered, summary.texts_deduped, summary.s
 
 Label promotion is opt-in and mirrors unstructured2graph's flags: the default
 (`enforce_ontology=False, promote_labels=False`) leaves entities under the
-LightRAG workspace label with an `entity_type` property only; `enforce_ontology=True`
+backend's workspace label (`gliner2` by default) with an `entity_type` property only; `enforce_ontology=True`
 restricts promotion to an ontology (pass `ontology_path=` for a custom one);
 `promote_labels=True` promotes every `entity_type` with no vocabulary. See
 [unstructured2graph § entity typing](../../unstructured2graph/README.md#entity-typing--ontology).
 
-Extracted entities land in the same LightRAG workspace as any documents
-ingested via unstructured2graph by default, so a person or concept mentioned
-both in a session and in an ingested document merges into one node. Pass
-`entity_workspace=` explicitly to `reconcile_session()` to isolate them instead.
+Extracted entities land in the backend's workspace, the same one any
+documents ingested via unstructured2graph with that backend use, so a person
+or concept mentioned both in a session and in an ingested document merges
+into one node. Pass `entity_workspace=` explicitly to `reconcile_session()` to
+isolate them instead.
 
-Content is deduplicated by hash before ever reaching the LLM, so re-running a
-sweep over already-processed content never re-bills it. Each reconcilable unit
+Content is deduplicated by hash before extraction, so re-running a sweep over
+already-processed content never re-extracts it or re-bills the summary. Each reconcilable unit
 (a message, tool call, tool result, or memory) is truncated to
 `MAX_RECONCILABLE_CHARS` (8000) before extraction, but a chatty session still
 has many units, so the first run can be substantial. Consider this before
@@ -338,7 +340,7 @@ sessions-graph embed --pending --limit 50 --model BAAI/bge-small-en-v1.5
 | `search_memories(user_id, query, *, limit=10)` | Full-text search over Memory content. |
 | `update_memory(memory_id, content)` | Replace the content of an existing Memory. Returns `None` if not found. |
 | `delete_memory(memory_id)` | Remove a Memory and all its relationships. |
-| `async reconcile_session(session_id, *, lightrag_wrapper, extraction_backend=None, actions_graph=None, entity_workspace=None, promote_labels=False, enforce_ontology=False, ontology_path=None, embedding_model=DEFAULT_EMBEDDING_MODEL)` | Run session reconciliation for one session, then embed what it wrote (see [Embeddings for recall](#embeddings-for-recall)). `extraction_backend` overrides entity extraction to another `ExtractionBackend` (e.g. GLiNER2); `lightrag_wrapper` is always required regardless, since the narrative summary is always produced via its LLM. `promote_labels`/`enforce_ontology`/`ontology_path` control entity-type label promotion (see above). Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
+| `async reconcile_session(session_id, *, lightrag_wrapper, extraction_backend=None, actions_graph=None, entity_workspace=None, promote_labels=False, enforce_ontology=False, ontology_path=None, embedding_model=DEFAULT_EMBEDDING_MODEL)` | Run session reconciliation for one session, then embed what it wrote (see [Embeddings for recall](#embeddings-for-recall)). `extraction_backend` overrides entity extraction to another `ExtractionBackend` (default: GLiNER2 over `hygm.default_model()`, built once per instance); `lightrag_wrapper` is always required regardless, since the narrative summary is always produced via its LLM. `promote_labels`/`enforce_ontology`/`ontology_path` control entity-type label promotion (see above). Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
 | `get_pending_reconciliation_sessions(*, limit=100)` | Return session IDs marked `reconciliation_status = 'pending'`. |
 | `recall(user_id, question, *, config=None, model=DEFAULT_EMBEDDING_MODEL)` | What the user's own sessions hold about `question`, as `Recalled` (turns and facts; `lines()`, `render(today)`, `to_json()`). See [Recall](#recall). |
 | `embed_session(session_id, *, model=DEFAULT_EMBEDDING_MODEL)` | Embed the session's messages, entities and edges that lack a vector from `model`, inside Memgraph. Returns counts as `Embedded`; records the outcome on the Session. Raises `EmbeddingUnavailableError` without MAGE or when the model can't load. |

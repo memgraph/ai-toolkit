@@ -8,6 +8,8 @@ Requires:
   memgraph-toolbox's Python-level defaults: LightRAG's own storage backends
   read these directly and raise (not skip) if MEMGRAPH_URL is unset, even
   when a real Memgraph is reachable at the default bolt://localhost:7687.
+- The GLiNER2 checkpoint, downloaded on first use: extraction is the default
+  GLiNER2 backend, run for real. Only the session summary uses the LLM.
 - OPENAI_API_KEY -- skips if unset (mirrors skills-graph's
   tests/test_connector_e2e.py `requires_openai_key` convention).
 - The `sessions-graph[reconciliation]` extra (actions-graph + unstructured2graph).
@@ -104,8 +106,8 @@ async def test_reconcile_session_extracts_real_entities_from_session_content(
     )
     assert has_chunk_rows[0]["count"] > 0
 
-    workspace = lightrag_wrapper.get_lightrag().chunk_entity_relation_graph.workspace
-    entity_rows = memgraph.query(f"MATCH (:{workspace})-[:MENTIONED_IN]->(:Chunk) RETURN count(*) AS count")
+    # GLiNER2, the default backend, writes entities under its own workspace label.
+    entity_rows = memgraph.query("MATCH (:gliner2)-[:MENTIONED_IN]->(:Chunk) RETURN count(*) AS count")
     assert entity_rows[0]["count"] > 0
 
     # Re-reconciling the same session must update the one Episode, not accumulate another.

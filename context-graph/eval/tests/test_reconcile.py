@@ -208,8 +208,8 @@ async def test_reconcile_batch_gliner2_mode_reconciles_through_reconcile_session
 
 @pytest.mark.asyncio
 async def test_reconcile_batch_lightrag_mode_still_uses_the_batch_pipeline(eval_graph, monkeypatch):
-    """Regression guard alongside the gliner2 test above: the default path
-    must be untouched by extraction_backend's introduction."""
+    """Regression guard alongside the gliner2 test above: LightRAG, no longer
+    the default, still runs through the batch pipeline when asked for."""
     from context_graph_eval.inject import inject_batch
 
     from lightrag_memgraph import MemgraphLightRAGWrapper
@@ -222,7 +222,11 @@ async def test_reconcile_batch_lightrag_mode_still_uses_the_batch_pipeline(eval_
 
     try:
         outcome = await reconcile_batch(
-            eval_graph._db, memgraph_url=EVAL_MEMGRAPH_URL, lightrag_wrapper=wrapper, progress=False
+            eval_graph._db,
+            memgraph_url=EVAL_MEMGRAPH_URL,
+            lightrag_wrapper=wrapper,
+            extraction_backend="lightrag",
+            progress=False,
         )
     finally:
         await wrapper.afinalize()

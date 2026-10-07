@@ -2,19 +2,12 @@
 
 Uses GLiNER2 (https://github.com/fastino-ai/GLiNER2, pip package `gliner2`),
 a small open-source model that runs entirely locally (no GPU required, no
-network calls, no API key) and does joint entity+relation extraction. This
-module is not imported by unstructured2graph/__init__.py and never imports
-`gliner2` at module scope, so `import unstructured2graph` never requires the
-optional `gliner2` dependency -- only constructing a GLiNER2Backend does.
+network calls, no API key) and does joint entity+relation extraction. It is
+the project's default extraction backend. `gliner2` is imported only when a
+GLiNER2Backend is constructed, so `import unstructured2graph` stays light.
 
-gliner2 is deliberately NOT declared as a pyproject.toml extra of this
-package -- gliner2[local] hard-pins transformers<5, which conflicts with
-this workspace's transformers>=5.0.0rc3 floor (the fix for CVE-2026-1839,
-an RCE in transformers.Trainer's checkpoint loading -- see
-GHSA-69w3-r845-3855). Install it manually in your own environment:
-`pip install 'gliner2[local]>=2.0.0'`. Doing so accepts that CVE's exposure
-for your environment only; it never affects the workspace-managed lock or
-anyone who doesn't opt in.
+gliner2[local] pins transformers<5, below the CVE-2026-1839 floor the
+workspace used to hold; restoring it is tracked in #443.
 
 The typed relation model (map #344) this backend implements:
 
@@ -46,7 +39,6 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Literal
 
 from hygm import PERSON_LABEL, USER_LABEL, require_valid_identifier
@@ -318,8 +310,6 @@ class GLiNER2Backend:
 
         Raises:
             ValueError: if `workspace` isn't a valid Cypher identifier.
-            ImportError: if `model` is omitted (or is a bare model to wrap)
-                and `gliner2` isn't installed.
         """
         require_valid_identifier(workspace, "workspace")
         self._workspace = workspace
@@ -339,32 +329,21 @@ class GLiNER2Backend:
     def _engine(model: Any | None, model_name: str) -> Any:
         if model is not None and all(hasattr(model, a) for a in ("create_schema", "compile_schema", "extract")):
             return model
-        try:
-            # ty can't resolve this: gliner2 is deliberately not part of the
-            # workspace's managed dependency graph (see the module docstring).
-            from gliner2 import AutoExtractor  # ty: ignore[unresolved-import]
-            from gliner2.joint_ie import JointIEEngine  # ty: ignore[unresolved-import]
-        except ImportError as e:
-            raise ImportError(
-                "gliner2 is required for GLiNER2Backend; install it manually with "
-                "`pip install 'gliner2[local]>=2.0.0'` (see this module's docstring for why "
-                "it's not a pyproject.toml extra)"
-            ) from e
+        from gliner2 import AutoExtractor
+        from gliner2.joint_ie import JointIEEngine
+
         return JointIEEngine(model if model is not None else AutoExtractor.from_pretrained(model_name))
 
     @staticmethod
     def _make_config(candidate_cap: int) -> Any:
-        options = {
-            "include_spans": True,
-            "include_confidence": True,
-            "relation_pair_cap": candidate_cap,
-            "max_edges_per_type": candidate_cap,
-        }
-        try:
-            from gliner2.joint_ie import JointIEConfig  # ty: ignore[unresolved-import]
-        except ImportError:  # only reachable with an injected engine, which takes any config object
-            return SimpleNamespace(**options)
-        return JointIEConfig(**options)
+        from gliner2.joint_ie import JointIEConfig
+
+        return JointIEConfig(
+            include_spans=True,
+            include_confidence=True,
+            relation_pair_cap=candidate_cap,
+            max_edges_per_type=candidate_cap,
+        )
 
     def _build_schema(self) -> Any:
         """The ontology as a JointSchema. An unconstrained endpoint becomes every declared

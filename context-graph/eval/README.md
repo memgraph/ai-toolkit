@@ -53,12 +53,12 @@ keeps that role's default provider (#329 -- the judge stays on a different
 provider from the pipeline by default, but a shared provider is a legitimate
 experiment, flagged loudly rather than refused).
 
-`--extraction-backend {lightrag,gliner2}` (default `lightrag`) picks what
+`--extraction-backend {gliner2,lightrag}` (default `gliner2`) picks what
 reconciliation uses to extract entities -- `gliner2` is local and LLM-free
-(`unstructured2graph.gliner2_backend.GLiNER2Backend`), needs `pip install
-'gliner2[local]>=2.0.0'` installed manually (see that module's own
-docstring), and still needs an LLM key regardless: narrative summarization
-has no GLiNER2 equivalent and always runs through the LightRAG wrapper's LLM.
+(`unstructured2graph.gliner2_backend.GLiNER2Backend`, over the LongMemEval
+vocabulary), and an LLM key is still needed regardless: narrative
+summarization has no GLiNER2 equivalent and always runs through the LightRAG
+wrapper's LLM.
 `RunMeta` records which backend built a saved run, and `compare()` refuses
 across a mismatch the same way it refuses across a judge or tokenizer
 mismatch.

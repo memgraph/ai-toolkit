@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from actions_graph import ActionsGraph
-    from unstructured2graph import Document, ExtractionBackend
+    from unstructured2graph import Document, ExtractionBackend, Ontology
 
 _FULLTEXT_INDEX = "memory_content_index"
 
@@ -104,6 +104,7 @@ class SessionsGraph:
             **kwargs: Forwarded to :class:`Memgraph` when *memgraph* is ``None``.
         """
         self._db = memgraph or Memgraph(**kwargs)
+        self._extraction_backend: ExtractionBackend | None = None
 
     # ------------------------------------------------------------------
     # Schema setup
@@ -413,8 +414,8 @@ class SessionsGraph:
         Pulls all reconcilable Message/ToolCall/ToolResult text recorded for
         *session_id* in Actions Graph, plus this session's Memories, dedupes
         by content hash, and runs the result through unstructured2graph's
-        chunk + entity-extraction pipeline -- LightRAG by default, or
-        whatever ``extraction_backend`` overrides it to (e.g. GLiNER2).
+        chunk + entity-extraction pipeline -- GLiNER2 over hygm's default
+        model by default, or whatever ``extraction_backend`` overrides it to.
         Resulting Chunk nodes are linked back to their source Action/Memory
         node via ``HAS_CHUNK`` so entities trace back to the session that
         produced them.
@@ -444,11 +445,10 @@ class SessionsGraph:
                 is always produced via this wrapper's own LLM
                 (``summarize_session_texts``), since summarization is a
                 generative task no non-LLM backend (e.g. GLiNER2) can do.
-            extraction_backend: Overrides what runs entity extraction, for a
-                backend other than LightRAG (e.g. ``GLiNER2Backend``).
-                Defaults to ``LightRAGBackend(lightrag_wrapper)`` -- the
-                original, only behavior before this parameter existed -- so
-                every existing caller is unaffected.
+            extraction_backend: Overrides what runs entity extraction (e.g.
+                ``LightRAGBackend(lightrag_wrapper)``). Defaults to a
+                ``GLiNER2Backend`` over ``hygm.default_model()``, built once per
+                SessionsGraph since loading the model is the slow part.
             actions_graph: An ``ActionsGraph`` instance sharing this graph's
                 Memgraph connection. Constructed automatically if omitted.
             entity_workspace: Passed through to ``unstructured2graph.from_texts``.
@@ -461,8 +461,9 @@ class SessionsGraph:
                 enforce_ontology is also True. Both default to False, matching
                 unstructured2graph's own default: no label promotion unless
                 explicitly requested.
-            enforce_ontology: Passed through to ``unstructured2graph.from_texts``.
-                Restricts entity_type promotion to ontology_path's vocabulary (or
+            enforce_ontology: Passed through to ``unstructured2graph.from_documents``.
+                Restricts entity_type promotion to ontology_path's vocabulary (or,
+                without one, the vocabulary the backend extracted against, else
                 unstructured2graph's bundled default), flagging anything outside it
                 ontology_conformant=false instead of promoting a label. Takes
                 precedence over promote_labels.
@@ -489,7 +490,7 @@ class SessionsGraph:
         actions_graph = self._default_actions_graph(actions_graph, "reconcile_session")
 
         try:
-            from unstructured2graph import LightRAGBackend, from_documents
+            from unstructured2graph import from_documents
         except ImportError as exc:
             msg = "unstructured2graph is required for reconcile_session; install sessions-graph[reconciliation]"
             raise ImportError(msg) from exc
@@ -529,7 +530,10 @@ class SessionsGraph:
                 # offsets. The segments are what the GLiNER2 backend windows on
                 # (one turn each, #352) and resolves the user's own mentions
                 # with (#358); LightRAG reads the text alone.
-                backend = extraction_backend or LightRAGBackend(lightrag_wrapper)
+                backend = extraction_backend or self._default_extraction_backend()
+                # A backend that extracts against a vocabulary (GLiNER2) is
+                # enforced against that same vocabulary unless a file overrides it.
+                ontology = None if ontology_path else getattr(backend, "ontology", None)
                 user_id = self._session_user(session_id)
                 grouped_chunks = await from_documents(
                     [prepared.document(user_id)],
@@ -539,12 +543,13 @@ class SessionsGraph:
                     promote_labels=promote_labels,
                     enforce_ontology=enforce_ontology,
                     ontology_path=ontology_path,
+                    ontology=ontology,
                 )
                 used_backend = type(backend).__name__
                 session_chunks = grouped_chunks[0] if grouped_chunks else []
                 self._link_chunks_to_sources(prepared.sources, session_chunks)
                 if enforce_ontology and session_chunks:
-                    integrity = self._integrity(backend.workspace_label, ontology_path, session_chunks)
+                    integrity = self._integrity(backend.workspace_label, ontology_path, ontology, session_chunks)
                 summary_text = await summarize_session_texts(lightrag_wrapper, list(prepared.unique_texts.values()))
 
             self._write_completed(session_id, summary_text=summary_text, extraction_backend=used_backend)
@@ -904,12 +909,24 @@ class SessionsGraph:
         )
         return user_id
 
-    def _integrity(self, workspace: str, ontology_path: str | Path | None, chunks: list[Any]) -> tuple[int, int]:
+    def _default_extraction_backend(self) -> ExtractionBackend:
+        """GLiNER2 over hygm's default model, built on first use and kept: loading the model is the slow part."""
+        if self._extraction_backend is None:
+            from hygm import default_model
+            from unstructured2graph import Ontology
+            from unstructured2graph.gliner2_backend import GLiNER2Backend
+
+            self._extraction_backend = GLiNER2Backend(ontology=Ontology.from_model(default_model()))
+        return self._extraction_backend
+
+    def _integrity(
+        self, workspace: str, ontology_path: str | Path | None, ontology: Ontology | None, chunks: list[Any]
+    ) -> tuple[int, int]:
         """(non-conformant entities, non-conformant relationships) over *chunks*, for ReconciliationSummary."""
         from unstructured2graph import DEFAULT_ONTOLOGY, load_ontology, ontology_report
 
-        ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
-        report = ontology_report(self._db, workspace, ontology, chunk_hashes=[chunk.hash for chunk in chunks])
+        enforced = ontology or (load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY)
+        report = ontology_report(self._db, workspace, enforced, chunk_hashes=[chunk.hash for chunk in chunks])
         return report.nonconformant_entities, report.nonconformant_relations
 
     def _link_chunks_to_sources(
