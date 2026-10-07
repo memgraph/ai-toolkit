@@ -461,6 +461,44 @@ would hold it; namespacing per question would store byte-identical copies and
 pay to reconcile each. The duplicate-turns hazard that implies is handled by
 deduplicating at injection instead.
 
+
+## Knowledge-graph construction (`kg`)
+
+`context-graph-eval kg` measures what reconcile's default graph construction
+does on BEAM's long multi-domain chats. It needs no Memgraph and no LLM, and
+takes a few minutes on a laptop CPU:
+
+```bash
+context-graph-eval kg --observe --baseline context-graph/eval/baselines/kg-beam-100k.json
+```
+
+It runs the extraction `sessions-graph reconcile` runs by default: GLiNER2
+under hygm's default model, its value-only pass and the user resolver. The
+input is a fixed, evenly spread sample of windows (`--windows`, 200) from
+BEAM 100K chats 1–20 at the pinned revision, each session built as reconcile
+builds it. It reports:
+
+- **Speed:** seconds per window, plus with `--observe` the open-endpoint pass
+  `sessions-graph derive` pays.
+- **Volume:** mentions and relations per window, and their distributions by type.
+- **Fit:** catch-all share (`Topic`/`Artifact`), value-type share,
+  User-headed relations, and coverage (user turns with at least one typed
+  relation, the adoption gate's number).
+- **Probes:** known facts, the 25:50 personal best and the MoMA visit, taken
+  from the cached LongMemEval corpus when it's present. They show `None`
+  otherwise.
+- **Stability:** with `--baseline`, how many of the baseline's mentions and
+  relations this run reproduces.
+
+`baselines/kg-beam-100k.json` is committed. It holds only metrics and
+fingerprints (hashes of session, offsets and type), never BEAM's text, so the
+licence point above still holds. **A PR that changes how the graph is built by
+default** (the GLiNER2 checkpoint, decoder or caps, the default model, the
+value pass, the resolver, windowing) reruns this against the baseline and
+pastes the comparison into the PR. If the change is intended, it saves a new
+baseline in the same PR. Seconds per window depend on the machine, so read
+them as a ratio against a baseline taken on the same hardware.
+
 ## BEAM: a second benchmark
 
 `context-graph-eval beam` runs [BEAM](https://github.com/mohammadtavakoli78/BEAM)'s
