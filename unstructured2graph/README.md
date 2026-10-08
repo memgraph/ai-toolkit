@@ -26,9 +26,12 @@ For full document support (PDF, DOCX, etc.):
 pip install -e ".[all-docs]"
 ```
 
-GLiNER2, the default extraction backend, comes with the package. Its
-`gliner2[local]` dependency pins `transformers<5`, below the CVE-2026-1839
-floor the workspace used to hold; restoring it is tracked in #443.
+GLiNER2, the default extraction backend, comes with the package. Local inference
+uses GLiNER2 2.0.0 and Transformers 5.5.4. The package declares the inference
+dependencies directly because upstream's `gliner2[local]` extra restricts
+Transformers to versions below 5. This preserves the workspace's Transformers
+security floor; installing that upstream extra alongside this package would
+produce a dependency conflict.
 
 ## Choosing an extraction backend
 

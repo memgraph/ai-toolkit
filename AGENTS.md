@@ -54,6 +54,10 @@ gh issue list --label wayfinder:map --state open
 
 - Python `>=3.10`, dependency/workspace manager is `uv`. Workspace members are
   listed in the root `pyproject.toml` under `[tool.uv.workspace]`.
+- `unstructured2graph` declares GLiNER2's local inference dependencies directly
+  because upstream's `[local]` extra caps Transformers below v5. GLiNER2 2.0.0
+  and Transformers 5.5.4 are pinned together; validate real model extraction and
+  embedding consumers before widening them.
 - Install a package editable with its test extras, e.g.:
   ```bash
   uv pip install -e memgraph-toolbox"[test]"   # quote extras on zsh/macOS

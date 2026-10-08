@@ -26,7 +26,13 @@ dependencies = [
     "lightrag-memgraph>=0.3.0",
     "memgraph-toolbox>=0.1.11",
     "hygm>=0.1.0",
-    "gliner2[local]>=2.0.0",
+    # Declare local inference dependencies here because GLiNER2's local extra caps Transformers below v5.
+    "gliner2==2.0.0",
+    "numpy>=1.24,<3",
+    "peft>=0.10,<1",
+    "safetensors>=0.4,<1",
+    "torch>=2.1,<3",
+    "transformers==5.5.4",
     "pyyaml>=6.0",
     "nltk<3.11",
 ]
