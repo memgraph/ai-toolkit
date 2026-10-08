@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 RECORDED = Path(__file__).with_name("github.json")
+RECORDED_REST = Path(__file__).with_name("github_rest.json")
 PAGE_SIZE = 2
 
 
@@ -37,3 +38,19 @@ class Replay:
         for key, body in self.responses.items():
             if key.startswith(operation_prefix):
                 change(body)
+
+
+class RestReplay:
+    """A REST transport answering from ``github_rest.json``; ``calls`` counts the requests."""
+
+    def __init__(self) -> None:
+        self.responses: dict[str, list[Any]] = json.loads(RECORDED_REST.read_text(encoding="utf-8"))
+        self.calls = 0
+
+    def __call__(self, path: str, accept: str) -> tuple[int, str]:
+        self.calls += 1
+        key = f"{path}|{accept}"
+        if key not in self.responses:
+            raise AssertionError(f"no recorded response for {key}; re-run tests/fixtures/record.py")
+        status, body = self.responses[key]
+        return status, body

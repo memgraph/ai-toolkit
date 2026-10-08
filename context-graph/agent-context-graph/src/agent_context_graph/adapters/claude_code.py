@@ -10,6 +10,7 @@ from agent_context_graph.adapters._spec import (
     RuntimeSpec,
     SpecAdapter,
     SpecPlugin,
+    pre_tool_use_context,
     session_start,
     tool_start,
     turn_end,
@@ -197,6 +198,7 @@ SPEC = RuntimeSpec(
         },
     ),
     responses={"Stop": {"continue": True}, "SubagentStop": {"continue": True}},
+    context_before_tool=pre_tool_use_context,
     # Grok Build also runs .claude/settings.json hooks, with its own payloads
     # (camelCase duplicates of every field); its grok runtime records those.
     foreign_payload_keys=frozenset({"hookEventName"}),

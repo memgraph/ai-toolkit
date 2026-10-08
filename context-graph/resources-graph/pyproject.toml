@@ -21,8 +21,9 @@ agent-context-graph = [
 ]
 test = [
     "pytest>=9.0.3",
-    # The real owner of (:User)-[:HAD_SESSION], so privacy tests don't fake it.
+    # The real owners of (:User)-[:HAD_SESSION] and of (:ToolCall)/(:Agent), so tests don't fake them.
     "sessions-graph>=0.6.0",
+    "actions-graph>=0.3.0",
 ]
 
 [project.scripts]
@@ -35,6 +36,7 @@ resource = "resources_graph.tool:RESOURCE"
 agent-context-graph = { workspace = true }
 memgraph-toolbox = { workspace = true }
 sessions-graph = { workspace = true }
+actions-graph = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

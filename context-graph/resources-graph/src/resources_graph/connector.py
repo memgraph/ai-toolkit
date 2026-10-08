@@ -13,6 +13,7 @@ Makes no network call — a hook must never wait on GitHub. Three events matter:
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from agent_context_graph.events import Event, EventType, MessageEvent, ToolEndEvent, ToolStartEvent
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
 
 _SUPPORTED_EVENTS = {EventType.TOOL_START, EventType.TOOL_END, EventType.MESSAGE}
 #: The first line of every ``resource`` tool answer; see :mod:`resources_graph.tool`.
-OUTCOME_LINE = re.compile(r"\[resource (hit|miss)\] (\S+)")
+OUTCOME_LINE = re.compile(r"\[resource (hit|subsumed|miss)\] (\S+)(?: from (\S+))?")
 
 
 def is_resource_tool(tool_name: str) -> bool:
@@ -54,6 +55,29 @@ class ResourcesGraphConnector(GraphConnector):
             self._on_tool_end(event)
         elif isinstance(event, MessageEvent) and event.role == "user":
             self._on_prompt(event)
+
+    def context_before_tool(self, event: ToolStartEvent) -> str | None:
+        """The Nudge: one line when the tool is about to fetch something memory already holds.
+
+        Facts, not a verdict — when it was fetched and when GitHub last changed
+        it — so the model decides; the fetch proceeds either way. No GitHub call.
+        """
+        if is_resource_tool(event.tool_name):
+            return None
+        lines = []
+        for address in addresses_from_tool(event.tool_name, event.tool_input):
+            facts = self._graph.in_memory(address)
+            if facts is None:
+                continue
+            ages = f"fetched {_age(facts['fetched_at'])}"
+            if facts.get("updated_at"):
+                ages += f", GitHub updated_at {_age(facts['updated_at'])}"
+            how = " (filtered from a broader stored listing)" if facts["outcome"] == "subsumed" else ""
+            lines.append(
+                f"Context Graph memory already has {address.key}{how} ({ages}); "
+                "the `resource` tool returns it without fetching."
+            )
+        return "\n".join(lines) or None
 
     def _on_tool_start(self, event: ToolStartEvent) -> None:
         if is_resource_tool(event.tool_name):
@@ -84,6 +108,7 @@ class ResourcesGraphConnector(GraphConnector):
             address,
             match[1],
             discriminator=event.tool_use_id or event.timestamp,
+            served_from=match[3] or match[2],
             tool_use_id=event.tool_use_id,
             agent_name=event.agent_name,
             at=event.timestamp,
@@ -100,6 +125,21 @@ class ResourcesGraphConnector(GraphConnector):
                 agent_name=event.agent_name,
                 at=event.timestamp,
             )
+
+
+def _age(timestamp: str | None) -> str:
+    """``2h ago``-style age of an ISO timestamp, for a line the model reads at a glance."""
+    if not timestamp:
+        return "at an unknown time"
+    try:
+        then = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return timestamp
+    seconds = max(0, int((datetime.now(timezone.utc) - then).total_seconds()))
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if seconds >= size:
+            return f"{seconds // size}{unit} ago"
+    return "just now"
 
 
 def _text(value: Any) -> str:

@@ -57,7 +57,8 @@ _Avoid_: Interception, redirect, block
 - A **Touch** links to the Action that caused it, and to the Agent when it happened inside a subagent.
 - A listing **Touch** points at a **Listing**, which lists from one Repository; the **Sweep** fetches its members up to what the agent asked for, without creating Touches for them.
 - A Resource references another only when both are stored; a reference to anything not in memory stays on the Resource as an Address until the other end is touched.
-- Only a Touch that really fetches makes the **Sweep** refresh a Resource; a **Cache Read** never does.
+- Only a Touch that really fetches makes the **Sweep** refresh a Resource; a **Cache Read** never does. Refreshing checks whether the platform changed it first and refetches only what did.
+- A transferred issue is a new Resource (the platform gives it a new identity); the old one points at it and gives up its Address.
 - An **MCP resource** is one channel through which a Resource can be touched, not a separate concept.
 - unstructured2graph's **Source** is an ingestion's input Address; a Resource is the persisted, identified thing behind it.
 

@@ -876,3 +876,19 @@ def test_results_without_ids_pair_with_the_oldest_open_call_of_the_same_tool(gra
         [({"command": "ls"}, "README.md"), ({"path": "README.md"}, "# Demo"), ({"command": "pwd"}, "/work")],
         key=str,
     )
+
+
+def test_tool_calls_and_results_carry_the_harness_tool_use_id(graph: ActionsGraph):
+    """Promoted to a node property so other components can join on it (resources-graph's Touches do)."""
+    from agent_context_graph.events import SessionStartEvent, ToolEndEvent, ToolStartEvent
+
+    link = _connector(graph)
+    link.emit(SessionStartEvent(session_id="tool-use-id-session"))
+    link.emit(ToolStartEvent(session_id="tool-use-id-session", tool_name="Bash", tool_input={}, tool_use_id="toolu_9"))
+    link.emit(ToolEndEvent(session_id="tool-use-id-session", tool_name="Bash", tool_use_id="toolu_9", result="ok"))
+
+    rows = graph._db.query(
+        "MATCH (:Session {session_id: 'tool-use-id-session'})-[:HAS_ACTION]->(a:Action {tool_use_id: 'toolu_9'}) "
+        "RETURN labels(a) AS labels ORDER BY a.timestamp"
+    )
+    assert [row["labels"][-1] for row in rows] == ["ToolCall", "ToolResult"]

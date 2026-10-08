@@ -9,15 +9,11 @@ from __future__ import annotations
 import os
 
 import pytest
-from sessions_graph import SessionsGraph
-from sessions_graph.connector import SessionsGraphConnector
 
 from agent_context_graph.adapters._identity import HookConfig
 from agent_context_graph.events import MessageEvent, SessionStartEvent, ToolEndEvent, ToolStartEvent
 from agent_context_graph.tools import ToolError
 from resources_graph.address import parse_address
-from resources_graph.connector import ResourcesGraphConnector
-from resources_graph.github import GitHubSource
 from resources_graph.sweep import sweep
 from resources_graph.tool import ResourceTool
 
@@ -32,25 +28,6 @@ def config(user_id):
         memgraph_user=os.environ.get("MEMGRAPH_USER", ""),
         memgraph_password=os.environ.get("MEMGRAPH_PASSWORD", ""),
     )
-
-
-@pytest.fixture()
-def harness(graph):
-    """Both connectors, as a hook with ``--connector sessions-graph --connector resources-graph`` runs them."""
-    sessions = SessionsGraphConnector(SessionsGraph())
-    resources = ResourcesGraphConnector(graph)
-
-    def emit(event):
-        for connector in (sessions, resources):
-            if connector.supports(event):
-                connector.on_event(event)
-
-    return emit
-
-
-@pytest.fixture()
-def source(replay, page_size):
-    return GitHubSource(replay, page_size=page_size)
 
 
 def start(emit, session_id, user_id):
@@ -205,15 +182,18 @@ def test_a_real_refetch_refreshes_and_drops_deleted_comments(graph, harness, sou
         node["comments"]["nodes"] = node["comments"]["nodes"][:-1]
 
     replay.edit("MoreComments:", delete_last_comment)
-    replay.edit(
-        "Item:",
-        lambda body: (body["data"]["repository"]["issueOrPullRequest"] or {}).update(updatedAt="2030-01-01T00:00:00Z"),
-    )
+    for operation in ("Item:", "Freshness:"):  # the cheap check sees the change first
+        replay.edit(
+            operation,
+            lambda body: (body["data"]["repository"]["issueOrPullRequest"] or {}).update(
+                updatedAt="2030-01-01T00:00:00Z"
+            ),
+        )
     fetch(harness, "s1", "gh issue view 2000 -R memgraph/memgraph", "toolu_2")
     report = sweep(graph, source)
 
     served = graph.read(address("memgraph/memgraph#2000"))
-    assert report.fetched == 1  # the Repository is stored already
+    assert (report.checked, report.fetched) == (1, 1)  # one cheap check, then one refetch; the Repository is stored
     assert served.resource["updated_at"] == "2030-01-01T00:00:00Z"
     assert len(served.comments) == 3
     assert graph._db.query("MATCH (c:Comment) RETURN count(c) AS n")[0]["n"] == 3
@@ -275,3 +255,67 @@ def address(text):
     parsed = parse_address(text)
     assert parsed is not None
     return parsed
+
+
+def test_a_refetch_of_unchanged_content_is_one_cheap_check(graph, harness, source, replay):
+    start(harness, "s1", "ante")
+    fetch(harness, "s1", "gh issue view 2000 -R memgraph/memgraph", "toolu_1")
+    sweep(graph, source)
+    fetched_at = graph.read(address("memgraph/memgraph#2000")).resource["fetched_at"]
+
+    fetch(harness, "s1", "gh issue view 2000 -R memgraph/memgraph", "toolu_2")
+    report = sweep(graph, source)
+
+    assert (report.resolved, report.checked, report.unchanged, report.fetched) == (1, 1, 1, 0)
+    assert graph.read(address("memgraph/memgraph#2000")).resource["fetched_at"] >= fetched_at
+
+
+def test_rate_limit_stops_the_sweep_and_the_next_one_retries(graph, harness, source, replay):
+    start(harness, "s1", "ante")
+    fetch(harness, "s1", "gh issue view 2000 -R memgraph/memgraph", "toolu_1")
+    fetch(harness, "s1", "gh pr view 3600 -R memgraph/memgraph", "toolu_2")
+    recorded = dict(replay.responses)
+    for key in list(replay.responses):
+        replay.responses[key] = {"errors": [{"type": "RATE_LIMITED", "message": "API rate limit exceeded"}]}
+
+    limited = sweep(graph, source)
+
+    assert (limited.resolved, limited.unresolved) == (0, {"rate_limited": 1})  # stopped at the first
+    statuses = sorted(touch[4] for touch in touches(graph, "ante"))
+    assert statuses == ["pending", "unresolved"]
+
+    replay.responses = recorded
+    retried = sweep(graph, source)
+
+    assert (retried.resolved, retried.unresolved) == (2, {})
+
+
+def test_a_transferred_issue_links_old_to_new(graph, harness, source, replay):
+    start(harness, "s1", "ante")
+    fetch(harness, "s1", "gh issue view 2000 -R memgraph/memgraph", "toolu_1")
+    fetch(harness, "s1", "gh repo view memgraph/gqlalchemy", "toolu_2")
+    sweep(graph, source)
+
+    def transfer(body):  # GitHub now answers memgraph/memgraph#2000 with the issue moved to gqlalchemy
+        item = body["data"]["repository"]["issueOrPullRequest"]
+        if item and item["number"] == 2000:
+            item.update(id="I_transferred", number=901, updatedAt="2030-01-01T00:00:00Z")
+            for connection in ("comments", "timelineItems"):  # its pages were recorded under the old id
+                if connection in item:
+                    item[connection]["pageInfo"]["hasNextPage"] = False
+            item["repository"] = {"id": gqlalchemy_id, "nameWithOwner": "memgraph/gqlalchemy", "visibility": "PUBLIC"}
+
+    gqlalchemy_id = graph._db.query(
+        "MATCH (r:Repository {address: 'github:memgraph/gqlalchemy'}) RETURN r.node_id AS id"
+    )[0]["id"]
+    replay.edit("Item:", transfer)
+    replay.edit("Freshness:", transfer)
+    fetch(harness, "s1", "gh issue view 2000 -R memgraph/memgraph", "toolu_3")
+    sweep(graph, source)
+
+    moved = graph._db.query(
+        "MATCH (old:Issue)-[:MOVED_TO]->(new:Issue) RETURN old.address AS old, new.address AS new, old.number AS number"
+    )
+    assert moved == [{"old": None, "new": "github:memgraph/gqlalchemy#901", "number": 2000}]
+    assert graph.read(address("memgraph/memgraph#2000")).outcome == "miss"
+    assert graph.read(address("memgraph/gqlalchemy#901")).outcome == "hit"

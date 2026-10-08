@@ -17,16 +17,21 @@ from agent_context_graph.tools import ToolError, ToolResult
 
 from .address import parse_address
 from .core import ResourcesGraph
-from .models import HIT, Served
+from .models import MISS, SUBSUMED, Served
 
 if TYPE_CHECKING:
     from agent_context_graph.adapters._identity import HookConfig
 
 _DESCRIPTION = """\
-Read a public GitHub issue, pull request or repository from memory instead of fetching it. \
-Pass what you would fetch: a URL, owner/repo#123, owner/repo, or the gh command. Returns the \
-stored content with all comments, when it was fetched (fetched_at) and when GitHub last changed \
-it (updated_at); decide yourself whether that is fresh enough. On a miss, fetch it as usual."""
+Read a public GitHub issue, pull request, repository or issue/PR list from memory instead of \
+fetching it. Pass what you would fetch: a URL, owner/repo#123, owner/repo, or the gh command \
+(gh issue list -R owner/repo --label bug ...). An issue or PR comes with all its comments; a \
+list comes as an index of its members, page by page — read the ones you need one at a time with \
+owner/repo#number. Every answer says when it was fetched (fetched_at) and, for an item, when \
+GitHub last changed it (updated_at); decide yourself whether that is fresh enough. On a miss, \
+fetch it as usual."""
+#: Index rows per page of a Listing answer.
+PAGE_SIZE = 100
 
 
 class ResourceTool:
@@ -40,14 +45,16 @@ class ResourceTool:
         "properties": {
             "address": {
                 "type": "string",
-                "description": "A GitHub URL, owner/repo#123, owner/repo, or a gh issue/pr/repo view command.",
+                "description": "A GitHub URL, owner/repo#123, owner/repo, or a gh issue/pr/repo view or list command.",
             },
+            "page": {"type": "integer", "minimum": 1, "description": "For a list: which page of its index (1 first)."},
         },
         "required": ["address"],
     }
     session_hint = (
-        "Public GitHub issues, pull requests and repositories you have read before are in Context Graph memory. "
-        "Before fetching one, call the `resource` tool with its URL or owner/repo#number."
+        "Public GitHub issues, pull requests, repositories and issue/PR lists you have read before are in "
+        "Context Graph memory. Before fetching one, call the `resource` tool with its URL, owner/repo#number "
+        "or gh command."
     )
 
     def __init__(self) -> None:
@@ -72,11 +79,15 @@ class ResourceTool:
         address = parse_address(text)
         if address is None:
             raise ToolError(
-                f"{text!r} doesn't name a single GitHub issue, pull request or repository. "
-                "Listings and searches aren't served from memory yet."
+                f"{text!r} doesn't name a GitHub issue, pull request, repository or issue/PR list I can read. "
+                "Lists need the repository (gh issue list -R owner/repo ...)."
             )
+        try:
+            page = max(1, int(arguments.get("page") or 1))
+        except (TypeError, ValueError) as exc:
+            raise ToolError("page must be a whole number, 1 or more.") from exc
         served = self._graph_for(config).read(address)
-        return ToolResult(text=render(served), structured=_structured(served))
+        return ToolResult(text=render(served, page=page), structured=_structured(served, page=page))
 
     def _graph_for(self, config: HookConfig) -> ResourcesGraph:
         key = (config.memgraph_url, config.memgraph_user, config.memgraph_password, config.memgraph_database)
@@ -92,13 +103,17 @@ class ResourceTool:
             return self._graph
 
 
-def render(served: Served) -> str:
+def render(served: Served, *, page: int = 1) -> str:
     """The model-facing answer. Its first line is the outcome the connector records."""
     head = f"[resource {served.outcome}] {served.address}"
-    if served.outcome != HIT:
+    if served.outcome == SUBSUMED:
+        head += f" from {served.served_from}"
+    if served.outcome == MISS:
         return f"{head}\nNot in memory. Fetch it as usual; it will be remembered for next time."
     r = served.resource
     lines = [head]
+    if served.kind == "Listing":
+        return "\n".join(lines + _listing_lines(served, page))
     if served.kind == "Repository":
         lines += [
             f"Repository {r['name_with_owner']}: {r.get('description') or ''}".rstrip(),
@@ -135,17 +150,49 @@ def render(served: Served) -> str:
     return "\n".join(lines)
 
 
+def _listing_lines(served: Served, page: int) -> list[str]:
+    listing, rows = served.resource, _page(served.index, page)
+    pages = max(1, -(-len(served.index) // PAGE_SIZE))
+    lines = []
+    if served.outcome == SUBSUMED:
+        lines.append(f"Derived from {served.served_from} by filtering its stored members locally.")
+    lines += [
+        f"fetched_at: {listing.get('fetched_at')} · {len(served.index)} members"
+        + (
+            ""
+            if listing.get("fully_expanded")
+            else f" (the first {listing.get('member_count')} of {listing.get('total_count')})"
+        ),
+        f"page {min(page, pages)} of {pages}; newest created first. Read one with owner/repo#number.",
+        "",
+    ]
+    lines += [
+        f"#{row['number']} [{row['state']}] {row['title']} · labels: {', '.join(row.get('labels') or []) or '-'}"
+        f" · updated_at: {row.get('updated_at')} · comments: {row.get('comment_count')}"
+        for row in rows
+    ]
+    return lines
+
+
+def _page(rows: list[dict[str, Any]], page: int) -> list[dict[str, Any]]:
+    return rows[(page - 1) * PAGE_SIZE : page * PAGE_SIZE]
+
+
 def _freshness(resource: dict[str, Any]) -> str:
     return f"fetched_at: {resource.get('fetched_at')} · updated_at (GitHub): {resource.get('updated_at')}"
 
 
-def _structured(served: Served) -> dict[str, Any]:
+def _structured(served: Served, *, page: int) -> dict[str, Any]:
     return {
         "address": served.address,
         "outcome": served.outcome,
         "kind": served.kind,
+        "served_from": served.served_from,
         "resource": served.resource,
         "comments": served.comments,
+        "index": _page(served.index, page),
+        "index_size": len(served.index),
+        "page": page,
     }
 
 

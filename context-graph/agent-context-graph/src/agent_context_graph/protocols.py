@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .events import Event
+    from .events import Event, ToolStartEvent
 
 
 class GraphConnector(ABC):
@@ -37,6 +37,15 @@ class GraphConnector(ABC):
         Override to filter on ``event.event_type``.
         """
         return True
+
+    def context_before_tool(self, event: ToolStartEvent) -> str | None:
+        """One line for the model to read before the tool in ``event`` runs, or None.
+
+        Only advice: the tool call always proceeds unchanged, and a failure here
+        means no line, never a blocked call. Shown only where the runtime can add
+        context before a tool without denying or modifying it. The default adds nothing.
+        """
+        return None
 
 
 class RuntimeAdapter(ABC):

@@ -7923,12 +7923,14 @@ agent-context-graph = [
     { name = "agent-context-graph" },
 ]
 test = [
+    { name = "actions-graph" },
     { name = "pytest" },
     { name = "sessions-graph" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "actions-graph", marker = "extra == 'test'", editable = "context-graph/actions-graph" },
     { name = "agent-context-graph", marker = "extra == 'agent-context-graph'", editable = "context-graph/agent-context-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
