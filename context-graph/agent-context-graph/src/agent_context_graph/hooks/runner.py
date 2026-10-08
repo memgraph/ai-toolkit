@@ -41,7 +41,7 @@ def load_payload(stream: Any | None = None) -> dict[str, Any]:
 def create_link(connector_names: Iterable[str] = (), *, memgraph_env: dict[str, str] | None = None) -> AgentLink:
     """Create an AgentLink with optional connectors named by CLI/config.
 
-    Runtime-agnostic: connectors (skills-graph, actions-graph, sessions-graph)
+    Runtime-agnostic: connectors (skills-graph, actions-graph, sessions-graph, resources-graph)
     are graph components, not tied to any particular runtime adapter.
     """
     link = AgentLink()
@@ -55,6 +55,8 @@ def create_link(connector_names: Iterable[str] = (), *, memgraph_env: dict[str, 
             _add_actions_graph_connector(link, memgraph_env)
         elif normalized == "sessions_graph":
             _add_sessions_graph_connector(link, memgraph_env)
+        elif normalized == "resources_graph":
+            _add_resources_graph_connector(link, memgraph_env)
         else:
             msg = f"Unsupported connector: {connector_name}"
             raise ValueError(msg)
@@ -65,6 +67,7 @@ _SCHEMA_COMPONENTS = {
     "skills_graph": ("skills_graph", "SkillGraph"),
     "actions_graph": ("actions_graph", "ActionsGraph"),
     "sessions_graph": ("sessions_graph", "SessionsGraph"),
+    "resources_graph": ("resources_graph", "ResourcesGraph"),
 }
 
 
@@ -113,7 +116,7 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
         "--connector",
         action="append",
         default=None,
-        help="Graph connector to enable. Currently supported: skills-graph, actions-graph, sessions-graph.",
+        help="Graph connector to enable. Currently supported: skills-graph, actions-graph, sessions-graph, resources-graph.",
     )
     parser.add_argument(
         "--session-id",
@@ -231,6 +234,18 @@ def _add_actions_graph_connector(link: AgentLink, memgraph_env: dict[str, str] |
     kwargs = _memgraph_kwargs(memgraph_env)
     graph = ActionsGraph(**kwargs)
     link.add_connector(ActionsGraphConnector(graph))
+
+
+def _add_resources_graph_connector(link: AgentLink, memgraph_env: dict[str, str] | None = None) -> None:
+    try:
+        from resources_graph import ResourcesGraph
+        from resources_graph.connector import ResourcesGraphConnector
+    except ImportError as exc:
+        msg = "resources-graph is required for the resources-graph connector"
+        raise ImportError(msg) from exc
+
+    kwargs = _memgraph_kwargs(memgraph_env)
+    link.add_connector(ResourcesGraphConnector(ResourcesGraph(**kwargs)))
 
 
 # A closed key set (never `memgraph`) so `Component(**kwargs)` below can't be

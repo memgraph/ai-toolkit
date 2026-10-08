@@ -1,0 +1,113 @@
+"""Agent-link connector: hook events become address-only Touches.
+
+Makes no network call — a hook must never wait on GitHub. Three events matter:
+
+- a tool start that fetches GitHub (WebFetch, ``gh``, ``curl``, a GitHub MCP
+  tool) becomes a FETCHED Touch;
+- a user prompt that mentions GitHub links becomes PROMPTED Touches;
+- a finished call of this component's own ``resource`` tool becomes a Cache
+  Read, with the outcome the tool printed. The tool runs over MCP and can't
+  see the session, so its Touch is written here, where the session is known.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import TYPE_CHECKING, Any
+
+from agent_context_graph.events import Event, EventType, MessageEvent, ToolEndEvent, ToolStartEvent
+from agent_context_graph.protocols import GraphConnector
+
+from .address import Address, addresses_from_text, addresses_from_tool
+from .models import FETCHED, PROMPTED
+
+if TYPE_CHECKING:
+    from .core import ResourcesGraph
+
+_SUPPORTED_EVENTS = {EventType.TOOL_START, EventType.TOOL_END, EventType.MESSAGE}
+#: The first line of every ``resource`` tool answer; see :mod:`resources_graph.tool`.
+OUTCOME_LINE = re.compile(r"\[resource (hit|miss)\] (\S+)")
+
+
+def is_resource_tool(tool_name: str) -> bool:
+    """Whether ``tool_name`` is this component's ``resource`` tool, however the harness prefixes it.
+
+    Harnesses namespace MCP tools (``mcp__plugin_context-graph_context-graph__resource``).
+    """
+    name = tool_name.strip().lower()
+    return name == "resource" or (name.endswith("__resource") and "context" in name)
+
+
+class ResourcesGraphConnector(GraphConnector):
+    """Records Touches and Cache Reads in a :class:`ResourcesGraph`."""
+
+    def __init__(self, graph: ResourcesGraph) -> None:
+        self._graph = graph
+
+    def supports(self, event: Event) -> bool:
+        return event.event_type in _SUPPORTED_EVENTS
+
+    def on_event(self, event: Event) -> None:
+        if isinstance(event, ToolStartEvent):
+            self._on_tool_start(event)
+        elif isinstance(event, ToolEndEvent):
+            self._on_tool_end(event)
+        elif isinstance(event, MessageEvent) and event.role == "user":
+            self._on_prompt(event)
+
+    def _on_tool_start(self, event: ToolStartEvent) -> None:
+        if is_resource_tool(event.tool_name):
+            return
+        for address in addresses_from_tool(event.tool_name, event.tool_input):
+            self._graph.record_touch(
+                event.session_id,
+                address,
+                FETCHED,
+                discriminator=event.tool_use_id or event.timestamp,
+                tool_use_id=event.tool_use_id,
+                agent_name=event.agent_name,
+                at=event.timestamp,
+            )
+
+    def _on_tool_end(self, event: ToolEndEvent) -> None:
+        if event.is_error or not is_resource_tool(event.tool_name):
+            return
+        match = OUTCOME_LINE.search(_text(event.result))
+        if not match:
+            return
+        try:
+            address = Address.from_key(match[2])
+        except ValueError:
+            return
+        self._graph.record_cache_read(
+            event.session_id,
+            address,
+            match[1],
+            discriminator=event.tool_use_id or event.timestamp,
+            tool_use_id=event.tool_use_id,
+            agent_name=event.agent_name,
+            at=event.timestamp,
+        )
+
+    def _on_prompt(self, event: MessageEvent) -> None:
+        text = _text(event.content)
+        for address in addresses_from_text(text):
+            self._graph.record_touch(
+                event.session_id,
+                address,
+                PROMPTED,
+                discriminator=event.timestamp,
+                agent_name=event.agent_name,
+                at=event.timestamp,
+            )
+
+
+def _text(value: Any) -> str:
+    """Flatten a hook payload value (string, MCP content blocks, nested dicts) to searchable text."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return "\n".join(_text(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return "\n".join(_text(item) for item in value)
+    return "" if value is None else str(value)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Local dev lifecycle for exploring/dogfooding unstructured2graph and the
 # context-graph family (agent-context-graph, actions-graph, skills-graph,
-# sessions-graph) against an isolated local Memgraph -- including pointing
+# sessions-graph, resources-graph) against an isolated local Memgraph -- including pointing
 # the real live Claude Code plugin at it. That exploration instance's data
 # persists until you explicitly `down` it. `test` is a separate concern with
 # its own disposable container, so running the automated suites can never
@@ -46,7 +46,7 @@ CONFIG_DIR="${HOME}/.config/context-graph"
 CONFIG_FILE="${CONFIG_DIR}/config.toml"
 CONFIG_BACKUP="${CONFIG_DIR}/config.toml.pre-local-test-backup"
 
-ALL_PACKAGES=(unstructured2graph actions-graph agent-context-graph skills-graph sessions-graph)
+ALL_PACKAGES=(unstructured2graph actions-graph agent-context-graph skills-graph sessions-graph resources-graph)
 
 _HELP="usage: $(basename "$0") <command> [args]
 
@@ -384,6 +384,10 @@ cmd_test() {
       sessions-graph)
         (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package sessions-graph --extra test --extra reconciliation --extra agent-context-graph \
           pytest context-graph/sessions-graph/tests/ -v) || failed+=("$pkg")
+        ;;
+      resources-graph)
+        (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package resources-graph --extra test --extra agent-context-graph \
+          pytest context-graph/resources-graph/tests/ -v) || failed+=("$pkg")
         ;;
       *)
         echo "Unknown package: $pkg (expected one of: ${ALL_PACKAGES[*]})" >&2

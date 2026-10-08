@@ -63,6 +63,7 @@ members = [
     "mcp-memgraph",
     "memgraph-ai",
     "memgraph-toolbox",
+    "resources-graph",
     "sessions-graph",
     "skills-graph",
     "structured2graph",
@@ -7908,6 +7909,32 @@ sdist = { url = "https://files.pythonhosted.org/packages/f3/61/d7545dafb7ac2230c
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3f/51/d4db610ef29373b879047326cbf6fa98b6c1969d6f6dc423279de2b1be2c/requests_toolbelt-1.0.0-py2.py3-none-any.whl", hash = "sha256:cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06", size = 54481, upload-time = "2023-05-01T04:11:28.427Z" },
 ]
+
+[[package]]
+name = "resources-graph"
+version = "0.1.0"
+source = { editable = "context-graph/resources-graph" }
+dependencies = [
+    { name = "memgraph-toolbox" },
+]
+
+[package.optional-dependencies]
+agent-context-graph = [
+    { name = "agent-context-graph" },
+]
+test = [
+    { name = "pytest" },
+    { name = "sessions-graph" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "agent-context-graph", marker = "extra == 'agent-context-graph'", editable = "context-graph/agent-context-graph" },
+    { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
+    { name = "sessions-graph", marker = "extra == 'test'", editable = "context-graph/sessions-graph" },
+]
+provides-extras = ["agent-context-graph", "test"]
 
 [[package]]
 name = "rich"

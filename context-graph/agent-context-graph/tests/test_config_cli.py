@@ -112,3 +112,21 @@ def test_ontology_is_unset_by_default(config_dir, capsys):
     out = capsys.readouterr().out
     assert "ontology.path = unset" in out
     assert "ontology.derive = unset (defaults to extend)" in out
+
+
+def test_config_set_github_token_is_secret_and_survives_bootstrap(config_dir, capsys):
+    assert top_level_main(["config", "set", "github.token", "ghp_example"]) == 0
+    assert "Wrote github.token = ***" in capsys.readouterr().out
+    _identity.write_full_config(user_id="alice")
+    _identity._reset_cache()
+
+    assert _identity.load_config().github_token == "ghp_example"
+    assert top_level_main(["config", "show"]) == 0
+    shown = capsys.readouterr().out
+    assert "github.token = ***" in shown and "ghp_example" not in shown
+
+
+def test_github_token_is_unset_by_default(config_dir, capsys):
+    assert _identity.load_config().github_token is None
+    assert top_level_main(["config", "show"]) == 0
+    assert "github.token = unset" in capsys.readouterr().out
