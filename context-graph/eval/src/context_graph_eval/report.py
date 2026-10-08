@@ -68,8 +68,9 @@ class RunMeta:
     #: Defaults to "graph-agent" for runs saved before this field existed,
     #: which is the only strategy that existed then.
     retrieval_strategy: str = "graph-agent"
-    #: "fixed" (the LongMemEval vocabulary) or "learned" (each user's derived
-    #: model, map #431): different graphs, so different systems under test.
+    #: "fixed" (the LongMemEval vocabulary), "default" (hygm's default model) or
+    #: "learned" (each user's derived model, map #431): different graphs, so
+    #: different systems under test.
     ontology: str = "fixed"
     #: Which judge scores decided ``covered`` -- see scoring.COVERAGE_GATE.
     #: Defaults to "min" for runs saved before this field existed, which gated
