@@ -90,6 +90,8 @@ async def test_reconcile_batch_needs_gliner2_for_a_learned_ontology_and_checks_b
         await reconcile_batch(db, extraction_backend="lightrag", ontology="learned")
     with pytest.raises(ValueError, match="ontology"):
         await reconcile_batch(db, extraction_backend="gliner2", ontology="adaptive")
+    with pytest.raises(ValueError, match="ontology"):
+        await reconcile_batch(db, extraction_backend="lightrag", ontology="default")
 
     db.query.assert_not_called()
 

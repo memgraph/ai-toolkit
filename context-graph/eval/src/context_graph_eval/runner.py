@@ -76,8 +76,8 @@ class RunPlan:
     reconcile_limit: int | None = None
     #: False skips each session's summary LLM call; recall never reads Episodes.
     summaries: bool = True
-    #: "fixed" extracts against the LongMemEval vocabulary; "learned" under each
-    #: user's adopted version, derived once per user after reconciling (learned.py).
+    #: "fixed" extracts against the LongMemEval vocabulary; "default" under hygm's
+    #: default model; "learned" the same, then derived once per user (learned.py).
     ontology: str = "fixed"
     derive_seeds: int = 1
     derive_workers: int = 4

@@ -217,6 +217,12 @@ BACKEND_CLASS_NAMES: dict[ExtractionBackendName, str] = {
 GLINER2_ONTOLOGY_PATH = Path(__file__).parent / "ontologies" / "longmemeval.yaml"
 
 
+#: What reconcile extracts under: "fixed", the LongMemEval vocabulary; "default",
+#: each user's adopted version (hygm's default model, nothing derived); "learned",
+#: the same, then each user's own model derived and adopted (learned.py).
+ONTOLOGIES = ("fixed", "default", "learned")
+
+
 async def reconcile_batch(
     db: "Memgraph",
     *,
@@ -285,13 +291,14 @@ async def reconcile_batch(
     and no LightRAG wrapper at all on the GLiNER2 path): recall never reads
     Episodes, so a hybrid benchmark build needs no LLM until it answers.
 
-    ``ontology="learned"`` (GLiNER2 only) extracts each session under its
-    user's adopted ontology version instead of :data:`GLINER2_ONTOLOGY_PATH`
-    -- hygm's default model until ``learned.derive_users`` adopts one.
+    ``ontology="default"`` or ``"learned"`` (GLiNER2 only) extracts each
+    session under its user's adopted ontology version instead of
+    :data:`GLINER2_ONTOLOGY_PATH` -- hygm's default model until
+    ``learned.derive_users`` adopts one, which only ``"learned"`` runs.
 
     Raises:
         ValueError: if ``sessions_per_call`` or ``gliner2_concurrency`` is
-            less than 1, ``ontology`` is "learned" without GLiNER2, or ``extraction_backend`` is not one of
+            less than 1, ``ontology`` is "default" or "learned" without GLiNER2, or ``extraction_backend`` is not one of
             :data:`EXTRACTION_BACKENDS` -- all checked up front, before
             querying for pending sessions at all.
     """
@@ -301,8 +308,8 @@ async def reconcile_batch(
         raise ValueError(f"gliner2_concurrency must be >= 1, got {gliner2_concurrency}")
     if extraction_backend not in EXTRACTION_BACKENDS:
         raise ValueError(f"extraction_backend must be one of {EXTRACTION_BACKENDS}, got {extraction_backend!r}")
-    if ontology not in ("fixed", "learned") or (ontology == "learned" and extraction_backend != "gliner2"):
-        raise ValueError(f"ontology must be 'fixed', or 'learned' with gliner2; got {ontology!r}")
+    if ontology not in ONTOLOGIES or (ontology != "fixed" and extraction_backend != "gliner2"):
+        raise ValueError(f"ontology must be one of {ONTOLOGIES}, the last two with gliner2; got {ontology!r}")
 
     import os
 

@@ -521,7 +521,9 @@ context-graph-eval beam --size 100K --chats 1-20 --limit 100 \
   reconciled under hygm's default model, then each user's own model is
   derived and adopted (`sessions-graph derive --user U --force --seeds
   N`, `--derive-workers` users at a time), which re-extracts their sessions
-  under it before any question is asked. The default, `fixed`, keeps runs
+  under it before any question is asked. `--ontology default` stops before
+  deriving: the graph is built under hygm's default model alone, which shows
+  how the generic model does on its own. The default, `fixed`, keeps runs
   comparable.
 - **One chat is one user.** Each of its time-anchored batches becomes one
   dated session; every question of the chat is asked of the whole chat.
