@@ -6,8 +6,8 @@ network calls, no API key) and does joint entity+relation extraction. It is
 the project's default extraction backend. `gliner2` is imported only when a
 GLiNER2Backend is constructed, so `import unstructured2graph` stays light.
 
-gliner2[local] pins transformers<5, below the CVE-2026-1839 floor the
-workspace used to hold; restoring it is tracked in #443.
+The package declares GLiNER2's local inference dependencies directly to use
+Transformers 5; upstream's gliner2[local] extra still requires transformers<5.
 
 The typed relation model (map #344) this backend implements:
 
