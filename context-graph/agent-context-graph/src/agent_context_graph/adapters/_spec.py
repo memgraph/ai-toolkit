@@ -93,7 +93,10 @@ class RuntimeSpec:
     spellings of an event name onto the canonical name used by ``rules`` and
     ``responses``. ``foreign_payload_keys`` are keys this runtime never sends;
     a payload carrying one came from another runtime reading this runtime's
-    hook file, and is ignored.
+    hook file, and is ignored. ``context_before_tool`` renders the stdout JSON
+    that shows the model a line of context before a tool runs, leaving the call
+    itself untouched; None where the runtime can't do that without denying or
+    modifying the call.
     """
 
     name: str
@@ -108,6 +111,7 @@ class RuntimeSpec:
     event_aliases: Mapping[str, str] = field(default_factory=dict)
     foreign_payload_keys: frozenset[str] = frozenset()
     probe_payload: Mapping[str, Any] = field(default_factory=dict)
+    context_before_tool: Callable[[str], Mapping[str, Any]] | None = None
 
     def event_name(self, payload: Mapping[str, Any]) -> str:
         """Return *payload*'s canonical event name."""
@@ -191,6 +195,16 @@ class SpecAdapter(RuntimeAdapter):
         return ""
 
 
+def pre_tool_use_context(text: str) -> dict[str, Any]:
+    """``PreToolUse`` output that adds *text* to the model's context and leaves the call alone.
+
+    Claude Code and Codex both accept it; it carries no ``permissionDecision``,
+    so the tool runs as it would have. (Codex treats ``continue``/``stopReason``
+    here as a failed hook run, so neither is added.)
+    """
+    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": text}}
+
+
 @dataclass(frozen=True)
 class SpecPlugin:
     """Runtime registration (``RuntimeCLIPlugin``) derived from a :class:`RuntimeSpec`.
@@ -217,6 +231,11 @@ class SpecPlugin:
         """Return the JSON the runtime expects on stdout for *payload*, if any."""
         response = self.spec.responses.get(self.spec.event_name(payload))
         return None if response is None else dict(response)
+
+    def context_before_tool_response(self, text: str) -> dict[str, Any] | None:
+        """The stdout JSON that shows the model *text* before a tool runs; None where unsupported."""
+        render = self.spec.context_before_tool
+        return None if render is None else dict(render(text))
 
     def build_hooks_config(self, command: str, *, timeout: int = 30) -> dict[str, Any]:
         """Render the runtime's hook map using *command*."""

@@ -16,11 +16,14 @@ import os
 import sys
 from typing import TYPE_CHECKING, Any, TypedDict
 
+from agent_context_graph.events import ToolStartEvent
 from agent_context_graph.link import AgentLink
+from agent_context_graph.protocols import GraphConnector
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
+    from agent_context_graph.events import Event
     from agent_context_graph.hooks.runtime_plugin import RuntimeCLIPlugin
 
 
@@ -158,9 +161,11 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
         if args.event_name is not None:
             payload.setdefault("hook_event_name", args.event_name)
         link = create_link(connector_names, memgraph_env=memgraph_env)
+        tool_starts = _ToolStarts()
+        link.add_connector(tool_starts)
         adapter = plugin.adapter_class(link, session_id=args.session_id)
         adapter.handle_payload(payload)
-        _print_response(plugin, payload, connector_names)
+        _print_response(plugin, payload, connector_names, before_tool=_context_before_tool(link, tool_starts.events))
     except Exception as exc:
         strict_env = os.environ.get(f"{_env_prefix(plugin.name)}_STRICT") == "1"
         if args.strict or strict_env:
@@ -170,12 +175,45 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
     return 0
 
 
-def _print_response(plugin: RuntimeCLIPlugin, payload: dict[str, Any], connector_names: list[str]) -> None:
+def _print_response(
+    plugin: RuntimeCLIPlugin, payload: dict[str, Any], connector_names: list[str], *, before_tool: Sequence[str] = ()
+) -> None:
     response = plugin.response_for_payload(payload) or {}
     if payload.get("hook_event_name") == "SessionStart":
         response.update(session_start_context(connector_names))
+    render = getattr(plugin, "context_before_tool_response", None)
+    if before_tool and render is not None:
+        response.update(render("\n".join(before_tool)) or {})
     if response:
         print(json.dumps(response))
+
+
+class _ToolStarts(GraphConnector):
+    """Keeps the tool-start events one payload produced, to ask the connectors about afterwards."""
+
+    def __init__(self) -> None:
+        self.events: list[ToolStartEvent] = []
+
+    def supports(self, event: Event) -> bool:
+        return isinstance(event, ToolStartEvent)
+
+    def on_event(self, event: Event) -> None:
+        if isinstance(event, ToolStartEvent):
+            self.events.append(event)
+
+
+def _context_before_tool(link: AgentLink, events: list[ToolStartEvent]) -> list[str]:
+    """Every connector's line for the tools about to run; a connector that fails adds nothing."""
+    lines: list[str] = []
+    for event in events:
+        for connector in link.connectors:
+            try:
+                line = connector.context_before_tool(event)
+            except Exception:
+                line = None
+            if line:
+                lines.append(line)
+    return lines
 
 
 def session_start_context(connector_names: list[str]) -> dict[str, Any]:

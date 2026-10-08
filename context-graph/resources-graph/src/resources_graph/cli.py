@@ -51,25 +51,31 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _sweep(graph: ResourcesGraph, token: str | None, *, limit: int | None, quiet: bool) -> int:
-    from .github import GitHubAuthError, GitHubSource, http_transport
+    from .github import GitHubAuthError, GitHubSource, Source, http_transport
+    from .rest import RestSource, http_rest_transport
     from .sweep import sweep
 
-    if not token:
+    source: Source
+    if token:
+        source = GitHubSource(http_transport(token))
+    else:
         print(
-            "No GitHub credentials, so nothing can be fetched; Touches stay pending.\n"
+            "No GitHub credentials: fetching single issues, PRs and repositories without them "
+            "(60 requests an hour); listings wait.\n"
             "Log in with `gh auth login`, or set a token: agent-context-graph config set github.token",
             file=sys.stderr,
         )
-        return 1
+        source = RestSource(http_rest_transport())
     try:
-        report = sweep(
-            graph, GitHubSource(http_transport(token)), limit=limit, log=(lambda _: None) if quiet else print
-        )
+        report = sweep(graph, source, limit=limit, log=(lambda _: None) if quiet else print)
     except GitHubAuthError as exc:
         print(f"{exc}; Touches stay pending.", file=sys.stderr)
         return 1
     unresolved = ", ".join(f"{reason}={count}" for reason, count in sorted(report.unresolved.items())) or "none"
-    print(f"resolved {report.resolved} · unresolved {unresolved} · {report.fetched} fetches")
+    print(
+        f"resolved {report.resolved} · unresolved {unresolved} · {report.fetched} fetched · "
+        f"{report.checked} checked ({report.unchanged} unchanged) · {report.linked} links"
+    )
     return 0
 
 

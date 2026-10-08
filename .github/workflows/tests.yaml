@@ -106,6 +106,7 @@ jobs:
             resources-graph:
               - 'context-graph/resources-graph/**'
               - 'context-graph/sessions-graph/**'
+              - 'context-graph/actions-graph/**'
               - 'context-graph/agent-context-graph/**'
               - 'memgraph-toolbox/**'
               - '.github/workflows/tests.yaml'

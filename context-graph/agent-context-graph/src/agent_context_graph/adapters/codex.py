@@ -10,6 +10,7 @@ from agent_context_graph.adapters._spec import (
     RuntimeSpec,
     SpecAdapter,
     SpecPlugin,
+    pre_tool_use_context,
     session_start,
     tool_end,
     tool_start,
@@ -76,6 +77,7 @@ SPEC = RuntimeSpec(
         matchers={"SessionStart": "startup|resume|clear", "PreToolUse": "*", "PostToolUse": "*"},
     ),
     responses={"Stop": {"continue": True}},
+    context_before_tool=pre_tool_use_context,
     probe_payload={"hook_event_name": "Stop", "session_id": "doctor"},
 )
 

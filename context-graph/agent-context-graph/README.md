@@ -308,6 +308,14 @@ At session start the hook adds one line to the model's context saying the tool
 exists. It never pushes retrieved content; the model calls `recall` when a
 question needs memory.
 
+A connector may also add a line just before a tool runs
+(`GraphConnector.context_before_tool`) — resources-graph's Nudge that what the
+tool is about to fetch is already in memory. It is advice only: the call always
+proceeds unchanged, and a connector that fails adds nothing. Only Claude Code
+and Codex show it (`PreToolUse` `additionalContext` with no permission
+decision); the other harnesses' pre-tool hooks can only allow, deny or rewrite
+a call, so they get the session-start line alone.
+
 The same search from a shell:
 
 ```bash
