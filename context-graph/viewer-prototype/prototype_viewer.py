@@ -22,6 +22,7 @@ from typing import ClassVar
 
 import tomllib
 from neo4j import GraphDatabase
+from prototype_knowledge import EntityList
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
@@ -250,7 +251,13 @@ def session_row(s: dict, variant: str) -> list:
 
 
 class Dashboard(Screen):
-    BINDINGS: ClassVar = [Binding("enter", "open", "open session", show=True)]
+    BINDINGS: ClassVar = [
+        Binding("enter", "open", "open session", show=True),
+        Binding("k", "knowledge", "knowledge graph"),
+    ]
+
+    def action_knowledge(self) -> None:
+        self.app.push_screen(EntityList())
 
     def compose(self) -> ComposeResult:
         app: Viewer = self.app  # type: ignore[assignment]  # prototype
@@ -344,7 +351,13 @@ def duration(a: dict) -> str:
 
 
 class SessionScreen(Screen):
-    BINDINGS: ClassVar = [Binding("escape", "app.pop_screen", "back")]
+    BINDINGS: ClassVar = [
+        Binding("escape", "app.pop_screen", "back"),
+        Binding("g", "entities", "entities of session"),
+    ]
+
+    def action_entities(self) -> None:
+        self.app.push_screen(EntityList(self.session_id))
 
     def __init__(self, session_id: str):
         super().__init__()
@@ -458,6 +471,11 @@ class Viewer(App):
     #main { width: 3fr; }
     #details { width: 1fr; height: 1fr; }
     #derived { height: auto; max-height: 12; }
+    #entities { width: 3fr; }
+    #prov { width: 2fr; height: 1fr; }
+    #nbmain { width: 3fr; }
+    #evidence { width: 2fr; height: 1fr; }
+    #filter { height: 3; }
     """
     BINDINGS: ClassVar = [
         Binding("v", "variant", "variant"),
@@ -524,6 +542,8 @@ class Viewer(App):
             self.screen.render_data()
 
     def action_variant(self) -> None:
+        if not hasattr(self.screen, "render_data"):
+            return
         key = "session" if isinstance(self.screen, SessionScreen) else "dash"
         self.variant[key] = "B" if self.variant[key] == "A" else "A"
         self.screen.refresh(recompose=True)
