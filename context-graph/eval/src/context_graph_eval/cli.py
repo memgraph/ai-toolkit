@@ -413,11 +413,11 @@ def _learned_args(parser) -> None:
     )
     parser.add_argument(
         "--ontology",
-        choices=("fixed", "learned"),
+        choices=("fixed", "default", "learned"),
         default="fixed",
-        help="'fixed': extract against the LongMemEval vocabulary. 'learned': extract under hygm's default "
-        "model, then derive and adopt each user's own model (sessions-graph derive) before answering. "
-        "GLiNER2 only.",
+        help="'fixed': extract against the LongMemEval vocabulary. 'default': extract under hygm's default "
+        "model, nothing derived. 'learned': the same, then derive and adopt each user's own model "
+        "(sessions-graph derive) before answering. The last two need GLiNER2.",
     )
     parser.add_argument("--derive-seeds", type=int, default=1, help="candidates per user derivation (learned)")
     parser.add_argument("--derive-workers", type=int, default=4, help="user derivations at once (learned)")
