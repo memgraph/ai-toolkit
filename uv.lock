@@ -187,7 +187,7 @@ wheels = [
 
 [[package]]
 name = "actions-graph"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "context-graph/actions-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -219,7 +219,7 @@ provides-extras = ["agent-context-graph", "claude-agent", "test"]
 
 [[package]]
 name = "agent-context-graph"
-version = "0.3.1"
+version = "0.4.0"
 source = { editable = "context-graph/agent-context-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -2621,7 +2621,7 @@ wheels = [
 
 [[package]]
 name = "hygm"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "hygm" }
 dependencies = [
     { name = "pyyaml" },
@@ -8477,7 +8477,7 @@ wheels = [
 
 [[package]]
 name = "sessions-graph"
-version = "0.6.0"
+version = "0.7.0"
 source = { editable = "context-graph/sessions-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -9974,7 +9974,7 @@ wheels = [
 
 [[package]]
 name = "unstructured2graph"
-version = "0.6.0"
+version = "0.7.0"
 source = { editable = "unstructured2graph" }
 dependencies = [
     { name = "gliner2" },
