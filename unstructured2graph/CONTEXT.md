@@ -1,6 +1,6 @@
 # unstructured2graph
 
-Converts files, URLs, raw text into `Chunk` nodes in Memgraph. Full ingestion also sends each Chunk to a pluggable `ExtractionBackend` (LightRAG, LLM-based; or GLiNER2, local/LLM-free) for entity/relationship extraction.
+Converts files, URLs, raw text into `Chunk` nodes in Memgraph. Full ingestion also sends each Chunk to a pluggable `ExtractionBackend` (GLiNER2, local/LLM-free and the sessions-graph default; or LightRAG, LLM-based) for entity/relationship extraction.
 
 ## Language
 
@@ -57,3 +57,12 @@ Whether Entity Type appears in Ontology, during gated Label Promotion. Non-confo
 - Ontology prompt guidance and Ontology-gated Label Promotion share one file, enforce different things. Guidance steers LLM; promotion checks its output in application code.
 - Ontology Conformance never rejects an entity. Only controls label promotion.
 - Label Promotion doesn't require an Ontology. Unrestricted promotion has no conformance check.
+
+## Shared graph model
+
+`hygm.GraphModel` defines node labels, relation types with allowed start/end labels,
+and identity rules. The conformance gate validates extracted nodes and relations
+against that model; an entity-type YAML alone is the older label-promotion contract.
+Sessions Graph selects a user's adopted model or the generic default model.
+`MENTIONED_IN.sources` records entity evidence by source turn, and typed relation
+edges carry `source_id` for precise recall despite coarse session-level `HAS_CHUNK` links.

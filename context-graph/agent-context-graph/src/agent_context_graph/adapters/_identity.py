@@ -156,9 +156,9 @@ def resolve_llm_env() -> dict[str, str]:
 
     Config file only — mirrors :func:`resolve_memgraph_env`, but there is no
     CLI-flag override path for these since nothing resolves them from argparse.
-    Values are empty strings when not configured; callers should treat an
-    empty value as "not configured" rather than overlaying it onto a child
-    process's environment.
+    Values are empty strings when not configured. Hook-spawned children must
+    overlay these empty values too so ambient credentials cannot supply a key
+    absent from the selected config file.
     """
     config = load_config()
     return {

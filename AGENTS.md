@@ -45,7 +45,9 @@ Substantial design work in this family is tracked as GitHub issues labeled
 `wayfinder:map` (title `Map: ...`), broken into `wayfinder:grilling` /
 `wayfinder:research` / `wayfinder:prototype` / `wayfinder:task` child issues,
 using this repo's `/grilling`, `/domain-modeling`, and `/research` skills.
-Check open maps before starting non-trivial work here:
+Closed maps preserve design decisions; their implementation plans may describe work
+that has already shipped. Verify linked implementation PRs, current code, and package
+releases before treating those plans as pending. Check open maps before starting non-trivial work here:
 ```bash
 gh issue list --label wayfinder:map --state open
 ```
@@ -101,10 +103,18 @@ stray container for these; `scripts/dev-memgraph.sh` owns the disposable test
 instance so the automated suite can never collide with or wipe your
 exploration data:
 ```bash
-./scripts/dev-memgraph.sh test                  # all packages
+./scripts/dev-memgraph.sh test                  # Context Graph + HyGM + unstructured2graph
 ./scripts/dev-memgraph.sh test sessions-graph    # one package
 ./scripts/dev-memgraph.sh test-down              # reclaim the test container when done
 ```
+For parallel checkouts, override `AI_TOOLKIT_TEST_CONTAINER` and
+`AI_TOOLKIT_TEST_PORT` together to select an isolated test instance. Exploration
+uses `AI_TOOLKIT_DEV_CONTAINER`/`AI_TOOLKIT_DEV_PORT`. Test fixtures must honor
+`MEMGRAPH_URL` (and eval's `EVAL_MEMGRAPH_URL`) instead of hardcoding port 7687.
+`dogfood-env` creates a private session config and prints only its
+`CONTEXT_GRAPH_CONFIG` export; remove that temporary file after the session.
+`hooks-local`/`hooks-restore` back up and restore the selected config file.
+
 The same script also drives a disposable *exploration* Memgraph
 (`up`/`hooks-local`/`inspect`/`reconcile`/`down`) for dogfooding against your
 own real Claude Code session — see `./scripts/dev-memgraph.sh --help`.

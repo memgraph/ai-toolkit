@@ -269,21 +269,31 @@ class TestReconciliationEnv:
         assert env["MEMGRAPH_URL"] == "bolt://remote:7687"
         assert env["OPENAI_API_KEY"] == "sk-test"
 
-    def test_ambient_llm_key_preserved_when_config_empty(self, context_graph_config, monkeypatch):
+    def test_empty_config_clears_ambient_credentials(self, context_graph_config, monkeypatch):
         from sessions_graph.connector import _child_env
 
         monkeypatch.setenv("OPENAI_API_KEY", "ambient-key")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient-key")
+        monkeypatch.setenv("MEMGRAPH_USER", "ambient-user")
+        monkeypatch.setenv("MEMGRAPH_PASSWORD", "ambient-password")
+        monkeypatch.setenv("MEMGRAPH_URI", "bolt://ambient:7687")
+        monkeypatch.setenv("MEMGRAPH_USERNAME", "ambient-user")
 
         env = _child_env(llm=True)
 
-        # config.toml has no openai_api_key set -> must not clobber the ambient value
-        assert env["OPENAI_API_KEY"] == "ambient-key"
+        assert env["OPENAI_API_KEY"] == ""
+        assert env["ANTHROPIC_API_KEY"] == ""
+        assert env["MEMGRAPH_USER"] == ""
+        assert env["MEMGRAPH_PASSWORD"] == ""
+        assert "MEMGRAPH_URI" not in env
+        assert "MEMGRAPH_USERNAME" not in env
 
     def test_embedding_env_gets_memgraph_but_not_configured_llm_keys(self, context_graph_config, monkeypatch):
         """Embedding runs inside Memgraph; the child needs the connection, not the keys."""
         from sessions_graph.connector import _child_env
 
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "ambient-key")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient-key")
         context_graph_config.write_full_config(memgraph_url="bolt://remote:7687", openai_api_key="sk-test")
         context_graph_config._reset_cache()
 
@@ -291,3 +301,4 @@ class TestReconciliationEnv:
 
         assert env["MEMGRAPH_URL"] == "bolt://remote:7687"
         assert "OPENAI_API_KEY" not in env
+        assert "ANTHROPIC_API_KEY" not in env

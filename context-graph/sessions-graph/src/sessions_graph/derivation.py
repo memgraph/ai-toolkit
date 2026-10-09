@@ -9,8 +9,8 @@ The decisions this implements (map #431):
   watermark at the start, so a session finishing mid-run belongs to the next.
 - **Claim (#433).** A run holds an expiring claim on ``(:User)``, so a second
   run exits and a crashed one's claim lapses.
-- **Gate (#435).** From the 16-session run on, a quarter of the delta (at
-  most 8 sessions) is held out; earlier runs gate in-sample. Up to three
+- **Gate (#435).** When the sampled delta has at least 8 sessions, a quarter
+  (at most 8 sessions) is held out; smaller samples gate in-sample. Up to three
   candidates (different seeds) are derived and each is extracted over the
   held-out sessions; one passes when it is no worse than N, within a small
   tolerance, on catch-all share and on user-turn coverage. The best passing

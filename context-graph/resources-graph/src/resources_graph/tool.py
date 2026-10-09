@@ -140,6 +140,11 @@ def render(served: Served, *, page: int = 1) -> str:
         f"created_at: {r['created_at']} · closed_at: {r.get('closed_at') or '-'}",
         _freshness(r),
     ]
+    if served.kind == "Issue" and str(r["state"]).lower() == "closed" and "wayfinder:map" in (r.get("labels") or []):
+        lines.append(
+            "Closed design map: its build plans may already have shipped. Check linked implementation PRs, "
+            "current code and releases before treating planned work as pending; fetched_at only dates the source fetch."
+        )
     if served.kind == "PullRequest":
         lines.append(f"merged: {r.get('merged')} · base: {r.get('base_ref')}")
         lines.append(f"changed files ({len(r.get('changed_files') or [])}): {', '.join(r.get('changed_files') or [])}")

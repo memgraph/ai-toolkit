@@ -33,7 +33,7 @@ Token count of retrieved payload. Excludes agent's own usage; only ranks questio
 _Avoid_: Cost, latency, performance
 
 **Retrieval**:
-Step under test: answering a question from graph. v1: agent gets schema, writes read-only Cypher. No ranking, query template, vector search yet.
+Step under test: answering a question from graph. The agent strategy gets the schema and writes read-only Cypher. The hybrid strategy calls production `SessionsGraph.recall`, combining full-text and vector search with typed facts. Reports identify the strategy and settings measured.
 
 Only Retrieval is read-only. Can't alter graph or access distillation storage, incl. cached LLM responses that may hold answers.
 _Avoid_: Query, search, lookup (each names a mechanism not yet chosen)

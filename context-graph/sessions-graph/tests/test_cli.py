@@ -103,3 +103,31 @@ def test_reconcile_pending_with_no_sessions_returns_0_without_constructing_light
     assert exit_code == 0
     assert "No sessions to reconcile" in capsys.readouterr().out
     mock_wrapper_cls.assert_not_called()
+
+
+def test_reconcile_with_only_anthropic_key(monkeypatch):
+    """An Anthropic-only config must select an Anthropic summary callable."""
+    from functools import partial
+
+    from lightrag.llm.anthropic import anthropic_complete_if_cache
+    from sessions_graph.derive_llm import DEFAULT_MODELS
+
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
+    fake_graph = MagicMock()
+    fake_graph.reconcile_session = AsyncMock(
+        return_value=ReconciliationSummary(session_id="s-1", status="completed", texts_considered=1, texts_deduped=1)
+    )
+    fake_wrapper = MagicMock()
+    fake_wrapper.initialize = AsyncMock()
+    fake_wrapper.afinalize = AsyncMock()
+    with (
+        patch("sessions_graph.SessionsGraph", return_value=fake_graph),
+        patch("lightrag_memgraph.MemgraphLightRAGWrapper", return_value=fake_wrapper),
+    ):
+        assert main(["reconcile", "--session", "s-1"]) == 0
+    kwargs = fake_wrapper.initialize.call_args.kwargs
+    assert isinstance(kwargs["llm_model_func"], partial)
+    assert kwargs["llm_model_func"].func is anthropic_complete_if_cache
+    assert kwargs["llm_model_func"].args == (DEFAULT_MODELS["anthropic"],)
+    assert kwargs["llm_model_name"] == DEFAULT_MODELS["anthropic"]

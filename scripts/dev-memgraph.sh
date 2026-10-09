@@ -10,8 +10,8 @@
 # See `./scripts/dev-memgraph.sh --help` for the intended workflow.
 set -euo pipefail
 
-CONTAINER_NAME="ai-toolkit-dev-memgraph"
-HOST_PORT="7688"
+CONTAINER_NAME="${AI_TOOLKIT_DEV_CONTAINER:-ai-toolkit-dev-memgraph}"
+HOST_PORT="${AI_TOOLKIT_DEV_PORT:-7688}"
 IMAGE="memgraph/memgraph-mage:latest"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -35,18 +35,21 @@ LOCAL_MEMGRAPH_DATABASE="memgraph"
 # convention) a place to run without ever being able to wipe whatever you're
 # exploring/dogfooding on the instance above. Managed transparently by `test`
 # itself -- you never need to think about it.
-TEST_CONTAINER_NAME="ai-toolkit-test-memgraph"
-TEST_HOST_PORT="7689"
+TEST_CONTAINER_NAME="${AI_TOOLKIT_TEST_CONTAINER:-ai-toolkit-test-memgraph}"
+TEST_HOST_PORT="${AI_TOOLKIT_TEST_PORT:-7689}"
 TEST_MEMGRAPH_URL="bolt://localhost:${TEST_HOST_PORT}"
 TEST_MEMGRAPH_USER=""
 TEST_MEMGRAPH_PASSWORD=""
 TEST_MEMGRAPH_DATABASE="memgraph"
 
-CONFIG_DIR="${HOME}/.config/context-graph"
-CONFIG_FILE="${CONFIG_DIR}/config.toml"
-CONFIG_BACKUP="${CONFIG_DIR}/config.toml.pre-local-test-backup"
+CONFIG_FILE="${CONTEXT_GRAPH_CONFIG:-${HOME}/.config/context-graph/config.toml}"
+case "$CONFIG_FILE" in /*) ;; *) CONFIG_FILE="$PWD/$CONFIG_FILE" ;; esac
+export CONTEXT_GRAPH_CONFIG="$CONFIG_FILE"
+CONFIG_DIR="$(dirname "$CONFIG_FILE")"
+CONFIG_BACKUP="${CONFIG_FILE}.pre-local-test-backup"
+CONFIG_ABSENT="${CONFIG_BACKUP}.absent"
 
-ALL_PACKAGES=(unstructured2graph actions-graph agent-context-graph skills-graph sessions-graph resources-graph)
+ALL_PACKAGES=(unstructured2graph actions-graph agent-context-graph skills-graph sessions-graph resources-graph hygm context-graph-eval)
 
 _HELP="usage: $(basename "$0") <command> [args]
 
@@ -82,9 +85,9 @@ Commands:
                      'claude' + 'agent-context-graph' on PATH. Costs a real LLM
                      call; Tier 1 only (one subagent, no concurrent-subagent
                      disambiguation).
-  dogfood-env         Print export statements enabling auto_reconcile (true, automatic,
-                     event-driven reconciliation on SESSION_END) for a claude session
-                     launched afterward. Usage: eval \"\$(./scripts/dev-memgraph.sh dogfood-env)\" && claude
+  dogfood-env         Create a private config enabling auto_reconcile on SESSION_END.
+                     Print only an export of CONTEXT_GRAPH_CONFIG; delete that temporary
+                     file after the session. Usage: eval \"\$(./scripts/dev-memgraph.sh dogfood-env)\" && claude
   test [pkg...]      Run test suites against a SEPARATE, disposable container --
                      never touches the main one. Default packages: ${ALL_PACKAGES[*]}
 
@@ -164,25 +167,24 @@ _container_up() {
   _wait_ready "${port}" "${name}"
 }
 
-# Some packages' own test suites are not perfectly hermetic about
-# ~/.config/context-graph/config.toml (a real, discovered bug: a bootstrap
-# test in agent-context-graph's suite failed to mock its config-writing call
-# and silently overwrote a real, live, credentialed config with test
-# artifacts). Belt-and-suspenders: protect whatever is currently in that file
-# across every `test` run, independent of whether hooks-local/hooks-restore
-# are ever used, so a similar bug anywhere else can't do the same thing.
-_TEST_CONFIG_SAFETY_BACKUP="${CONFIG_FILE}.test-run-safety-backup"
-
+# Hooks spawned by tests must use the disposable instance and a private config.
+_TEST_CONFIG_DIR=""
 _protect_hook_config() {
-  if [ -f "${CONFIG_FILE}" ]; then
-    cp "${CONFIG_FILE}" "${_TEST_CONFIG_SAFETY_BACKUP}"
-    chmod 600 "${_TEST_CONFIG_SAFETY_BACKUP}" 2>/dev/null || true
-  fi
+  _TEST_CONFIG_DIR="$(mktemp -d -t ai-toolkit-test-config.XXXXXX)"
+  export CONTEXT_GRAPH_CONFIG="${_TEST_CONFIG_DIR}/config.toml"
+  (umask 077; cat >"${CONTEXT_GRAPH_CONFIG}" <<EOF
+[memgraph]
+url = "${TEST_MEMGRAPH_URL}"
+user = "${TEST_MEMGRAPH_USER}"
+password = "${TEST_MEMGRAPH_PASSWORD}"
+database = "${TEST_MEMGRAPH_DATABASE}"
+EOF
+  )
 }
 
 _restore_hook_config_after_test() {
-  if [ -f "${_TEST_CONFIG_SAFETY_BACKUP}" ]; then
-    mv "${_TEST_CONFIG_SAFETY_BACKUP}" "${CONFIG_FILE}"
+  if [ -n "${_TEST_CONFIG_DIR}" ]; then
+    rm -rf "${_TEST_CONFIG_DIR}"
   fi
 }
 
@@ -223,7 +225,7 @@ cmd_status() {
   _describe_container "Main container " "${CONTAINER_NAME}" "${HOST_PORT}"
   _describe_container "Test container " "${TEST_CONTAINER_NAME}" "${TEST_HOST_PORT}"
 
-  if [ -f "${CONFIG_BACKUP}" ]; then
+  if [ -f "${CONFIG_BACKUP}" ] || [ -f "${CONFIG_ABSENT}" ]; then
     echo "Hook config:     LOCAL mode (your real config is backed up at ${CONFIG_BACKUP})"
   else
     echo "Hook config:     real/production mode (no local-mode backup present)"
@@ -265,7 +267,7 @@ _resolve_openai_api_key() {
   local env_file="${REPO_ROOT}/.env"
   if [ -f "${env_file}" ]; then
     OPENAI_API_KEY="$(grep -E '^OPENAI_API_KEY=' "${env_file}" | head -1 | cut -d'=' -f2-)"
-    export OPENAI_API_KEY
+    if [ -n "$OPENAI_API_KEY" ]; then export OPENAI_API_KEY; else unset OPENAI_API_KEY; fi
   fi
   [ -n "${OPENAI_API_KEY:-}" ]
 }
@@ -280,43 +282,55 @@ _resolve_anthropic_api_key() {
   local env_file="${REPO_ROOT}/.env"
   if [ -f "${env_file}" ]; then
     ANTHROPIC_API_KEY="$(grep -E '^ANTHROPIC_API_KEY=' "${env_file}" | head -1 | cut -d'=' -f2-)"
-    export ANTHROPIC_API_KEY
+    if [ -n "$ANTHROPIC_API_KEY" ]; then export ANTHROPIC_API_KEY; else unset ANTHROPIC_API_KEY; fi
   fi
   [ -n "${ANTHROPIC_API_KEY:-}" ]
 }
 
-# Prints export statements for the vars SessionsGraphConnector's own
-# auto_reconcile fallback (SESSIONS_GRAPH_AUTO_RECONCILE) and the detached
-# reconcile subprocess it spawns actually need. Deliberately NOT something
-# this script sets permanently in a shell profile: env vars set on an
-# already-running `claude` process can't retroactively reach it (or its hook
-# subprocesses) -- they only take effect for a `claude` you launch fresh
-# afterward, from a shell that has run this first. Usage:
-#   eval "$(./scripts/dev-memgraph.sh dogfood-env)" && claude
-# Scoped to that one shell/session; a plain new terminal is unaffected.
+# Create a private, session-scoped config; only its path reaches stdout.
 cmd_dogfood_env() {
-  if ! _resolve_openai_api_key; then
-    echo "ERROR: OPENAI_API_KEY is not set and was not found in ${REPO_ROOT}/.env" >&2
-    exit 1
-  fi
-  cat <<EOF
-export SESSIONS_GRAPH_AUTO_RECONCILE=1
-export MEMGRAPH_URL="${LOCAL_MEMGRAPH_URL}"
-export MEMGRAPH_USER="${LOCAL_MEMGRAPH_USER}"
-export MEMGRAPH_PASSWORD="${LOCAL_MEMGRAPH_PASSWORD}"
-export MEMGRAPH_DATABASE="${LOCAL_MEMGRAPH_DATABASE}"
-export OPENAI_API_KEY="${OPENAI_API_KEY}"
-EOF
+  (cd "$REPO_ROOT" && uv run --package agent-context-graph python - "$LOCAL_MEMGRAPH_URL" "$REPO_ROOT" <<'PYCONFIG'
+import os
+import shlex
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+from dotenv import dotenv_values
+from agent_context_graph.adapters import _identity
+
+source = _identity.config_file()
+config = _identity.load_config()
+values = dotenv_values(Path(sys.argv[2]) / ".env")
+keys = {
+    name: os.environ.get(env_name) or getattr(config, name) or values.get(env_name) or ""
+    for name, env_name in (("openai_api_key", "OPENAI_API_KEY"), ("anthropic_api_key", "ANTHROPIC_API_KEY"))
+}
+if not any(keys.values()):
+    raise SystemExit("Reconciliation needs llm.openai_api_key or llm.anthropic_api_key (config, env, or repo .env).")
+fd, filename = tempfile.mkstemp(prefix="context-graph-dogfood-", suffix=".toml")
+os.close(fd)
+try:
+    if source.is_file():
+        shutil.copyfile(source, filename)
+    os.environ[_identity.CONFIG_PATH_ENV] = filename
+    _identity.write_config(memgraph_url=sys.argv[1], memgraph_user="", memgraph_password="",
+                           memgraph_database="memgraph", auto_reconcile=True, **keys)
+except BaseException:
+    Path(filename).unlink(missing_ok=True)
+    raise
+print("export CONTEXT_GRAPH_CONFIG=" + shlex.quote(filename))
+PYCONFIG
+  )
 }
 
 cmd_reconcile() {
   _require_container_reachable
 
-  if ! _resolve_openai_api_key; then
-    echo "ERROR: OPENAI_API_KEY is not set and was not found in ${REPO_ROOT}/.env" >&2
-    echo "Session reconciliation calls a real LLM (via LightRAG) and needs it." >&2
-    exit 1
-  fi
+  # Manual runs can capture write-time env/.env keys; the CLI also reads config.
+  _resolve_openai_api_key || true
+  _resolve_anthropic_api_key || true
 
   local target=("$@")
   if [ "${#target[@]}" -eq 0 ]; then
@@ -324,12 +338,11 @@ cmd_reconcile() {
   fi
 
   echo "Running: sessions-graph reconcile ${target[*]}"
-  (cd "$REPO_ROOT" && env \
+  (cd "$REPO_ROOT" && env -u MEMGRAPH_URI -u MEMGRAPH_USERNAME \
     "MEMGRAPH_URL=${LOCAL_MEMGRAPH_URL}" \
     "MEMGRAPH_USER=${LOCAL_MEMGRAPH_USER}" \
     "MEMGRAPH_PASSWORD=${LOCAL_MEMGRAPH_PASSWORD}" \
     "MEMGRAPH_DATABASE=${LOCAL_MEMGRAPH_DATABASE}" \
-    "OPENAI_API_KEY=${OPENAI_API_KEY}" \
     uv run --package sessions-graph --extra reconciliation sessions-graph reconcile "${target[@]}")
 }
 
@@ -353,6 +366,7 @@ cmd_test() {
   # already in the ambient shell environment.
   local with_local_memgraph=(
     env
+    "EVAL_MEMGRAPH_URL=${TEST_MEMGRAPH_URL}"
     "MEMGRAPH_URL=${TEST_MEMGRAPH_URL}"
     "MEMGRAPH_USER=${TEST_MEMGRAPH_USER}"
     "MEMGRAPH_PASSWORD=${TEST_MEMGRAPH_PASSWORD}"
@@ -389,6 +403,13 @@ cmd_test() {
         (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package resources-graph --extra test --extra agent-context-graph \
           pytest context-graph/resources-graph/tests/ -v) || failed+=("$pkg")
         ;;
+      hygm)
+        (cd "$REPO_ROOT" && uv run --package hygm --extra test pytest hygm/tests/ -v) || failed+=("$pkg")
+        ;;
+      context-graph-eval)
+        (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package context-graph-eval --extra test --extra pipeline \
+          pytest context-graph/eval/tests/ -v) || failed+=("$pkg")
+        ;;
       *)
         echo "Unknown package: $pkg (expected one of: ${ALL_PACKAGES[*]})" >&2
         failed+=("$pkg")
@@ -413,13 +434,15 @@ cmd_hooks_local() {
   fi
 
   mkdir -p "${CONFIG_DIR}"
-  if [ -f "${CONFIG_BACKUP}" ]; then
+  if [ -f "${CONFIG_BACKUP}" ] || [ -f "${CONFIG_ABSENT}" ]; then
     echo "Backup already exists at ${CONFIG_BACKUP} -- assuming you're already in local mode; re-applying local config."
   elif [ -f "${CONFIG_FILE}" ]; then
     cp "${CONFIG_FILE}" "${CONFIG_BACKUP}"
+    chmod 600 "${CONFIG_BACKUP}"
     echo "Backed up your real config to ${CONFIG_BACKUP}"
   else
-    echo "No existing config file at ${CONFIG_FILE} -- nothing to back up."
+    (umask 077; touch "${CONFIG_ABSENT}")
+    echo "No existing config file at ${CONFIG_FILE} -- recording its absence."
   fi
 
   agent-context-graph config set memgraph.url "${LOCAL_MEMGRAPH_URL}"
@@ -434,6 +457,11 @@ cmd_hooks_local() {
 }
 
 cmd_hooks_restore() {
+  if [ -f "${CONFIG_ABSENT}" ]; then
+    rm -f "${CONFIG_FILE}" "${CONFIG_ABSENT}"
+    echo "Removed the temporary hook config; no original file existed."
+    return
+  fi
   if [ ! -f "${CONFIG_BACKUP}" ]; then
     echo "ERROR: no backup found at ${CONFIG_BACKUP} -- nothing to restore." >&2
     echo "(Are you sure hooks-local was run, and hasn't already been restored?)" >&2
@@ -503,20 +531,13 @@ PYEOF
   # Only swap (and later restore) if hooks-local hasn't already been applied
   # by the caller -- same convention cmd_hooks_local itself uses.
   local we_swapped_hooks=0
-  if [ ! -f "${CONFIG_BACKUP}" ]; then
+  if [ ! -f "${CONFIG_BACKUP}" ] && [ ! -f "${CONFIG_ABSENT}" ]; then
     cmd_hooks_local
     we_swapped_hooks=1
   else
     echo "Hook config already in local mode -- leaving as-is."
   fi
-  # Only arm the restore trap if a backup actually exists now -- on a machine
-  # with no pre-existing real config (e.g. a fresh CI runner), cmd_hooks_local
-  # has nothing to back up and creates no backup file, so there is nothing to
-  # restore either. Without this check, the trap would call cmd_hooks_restore
-  # unconditionally on exit, which errors ("no backup found") and calls
-  # `exit 1` from inside the trap -- clobbering even a successful run's exit
-  # code.
-  if [ "${we_swapped_hooks}" -eq 1 ] && [ -f "${CONFIG_BACKUP}" ]; then
+  if [ "${we_swapped_hooks}" -eq 1 ]; then
     trap cmd_hooks_restore EXIT
   fi
   if [ "${we_swapped_hooks}" -eq 1 ]; then
