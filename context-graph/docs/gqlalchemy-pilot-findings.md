@@ -100,3 +100,45 @@ gate was exercised against the recovered real graph: it rejects the pending
 second session. Syntax/lint and targeted type checks pass. These checks do not
 establish live Codex readiness. Additional model launches remain disabled while
 the blockers are unresolved.
+
+## Follow-up validation on 2026-10-09
+
+The user authorized two additional bounded infrastructure sessions. A durable
+ledger reserved each launch before execution; the original six-session pilot
+ledger was preserved. No comparative issue-solving sessions were launched.
+
+Both fresh GPT-6 Luna sessions read frozen issue #375 through the resource MCP
+tool and queried `RETURN 1 AS ok` against a new disposable Memgraph from inside
+the sandbox. The first completed in 11.92 seconds with three tool starts; the
+second in 16.85 seconds with four tool starts. The second initially sent a
+`query` argument to the resource tool, recovered by supplying `address`, and
+completed successfully. Explicit approval configuration resolved the earlier
+noninteractive tool denial.
+
+Actual first-session JSONL was replayed through the Event Protocol, followed by
+serial default-HyGM extraction and embedding with summaries disabled. The second
+fresh session retrieved a unique fixture name through the recall MCP tool and
+reported the correct first-session ID. Independent assertions verified that the
+name and provenance appeared in the tool result, the second prompt did not contain
+the name, and the two thread IDs differed. No repository note carried the name.
+
+Both sessions subsequently reached completed reconciliation and embedding
+statuses. The Memgraph container's sampled peak was 899.5 MiB under a 2 GiB
+container limit; no OOM occurred. This is sampled container memory, not peak
+host memory or proof of stability under larger content. Copied authentication
+was removed and the validation container stopped; previous containers were kept.
+
+Extraction reported one nonconformant relation for the first session and two for
+the second. Second-session processing also logged an already-existing typed
+constraint error while ultimately completing. These require integrity review
+before making claims about extracted graph-fact quality. Successful recall here
+does not isolate the contribution of extracted facts from stored session turns.
+
+**Result:** explicit replay capture, agent-side connectivity, authorized MCP
+reads, serial processing and fresh-session recall now pass this small smoke.
+Native hook discovery remains unverified. A small paired pilot can use this replay
+path once evaluator isolation and quality-review gates are addressed; the full
+benchmark remains disabled. Dollar charges are still unknown.
+
+Local evidence: `runs/validation-20261009/validation-summary.json`, launch ledger,
+per-session JSONL and sampled container-memory log under the experiment directory.
