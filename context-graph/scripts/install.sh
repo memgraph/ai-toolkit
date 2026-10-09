@@ -16,6 +16,7 @@
 #                                 opencode, antigravity-cli, grok (default: current directory)
 #   AGENT_CONTEXT_GRAPH_USER_ID   identity to record (default: git user.name, else $USER)
 #   MEMGRAPH_HOST / MEMGRAPH_PORT default localhost:7687
+#   CONTEXT_GRAPH_MEMGRAPH_CONTAINER default context-graph-memgraph (existing data preserved)
 #   SKIP_MEMGRAPH=1               don't start a local Memgraph even if none is reachable
 #   SKIP_UV_INSTALL=1             don't auto-install uv if missing (just fail with instructions)
 
@@ -41,7 +42,7 @@ PROJECT_DIR="${CONTEXT_GRAPH_PROJECT_DIR:-$PWD}"
 CONNECTORS=(skills-graph actions-graph sessions-graph)
 MEMGRAPH_HOST="${MEMGRAPH_HOST:-localhost}"
 MEMGRAPH_PORT="${MEMGRAPH_PORT:-7687}"
-CONTAINER_NAME="context-graph-memgraph"
+CONTAINER_NAME="${CONTEXT_GRAPH_MEMGRAPH_CONTAINER:-context-graph-memgraph}"
 MAGE_IMAGE="memgraph/memgraph-mage:latest"
 
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
@@ -68,14 +69,25 @@ elif [[ "${SKIP_MEMGRAPH:-0}" == "1" ]]; then
   fail "memgraph: not reachable and SKIP_MEMGRAPH=1 -- start one and rerun."
 else
   command -v docker >/dev/null 2>&1 || fail "docker is required to auto-start Memgraph: https://docs.docker.com/get-docker/ (or start your own and rerun with SKIP_MEMGRAPH=1)"
-  echo "Nothing reachable -- starting a local Memgraph ($MAGE_IMAGE)."
-  docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-  docker run -d --name "$CONTAINER_NAME" \
-    -p "${MEMGRAPH_PORT}:7687" -p 7444:7444 \
-    "$MAGE_IMAGE" --schema-info-enabled=True >/dev/null
+  case "$MEMGRAPH_HOST" in
+    localhost|127.0.0.1) ;;
+    *) fail "remote memgraph is unreachable; start it at $MEMGRAPH_HOST:$MEMGRAPH_PORT and rerun (no local container was changed)" ;;
+  esac
+  docker info >/dev/null 2>&1 || fail "docker daemon is unavailable"
+  if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+    published="$(docker inspect --format '{{range (index .HostConfig.PortBindings "7687/tcp")}}{{println .HostPort}}{{end}}' "$CONTAINER_NAME")"
+    [[ "$published" == "$MEMGRAPH_PORT" ]] || fail "existing $CONTAINER_NAME does not publish port $MEMGRAPH_PORT; choose its published port or a different CONTEXT_GRAPH_MEMGRAPH_CONTAINER (container preserved)"
+    echo "Restarting existing Memgraph container $CONTAINER_NAME (data preserved)."
+    docker start "$CONTAINER_NAME" >/dev/null
+  else
+    echo "Nothing reachable -- starting a local Memgraph ($MAGE_IMAGE)."
+    docker run -d --name "$CONTAINER_NAME" \
+      -p "127.0.0.1:${MEMGRAPH_PORT}:7687" -p 127.0.0.1:7444:7444 \
+      "$MAGE_IMAGE" --schema-info-enabled=True >/dev/null
+  fi
   ready=0
   for _ in $(seq 1 90); do
-    if bolt_query_ready; then ready=1; break; fi
+    if bolt_reachable && bolt_query_ready; then ready=1; break; fi
     sleep 2
   done
   [[ "$ready" == "1" ]] || { docker logs "$CONTAINER_NAME" || true; fail "memgraph did not become ready in time"; }

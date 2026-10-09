@@ -143,17 +143,19 @@ back to the session that produced them — see
 The same pass also writes the session's **episodic memory**: an
 `(:Episode {summary, summarized_at})` node linked via
 `(:Session)-[:HAS_EPISODE]->(:Episode)` (at most one per session — re-running
-reconciliation updates it rather than adding another), produced by a second,
+reconciliation updates it rather than adding another), produced by a
 dedicated LLM call over the same deduped session text — a "what happened in
-this session" gist, not the structured entity graph. This is what a "what did
-we do last time?" recall query actually reads.
+this session" gist, not the structured entity graph. This gist can be
+queried directly. The `recall` tool retrieves
+source turns, entities, and typed facts; it does not read Episode summaries.
 
 This requires the `sessions-graph[reconciliation]` extra and an LLM API key
-(`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`) for LightRAG — see the
+(`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`) for LightRAG. The CLI uses OpenAI
+when its key is present, otherwise Anthropic with `claude-sonnet-5-5` — see the
 [lightrag-memgraph README](../../integrations/lightrag-memgraph/README.md).
 
-**Reconciliation never runs inside a hook itself.** LightRAG entity
-extraction is LLM-backed and slow, and hook runtimes enforce a timeout on hook
+**Reconciliation never runs inside a hook itself.** Local GLiNER2 extraction
+and the LLM summary can exceed the timeout that hook runtimes enforce on hook
 commands. Instead:
 
 - On `SESSION_END` and on `TURN_END`, `SessionsGraphConnector` cheaply marks
@@ -300,8 +302,8 @@ One run:
 2. Reads the sessions since the last adopted run, sampled down to 64.
 3. Derives up to three candidates (`hygm.LlmRecommendationStrategy`, observed
    with local GLiNER2).
-4. Gates each candidate against the current model. From the 16-session run on,
-   the gate uses a held-out quarter of the delta (at most 8 sessions); earlier
+4. Gates each candidate against the current model. When the sampled delta
+   contains at least 8 sessions, the gate holds out a quarter (at most 8 sessions); smaller
    runs gate in-sample. A candidate passes when it is no worse on catch-all
    share (mentions typed `Topic`/`Artifact`) and on coverage (user turns with a
    typed relation).

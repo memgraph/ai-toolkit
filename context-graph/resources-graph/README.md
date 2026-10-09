@@ -26,6 +26,10 @@ Free-text searches only hit exactly. A truncated Listing (`--limit 500` of 686) 
 
 No TTL and no background crawl: a Resource is revalidated only when the agent really fetches it again (the model judged memory too stale). Then the Sweep makes one cheap check of GitHub's `updatedAt` — for a Listing, a light index of its members — and refetches at full depth only what changed; unchanged content just gets a new `fetched_at`. Reactions don't move GitHub's `updatedAt`, so reaction counts may be stale.
 
+Closed `wayfinder:map` issues are served with a reading note: their build plans may
+already have shipped. A recent fetch does not make the source narrative current;
+check linked implementation PRs, current code and releases before proposing pending work.
+
 When GitHub rate-limits, the Sweep stops; that Touch is kept as `rate_limited` and it and the rest are retried by the next Sweep.
 
 A transferred issue gets a new GitHub id (the id embeds its repository). When a fetch finds an item somewhere new, the old Resource releases its Address and points at the new one with `MOVED_TO`.

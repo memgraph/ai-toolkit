@@ -14,7 +14,7 @@ class TestMemgraphIntegration(ToolsUnitTests):
         # if your tool constructor instead required initialization arguments like
         # `def __init__(self, some_arg: int):`, you would return those here
         # as a dictionary, e.g.: `return {'some_arg': 42}`
-        return {"db": Memgraph("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph()}
 
     @property
     def tool_invoke_params_example(self) -> dict:

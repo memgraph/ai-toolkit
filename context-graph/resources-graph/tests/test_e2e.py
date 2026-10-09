@@ -319,3 +319,29 @@ def test_a_transferred_issue_links_old_to_new(graph, harness, source, replay):
     assert moved == [{"old": None, "new": "github:memgraph/gqlalchemy#901", "number": 2000}]
     assert graph.read(address("memgraph/memgraph#2000")).outcome == "miss"
     assert graph.read(address("memgraph/gqlalchemy#901")).outcome == "hit"
+
+
+@pytest.mark.parametrize(
+    "state,label,expected",
+    [("CLOSED", "wayfinder:map", True), ("OPEN", "wayfinder:map", False), ("CLOSED", "bug", False)],
+)
+def test_closed_design_maps_distinguish_source_freshness_from_implementation(
+    graph, harness, source, replay, state, label, expected
+):
+    """Reading a fresh cached plan must preserve its historical interpretation."""
+    replay.edit(
+        "Item:",
+        lambda body: (body["data"]["repository"]["issueOrPullRequest"] or {}).update(
+            state=state, labels={"nodes": [{"name": label}]}
+        ),
+    )
+    start(harness, "map-session", "ante")
+    fetch(harness, "map-session", "gh issue view 2000 -R memgraph/memgraph", "map-fetch")
+    assert sweep(graph, source).resolved == 1
+    calls = replay.calls
+    result = ask_memory(harness, "map-session", "memgraph/memgraph#2000", "map-read")
+    assert ("Closed design map:" in result.text) is expected
+    assert result.text.startswith("[resource hit]")
+    assert "fetched_at:" in result.text and "updated_at (GitHub):" in result.text
+    assert result.structured["resource"]["state"] == state
+    assert replay.calls == calls

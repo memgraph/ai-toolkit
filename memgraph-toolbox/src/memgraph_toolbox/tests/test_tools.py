@@ -14,7 +14,7 @@ from ..tools.schema import (
 
 @pytest.fixture()
 def db():
-    client = Memgraph(url="bolt://localhost:7687", username="", password="")
+    client = Memgraph()
     yield client
     client.close()
 

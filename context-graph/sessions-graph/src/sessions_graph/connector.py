@@ -86,7 +86,7 @@ class SessionsGraphConnector(GraphConnector):
             SESSION_END. Hook-based runtimes pass this explicitly, resolved
             from the persistent ``reconcile.auto_reconcile`` config-file
             setting. Defaults to ``False`` (off) when not given explicitly --
-            given LightRAG entity extraction's LLM cost, and per ADR 0002
+            given the session summary's LLM cost, and per ADR 0002
             (config-file-only-hook-resolution): no ambient environment
             variable is consulted here. A caller constructing
             ``SessionsGraphConnector`` directly (not through the hook config
@@ -195,23 +195,18 @@ def _spawn_detached(args: list[str], *, env: dict[str, str]) -> None:
 def _child_env(*, llm: bool) -> dict[str, str]:
     """Build the environment for a detached ``sessions-graph`` subprocess.
 
-    This hook process resolves Memgraph connection settings from
-    ``~/.config/context-graph/config.toml`` (per ADR 0002) purely as constructor
-    kwargs -- never writing them into ``os.environ``. A plain ``Popen`` without an
-    explicit ``env=`` would therefore leave the detached reconciliation subprocess
-    with ambient ``os.environ`` only, missing both the configured Memgraph
-    connection and any LLM API key LightRAG needs. Overlay the same config-file
-    resolution onto a copy of the ambient environment so the child gets what this
-    process would have used, without discarding real ambient values (e.g. an
-    OPENAI_API_KEY already exported) when config-file values are unset.
-
-    ``llm`` adds the configured LLM keys: reconciliation needs them, embedding
-    runs inside Memgraph and doesn't.
+    Connection values and provider keys come only from the selected config file.
+    Empty configured values must clear ambient credentials too. Unrelated
+    environment entries, including ``CONTEXT_GRAPH_CONFIG``, remain inherited.
+    ``llm=False`` omits provider keys because embedding runs inside Memgraph.
     """
     from agent_context_graph.adapters._identity import resolve_llm_env, resolve_memgraph_env
 
     env = dict(os.environ)
-    env.update({k: v for k, v in resolve_memgraph_env().items() if v})
+    # LightRAG bridges these aliases from the canonical connection values.
+    for key in ("MEMGRAPH_URI", "MEMGRAPH_USERNAME", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+        env.pop(key, None)
+    env.update(resolve_memgraph_env())
     if llm:
-        env.update({k: v for k, v in resolve_llm_env().items() if v})
+        env.update(resolve_llm_env())
     return env

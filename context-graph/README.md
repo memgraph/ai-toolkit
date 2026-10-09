@@ -29,6 +29,7 @@ Everything is joined by a shared `(:Session {session_id})` node, so one graph an
 | **[agent-context-graph](./agent-context-graph/)** | The event hub. Normalizes runtime hooks/SDK activity into a shared event stream and routes it to the connectors below. | Adapters + connectors wiring |
 | **[actions-graph](./actions-graph/)** | Tool calls, tool results, messages, subagent/error events — the raw activity of a session. | `(:Action)`, `(:Tool)` |
 | **[skills-graph](./skills-graph/)** | Which reusable [Agent Skills](https://docs.claude.com/en/docs/claude-code/skills) a session used, and stored skill definitions. | `(:Skill)` |
+| **[resources-graph](./resources-graph/)** | GitHub resources touched by agents, their shared cache, and the `resource` MCP read tool. Enabled explicitly; see its installation guide. | `(:Resource)`, `(:Touch)`, `(:Listing)` |
 | **[sessions-graph](./sessions-graph/)** | User/session provenance, durable **Memories**, and session **reconciliation** into entities. | `(:User)`, `(:Session)`, `(:Memory)` |
 
 > `(:Session)` is a shared coordination point — every component `MERGE`s it idempotently, but only sessions-graph owns `(:User)` and the `HAD_SESSION` edge. Entity extraction is powered by [unstructured2graph](../unstructured2graph/), which lives outside this family.
@@ -50,8 +51,9 @@ Requires Docker (only if no Memgraph is already reachable) and the runtime's CLI
 | `CONTEXT_GRAPH_RUNTIME` | `claude-code` | `claude-code`, `codex`, `copilot-cli`, `cursor`, `opencode`, `antigravity-cli`, or `grok` |
 | `CONTEXT_GRAPH_PROJECT_DIR` | current directory | Project to wire, for the runtimes with project-local hooks |
 | `AGENT_CONTEXT_GRAPH_USER_ID` | `git config user.name`, else `$USER` | Identity recorded on every session (`identity.user_id`) |
-| `MEMGRAPH_HOST` | `localhost` | Host to bootstrap against and, if starting one, to publish the container on |
-| `MEMGRAPH_PORT` | `7687` | Bolt port, same two uses as above |
+| `MEMGRAPH_HOST` | `localhost` | Host to bootstrap against. Auto-start supports `localhost`/`127.0.0.1` and publishes on loopback; an unreachable remote host fails without changing containers |
+| `MEMGRAPH_PORT` | `7687` | Bolt port to connect to and publish locally |
+| `CONTEXT_GRAPH_MEMGRAPH_CONTAINER` | `context-graph-memgraph` | Container to create or resume; incompatible port mappings fail while preserving its data |
 | `SKIP_MEMGRAPH` | unset | Set to `1` to fail instead of auto-starting a local Memgraph when none is reachable |
 | `SKIP_UV_INSTALL` | unset | Set to `1` to fail instead of auto-installing `uv` when missing |
 
@@ -59,7 +61,7 @@ Requires Docker (only if no Memgraph is already reachable) and the runtime's CLI
 CONTEXT_GRAPH_RUNTIME=codex ./context-graph/scripts/install.sh
 ```
 
-Already reachable Memgraph, already-registered marketplace, already-installed plugin — each is detected and skipped, so rerunning is safe (e.g. to pick up a new context-graph version).
+Already reachable Memgraph, already-registered marketplace, already-installed plugin — each is detected and skipped, so rerunning is safe (e.g. to pick up a new context-graph version). A stopped container is resumed with its data intact. An existing container with incompatible port publication is preserved and reported for correction.
 
 Once it finishes, use the runtime normally — every session writes to the graph automatically: `(:User)-[:HAD_SESSION]->(:Session)`, tool actions, skill usage, and any Memories the agent records.
 
@@ -143,7 +145,7 @@ See [agent-context-graph](./agent-context-graph/) for both runtimes' adapter det
 
 ## Turning sessions into an entity graph (reconciliation)
 
-By default, a finished session is marked `reconciliation_status = 'pending'` — its content is captured but not yet extracted into entities (LLM extraction is too slow/costly to run inside a hook). Run it out-of-band to build the entity graph:
+By default, a finished session is marked `reconciliation_status = 'pending'` — its content is captured but not yet extracted into entities (local extraction and the LLM summary run outside the hook timeout). Run it out-of-band to build the entity graph:
 
 ```bash
 pip install "sessions-graph[reconciliation]"    # actions-graph + unstructured2graph + LightRAG
@@ -153,7 +155,7 @@ export OPENAI_API_KEY=...                        # or ANTHROPIC_API_KEY
 sessions-graph reconcile --pending
 ```
 
-This pulls each session's actions and memories, runs them through [unstructured2graph](../unstructured2graph/)'s chunk + entity-extraction pipeline, and writes extracted entities (with typed labels like `:Person`, `:Organization`) linked back via `(:Action|:Memory)-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(:Entity)`. The `sessions-graph reconcile` CLI above always extracts via LightRAG; programmatic callers can swap in another `ExtractionBackend` (e.g. GLiNER2, local and LLM-free) — see [sessions-graph § reconciliation](./sessions-graph/README.md#session-reconciliation).
+This pulls each session's actions and memories, runs them through [unstructured2graph](../unstructured2graph/)'s chunk + entity-extraction pipeline, and writes extracted entities (with typed labels like `:Person`, `:Organization`) linked back via `(:Action|:Memory)-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(:Entity)`. The `sessions-graph reconcile` CLI extracts locally with GLiNER2 over the user's adopted HyGM model, or `hygm.default_model()` when none is adopted. LightRAG supplies the separate LLM session summary. Programmatic callers can swap in another `ExtractionBackend` — see [sessions-graph § reconciliation](./sessions-graph/README.md#session-reconciliation).
 
 ## Querying the graph
 
@@ -181,11 +183,12 @@ Each component is a standalone Python library with its own README and can be use
 
 ## Local development
 
-`scripts/dev-memgraph.sh` (repo root) starts an isolated Memgraph, runs each component's test suite against it, and can point your live plugin at it for dogfooding:
+`scripts/dev-memgraph.sh` (repo root) manages an exploration Memgraph on port 7688 and a separate disposable test Memgraph on port 7689, and can point your live plugin at it for dogfooding:
 
 ```bash
 ./scripts/dev-memgraph.sh up        # start an isolated local Memgraph
-./scripts/dev-memgraph.sh test      # run all component test suites against it
+./scripts/dev-memgraph.sh test      # Context Graph + HyGM + unstructured2graph on the test instance
+./scripts/dev-memgraph.sh test-down # reclaim the disposable test instance
 ./scripts/dev-memgraph.sh reconcile # run reconciliation on pending sessions
 ./scripts/dev-memgraph.sh down      # tear it down
 ```

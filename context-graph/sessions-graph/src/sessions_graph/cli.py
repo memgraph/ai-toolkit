@@ -38,7 +38,7 @@ import argparse
 import asyncio
 import os
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -399,7 +399,17 @@ async def _run_reconcile(parsed: argparse.Namespace) -> int:
         return 0
 
     lightrag_wrapper = MemgraphLightRAGWrapper()
-    await lightrag_wrapper.initialize(working_dir=parsed.working_dir)
+    kwargs: dict[str, Any] = {"working_dir": parsed.working_dir}
+    if not os.environ.get("OPENAI_API_KEY") and os.environ.get("ANTHROPIC_API_KEY"):
+        from functools import partial
+
+        from lightrag.llm.anthropic import anthropic_complete_if_cache
+
+        from sessions_graph.derive_llm import DEFAULT_MODELS
+
+        kwargs["llm_model_func"] = partial(anthropic_complete_if_cache, DEFAULT_MODELS["anthropic"])
+        kwargs["llm_model_name"] = DEFAULT_MODELS["anthropic"]
+    await lightrag_wrapper.initialize(**kwargs)
     try:
         exit_code = 0
         completed = []

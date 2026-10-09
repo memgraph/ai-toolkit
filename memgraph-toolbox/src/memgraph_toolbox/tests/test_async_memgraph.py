@@ -42,12 +42,12 @@ async def test_async_memgraph_query_live():
     """Live round-trip; skips cleanly when no server is reachable."""
     import neo4j
 
-    client = AsyncMemgraph(url="bolt://localhost:7687", username="", password="")
+    client = AsyncMemgraph()
     try:
         await client.verify_connectivity()
     except (neo4j.exceptions.ServiceUnavailable, neo4j.exceptions.SessionExpired, OSError):
         await client.close()
-        pytest.skip("No Memgraph server reachable at bolt://localhost:7687")
+        pytest.skip("No Memgraph server reachable at the configured MEMGRAPH_URL")
 
     try:
         result = await client.query("RETURN 1 AS value")

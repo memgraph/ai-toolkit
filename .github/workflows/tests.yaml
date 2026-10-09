@@ -14,6 +14,8 @@ on:
       - "context-graph/skills-graph/**"
       - "context-graph/actions-graph/**"
       - "context-graph/agent-context-graph/**"
+      - "scripts/dev-memgraph.sh"
+      - "context-graph/scripts/install.sh"
       - "context-graph/sessions-graph/**"
       - "context-graph/resources-graph/**"
       - "context-graph/eval/**"
@@ -29,6 +31,8 @@ on:
       - "context-graph/skills-graph/**"
       - "context-graph/actions-graph/**"
       - "context-graph/agent-context-graph/**"
+      - "scripts/dev-memgraph.sh"
+      - "context-graph/scripts/install.sh"
       - "context-graph/sessions-graph/**"
       - "context-graph/resources-graph/**"
       - "context-graph/eval/**"
@@ -84,6 +88,8 @@ jobs:
               - '.github/workflows/tests.yaml'
             agent-context-graph:
               - 'context-graph/agent-context-graph/**'
+              - 'scripts/dev-memgraph.sh'
+              - 'context-graph/scripts/install.sh'
               - '.github/workflows/tests.yaml'
             skills-graph:
               - 'context-graph/skills-graph/**'
