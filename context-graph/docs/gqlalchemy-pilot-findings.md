@@ -142,3 +142,59 @@ benchmark remains disabled. Dollar charges are still unknown.
 
 Local evidence: `runs/validation-20261009/validation-summary.json`, launch ledger,
 per-session JSONL and sampled container-memory log under the experiment directory.
+
+## Follow-up issue pilot on 2026-10-09
+
+The user authorized a six-session follow-up. Four sessions were reserved in an
+attempt to enforce evaluator/other-arm filesystem read isolation with an outer
+macOS `sandbox-exec` profile. A direct read-denial probe worked, but actual Codex
+shell tools failed with `sandbox_apply: Operation not permitted`: the wrapper
+was incompatible with Codex's own shell sandbox. MCP resource reads still worked.
+This attempt is excluded from comparison. The orchestrator did not detect the
+shell failure from the session exit code and advanced to further tasks; transport
+readiness must be an explicit preflight gate before issue work. Failed attempts
+consume the session budget, even when an agent reports completion successfully.
+
+The remaining two sessions ran only the graph-memory arm on the validated replay
+path with cooperative isolation. No allowance was reset. The implementation
+session took 57.78 seconds and nine counted tool starts; the fresh assessment
+session took 28.21 seconds and seven. The patch passed the independent multigraph
+acceptance check and 18 tests in the evaluator's translator-suite invocation.
+The agent separately reported 20 passes under its pytest invocation. The first
+session completed extraction and embedding, with five nonconformant relations
+reported and summaries disabled, before the second session began.
+
+The second session called recall and retrieved evidence with the first session's
+ID. It reused the prior collapse reproduction, validated locally that the builder
+emits both parallel edges, compared two approaches and recommended separating
+#246/#319 from #375. This demonstrates usable cross-session recall; it does not
+measure a causal efficiency gain over the two excluded arms.
+
+Code review identified a default-export compatibility concern that the frozen
+acceptance check missed. An additional, explicitly post-submission real-Memgraph
+probe created parallel relationships with disjoint property names. The baseline
+export contained only the selected relationship's properties; the candidate
+`DiGraph.add_edges_from` path combined properties from both relationships. This
+probe passes at baseline and fails on the candidate. The submission needs revision
+and contributes **zero accepted resolutions**; a passing issue-specific test alone
+is insufficient. Human blinded review remains pending.
+
+During the excluded first attempt, a newly added evaluator assertion was corrected
+from `labels` to GQLAlchemy's existing `label` export key before any patched
+evaluation. The correction is logged locally; the graph-only continuation pinned
+the corrected evaluator hash. This is another reason to distinguish the attempts
+rather than treat them as one controlled comparison.
+
+All six follow-up sessions were used, bringing recorded experiment usage to 14
+Codex sessions including the original pilot and infrastructure validation. No
+additional issue closures, pushes of GQLAlchemy changes or model calls were made.
+New pilot graph containers and the test fixture were stopped, copied credentials
+removed, and the original checkout and existing exploration graphs preserved.
+Dollar cost remains unknown and launches are disabled again.
+
+Local evidence: `runs/20261009T124720Z/infrastructure-failure.json` for the excluded
+attempt; `runs/20261009T124943Z/followup-summary.json`, recall JSONL, compatibility
+probe outputs and `review-packet/` for the graph feasibility result. Before another
+comparison, validate actual shell execution under the chosen isolation policy,
+fix the candidate regression in a separately tracked revision, and allocate a
+new explicit session allowance. The ordinary-context arm is still required.
