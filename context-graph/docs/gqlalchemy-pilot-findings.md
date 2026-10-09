@@ -1,5 +1,10 @@
 # GQLAlchemy pilot: infrastructure findings and rerun gates
 
+The missing baselines have now been completed with four additional sessions.
+See [the baseline comparison](gqlalchemy-baseline-results.md) for matched inputs,
+quality checks, timing/usage results and the practical judgment. Earlier failures
+below remain part of the experiment history, not the current comparison verdict.
+
 Recorded 2026-10-09. This report concerns six bounded, sequential, ChatGPT-authenticated
 Codex sessions using `gpt-6-luna` at medium reasoning. Each had a 120-second wall limit
 and a 14-tool-start limit. GQLAlchemy was pinned to
