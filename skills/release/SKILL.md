@@ -20,6 +20,7 @@ All release workflows are triggered via **`workflow_dispatch`** (manual) from th
 | `release-agent-context-graph.yaml` | agent-context-graph | Build & publish to PyPI             | `PYPI_TOKEN`                                          |
 | `release-actions-graph.yaml`      | actions-graph      | Build & publish to PyPI              | `PYPI_TOKEN`                                          |
 | `release-skills-graph.yaml`       | skills-graph       | Build & publish to PyPI              | `PYPI_TOKEN`                                          |
+| `release-resources-graph.yaml`     | resources-graph     | Build & publish to PyPI              | `PYPI_TOKEN`                                          |
 | `release-sessions-graph.yaml`     | sessions-graph     | Build & publish to PyPI              | `PYPI_TOKEN`                                          |
 
 ## Subproject paths
@@ -35,6 +36,7 @@ All release workflows are triggered via **`workflow_dispatch`** (manual) from th
 | agent-context-graph | `context-graph/agent-context-graph` | `[project] version`        |
 | actions-graph      | `context-graph/actions-graph`     | `[project] version`          |
 | skills-graph       | `context-graph/skills-graph`      | `[project] version`          |
+| resources-graph    | `context-graph/resources-graph`    | `[project] version`          |
 | sessions-graph     | `context-graph/sessions-graph`    | `[project] version`          |
 
 ## Required GitHub secrets
@@ -47,7 +49,7 @@ All release workflows are triggered via **`workflow_dispatch`** (manual) from th
 
 ## Notes
 
-- **Publish dependencies first.** PyPI resolves the published floor of every dependency, so release in dependency order: `memgraph-toolbox` → `hygm` → `unstructured2graph`; `agent-context-graph` → `actions-graph` / `skills-graph` → `sessions-graph`.
+- **Publish dependencies first.** PyPI resolves the published floor of every dependency, so release in dependency order: `memgraph-toolbox` → `hygm` → `unstructured2graph`; `agent-context-graph` → `actions-graph` / `skills-graph` → `sessions-graph`. Publish `memgraph-toolbox` and `agent-context-graph` before `resources-graph` (its optional harness integration).
 - **Context Graph plugins** install from PyPI in `context-graph/plugins/*/scripts/bootstrap.sh`. When a release is one the plugins need, raise the floors there and bump both plugin manifests (`.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`) plus the root `.claude-plugin/marketplace.json` entry, and merge that only once the packages are on PyPI: the plugins install from `main`.
 - **lightrag-memgraph**, **unstructured2graph** and **hygm** use `uv build --out-dir dist` to work around a uv artifact path issue.
 - The **mcp-memgraph** Docker image is built from the repo root (the Dockerfile copies both `memgraph-toolbox/` and `integrations/mcp-memgraph/`).

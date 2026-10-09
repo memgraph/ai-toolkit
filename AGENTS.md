@@ -52,6 +52,8 @@ gh issue list --label wayfinder:map --state open
 
 ## Environment & setup
 
+- Use a separate git worktree for each repository task so existing work stays isolated.
+
 - Python `>=3.10`, dependency/workspace manager is `uv`. Workspace members are
   listed in the root `pyproject.toml` under `[tool.uv.workspace]`.
 - `unstructured2graph` declares GLiNER2's local inference dependencies directly
