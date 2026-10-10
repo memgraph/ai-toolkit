@@ -69,11 +69,17 @@ def extract_reconcilable_text(action: Action) -> str | None:
 
     Only Messages, ToolCalls, and ToolResults carry text worth running through
     LightRAG; other action types (errors, subagent events, structured output,
-    permission requests, rate limits) return None. Returns None for
-    empty/whitespace-only content.
+    permission requests, rate limits) return None, as do calls to the
+    ``memory`` tool. Returns None for empty/whitespace-only content.
     """
     from actions_graph.models import Message, ToolCall, ToolResult
 
+    from .memory_store import is_memory_tool
+
+    if isinstance(action, (ToolCall, ToolResult)) and is_memory_tool(action.tool_name):
+        # The memory file itself is reconciled on its own (reconcile_memory);
+        # the call that wrote it would only extract the same text twice.
+        return None
     if isinstance(action, Message):
         # Prefixed with the speaker, because who asserted something is part of
         # what was asserted. Without it the extractor sees undifferentiated
@@ -164,6 +170,17 @@ class ReconciliationSummary:
     summary_written: bool = False
     nonconformant_entities: int | None = None
     nonconformant_relations: int | None = None
+
+
+@dataclass(frozen=True)
+class MemoryReconciliation:
+    """Result of one ``SessionsGraph.reconcile_memory`` call."""
+
+    memory_id: str
+    path: str | None
+    status: str  # "completed" | "failed"
+    chunks: int = 0
+    error: str | None = None
 
 
 def normalize_timestamp(value: str | None) -> str | None:

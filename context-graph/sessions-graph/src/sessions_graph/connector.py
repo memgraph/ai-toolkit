@@ -39,7 +39,14 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING
 
-from agent_context_graph.events import Event, EventType, SessionEndEvent, SessionStartEvent, TurnEndEvent
+from agent_context_graph.events import (
+    Event,
+    EventType,
+    SessionEndEvent,
+    SessionStartEvent,
+    ToolEndEvent,
+    TurnEndEvent,
+)
 from agent_context_graph.protocols import GraphConnector
 
 if TYPE_CHECKING:
@@ -47,7 +54,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_EVENTS = {EventType.SESSION_START, EventType.SESSION_END, EventType.TURN_END}
+_SUPPORTED_EVENTS = {EventType.SESSION_START, EventType.SESSION_END, EventType.TURN_END, EventType.TOOL_END}
 
 
 class SessionsGraphConnector(GraphConnector):
@@ -69,6 +76,11 @@ class SessionsGraphConnector(GraphConnector):
         background process to run the actual (slow, LLM-backed) reconciliation,
         so this hook call itself never waits on it. The reliable path if that
         detached process dies is the ``sessions-graph reconcile --pending`` CLI.
+
+    On ``TOOL_END`` of a successful ``memory`` tool write:
+      - Records ``(:Session)-[:PRODUCED_MEMORY]->(:Memory)`` for the file it
+        wrote. The MCP server that served the call doesn't know the session;
+        the hook does.
 
     On ``TURN_END``:
       - Marks the Session node ``reconciliation_status = 'pending'``.
@@ -113,6 +125,8 @@ class SessionsGraphConnector(GraphConnector):
             self._on_session_end(event)
         elif isinstance(event, TurnEndEvent):
             self._on_turn_end(event)
+        elif isinstance(event, ToolEndEvent):
+            self._on_tool_end(event)
 
     # ------------------------------------------------------------------
     # Active session context (convenience for callers)
@@ -131,6 +145,15 @@ class SessionsGraphConnector(GraphConnector):
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _on_tool_end(self, event: ToolEndEvent) -> None:
+        from .memory_store import is_memory_tool, memory_paths_written
+
+        if event.is_error or not is_memory_tool(event.tool_name):
+            return
+        paths = memory_paths_written(event.metadata.get("tool_input"))
+        if paths:
+            self._graph.record_memory_provenance(event.session_id, paths)
 
     def _on_session_start(self, event: SessionStartEvent) -> None:
         user_id: str | None = getattr(event, "user_id", None)
