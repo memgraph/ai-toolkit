@@ -45,8 +45,12 @@ Shared `(:Session {session_id})` node joining data from Context Graph components
 _Avoid_: treating other components' MERGEs as lifecycle ownership
 
 **Session Reconciliation**:
-Out-of-band batch process using local GLiNER2 entity extraction and an LLM summary. Dedupes Reconcilable Content, combines into one document per session, uses unstructured2graph to create Chunks and extract entities using the adopted HyGM model (or the default model). Per-session batching lets extraction see facts/references spanning turns ([#297](https://github.com/memgraph/ai-toolkit/issues/297)). Same run creates session's **Episode**. Never creates Memory nodes — Memories are explicit writes.
+Out-of-band batch process using local GLiNER2 entity extraction and an LLM summary. Dedupes Reconcilable Content, combines into one document per session, uses unstructured2graph to create Chunks and extract entities using the adopted HyGM model (or the default model). Per-session batching lets extraction see facts/references spanning turns ([#297](https://github.com/memgraph/ai-toolkit/issues/297)). Same run creates session's **Episode**. Never creates Memory nodes — Memories are explicit writes. Doesn't read Memories either: each Memory File has its own **Memory File Reconciliation**.
 _Avoid_: Memory extraction, memory reconciliation, auto-memory
+
+**Memory File Reconciliation**:
+Per-file counterpart of Session Reconciliation (`reconcile_memory`). A write marks the file `extraction_status = 'pending'`; the `reconcile --pending` sweep removes what the file's previous text produced, then extracts Chunks and entities from its current text. No LLM, no Episode. Per file, not per session, because a file outlives the session that first wrote it and changes across many. `memory` tool calls are excluded from session content, so the text isn't extracted twice.
+_Avoid_: Memory extraction (implies deriving Memories), memory reconciliation (ambiguous with Session Reconciliation)
 
 **Episode**:
 Summary of what happened in one session. Session Reconciliation creates it via separate LLM call over same content used for entity extraction: `(:Session)-[:HAS_EPISODE]->(:Episode {summary, summarized_at})`. Max one per session; re-reconciliation updates it.
@@ -87,7 +91,7 @@ _Avoid_: Status, session status (`status` already tracks session completion)
 - "global memory" ambiguous. Resolved: deferred — v1, every Memory user-owned. Cross-user/repo-shared memories out of scope.
 - "sessions-graph owns sessions" surfaced during PyPI naming discussion. Resolved: Session nodes = shared idempotent coordination point; sessions-graph owns lifecycle while all components may MERGE them.
 - "status" ambiguous: `status` tracks agent session; `reconciliation_status` tracks reconciliation. Never use bare `status` for reconciliation.
-- Reconciliation doesn't extend a Memory. Derives Chunks, entities, Episode from Action/Memory content. Use **Session Reconciliation** — never "memory reconciliation"/"memory extraction."
+- Reconciliation doesn't extend a Memory. Session Reconciliation derives Chunks, entities, Episode from Action content; **Memory File Reconciliation** derives Chunks and entities from one Memory File. Never "memory reconciliation"/"memory extraction."
 - Episodic memory = `Episode` node linked via `HAS_EPISODE`, not a Session property ([#261](https://github.com/memgraph/ai-toolkit/issues/261)).
 - Should Sessions Graph define an Entity? Resolved: no. unstructured2graph owns Entity/Chunk semantics; Sessions Graph only links sources to Chunks.
 - `HAS_CHUNK` exact when session produces one Chunk. Several Chunks -> every source links to every Chunk. Recall narrows this using `MENTIONED_IN.sources` and typed edges' `source_id`.
