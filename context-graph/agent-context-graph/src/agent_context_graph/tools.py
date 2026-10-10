@@ -11,6 +11,10 @@ tool under the ``agent_context_graph.tools`` entry-point group, in its own
 A tool reads its identity and Memgraph connection from the config file
 (:class:`~agent_context_graph.adapters._identity.HookConfig`), never from its
 arguments: the model can't ask on another user's behalf (#394).
+
+A tool may also define ``available(config) -> bool``; while it returns False
+the tool is neither listed nor callable, nor is its session hint shown. The
+``memory`` tool uses this to exist only for users who opted into graph memory.
 """
 
 from __future__ import annotations
@@ -81,12 +85,27 @@ def load_tools() -> dict[str, Tool]:
     return tools
 
 
-def session_hints(connectors: list[str]) -> list[str]:
-    """The session-start lines of the tools that read one of ``connectors``' graphs."""
+def available_tools(config: HookConfig) -> dict[str, Tool]:
+    """The registered tools *config* turns on, keyed by name."""
+    return {name: tool for name, tool in load_tools().items() if is_available(tool, config)}
+
+
+def is_available(tool: Tool, config: HookConfig) -> bool:
+    """Whether *tool* is on for *config*; tools without an ``available`` check always are."""
+    available = getattr(tool, "available", None)
+    return available is None or bool(available(config))
+
+
+def session_hints(connectors: list[str], config: HookConfig | None = None) -> list[str]:
+    """The session-start lines of the available tools that read one of ``connectors``' graphs."""
+    if config is None:
+        from agent_context_graph.adapters._identity import load_config
+
+        config = load_config()
     enabled = {_normalize(connector) for connector in connectors}
     return [
         tool.session_hint
-        for tool in load_tools().values()
+        for tool in available_tools(config).values()
         if tool.session_hint and _normalize(tool.connector) in enabled
     ]
 

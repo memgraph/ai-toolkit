@@ -282,7 +282,7 @@ agent-context-graph config get memgraph.url
 agent-context-graph config set <key> <value>
 # keys: identity.user_id, memgraph.{url,user,password,database},
 #       llm.{openai_api_key,anthropic_api_key}, reconcile.auto_reconcile,
-#       recall.embedding_model, ontology.{path,derive}
+#       recall.embedding_model, ontology.{path,derive}, memory.backend
 ```
 
 Environment variables (`MEMGRAPH_URL`, `MEMGRAPH_USER`, `MEMGRAPH_PASSWORD`, `MEMGRAPH_DATABASE`, `AGENT_CONTEXT_GRAPH_USER_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) are consulted **only at bootstrap time** — if set, `bootstrap` persists them into the config file. Exporting them later has no effect on running hooks; use `config set` instead.
@@ -345,6 +345,29 @@ without it, it answers from text search and says so. `doctor` checks both
 Code and Codex both show the model a result's `structuredContent` JSON
 *instead of* its text when both are present, and the text is the form recall
 was benchmarked in; the JSON is what `--json` prints.
+
+### Memory: Context Graph as the harness's memory
+
+Claude Code and Codex each keep their own memory. Context Graph can replace it
+for a user who opts in:
+
+```bash
+agent-context-graph config set memory.backend context-graph
+```
+
+With that set, `agent-context-graph mcp` also serves a `memory` tool with the
+Claude API memory tool's commands (`view`, `create`, `str_replace`, `insert`,
+`delete`, `rename` on `/memories`). The model keeps its curated long-term memory there:
+- `/memories/` for what applies everywhere;
+- `/memories/projects/<project>/` for one codebase.
+
+Every file is a `(:Memory)` node in the user's graph, shared across harnesses
+and sessions. Whose memory it is comes from `identity.user_id`, never from
+the call. Without the setting the tool isn't listed at all, so the harness's
+own memory stays in charge. Harnesses list tools once per session, so the
+change shows from the next session. See
+[ADR 0006](docs/adr/0006-memory-tool-writes-explicit-memory.md) for why this is
+the one write the model makes over MCP.
 
 ### OpenAI Codex Plugin
 

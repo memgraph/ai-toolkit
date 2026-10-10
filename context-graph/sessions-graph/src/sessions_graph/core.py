@@ -4,13 +4,15 @@ Graph schema
 ------------
 Nodes:
     (:User  {user_id})
-    (:Memory {memory_id, user_id, content, created_at, session_id?})
+    (:Memory {memory_id, user_id, path, content, created_at, updated_at})
+    (:Project {key})                      — a folder under /memories/projects/
     (:Session {session_id})
     (:Episode {summary, summarized_at})   — written by reconcile_session(), see below
 
 Relationships:
     (:User)-[:HAS_MEMORY]->(:Memory)
-    (:Session)-[:PRODUCED_MEMORY]->(:Memory)   — only when session_id is provided
+    (:Session)-[:PRODUCED_MEMORY]->(:Memory)   — every session that wrote it, when known
+    (:Memory)-[:ABOUT]->(:Project)             — memories under /memories/projects/<key>/
     (:Session)-[:HAS_EPISODE]->(:Episode)      — at most one per session
 """
 
@@ -25,7 +27,8 @@ from typing import TYPE_CHECKING, Any
 from memgraph_toolbox.api.memgraph import Memgraph
 
 from .embeddings import DEFAULT_EMBEDDING_MODEL, Embedded, EmbeddingUnavailableError, embed_session
-from .models import Memory, validate_content, validate_memory_id, validate_user_id
+from .memory_store import MemoryStore
+from .models import Memory, project_key, validate_content, validate_memory_id, validate_user_id
 from .passages import PASSAGE_SCHEME
 from .recall import TURN_TEXT_INDEX, RecallConfig, Recalled, recall
 from .reconciliation import (
@@ -95,6 +98,7 @@ class SessionsGraph:
     - :meth:`search_memories` — full-text search over Memory content
     - :meth:`update_memory` — replace the content of an existing Memory
     - :meth:`delete_memory` — remove a Memory by ID
+    - :meth:`memory_store` — the memory tool's file commands over a user's Memories
     - :meth:`embed_session` — embed a session's messages, entities and edges for recall
     - :meth:`recall` — what a user's past sessions hold about a question
     """
@@ -119,9 +123,14 @@ class SessionsGraph:
         """Create constraints, indexes, and the full-text index."""
         self._db.query("CREATE CONSTRAINT ON (u:User) ASSERT u.user_id IS UNIQUE;")
         self._db.query("CREATE CONSTRAINT ON (m:Memory) ASSERT m.memory_id IS UNIQUE;")
+        # A path names one file per user; the memory tool relies on this to make
+        # concurrent creates of the same path converge on one node.
+        self._db.query("CREATE CONSTRAINT ON (m:Memory) ASSERT m.user_id, m.path IS UNIQUE;")
+        self._db.query("CREATE CONSTRAINT ON (p:Project) ASSERT p.key IS UNIQUE;")
         self._db.query("CREATE CONSTRAINT ON (v:OntologyVersion) ASSERT v.user_id, v.version IS UNIQUE;")
         self._db.query("CREATE INDEX ON :Memory(user_id);")
         self._db.query("CREATE INDEX ON :Memory(created_at);")
+        self._db.query("CREATE INDEX ON :Memory(path);")
         self._db.query(f"CREATE TEXT INDEX {_FULLTEXT_INDEX} ON :Memory(content);")
         self._db.query("CREATE INDEX ON :Session(reconciliation_status);")
         self._db.query("CREATE INDEX ON :Session(embedding_status);")
@@ -184,6 +193,7 @@ class SessionsGraph:
         *,
         session_id: str | None = None,
         memory_id: str | None = None,
+        path: str | None = None,
     ) -> Memory:
         """Persist a new Memory for *user_id*.
 
@@ -192,14 +202,21 @@ class SessionsGraph:
             content:    The free-form text assertion to store.
             session_id: Optional session that produced this memory (for provenance).
             memory_id:  Override the auto-generated UUID (useful in tests).
+            path:       Where the memory lives under ``/memories``; defaults to
+                        ``/memories/notes/<memory_id>.md``.
 
         Returns:
             The persisted :class:`Memory` instance.
+
+        Raises:
+            MemoryValidationError: an invalid user, content or path.
+            Exception: the database's constraint error when *path* is already taken.
         """
         memory = Memory(
             user_id=validate_user_id(user_id),
             content=validate_content(content),
             session_id=session_id,
+            path=path or "",
             **({"memory_id": memory_id} if memory_id else {}),
         )
 
@@ -210,18 +227,30 @@ class SessionsGraph:
             CREATE (m:Memory {
                 memory_id: $memory_id,
                 user_id:   $user_id,
+                path:      $path,
                 content:   $content,
-                created_at: $created_at
+                created_at: $created_at,
+                updated_at: $created_at
             })
             CREATE (u)-[:HAS_MEMORY]->(m)
             """,
             params={
                 "user_id": memory.user_id,
                 "memory_id": memory.memory_id,
+                "path": memory.path,
                 "content": memory.content,
                 "created_at": memory.created_at,
             },
         )
+        if key := project_key(memory.path):
+            self._db.query(
+                """
+                MATCH (m:Memory {memory_id: $memory_id})
+                MERGE (p:Project {key: $key})
+                MERGE (m)-[:ABOUT]->(p)
+                """,
+                params={"memory_id": memory.memory_id, "key": key},
+            )
 
         # Wire session provenance when a session_id is supplied
         if session_id:
@@ -248,11 +277,14 @@ class SessionsGraph:
             """
             MATCH (u:User {user_id: $user_id})-[:HAS_MEMORY]->(m:Memory)
             OPTIONAL MATCH (s:Session)-[:PRODUCED_MEMORY]->(m)
+            WITH m, min(s.session_id) AS producing_session
             RETURN m.memory_id  AS memory_id,
                    m.user_id    AS user_id,
                    m.content    AS content,
+                   m.path       AS path,
                    m.created_at AS created_at,
-                   s.session_id AS session_id
+                   m.updated_at AS updated_at,
+                   producing_session AS session_id
             ORDER BY m.created_at DESC
             """,
             params={"user_id": user_id},
@@ -272,7 +304,9 @@ class SessionsGraph:
             RETURN m.memory_id  AS memory_id,
                    m.user_id    AS user_id,
                    m.content    AS content,
+                   m.path       AS path,
                    m.created_at AS created_at,
+                   m.updated_at AS updated_at,
                    $session_id  AS session_id
             ORDER BY m.created_at DESC
             """,
@@ -302,17 +336,28 @@ class SessionsGraph:
             WITH m, score
             WHERE m.user_id = $user_id
             OPTIONAL MATCH (s:Session)-[:PRODUCED_MEMORY]->(m)
+            WITH m, score, min(s.session_id) AS producing_session
             RETURN m.memory_id  AS memory_id,
                    m.user_id    AS user_id,
                    m.content    AS content,
+                   m.path       AS path,
                    m.created_at AS created_at,
-                   s.session_id AS session_id
+                   m.updated_at AS updated_at,
+                   producing_session AS session_id
             ORDER BY score DESC
             LIMIT {int(limit)}
             """,
             params={"user_id": user_id, "query": query.strip()},
         )
         return [self._row_to_memory(r) for r in rows]
+
+    def memory_store(self, user_id: str, *, session_id: str | None = None) -> MemoryStore:
+        """The memory tool's commands over *user_id*'s memory files; see :mod:`sessions_graph.memory_store`.
+
+        Raises:
+            MemoryValidationError: *user_id* is invalid.
+        """
+        return MemoryStore(self._db, user_id, session_id=session_id)
 
     # ------------------------------------------------------------------
     # Update / Delete
@@ -329,16 +374,19 @@ class SessionsGraph:
         rows = self._db.query(
             """
             MATCH (m:Memory {memory_id: $memory_id})
-            SET m.content = $content
+            SET m.content = $content, m.updated_at = $updated_at
             WITH m
             OPTIONAL MATCH (s:Session)-[:PRODUCED_MEMORY]->(m)
+            WITH m, min(s.session_id) AS producing_session
             RETURN m.memory_id  AS memory_id,
                    m.user_id    AS user_id,
                    m.content    AS content,
+                   m.path       AS path,
                    m.created_at AS created_at,
-                   s.session_id AS session_id
+                   m.updated_at AS updated_at,
+                   producing_session AS session_id
             """,
-            params={"memory_id": memory_id, "content": content},
+            params={"memory_id": memory_id, "content": content, "updated_at": datetime.now(timezone.utc).isoformat()},
         )
         if not rows:
             return None
@@ -1094,6 +1142,8 @@ class SessionsGraph:
             content=row["content"],
             created_at=row["created_at"],
             session_id=row.get("session_id"),
+            path=row.get("path") or "",
+            updated_at=row.get("updated_at") or "",
         )
 
 
