@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import pytest
 from sessions_graph import RecallConfig
-from sessions_graph.embeddings import EmbeddingUnavailableError, check_available
+from sessions_graph.embeddings import EmbeddingUnavailableError, check_available, embed_memory
+from sessions_graph.recall import LANES, MEMORY_RULE
 
 pytest.importorskip("actions_graph")
 
@@ -279,3 +280,54 @@ def test_a_user_without_a_version_ranks_types_by_the_default_models_descriptions
     descriptions = _type_descriptions(memgraph, "nobody")
 
     assert descriptions["works_for"] == "is employed by or works at"
+
+
+# The memory lane: memory files first, and nothing changes without them.
+
+
+def _memory(graph, memgraph, path, text, user="u1"):
+    graph.memory_store(user).create(path, text)
+    memory_id = memgraph.query(
+        "MATCH (m:Memory {path: $p, user_id: $u}) RETURN m.memory_id AS id", {"p": path, "u": user}
+    )
+    embed_memory(memgraph, memory_id[0]["id"])
+
+
+def test_memory_files_come_first_with_their_reading_rule(graph, memgraph, moma):
+    _memory(graph, memgraph, "/memories/user/museums.md", "The user's favourite museum is the Museum of Modern Art.")
+
+    recalled = graph.recall("u1", "Which museum does the user like most?")
+
+    assert recalled.lines()[0].startswith("MEMORY [/memories/user/museums.md, updated ")
+    assert recalled.lines()[0].endswith("The user's favourite museum is the Museum of Modern Art.")
+    assert MEMORY_RULE in recalled.render()
+
+
+def test_full_text_finds_a_file_without_vectors(graph, memgraph, moma):
+    graph.memory_store("u1").create("/memories/user/tools.md", "Ante prefers uv over pip for Python tooling.")
+
+    recalled = graph.recall("u1", "uv pip tooling", config=RecallConfig(lanes=("memories",)))
+
+    assert [note.path for note in recalled.memories] == ["/memories/user/tools.md"]
+
+
+def test_other_users_files_are_never_recalled(graph, memgraph, moma):
+    _memory(
+        graph, memgraph, "/memories/user/museums.md", "Favourite museum: Museum of Modern Art.", user="someone-else"
+    )
+
+    assert graph.recall("u1", "favourite museum Museum of Modern Art").memories == []
+
+
+def test_without_memory_files_recall_reads_exactly_as_benchmarked(graph, moma):
+    """The benchmark corpora hold no memory files, so the lane must leave their recall byte-identical."""
+    question = "When did I visit the Museum of Modern Art?"
+    conversation_lanes = tuple(lane for lane in LANES if lane != "memories")
+
+    with_lane = graph.recall("u1", question).render(today="2026-10-10")
+    without_lane = graph.recall("u1", question, config=RecallConfig(lanes=conversation_lanes)).render(
+        today="2026-10-10"
+    )
+
+    assert with_lane == without_lane
+    assert MEMORY_RULE not in with_lane
