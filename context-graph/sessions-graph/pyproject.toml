@@ -37,6 +37,7 @@ sessions-graph = "sessions_graph.cli:main"
 
 [project.entry-points."agent_context_graph.tools"]
 recall = "sessions_graph.tool:RECALL"
+memory = "sessions_graph.tool:MEMORY"
 
 [tool.uv.sources]
 agent-context-graph = { workspace = true }
