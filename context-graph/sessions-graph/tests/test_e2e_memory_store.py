@@ -263,3 +263,53 @@ class TestSaveMemoryPaths:
 
         rows = memgraph.query("MATCH (:Memory)-[:ABOUT]->(p:Project) RETURN p.key AS key")
         assert rows == [{"key": "repo"}]
+
+
+class TestVersions:
+    def test_every_discarding_write_keeps_what_it_replaced(self, store):
+        store.create("/memories/a.md", "one")
+        store.create("/memories/a.md", "two")
+        store.str_replace("/memories/a.md", "two", "three")
+        store.insert("/memories/a.md", 0, "zero")
+
+        assert [v.content for v in store.versions("/memories/a.md")] == ["three", "two", "one"]
+        assert all(v.session_id == "s-1" and not v.deleted for v in store.versions("/memories/a.md"))
+
+    def test_rewriting_the_same_text_keeps_nothing(self, store):
+        store.create("/memories/a.md", "same")
+        store.create("/memories/a.md", "same")
+        assert store.versions("/memories/a.md") == []
+
+    def test_history_follows_a_rename_and_outlives_a_delete(self, store, memgraph):
+        store.create("/memories/a.md", "v1")
+        store.create("/memories/a.md", "v2")
+        store.rename("/memories/a.md", "/memories/b.md")
+        assert [v.content for v in store.versions("/memories/b.md")] == ["v1"]
+
+        store.delete("/memories/b.md")
+
+        history = store.versions("/memories/b.md")
+        assert [(v.content, v.deleted) for v in history] == [("v2", True)]
+        assert memgraph.query("MATCH (v:MemoryVersion) RETURN count(v) AS n")[0]["n"] == 2
+
+    def test_deleting_a_directory_keeps_each_files_last_text(self, store):
+        store.create("/memories/dir/a.md", "a")
+        store.create("/memories/dir/b.md", "b")
+        store.delete("/memories/dir")
+        assert [v.content for v in store.versions("/memories/dir/a.md")] == ["a"]
+        assert [v.content for v in store.versions("/memories/dir/b.md")] == ["b"]
+
+    def test_only_the_newest_versions_are_kept(self, store):
+        from sessions_graph.memory_store import MAX_VERSIONS
+
+        for n in range(MAX_VERSIONS + 5):
+            store.create("/memories/a.md", f"text {n}")
+
+        kept = store.versions("/memories/a.md")
+        assert len(kept) == MAX_VERSIONS
+        assert kept[0].content == f"text {MAX_VERSIONS + 3}"
+
+    def test_versions_are_per_user(self, graph):
+        graph.memory_store("alice").create("/memories/a.md", "x")
+        graph.memory_store("alice").create("/memories/a.md", "y")
+        assert graph.memory_store("bob").versions("/memories/a.md") == []
