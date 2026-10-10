@@ -393,10 +393,21 @@ async def _run_reconcile(parsed: argparse.Namespace) -> int:
     graph.setup()
     _sync_configured_ontology(graph)
 
+    exit_code = 0
+    if not parsed.session:
+        # Memory files first: they need no LLM, so they never wait on one.
+        for memory_id in graph.get_pending_memory_reconciliations(limit=parsed.limit):
+            result = await graph.reconcile_memory(memory_id)
+            if result.status == "completed":
+                print(f"OK memory {result.path}: {result.chunks} chunk(s)")
+            else:
+                print(f"FAILED memory {result.path or memory_id}: {result.error}", file=sys.stderr)
+                exit_code = 1
+
     session_ids = [parsed.session] if parsed.session else graph.get_pending_reconciliation_sessions(limit=parsed.limit)
     if not session_ids:
         print("No sessions to reconcile.")
-        return 0
+        return exit_code
 
     lightrag_wrapper = MemgraphLightRAGWrapper()
     kwargs: dict[str, Any] = {"working_dir": parsed.working_dir}
@@ -411,7 +422,6 @@ async def _run_reconcile(parsed: argparse.Namespace) -> int:
         kwargs["llm_model_name"] = DEFAULT_MODELS["anthropic"]
     await lightrag_wrapper.initialize(**kwargs)
     try:
-        exit_code = 0
         completed = []
         for session_id in session_ids:
             summary = await graph.reconcile_session(

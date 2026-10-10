@@ -176,8 +176,8 @@ The query string follows [Tantivy query syntax](https://docs.rs/tantivy/latest/t
 
 ## Session reconciliation
 
-A session's Actions Graph content (Messages, ToolCalls, ToolResults) and
-Memories are mostly opaque text today. Session reconciliation runs that content
+A session's Actions Graph content (Messages, ToolCalls, ToolResults) is
+mostly opaque text today. Session reconciliation runs that content
 through [unstructured2graph](../../unstructured2graph/)'s chunk + entity-extraction
 pipeline -- GLiNER2 over `hygm`'s default model by default, overridable to
 another `ExtractionBackend` (e.g. LightRAG) via
@@ -186,6 +186,20 @@ it into queryable graph entities linked
 back to the session that produced them — see
 [`CONTEXT.md`](./CONTEXT.md#language) for the **Session Reconciliation** /
 **Reconcilable Content** / **Reconciliation Status** terminology.
+
+Memory files are reconciled on their own, not with a session, because a file
+outlives the session that first wrote it.
+- **Trigger.** Every write marks the file `extraction_status = 'pending'`.
+- **What runs.** `reconcile_memory(memory_id)` first removes what the file's
+  previous text produced. That covers relations carrying its id as
+  `source_id`, its share of `MENTIONED_IN.sources`, and any chunks and
+  entities nothing else backs. It then extracts from the current text, with
+  no LLM and no Episode.
+- **Sweep.** `sessions-graph reconcile --pending` processes pending files
+  before sessions.
+- **Deletes.** Deleting a file removes what it produced the same way.
+- **No double extraction.** `memory` tool calls are left out of session
+  content, so their text isn't extracted twice.
 
 The same pass also writes the session's **episodic memory**: an
 `(:Episode {summary, summarized_at})` node linked via
