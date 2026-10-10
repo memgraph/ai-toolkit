@@ -15,6 +15,7 @@ from agent_context_graph.adapters._spec import (
     tool_start,
     turn_end,
 )
+from agent_context_graph.adapters.claude_code_memory import CLAUDE_CODE_MEMORY
 from agent_context_graph.events import (
     AgentEndEvent,
     AgentStartEvent,
@@ -212,4 +213,4 @@ class ClaudeCodeHooksAdapter(SpecAdapter):
     SPEC = SPEC
 
 
-PLUGIN = SpecPlugin(SPEC, ClaudeCodeHooksAdapter)
+PLUGIN = SpecPlugin(SPEC, ClaudeCodeHooksAdapter, native_memory=CLAUDE_CODE_MEMORY)

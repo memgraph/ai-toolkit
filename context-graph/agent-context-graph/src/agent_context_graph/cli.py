@@ -21,7 +21,8 @@ Commands:
   bootstrap        Install runtime dependencies and verify hook capture.
   config           Get or set persistent configuration values.
   doctor           Check runtime hook dependencies and Memgraph connectivity.
-  setup <runtime>  Configure an agent runtime.
+  setup <runtime>  Configure an agent runtime; --memory-backend context-graph|native
+                   switches whose memory its model uses.
   hook <command>  Configure or run command hooks.
   mcp              Serve the registered tools (recall, ...) over stdio MCP.
   recall <question>  Search your own past sessions; --json for the data.
@@ -448,6 +449,8 @@ def _doctor(argv: list[str]) -> int:
         checks.append(_check_embeddings())
         checks.append(_check_mcp())
     checks.append(_check_runtime(args.runtime, connectors))
+    if (memory_check := _check_memory_backend(args.runtime)) is not None:
+        checks.append(memory_check)
 
     ok = all(check["ok"] for check in checks)
     payload: _DoctorPayload = {"ok": ok, "checks": checks}
@@ -684,6 +687,33 @@ def _check_mcp() -> _CheckResult:
     if "recall" not in names:
         return {"name": "mcp", "ok": False, "detail": f"no recall tool registered (tools: {names or 'none'})"}
     return {"name": "mcp", "ok": True, "detail": f"serves {', '.join(names)}"}
+
+
+def _check_memory_backend(runtime: str) -> _CheckResult | None:
+    """Which memory the runtime's model uses; fails when both are on. None for runtimes that can't switch."""
+    from pathlib import Path
+
+    from agent_context_graph.adapters._identity import load_config
+    from agent_context_graph.hooks.runtime_plugin import get_runtime_plugin
+    from agent_context_graph.memory_backend import MemoryBackendError, native_memory_of
+
+    native = native_memory_of(get_runtime_plugin(runtime))
+    if native is None:
+        return None
+    try:
+        native_on = native.enabled(Path.home())
+    except MemoryBackendError as exc:
+        return {"name": "memory", "ok": False, "detail": str(exc)}
+    if not load_config().graph_memory:
+        return {"name": "memory", "ok": True, "detail": f"{runtime}'s built-in memory (memory.backend native)"}
+    if native_on:
+        return {
+            "name": "memory",
+            "ok": False,
+            "detail": f"memory.backend is context-graph but {runtime}'s built-in memory is still on, so the model "
+            f"has two memories — run: agent-context-graph setup {runtime} --memory-backend context-graph",
+        }
+    return {"name": "memory", "ok": True, "detail": f"Context Graph; {runtime}'s built-in memory is off"}
 
 
 def _check_runtime(runtime: str, connectors: list[str]) -> _CheckResult:

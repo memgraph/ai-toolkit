@@ -80,12 +80,39 @@ def _init(argv: list[str]) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
+    if any(arg.split("=", 1)[0] == "--memory-backend" for arg in init_argv):
+        return _switch_memory_backend(plugin, init_argv)
+
     init = getattr(plugin, "init", None)
     if init is None:
         print(f"{plugin.name} hook setup is not implemented yet.", file=sys.stderr)
         return 2
 
     return _run_generic_init(plugin.name, init, init_argv)
+
+
+def _switch_memory_backend(plugin: Any, argv: list[str]) -> int:
+    """``setup <runtime> --memory-backend context-graph|native``: whose memory the harness's model uses."""
+    from agent_context_graph.adapters._identity import MEMORY_BACKEND_GRAPH, MEMORY_BACKEND_NATIVE
+    from agent_context_graph.memory_backend import MemoryBackendError, use_graph_memory, use_native_memory
+
+    parser = argparse.ArgumentParser(
+        prog=f"agent-context-graph setup {plugin.name}",
+        description=(
+            f"Make Context Graph {plugin.name}'s memory (turning its built-in memory off and importing it), "
+            "or hand memory back to the built-in one."
+        ),
+    )
+    parser.add_argument("--memory-backend", required=True, choices=[MEMORY_BACKEND_GRAPH, MEMORY_BACKEND_NATIVE])
+    args = parser.parse_args(argv)
+    switch = use_graph_memory if args.memory_backend == MEMORY_BACKEND_GRAPH else use_native_memory
+    try:
+        lines = switch(plugin)
+    except MemoryBackendError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print("\n".join(lines))
+    return 0
 
 
 def _run_generic_init(runtime_name: str, init: Any, argv: list[str]) -> int:
