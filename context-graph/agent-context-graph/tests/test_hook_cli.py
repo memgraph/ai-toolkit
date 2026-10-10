@@ -350,7 +350,7 @@ def test_init_codex_writes_private_config(tmp_path, capsys):
     hooks = json.loads((tmp_path / ".codex" / "hooks.json").read_text())
     command = hooks["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
     assert command == "/venv/bin/agent-context-graph hook run codex --connector skills-graph"
-    assert hooks["hooks"]["SessionStart"][0]["matcher"] == "startup|resume|clear"
+    assert hooks["hooks"]["SessionStart"][0]["matcher"] == "startup|resume|clear|compact"
     assert "Wrote" in capsys.readouterr().out
 
 

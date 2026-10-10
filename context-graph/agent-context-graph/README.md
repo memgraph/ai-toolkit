@@ -366,6 +366,25 @@ Opting in does three things, in this order:
    once to `settings.json.context-graph.bak`.
 3. Records `[memory] backend = "context-graph"`.
 
+For Codex, `setup codex --memory-backend context-graph` does the same against
+its global store, with three differences:
+- **Import.** `memory_summary.md`, the profile Codex injected each session,
+  becomes `/memories/user/codex-memory-summary.md`, and `MEMORY.md` becomes
+  `/memories/codex/memory.md`.
+- **Switch.** It turns off `features.memories`, `memories.use_memories` and
+  `memories.generate_memories` in `~/.codex/config.toml` (or under
+  `$CODEX_HOME`), keeping the user's comments and layout. Handing memory back
+  restores whatever those keys were before. If the user's own
+  `[mcp_servers.context-graph]` narrows tools with `enabled_tools`, `memory` is
+  added there.
+- **Compaction.** The Codex plugin's `SessionStart` hook also fires after
+  compaction (`compact`), so the memory index comes back once the context is
+  summarized.
+
+Codex caps hook context at about 2,500 tokens, so pinned files come before the
+index and a long index is cut from its tail. See
+[the Codex research note](docs/research/2026-10-codex-memory.md).
+
 If the import can't run, for example because Memgraph is down, nothing is
 switched. Handing memory back removes the setting and leaves the graph's
 memories where they are. `doctor` fails when the backend is `context-graph`
