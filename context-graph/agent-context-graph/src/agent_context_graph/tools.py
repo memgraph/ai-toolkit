@@ -15,6 +15,10 @@ arguments: the model can't ask on another user's behalf (#394).
 A tool may also define ``available(config) -> bool``; while it returns False
 the tool is neither listed nor callable, nor is its session hint shown. The
 ``memory`` tool uses this to exist only for users who opted into graph memory.
+
+A tool may define ``session_context(config, payload) -> str | None`` to write
+its session-start text from the SessionStart payload (e.g. its ``cwd``) instead
+of the fixed ``session_hint``; if it raises, the fixed hint is used.
 """
 
 from __future__ import annotations
@@ -96,18 +100,30 @@ def is_available(tool: Tool, config: HookConfig) -> bool:
     return available is None or bool(available(config))
 
 
-def session_hints(connectors: list[str], config: HookConfig | None = None) -> list[str]:
-    """The session-start lines of the available tools that read one of ``connectors``' graphs."""
+def session_hints(
+    connectors: list[str], config: HookConfig | None = None, *, payload: dict[str, Any] | None = None
+) -> list[str]:
+    """The session-start text of the available tools that read one of ``connectors``' graphs."""
     if config is None:
         from agent_context_graph.adapters._identity import load_config
 
         config = load_config()
     enabled = {_normalize(connector) for connector in connectors}
-    return [
-        tool.session_hint
-        for tool in available_tools(config).values()
-        if tool.session_hint and _normalize(tool.connector) in enabled
-    ]
+    hints = []
+    for tool in available_tools(config).values():
+        if _normalize(tool.connector) in enabled and (hint := _session_text(tool, config, payload or {})):
+            hints.append(hint)
+    return hints
+
+
+def _session_text(tool: Tool, config: HookConfig, payload: dict[str, Any]) -> str | None:
+    session_context = getattr(tool, "session_context", None)
+    if session_context is not None:
+        try:
+            return session_context(config, payload)
+        except Exception:  # Never fail the hook over memory context; fall back to the fixed hint.
+            return tool.session_hint
+    return tool.session_hint
 
 
 def _normalize(name: str) -> str:
