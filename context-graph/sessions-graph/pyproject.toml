@@ -16,6 +16,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# MemgraphMemoryTool: the memory tool for apps built on the Claude API.
+anthropic = [
+    "anthropic>=0.74.0",
+]
 agent-context-graph = [
     "agent-context-graph>=0.4.0",
 ]
