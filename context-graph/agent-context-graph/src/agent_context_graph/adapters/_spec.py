@@ -211,11 +211,14 @@ class SpecPlugin:
 
     ``init`` is ``None`` for a runtime with no project-local installer, which
     the CLI reports as "not implemented" (see ``RuntimeCLIPlugin``).
+    ``native_memory`` is the harness's built-in memory, for runtimes whose
+    memory Context Graph can replace (see ``agent_context_graph.memory_backend``).
     """
 
     spec: RuntimeSpec
     adapter_class: type[SpecAdapter]
     init: Installer | None = None
+    native_memory: Any = None
 
     @property
     def name(self) -> str:

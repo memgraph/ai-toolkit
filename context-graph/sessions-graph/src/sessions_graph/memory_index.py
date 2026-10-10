@@ -52,7 +52,7 @@ def project_key_for(directory: str | Path) -> str | None:
     if remote:
         return _key_from_remote(remote)
     toplevel = _git(directory, "rev-parse", "--show-toplevel")
-    return _safe_key(Path(toplevel).name if toplevel else directory.name)
+    return safe_key(Path(toplevel).name if toplevel else directory.name)
 
 
 def render_index(store: MemoryStore, project: str | None, *, guidance: str) -> str:
@@ -137,10 +137,10 @@ def _key_from_remote(remote: str) -> str:
     host, _, path = remote.partition("/")
     host = host.split(":", 1)[0].lower()
     path = path.strip("/").removesuffix(".git")
-    return _safe_key(f"{host}/{path}" if path else host)
+    return safe_key(f"{host}/{path}" if path else host)
 
 
-def _safe_key(name: str) -> str:
+def safe_key(name: str) -> str:
     """One path segment: separators become ``_``, and nothing a path check rejects survives."""
     key = _UNSAFE_KEY_CHARS_RE.sub("_", name.replace("/", "_")).strip("._") or "project"
     return key
