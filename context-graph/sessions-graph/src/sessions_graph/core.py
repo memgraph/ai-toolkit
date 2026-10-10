@@ -29,11 +29,11 @@ from typing import TYPE_CHECKING, Any
 
 from memgraph_toolbox.api.memgraph import Memgraph
 
-from .embeddings import DEFAULT_EMBEDDING_MODEL, Embedded, EmbeddingUnavailableError, embed_session
+from .embeddings import DEFAULT_EMBEDDING_MODEL, Embedded, EmbeddingUnavailableError, embed_memory, embed_session
 from .memory_store import MemoryStore
 from .models import Memory, project_key, validate_content, validate_memory_id, validate_user_id
 from .passages import PASSAGE_SCHEME
-from .recall import TURN_TEXT_INDEX, RecallConfig, Recalled, recall
+from .recall import MEMORY_TEXT_INDEX, TURN_TEXT_INDEX, RecallConfig, Recalled, recall
 from .reconciliation import (
     MAX_SESSION_BATCH_CHARS,
     NODE_LABELS,
@@ -55,7 +55,7 @@ if TYPE_CHECKING:
 
     from .ontology import Derive, OntologyVersion
 
-_FULLTEXT_INDEX = "memory_content_index"
+_FULLTEXT_INDEX = MEMORY_TEXT_INDEX
 
 
 @dataclass(frozen=True)
@@ -1076,6 +1076,7 @@ class SessionsGraph:
         extraction_backend: ExtractionBackend | None = None,
         entity_workspace: str | None = None,
         enforce_ontology: bool = True,
+        embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     ) -> MemoryReconciliation:
         """Extract entities and relations from one memory file, replacing what its last version gave.
 
@@ -1086,6 +1087,8 @@ class SessionsGraph:
         chunks link back to it via ``HAS_CHUNK`` and its relations carry its
         id as ``source_id``. No summary and no LLM: GLiNER2 over the owner's
         adopted ontology version, unless *extraction_backend* overrides it.
+        The file's passages are then embedded with *embedding_model* for
+        recall's memory lane.
 
         Returns:
             A :class:`MemoryReconciliation`. Never raises for a failure of
@@ -1135,6 +1138,9 @@ class SessionsGraph:
             )
             chunks = grouped[0] if grouped else []
             self._link_chunks_to_sources([ReconciliationSource(kind="memory", node_id=memory_id, text=text)], chunks)
+            # Recall's memory lane searches these; without MAGE it falls back to text search.
+            with contextlib.suppress(EmbeddingUnavailableError):
+                embed_memory(self._db, memory_id, embedding_model)
             self._db.query(
                 """
                 MATCH (m:Memory {memory_id: $memory_id})

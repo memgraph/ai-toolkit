@@ -330,7 +330,8 @@ from the tool call, so a model can only read its own user's sessions.
 | Key | Default | What it sets |
 |---|---|---|
 | `embedding_model` | `BAAI/bge-small-en-v1.5` | The model Memgraph embeds with; set with `config set recall.embedding_model` |
-| `lanes` | all five | Comma-separated subset of `turns,text,entities,facts,user_facts` |
+| `lanes` | all six | Comma-separated subset of `memories,turns,text,entities,facts,user_facts` |
+| `memories_k` | `5` | Memory files shown, found by vector and full text (shown first) |
 | `turns_k`, `text_k` | `8`, `8` | Messages found by vector and by text search |
 | `entities_k`, `edges_per_entity` | `15`, `6` | Entities matched, and facts read from each |
 | `facts_k`, `fact_turns_k` | `15`, `8` | Facts matched, and the messages they were read from |

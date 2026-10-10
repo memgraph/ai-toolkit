@@ -164,3 +164,23 @@ def _embed_rows(db: Any, rows: list[dict[str, Any]], model: str, write: str) -> 
             {"rows": [{**row, "vector": vector} for row, vector in zip(batch, vectors, strict=True)], "model": model},
         )
     return len(rows)
+
+
+def embed_memory(db: Any, memory_id: str, model: str = DEFAULT_EMBEDDING_MODEL) -> int:
+    """Embed one memory file's passages for recall's memory lane; returns how many.
+
+    Raises:
+        EmbeddingUnavailableError: as :func:`embed_texts`.
+    """
+    from .passages import split_passages
+
+    rows = db.query("MATCH (m:Memory {memory_id: $id}) RETURN m.content AS content", {"id": memory_id})
+    if not rows or not (rows[0]["content"] or "").strip():
+        return 0
+    passages = split_passages(rows[0]["content"])
+    vectors = embed_texts(db, passages, model)
+    db.query(
+        "MATCH (m:Memory {memory_id: $id}) SET m.passage_embeddings = $vectors, m.embedding_model = $model",
+        {"id": memory_id, "vectors": vectors, "model": model},
+    )
+    return len(vectors)
