@@ -13,6 +13,8 @@ classifiers = [
 ]
 dependencies = [
     "memgraph-toolbox>=0.1.11",
+    # Edits ~/.codex/config.toml when switching Codex's memory, keeping the user's comments and layout.
+    "tomlkit>=0.13,<1",
 ]
 
 [project.scripts]

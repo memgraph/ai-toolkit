@@ -238,6 +238,15 @@ don't source shell profiles, so an env-var-only path would silently work in
 your interactive shell and silently fail in the hook. Keep that boundary when
 touching `agent-context-graph`'s hook/config code.
 
+A user can make Context Graph their harness memory with
+`agent-context-graph setup <claude-code|codex> --memory-backend context-graph`
+(map #484, ADR 0006). This switch is per user, never per project. It turns
+the harness's built-in memory off in its user-level config, imports what that
+memory held, and sets `[memory] backend` in the config file. That setting is
+the one source of truth that switches on the MCP `memory` tool and the
+session-start memory index. The `memory` tool writes only `(:Memory)` files;
+everything derived stays background-only.
+
 One env var is read at hook runtime, and it is not an exception to the rule
 above so much as a different question: `CONTEXT_GRAPH_CONFIG` selects **which
 file** to read, never what is in it (ADR 0003). The failure mode the rule

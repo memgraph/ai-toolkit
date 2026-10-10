@@ -67,12 +67,9 @@ def render_index(store: MemoryStore, project: str | None, *, guidance: str) -> s
         lines.append(f"No memory files yet in {MEMORY_ROOT}" + (f" or {project_folder}/." if project_folder else "."))
         return "\n".join(lines)
 
-    lines.append("Memory index (view a file for its full text):")
-    shown = files[:MAX_INDEX_LINES]
-    lines += [f"- {file.path} — {_description(file.content)}" for file in shown]
-    if len(files) > len(shown):
-        lines.append(f"- ...and {len(files) - len(shown)} more; view {MEMORY_ROOT} to list them.")
-
+    # Pinned text before the index: a harness that caps hook context (Codex,
+    # about 2,500 tokens) cuts from the end, and rules that must always apply
+    # matter more than the tail of a listing.
     pinned = [file for file in files if _frontmatter(file.content).get("pin", "").lower() == "true"]
     if pinned:
         lines.append("Pinned memories (always apply):")
@@ -84,6 +81,12 @@ def render_index(store: MemoryStore, project: str | None, *, guidance: str) -> s
                 break
             lines += [f'<memory path="{file.path}">', body, "</memory>"]
             budget -= len(body)
+
+    lines.append("Memory index (view a file for its full text):")
+    shown = files[:MAX_INDEX_LINES]
+    lines += [f"- {file.path} — {_description(file.content)}" for file in shown]
+    if len(files) > len(shown):
+        lines.append(f"- ...and {len(files) - len(shown)} more; view {MEMORY_ROOT} to list them.")
     return "\n".join(lines)
 
 

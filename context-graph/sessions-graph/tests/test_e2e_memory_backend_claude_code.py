@@ -110,7 +110,8 @@ def test_setup_cli_and_doctor_agree(home, capsys):
 
     from agent_context_graph.cli import _check_memory_backend
 
-    assert _check_memory_backend("claude-code")["ok"]
+    check = _check_memory_backend("claude-code")
+    assert check is not None and check["ok"]
     (home / ".claude" / "settings.json").write_text("{}")
     check = _check_memory_backend("claude-code")
-    assert not check["ok"] and "two memories" in check["detail"]
+    assert check is not None and not check["ok"] and "two memories" in check["detail"]
