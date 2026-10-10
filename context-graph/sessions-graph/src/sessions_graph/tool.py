@@ -29,6 +29,7 @@ from agent_context_graph.tools import ToolError, ToolResult
 
 from .core import SessionsGraph
 from .embeddings import DEFAULT_EMBEDDING_MODEL
+from .memory_index import project_key_for, render_index
 from .memory_store import MemoryCommandError
 from .recall import RecallConfig
 
@@ -177,6 +178,18 @@ class MemoryTool(_GraphPerConfig):
         "This user's long-term memory is in Context Graph, not in local memory files: use the `memory` tool "
         "to view /memories before work that could depend on earlier sessions, and to save what you learn."
     )
+
+    def session_context(self, config: HookConfig, payload: dict[str, Any]) -> str | None:
+        """The memory index for this session: root files, the current project's files, pinned text.
+
+        The project comes from the SessionStart payload's ``cwd``.
+        """
+        if not config.user_id:
+            return self.session_hint
+        cwd = payload.get("cwd")
+        project = project_key_for(cwd) if isinstance(cwd, str) and cwd else None
+        store = self._graph_for(config).memory_store(config.user_id)
+        return render_index(store, project, guidance=self.session_hint)
 
     def available(self, config: HookConfig) -> bool:
         """Only for users who made Context Graph their memory backend."""
