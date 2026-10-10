@@ -397,7 +397,7 @@ async def _run_reconcile(parsed: argparse.Namespace) -> int:
     if not parsed.session:
         # Memory files first: they need no LLM, so they never wait on one.
         for memory_id in graph.get_pending_memory_reconciliations(limit=parsed.limit):
-            result = await graph.reconcile_memory(memory_id)
+            result = await graph.reconcile_memory(memory_id, embedding_model=_configured_embedding_model())
             if result.status == "completed":
                 print(f"OK memory {result.path}: {result.chunks} chunk(s)")
             else:
