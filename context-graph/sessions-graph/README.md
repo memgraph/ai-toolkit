@@ -138,6 +138,12 @@ store.execute({"command": "view", "path": "/memories/feedback/testing.md"})  # a
   clobbering. A file can't be empty or larger than 100 KB.
 - **Views.** A file view stops near 16,000 characters and says how to page on
   with `view_range`.
+- **History.** Every write that discards text keeps it first as a
+  `(:MemoryVersion)`, created in the same query as the write. That covers an
+  overwriting `create`, `str_replace`, `insert`, and `delete` (marked
+  `deleted`). The newest 20 per file are kept. `store.versions(path)` lists
+  them, newest first; a live file's history follows it across renames, and a
+  deleted file's history stays under its last path.
 - **Provenance and projects.** With `session_id`, every write records
   `(:Session)-[:PRODUCED_MEMORY]->(:Memory)`. A file under
   `/memories/projects/<key>/` is linked `-[:ABOUT]->(:Project {key})`, and a

@@ -4,7 +4,13 @@ Implements the command surface of the Claude API memory tool
 (``memory_20250818``): ``view``, ``create``, ``str_replace``, ``insert``,
 ``delete`` and ``rename`` on paths under ``/memories``. Each file is one
 ``(:Memory {path, content})`` node owned by the store's user; directories are
-not stored, they are the path prefixes their files share. Results and error
+not stored, they are the path prefixes their files share.
+
+Every write that discards text (an overwriting ``create``, ``str_replace``,
+``insert``, ``delete``) first keeps it as a ``(:MemoryVersion)``, so a stale
+or mistaken write is recoverable; the newest :data:`MAX_VERSIONS` per file are
+kept. Versions hang off the user as well as the file, so a deleted file's
+history outlives it. Results and error
 messages follow the memory tool documentation, because the model reads them.
 
 The store is the single implementation behind every entry point, such as the
@@ -32,12 +38,25 @@ MAX_FILE_BYTES = 100 * 1024
 #: A file view longer than this is cut, and the model pages with ``view_range``.
 VIEW_CHAR_LIMIT = 16_000
 MAX_LINES = 999_999
+#: Versions kept per file; older ones are deleted as new ones arrive.
+MAX_VERSIONS = 20
 _LINE_NUMBER_WIDTH = 6
 _LISTING_DEPTH = 2
 
 
 class MemoryCommandError(Exception):
     """A command that can't be carried out; the message is written for the model."""
+
+
+@dataclass(frozen=True)
+class MemoryVersion:
+    """Text a write replaced or a delete removed, with when and by which session."""
+
+    path: str
+    content: str
+    replaced_at: str
+    session_id: str | None
+    deleted: bool
 
 
 @dataclass(frozen=True)
@@ -218,16 +237,28 @@ class MemoryStore:
             raise MemoryCommandError(f"Error: Cannot delete the {MEMORY_ROOT} directory itself")
         rows = self._db.query(
             """
-            MATCH (m:Memory {user_id: $user_id})
+            MATCH (u:User {user_id: $user_id})-[:HAS_MEMORY]->(m:Memory)
             WHERE m.path = $path OR m.path STARTS WITH $prefix
-            WITH m, m.path AS path
+            CREATE (u)-[:HAS_MEMORY_VERSION]->(:MemoryVersion {
+                memory_id: m.memory_id, path: m.path, content: m.content,
+                replaced_at: $now, session_id: $session_id, deleted: true
+            })
+            WITH m, m.memory_id AS memory_id
             DETACH DELETE m
-            RETURN count(path) AS deleted
+            RETURN memory_id
             """,
-            params={"user_id": self.user_id, "path": path, "prefix": path + "/"},
+            params={
+                "user_id": self.user_id,
+                "path": path,
+                "prefix": path + "/",
+                "now": _now(),
+                "session_id": self.session_id,
+            },
         )
-        if not rows or not rows[0]["deleted"]:
+        if not rows:
             raise MemoryCommandError(f"Error: The path {path} does not exist")
+        for row in rows:
+            self._prune_versions(row["memory_id"])
         return f"Successfully deleted {path}"
 
     def rename(self, old_path: str, new_path: str) -> str:
@@ -274,6 +305,35 @@ class MemoryStore:
     # ------------------------------------------------------------------
     # Reads for other components
     # ------------------------------------------------------------------
+
+    def versions(self, path: str) -> list[MemoryVersion]:
+        """What writes to *path* replaced, newest first.
+
+        For a live file, its whole history (also from before a rename); for a
+        deleted one, the versions recorded under that path, ending with the
+        text it had when deleted.
+
+        Raises:
+            MemoryValidationError: *path* is not a valid memory path.
+        """
+        path = normalize_memory_path(path)
+        rows = self._db.query(
+            """
+            MATCH (u:User {user_id: $user_id})
+            OPTIONAL MATCH (u)-[:HAS_MEMORY]->(live:Memory {path: $path})
+            WITH u, live.memory_id AS live_id
+            MATCH (u)-[:HAS_MEMORY_VERSION]->(v:MemoryVersion)
+            WHERE (live_id IS NOT NULL AND v.memory_id = live_id) OR (live_id IS NULL AND v.path = $path)
+            RETURN v.path AS path, v.content AS content, v.replaced_at AS replaced_at,
+                   v.session_id AS session_id, coalesce(v.deleted, false) AS deleted
+            ORDER BY replaced_at DESC
+            """,
+            params={"user_id": self.user_id, "path": path},
+        )
+        return [
+            MemoryVersion(row["path"], row["content"], row["replaced_at"], row["session_id"], row["deleted"])
+            for row in rows
+        ]
 
     def files(self, directory: str = MEMORY_ROOT) -> list[MemoryFile]:
         """Every file under *directory*, at any depth, ordered by path.
@@ -380,8 +440,12 @@ class MemoryStore:
                 MERGE (u:User {user_id: $user_id})
                 MERGE (m:Memory {user_id: $user_id, path: $path})
                 ON CREATE SET m.memory_id = $memory_id, m.created_at = $now
+                WITH u, m, m.content AS previous
                 SET m.content = $content, m.updated_at = $now
                 MERGE (u)-[:HAS_MEMORY]->(m)
+                """
+                + _KEEP_PREVIOUS
+                + """
                 RETURN m.memory_id AS memory_id
                 """,
                 params={
@@ -390,23 +454,48 @@ class MemoryStore:
                     "memory_id": str(uuid4()),
                     "content": content,
                     "now": now,
+                    "session_id": self.session_id,
                 },
             )
         else:
             rows = self._db.query(
                 """
-                MATCH (m:Memory {user_id: $user_id, path: $path})
+                MATCH (u:User {user_id: $user_id})-[:HAS_MEMORY]->(m:Memory {path: $path})
                 WHERE m.content = $expected
+                WITH u, m, m.content AS previous
                 SET m.content = $content, m.updated_at = $now
+                """
+                + _KEEP_PREVIOUS
+                + """
                 RETURN m.memory_id AS memory_id
                 """,
-                params={"user_id": self.user_id, "path": path, "expected": expected, "content": content, "now": now},
+                params={
+                    "user_id": self.user_id,
+                    "path": path,
+                    "expected": expected,
+                    "content": content,
+                    "now": now,
+                    "session_id": self.session_id,
+                },
             )
             if not rows:
                 raise MemoryCommandError(f"Error: {path} changed while it was being edited. View it again and retry.")
         memory_id = rows[0]["memory_id"]
         self._link_project(memory_id, path)
         self._record_provenance(memory_id)
+        self._prune_versions(memory_id)
+
+    def _prune_versions(self, memory_id: str) -> None:
+        """Keep the newest :data:`MAX_VERSIONS` versions of one file."""
+        self._db.query(
+            """
+            MATCH (:User {user_id: $user_id})-[:HAS_MEMORY_VERSION]->(v:MemoryVersion {memory_id: $memory_id})
+            WITH v ORDER BY v.replaced_at DESC
+            SKIP $keep
+            DETACH DELETE v
+            """,
+            params={"user_id": self.user_id, "memory_id": memory_id, "keep": MAX_VERSIONS},
+        )
 
     def _link_project(self, memory_id: str, path: str) -> None:
         """Point the memory at the project its path is under, and nowhere else."""
@@ -436,6 +525,22 @@ class MemoryStore:
             """,
             params={"session_id": self.session_id, "memory_id": memory_id},
         )
+
+
+# Appended to a write that has bound u (the owner), m (the file) and previous
+# (its text before the write): keeps that text as a version when the write
+# changed it. Part of the same query, so the version and the write commit together.
+_KEEP_PREVIOUS = """
+                WITH u, m, previous
+                FOREACH (_ IN CASE WHEN previous IS NOT NULL AND previous <> $content THEN [1] ELSE [] END |
+                    CREATE (u)-[:HAS_MEMORY_VERSION]->(v:MemoryVersion {
+                        memory_id: m.memory_id, path: m.path, content: previous,
+                        replaced_at: $now, session_id: $session_id, deleted: false
+                    })
+                    CREATE (m)-[:PREVIOUS_VERSION]->(v)
+                )
+                WITH m
+"""
 
 
 def _path(path: str) -> str:
