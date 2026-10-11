@@ -25,6 +25,7 @@ _Avoid_: Collection tier, raw data
 - [Skills Graph](./skills-graph/CONTEXT.md) — stores reusable agent skills in Memgraph, records session skill usage.
 - [Actions Graph](./actions-graph/CONTEXT.md) — records agent session activity as action nodes for observability + tool usage analytics.
 - [Sessions Graph](./sessions-graph/CONTEXT.md) — stores explicit Memories, turns completed sessions into Episodes + extracted entities. Named `sessions-graph`: `memory-graph` taken on PyPI. Domain = memory recall.
+- [Context Graph Spaces](./spaces/CONTEXT.md) — Enterprise edition: personal + shared spaces for many users on one licensed Memgraph, isolated by Memgraph access control.
 - [Context Graph Eval](./eval/CONTEXT.md) — measures whether Memory-Tier output is recallable. Not part of the pipeline it measures.
 
 ## Relationships

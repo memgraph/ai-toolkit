@@ -36,6 +36,7 @@ Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable Memgraph graph.
 | `actions-graph` | Records tool calls/results/messages/subagent activity as `(:Action)`/`(:Agent)` nodes — observability, not memory. |
 | `skills-graph` | Tracks Agent-Skills-spec `(:Skill)` usage per session. |
 | `sessions-graph` | Owns `(:User)`/`(:Session)`, durable `(:Memory)` writes/recall, and session reconciliation into `(:Episode)` + extracted entities. |
+| `spaces` (`context-graph-spaces`) | The Enterprise edition: personal and shared spaces for many users on one licensed Memgraph, isolated by Memgraph's own multi-tenancy and access control. Provisions from an admin's spec (`context-graph-spaces plan|apply`). Community (the default `edition`) never imports it. |
 | `resources-graph` | Remembers public GitHub resources the agent touched: hooks record private `(:Touch)` nodes, the out-of-band `resources-graph sweep` stores shared `(:Resource)`s, and the `resource` tool serves them from memory. |
 
 Everything joins on a shared, idempotently-`MERGE`d `(:Session {session_id})`
@@ -106,7 +107,11 @@ exploration data:
 ./scripts/dev-memgraph.sh test                  # Context Graph + HyGM + unstructured2graph
 ./scripts/dev-memgraph.sh test sessions-graph    # one package
 ./scripts/dev-memgraph.sh test-down              # reclaim the test container when done
+./scripts/dev-memgraph.sh test-enterprise        # context-graph-spaces, on its own licensed container
 ```
+`test-enterprise` needs `MEMGRAPH_ENTERPRISE_LICENSE` and `MEMGRAPH_ORGANIZATION_NAME`
+(environment, or `.env` at the repo root); the Community suites stay on an
+unlicensed container on purpose.
 For parallel checkouts, override `AI_TOOLKIT_TEST_CONTAINER` and
 `AI_TOOLKIT_TEST_PORT` together to select an isolated test instance. Exploration
 uses `AI_TOOLKIT_DEV_CONTAINER`/`AI_TOOLKIT_DEV_PORT`. Test fixtures must honor
