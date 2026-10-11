@@ -1,5 +1,13 @@
 """Tests for the OpenCode V2 plugin runtime adapter."""
 
+import json
+import shlex
+import shutil
+import subprocess
+import sys
+
+import pytest
+
 from agent_context_graph import AgentLink
 from agent_context_graph.adapters.opencode import OpenCodeHooksAdapter, init
 from agent_context_graph.events import ErrorOccurredEvent, MessageEvent, SessionEndEvent, ToolEndEvent, TurnEndEvent
@@ -73,6 +81,61 @@ def test_opencode_init_installs_v2_plugin_with_capture_command(tmp_path):
     # `opencode run` can exit before the bus delivers the turn end; shutdown sends it.
     assert 'capture({ hook_event_name: "session.execution.succeeded", session_id: sessionID })' in plugin
     assert '"session.idle"' not in plugin
+
+
+# Drives the installed plugin with a stand-in for OpenCode's plugin context:
+# the bus yields the events in argv[2], then the prompt hook fires once.
+_PLUGIN_DRIVER = """
+const [plugin, events] = [process.argv[1], JSON.parse(process.argv[2])]
+const { default: { setup } } = await import(plugin)
+const hooks = {}
+const registrar = (domain) => ({
+  hook: async (name, fn) => { hooks[`${domain}.${name}`] = fn; return { dispose() {} } },
+})
+const cleanup = await setup({
+  location: { directory: "/plugin/dir" },
+  session: registrar("session"),
+  tool: registrar("tool"),
+  event: { subscribe: async function* () { for (const event of events) yield event } },
+})
+await new Promise((resolve) => setTimeout(resolve, 100))
+await hooks["session.prompt"]({ sessionID: "ses_1", prompt: { text: "hi" } })
+await cleanup()
+"""
+
+
+def _run_plugin(tmp_path, bus_events):
+    """The payloads the plugin captures for one prompt, after the bus delivers *bus_events*."""
+    if shutil.which("node") is None:
+        pytest.skip("node is not installed")
+    captured = tmp_path / "captured.jsonl"
+    recorder = f"import sys; open({str(captured)!r}, 'a').write(sys.stdin.read() + '\\n')"
+    init(tmp_path, ["actions-graph"], hook_command=shlex.join([sys.executable, "-c", recorder]))
+    plugin = tmp_path / ".opencode" / "plugins" / "agent-context-graph" / "index.js"
+    module = plugin.rename(plugin.with_suffix(".mjs"))
+    subprocess.run(
+        ["node", "--input-type=module", "-e", _PLUGIN_DRIVER, module.as_uri(), json.dumps(bus_events)],
+        check=True,
+        timeout=30,
+    )
+    return [json.loads(line) for line in captured.read_text().splitlines() if line]
+
+
+def test_opencode_plugin_starts_the_session_from_the_first_prompt_when_the_bus_missed_it(tmp_path):
+    payloads = _run_plugin(tmp_path, [])
+
+    starts = [payload for payload in payloads if payload["hook_event_name"] == "session.created"]
+    assert starts == [{"hook_event_name": "session.created", "session_id": "ses_1", "cwd": "/plugin/dir"}]
+    assert [payload["hook_event_name"] for payload in payloads][:2] == ["session.created", "session.prompt"]
+
+
+def test_opencode_plugin_records_the_bus_session_start_once(tmp_path):
+    created = {"type": "session.created", "data": {"sessionID": "ses_1", "location": {"directory": "/session/dir"}}}
+
+    payloads = _run_plugin(tmp_path, [created])
+
+    starts = [payload for payload in payloads if payload["hook_event_name"] == "session.created"]
+    assert starts == [{"hook_event_name": "session.created", "session_id": "ses_1", "cwd": "/session/dir"}]
 
 
 def test_opencode_records_completed_assistant_text_and_ignores_unmapped_events():

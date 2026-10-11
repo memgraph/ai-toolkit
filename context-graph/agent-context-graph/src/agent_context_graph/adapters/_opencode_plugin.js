@@ -9,7 +9,6 @@ import { spawn } from "node:child_process"
 const command = __AGENT_CONTEXT_GRAPH_COMMAND__
 
 const CAPTURED_EVENTS = new Set([
-  "session.created",
   "session.deleted",
   "session.text.ended",
   "session.execution.succeeded",
@@ -33,9 +32,20 @@ export default {
     // Sessions with a turn in flight. `opencode run` can exit before the bus
     // delivers session.execution.succeeded, so shutdown closes these turns.
     const openTurns = new Set()
+    // Sessions already recorded as started. The bus subscription below can
+    // start after `opencode run` creates its session, so session.created may
+    // never arrive; the first prompt then records the start, with the
+    // plugin's own directory as the session's.
+    const started = new Set()
+    const start = (sessionID, cwd, model) => {
+      if (started.has(sessionID)) return
+      started.add(sessionID)
+      return capture({ hook_event_name: "session.created", session_id: sessionID, cwd, model })
+    }
 
     registrations.push(await ctx.session.hook("prompt", async (event) => {
       openTurns.add(event.sessionID)
+      await start(event.sessionID, ctx.location?.directory)
       await capture({
         hook_event_name: "session.prompt",
         session_id: event.sessionID,
@@ -70,8 +80,12 @@ export default {
     const controller = new AbortController()
     void (async () => {
       for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-        if (!CAPTURED_EVENTS.has(event.type)) continue
         const data = event.data ?? {}
+        if (event.type === "session.created") {
+          await start(data.sessionID, data.location?.directory ?? ctx.location?.directory, data.model?.id)
+          continue
+        }
+        if (!CAPTURED_EVENTS.has(event.type)) continue
         if (event.type.startsWith("session.execution.")) openTurns.delete(data.sessionID)
         await capture({
           hook_event_name: event.type,
