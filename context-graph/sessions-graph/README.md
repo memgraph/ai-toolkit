@@ -83,7 +83,9 @@ graph.save_memory(
 
 ```
 (:User {user_id})
-    ├─[:HAS_MEMORY]──▶ (:Memory {memory_id, user_id, content, created_at})
+    ├─[:HAS_MEMORY]──▶ (:Memory {memory_id, user_id, path, content, created_at, updated_at})
+    │                          │
+    │                       [:ABOUT]──▶ (:Project {key})   (files under /memories/projects/<key>/)
     │                          ▲                        │
     │            [:PRODUCED_MEMORY]              [:HAS_CHUNK]
     │                          │                        ▼
@@ -98,6 +100,10 @@ graph.save_memory(
                                               (:Entity)-[:MENTIONED_IN]->(:Chunk)
 ```
 
+Every Memory is a file in the user's `/memories` tree: `path` is unique per
+user, and a Memory under `/memories/projects/<key>/` links to that project. See
+[Memory files](#memory-files).
+
 `(:User)-[:HAD_SESSION]->(:Session)` is written by `SessionsGraphConnector` on
 session start; it is the join key other Context Graph components hang off of.
 
@@ -105,6 +111,41 @@ session start; it is the join key other Context Graph components hang off of.
 extracted entity nodes are owned by
 [unstructured2graph](../../unstructured2graph/). See [Session
 reconciliation](#session-reconciliation) below for how they get linked.
+
+## Memory files
+
+`memory_store(user_id)` exposes a user's Memories as the file tree the Claude
+API memory tool (`memory_20250818`) works on: `view`, `create`, `str_replace`,
+`insert`, `delete` and `rename` on paths under `/memories`, returning the
+result and error strings that tool documents. Directories aren't stored; they
+are the path prefixes their files share.
+
+```python
+store = graph.memory_store("alice", session_id="s-1")
+store.create(
+    "/memories/feedback/testing.md", "---\ndescription: Prefer real Memgraph in tests\ntype: feedback\n---\n..."
+)
+store.view("/memories")  # listing, two levels deep
+store.execute({"command": "view", "path": "/memories/feedback/testing.md"})  # a tool call's input as-is
+```
+
+- **Paths.** Must start with `/memories`. `.`/`..` segments, backslashes,
+  control characters and percent-encoded dots or slashes are rejected, and
+  repeated slashes collapse.
+- **Writes.** `create` overwrites an existing file. An edit
+  (`str_replace`/`insert`) applies only if the file still holds what the edit
+  was computed from, so a stale read from another session fails instead of
+  clobbering. A file can't be empty or larger than 100 KB.
+- **Views.** A file view stops near 16,000 characters and says how to page on
+  with `view_range`.
+- **Provenance and projects.** With `session_id`, every write records
+  `(:Session)-[:PRODUCED_MEMORY]->(:Memory)`. A file under
+  `/memories/projects/<key>/` is linked `-[:ABOUT]->(:Project {key})`, and a
+  rename re-links it.
+
+Harnesses reach it as the `memory` tool, which agent-context-graph serves once
+the user makes Context Graph their memory backend; see
+[agent-context-graph § Memory](../agent-context-graph/README.md#memory-context-graph-as-the-harnesss-memory).
 
 ## Text search
 
@@ -411,7 +452,8 @@ sessions-graph embed --pending --limit 50 --model BAAI/bge-small-en-v1.5
 |---|---|
 | `setup()` | Create constraints, text index, and reconciliation indexes. Run once on first use. |
 | `drop()` | Remove all Memory-related constraints and indexes. |
-| `save_memory(user_id, content, *, session_id, memory_id)` | Persist a new Memory. Returns the stored `Memory` object. |
+| `save_memory(user_id, content, *, session_id, memory_id, path)` | Persist a new Memory at `path` (default `/memories/notes/<memory_id>.md`). Returns the stored `Memory` object. |
+| `memory_store(user_id, *, session_id=None)` | The memory tool's file commands over the user's Memories. See [Memory files](#memory-files). |
 | `get_memories(user_id)` | Return all Memories for a user, newest first. |
 | `get_memories_for_session(session_id)` | Return all Memories produced by a session, newest first. |
 | `search_memories(user_id, query, *, limit=10)` | Full-text search over Memory content. |

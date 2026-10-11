@@ -65,6 +65,11 @@ _LLM_DEFAULTS = {
     "anthropic_api_key": "",
 }
 
+#: ``[memory] backend`` values: the graph, or the harness's built-in memory.
+MEMORY_BACKEND_GRAPH = "context-graph"
+MEMORY_BACKEND_NATIVE = "native"
+MEMORY_BACKENDS = frozenset({MEMORY_BACKEND_GRAPH, MEMORY_BACKEND_NATIVE})
+
 _RECONCILE_DEFAULTS = {
     "auto_reconcile": None,
 }
@@ -101,6 +106,15 @@ class HookConfig:
     ontology_derive: str | None = None
     #: ``[github] token``: overrides the ``gh`` login resources-graph's Sweep otherwise fetches with.
     github_token: str | None = None
+    #: ``[memory] backend``: ``"context-graph"`` when the user has handed their
+    #: harness memory to the graph (the ``memory`` tool and session-start index
+    #: are on); ``"native"`` or None leaves the harness's own memory in charge.
+    memory_backend: str | None = None
+
+    @property
+    def graph_memory(self) -> bool:
+        """Whether Context Graph is this user's memory backend."""
+        return self.memory_backend == MEMORY_BACKEND_GRAPH
 
 
 def load_config() -> HookConfig:
@@ -116,6 +130,13 @@ def load_config() -> HookConfig:
     config = _read_config_file()
     _cached_config = config
     return config
+
+
+def reload_config() -> HookConfig:
+    """Re-read the config file, for long-lived processes (the MCP server) that must see later edits."""
+    global _cached_config
+    _cached_config = None
+    return load_config()
 
 
 def resolve_user_id(payload: dict[str, Any]) -> str | None:
@@ -225,6 +246,7 @@ def write_config(
     ontology_path: str | None = None,
     ontology_derive: str | None = None,
     github_token: str | None = None,
+    memory_backend: str | None = None,
 ) -> Path:
     """Write or update the config file. Returns the path written to.
 
@@ -248,6 +270,7 @@ def write_config(
     final_ontology_path = ontology_path if ontology_path is not None else existing.ontology_path
     final_ontology_derive = ontology_derive if ontology_derive is not None else existing.ontology_derive
     final_github_token = github_token if github_token is not None else existing.github_token
+    final_memory_backend = memory_backend if memory_backend is not None else existing.memory_backend
 
     content = _render_config(
         user_id=final_user_id or "",
@@ -263,6 +286,7 @@ def write_config(
         ontology_path=final_ontology_path,
         ontology_derive=final_ontology_derive,
         github_token=final_github_token,
+        memory_backend=final_memory_backend,
     )
 
     path = config_file()
@@ -288,7 +312,7 @@ def write_full_config(
 ) -> Path:
     """Write a complete config file with all sections (used by bootstrap).
 
-    Overwrites every section except ``[reconcile]``, ``[recall]``, ``[ontology]`` and ``[github]``: unlike identity/Memgraph/LLM
+    Overwrites every section except ``[reconcile]``, ``[recall]``, ``[ontology]``, ``[github]`` and ``[memory]``: unlike identity/Memgraph/LLM
     settings, ``auto_reconcile`` has no legitimate ambient-env source for
     ``bootstrap`` to capture (nobody has ``SESSIONS_GRAPH_AUTO_RECONCILE``
     exported for an unrelated reason the way they might already have
@@ -297,7 +321,7 @@ def write_full_config(
     silently revert it to off, so ``auto_reconcile`` is preserved from the
     existing file unless explicitly given here. ``[recall]``, ``[ontology]`` and
     ``[github]`` are preserved the same way: they are only ever set via ``config set`` or by
-    editing the file.
+    editing the file. ``[memory]`` is set by ``setup --memory-backend`` and kept likewise.
     """
     global _cached_config
 
@@ -318,6 +342,7 @@ def write_full_config(
         ontology_path=existing.ontology_path,
         ontology_derive=existing.ontology_derive,
         github_token=existing.github_token,
+        memory_backend=existing.memory_backend,
     )
 
     path = config_file()
@@ -359,6 +384,7 @@ def _read_config_file() -> HookConfig:
     recall = sections.get("recall", {})
     ontology = sections.get("ontology", {})
     github = sections.get("github", {})
+    memory = sections.get("memory", {})
     auto_reconcile_raw = reconcile.get("auto_reconcile")
 
     return HookConfig(
@@ -375,6 +401,7 @@ def _read_config_file() -> HookConfig:
         ontology_path=ontology.get("path") or None,
         ontology_derive=ontology.get("derive") or None,
         github_token=github.get("token") or None,
+        memory_backend=memory.get("backend") or None,
     )
 
 
@@ -422,6 +449,7 @@ def _render_config(
     ontology_path: str | None = None,
     ontology_derive: str | None = None,
     github_token: str | None = None,
+    memory_backend: str | None = None,
 ) -> str:
     """Render the full config file content.
 
@@ -429,7 +457,7 @@ def _render_config(
     ``None`` (never configured), so a fresh read of the file resolves it back
     to ``None`` rather than a concrete ``false`` — see
     :func:`resolve_auto_reconcile` for why that distinction matters.
-    ``[recall]``, ``[ontology]`` and ``[github]`` are likewise omitted while they hold nothing.
+    ``[recall]``, ``[ontology]``, ``[github]`` and ``[memory]`` are likewise omitted while they hold nothing.
     """
     lines = [
         "# Context Graph hook configuration",
@@ -459,6 +487,8 @@ def _render_config(
         lines += ["", "[ontology]", *(f'{key} = "{value}"' for key, value in ontology.items())]
     if github_token:
         lines += ["", "[github]", f'token = "{github_token}"']
+    if memory_backend:
+        lines += ["", "[memory]", f'backend = "{memory_backend}"']
     lines.append("")
     return "\n".join(lines)
 

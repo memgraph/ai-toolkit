@@ -130,3 +130,24 @@ def test_github_token_is_unset_by_default(config_dir, capsys):
     assert _identity.load_config().github_token is None
     assert top_level_main(["config", "show"]) == 0
     assert "github.token = unset" in capsys.readouterr().out
+
+
+def test_config_set_memory_backend_round_trips_and_survives_bootstrap(config_dir, capsys):
+    assert top_level_main(["config", "set", "memory.backend", "context-graph"]) == 0
+    _identity.write_full_config(user_id="ante")
+    _identity._reset_cache()
+
+    assert _identity.load_config().graph_memory
+    assert top_level_main(["config", "show"]) == 0
+    assert "memory.backend = 'context-graph'" in capsys.readouterr().out
+
+
+def test_config_set_memory_backend_rejects_other_values(config_dir, capsys):
+    assert top_level_main(["config", "set", "memory.backend", "files"]) == 2
+    assert "expected context-graph/native" in capsys.readouterr().err
+
+
+def test_memory_backend_is_native_by_default(config_dir, capsys):
+    assert not _identity.load_config().graph_memory
+    assert top_level_main(["config", "show"]) == 0
+    assert "memory.backend = unset (native)" in capsys.readouterr().out

@@ -43,6 +43,17 @@ class _EchoTool:
         )
 
 
+@dataclass
+class _OptInTool(_EchoTool):
+    """A tool that, like ``memory``, exists only once the user opts into graph memory."""
+
+    name: str = "memory"
+    session_hint: str | None = "Use `memory`."
+
+    def available(self, config: _identity.HookConfig) -> bool:
+        return config.graph_memory
+
+
 @pytest.fixture(autouse=True)
 def _config(monkeypatch, tmp_path):
     monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "config.toml"))
@@ -165,3 +176,32 @@ def test_recall_settings_survive_config_set(tmp_path):
     config = _identity.load_config()
     assert config.recall_settings == {"turns_k": "12", "lanes": "turns,text"}
     assert config.embedding_model == "BAAI/bge-small-en-v1.5"
+
+
+@pytest.mark.asyncio
+async def test_mcp_hides_and_refuses_a_tool_until_its_user_opts_in():
+    pytest.importorskip("mcp")
+    from agent_context_graph.mcp_server import build_server
+
+    server = build_server({"recall": _EchoTool(), "memory": _OptInTool()})
+    async with _connected(server) as client:
+        before = [tool["name"] for tool in _wire(await client.list_tools())["tools"]]
+        refused = _wire(await client.call_tool("memory", {"question": "x"}))
+        _identity.write_config(memory_backend="context-graph")
+        after = [tool["name"] for tool in _wire(await client.list_tools())["tools"]]
+        allowed = _wire(await client.call_tool("memory", {"question": "x"}))
+
+    assert before == ["recall"]
+    assert refused["isError"] and refused["content"][0]["text"] == "Unknown tool: memory"
+    assert after == ["recall", "memory"]
+    assert not allowed.get("isError")
+
+
+def test_session_hints_skip_tools_the_user_has_not_turned_on(monkeypatch):
+    from agent_context_graph.tools import session_hints
+
+    monkeypatch.setattr("agent_context_graph.tools.load_tools", lambda: {"memory": _OptInTool()})
+
+    assert session_hints(["sessions-graph"]) == []
+    _identity.write_config(memory_backend="context-graph")
+    assert session_hints(["sessions-graph"], _identity.load_config()) == ["Use `memory`."]

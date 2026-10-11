@@ -76,6 +76,7 @@ def _config(argv: list[str]) -> int:
     """Get or set persistent config values in ~/.config/context-graph/config.toml."""
     from agent_context_graph.adapters._identity import (
         FALSY_VALUES,
+        MEMORY_BACKENDS,
         TRUTHY_VALUES,
         config_file_path,
         load_config,
@@ -98,6 +99,7 @@ def _config(argv: list[str]) -> int:
         "ontology.path": "ontology_path",
         "ontology.derive": "ontology_derive",
         "github.token": "github_token",
+        "memory.backend": "memory_backend",
     }
     _SECRET_KEYS = {"memgraph.password", "llm.openai_api_key", "llm.anthropic_api_key", "github.token"}
     _BOOL_KEYS = {"reconcile.auto_reconcile"}
@@ -139,6 +141,11 @@ def _config(argv: list[str]) -> int:
         else:
             print(f"ontology.derive = {config.ontology_derive!r}")
         print(f"github.token = {'***' if config.github_token else 'unset'}")
+        print(
+            f"memory.backend = {config.memory_backend!r}"
+            if config.memory_backend
+            else "memory.backend = unset (native)"
+        )
         return 0
 
     if action == "set":
@@ -170,6 +177,9 @@ def _config(argv: list[str]) -> int:
                 print(f"Invalid value for {key}: {value!r} (expected true/false)", file=sys.stderr)
                 return 2
             write_value = parse_bool_flag(normalized)
+        if key == "memory.backend" and value not in MEMORY_BACKENDS:
+            print(f"Invalid value for {key}: {value!r} (expected {'/'.join(sorted(MEMORY_BACKENDS))})", file=sys.stderr)
+            return 2
         if key == "ontology.derive" and value not in {"extend", "off"}:
             print(f"Invalid value for {key}: {value!r} (expected extend/off)", file=sys.stderr)
             return 2

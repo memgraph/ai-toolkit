@@ -9,11 +9,19 @@ Graph component owning User and Session lifecycle, explicit **Memories**, reconc
 _Avoid_: treating session tracking as the whole memory component
 
 **Memory**:
-Free-form text assertion about a user/their work, an agent deliberately saves for later sessions.
+Free-form text assertion about a user/their work, an agent deliberately saves for later sessions. Stored as one file in the user's `/memories` tree: `path` unique per user.
 _Avoid_: Fact, note, log entry, preference, session record, extracted insight, typed fact
 
+**Memory File**:
+A Memory seen through the memory tool: a path under `/memories` plus its text. Directories aren't stored — they are shared path prefixes. `/memories/` = applies everywhere; `/memories/projects/<key>/` = one project.
+_Avoid_: Document, note file, memory folder (as a stored thing)
+
+**Memory Backend**:
+Which memory a harness's model uses: its own built-in memory (`native`) or Context Graph (`context-graph`). Per user, opt-in (`[memory] backend` in the config file). Never both at once.
+_Avoid_: Memory mode, memory provider
+
 **Memory Write**:
-Persisting a Memory via Sessions Graph Python API. MCP exposure deferred until write contract is clear.
+Persisting a Memory via Sessions Graph Python API, or by the model through the `memory` tool (memory tool commands, ADR 0006 in agent-context-graph). The only write a model makes over MCP; everything derived stays background-only.
 _Avoid_: Memory extraction, LLM distillation, passive capture, tool-intercepted write
 
 **Memory Recall**:
@@ -63,6 +71,7 @@ _Avoid_: Status, session status (`status` already tracks session completion)
 - `SessionsGraphConnector` consumes session start/end and turn-end events. `MERGE`s User + Session nodes, exposes `active_user_id`/`active_session_id`.
 - **Memory Owner** connected to their sessions: `(:User)-[:HAD_SESSION]->(:Session)`. Created atomically with User/Session MERGEs on `SESSION_START`.
 - Every **Memory** owned by a **Memory Owner** via `HAS_MEMORY`: `(:User)-[:HAS_MEMORY]->(:Memory)`.
+- A **Memory File** under `/memories/projects/<key>/` is `(:Memory)-[:ABOUT]->(:Project {key})`; the key is one path segment.
 - **Memory Provenance** encoded as `(:Session)-[:PRODUCED_MEMORY]->(:Memory)`.
 - Scope derived from graph topology, not stored as attribute.
 - Session Reconciliation reads Message/ToolCall/ToolResult Actions + Memories, passes text to unstructured2graph.
@@ -73,7 +82,8 @@ _Avoid_: Status, session status (`status` already tracks session completion)
 ## Flagged ambiguities
 
 - "scope" can imply stored attribute. Resolved: scope derived from graph topology (ownership + provenance relationships), not a Memory-node attribute.
-- "extract" implies passive/LLM-driven capture. Resolved: Memories always written explicitly via Python API — use **Memory Write**.
+- "extract" implies passive/LLM-driven capture. Resolved: Memories always written explicitly — Python API or the `memory` tool — use **Memory Write**.
+- "MCP is read-only" (#259) vs the `memory` tool. Resolved (ADR 0006, map #484): MCP may write `(:Memory)` files only; chunks, entities, Episodes, Procedures stay background-only.
 - "global memory" ambiguous. Resolved: deferred — v1, every Memory user-owned. Cross-user/repo-shared memories out of scope.
 - "sessions-graph owns sessions" surfaced during PyPI naming discussion. Resolved: Session nodes = shared idempotent coordination point; sessions-graph owns lifecycle while all components may MERGE them.
 - "status" ambiguous: `status` tracks agent session; `reconciliation_status` tracks reconciliation. Never use bare `status` for reconciliation.
