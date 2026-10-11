@@ -13,6 +13,7 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from agent_context_graph.spaces import MemgraphTarget, SpaceError, SpaceResolver, spaces_for
 from agent_context_graph.tools import ToolError, ToolResult
 
 from .address import parse_address
@@ -60,7 +61,7 @@ class ResourceTool:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._graph: ResourcesGraph | None = None
-        self._graph_key: tuple[str, ...] | None = None
+        self._graph_key: MemgraphTarget | None = None
 
     def call(self, arguments: dict[str, Any], config: HookConfig) -> ToolResult:
         """Serve ``arguments["address"]`` from memory.
@@ -71,7 +72,7 @@ class ResourceTool:
         text = str(arguments.get("address") or "").strip()
         if not text:
             raise ToolError("resource needs an address: a GitHub URL, owner/repo#123 or owner/repo.")
-        if not config.user_id:
+        if not _spaces(config).user_id():
             raise ToolError(
                 "No user is configured, so memory can't be read. "
                 "Set one with: agent-context-graph config set identity.user_id <name>"
@@ -90,17 +91,24 @@ class ResourceTool:
         return ToolResult(text=render(served, page=page), structured=_structured(served, page=page))
 
     def _graph_for(self, config: HookConfig) -> ResourcesGraph:
-        key = (config.memgraph_url, config.memgraph_user, config.memgraph_password, config.memgraph_database)
+        target = _spaces(config).personal().target
         with self._lock:
-            if self._graph is None or self._graph_key != key:
-                self._graph = ResourcesGraph(
-                    url=config.memgraph_url,
-                    username=config.memgraph_user,
-                    password=config.memgraph_password,
-                    database=config.memgraph_database,
-                )
-                self._graph_key = key
+            if self._graph is None or self._graph_key != target:
+                self._graph = ResourcesGraph(**target.client_kwargs())
+                self._graph_key = target
             return self._graph
+
+
+def _spaces(config: HookConfig) -> SpaceResolver:
+    """The configured edition's space resolver.
+
+    Raises:
+        ToolError: the edition is unknown or its package isn't installed.
+    """
+    try:
+        return spaces_for(config)
+    except SpaceError as exc:
+        raise ToolError(str(exc)) from exc
 
 
 def render(served: Served, *, page: int = 1) -> str:

@@ -25,6 +25,7 @@ import threading
 from datetime import date
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from agent_context_graph.spaces import MemgraphTarget, SpaceError, SpaceResolver, spaces_for
 from agent_context_graph.tools import ToolError, ToolResult
 
 from .core import SessionsGraph
@@ -49,26 +50,24 @@ the rows don't contain the answer, say it isn't in memory."""
 
 
 class _GraphPerConfig:
-    """One SessionsGraph, rebuilt only when the configured Memgraph connection changes."""
+    """One SessionsGraph on the user's personal space, rebuilt only when that space's connection changes."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._graph: SessionsGraph | None = None
-        self._graph_key: tuple[str, ...] | None = None
+        self._graph_key: MemgraphTarget | None = None
+
+    def _user_id(self, config: HookConfig) -> str | None:
+        return _spaces(config).user_id()
 
     def _graph_for(self, config: HookConfig) -> SessionsGraph:
-        key = (config.memgraph_url, config.memgraph_user, config.memgraph_password, config.memgraph_database)
+        target = _spaces(config).personal().target
         with self._lock:
-            if self._graph is None or self._graph_key != key:
-                graph = SessionsGraph(
-                    url=config.memgraph_url,
-                    username=config.memgraph_user,
-                    password=config.memgraph_password,
-                    database=config.memgraph_database,
-                )
+            if self._graph is None or self._graph_key != target:
+                graph = SessionsGraph(**target.client_kwargs())
                 # Recall's text lane and the memory tool's path constraint need the schema; setup is idempotent.
                 graph.setup()
-                self._graph, self._graph_key = graph, key
+                self._graph, self._graph_key = graph, target
             return self._graph
 
 
@@ -99,7 +98,8 @@ class RecallTool(_GraphPerConfig):
         question = str(arguments.get("question") or "").strip()
         if not question:
             raise ToolError("recall needs a question.")
-        if not config.user_id:
+        user_id = self._user_id(config)
+        if not user_id:
             raise ToolError(
                 "No user is configured, so there is no memory to search. "
                 "Set one with: agent-context-graph config set identity.user_id <name>"
@@ -110,7 +110,7 @@ class RecallTool(_GraphPerConfig):
             raise ToolError(f"[recall] in {_config_path()} is invalid: {exc}") from exc
 
         recalled = self._graph_for(config).recall(
-            config.user_id, question, config=settings, model=config.embedding_model or DEFAULT_EMBEDDING_MODEL
+            user_id, question, config=settings, model=config.embedding_model or DEFAULT_EMBEDDING_MODEL
         )
         return ToolResult(text=recalled.render(today=date.today().isoformat()), structured=recalled.to_json())
 
@@ -184,11 +184,12 @@ class MemoryTool(_GraphPerConfig):
 
         The project comes from the SessionStart payload's ``cwd``.
         """
-        if not config.user_id:
+        user_id = self._user_id(config)
+        if not user_id:
             return self.session_hint
         cwd = payload.get("cwd")
         project = project_key_for(cwd) if isinstance(cwd, str) and cwd else None
-        store = self._graph_for(config).memory_store(config.user_id)
+        store = self._graph_for(config).memory_store(user_id)
         return render_index(store, project, guidance=self.session_hint)
 
     def available(self, config: HookConfig) -> bool:
@@ -202,16 +203,29 @@ class MemoryTool(_GraphPerConfig):
             ToolError: no ``identity.user_id`` configured, or the command fails;
                 the message is the memory tool's own error text.
         """
-        if not config.user_id:
+        user_id = self._user_id(config)
+        if not user_id:
             raise ToolError(
                 "No user is configured, so there is no memory to use. "
                 "Set one with: agent-context-graph config set identity.user_id <name>"
             )
-        store = self._graph_for(config).memory_store(config.user_id)
+        store = self._graph_for(config).memory_store(user_id)
         try:
             return ToolResult(text=store.execute(arguments))
         except MemoryCommandError as exc:
             raise ToolError(str(exc)) from exc
+
+
+def _spaces(config: HookConfig) -> SpaceResolver:
+    """The configured edition's space resolver; a misconfigured edition is the model's error to read.
+
+    Raises:
+        ToolError: the edition is unknown or its package isn't installed.
+    """
+    try:
+        return spaces_for(config)
+    except SpaceError as exc:
+        raise ToolError(str(exc)) from exc
 
 
 def _config_path() -> str:

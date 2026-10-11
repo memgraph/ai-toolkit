@@ -23,6 +23,7 @@ from agent_context_graph.adapters._identity import (
     load_config,
     write_config,
 )
+from agent_context_graph.spaces import spaces_for
 
 if TYPE_CHECKING:
     from agent_context_graph.hooks.runtime_plugin import RuntimeCLIPlugin
@@ -87,12 +88,13 @@ def use_graph_memory(plugin: RuntimeCLIPlugin, *, home: Path | None = None) -> l
     native = _require_native(plugin)
     home = home or Path.home()
     config = load_config()
-    if not config.user_id:
+    user_id = spaces_for(config).user_id()
+    if not user_id:
         raise MemoryBackendError(
             "No user is configured, so there is no memory to move into. "
             "Set one first: agent-context-graph config set identity.user_id <name>"
         )
-    report = native.import_into(_memory_files(config), home)
+    report = native.import_into(_memory_files(config, user_id), home)
     lines = [f"Imported {path}" for path in report.imported]
     lines += [f"Kept existing {path}" for path in report.skipped]
     lines += native.disable(home)
@@ -125,7 +127,7 @@ def _require_native(plugin: RuntimeCLIPlugin) -> NativeMemory:
     return native
 
 
-def _memory_files(config: Any) -> MemoryFiles:
+def _memory_files(config: Any, user_id: str) -> MemoryFiles:
     try:
         from sessions_graph import SessionsGraph
     except ImportError as exc:
@@ -133,14 +135,10 @@ def _memory_files(config: Any) -> MemoryFiles:
             "Context Graph memory needs sessions-graph: "
             "uv tool install 'agent-context-graph[mcp]' --with 'sessions-graph[agent-context-graph]'"
         ) from exc
+    target = spaces_for(config).personal().target
     try:
-        graph = SessionsGraph(
-            url=config.memgraph_url,
-            username=config.memgraph_user,
-            password=config.memgraph_password,
-            database=config.memgraph_database,
-        )
+        graph = SessionsGraph(**target.client_kwargs())
         graph.setup()
     except Exception as exc:
-        raise MemoryBackendError(f"Can't reach Memgraph at {config.memgraph_url}: {exc}") from exc
-    return graph.memory_store(config.user_id)
+        raise MemoryBackendError(f"Can't reach Memgraph at {target.url}: {exc}") from exc
+    return graph.memory_store(user_id)

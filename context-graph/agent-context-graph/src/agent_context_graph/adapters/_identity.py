@@ -87,6 +87,8 @@ _cached_config: HookConfig | None = None
 class HookConfig:
     """Parsed hook configuration from the config file."""
 
+    #: Top-level ``edition``: "community" (or None, the default) or "enterprise"; see agent_context_graph.spaces.
+    edition: str | None = None
     user_id: str | None = None
     memgraph_url: str = _MEMGRAPH_DEFAULTS["url"]
     memgraph_user: str = _MEMGRAPH_DEFAULTS["user"]
@@ -140,15 +142,13 @@ def reload_config() -> HookConfig:
 
 
 def resolve_user_id(payload: dict[str, Any]) -> str | None:
-    """Resolve user identity for hook subprocesses.
+    """Resolve user identity for hook subprocesses, as the configured edition's space resolver decides.
 
-    Resolution order:
-    1. ``user_id`` field in the hook payload (forward-compat).
-    2. Config file ``[identity] user_id``.
+    In Community: the hook payload's ``user_id`` (forward-compat), else ``[identity] user_id``.
     """
-    if uid := _string_or_none(payload.get("user_id")):
-        return uid
-    return load_config().user_id
+    from agent_context_graph.spaces import spaces_for
+
+    return spaces_for(load_config()).user_id(payload)
 
 
 def resolve_memgraph_env(
@@ -160,16 +160,20 @@ def resolve_memgraph_env(
 ) -> dict[str, str]:
     """Resolve Memgraph connection settings for hook subprocesses.
 
-    Resolution order per setting: explicit arg (CLI flag) > config file > default.
+    Resolution order per setting: explicit arg (CLI flag) > the user's personal
+    space, as the configured edition's space resolver gives it > default.
     Returns a dict with keys matching memgraph-toolbox's env contract.
     """
-    config = load_config()
-    return {
-        "MEMGRAPH_URL": url if url is not None else config.memgraph_url,
-        "MEMGRAPH_USER": user if user is not None else config.memgraph_user,
-        "MEMGRAPH_PASSWORD": password if password is not None else config.memgraph_password,
-        "MEMGRAPH_DATABASE": database if database is not None else config.memgraph_database,
+    from agent_context_graph.spaces import spaces_for
+
+    env = spaces_for(load_config()).personal().target.env()
+    overrides = {
+        "MEMGRAPH_URL": url,
+        "MEMGRAPH_USER": user,
+        "MEMGRAPH_PASSWORD": password,
+        "MEMGRAPH_DATABASE": database,
     }
+    return {key: value if value is not None else env[key] for key, value in overrides.items()}
 
 
 def resolve_llm_env() -> dict[str, str]:
@@ -234,6 +238,7 @@ def parse_bool_flag(value: str | bool) -> bool:
 
 def write_config(
     *,
+    edition: str | None = None,
     user_id: str | None = None,
     memgraph_url: str | None = None,
     memgraph_user: str | None = None,
@@ -258,6 +263,7 @@ def write_config(
     # Read existing config as base.
     existing = _read_config_file()
 
+    final_edition = edition if edition is not None else existing.edition
     final_user_id = user_id if user_id is not None else existing.user_id
     final_url = memgraph_url if memgraph_url is not None else existing.memgraph_url
     final_user = memgraph_user if memgraph_user is not None else existing.memgraph_user
@@ -273,6 +279,7 @@ def write_config(
     final_memory_backend = memory_backend if memory_backend is not None else existing.memory_backend
 
     content = _render_config(
+        edition=final_edition,
         user_id=final_user_id or "",
         url=final_url,
         user=final_user,
@@ -329,6 +336,7 @@ def write_full_config(
     final_auto_reconcile = auto_reconcile if auto_reconcile is not None else existing.auto_reconcile
 
     content = _render_config(
+        edition=existing.edition,
         user_id=user_id,
         url=memgraph_url,
         user=memgraph_user,
@@ -388,6 +396,7 @@ def _read_config_file() -> HookConfig:
     auto_reconcile_raw = reconcile.get("auto_reconcile")
 
     return HookConfig(
+        edition=sections.get("", {}).get("edition") or None,
         user_id=identity.get("user_id") or None,
         memgraph_url=memgraph.get("url") or _MEMGRAPH_DEFAULTS["url"],
         memgraph_user=memgraph.get("user", _MEMGRAPH_DEFAULTS["user"]),
@@ -409,9 +418,10 @@ def _parse_toml(path: Path) -> dict[str, dict[str, str]]:
     """Minimal TOML parser — handles [section] and key = "value" pairs.
 
     Only supports string values (quoted or bare). Sufficient for our config shape.
+    Keys before the first section header land in the ``""`` section.
     """
-    sections: dict[str, dict[str, str]] = {}
-    current_section: str | None = None
+    sections: dict[str, dict[str, str]] = {"": {}}
+    current_section = ""
 
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
@@ -421,7 +431,7 @@ def _parse_toml(path: Path) -> dict[str, dict[str, str]]:
             current_section = stripped[1:-1].strip()
             sections.setdefault(current_section, {})
             continue
-        if current_section is not None and "=" in stripped:
+        if "=" in stripped:
             key, _, value = stripped.partition("=")
             key = key.strip()
             value = value.strip()
@@ -436,6 +446,7 @@ def _parse_toml(path: Path) -> dict[str, dict[str, str]]:
 
 def _render_config(
     *,
+    edition: str | None = None,
     user_id: str,
     url: str,
     user: str,
@@ -464,6 +475,7 @@ def _render_config(
         "# Generated by: agent-context-graph config set / bootstrap",
         f"# Location: {config_file()}",
         "",
+        *([f'edition = "{edition}"', ""] if edition else []),
         "[identity]",
         f'user_id = "{user_id}"',
         "",
@@ -491,13 +503,6 @@ def _render_config(
         lines += ["", "[memory]", f'backend = "{memory_backend}"']
     lines.append("")
     return "\n".join(lines)
-
-
-def _string_or_none(value: Any) -> str | None:
-    if value is None:
-        return None
-    s = str(value)
-    return s if s else None
 
 
 def _reset_cache() -> None:
