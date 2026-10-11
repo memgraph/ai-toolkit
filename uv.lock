@@ -8489,6 +8489,9 @@ dependencies = [
 agent-context-graph = [
     { name = "agent-context-graph" },
 ]
+anthropic = [
+    { name = "anthropic" },
+]
 reconciliation = [
     { name = "actions-graph" },
     { name = "anthropic" },
@@ -8505,6 +8508,7 @@ test = [
 requires-dist = [
     { name = "actions-graph", marker = "extra == 'reconciliation'", editable = "context-graph/actions-graph" },
     { name = "agent-context-graph", marker = "extra == 'agent-context-graph'", editable = "context-graph/agent-context-graph" },
+    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.74.0" },
     { name = "anthropic", marker = "extra == 'reconciliation'", specifier = ">=0.74.0" },
     { name = "hygm", marker = "extra == 'reconciliation'", editable = "hygm" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
@@ -8513,7 +8517,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
     { name = "unstructured2graph", marker = "extra == 'reconciliation'", editable = "unstructured2graph" },
 ]
-provides-extras = ["agent-context-graph", "reconciliation", "test"]
+provides-extras = ["anthropic", "agent-context-graph", "reconciliation", "test"]
 
 [[package]]
 name = "setuptools"

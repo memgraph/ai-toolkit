@@ -149,6 +149,17 @@ store.execute({"command": "view", "path": "/memories/feedback/testing.md"})  # a
   `/memories/projects/<key>/` is linked `-[:ABOUT]->(:Project {key})`, and a
   rename re-links it.
 
+Apps built on the Claude API get the same files through the SDK's tool
+runner (`pip install 'sessions-graph[anthropic]'`). The application supplies
+the user; the model never does.
+
+```python
+from sessions_graph.anthropic_memory import MemgraphMemoryTool  # AsyncMemgraphMemoryTool for the async client
+
+memory = MemgraphMemoryTool(graph, user_id="alice", session_id="request-42")
+client.beta.messages.tool_runner(model=..., max_tokens=..., tools=[memory], messages=[...]).until_done()
+```
+
 Harnesses reach it as the `memory` tool, which agent-context-graph serves once
 the user makes Context Graph their memory backend; see
 [agent-context-graph § Memory](../agent-context-graph/README.md#memory-context-graph-as-the-harnesss-memory).
