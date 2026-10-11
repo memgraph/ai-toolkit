@@ -1,7 +1,5 @@
 """The space resolver seam: which edition a config selects, and what Community resolves to."""
 
-import sys
-
 import pytest
 
 from agent_context_graph import spaces
@@ -73,7 +71,7 @@ def test_community_has_no_shared_spaces():
 
 
 def test_enterprise_without_its_package_says_what_to_install(monkeypatch):
-    monkeypatch.setitem(sys.modules, "context_graph_spaces", None)
+    monkeypatch.setattr(spaces, "_edition_factory", lambda edition: None)
 
     with pytest.raises(SpaceError, match="context-graph-spaces"):
         spaces_for(_config(edition="enterprise"))

@@ -13,22 +13,29 @@ There are two editions, chosen explicitly by the config file's top-level
   it makes no queries.
 - **Enterprise**: many users on a shared Memgraph, each with a personal
   database and membership in shared ones, enforced by Memgraph's own access
-  control. Implemented by the separate ``context-graph-spaces`` package, so
-  Community never imports it.
+  control. Implemented by the separate ``context-graph-spaces`` package, found
+  through the ``agent_context_graph.editions`` entry point, so Community never
+  imports it.
 """
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import dataclass
+from importlib import metadata
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from agent_context_graph.adapters._identity import HookConfig
 
 EDITION_COMMUNITY = "community"
 EDITION_ENTERPRISE = "enterprise"
 EDITIONS = frozenset({EDITION_COMMUNITY, EDITION_ENTERPRISE})
+
+#: Where a package registers a non-Community edition's resolver class, under the edition's name:
+#: ``[project.entry-points."agent_context_graph.editions"] enterprise = "context_graph_spaces:EnterpriseSpaces"``.
+_ENTRY_POINT_GROUP = "agent_context_graph.editions"
 
 #: The name of every user's own space, in both editions.
 PERSONAL = "personal"
@@ -168,15 +175,22 @@ def _build(config: HookConfig) -> SpaceResolver:
     if edition == EDITION_COMMUNITY:
         return CommunitySpaces(config)
     if edition == EDITION_ENTERPRISE:
-        try:
-            enterprise = importlib.import_module("context_graph_spaces")
-        except ImportError as exc:
+        factory = _edition_factory(edition)
+        if factory is None:
             raise SpaceError(
                 "edition = enterprise needs the context-graph-spaces package: "
                 "uv tool install 'agent-context-graph[mcp]' --with context-graph-spaces"
-            ) from exc
-        return enterprise.EnterpriseSpaces(config)
+            )
+        return factory(config)
     raise SpaceError(f"Unknown edition {edition!r} in the config file; use one of: {', '.join(sorted(EDITIONS))}.")
+
+
+def _edition_factory(edition: str) -> Callable[[HookConfig], SpaceResolver] | None:
+    """The resolver class a package registers for *edition* under the ``agent_context_graph.editions`` entry points."""
+    for entry_point in metadata.entry_points(group=_ENTRY_POINT_GROUP):
+        if entry_point.name == edition:
+            return entry_point.load()
+    return None
 
 
 def _reset_cache() -> None:
