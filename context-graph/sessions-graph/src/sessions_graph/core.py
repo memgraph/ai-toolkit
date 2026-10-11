@@ -37,10 +37,12 @@ from .recall import TURN_TEXT_INDEX, RecallConfig, Recalled, recall
 from .reconciliation import (
     MAX_SESSION_BATCH_CHARS,
     NODE_LABELS,
+    MemoryReconciliation,
     ReconciliationSource,
     ReconciliationSummary,
     build_reconciliation_sources,
     content_hash,
+    normalize_timestamp,
     summarize_session_texts,
 )
 
@@ -135,6 +137,7 @@ class SessionsGraph:
         self._db.query("CREATE INDEX ON :Memory(created_at);")
         self._db.query("CREATE INDEX ON :Memory(path);")
         self._db.query("CREATE INDEX ON :MemoryVersion(memory_id);")
+        self._db.query("CREATE INDEX ON :Memory(extraction_status);")
         self._db.query(f"CREATE TEXT INDEX {_FULLTEXT_INDEX} ON :Memory(content);")
         self._db.query("CREATE INDEX ON :Session(reconciliation_status);")
         self._db.query("CREATE INDEX ON :Session(embedding_status);")
@@ -355,6 +358,22 @@ class SessionsGraph:
         )
         return [self._row_to_memory(r) for r in rows]
 
+    def record_memory_provenance(self, session_id: str, paths: list[str]) -> None:
+        """Record that *session_id* wrote the memory files at *paths*, owned by that session's user.
+
+        For writes made where the session isn't known (the MCP server), so the
+        session's hook records it afterwards.
+        """
+        self._db.query(
+            """
+            MATCH (u:User)-[:HAD_SESSION]->(s:Session {session_id: $session_id})
+            MATCH (u)-[:HAS_MEMORY]->(m:Memory)
+            WHERE m.path IN $paths
+            MERGE (s)-[:PRODUCED_MEMORY]->(m)
+            """,
+            params={"session_id": session_id, "paths": paths},
+        )
+
     def memory_store(self, user_id: str, *, session_id: str | None = None) -> MemoryStore:
         """The memory tool's commands over *user_id*'s memory files; see :mod:`sessions_graph.memory_store`.
 
@@ -427,8 +446,10 @@ class SessionsGraph:
         content hash -- the read-only half of reconciliation shared by
         ``reconcile_session`` and ``reconcile_sessions_batch``."""
         actions = actions_graph.get_session_actions(session_id)
-        memories = self.get_memories_for_session(session_id)
-        sources = build_reconciliation_sources(actions, memories)
+        # Memories aren't session content any more: each file is reconciled
+        # on its own when it changes (reconcile_memory), since a file outlives
+        # the session that first wrote it.
+        sources = build_reconciliation_sources(actions, [])
         unique_texts: dict[str, str] = {}
         for source in sources:
             unique_texts.setdefault(content_hash(source.text), source.text)
@@ -537,7 +558,8 @@ class SessionsGraph:
         """Batch-extract entities and a narrative summary from a session's content.
 
         Pulls all reconcilable Message/ToolCall/ToolResult text recorded for
-        *session_id* in Actions Graph, plus this session's Memories, dedupes
+        *session_id* in Actions Graph (Memories are reconciled per file by
+        :meth:`reconcile_memory`), dedupes
         by content hash, and runs the result through unstructured2graph's
         chunk + entity-extraction pipeline -- GLiNER2 over the session user's
         adopted ontology version by default (see ``sessions_graph.ontology``;
@@ -1033,6 +1055,101 @@ class SessionsGraph:
         """
         with contextlib.suppress(EmbeddingUnavailableError):
             self.embed_session(session_id, model=model)
+
+    def get_pending_memory_reconciliations(self, *, limit: int = 100) -> list[str]:
+        """Return memory_ids whose file changed since it was last reconciled (``extraction_status = 'pending'``)."""
+        rows = self._db.query(
+            """
+            MATCH (m:Memory {extraction_status: 'pending'})
+            RETURN m.memory_id AS memory_id
+            ORDER BY m.updated_at
+            LIMIT $limit
+            """,
+            params={"limit": limit},
+        )
+        return [row["memory_id"] for row in rows]
+
+    async def reconcile_memory(
+        self,
+        memory_id: str,
+        *,
+        extraction_backend: ExtractionBackend | None = None,
+        entity_workspace: str | None = None,
+        enforce_ontology: bool = True,
+    ) -> MemoryReconciliation:
+        """Extract entities and relations from one memory file, replacing what its last version gave.
+
+        A memory file outlives the session that wrote it and changes across
+        many, so it is reconciled on its own whenever it changes, not with a
+        session. What the previous version produced is removed first
+        (:func:`~sessions_graph.memory_store.forget_extraction`); the file's
+        chunks link back to it via ``HAS_CHUNK`` and its relations carry its
+        id as ``source_id``. No summary and no LLM: GLiNER2 over the owner's
+        adopted ontology version, unless *extraction_backend* overrides it.
+
+        Returns:
+            A :class:`MemoryReconciliation`. Never raises for a failure of
+            this file, which is recorded on it as ``extraction_error``.
+
+        Raises:
+            ImportError: the ``reconciliation`` extra isn't installed.
+        """
+        try:
+            from unstructured2graph import Document, Segment, from_documents
+        except ImportError as exc:
+            msg = "unstructured2graph is required for reconcile_memory; install sessions-graph[reconciliation]"
+            raise ImportError(msg) from exc
+
+        rows = self._db.query(
+            """
+            MATCH (m:Memory {memory_id: $memory_id})
+            RETURN m.user_id AS user_id, m.path AS path, m.content AS content, m.updated_at AS updated_at
+            """,
+            params={"memory_id": memory_id},
+        )
+        if not rows:
+            return MemoryReconciliation(memory_id, None, "failed", error="no such memory")
+        row = rows[0]
+        try:
+            from .memory_store import forget_extraction
+            from .ontology import adopted
+
+            forget_extraction(self._db, memory_id)
+            if extraction_backend is None:
+                backend = self._extraction_backend_for(adopted(self._db, row["user_id"]).model)
+            else:
+                backend = extraction_backend
+            text = row["content"].strip()
+            document = Document(
+                text=text,
+                segments=(Segment(0, len(text), None, normalize_timestamp(row["updated_at"]), memory_id),),
+                user_id=row["user_id"],
+            )
+            grouped = await from_documents(
+                [document],
+                memgraph=self._db,
+                extraction_backend=backend,
+                entity_workspace=entity_workspace,
+                enforce_ontology=enforce_ontology,
+                ontology=getattr(backend, "ontology", None),
+            )
+            chunks = grouped[0] if grouped else []
+            self._link_chunks_to_sources([ReconciliationSource(kind="memory", node_id=memory_id, text=text)], chunks)
+            self._db.query(
+                """
+                MATCH (m:Memory {memory_id: $memory_id})
+                SET m.extraction_status = 'completed', m.extracted_at = $now
+                REMOVE m.extraction_error
+                """,
+                params={"memory_id": memory_id, "now": datetime.now(timezone.utc).isoformat()},
+            )
+            return MemoryReconciliation(memory_id, row["path"], "completed", chunks=len(chunks))
+        except Exception as exc:
+            self._db.query(
+                "MATCH (m:Memory {memory_id: $memory_id}) SET m.extraction_status = 'failed', m.extraction_error = $error",
+                params={"memory_id": memory_id, "error": str(exc)},
+            )
+            return MemoryReconciliation(memory_id, row["path"], "failed", error=str(exc))
 
     def get_pending_reconciliation_sessions(self, *, limit: int = 100) -> list[str]:
         """Return session_ids marked ``reconciliation_status = 'pending'``."""

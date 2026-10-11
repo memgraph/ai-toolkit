@@ -21,6 +21,7 @@ so a model can't reach another user's memory.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -29,8 +30,6 @@ from uuid import uuid4
 from .models import MEMORY_ROOT, MemoryValidationError, normalize_memory_path, project_key, validate_user_id
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from memgraph_toolbox.api.memgraph import Memgraph
 
 #: Largest file a write may leave behind, in UTF-8 bytes.
@@ -42,6 +41,32 @@ MAX_LINES = 999_999
 MAX_VERSIONS = 20
 _LINE_NUMBER_WIDTH = 6
 _LISTING_DEPTH = 2
+
+
+def is_memory_tool(tool_name: str) -> bool:
+    """Whether *tool_name* is a call to Context Graph's ``memory`` tool, under any harness's MCP naming.
+
+    Claude Code names it ``mcp__plugin_context-graph_context-graph__memory``,
+    Codex ``mcp__context-graph__memory``; an SDK app may call it ``memory``.
+    """
+    if tool_name == "memory":
+        return True
+    parts = tool_name.split("__")
+    return len(parts) >= 3 and parts[0] == "mcp" and parts[-1] == "memory" and "context" in parts[1].replace("_", "-")
+
+
+def memory_paths_written(tool_input: Any) -> list[str]:
+    """The paths a ``memory`` tool call (its input as sent) created or changed, canonical; [] for reads and deletes."""
+    if not isinstance(tool_input, Mapping):
+        return []
+    command = tool_input.get("command")
+    raw = tool_input.get("new_path") if command == "rename" else tool_input.get("path")
+    if command not in {"create", "str_replace", "insert", "rename"} or not isinstance(raw, str):
+        return []
+    try:
+        return [normalize_memory_path(raw)]
+    except MemoryValidationError:
+        return []
 
 
 class MemoryCommandError(Exception):
@@ -235,6 +260,16 @@ class MemoryStore:
         path = _path(path)
         if path == MEMORY_ROOT:
             raise MemoryCommandError(f"Error: Cannot delete the {MEMORY_ROOT} directory itself")
+        doomed = self._db.query(
+            """
+            MATCH (m:Memory {user_id: $user_id})
+            WHERE m.path = $path OR m.path STARTS WITH $prefix
+            RETURN m.memory_id AS memory_id
+            """,
+            params={"user_id": self.user_id, "path": path, "prefix": path + "/"},
+        )
+        for row in doomed:
+            forget_extraction(self._db, row["memory_id"])
         rows = self._db.query(
             """
             MATCH (u:User {user_id: $user_id})-[:HAS_MEMORY]->(m:Memory)
@@ -441,7 +476,7 @@ class MemoryStore:
                 MERGE (m:Memory {user_id: $user_id, path: $path})
                 ON CREATE SET m.memory_id = $memory_id, m.created_at = $now
                 WITH u, m, m.content AS previous
-                SET m.content = $content, m.updated_at = $now
+                SET m.content = $content, m.updated_at = $now, m.extraction_status = 'pending'
                 MERGE (u)-[:HAS_MEMORY]->(m)
                 """
                 + _KEEP_PREVIOUS
@@ -463,7 +498,7 @@ class MemoryStore:
                 MATCH (u:User {user_id: $user_id})-[:HAS_MEMORY]->(m:Memory {path: $path})
                 WHERE m.content = $expected
                 WITH u, m, m.content AS previous
-                SET m.content = $content, m.updated_at = $now
+                SET m.content = $content, m.updated_at = $now, m.extraction_status = 'pending'
                 """
                 + _KEEP_PREVIOUS
                 + """
@@ -525,6 +560,49 @@ class MemoryStore:
             """,
             params={"session_id": self.session_id, "memory_id": memory_id},
         )
+
+
+def forget_extraction(memgraph: Memgraph, memory_id: str) -> None:
+    """Remove what reconciliation derived from one memory file, before it is re-extracted or deleted.
+
+    Relationships extracted from the file carry its id as ``source_id`` and
+    mentions list it in ``MENTIONED_IN.sources`` (unstructured2graph's
+    provenance), so exactly its share goes. A chunk or entity still backed
+    by anything else stays.
+    """
+    memgraph.query(
+        """
+        MATCH (:Memory {memory_id: $memory_id})-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(e)
+        MATCH (e)-[r]-()
+        WHERE r.source_id = $memory_id
+        DELETE r
+        """,
+        params={"memory_id": memory_id},
+    )
+    memgraph.query(
+        """
+        MATCH (:Memory {memory_id: $memory_id})-[:HAS_CHUNK]->(c:Chunk)<-[mention:MENTIONED_IN]-(e)
+        SET mention.sources = [s IN coalesce(mention.sources, []) WHERE s <> $memory_id]
+        WITH c, mention, e
+        WHERE size(mention.sources) = 0
+          AND NOT EXISTS { MATCH (c)<-[:HAS_CHUNK]-(other) WHERE other.memory_id IS NULL OR other.memory_id <> $memory_id }
+        DELETE mention
+        WITH DISTINCT e
+        WHERE NOT EXISTS { MATCH (e)-[:MENTIONED_IN]->() }
+        DETACH DELETE e
+        """,
+        params={"memory_id": memory_id},
+    )
+    memgraph.query(
+        """
+        MATCH (m:Memory {memory_id: $memory_id})-[link:HAS_CHUNK]->(c:Chunk)
+        DELETE link
+        WITH DISTINCT c
+        WHERE NOT EXISTS { MATCH (c)<-[:HAS_CHUNK]-() } AND NOT EXISTS { MATCH (c)<-[:MENTIONED_IN]-() }
+        DETACH DELETE c
+        """,
+        params={"memory_id": memory_id},
+    )
 
 
 # Appended to a write that has bound u (the owner), m (the file) and previous
