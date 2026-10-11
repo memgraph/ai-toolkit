@@ -57,6 +57,7 @@ members = [
     "actions-graph",
     "agent-context-graph",
     "context-graph-eval",
+    "context-graph-spaces",
     "hygm",
     "langchain-memgraph",
     "lightrag-memgraph",
@@ -1208,6 +1209,34 @@ requires-dist = [
     { name = "unstructured2graph", marker = "extra == 'pipeline'", editable = "unstructured2graph" },
 ]
 provides-extras = ["pipeline", "test"]
+
+[[package]]
+name = "context-graph-spaces"
+version = "0.1.0"
+source = { editable = "context-graph/spaces" }
+dependencies = [
+    { name = "agent-context-graph" },
+    { name = "memgraph-toolbox" },
+    { name = "neo4j" },
+    { name = "tomli" },
+]
+
+[package.optional-dependencies]
+test = [
+    { name = "pytest" },
+    { name = "sessions-graph", extra = ["agent-context-graph"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "agent-context-graph", editable = "context-graph/agent-context-graph" },
+    { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
+    { name = "neo4j", specifier = ">=5.0" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
+    { name = "sessions-graph", extras = ["agent-context-graph"], marker = "extra == 'test'", editable = "context-graph/sessions-graph" },
+    { name = "tomli", specifier = ">=2.0" },
+]
+provides-extras = ["test"]
 
 [[package]]
 name = "contourpy"

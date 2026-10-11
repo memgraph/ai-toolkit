@@ -42,6 +42,16 @@ TEST_MEMGRAPH_USER=""
 TEST_MEMGRAPH_PASSWORD=""
 TEST_MEMGRAPH_DATABASE="memgraph"
 
+# `test-enterprise` runs context-graph-spaces' suite against a third disposable
+# container, licensed for Memgraph Enterprise (multi-tenancy, RBAC/LBAC). It is
+# separate from the test container on purpose: the Community suites must keep
+# passing on an unlicensed Memgraph, which is what proves Community doesn't
+# lean on Enterprise. The licence comes from MEMGRAPH_ENTERPRISE_LICENSE and
+# MEMGRAPH_ORGANIZATION_NAME, in the environment or the repo's .env.
+ENTERPRISE_CONTAINER_NAME="${AI_TOOLKIT_ENTERPRISE_CONTAINER:-ai-toolkit-enterprise-memgraph}"
+ENTERPRISE_HOST_PORT="${AI_TOOLKIT_ENTERPRISE_PORT:-7690}"
+ENTERPRISE_MEMGRAPH_URL="bolt://localhost:${ENTERPRISE_HOST_PORT}"
+
 CONFIG_FILE="${CONTEXT_GRAPH_CONFIG:-${HOME}/.config/context-graph/config.toml}"
 case "$CONFIG_FILE" in /*) ;; *) CONFIG_FILE="$PWD/$CONFIG_FILE" ;; esac
 export CONTEXT_GRAPH_CONFIG="$CONFIG_FILE"
@@ -90,6 +100,11 @@ Commands:
                      file after the session. Usage: eval \"\$(./scripts/dev-memgraph.sh dogfood-env)\" && claude
   test [pkg...]      Run test suites against a SEPARATE, disposable container --
                      never touches the main one. Default packages: ${ALL_PACKAGES[*]}
+  test-enterprise    Run context-graph-spaces' suite against its own disposable,
+                     Enterprise-licensed container (port ${ENTERPRISE_HOST_PORT}). Needs
+                     MEMGRAPH_ENTERPRISE_LICENSE and MEMGRAPH_ORGANIZATION_NAME (env, or
+                     .env at the repo root).
+  test-enterprise-down  Remove the Enterprise test container.
 
 Typical workflow (exploration -- the actual goal of this script):
   $(basename "$0") up
@@ -107,6 +122,7 @@ takes effect for a NEW claude session, not one already running:
 Running the automated suites any time (does not touch the above):
   $(basename "$0") test
   $(basename "$0") test-down          # optional -- reclaim the disposable test container
+  $(basename "$0") test-enterprise    # context-graph-spaces, on a licensed container
 "
 
 _wait_ready() {
@@ -135,9 +151,17 @@ _wait_ready() {
 # round trip too, not just a socket connect.
 _bolt_roundtrip_ok() {
   local port="$1"
+  # An authentication error is a full Bolt round trip too: a provisioned (Enterprise) instance has users,
+  # so it refuses the anonymous login, but only once it is ready to answer.
   uv run --package agent-context-graph python3 -c "
-from memgraph_toolbox.api.memgraph import Memgraph
-Memgraph(url='bolt://localhost:${port}', username='', password='', database='memgraph').query('RETURN 1')
+import neo4j
+driver = neo4j.GraphDatabase.driver('bolt://localhost:${port}', auth=('', ''))
+try:
+    driver.execute_query('RETURN 1')
+except neo4j.exceptions.Neo4jError:  # the server answered (e.g. Memgraph.ClientError.Security.Unauthenticated)
+    pass
+finally:
+    driver.close()
 " >/dev/null 2>&1
 }
 
@@ -208,6 +232,44 @@ cmd_down() {
 
 cmd_test_down() {
   _container_down "${TEST_CONTAINER_NAME}"
+}
+
+cmd_test_enterprise_down() {
+  _container_down "${ENTERPRISE_CONTAINER_NAME}"
+}
+
+# Exports the Enterprise licence for test-enterprise: whatever is already in the
+# environment, otherwise .env at the repo root. Never prints either value.
+_resolve_enterprise_license() {
+  local env_file="${REPO_ROOT}/.env" name value
+  for name in MEMGRAPH_ENTERPRISE_LICENSE MEMGRAPH_ORGANIZATION_NAME; do
+    if [ -z "${!name:-}" ] && [ -f "${env_file}" ]; then
+      value="$(grep -E "^${name}=" "${env_file}" | head -1 | cut -d'=' -f2-)"
+      value="${value%\"}"; value="${value#\"}"
+      if [ -n "$value" ]; then export "${name}=${value}"; fi
+    fi
+    if [ -z "${!name:-}" ]; then
+      echo "test-enterprise needs ${name} (environment, or .env at the repo root)." >&2
+      return 1
+    fi
+  done
+}
+
+cmd_test_enterprise() {
+  _resolve_enterprise_license
+  if ! docker ps -a --format '{{.Names}}' | grep -qx "${ENTERPRISE_CONTAINER_NAME}"; then
+    echo "Creating ${ENTERPRISE_CONTAINER_NAME} (${IMAGE}, licensed) on port ${ENTERPRISE_HOST_PORT}..."
+    # -e NAME (no value) hands the variable through from this environment, so the licence never appears in argv.
+    docker run -d -p "${ENTERPRISE_HOST_PORT}:7687" --name "${ENTERPRISE_CONTAINER_NAME}" \
+      -e MEMGRAPH_ENTERPRISE_LICENSE -e MEMGRAPH_ORGANIZATION_NAME "${IMAGE}" \
+      --schema-info-enabled=True --telemetry-enabled=false >/dev/null
+  fi
+  _container_up "${ENTERPRISE_CONTAINER_NAME}" "${ENTERPRISE_HOST_PORT}"
+  _protect_hook_config
+  trap _restore_hook_config_after_test EXIT
+  (cd "$REPO_ROOT" && env -u MEMGRAPH_URL -u MEMGRAPH_USER -u MEMGRAPH_PASSWORD -u MEMGRAPH_DATABASE \
+    "ENTERPRISE_MEMGRAPH_URL=${ENTERPRISE_MEMGRAPH_URL}" \
+    uv run --package context-graph-spaces --extra test pytest context-graph/spaces/tests/ -v "$@")
 }
 
 _describe_container() {
@@ -784,6 +846,8 @@ main() {
     inspect) cmd_inspect ;;
     test) cmd_test "$@" ;;
     test-down) cmd_test_down ;;
+    test-enterprise) cmd_test_enterprise "$@" ;;
+    test-enterprise-down) cmd_test_enterprise_down ;;
     reconcile) cmd_reconcile "$@" ;;
     dogfood-env) cmd_dogfood_env ;;
     hooks-local) cmd_hooks_local ;;
