@@ -374,13 +374,20 @@ class SessionsGraph:
             params={"session_id": session_id, "paths": paths},
         )
 
-    def memory_store(self, user_id: str, *, session_id: str | None = None) -> MemoryStore:
+    def memory_store(
+        self,
+        user_id: str,
+        *,
+        session_id: str | None = None,
+        author: str | None = None,
+        forget_derived: bool = True,
+    ) -> MemoryStore:
         """The memory tool's commands over *user_id*'s memory files; see :mod:`sessions_graph.memory_store`.
 
         Raises:
             MemoryValidationError: *user_id* is invalid.
         """
-        return MemoryStore(self._db, user_id, session_id=session_id)
+        return MemoryStore(self._db, user_id, session_id=session_id, author=author, forget_derived=forget_derived)
 
     # ------------------------------------------------------------------
     # Update / Delete

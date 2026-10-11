@@ -1218,6 +1218,7 @@ dependencies = [
     { name = "agent-context-graph" },
     { name = "memgraph-toolbox" },
     { name = "neo4j" },
+    { name = "sessions-graph" },
     { name = "tomli" },
 ]
 
@@ -1233,6 +1234,7 @@ requires-dist = [
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "neo4j", specifier = ">=5.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
+    { name = "sessions-graph", editable = "context-graph/sessions-graph" },
     { name = "sessions-graph", extras = ["agent-context-graph"], marker = "extra == 'test'", editable = "context-graph/sessions-graph" },
     { name = "tomli", specifier = ">=2.0" },
 ]

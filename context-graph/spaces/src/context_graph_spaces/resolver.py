@@ -29,6 +29,10 @@ from .provision import MEMBERSHIP_LABEL
 if TYPE_CHECKING:
     from agent_context_graph.adapters._identity import HookConfig
 
+#: The longest a connection outlives a revoked grant, in seconds. Memgraph checks grants when a connection
+#: opens, so a long-lived reader (the MCP server) would otherwise keep a removed member's access until restart.
+REVOCATION_DELAY_SECONDS = 60.0
+
 #: Config keys the login decides in Enterprise; writing them is an error.
 _REFUSED_KEYS = {
     "identity.user_id": "the user is your Memgraph login",
@@ -56,7 +60,11 @@ class EnterpriseSpaces:
         self._personal = Space(
             PERSONAL,
             MemgraphTarget(
-                url=config.memgraph_url, user=config.memgraph_user, password=config.memgraph_password, database=None
+                url=config.memgraph_url,
+                user=config.memgraph_user,
+                password=config.memgraph_password,
+                database=None,
+                max_connection_lifetime=REVOCATION_DELAY_SECONDS,
             ),
         )
         self._lock = threading.Lock()
@@ -109,7 +117,13 @@ class EnterpriseSpaces:
         return {
             row["space"]: Space(
                 row["space"],
-                MemgraphTarget(url=target.url, user=target.user, password=target.password, database=row["database"]),
+                MemgraphTarget(
+                    url=target.url,
+                    user=target.user,
+                    password=target.password,
+                    database=row["database"],
+                    max_connection_lifetime=target.max_connection_lifetime,
+                ),
             )
             for row in rows
         }

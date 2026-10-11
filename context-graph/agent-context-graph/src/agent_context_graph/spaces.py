@@ -57,6 +57,9 @@ class MemgraphTarget:
     user: str
     password: str
     database: str | None
+    #: Seconds a pooled connection may live. Memgraph applies a revoked grant only to new connections, so
+    #: an edition whose grants can change under a running process bounds how long a revoked one survives.
+    max_connection_lifetime: float | None = None
 
     def env(self) -> dict[str, str]:
         """The target in memgraph-toolbox's ``MEMGRAPH_*`` env contract; an unnamed database is an empty string."""
@@ -73,7 +76,15 @@ class MemgraphTarget:
         An unnamed database is passed as ``""``: memgraph-toolbox reads None as "use the default name",
         while ``""`` reaches the server unset, which picks the login's main database.
         """
-        return {"url": self.url, "username": self.user, "password": self.password, "database": self.database or ""}
+        kwargs: dict[str, Any] = {
+            "url": self.url,
+            "username": self.user,
+            "password": self.password,
+            "database": self.database or "",
+        }
+        if self.max_connection_lifetime is not None:
+            kwargs["driver_config"] = {"max_connection_lifetime": self.max_connection_lifetime}
+        return kwargs
 
 
 @dataclass(frozen=True)

@@ -56,3 +56,14 @@ def test_command_errors_reach_the_model_as_tool_errors(config):
 def test_no_user_configured(config):
     with pytest.raises(ToolError, match="No user is configured"):
         MemoryTool().call({"command": "view", "path": "/memories"}, replace(config, user_id=None))
+
+
+def test_community_has_no_shared_spaces(config):
+    tool = MemoryTool()
+
+    with pytest.raises(ToolError, match="needs the Enterprise edition"):
+        tool.call({"command": "create", "path": "/memories/spaces/team/a.md", "file_text": "x"}, config)
+    assert "No shared spaces" in tool.call({"command": "view", "path": "/memories/spaces"}, config).text
+    index = tool.session_context(config, {})
+    assert index is not None
+    assert "Shared space" not in index

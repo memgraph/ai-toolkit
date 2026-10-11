@@ -100,12 +100,26 @@ class MemoryStore:
         memgraph:   Client for the graph the memories live in.
         user_id:    Whose memory this is. Every command reads and writes only this user's files.
         session_id: The session making the changes, recorded as ``PRODUCED_MEMORY`` provenance.
+        author:     Who is writing, when that isn't *user_id*: in a shared space the files belong to the
+                    space and each write records its login as ``author`` (first write) and ``updated_by``.
+        forget_derived: Whether a delete also removes what reconciliation derived from the file. Off in a
+                    shared space, where members may not touch Chunks; the space's worker cleans up there.
     """
 
-    def __init__(self, memgraph: Memgraph, user_id: str, *, session_id: str | None = None) -> None:
+    def __init__(
+        self,
+        memgraph: Memgraph,
+        user_id: str,
+        *,
+        session_id: str | None = None,
+        author: str | None = None,
+        forget_derived: bool = True,
+    ) -> None:
         self._db = memgraph
         self.user_id = validate_user_id(user_id)
         self.session_id = session_id
+        self.author = author
+        self.forget_derived = forget_derived
 
     # ------------------------------------------------------------------
     # Dispatch
@@ -268,7 +282,7 @@ class MemoryStore:
             """,
             params={"user_id": self.user_id, "path": path, "prefix": path + "/"},
         )
-        for row in doomed:
+        for row in doomed if self.forget_derived else ():
             forget_extraction(self._db, row["memory_id"])
         rows = self._db.query(
             """
@@ -276,7 +290,7 @@ class MemoryStore:
             WHERE m.path = $path OR m.path STARTS WITH $prefix
             CREATE (u)-[:HAS_MEMORY_VERSION]->(:MemoryVersion {
                 memory_id: m.memory_id, path: m.path, content: m.content,
-                replaced_at: $now, session_id: $session_id, deleted: true
+                replaced_at: $now, session_id: $session_id, deleted: true, replaced_by: $author
             })
             WITH m, m.memory_id AS memory_id
             DETACH DELETE m
@@ -288,6 +302,7 @@ class MemoryStore:
                 "prefix": path + "/",
                 "now": _now(),
                 "session_id": self.session_id,
+                "author": self.author,
             },
         )
         if not rows:
@@ -392,6 +407,22 @@ class MemoryStore:
     # Graph access
     # ------------------------------------------------------------------
 
+    def read(self, path: str) -> str | None:
+        """The text of the file at *path*, or None when there is no such file (a directory isn't one).
+
+        Raises:
+            MemoryCommandError: *path* is not a valid memory path.
+        """
+        return self._content(_path(path))
+
+    def is_directory(self, path: str) -> bool:
+        """Whether *path* is a directory: the root, or a prefix of some file's path.
+
+        Raises:
+            MemoryCommandError: *path* is not a valid memory path.
+        """
+        return self._is_directory(_path(path))
+
     def _content(self, path: str) -> str | None:
         rows = self._db.query(
             "MATCH (m:Memory {user_id: $user_id, path: $path}) RETURN m.content AS content",
@@ -474,9 +505,9 @@ class MemoryStore:
                 """
                 MERGE (u:User {user_id: $user_id})
                 MERGE (m:Memory {user_id: $user_id, path: $path})
-                ON CREATE SET m.memory_id = $memory_id, m.created_at = $now
+                ON CREATE SET m.memory_id = $memory_id, m.created_at = $now, m.author = $author
                 WITH u, m, m.content AS previous
-                SET m.content = $content, m.updated_at = $now, m.extraction_status = 'pending'
+                SET m.content = $content, m.updated_at = $now, m.extraction_status = 'pending', m.updated_by = $author
                 MERGE (u)-[:HAS_MEMORY]->(m)
                 """
                 + _KEEP_PREVIOUS
@@ -490,6 +521,7 @@ class MemoryStore:
                     "content": content,
                     "now": now,
                     "session_id": self.session_id,
+                    "author": self.author,
                 },
             )
         else:
@@ -498,7 +530,7 @@ class MemoryStore:
                 MATCH (u:User {user_id: $user_id})-[:HAS_MEMORY]->(m:Memory {path: $path})
                 WHERE m.content = $expected
                 WITH u, m, m.content AS previous
-                SET m.content = $content, m.updated_at = $now, m.extraction_status = 'pending'
+                SET m.content = $content, m.updated_at = $now, m.extraction_status = 'pending', m.updated_by = $author
                 """
                 + _KEEP_PREVIOUS
                 + """
@@ -511,6 +543,7 @@ class MemoryStore:
                     "content": content,
                     "now": now,
                     "session_id": self.session_id,
+                    "author": self.author,
                 },
             )
             if not rows:
@@ -613,7 +646,7 @@ _KEEP_PREVIOUS = """
                 FOREACH (_ IN CASE WHEN previous IS NOT NULL AND previous <> $content THEN [1] ELSE [] END |
                     CREATE (u)-[:HAS_MEMORY_VERSION]->(v:MemoryVersion {
                         memory_id: m.memory_id, path: m.path, content: previous,
-                        replaced_at: $now, session_id: $session_id, deleted: false
+                        replaced_at: $now, session_id: $session_id, deleted: false, replaced_by: $author
                     })
                     CREATE (m)-[:PREVIOUS_VERSION]->(v)
                 )

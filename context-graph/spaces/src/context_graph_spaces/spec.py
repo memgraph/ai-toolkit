@@ -32,10 +32,11 @@ else:  # tomli is tomllib's backport
     import tomli as tomllib
 
 #: What members may create and change in a shared space by default: the
-#: memory tool's files, their history, and what links them to the user and
-#: project. Chunks and entities are left to the space's reconcile worker.
+#: memory tool's files, their history, and what links them to the space and
+#: project. Chunks and entities are left to the space's reconcile worker;
+#: members may only drop a file's HAS_CHUNK links, which deleting the file does.
 DEFAULT_SHARED_LABELS = ("Memory", "MemoryVersion", "User", "Project")
-DEFAULT_SHARED_EDGE_TYPES = ("HAS_MEMORY", "HAS_MEMORY_VERSION", "PREVIOUS_VERSION", "ABOUT")
+DEFAULT_SHARED_EDGE_TYPES = ("HAS_MEMORY", "HAS_MEMORY_VERSION", "PREVIOUS_VERSION", "ABOUT", "HAS_CHUNK")
 
 # Logins and space names become database, role and user names in DDL, which
 # Memgraph can't parameterize; this pattern is the guard that keeps them inert.

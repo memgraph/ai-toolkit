@@ -36,7 +36,7 @@ import hashlib
 import secrets
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from .spec import SharedSpace, Spec
@@ -386,7 +386,28 @@ def apply(spec: Spec, query: Query, *, prune: bool = False) -> Applied:
     for login in spec.members:
         for statement, target in _main_database(login):
             query(statement, target, None)
+    # Members can't create indexes or constraints in a shared space, so the memory store's schema is set up here.
+    for space in spec.spaces:
+        setup_shared_schema(query, shared_database(space.name))
     return Applied(the_plan.steps, passwords, the_plan.kept)
+
+
+def setup_shared_schema(query: Query, database: str) -> None:
+    """Create sessions-graph's constraints and indexes in shared *database*, as the admin; idempotent."""
+    from sessions_graph import SessionsGraph
+
+    SessionsGraph(cast("Any", _OnDatabase(query, database))).setup()
+
+
+class _OnDatabase:
+    """The ``query`` half of memgraph-toolbox's client, pinned to one database over an admin :data:`Query`."""
+
+    def __init__(self, query: Query, database: str) -> None:
+        self._query = query
+        self._database = database
+
+    def query(self, statement: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        return self._query(statement, self._database, params)
 
 
 def _write_catalog(query: Query, login: str, spaces: frozenset[tuple[str, str]]) -> None:
