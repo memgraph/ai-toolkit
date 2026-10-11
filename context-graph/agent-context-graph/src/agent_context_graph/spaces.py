@@ -68,8 +68,12 @@ class MemgraphTarget:
         }
 
     def client_kwargs(self) -> dict[str, Any]:
-        """Keyword arguments for a component's graph class (``SessionsGraph(**target.client_kwargs())``)."""
-        return {"url": self.url, "username": self.user, "password": self.password, "database": self.database}
+        """Keyword arguments for a component's graph class (``SessionsGraph(**target.client_kwargs())``).
+
+        An unnamed database is passed as ``""``: memgraph-toolbox reads None as "use the default name",
+        while ``""`` reaches the server unset, which picks the login's main database.
+        """
+        return {"url": self.url, "username": self.user, "password": self.password, "database": self.database or ""}
 
 
 @dataclass(frozen=True)

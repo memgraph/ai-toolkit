@@ -23,6 +23,7 @@ Commands:
   doctor           Check runtime hook dependencies and Memgraph connectivity.
   setup <runtime>  Configure an agent runtime; --memory-backend context-graph|native
                    switches whose memory its model uses.
+  join <url> <login>  Use an Enterprise Memgraph as <login> (edition = enterprise); --password or prompt.
   hook <command>  Configure or run command hooks.
   mcp              Serve the registered tools (recall, ...) over stdio MCP.
   recall <question>  Search your own past sessions; --json for the data.
@@ -57,6 +58,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "recall":
         return _recall(args[1:])
+
+    if command == "join":
+        return _join(args[1:])
 
     if command == "hook":
         from agent_context_graph.hooks.cli import main as hook_main
@@ -267,6 +271,44 @@ def _recall(argv: list[str]) -> int:
     return 0
 
 
+def _join(argv: list[str]) -> int:
+    """Point the config file at an Enterprise Memgraph as one login, then prove the login works."""
+    import getpass
+
+    from agent_context_graph.adapters._identity import config_file_path, reload_config, write_config
+    from agent_context_graph.spaces import EDITION_ENTERPRISE, SpaceError, spaces_for
+
+    parser = argparse.ArgumentParser(
+        prog="agent-context-graph join", description="Use an Enterprise Memgraph's personal and shared spaces."
+    )
+    parser.add_argument("url", help="The Memgraph Bolt URL, e.g. bolt://memgraph.corp:7687.")
+    parser.add_argument("login", help="Your Memgraph login; it is also who you are in Context Graph.")
+    parser.add_argument("--password", default=None, help="Prompted for when omitted.")
+    args = parser.parse_args(argv)
+    password = args.password if args.password is not None else getpass.getpass(f"Password for {args.login}: ")
+
+    write_config(
+        edition=EDITION_ENTERPRISE, memgraph_url=args.url, memgraph_user=args.login, memgraph_password=password
+    )
+    try:
+        spaces = spaces_for(reload_config())
+        from memgraph_toolbox.api.memgraph import Memgraph
+
+        client = Memgraph(**spaces.personal().target.client_kwargs())
+        try:
+            (row,) = client.query("SHOW CURRENT DATABASE")
+        finally:
+            client.close()
+        shared = [space.name for space in spaces.readable() if space.shared]
+    except (SpaceError, ValueError) as exc:
+        print(f"Wrote {config_file_path()}, but the login doesn't work yet: {exc}", file=sys.stderr)
+        return 1
+    print(f"Wrote {config_file_path()}: edition = enterprise, login {args.login!r}.")
+    print(f"Personal space: {row['Current']}. Shared spaces: {', '.join(shared) or 'none yet'}.")
+    print("Next: agent-context-graph setup <runtime> (e.g. claude-code) if this machine isn't set up yet.")
+    return 0
+
+
 def _bootstrap(argv: list[str]) -> int:
     from agent_context_graph.hooks.runtime_plugin import load_runtime_plugins
 
@@ -447,16 +489,19 @@ def _doctor(argv: list[str]) -> int:
         _check_cli(),
         _check_package("agent-context-graph"),
         _check_config(),
-        _check_memgraph(),
     ]
-    for connector in connectors:
-        checks.append(_check_connector(connector))
-    if any(connector.strip().replace("_", "-") == "sessions-graph" for connector in connectors):
-        checks.append(_check_embeddings())
-        checks.append(_check_mcp())
-    checks.append(_check_runtime(args.runtime, connectors))
-    if (memory_check := _check_memory_backend(args.runtime)) is not None:
-        checks.append(memory_check)
+    # Every later check connects through the edition's space resolver; when the config can't
+    # produce one, the config check already says why, and the rest would only repeat it.
+    if _edition_resolves():
+        checks.append(_check_memgraph())
+        for connector in connectors:
+            checks.append(_check_connector(connector))
+        if any(connector.strip().replace("_", "-") == "sessions-graph" for connector in connectors):
+            checks.append(_check_embeddings())
+            checks.append(_check_mcp())
+        checks.append(_check_runtime(args.runtime, connectors))
+        if (memory_check := _check_memory_backend(args.runtime)) is not None:
+            checks.append(memory_check)
 
     ok = all(check["ok"] for check in checks)
     payload: _DoctorPayload = {"ok": ok, "checks": checks}
@@ -476,6 +521,17 @@ class _CheckResult(TypedDict):
 class _DoctorPayload(TypedDict):
     ok: bool
     checks: list[_CheckResult]
+
+
+def _edition_resolves() -> bool:
+    from agent_context_graph.adapters._identity import load_config
+    from agent_context_graph.spaces import SpaceError, spaces_for
+
+    try:
+        spaces_for(load_config())
+    except SpaceError:
+        return False
+    return True
 
 
 def _check_config() -> _CheckResult:

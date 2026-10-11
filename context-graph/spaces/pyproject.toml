@@ -28,6 +28,9 @@ test = [
 [project.scripts]
 context-graph-spaces = "context_graph_spaces.cli:main"
 
+[project.entry-points."agent_context_graph.editions"]
+enterprise = "context_graph_spaces.resolver:EnterpriseSpaces"
+
 [tool.uv.sources]
 agent-context-graph = { workspace = true }
 memgraph-toolbox = { workspace = true }

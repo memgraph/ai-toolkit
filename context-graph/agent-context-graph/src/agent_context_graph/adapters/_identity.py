@@ -112,6 +112,10 @@ class HookConfig:
     #: harness memory to the graph (the ``memory`` tool and session-start index
     #: are on); ``"native"`` or None leaves the harness's own memory in charge.
     memory_backend: str | None = None
+    #: The ``section.key`` names the file actually sets (top-level keys as ``key``), so a check can tell
+    #: "left at the default" from "written": Enterprise refuses an explicit ``identity.user_id`` or
+    #: ``memgraph.database``, which would quietly override what the login decides.
+    present: frozenset[str] = frozenset()
 
     @property
     def graph_memory(self) -> bool:
@@ -411,6 +415,12 @@ def _read_config_file() -> HookConfig:
         ontology_derive=ontology.get("derive") or None,
         github_token=github.get("token") or None,
         memory_backend=memory.get("backend") or None,
+        present=frozenset(
+            f"{section}.{key}" if section else key
+            for section, keys in sections.items()
+            for key, value in keys.items()
+            if value
+        ),
     )
 
 
@@ -476,14 +486,13 @@ def _render_config(
         f"# Location: {config_file()}",
         "",
         *([f'edition = "{edition}"', ""] if edition else []),
-        "[identity]",
-        f'user_id = "{user_id}"',
-        "",
+        # Enterprise takes the user and their database from the Memgraph login, so it writes neither.
+        *(["[identity]", f'user_id = "{user_id}"', ""] if edition != "enterprise" else []),
         "[memgraph]",
         f'url = "{url}"',
         f'user = "{user}"',
         f'password = "{password}"',
-        f'database = "{database}"',
+        *([f'database = "{database}"'] if edition != "enterprise" else []),
         "",
         "[llm]",
         f'openai_api_key = "{openai_api_key}"',

@@ -57,7 +57,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"  Give the worker: {SERVICE_PASSWORD_ENV}='{password}'")
             continue
         print(f"\nNew login {login!r}. Hand this to them once; it isn't stored anywhere:")
-        print(f"  agent-context-graph setup --enterprise {args.url} {login} --password '{password}'")
+        print(f"  agent-context-graph join {args.url} {login} --password '{password}'")
     return 0
 
 

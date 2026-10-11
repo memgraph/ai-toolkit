@@ -148,15 +148,15 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
 
     from agent_context_graph.adapters._identity import resolve_memgraph_env
 
-    memgraph_env = resolve_memgraph_env(
-        url=args.memgraph_url,
-        user=args.memgraph_user,
-        password=args.memgraph_password,
-        database=args.memgraph_database,
-    )
-
     payload: dict[str, Any] = {}
     try:
+        # Inside the guard: an edition the config can't resolve skips the hook like any other failure.
+        memgraph_env = resolve_memgraph_env(
+            url=args.memgraph_url,
+            user=args.memgraph_user,
+            password=args.memgraph_password,
+            database=args.memgraph_database,
+        )
         payload = load_payload()
         if args.event_name is not None:
             payload.setdefault("hook_event_name", args.event_name)

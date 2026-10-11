@@ -98,18 +98,18 @@ def test_the_target_speaks_memgraph_toolboxs_env_contract():
         "MEMGRAPH_PASSWORD": "pw",
         "MEMGRAPH_DATABASE": "",
     }
-    assert target.client_kwargs() == {"url": "bolt://db:7687", "username": "mg", "password": "pw", "database": None}
+    assert target.client_kwargs() == {"url": "bolt://db:7687", "username": "mg", "password": "pw", "database": ""}
 
 
 # --- edition in the config file ---
 
 
 def test_edition_is_a_top_level_key(config_dir):
-    _identity.write_config(edition="enterprise", user_id="ante")
+    _identity.write_config(edition="community", user_id="ante")
 
     text = (config_dir / "config.toml").read_text()
-    assert text.index('edition = "enterprise"') < text.index("[identity]")
-    assert _identity.load_config().edition == "enterprise"
+    assert text.index('edition = "community"') < text.index("[identity]")
+    assert _identity.load_config().edition == "community"
 
 
 def test_a_config_without_edition_writes_none(config_dir):
@@ -140,3 +140,21 @@ def test_hooks_resolve_through_the_community_resolver_unchanged(config_dir):
         "MEMGRAPH_DATABASE": "memgraph",
     }
     assert _identity.resolve_memgraph_env(database="other")["MEMGRAPH_DATABASE"] == "other"
+
+
+def test_the_config_knows_which_keys_it_sets(config_dir):
+    _identity.write_config(user_id="ante")
+
+    present = _identity.load_config().present
+    assert "identity.user_id" in present
+    assert "memgraph.database" in present
+    assert "edition" not in present
+
+
+def test_an_enterprise_config_writes_no_identity_or_database(config_dir):
+    _identity.write_config(edition="enterprise", memgraph_user="ante", memgraph_password="pw")
+
+    text = (config_dir / "config.toml").read_text()
+    assert "[identity]" not in text
+    assert "database =" not in text
+    assert {"identity.user_id", "memgraph.database"}.isdisjoint(_identity.load_config().present)
