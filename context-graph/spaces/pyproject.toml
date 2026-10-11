@@ -14,6 +14,8 @@ classifiers = [
 dependencies = [
     "agent-context-graph>=0.4.0",
     "memgraph-toolbox",
+    # Shared spaces hold sessions-graph's memory files: apply sets up its schema there.
+    "sessions-graph>=0.6.0",
     "neo4j>=5.0",
     # tomllib on 3.11+; tomli for 3.10, which ty checks against.
     "tomli>=2.0",

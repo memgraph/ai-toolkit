@@ -25,13 +25,16 @@ import threading
 from datetime import date
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from agent_context_graph.spaces import MemgraphTarget, SpaceError, SpaceResolver, spaces_for
+from neo4j.exceptions import Neo4jError
+
+from agent_context_graph.spaces import PERSONAL, MemgraphTarget, Space, SpaceError, SpaceResolver, spaces_for
 from agent_context_graph.tools import ToolError, ToolResult
 
 from .core import SessionsGraph
 from .embeddings import DEFAULT_EMBEDDING_MODEL
-from .memory_index import project_key_for, render_index
-from .memory_store import MemoryCommandError
+from .memory_index import describe, project_key_for, render_index
+from .memory_store import MemoryCommandError, MemoryStore
+from .models import MEMORY_ROOT, MemoryValidationError, normalize_memory_path
 from .recall import RecallConfig
 
 if TYPE_CHECKING:
@@ -50,25 +53,34 @@ the rows don't contain the answer, say it isn't in memory."""
 
 
 class _GraphPerConfig:
-    """One SessionsGraph on the user's personal space, rebuilt only when that space's connection changes."""
+    """One SessionsGraph per space connection, kept while the user's personal space stays the same."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._graph: SessionsGraph | None = None
-        self._graph_key: MemgraphTarget | None = None
+        self._personal: MemgraphTarget | None = None
+        self._graphs: dict[MemgraphTarget, SessionsGraph] = {}
 
     def _user_id(self, config: HookConfig) -> str | None:
         return _spaces(config).user_id()
 
     def _graph_for(self, config: HookConfig) -> SessionsGraph:
-        target = _spaces(config).personal().target
+        """The personal space's graph."""
+        return self._graph_at(_spaces(config).personal())
+
+    def _graph_at(self, space: Space) -> SessionsGraph:
         with self._lock:
-            if self._graph is None or self._graph_key != target:
-                graph = SessionsGraph(**target.client_kwargs())
+            if space.name == PERSONAL and space.target != self._personal:
+                self._graphs.clear()
+                self._personal = space.target
+            graph = self._graphs.get(space.target)
+            if graph is None:
+                graph = SessionsGraph(**space.target.client_kwargs())
                 # Recall's text lane and the memory tool's path constraint need the schema; setup is idempotent.
-                graph.setup()
-                self._graph, self._graph_key = graph, target
-            return self._graph
+                # Members can't create indexes in a shared space: provisioning sets its schema up instead.
+                if not space.shared:
+                    graph.setup()
+                self._graphs[space.target] = graph
+            return graph
 
 
 class RecallTool(_GraphPerConfig):
@@ -122,6 +134,9 @@ work (types `user` and `feedback`).
 - /memories/projects/<project>/ holds what applies to one codebase: decisions and their \
 reasons, ongoing work, where to find things (types `project` and `reference`). The \
 session-start note names the current project's folder.
+- /memories/spaces/<space>/ exists only when the session-start note lists shared spaces: \
+every member of that space reads and edits it. Write there, or `rename` a file there, \
+only when the user wants it shared.
 
 Save when you learn something a future session needs that the code and git history \
 don't record: the user corrects you or confirms an approach, states a preference, \
@@ -190,7 +205,9 @@ class MemoryTool(_GraphPerConfig):
         cwd = payload.get("cwd")
         project = project_key_for(cwd) if isinstance(cwd, str) and cwd else None
         store = self._graph_for(config).memory_store(user_id)
-        return render_index(store, project, guidance=self.session_hint)
+        index = render_index(store, project, guidance=self.session_hint)
+        shared = [space for space in _spaces(config).readable() if space.shared]
+        return "\n".join([index, *(self._shared_index(space, user_id) for space in shared)])
 
     def available(self, config: HookConfig) -> bool:
         """Only for users who made Context Graph their memory backend."""
@@ -209,11 +226,75 @@ class MemoryTool(_GraphPerConfig):
                 "No user is configured, so there is no memory to use. "
                 "Set one with: agent-context-graph config set identity.user_id <name>"
             )
-        store = self._graph_for(config).memory_store(user_id)
+        spaces = _spaces(config)
         try:
-            return ToolResult(text=store.execute(arguments))
+            if arguments.get("command") == "rename":
+                source = _space_of(arguments.get("old_path"))
+                destination = _space_of(arguments.get("new_path"))
+                if source != destination:
+                    return ToolResult(text=self._move(spaces, user_id, arguments, source, destination))
+                return ToolResult(text=self._store(spaces, user_id, source).execute(arguments))
+            space = _space_of(arguments.get("path"))
+            if space == "" and arguments.get("command") == "view":
+                return ToolResult(text=_list_spaces(spaces))
+            return ToolResult(text=self._store(spaces, user_id, space).execute(arguments))
         except MemoryCommandError as exc:
             raise ToolError(str(exc)) from exc
+        except SpaceError as exc:
+            raise ToolError(str(exc)) from exc
+        except Neo4jError as exc:
+            # The catalog listed a space Memgraph no longer lets this login into; the grants are the authority.
+            if refresh := getattr(spaces, "refresh", None):
+                refresh()
+            raise ToolError(f"Memgraph refused that: {exc.message or exc}") from exc
+
+    def _store(self, spaces: SpaceResolver, user_id: str, space: str | None) -> MemoryStore:
+        """The personal store, or shared space *space*'s store, writing as *user_id*."""
+        if not space:
+            return self._graph_at(spaces.personal()).memory_store(user_id)
+        return self._shared_store(spaces.shared_space(space), user_id)
+
+    def _shared_store(self, space: Space, user_id: str) -> MemoryStore:
+        return self._graph_at(space).memory_store(SHARED_OWNER, author=user_id, forget_derived=False)
+
+    def _move(
+        self,
+        spaces: SpaceResolver,
+        user_id: str,
+        arguments: dict[str, Any],
+        source: str | None,
+        destination: str | None,
+    ) -> str:
+        """Rename across spaces: write the destination, then delete the source, one file at a time.
+
+        Not atomic across two databases, so the order makes a failure leave a duplicate, never a loss.
+        """
+        old_path, new_path = str(arguments.get("old_path")), str(arguments.get("new_path"))
+        source_store = self._store(spaces, user_id, source)
+        destination_store = self._store(spaces, user_id, destination)
+        content = source_store.read(old_path)
+        if content is None:
+            if source_store.is_directory(old_path):
+                raise MemoryCommandError(f"Error: {old_path} is a directory; move its files one at a time")
+            raise MemoryCommandError(f"Error: The path {old_path} does not exist")
+        if destination_store.read(new_path) is not None or destination_store.is_directory(new_path):
+            raise MemoryCommandError(f"Error: The destination {new_path} already exists")
+        destination_store.create(new_path, content)
+        source_store.delete(old_path)
+        where = f"shared space {destination}" if destination else "your personal memory"
+        return f"Successfully renamed {old_path} to {new_path} (now in {where})"
+
+    def _shared_index(self, space: Space, user_id: str) -> str:
+        """One shared space's part of the session-start index."""
+        folder = f"{SPACES_ROOT}/{space.name}"
+        files = self._shared_store(space, user_id).files(folder)
+        lines = [f"Shared space {space.name} ({folder}/; every member can read and edit it):"]
+        lines += [f"- {file.path} — {describe(file.content)}" for file in files[:MAX_SHARED_INDEX_LINES]]
+        if len(files) > MAX_SHARED_INDEX_LINES:
+            lines.append(f"- ...and {len(files) - MAX_SHARED_INDEX_LINES} more; view {folder} to list them.")
+        if not files:
+            lines.append(f"- (empty; create files under {folder}/ to share them)")
+        return "\n".join(lines)
 
 
 def _spaces(config: HookConfig) -> SpaceResolver:
@@ -226,6 +307,39 @@ def _spaces(config: HookConfig) -> SpaceResolver:
         return spaces_for(config)
     except SpaceError as exc:
         raise ToolError(str(exc)) from exc
+
+
+#: Where shared spaces appear in the memory tool's tree: /memories/spaces/<space>/...
+SPACES_ROOT = f"{MEMORY_ROOT}/spaces"
+#: Every file in a shared space belongs to the space, not to a member, so all members see one tree.
+#: Not a valid login (logins start with a letter), so it can't collide with a member.
+SHARED_OWNER = "@space"
+MAX_SHARED_INDEX_LINES = 20
+
+
+def _space_of(path: Any) -> str | None:
+    """The shared space *path* is in; "" for /memories/spaces itself; None for personal memory.
+
+    A malformed path is personal, so the store reports it with its usual error.
+    """
+    if not isinstance(path, str):
+        return None
+    try:
+        path = normalize_memory_path(path)
+    except MemoryValidationError:
+        return None
+    if path == SPACES_ROOT:
+        return ""
+    if path.startswith(SPACES_ROOT + "/"):
+        return path[len(SPACES_ROOT) + 1 :].split("/", 1)[0]
+    return None
+
+
+def _list_spaces(spaces: SpaceResolver) -> str:
+    shared = [space.name for space in spaces.readable() if space.shared]
+    if not shared:
+        return f"No shared spaces. Files under {SPACES_ROOT}/<space>/ are shared with that space's members."
+    return f"Shared spaces under {SPACES_ROOT}:\n" + "\n".join(f"- {SPACES_ROOT}/{name}/" for name in shared)
 
 
 def _config_path() -> str:

@@ -84,7 +84,7 @@ def render_index(store: MemoryStore, project: str | None, *, guidance: str) -> s
 
     lines.append("Memory index (view a file for its full text):")
     shown = files[:MAX_INDEX_LINES]
-    lines += [f"- {file.path} — {_description(file.content)}" for file in shown]
+    lines += [f"- {file.path} — {describe(file.content)}" for file in shown]
     if len(files) > len(shown):
         lines.append(f"- ...and {len(files) - len(shown)} more; view {MEMORY_ROOT} to list them.")
     return "\n".join(lines)
@@ -123,7 +123,8 @@ def _body(content: str) -> str:
     return content
 
 
-def _description(content: str) -> str:
+def describe(content: str) -> str:
+    """A file's one-line index entry: its frontmatter ``description``, else its first line."""
     description = _frontmatter(content).get("description")
     if not description:
         first = next((line.strip() for line in _body(content).splitlines() if line.strip()), "")
