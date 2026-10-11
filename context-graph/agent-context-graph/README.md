@@ -365,7 +365,20 @@ Every file is a `(:Memory)` node in the user's graph, shared across harnesses
 and sessions. Whose memory it is comes from `identity.user_id`, never from
 the call. Without the setting the tool isn't listed at all, so the harness's
 own memory stays in charge. Harnesses list tools once per session, so the
-change shows from the next session. See
+change shows from the next session.
+
+At session start the hook loads the memory, the way the harness's built-in
+memory would have. It adds:
+- an index of the root and the current project's files, one line each with
+  the file's `description:` frontmatter or first line, up to 200 lines;
+- the full text of any file with `pin: true` in its frontmatter;
+- the current project's folder.
+
+The index is generated from the graph, so the model never maintains an index
+file and it can't go stale. The project folder is keyed by the checkout's git
+`origin` remote (e.g. `github.com_memgraph_ai-toolkit`), so every clone of a
+repository shares one folder. Without a remote, the repository's directory
+name is used. See
 [ADR 0006](docs/adr/0006-memory-tool-writes-explicit-memory.md) for why this is
 the one write the model makes over MCP.
 
