@@ -22,6 +22,9 @@ own memory rather than sitting beside it.
 from __future__ import annotations
 
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from datetime import date
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -35,7 +38,7 @@ from .embeddings import DEFAULT_EMBEDDING_MODEL
 from .memory_index import describe, project_key_for, render_index
 from .memory_store import MemoryCommandError, MemoryStore
 from .models import MEMORY_ROOT, MemoryValidationError, normalize_memory_path
-from .recall import RecallConfig
+from .recall import RecallConfig, Recalled, fuse
 
 if TYPE_CHECKING:
     from agent_context_graph.adapters._identity import HookConfig
@@ -121,10 +124,43 @@ class RecallTool(_GraphPerConfig):
         except ValueError as exc:
             raise ToolError(f"[recall] in {_config_path()} is invalid: {exc}") from exc
 
-        recalled = self._graph_for(config).recall(
-            user_id, question, config=settings, model=config.embedding_model or DEFAULT_EMBEDDING_MODEL
-        )
+        model = config.embedding_model or DEFAULT_EMBEDDING_MODEL
+        readable = _spaces(config).readable()
+        if len(readable) == 1:
+            recalled = self._graph_at(readable[0]).recall(user_id, question, config=settings, model=model)
+        else:
+            recalled = self._recall_across(readable, user_id, question, settings, model)
         return ToolResult(text=recalled.render(today=date.today().isoformat()), structured=recalled.to_json())
+
+    def _recall_across(
+        self, readable: list[Space], user_id: str, question: str, settings: RecallConfig, model: str
+    ) -> Recalled:
+        """Recall in every space at once, each within :data:`SPACE_DEADLINE_SECONDS`, fused into one result.
+
+        A space that fails or runs late is named in the result instead of failing the call: the
+        personal space alone still answers most questions.
+        """
+
+        def one(space: Space) -> Recalled:
+            owner = SHARED_OWNER if space.shared else user_id
+            return self._graph_at(space).recall(owner, question, config=settings, model=model)
+
+        pool = ThreadPoolExecutor(max_workers=len(readable), thread_name_prefix="recall-space")
+        futures = {space.name: pool.submit(one, space) for space in readable}
+        results: list[Recalled] = []
+        missing: list[str] = []
+        deadline = time.monotonic() + SPACE_DEADLINE_SECONDS
+        for space in readable:
+            try:
+                results.append(futures[space.name].result(timeout=max(0.0, deadline - time.monotonic())))
+            except FutureTimeout:
+                missing.append(f"{_space_label(space)} (took longer than {SPACE_DEADLINE_SECONDS:g}s)")
+            # Any one space's failure must not lose the others' rows.
+            except Exception as exc:
+                missing.append(f"{_space_label(space)} ({type(exc).__name__}: {exc})")
+        # Don't wait for a late space: its thread finishes on its own and its result is dropped.
+        pool.shutdown(wait=False, cancel_futures=True)
+        return fuse(question, results, memories_k=settings.memories_k, missing=tuple(missing))
 
 
 _MEMORY_DESCRIPTION = """Your long-term memory for this user, kept in Context Graph and shared across sessions, \
@@ -315,6 +351,14 @@ SPACES_ROOT = f"{MEMORY_ROOT}/spaces"
 #: Not a valid login (logins start with a letter), so it can't collide with a member.
 SHARED_OWNER = "@space"
 MAX_SHARED_INDEX_LINES = 20
+
+
+#: How long recall waits for the spaces it fans out to, together; a later one is reported missing.
+SPACE_DEADLINE_SECONDS = 10.0
+
+
+def _space_label(space: Space) -> str:
+    return "your personal space" if not space.shared else f"shared space {space.name}"
 
 
 def _space_of(path: Any) -> str | None:
