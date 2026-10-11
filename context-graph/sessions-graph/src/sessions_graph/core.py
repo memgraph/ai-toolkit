@@ -6,6 +6,7 @@ Nodes:
     (:User  {user_id})
     (:Memory {memory_id, user_id, path, content, created_at, updated_at})
     (:Project {key})                      — a folder under /memories/projects/
+    (:MemoryVersion {memory_id, path, content, replaced_at, session_id, deleted})
     (:Session {session_id})
     (:Episode {summary, summarized_at})   — written by reconcile_session(), see below
 
@@ -13,6 +14,8 @@ Relationships:
     (:User)-[:HAS_MEMORY]->(:Memory)
     (:Session)-[:PRODUCED_MEMORY]->(:Memory)   — every session that wrote it, when known
     (:Memory)-[:ABOUT]->(:Project)             — memories under /memories/projects/<key>/
+    (:User)-[:HAS_MEMORY_VERSION]->(:MemoryVersion)  — text a memory-tool write replaced or deleted
+    (:Memory)-[:PREVIOUS_VERSION]->(:MemoryVersion)  — the same, while the file still exists
     (:Session)-[:HAS_EPISODE]->(:Episode)      — at most one per session
 """
 
@@ -131,6 +134,7 @@ class SessionsGraph:
         self._db.query("CREATE INDEX ON :Memory(user_id);")
         self._db.query("CREATE INDEX ON :Memory(created_at);")
         self._db.query("CREATE INDEX ON :Memory(path);")
+        self._db.query("CREATE INDEX ON :MemoryVersion(memory_id);")
         self._db.query(f"CREATE TEXT INDEX {_FULLTEXT_INDEX} ON :Memory(content);")
         self._db.query("CREATE INDEX ON :Session(reconciliation_status);")
         self._db.query("CREATE INDEX ON :Session(embedding_status);")
