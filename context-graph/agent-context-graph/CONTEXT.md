@@ -52,6 +52,18 @@ _Avoid_: Stop (a runtime's hook name, not a protocol term), session end
 Persistent TOML file supplying identity + connection settings to hook subprocesses. Default path `~/.config/context-graph/config.toml`; `CONTEXT_GRAPH_CONFIG` may select another file. At hook runtime, config values come only from selected file. Env var selects file; never supplies a value from it.
 _Avoid_: env config, runtime config, shell config
 
+**Edition**:
+Which multi-user model the **Hook Configuration** selects, by its top-level `edition` key. **Community** (the default): one user, one Memgraph database. **Enterprise**: many users on a shared Memgraph, isolation enforced by Memgraph Enterprise access control, implemented by the separate `context-graph-spaces` package. Chosen explicitly, never detected from the server's licence (map #501).
+_Avoid_: tier, plan, licence (commercial terms, not behaviour)
+
+**Space**:
+A place memory lives. Each user has one **Personal Space**, where hooks write all their activity. Enterprise adds **Shared Spaces** that a set of members can read. A space is one Memgraph database: Memgraph can't query across databases, so reading several spaces means one query per space.
+_Avoid_: tenant (admin vocabulary), workspace, team (a team is just one kind of Shared Space)
+
+**Space Resolver**:
+`SpaceResolver` (`spaces.py`). The one place a component asks who the user is, which space to write to (`personal()`), and which spaces to read (`readable()`). `spaces_for(config)` returns the configured **Edition**'s resolver. Components never read `[identity]` or `[memgraph]` themselves.
+_Avoid_: reading `HookConfig.user_id` / `memgraph_*` directly
+
 **Runtime Registration**:
 Python object implementing `RuntimeCLIPlugin`. Package publishes it via `agent_context_graph.runtimes` entry-point group. CLI resolves runtime name through it to find adapter, hook response, hook config, optional initializer.
 
@@ -59,7 +71,7 @@ Not a **Runtime Plugin**: plugin installs host-facing files; registration lets A
 _Avoid_: Runtime Plugin (already means distribution package), Runtime Adapter (a Runtime Registration *references* one via `adapter_class`, isn't one)
 
 **Tool Registration**:
-Object implementing `Tool` (`tools.py`): a name, a description the model reads, an input schema, the connector whose graph it reads, an optional session-start hint, and `call(arguments, config)`. A graph component publishes it via the `agent_context_graph.tools` entry-point group; `agent-context-graph mcp` serves every registered tool, and the CLI runs one by name. Identity + connection come from **Hook Configuration**, never from tool arguments.
+Object implementing `Tool` (`tools.py`): a name, a description the model reads, an input schema, the connector whose graph it reads, an optional session-start hint, and `call(arguments, config)`. A graph component publishes it via the `agent_context_graph.tools` entry-point group; `agent-context-graph mcp` serves every registered tool, and the CLI runs one by name. Identity + connection come from the **Space Resolver** over **Hook Configuration**, never from tool arguments.
 _Avoid_: MCP tool (the protocol it is served over, not the thing), Graph Connector (writes events; a tool reads)
 
 ## Relationships

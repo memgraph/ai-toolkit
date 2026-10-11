@@ -84,10 +84,12 @@ def _config(argv: list[str]) -> int:
         parse_bool_flag,
         write_config,
     )
+    from agent_context_graph.spaces import EDITION_COMMUNITY, EDITIONS
 
     config_path = config_file_path()
 
     _CONFIG_KEYS = {
+        "edition": "edition",
         "identity.user_id": "user_id",
         "memgraph.url": "memgraph_url",
         "memgraph.user": "memgraph_user",
@@ -121,6 +123,7 @@ def _config(argv: list[str]) -> int:
     if action == "show":
         config = load_config()
         print(f"# {config_path}")
+        print(f"edition = {config.edition or EDITION_COMMUNITY!r}")
         print(f"identity.user_id = {config.user_id!r}")
         print(f"memgraph.url = {config.memgraph_url!r}")
         print(f"memgraph.user = {config.memgraph_user!r}")
@@ -178,6 +181,9 @@ def _config(argv: list[str]) -> int:
                 print(f"Invalid value for {key}: {value!r} (expected true/false)", file=sys.stderr)
                 return 2
             write_value = parse_bool_flag(normalized)
+        if key == "edition" and value not in EDITIONS:
+            print(f"Invalid value for {key}: {value!r} (expected {'/'.join(sorted(EDITIONS))})", file=sys.stderr)
+            return 2
         if key == "memory.backend" and value not in MEMORY_BACKENDS:
             print(f"Invalid value for {key}: {value!r} (expected {'/'.join(sorted(MEMORY_BACKENDS))})", file=sys.stderr)
             return 2
@@ -482,13 +488,20 @@ def _check_config() -> _CheckResult:
             "ok": False,
             "detail": f"{path} not found — run: agent-context-graph bootstrap or agent-context-graph config set identity.user_id <name>",
         }
+    from agent_context_graph.spaces import SpaceError, spaces_for
+
     config = load_config()
-    parts = []
-    if config.user_id:
-        parts.append(f"user_id={config.user_id!r}")
+    try:
+        spaces = spaces_for(config)
+    except SpaceError as exc:
+        return {"name": "config", "ok": False, "detail": f"{path} — {exc}"}
+    user_id = spaces.user_id()
+    parts = [f"edition={spaces.edition}"]
+    if user_id:
+        parts.append(f"user_id={user_id!r}")
     else:
         parts.append("user_id=NOT SET")
-    parts.append(f"memgraph.url={config.memgraph_url!r}")
+    parts.append(f"memgraph.url={spaces.personal().target.url!r}")
     llm_key_set = bool(config.openai_api_key or config.anthropic_api_key)
     parts.append(
         "llm_key=SET" if llm_key_set else "llm_key=NOT SET (needed only for sessions-graph auto-reconciliation)"
@@ -498,7 +511,7 @@ def _check_config() -> _CheckResult:
     broken_auto_reconcile = auto_reconcile_on and not llm_key_set
     if broken_auto_reconcile:
         parts.append("WARNING: auto_reconcile is ON but no LLM key is set — reconciliation will fail")
-    ok = bool(config.user_id) and not broken_auto_reconcile
+    ok = bool(user_id) and not broken_auto_reconcile
     return {"name": "config", "ok": ok, "detail": f"{path} — {'; '.join(parts)}"}
 
 

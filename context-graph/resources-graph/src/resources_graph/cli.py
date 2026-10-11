@@ -29,18 +29,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         from agent_context_graph.adapters._identity import load_config
+        from agent_context_graph.spaces import spaces_for
     except ImportError:
         print(
             "resources-graph needs agent-context-graph for its config: pip install 'resources-graph[agent-context-graph]'"
         )
         return 2
     config = load_config()
-    graph = ResourcesGraph(
-        url=config.memgraph_url,
-        username=config.memgraph_user,
-        password=config.memgraph_password,
-        database=config.memgraph_database,
-    )
+    graph = ResourcesGraph(**spaces_for(config).personal().target.client_kwargs())
     graph.setup()
     if args.command == "setup":
         print("resources-graph schema ready")

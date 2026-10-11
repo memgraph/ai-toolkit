@@ -263,10 +263,10 @@ def _describe(version: OntologyVersion) -> str:
 
 def _configured_user_id() -> str | None:
     try:
-        from agent_context_graph.adapters._identity import load_config
+        from agent_context_graph.adapters._identity import resolve_user_id
     except ImportError:
         return None
-    return load_config().user_id
+    return resolve_user_id({})
 
 
 def _sync_configured_ontology(graph: SessionsGraph) -> None:
@@ -276,11 +276,11 @@ def _sync_configured_ontology(graph: SessionsGraph) -> None:
     in it never stops reconciliation.
     """
     try:
-        from agent_context_graph.adapters._identity import load_config, resolve_ontology
+        from agent_context_graph.adapters._identity import resolve_ontology, resolve_user_id
     except ImportError:
         return
     path, derive = resolve_ontology()
-    user_id = load_config().user_id
+    user_id = resolve_user_id({})
     if not path or not user_id:
         return
 
