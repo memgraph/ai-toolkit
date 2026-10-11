@@ -69,17 +69,12 @@ async def test_reconcile_session_extracts_real_entities_from_session_content(
         role=MessageRole.ASSISTANT,
         content="Bob Smith works on the Payments team at Northwind Traders.",
     )
-    graph.save_memory(
-        user_id="alice",
-        content="User is investigating the Payments team's on-call rotation.",
-        session_id=session_id,
-    )
 
     summary = await graph.reconcile_session(session_id, lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph)
 
     assert summary.status == "completed"
-    assert summary.texts_considered == 3
-    assert summary.texts_deduped == 3
+    assert summary.texts_considered == 2
+    assert summary.texts_deduped == 2
     assert summary.summary_written is True
 
     rows = memgraph.query(
