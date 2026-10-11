@@ -1,15 +1,18 @@
 """Recall: what one user's past sessions say about a question (#394).
 
 Turns are the answer store and the extracted graph is an index into them.
-Five lanes, each over the user's own history only:
+Six lanes, each over the user's own history only:
 
+    memories    memory files the user's agents saved deliberately, by vector and full text
     turns       message passages nearest the question by vector
     text        messages matching it by full-text search
     entities    entities nearest it by vector, and each one's facts
     facts       extracted facts nearest it by vector
     user_facts  every fact of the relation types nearest it, from the user's turns
 
-then the turns the facts were read from. A turn too long to show whole is
+then the turns the facts were read from. Memory files come first: they are
+curated, where turns are everything that was said. A user with no memory
+files gets exactly what the five conversation lanes give, header included. A turn too long to show whole is
 shown as the passages that matched (:mod:`.passages`): the one a vector
 hit, the one a fact was read from, the one sharing most words with the
 question. The result is the evidence, not an
@@ -34,7 +37,7 @@ from typing import Any
 from .embeddings import DEFAULT_EMBEDDING_MODEL, EmbeddingUnavailableError, embed_texts
 from .passages import best_passage, excerpt, split_passages
 
-LANES = ("turns", "text", "entities", "facts", "user_facts")
+LANES = ("memories", "turns", "text", "entities", "facts", "user_facts")
 
 #: bge's retrieval instruction, prepended to the question only, never to what is searched.
 QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
@@ -48,6 +51,8 @@ class RecallConfig:
     """Which lanes run and how wide each is: the setup the hybrid benchmark measured."""
 
     lanes: tuple[str, ...] = LANES
+    #: Memory files shown at most, found by vector and full text together.
+    memories_k: int = 5
     turns_k: int = 8
     text_k: int = 8
     entities_k: int = 15
@@ -105,6 +110,21 @@ class Turn:
 
 
 @dataclass(frozen=True)
+class MemoryNote:
+    """One memory file, as recall shows it."""
+
+    path: str
+    updated_at: str
+    text: str
+    #: Indices of the passages that matched, most relevant first; what a file too long to show whole shows.
+    passages: tuple[int, ...] = ()
+
+    def line(self, chars: int) -> str:
+        shown = excerpt(self.text, list(self.passages), chars)
+        return f"MEMORY [{self.path}, updated {self.updated_at[:10]}]: {shown}"
+
+
+@dataclass(frozen=True)
 class Fact:
     """One extracted edge: what it says, when it became true, and the sentence it was read from."""
 
@@ -135,6 +155,11 @@ READING_RULES = (
     "- When the rows never mention what is asked, or don't show what the question assumes, say it is not "
     "in memory rather than answering a related question."
 )
+#: Added only when memory files are shown, so recall over conversations alone reads exactly as benchmarked.
+MEMORY_RULE = (
+    "- MEMORY rows are notes saved deliberately to remember; trust them over a TURN about the same thing, "
+    "unless the TURN is more recent."
+)
 
 
 @dataclass(frozen=True)
@@ -144,20 +169,25 @@ class Recalled:
     question: str
     turns: list[Turn] = field(default_factory=list)
     facts: list[Fact] = field(default_factory=list)
+    memories: list[MemoryNote] = field(default_factory=list)
     #: Why the vector lanes didn't run, or None when they did.
     vector_lanes_off: str | None = None
     turn_chars: int = RecallConfig.turn_chars
 
     def lines(self) -> list[str]:
         """The rows as text: exactly what the benchmark's answerer was shown."""
-        return [turn.line(self.turn_chars) for turn in self.turns] + [fact.line() for fact in self.facts]
+        return (
+            [note.line(self.turn_chars) for note in self.memories]
+            + [turn.line(self.turn_chars) for turn in self.turns]
+            + [fact.line() for fact in self.facts]
+        )
 
     def render(self, today: str | None = None) -> str:
         """The rows behind a header with the reading rules, for a model to answer from."""
         header = [f"Memory recall for: {self.question}"]
         if today:
             header.append(f"Today is {today}.")
-        header.append(READING_RULES)
+        header.append(READING_RULES + ("\n" + MEMORY_RULE if self.memories else ""))
         if self.vector_lanes_off:
             header.append(f"Vector search is off ({self.vector_lanes_off}); these rows come from text search only.")
         rows = "\n".join(self.lines()) or "(nothing in memory matched)"
@@ -168,6 +198,7 @@ class Recalled:
             "question": self.question,
             "turns": [asdict(turn) for turn in self.turns],
             "facts": [asdict(fact) for fact in self.facts],
+            "memories": [asdict(note) for note in self.memories],
             "vector_lanes_off": self.vector_lanes_off,
         }
 
@@ -247,6 +278,24 @@ _FACTS_OF_TURNS = (
     "WITH startNode(r) AS h, r, endNode(r) AS t " + _FACT_FIELDS
 )
 
+_MEMORY_VECTORS = (
+    "MATCH (m:Memory {user_id: $user}) WHERE m.embedding_model = $model AND m.passage_embeddings IS NOT NULL "
+    "UNWIND range(0, size(m.passage_embeddings) - 1) AS i "
+    "WITH m, i, vector_search.cosine_similarity(m.passage_embeddings[i], $query) AS score "
+    "ORDER BY score DESC LIMIT $k RETURN m.memory_id AS id, i AS passage"
+)
+_MEMORY_TEXT = (
+    "CALL text_search.search_all($index, $text, {limit: $pool}) YIELD node, score "
+    "WITH node, score WHERE node.user_id = $user "
+    "WITH node, score ORDER BY score DESC LIMIT $k RETURN node.memory_id AS id"
+)
+_MEMORY_ROWS = (
+    "UNWIND $ids AS id MATCH (m:Memory {memory_id: id}) "
+    "RETURN m.memory_id AS id, m.path AS path, m.updated_at AS updated_at, m.content AS text"
+)
+#: Full-text index over memory content; created by ``SessionsGraph.setup``.
+MEMORY_TEXT_INDEX = "memory_content_index"
+
 #: Relation-type vectors, per model and text embedded: types are few and reused across questions.
 _type_vectors: dict[tuple[str, str], list[float]] = {}
 
@@ -278,6 +327,7 @@ def recall(
         return _text_only(db, user_id, question, config, reason=str(exc))
 
     params = {"user": user_id, "query": query, "model": model}
+    memories = _memories(db, user_id, question, config, query=query, model=model)
     turn_ids: list[str] = []
     vector_hits: dict[str, list[int]] = {}
     facts: list[dict[str, Any]] = []
@@ -295,7 +345,44 @@ def recall(
         facts += db.query(_FACTS, {**params, "k": config.facts_k})
     if "user_facts" in config.lanes:
         facts += _user_facts(db, user_id, query, model, config)
-    return _assemble(db, question, turn_ids, facts, config, vector_hits)
+    return replace(_assemble(db, question, turn_ids, facts, config, vector_hits), memories=memories)
+
+
+def _memories(
+    db: Any, user_id: str, question: str, config: RecallConfig, *, query: list[float] | None, model: str
+) -> list[MemoryNote]:
+    """The user's memory files nearest the question: vector hits first, then full-text ones."""
+    if "memories" not in config.lanes or config.memories_k == 0:
+        return []
+    hits: dict[str, list[int]] = {}
+    if query is not None:
+        for row in db.query(_MEMORY_VECTORS, {"user": user_id, "query": query, "model": model, "k": config.memories_k}):
+            hits.setdefault(row["id"], []).append(row["passage"])
+    text = _safe_query(question)
+    if text:
+        pool = db.query("MATCH (m:Memory) RETURN count(m) AS n")[0]["n"]
+        if pool:
+            for row in db.query(
+                _MEMORY_TEXT,
+                {"index": MEMORY_TEXT_INDEX, "text": text, "pool": pool, "user": user_id, "k": config.memories_k},
+            ):
+                hits.setdefault(row["id"], [])
+    ids = list(hits)[: config.memories_k]
+    if not ids:
+        return []
+    rows = {row["id"]: row for row in db.query(_MEMORY_ROWS, {"ids": ids})}
+    notes = []
+    for memory_id in ids:
+        row = rows.get(memory_id)
+        if row is None:
+            continue
+        note = MemoryNote(path=row["path"], updated_at=row["updated_at"] or "", text=row["text"] or "")
+        if len(note.text) > config.turn_chars:
+            passages = split_passages(note.text)
+            found = [*hits[memory_id], best_passage(passages, question, ignore=_STOPWORDS)]
+            note = replace(note, passages=tuple(dict.fromkeys(found)))
+        notes.append(note)
+    return notes
 
 
 def _text_lane(db: Any, user_id: str, question: str, k: int) -> list[str]:
@@ -372,6 +459,7 @@ def _text_only(db: Any, user_id: str, question: str, config: RecallConfig, *, re
         question=question,
         turns=recalled.turns,
         facts=recalled.facts,
+        memories=_memories(db, user_id, question, config, query=None, model=""),
         vector_lanes_off=reason,
         turn_chars=config.turn_chars,
     )

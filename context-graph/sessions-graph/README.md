@@ -430,6 +430,14 @@ agent-context-graph's `agent_context_graph.tools` entry point
 the user and the `[recall]` overrides from the config file. See
 [agent-context-graph § Recall](../agent-context-graph/README.md#recall-memory-for-the-harnesss-model).
 
+With [memory files](#memory-files), recall also searches them: the
+`memories` lane matches their passages by vector and their text by full-text
+search. Their passages are embedded when the file is reconciled. Matching files
+come first as `MEMORY [path, updated date]` rows, ahead of the turns, with one
+extra reading rule. A user with no memory files gets exactly the five
+conversation lanes' output, header included. That's how the benchmark, whose
+corpora have none, stays byte-identical.
+
 ## Embeddings for recall
 
 Recall searches a user's history by vector as well as by text, so three
