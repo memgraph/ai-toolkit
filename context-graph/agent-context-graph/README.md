@@ -352,8 +352,24 @@ Claude Code and Codex each keep their own memory. Context Graph can replace it
 for a user who opts in:
 
 ```bash
-agent-context-graph config set memory.backend context-graph
+agent-context-graph setup claude-code --memory-backend context-graph
+agent-context-graph setup claude-code --memory-backend native   # hand it back
 ```
+
+Opting in does three things, in this order:
+1. Imports the existing auto-memory files from every project once:
+   - `user`/`feedback` memories go to `/memories/<type>/`;
+   - `project`/`reference` memories go to that project's folder;
+   - `MEMORY.md` is skipped, and anything already in the graph is never overwritten.
+2. Sets `autoMemoryEnabled: false` in `~/.claude/settings.json`, the user-level
+   settings file, because a plugin can't set it itself. The file is backed up
+   once to `settings.json.context-graph.bak`.
+3. Records `[memory] backend = "context-graph"`.
+
+If the import can't run, for example because Memgraph is down, nothing is
+switched. Handing memory back removes the setting and leaves the graph's
+memories where they are. `doctor` fails when the backend is `context-graph`
+but Claude Code's own memory is still on.
 
 With that set, `agent-context-graph mcp` also serves a `memory` tool with the
 Claude API memory tool's commands (`view`, `create`, `str_replace`, `insert`,
