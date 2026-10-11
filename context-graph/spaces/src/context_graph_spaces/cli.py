@@ -19,6 +19,8 @@ from .spec import SpecError, load_spec
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from .spec import Spec
+
 #: Where the reconcile worker finds the service login's password.
 SERVICE_PASSWORD_ENV = "CG_SERVICE_PASSWORD"
 
@@ -34,6 +36,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         command = commands.add_parser(name, help=text)
         command.add_argument("spec", help="The spaces spec (TOML).")
         command.add_argument("--prune", action="store_true", help="Also drop removed users and databases.")
+    reconcile = commands.add_parser("reconcile", help="Reconcile shared spaces' changed memory files, as cg_service.")
+    reconcile.add_argument("spec", help="The spaces spec (TOML): which shared spaces to reconcile.")
+    reconcile.add_argument("--watch", action="store_true", help="Keep going, one pass every --interval seconds.")
+    reconcile.add_argument("--interval", type=float, default=30.0)
     args = parser.parse_args(argv)
 
     try:
@@ -41,6 +47,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SpecError as exc:
         print(exc, file=sys.stderr)
         return 2
+    if args.command == "reconcile":
+        return _reconcile(spec, args.url, watch=args.watch, interval=args.interval)
     query, close = admin_query(args.url, args.user, args.password)
     try:
         if args.command == "plan":
@@ -59,6 +67,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"\nNew login {login!r}. Hand this to them once; it isn't stored anywhere:")
         print(f"  agent-context-graph join {args.url} {login} --password='{password}'")
     return 0
+
+
+def _reconcile(spec: Spec, url: str, *, watch: bool, interval: float) -> int:
+    """Run the worker once, or every *interval* seconds with *watch*; exit 1 if the last pass had an error."""
+    import time
+
+    from .worker import reconcile_spaces
+
+    password = os.environ.get(SERVICE_PASSWORD_ENV)
+    if not password:
+        print(f"Set {SERVICE_PASSWORD_ENV} to {SERVICE_ACCOUNT}'s password (apply printed it once).", file=sys.stderr)
+        return 2
+    while True:
+        reports = reconcile_spaces(spec, url=url, password=password)
+        for report in reports:
+            if report.error:
+                print(f"{report.space}: not reconciled: {report.error}", file=sys.stderr)
+                continue
+            failed = "".join(f"\n  failed {path}: {error}" for path, error in report.failed)
+            print(f"{report.space}: {len(report.completed)} reconciled, {report.pruned} leftovers removed{failed}")
+        if not watch:
+            return 1 if any(report.error or report.failed for report in reports) else 0
+        time.sleep(interval)
 
 
 def admin_query(url: str, user: str, password: str) -> tuple[Query, Any]:

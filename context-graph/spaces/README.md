@@ -54,6 +54,26 @@ Removing someone from the spec revokes their access. Removing a space revokes
 access to it. Users and databases are only dropped with `--prune`. Only objects
 with the `u_`, `space_` and `cg_` prefixes are ever touched.
 
+## The shared-space worker
+
+Members can write only curated memory into a shared space. The derived graph
+there (chunks, entities, relations, and the embeddings recall uses) is written by
+one service login, `cg_service`. Run the worker next to `apply`, with the
+password `apply` printed once:
+
+```bash
+export CG_SERVICE_PASSWORD=...
+context-graph-spaces reconcile spaces.toml --watch     # one pass every 30s
+```
+
+Each pass, for each shared space, it does two things:
+
+1. It removes what deleted files left behind. A member's delete can't touch chunks.
+2. It reconciles changed memory files with GLiNER2 under the space's ontology.
+   No LLM is involved.
+
+Personal spaces keep reconciling locally, as in Community.
+
 ## Tests
 
 The tests run end-to-end against a licensed Memgraph. The licence is read from
