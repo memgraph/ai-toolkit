@@ -18,6 +18,7 @@ on:
       - "context-graph/scripts/install.sh"
       - "context-graph/sessions-graph/**"
       - "context-graph/resources-graph/**"
+      - "context-graph/spaces/**"
       - "context-graph/eval/**"
       - ".github/workflows/tests.yaml"
   pull_request:
@@ -35,6 +36,7 @@ on:
       - "context-graph/scripts/install.sh"
       - "context-graph/sessions-graph/**"
       - "context-graph/resources-graph/**"
+      - "context-graph/spaces/**"
       - "context-graph/eval/**"
       - ".github/workflows/tests.yaml"
 
@@ -54,6 +56,7 @@ jobs:
       sessions-graph: ${{ steps.filter.outputs.sessions-graph }}
       resources-graph: ${{ steps.filter.outputs.resources-graph }}
       context-graph-eval: ${{ steps.filter.outputs.context-graph-eval }}
+      context-graph-spaces: ${{ steps.filter.outputs.context-graph-spaces }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -115,6 +118,14 @@ jobs:
               - 'context-graph/actions-graph/**'
               - 'context-graph/agent-context-graph/**'
               - 'memgraph-toolbox/**'
+              - '.github/workflows/tests.yaml'
+            context-graph-spaces:
+              - 'context-graph/spaces/**'
+              - 'context-graph/sessions-graph/**'
+              - 'context-graph/agent-context-graph/**'
+              - 'unstructured2graph/**'
+              - 'memgraph-toolbox/**'
+              - 'scripts/dev-memgraph.sh'
               - '.github/workflows/tests.yaml'
             context-graph-eval:
               - 'context-graph/eval/**'
@@ -431,6 +442,42 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: uv run --package skills-graph --extra test --extra agent-context-graph pytest tests/ -v
+
+  test-context-graph-spaces:
+    needs: changes
+    if: ${{ needs.changes.outputs.context-graph-spaces == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      MEMGRAPH_ENTERPRISE_LICENSE: ${{ secrets.MEMGRAPH_ENTERPRISE_LICENSE }}
+      MEMGRAPH_ORGANIZATION_NAME: ${{ secrets.MEMGRAPH_ORGANIZATION_NAME }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      # Fork PRs and repos without the secrets can't run the Enterprise suite. Say so loudly
+      # rather than letting a skipped run look like a pass (map #501).
+      - name: Check for an Enterprise licence
+        id: licence
+        run: |
+          if [ -z "$MEMGRAPH_ENTERPRISE_LICENSE" ] || [ -z "$MEMGRAPH_ORGANIZATION_NAME" ]; then
+            echo "::warning title=context-graph-spaces not tested::skipped: no licence (MEMGRAPH_ENTERPRISE_LICENSE / MEMGRAPH_ORGANIZATION_NAME secrets)"
+            echo "### context-graph-spaces: skipped, no Enterprise licence" >> "$GITHUB_STEP_SUMMARY"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run the Enterprise suite on a licensed Memgraph
+        if: ${{ steps.licence.outputs.present == 'true' }}
+        run: ./scripts/dev-memgraph.sh test-enterprise
 
   test-resources-graph:
     needs: changes
