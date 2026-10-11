@@ -17,6 +17,7 @@ from agent_context_graph.adapters._spec import (
     turn_end,
     write_hook_config,
 )
+from agent_context_graph.adapters.codex_memory import CODEX_MEMORY
 from agent_context_graph.events import MessageEvent
 
 if TYPE_CHECKING:
@@ -74,7 +75,7 @@ SPEC = RuntimeSpec(
     config=HookConfig(
         path=_HOOKS_PATH,
         layout="nested",
-        matchers={"SessionStart": "startup|resume|clear", "PreToolUse": "*", "PostToolUse": "*"},
+        matchers={"SessionStart": "startup|resume|clear|compact", "PreToolUse": "*", "PostToolUse": "*"},
     ),
     responses={"Stop": {"continue": True}},
     context_before_tool=pre_tool_use_context,
@@ -114,4 +115,4 @@ def init(
     print(f"Wrote {hooks_path}")
 
 
-PLUGIN = SpecPlugin(SPEC, CodexHooksAdapter, init=init)
+PLUGIN = SpecPlugin(SPEC, CodexHooksAdapter, init=init, native_memory=CODEX_MEMORY)
