@@ -181,17 +181,7 @@ async def test_reconcile_batch_gliner2_mode_reconciles_through_reconcile_session
     reconcile_sessions_batch (map #322's pipeline is LightRAG-specific)."""
     from context_graph_eval.inject import inject_batch
 
-    from lightrag_memgraph import MemgraphLightRAGWrapper
-
     inject_batch([_one_session_fixture("s-1"), _one_session_fixture("s-2")], graph=eval_graph)
-
-    # LightRAG's Memgraph storage backend reads this at construction time,
-    # before reconcile_batch itself sets it -- needed regardless of
-    # extraction_backend, since the summarization LLM call still goes
-    # through this same wrapper either way.
-    monkeypatch.setenv("MEMGRAPH_URL", EVAL_MEMGRAPH_URL)
-    wrapper = MemgraphLightRAGWrapper()
-    await wrapper.initialize(working_dir="./lightrag_storage.test_reconcile_gliner2", llm_model_func=_stub_no_entities)
 
     # Imported before patching: a lookup done *while* the patch is active
     # would resolve to the mock itself, calling it recursively.
@@ -200,17 +190,13 @@ async def test_reconcile_batch_gliner2_mode_reconciles_through_reconcile_session
     def _fake_gliner2_backend(**kwargs):
         return RealGLiNER2Backend(model=_FakeGLiNER2Engine(), **kwargs)
 
-    try:
-        with patch("unstructured2graph.gliner2_backend.GLiNER2Backend", side_effect=_fake_gliner2_backend):
-            outcome = await reconcile_batch(
-                eval_graph._db,
-                memgraph_url=EVAL_MEMGRAPH_URL,
-                lightrag_wrapper=wrapper,
-                extraction_backend="gliner2",
-                progress=False,
-            )
-    finally:
-        await wrapper.afinalize()
+    with patch("unstructured2graph.gliner2_backend.GLiNER2Backend", side_effect=_fake_gliner2_backend):
+        outcome = await reconcile_batch(
+            eval_graph._db,
+            memgraph_url=EVAL_MEMGRAPH_URL,
+            extraction_backend="gliner2",
+            progress=False,
+        )
 
     assert outcome.reconciled == 2
     assert outcome.failed == 0

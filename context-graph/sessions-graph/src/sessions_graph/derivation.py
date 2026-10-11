@@ -276,7 +276,7 @@ async def run(
         if chosen.added:
             for sid in delta:
                 summary = await graph.reconcile_session(
-                    sid, lightrag_wrapper=None, actions_graph=actions_graph, enforce_ontology=True, reextract=True
+                    sid, actions_graph=actions_graph, enforce_ontology=True, reextract=True
                 )
                 report.reextracted += summary.status == "completed"
         report.reextract_seconds = round(time.monotonic() - clock, 1)

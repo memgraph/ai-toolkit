@@ -9,14 +9,14 @@
     sessions-graph derive [--user USER_ID] [--force] [--seeds N] [--model MODEL]
 
 Batch-extracts entities from a session's Action/Memory content via
-unstructured2graph's GLiNER2 backend over hygm's default model, and writes
-the session's summary with an LLM through LightRAG (see reconcile_session()
-in core.py). This is the intended way to run reconciliation — deliberately a
-separate process from the SESSION_END hook, since local extraction and the
-summary call are slow and hook subprocesses run under a runtime timeout.
+unstructured2graph's GLiNER2 backend over the user's adopted ontology (see
+reconcile_session() in core.py). This is the intended way to run
+reconciliation — deliberately a separate process from the SESSION_END hook,
+since local extraction is slow and hook subprocesses run under a runtime
+timeout.
 
-Requires the ``sessions-graph[reconciliation]`` extra and an LLM API key
-(``OPENAI_API_KEY`` or ``ANTHROPIC_API_KEY``) for the summary.
+Requires the ``sessions-graph[reconciliation]`` extra. No LLM API key: one
+only enables ``derive``.
 
 ``ontology`` supplies a schema as a user's next ontology version, or shows
 the adopted one (see ``ontology.py``). ``reconcile`` also applies the config
@@ -24,8 +24,8 @@ file's ``[ontology] path`` to the configured user whenever the file changes.
 
 ``derive`` learns the user's next ontology version from their recent sessions
 and adopts it if it passes the gate (see ``derivation.py``). ``reconcile``
-spawns it, detached, for every user it reconciled who reached a milestone;
-run by hand, ``--force`` derives without waiting for one.
+spawns it, detached, for every user it reconciled who reached a milestone,
+when an LLM key is configured; run by hand, ``--force`` derives without waiting for one.
 
 ``embed`` computes recall's vectors inside Memgraph (see ``embeddings.py``):
 no LLM and no extra, but a Memgraph with MAGE. The SESSION_END hook runs it
@@ -38,7 +38,7 @@ import argparse
 import asyncio
 import os
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -47,15 +47,14 @@ if TYPE_CHECKING:
     from sessions_graph.derivation import RunReport
     from sessions_graph.ontology import OntologyVersion
 
-_HELP = """usage: sessions-graph reconcile (--session SESSION_ID | --pending) [--limit N] [--working-dir DIR]
+_HELP = """usage: sessions-graph reconcile (--session SESSION_ID | --pending) [--limit N]
        sessions-graph embed (--session SESSION_ID | --pending) [--limit N] [--model MODEL]
        sessions-graph ontology load --file SCHEMA.yaml [--user USER_ID] [--derive extend|off]
        sessions-graph ontology show [--user USER_ID]
        sessions-graph derive [--user USER_ID] [--force] [--seeds N] [--model MODEL]
 
-reconcile: extract entities from session Action/Memory content with GLiNER2
-(local) and summarize the session with an LLM. Requires an LLM API key
-(OPENAI_API_KEY or ANTHROPIC_API_KEY) -- see the lightrag-memgraph README.
+reconcile: extract entities from session content and memory files with
+GLiNER2 (local). No LLM.
 
 embed: embed a session's messages, entities and edges for recall, inside
 Memgraph (needs MAGE). No LLM.
@@ -66,7 +65,8 @@ the config file's identity.user_id.
 
 derive: learn the user's next ontology version from their recent sessions
 with an LLM (ANTHROPIC_API_KEY, else OPENAI_API_KEY) and local GLiNER2, and
-adopt it if it passes the gate. Runs on its own at 2, 4, 8, ... sessions.
+adopt it if it passes the gate. Runs on its own at 2, 4, 8, ... sessions
+when a key is configured; without one, users stay on their adopted ontology.
 """
 
 
@@ -111,11 +111,6 @@ def _reconcile(argv: list[str]) -> int:
         type=int,
         default=100,
         help="Max sessions to process with --pending (default: 100).",
-    )
-    parser.add_argument(
-        "--working-dir",
-        default="./lightrag_storage",
-        help="LightRAG working_dir fallback for stores not backed by Memgraph (default: ./lightrag_storage).",
     )
     parsed = parser.parse_args(argv)
 
@@ -372,9 +367,16 @@ def _describe_run(report: RunReport) -> str:
 
 
 def _spawn_due_derivations(graph: SessionsGraph, session_ids: list[str]) -> None:
-    """Start a detached ``derive`` for every user of `session_ids` who reached a milestone (#433)."""
+    """Start a detached ``derive`` for every user of `session_ids` who reached a milestone (#433).
+
+    Derivation is the one step that needs an LLM, so without a key nothing is
+    spawned and users stay on their adopted ontology.
+    """
     from sessions_graph.connector import _spawn_detached
     from sessions_graph.derivation import due
+
+    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")):
+        return
 
     for user_id in dict.fromkeys(graph._session_user(sid) for sid in session_ids):
         milestone = due(graph._db, user_id)
@@ -386,7 +388,6 @@ def _spawn_due_derivations(graph: SessionsGraph, session_ids: list[str]) -> None
 async def _run_reconcile(parsed: argparse.Namespace) -> int:
     _fill_env_from_context_graph_config()
 
-    from lightrag_memgraph import MemgraphLightRAGWrapper
     from sessions_graph import SessionsGraph
 
     graph = SessionsGraph()
@@ -395,7 +396,7 @@ async def _run_reconcile(parsed: argparse.Namespace) -> int:
 
     exit_code = 0
     if not parsed.session:
-        # Memory files first: they need no LLM, so they never wait on one.
+        # Memory files first: a file outlives the session that wrote it.
         for memory_id in graph.get_pending_memory_reconciliations(limit=parsed.limit):
             result = await graph.reconcile_memory(memory_id, embedding_model=_configured_embedding_model())
             if result.status == "completed":
@@ -409,41 +410,19 @@ async def _run_reconcile(parsed: argparse.Namespace) -> int:
         print("No sessions to reconcile.")
         return exit_code
 
-    lightrag_wrapper = MemgraphLightRAGWrapper()
-    kwargs: dict[str, Any] = {"working_dir": parsed.working_dir}
-    if not os.environ.get("OPENAI_API_KEY") and os.environ.get("ANTHROPIC_API_KEY"):
-        from functools import partial
-
-        from lightrag.llm.anthropic import anthropic_complete_if_cache
-
-        from sessions_graph.derive_llm import DEFAULT_MODELS
-
-        kwargs["llm_model_func"] = partial(anthropic_complete_if_cache, DEFAULT_MODELS["anthropic"])
-        kwargs["llm_model_name"] = DEFAULT_MODELS["anthropic"]
-    await lightrag_wrapper.initialize(**kwargs)
-    try:
-        completed = []
-        for session_id in session_ids:
-            summary = await graph.reconcile_session(
-                session_id,
-                lightrag_wrapper=lightrag_wrapper,
-                enforce_ontology=True,
-                embedding_model=_configured_embedding_model(),
-            )
-            if summary.status == "completed":
-                completed.append(session_id)
-                summarized = " (summary written)" if summary.summary_written else ""
-                print(
-                    f"OK {session_id}: {summary.texts_deduped}/{summary.texts_considered} "
-                    f"unique texts reconciled{summarized}"
-                )
-            else:
-                print(f"FAILED {session_id}: {summary.error}", file=sys.stderr)
-                exit_code = 1
-        _spawn_due_derivations(graph, completed)
-        return exit_code
-    finally:
-        await lightrag_wrapper.afinalize()
+    completed = []
+    for session_id in session_ids:
+        summary = await graph.reconcile_session(
+            session_id, enforce_ontology=True, embedding_model=_configured_embedding_model()
+        )
+        if summary.status == "completed":
+            completed.append(session_id)
+            print(f"OK {session_id}: {summary.texts_deduped}/{summary.texts_considered} unique texts reconciled")
+        else:
+            print(f"FAILED {session_id}: {summary.error}", file=sys.stderr)
+            exit_code = 1
+    _spawn_due_derivations(graph, completed)
+    return exit_code
 
 
 if __name__ == "__main__":

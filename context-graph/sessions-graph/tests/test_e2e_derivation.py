@@ -226,9 +226,23 @@ def test_a_merge_relabels_entities_and_relationships_in_place(graph, memgraph):
 def test_reconcile_spawns_a_detached_derive_for_users_at_a_milestone(graph, memgraph, actions_graph, monkeypatch):
     _sessions(memgraph, actions_graph, "alice", 2)
     _sessions(memgraph, actions_graph, "bob", 1)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     spawned = []
     monkeypatch.setattr("sessions_graph.connector._spawn_detached", lambda args, env: spawned.append(args))
 
     _spawn_due_derivations(graph, ["alice-s0", "alice-s1", "bob-s0"])
 
     assert spawned == [["derive", "--user", "alice"]]
+
+
+def test_reconcile_spawns_no_derive_without_an_llm_key(graph, memgraph, actions_graph, monkeypatch):
+    """Derivation is the one LLM step: without a key users stay on their adopted ontology."""
+    _sessions(memgraph, actions_graph, "alice", 2)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    spawned = []
+    monkeypatch.setattr("sessions_graph.connector._spawn_detached", lambda args, env: spawned.append(args))
+
+    _spawn_due_derivations(graph, ["alice-s0", "alice-s1"])
+
+    assert spawned == []

@@ -8,7 +8,6 @@ Nodes:
     (:Project {key})                      — a folder under /memories/projects/
     (:MemoryVersion {memory_id, path, content, replaced_at, session_id, deleted})
     (:Session {session_id})
-    (:Episode {summary, summarized_at})   — written by reconcile_session(), see below
 
 Relationships:
     (:User)-[:HAS_MEMORY]->(:Memory)
@@ -16,12 +15,10 @@ Relationships:
     (:Memory)-[:ABOUT]->(:Project)             — memories under /memories/projects/<key>/
     (:User)-[:HAS_MEMORY_VERSION]->(:MemoryVersion)  — text a memory-tool write replaced or deleted
     (:Memory)-[:PREVIOUS_VERSION]->(:MemoryVersion)  — the same, while the file still exists
-    (:Session)-[:HAS_EPISODE]->(:Episode)      — at most one per session
 """
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -43,7 +40,6 @@ from .reconciliation import (
     build_reconciliation_sources,
     content_hash,
     normalize_timestamp,
-    summarize_session_texts,
 )
 
 if TYPE_CHECKING:
@@ -466,15 +462,11 @@ class SessionsGraph:
         self,
         session_id: str,
         *,
-        summary_text: str | None,
         extraction_backend: str | None = None,
         ontology_version: int | None = None,
     ) -> str:
-        """Mark *session_id* completed and, if a narrative summary was
-        produced, MERGE its Episode -- both stamped with the SAME timestamp,
-        computed here at actual completion time (not earlier, e.g. when a
-        batch started), so ``reconciled_at``/``summarized_at`` reflect when
-        this specific session actually finished. Returns that timestamp.
+        """Mark *session_id* completed, stamped with the time it actually
+        finished (not when its batch started). Returns that timestamp.
 
         ``extraction_backend`` records which backend's class
         (``type(backend).__name__``, e.g. ``"LightRAGBackend"``,
@@ -505,18 +497,6 @@ class SessionsGraph:
                 "ontology_version": ontology_version,
             },
         )
-        if summary_text:
-            # MERGE on the (Session)-[:HAS_EPISODE]->(Episode) pattern (not just CREATE)
-            # so re-reconciling a session updates its one Episode instead of accumulating
-            # duplicates -- Episode has no natural external id of its own to dedupe on.
-            self._db.query(
-                """
-                MATCH (s:Session {session_id: $session_id})
-                MERGE (s)-[:HAS_EPISODE]->(e:Episode)
-                SET e.summary = $summary, e.summarized_at = $summarized_at
-                """,
-                params={"session_id": session_id, "summary": summary_text, "summarized_at": reconciled_at},
-            )
         return reconciled_at
 
     def _write_reextracted(
@@ -551,7 +531,6 @@ class SessionsGraph:
         self,
         session_id: str,
         *,
-        lightrag_wrapper: Any,
         extraction_backend: ExtractionBackend | None = None,
         actions_graph: ActionsGraph | None = None,
         entity_workspace: str | None = None,
@@ -559,10 +538,9 @@ class SessionsGraph:
         enforce_ontology: bool = False,
         ontology_path: str | Path | None = None,
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
-        summarize: bool = True,
         reextract: bool = False,
     ) -> ReconciliationSummary:
-        """Batch-extract entities and a narrative summary from a session's content.
+        """Batch-extract entities from a session's content.
 
         Pulls all reconcilable Message/ToolCall/ToolResult text recorded for
         *session_id* in Actions Graph (Memories are reconciled per file by
@@ -577,31 +555,20 @@ class SessionsGraph:
         node via ``HAS_CHUNK`` so entities trace back to the session that
         produced them.
 
-        This same pass also produces the session's episodic memory: an
-        ``(:Episode {summary, summarized_at})`` node linked from the session
-        via ``HAS_EPISODE``, via a second, dedicated LLM call (entity
-        extraction and narrative summarization are different task shapes, so
-        this doesn't piggyback on LightRAG's own extraction prompt) -- but
-        it's still one trigger, one fetch/dedupe of session text, no separate
-        schedule. Re-reconciling a session updates its one Episode rather
-        than creating another.
+        No LLM unless *extraction_backend* brings one: recall answers from the
+        turns themselves and uses the extracted graph as an index into them,
+        so nothing here writes a session summary.
 
-        This is deliberately not wired to run automatically inside the
-        ``SESSION_END`` hook — LightRAG extraction is LLM-backed and slow, and
-        hook subprocesses run under a runtime timeout. Call this from a
-        separate process (e.g. the ``sessions-graph reconcile`` CLI) instead.
+        This is deliberately not wired to run inside the ``SESSION_END`` hook:
+        extraction is slow and hook subprocesses run under a runtime timeout.
+        Call this from a separate process (e.g. the ``sessions-graph
+        reconcile`` CLI) instead.
 
         Requires the ``sessions-graph[reconciliation]`` extra (actions-graph +
         unstructured2graph).
 
         Args:
             session_id: Session to reconcile.
-            lightrag_wrapper: An initialised ``MemgraphLightRAGWrapper``. Always
-                required, even when ``extraction_backend`` overrides entity
-                extraction to a different backend: the narrative summary above
-                is always produced via this wrapper's own LLM
-                (``summarize_session_texts``), since summarization is a
-                generative task no non-LLM backend (e.g. GLiNER2) can do.
             extraction_backend: Overrides what runs entity extraction (e.g.
                 ``LightRAGBackend(lightrag_wrapper)``); the user's ontology
                 version is then not consulted. Defaults to a ``GLiNER2Backend``
@@ -609,8 +576,8 @@ class SessionsGraph:
                 sharing one loaded GLiNER2 checkpoint.
             actions_graph: An ``ActionsGraph`` instance sharing this graph's
                 Memgraph connection. Constructed automatically if omitted.
-            entity_workspace: Passed through to ``unstructured2graph.from_texts``.
-                Defaults to whatever the LightRAG wrapper resolves to, so
+            entity_workspace: Passed through to ``unstructured2graph.from_documents``.
+                Defaults to the extraction backend's own workspace, so
                 session-derived entities land in the same workspace as
                 document-ingested ones and can merge.
             promote_labels: Passed through to ``unstructured2graph.from_texts``.
@@ -631,11 +598,8 @@ class SessionsGraph:
                 edges are embedded with once extraction completes (see
                 :meth:`embed_session`). An embedding failure is recorded on the
                 Session and never fails the reconciliation.
-            summarize: False skips the summary LLM call, so no Episode is
-                written and `lightrag_wrapper` may be None. Recall never reads
-                Episodes, so a benchmark build can skip them.
-            reextract: True re-reads an already reconciled session: no summary,
-                and the Session keeps its ``reconciled_at``, recording
+            reextract: True re-reads an already reconciled session: the
+                Session keeps its ``reconciled_at``, recording
                 ``reextracted_at`` instead -- how derivation re-reads its delta
                 under a new model (#434) without the delta counting as new
                 sessions again. A failed re-read records ``reextraction_error``
@@ -665,7 +629,6 @@ class SessionsGraph:
         prepared = self._prepare_session(session_id, actions_graph)
 
         try:
-            summary_text: str | None = None
             used_backend: str | None = None
             integrity: tuple[int, int] | None = None
             ontology_version: int | None = None
@@ -725,16 +688,9 @@ class SessionsGraph:
                 self._link_chunks_to_sources(prepared.sources, session_chunks)
                 if enforce_ontology and session_chunks:
                     integrity = self._integrity(backend.workspace_label, ontology_path, ontology, session_chunks)
-                if summarize and not reextract:
-                    summary_text = await summarize_session_texts(lightrag_wrapper, list(prepared.unique_texts.values()))
 
             if not reextract:
-                self._write_completed(
-                    session_id,
-                    summary_text=summary_text,
-                    extraction_backend=used_backend,
-                    ontology_version=ontology_version,
-                )
+                self._write_completed(session_id, extraction_backend=used_backend, ontology_version=ontology_version)
             else:
                 self._write_reextracted(session_id, extraction_backend=used_backend, ontology_version=ontology_version)
             self._embed_after_reconcile(session_id, embedding_model)
@@ -743,7 +699,6 @@ class SessionsGraph:
                 status="completed",
                 texts_considered=len(prepared.sources),
                 texts_deduped=len(prepared.unique_texts),
-                summary_written=summary_text is not None,
                 nonconformant_entities=integrity[0] if integrity else None,
                 nonconformant_relations=integrity[1] if integrity else None,
             )
@@ -774,7 +729,6 @@ class SessionsGraph:
         promote_labels: bool = False,
         enforce_ontology: bool = False,
         ontology_path: str | Path | None = None,
-        summary_concurrency: int = 4,
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     ) -> list[ReconciliationSummary]:
         """Reconcile many sessions as ONE LightRAG processing pass, not one per session.
@@ -795,12 +749,8 @@ class SessionsGraph:
         (``unstructured2graph.enqueue_texts``), then triggers LightRAG's
         processing pass exactly once (``process_enqueued_and_finalize``) for
         the whole group, so its worker pool has something real to
-        parallelize. Per-session bookkeeping that has no shared-state
-        contention -- the episode-summary LLM call, HAS_CHUNK linking,
-        ``reconciliation_status`` -- happens after, fanned out with its own
-        bounded concurrency (``summary_concurrency``); it doesn't go through
-        LightRAG's pipeline at all, so the "busy" lock above doesn't apply to
-        it.
+        parallelize. Per-session bookkeeping -- HAS_CHUNK linking,
+        ``reconciliation_status``, embedding -- happens after, per session.
 
         Known limitation: if the shared processing pass raises outright (e.g.
         a Memgraph connection error), every session in this call is marked
@@ -843,10 +793,6 @@ class SessionsGraph:
             enforce_ontology: Passed through; see ``reconcile_session``.
                 Takes precedence over ``promote_labels``.
             ontology_path: Only consulted when ``enforce_ontology=True``.
-            summary_concurrency: Bound on concurrent episode-summary LLM
-                calls during finalize. Independent of LightRAG's own
-                ``MAX_ASYNC_LLM``, since this call never enters its pipeline.
-                Must be at least 1.
             embedding_model: Passed through; see ``reconcile_session``.
 
         Returns:
@@ -854,17 +800,9 @@ class SessionsGraph:
             same order as ``session_ids``.
 
         Raises:
-            ValueError: if ``summary_concurrency`` is less than 1 -- checked
-                up front, before any paid extraction work, since
-                ``asyncio.Semaphore(0)`` would otherwise deadlock the
-                finalize step forever *after* the batch has already been
-                billed.
             ImportError: if ``actions-graph`` or ``unstructured2graph`` (the
                 ``sessions-graph[reconciliation]`` extra) is not installed.
         """
-        if summary_concurrency < 1:
-            raise ValueError(f"summary_concurrency must be >= 1, got {summary_concurrency}")
-
         actions_graph = self._default_actions_graph(actions_graph, "reconcile_sessions_batch")
 
         try:
@@ -885,7 +823,7 @@ class SessionsGraph:
         for p in prepared:
             if p.unique_texts:
                 continue
-            self._write_completed(p.session_id, summary_text=None, extraction_backend=None)
+            self._write_completed(p.session_id, extraction_backend=None)
             results[p.session_id] = ReconciliationSummary(
                 session_id=p.session_id, status="completed", texts_considered=len(p.sources), texts_deduped=0
             )
@@ -928,9 +866,7 @@ class SessionsGraph:
                 )
             return [results[sid] for sid in session_ids]
 
-        semaphore = asyncio.Semaphore(summary_concurrency)
-
-        async def _finalize_one(prepared_session: _PreparedSession, session_chunks: list[Any]) -> None:
+        def _finalize_one(prepared_session: _PreparedSession, session_chunks: list[Any]) -> None:
             # process_enqueued_and_finalize returning is not proof this
             # session's own document succeeded -- it reports every document's
             # real, final status (including per-document failures LightRAG
@@ -955,24 +891,17 @@ class SessionsGraph:
 
             try:
                 self._link_chunks_to_sources(prepared_session.sources, session_chunks)
-                async with semaphore:
-                    summary_text = await summarize_session_texts(
-                        lightrag_wrapper, list(prepared_session.unique_texts.values())
-                    )
                 # Literal, not type(...).__name__: this whole method only ever
                 # drives LightRAG's enqueue/process pipeline (map #322), so
                 # there is no backend instance here to introspect -- unlike
                 # reconcile_session, which accepts an arbitrary one.
-                self._write_completed(
-                    prepared_session.session_id, summary_text=summary_text, extraction_backend="LightRAGBackend"
-                )
+                self._write_completed(prepared_session.session_id, extraction_backend="LightRAGBackend")
                 self._embed_after_reconcile(prepared_session.session_id, embedding_model)
                 results[prepared_session.session_id] = ReconciliationSummary(
                     session_id=prepared_session.session_id,
                     status="completed",
                     texts_considered=len(prepared_session.sources),
                     texts_deduped=len(prepared_session.unique_texts),
-                    summary_written=summary_text is not None,
                 )
             except Exception as e:
                 # Isolated per session, unlike the shared pass above: nothing
@@ -987,9 +916,8 @@ class SessionsGraph:
                     error=str(e),
                 )
 
-        await asyncio.gather(
-            *(_finalize_one(p, grouped_chunks[i] if i < len(grouped_chunks) else []) for i, p in enumerate(to_enqueue))
-        )
+        for i, p in enumerate(to_enqueue):
+            _finalize_one(p, grouped_chunks[i] if i < len(grouped_chunks) else [])
 
         return [results[sid] for sid in session_ids]
 

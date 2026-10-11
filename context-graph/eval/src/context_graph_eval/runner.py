@@ -74,8 +74,6 @@ class RunPlan:
     reuse_graph: bool = False
     judge: Any | None = None
     reconcile_limit: int | None = None
-    #: False skips each session's summary LLM call; recall never reads Episodes.
-    summaries: bool = True
     #: "fixed" extracts against the LongMemEval vocabulary; "default" under hygm's
     #: default model; "learned" the same, then derived once per user (learned.py).
     ontology: str = "fixed"
@@ -139,8 +137,8 @@ def _require_reconciled(fixtures: list, *, graph: "ActionsGraph", extraction_bac
 
     Missing sessions: the graph holds a different batch, or none.
 
-    Present but unreconciled: injection ran without distillation, so there is no
-    Chunk, Episode or entity to retrieve -- only the raw collection tier, which
+    Present but unreconciled: injection ran without reconciliation, so there is no
+    Chunk or entity to retrieve -- only the raw collection tier, which
     is a different system from the one under test.
 
     Reconciled by a different backend: ``extraction_backend`` names what this
@@ -268,7 +266,6 @@ async def run_batch(
             limit=plan.reconcile_limit,
             memgraph_url=plan.memgraph_url,
             extraction_backend=plan.extraction_backend,
-            summaries=plan.summaries,
             ontology=plan.ontology,
         )
         reconciled, failures = outcome.reconciled, outcome.failed

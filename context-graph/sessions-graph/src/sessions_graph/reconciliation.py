@@ -3,7 +3,7 @@
 Session content (Messages, ToolCalls, ToolResults, Memories) is mostly opaque
 strings and JSON blobs today. This module extracts plain text worth
 entity-extracting out of that content and hands it to unstructured2graph's
-chunk + LightRAG pipeline, so knowledge embedded in past sessions becomes
+chunk + entity-extraction pipeline, so knowledge embedded in past sessions becomes
 queryable graph entities instead of unread properties.
 
 Requires the ``sessions-graph[reconciliation]`` extra (actions-graph +
@@ -167,7 +167,6 @@ class ReconciliationSummary:
     texts_considered: int
     texts_deduped: int
     error: str | None = None
-    summary_written: bool = False
     nonconformant_entities: int | None = None
     nonconformant_relations: int | None = None
 
@@ -199,34 +198,6 @@ def normalize_timestamp(value: str | None) -> str | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.isoformat()
-
-
-_SUMMARY_PROMPT_TEMPLATE = (
-    "Summarize what happened in this agent session in 2-3 sentences, for future recall "
-    '(e.g. answering "what did we do last time?"). Be concrete: name entities, decisions, and '
-    "outcomes; skip meta-commentary about the summarization task itself.\n\n"
-    "Session content:\n{content}"
-)
-
-
-def build_session_summary_prompt(texts: list[str]) -> str:
-    """Build the prompt for distilling a session's reconcilable text into a narrative gist."""
-    return _SUMMARY_PROMPT_TEMPLATE.format(content="\n\n".join(texts))
-
-
-async def summarize_session_texts(lightrag_wrapper: Any, texts: list[str]) -> str:
-    """Produce a narrative session summary via the same LLM the LightRAG wrapper is configured with.
-
-    This is a second, dedicated LLM call alongside the entity-extraction pass ``from_texts``
-    already makes -- narrative summarization and structured entity/relationship extraction are
-    different task shapes, so this doesn't piggyback on LightRAG's own extraction prompt. It's
-    still one ``reconcile_session`` pass: one trigger, one fetch/dedupe of session text, no
-    separate schedule.
-    """
-    rag = lightrag_wrapper.get_lightrag()
-    prompt = build_session_summary_prompt(texts)
-    result = await rag.llm_model_func(prompt)
-    return result.strip()
 
 
 def build_reconciliation_sources(

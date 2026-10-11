@@ -116,9 +116,7 @@ def main(argv: list[str] | None = None) -> int:
         choices=EXTRACTION_BACKENDS,
         default="gliner2",
         help="what reconciliation uses to extract entities: 'gliner2' (default, local and LLM-free, "
-        "over the LongMemEval vocabulary) or 'lightrag' (LLM-based). Narrative summarization always "
-        "runs via a LightRAG wrapper's own LLM regardless of this choice -- GLiNER2 has no "
-        "generative capability -- so an LLM key is still needed either way.",
+        "over the LongMemEval vocabulary) or 'lightrag' (LLM-based, needs an LLM key).",
     )
     _learned_args(run)
     run.add_argument(
@@ -345,7 +343,6 @@ def _beam(args) -> int:
             hybrid=RecallConfig.from_mapping({"lanes": args.hybrid_lanes}),
             max_concurrent=args.max_concurrent,
             limit=args.limit,
-            summaries=not args.no_summaries,
             ontology=args.ontology,
             derive_seeds=args.derive_seeds,
             derive_workers=args.derive_workers,
@@ -369,7 +366,6 @@ def _beam(args) -> int:
                 "hybrid_lanes": args.hybrid_lanes,
                 "ontology": args.ontology,
                 "derive_seeds": args.derive_seeds if args.ontology == "learned" else None,
-                "summaries": not args.no_summaries,
             },
         )
         print(f"\nsaved run to {saved}")
@@ -405,12 +401,7 @@ def _kg(args) -> int:
 
 
 def _learned_args(parser) -> None:
-    """The reconcile options `run` and `beam` share: summaries, and a learned ontology (map #431)."""
-    parser.add_argument(
-        "--no-summaries",
-        action="store_true",
-        help="skip each session's summary LLM call when reconciling; recall never reads them",
-    )
+    """The reconcile options `run` and `beam` share: a learned ontology (map #431)."""
     parser.add_argument(
         "--ontology",
         choices=("fixed", "default", "learned"),
@@ -690,7 +681,6 @@ def _run(args) -> int:
                 text_search_limit=args.text_search_limit,
                 hybrid=RecallConfig.from_mapping({"lanes": args.hybrid_lanes}),
                 official_judge_model=official_model,
-                summaries=not args.no_summaries,
                 ontology=args.ontology,
                 derive_seeds=args.derive_seeds,
                 derive_workers=args.derive_workers,

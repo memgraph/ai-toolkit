@@ -1,14 +1,12 @@
 """Trigger reconciliation over an injected eval batch.
 
-Injection stages raw turns; reconciliation is what turns them into memory. It
-runs the same pass a real harness session would get -- one LLM call extracting
-entities into Chunks (semantic), and a second producing the session's Episode
-(episodic) -- so what retrieval is later scored against is the genuine emerged
-graph, not a shortcut built for eval.
+Injection stages raw turns; reconciliation indexes them. It runs the same
+pass a real harness session would get -- entity extraction into Chunks -- so
+what retrieval is later scored against is the genuine emerged graph, not a
+shortcut built for eval.
 
-Deliberately a separate step from injection: reconciliation is LLM-backed and
-slow, and running it per-injection would make staging a batch cost as much as
-scoring one.
+Deliberately a separate step from injection: extraction is slow, and running
+it per-injection would make staging a batch cost as much as scoring one.
 """
 
 import asyncio
@@ -21,9 +19,7 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
 
 from .inject import PENDING
 
-#: LightRAG's fallback store for anything not backed by Memgraph. Matches
-#: `sessions-graph reconcile --working-dir`'s default, so both entry points
-#: behave the same.
+#: LightRAG's fallback store for anything not backed by Memgraph.
 #:
 #: Must never be None. LightRAG guards on the *key* being present
 #: (``if "working_dir" in lightrag_kwargs``), not on its value, so a None
@@ -234,7 +230,6 @@ async def reconcile_batch(
     progress: bool = True,
     sessions_per_call: int = 20,
     gliner2_concurrency: int = 4,
-    summaries: bool = True,
     ontology: str = "fixed",
 ) -> Reconciled:
     """Reconcile pending sessions in the eval graph.
@@ -244,8 +239,8 @@ async def reconcile_batch(
     needs to know how much of the graph is actually populated before trusting a
     score computed against it.
 
-    No LightRAG wrapper is constructed when nothing is pending, so an empty
-    batch costs nothing and needs no LLM credentials.
+    No LightRAG wrapper is constructed when nothing is pending or GLiNER2
+    extracts, so neither needs LLM credentials.
 
     ``memgraph_url`` must name the same instance ``db`` is connected to, and is
     not optional in practice. LightRAG's Memgraph storage backends resolve their
@@ -271,13 +266,10 @@ async def reconcile_batch(
     inside ``range()`` rather than from an obviously-relevant validation.
     Ignored when ``extraction_backend="gliner2"`` -- see below.
 
-    ``extraction_backend`` picks what actually extracts entities: ``"lightrag"``
-    (default) or ``"gliner2"`` (local, LLM-free -- see
-    ``unstructured2graph.gliner2_backend.GLiNER2Backend``). Either way, a
-    ``MemgraphLightRAGWrapper`` is still constructed: narrative summarization
-    (``SessionsGraph.reconcile_session``'s Episode) is a generative task
-    GLiNER2 cannot do at all, so it always runs through the LightRAG wrapper's
-    own LLM regardless of which backend extracts entities. GLiNER2 extracts
+    ``extraction_backend`` picks what actually extracts entities: ``"gliner2"``
+    (default; local, LLM-free -- see
+    ``unstructured2graph.gliner2_backend.GLiNER2Backend``) or ``"lightrag"``
+    (LLM-based, through a ``MemgraphLightRAGWrapper``). GLiNER2 extracts
     against :data:`GLINER2_ONTOLOGY_PATH`, and a session whose output is not
     ontology-conformant is reported in ``errors``, since that is a bug.
     "gliner2" sessions go through ``reconcile_session``,
@@ -286,10 +278,6 @@ async def reconcile_batch(
     give LightRAG's own worker pool more than one document at a time, which
     is meaningless for a backend with no shared busy-lock or worker pool to
     fan out over in the first place.
-
-    ``summaries=False`` skips each session's summary LLM call (no Episode,
-    and no LightRAG wrapper at all on the GLiNER2 path): recall never reads
-    Episodes, so a hybrid benchmark build needs no LLM until it answers.
 
     ``ontology="default"`` or ``"learned"`` (GLiNER2 only) extracts each
     session under its user's adopted ontology version instead of
@@ -322,8 +310,7 @@ async def reconcile_batch(
     _resolve_llm_credentials()
     _resolve_reconciliation_tuning()
 
-    # The GLiNER2 path needs LightRAG only for the summary; skip it with them.
-    owns_wrapper = lightrag_wrapper is None and (summaries or extraction_backend != "gliner2")
+    owns_wrapper = lightrag_wrapper is None and extraction_backend != "gliner2"
 
     if memgraph_url:
         # Set, not defaulted: this is what LightRAG's stores actually follow.
@@ -381,8 +368,7 @@ async def reconcile_batch(
         if extraction_backend == "gliner2":
             # Several sessions at once, sharing one backend: extraction runs in
             # a worker thread per session (GLiNER2Backend.aingest_chunk uses
-            # asyncio.to_thread) and each session's summary is an awaited LLM
-            # call, so both overlap. Measured on 8 real sessions: 109 s serially,
+            # asyncio.to_thread), so sessions overlap. Measured on 8 real sessions: 109 s serially,
             # 70 s over 4 threads, identical mentions -- torch already uses
             # several intra-op threads, so returns flatten past 4. Memgraph
             # writes stay on the event loop thread, so no two MERGEs race.
@@ -394,14 +380,12 @@ async def reconcile_batch(
                 async with semaphore:
                     summary = await graph.reconcile_session(
                         session_id,
-                        lightrag_wrapper=lightrag_wrapper,
                         # None under a learned ontology: the user's adopted version.
                         extraction_backend=gliner2_backend,
                         enforce_ontology=True,
                         # The same file the backend extracts against, so label
                         # promotion and the domain/range check can't drift from it.
                         ontology_path=GLINER2_ONTOLOGY_PATH if gliner2_backend is not None else None,
-                        summarize=summaries,
                     )
                 if summary.nonconformant_entities or summary.nonconformant_relations:
                     # Zero by construction on GLiNER2 output (#355): nonzero is a bug.

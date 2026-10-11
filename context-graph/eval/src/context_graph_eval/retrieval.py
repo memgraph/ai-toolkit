@@ -165,7 +165,7 @@ class ReadOnlyGraph:
             raise InternalLabelRefusedError(
                 f"retrieval may not query internal storage {sorted(internal)}: these hold "
                 "LightRAG's own bookkeeping, including a cache of LLM responses that contains "
-                "the answers. Query the model instead (Session, Action, Chunk, Episode, and the "
+                "the answers. Query the model instead (Session, Action, Chunk, and the "
                 "entity labels)."
             )
         return self._db.query(cypher, params)

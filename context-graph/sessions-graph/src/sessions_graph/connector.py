@@ -73,7 +73,7 @@ class SessionsGraphConnector(GraphConnector):
         LLM, so it doesn't wait on ``auto_reconcile``; the hook never waits on
         the model. ``sessions-graph embed --pending`` retries what fails.
       - If ``auto_reconcile`` is enabled, best-effort spawns a **detached**
-        background process to run the actual (slow, LLM-backed) reconciliation,
+        background process to run the actual (slow, CPU-bound) reconciliation,
         so this hook call itself never waits on it. The reliable path if that
         detached process dies is the ``sessions-graph reconcile --pending`` CLI.
 
@@ -88,8 +88,8 @@ class SessionsGraphConnector(GraphConnector):
         it needs no LLM, so recall covers each turn as soon as it ends, and
         runtimes without a session-end hook (Codex, Antigravity,
         ``opencode run``) get embedded at all.
-      - Never spawns reconciliation: the session is still open and that step
-        costs LLM calls. The ``--pending`` sweep reconciles it, and a later
+      - Never spawns reconciliation: the session is still open and extraction
+        is slow. The ``--pending`` sweep reconciles it, and a later
         turn marks it pending again.
 
     Args:
@@ -98,7 +98,7 @@ class SessionsGraphConnector(GraphConnector):
             SESSION_END. Hook-based runtimes pass this explicitly, resolved
             from the persistent ``reconcile.auto_reconcile`` config-file
             setting. Defaults to ``False`` (off) when not given explicitly --
-            given the session summary's LLM cost, and per ADR 0002
+            local extraction is CPU-heavy, and per ADR 0002
             (config-file-only-hook-resolution): no ambient environment
             variable is consulted here. A caller constructing
             ``SessionsGraphConnector`` directly (not through the hook config

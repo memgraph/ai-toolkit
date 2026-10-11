@@ -96,13 +96,13 @@ def test_leaving_a_space_takes_effect_on_the_next_connection(admin, team, connec
 def test_widening_a_space_moves_members_to_a_new_role_without_a_gap(admin, team, connect):
     _, passwords = team
     before = {name for name in observed_state(admin).roles if name.startswith("space_payments_member")}
-    wider = _spec(spaces={"payments": {"members": ["alice", "bob"], "labels": ["Memory", "Episode"]}})
+    wider = _spec(spaces={"payments": {"members": ["alice", "bob"], "labels": ["Memory", "Note"]}})
 
     apply(wider, admin)
 
     after = {name for name in observed_state(admin).roles if name.startswith("space_payments_member")}
     assert len(after) == 1 and after != before
-    connect("bob", passwords["bob"], "CREATE (:Episode {summary: 'shared now'})", database="space_payments")
+    connect("bob", passwords["bob"], "CREATE (:Note {text: 'shared now'})", database="space_payments")
     assert _plan(admin, wider).empty
 
 
