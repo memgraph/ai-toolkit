@@ -173,6 +173,8 @@ class Recalled:
     #: Why the vector lanes didn't run, or None when they did.
     vector_lanes_off: str | None = None
     turn_chars: int = RecallConfig.turn_chars
+    #: Spaces that couldn't be searched, each with why; their rows are missing.
+    missing_spaces: tuple[str, ...] = ()
 
     def lines(self) -> list[str]:
         """The rows as text: exactly what the benchmark's answerer was shown."""
@@ -190,6 +192,8 @@ class Recalled:
         header.append(READING_RULES + ("\n" + MEMORY_RULE if self.memories else ""))
         if self.vector_lanes_off:
             header.append(f"Vector search is off ({self.vector_lanes_off}); these rows come from text search only.")
+        if self.missing_spaces:
+            header.append(f"Not searched, so rows from them are missing: {'; '.join(self.missing_spaces)}.")
         rows = "\n".join(self.lines()) or "(nothing in memory matched)"
         return "\n".join(header) + "\n\nRows:\n" + rows
 
@@ -200,6 +204,7 @@ class Recalled:
             "facts": [asdict(fact) for fact in self.facts],
             "memories": [asdict(note) for note in self.memories],
             "vector_lanes_off": self.vector_lanes_off,
+            **({"missing_spaces": list(self.missing_spaces)} if self.missing_spaces else {}),
         }
 
 
@@ -594,3 +599,47 @@ def _safe_query(question: str) -> str:
     reducing to words makes any question parseable.
     """
     return " ".join(t for t in _QUERY_TOKEN.findall(question) if t.lower() not in _STOPWORDS)
+
+
+#: Reciprocal rank fusion's damping constant: the usual 60, so a list's top few ranks don't drown the rest.
+RRF_K = 60
+
+
+def fuse(question: str, results: list[Recalled], *, memories_k: int, missing: tuple[str, ...] = ()) -> Recalled:
+    """One recall result from several spaces' results, the personal space's first.
+
+    Memories compete for one budget, so they are merged by reciprocal rank fusion
+    (each space ranks its own; raw scores from different databases aren't
+    comparable) and cut to *memories_k*. A note whose text another space already
+    holds is dropped, keeping the later space's copy: shared spaces come after
+    the personal one, and a promoted file belongs where it was shared. Turns and
+    facts, each already chosen by its space's own widths, are kept whole: turns
+    in time order, as recall shows them.
+    """
+    if len(results) == 1 and not missing:
+        return results[0]
+    scores: dict[int, float] = {}
+    notes: dict[int, MemoryNote] = {}
+    owner: dict[str, int] = {}
+    for space_index, result in enumerate(results):
+        for rank, note in enumerate(result.memories):
+            key = space_index * 1_000_000 + rank
+            scores[key] = 1.0 / (RRF_K + rank + 1)
+            notes[key] = note
+            if (previous := owner.get(note.text)) is not None:
+                scores[key] = max(scores[key], scores.pop(previous))
+                notes.pop(previous)
+            owner[note.text] = key
+    memories = [notes[key] for key in sorted(scores, key=lambda key: (-scores[key], key))][:memories_k]
+    turns = sorted((turn for result in results for turn in result.turns), key=lambda turn: turn.timestamp)
+    facts = [fact for result in results for fact in result.facts]
+    off = next((result.vector_lanes_off for result in results if result.vector_lanes_off), None)
+    return Recalled(
+        question=question,
+        turns=turns,
+        facts=facts,
+        memories=memories,
+        vector_lanes_off=off,
+        turn_chars=results[0].turn_chars if results else RecallConfig.turn_chars,
+        missing_spaces=missing,
+    )
