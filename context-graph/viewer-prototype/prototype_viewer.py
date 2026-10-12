@@ -9,8 +9,14 @@ Two structurally different variants per screen, switched with `v`:
 Run:  uv run --no-project --python 3.12 --with textual --with neo4j context-graph/viewer-prototype/prototype_viewer.py
 Keys: v variant · a scope (user → user+unattributed → all) · enter drill in · esc back · r refresh · q quit
 
-Reads the same config file as the hooks (CONTEXT_GRAPH_CONFIG or ~/.config/context-graph/config.toml).
+Reads the same config file as memgraph-context-graph's hooks (CONTEXT_GRAPH_CONFIG or
+~/.config/context-graph/config.toml), including `edition`: Community scopes to [identity] user_id, Enterprise to the
+Memgraph login. A real viewer would ship as `memgraph-context-graph ui`.
 Read-only. Polls every 3 s. The local capture-failure log (#378) does not exist yet and is stubbed.
+
+Tracks main@1b046f6: no Episodes (#520), no reconciliation LLM call (so no memory-cost tokens), GLiNER2 entities keyed
+by hash with `text` as the label, memory files reconciled on their own, resources-graph Touches, ontology versions.
+Not covered: Enterprise shared spaces (SpaceMembership databases), which need a licensed Memgraph to try.
 """
 
 import json
@@ -23,6 +29,7 @@ from typing import ClassVar
 import tomllib
 from neo4j import GraphDatabase
 from prototype_knowledge import EntityList
+from rich.markup import escape as esc
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
@@ -75,35 +82,55 @@ def bar(start, end, t0, t1, width=BAR_WIDTH) -> str:
 
 
 class Graph:
-    """All Cypher lives here (query/renderer split required by #381)."""
+    """All Cypher lives here (query/renderer split required by #381).
+
+    Never RETURN whole Action/Memory/entity nodes or properties(): since main@1b046f6 they carry embedding vectors.
+    """
 
     def __init__(self, cfg: dict):
         mg = cfg.get("memgraph", {})
         self.url = mg.get("url", "bolt://localhost:7687")
-        self.user_id = cfg.get("identity", {}).get("user_id")
+        self.edition = str(cfg.get("edition", "community")).lower()
+        # Identity follows memgraph-context-graph's SpaceResolver: Community reads [identity] user_id; Enterprise
+        # makes the Memgraph login the user and its personal space the login's main database (database=None).
+        if self.edition == "enterprise":
+            self.user_id = mg.get("user") or None
+            self.database = None
+        else:
+            self.user_id = cfg.get("identity", {}).get("user_id")
+            database = mg.get("database") or "memgraph"
+            self.database = None if database == "memgraph" else database
         self.driver = GraphDatabase.driver(self.url, auth=(mg.get("user", ""), mg.get("password", "")))
 
     def rows(self, query: str, **params) -> list[dict]:
-        with self.driver.session() as s:
+        with self.driver.session(database=self.database) as s:
             return [r.data() for r in s.run(query, **params)]
 
     def dashboard(self, scope: str) -> dict:
+        # Reconcile synthesizes `anon-<session_id>` users for sessions captured without one, so those count as
+        # unattributed alongside sessions with no owner at all.
         sessions = self.rows(
             """
             MATCH (s:Session)
             OPTIONAL MATCH (u:User)-[:HAD_SESSION]->(s)
-            WITH s, u.user_id AS owner
-            WHERE $scope = 'all' OR owner = $uid OR ($scope = 'user+unattributed' AND owner IS NULL)
+            // A session can end up with two owners: the anon-<id> user reconcile synthesizes, and the real user
+            // linked by a later SessionStart. Prefer the real one.
+            WITH s, collect(u.user_id) AS owners
+            WITH s, head([o IN owners WHERE NOT o STARTS WITH 'anon-'] + owners) AS owner
+            WITH s, owner, owner IS NULL OR owner STARTS WITH 'anon-' AS unattributed
+            WHERE $scope = 'all' OR owner = $uid OR ($scope = 'user+unattributed' AND unattributed)
             OPTIONAL MATCH (s)-[:HAS_ACTION|HAS_AGENT*1..2]->(a:Action)
-            WITH s, owner, count(CASE WHEN a.action_type <> 'tool_result' THEN 1 END) AS actions,
+            WITH s, owner, unattributed, count(CASE WHEN a.action_type <> 'tool_result' THEN 1 END) AS actions,
                  max(a.timestamp) AS last_event,
                  sum(CASE WHEN toString(a.is_error) = 'True' OR a.is_error = true THEN 1 ELSE 0 END) AS errors
             OPTIONAL MATCH (s)-[:HAS_ACTION]->(:Action)-[:HAS_CHUNK]->(c:Chunk)
-            WITH s, owner, actions, last_event, errors, count(DISTINCT c) AS chunks
-            RETURN s.session_id AS id, owner, s.working_directory AS wd, s.status AS status,
+            WITH s, owner, unattributed, actions, last_event, errors, count(DISTINCT c) AS chunks
+            RETURN s.session_id AS id, owner, unattributed, s.working_directory AS wd, s.status AS status,
                    s.started_at AS started, s.ended_at AS ended, s.reconciliation_status AS rstatus,
                    s.reconciliation_error AS rerror, s.reconciled_at AS reconciled_at,
-                   s.reconciliation_input_tokens AS in_tok, s.reconciliation_output_tokens AS out_tok,
+                   s.reextraction_error AS reerror, s.extraction_backend AS backend,
+                   s.ontology_version AS ontology_version, s.embedding_status AS estatus,
+                   s.embedding_error AS eerror, s.total_input_tokens AS in_tok, s.total_output_tokens AS out_tok,
                    actions, last_event, errors, chunks
             ORDER BY coalesce(last_event, s.started_at) DESC
             """,
@@ -111,19 +138,57 @@ class Graph:
             uid=self.user_id,
         )
         hidden = self.rows(
-            "MATCH (s:Session) WHERE NOT EXISTS { MATCH (:User)-[:HAD_SESSION]->(s) } RETURN count(s) AS n"
+            """
+            MATCH (s:Session) OPTIONAL MATCH (u:User)-[:HAD_SESSION]->(s)
+            WITH s, collect(u.user_id) AS owners
+            WHERE all(o IN owners WHERE o STARTS WITH 'anon-') RETURN count(s) AS n
+            """
         )[0]["n"]
         ids = [s["id"] for s in sessions]
+        # Memory files are reconciled on their own (#498) and belong to the user, not to a session.
+        memories = self.rows(
+            """
+            MATCH (u:User)-[:HAS_MEMORY]->(m:Memory)
+            WHERE $scope = 'all' OR u.user_id = $uid
+            RETURN m.path AS path, m.extraction_status AS status, m.extraction_error AS error,
+                   m.updated_at AS updated_at
+            """,
+            scope=scope,
+            uid=self.user_id,
+        )
+        touches = self.rows(
+            """
+            MATCH (t:Touch)-[:IN_SESSION]->(s:Session) WHERE s.session_id IN $ids
+            RETURN coalesce(t.status, 'unknown') AS status, count(t) AS n
+            """,
+            ids=ids,
+        )
+        ontology = self.rows(
+            """
+            MATCH (u:User) WHERE $scope = 'all' OR u.user_id = $uid
+            OPTIONAL MATCH (u)-[:ADOPTED]->(v:OntologyVersion)
+            RETURN u.user_id AS user, max(v.version) AS version, u.derive_milestone AS milestone
+            """,
+            scope=scope,
+            uid=self.user_id,
+        )
         new_entities = self.rows(
             """
             MATCH (s:Session)-[:HAS_ACTION]->(:Action)-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(e)
             WHERE s.session_id IN $ids AND s.reconciled_at IS NOT NULL
             WITH e, min(s.reconciled_at) AS first
-            RETURN substring(first, 0, 10) AS day, count(e) AS n
+            RETURN substring(toString(first), 0, 10) AS day, count(e) AS n
             """,
             ids=ids,
         )
-        return {"sessions": sessions, "unattributed": hidden, "new_entities": new_entities}
+        return {
+            "sessions": sessions,
+            "unattributed": hidden,
+            "memories": memories,
+            "touches": {r["status"]: r["n"] for r in touches},
+            "ontology": [o for o in ontology if not str(o["user"]).startswith("anon-")],
+            "new_entities": new_entities,
+        }
 
     def session(self, session_id: str) -> dict:
         actions = self.rows(
@@ -143,20 +208,40 @@ class Graph:
             """,
             id=session_id,
         )
+        # No Episode since #520: what a session produced is its chunks, the entities they mention, and memory files.
         derived = self.rows(
             """
             MATCH (s:Session {session_id: $id})
-            OPTIONAL MATCH (s)-[:HAS_EPISODE]->(ep:Episode)
             OPTIONAL MATCH (s)-[:HAS_ACTION]->(:Action)-[:HAS_CHUNK]->(c:Chunk)
             OPTIONAL MATCH (c)<-[:MENTIONED_IN]-(e)
-            RETURN s.started_at AS started, s.ended_at AS ended, s.reconciliation_status AS rstatus,
-                   ep.summary AS summary, count(DISTINCT c) AS chunks,
-                   collect(DISTINCT coalesce(e.name, e.entity_id, e.id))[..12] AS entities,
-                   count(DISTINCT e) AS entity_count
+            WITH s, count(DISTINCT c) AS chunks, count(DISTINCT e) AS entity_count,
+                 collect(DISTINCT coalesce(e.text, e.name, e.entity_id))[..12] AS entities
+            OPTIONAL MATCH (s)-[:PRODUCED_MEMORY]->(m:Memory)
+            RETURN s.reconciliation_status AS rstatus, s.reconciliation_error AS rerror,
+                   s.extraction_backend AS backend, s.ontology_version AS ontology_version,
+                   s.embedding_status AS estatus, chunks, entity_count, entities,
+                   collect(DISTINCT m.path) AS memories
             """,
             id=session_id,
         )
-        return {"actions": [a for a in actions if a["type"] != "tool_result"], "derived": derived[0] if derived else {}}
+        touches = self.rows(
+            """
+            MATCH (t:Touch)-[:IN_SESSION]->(:Session {session_id: $id})
+            OPTIONAL MATCH (t)-[:CAUSED_BY]->(c:Action)
+            OPTIONAL MATCH (t)-[:TOUCHED]->(r)
+            RETURN c.action_id AS action_id, t.status AS status, t.served_from_memory AS from_memory,
+                   [l IN labels(r) WHERE l <> 'Resource'][0] AS kind, coalesce(r.address, r.node_id) AS address
+            """,
+            id=session_id,
+        )
+        by_action = defaultdict(list)
+        for t in touches:
+            by_action[t["action_id"]].append(t)
+        return {
+            "actions": [a for a in actions if a["type"] != "tool_result"],
+            "derived": derived[0] if derived else {},
+            "touches": by_action,
+        }
 
 
 # ---------------------------------------------------------------- dashboard
@@ -183,23 +268,43 @@ def health_hints(data: dict) -> list[str]:
     errs = sum(s["errors"] for s in sessions)
     if errs:
         hints.append(f"[red]{errs} failed tool result(s)[/] (tool errors, not capture errors)")
+    unresolved = data["touches"].get("pending", 0) + data["touches"].get("unresolved", 0)
+    if unresolved:
+        hints.append(f"[yellow]{unresolved} resource touch(es) pending/unresolved[/] (resources-graph sweep)")
     if data["unattributed"]:
         hints.append(f"{data['unattributed']} unattributed session(s) in graph — press [b]a[/] to widen scope")
     return hints
 
 
+def count_line(label: str, values) -> str:
+    counts = Counter(v or "not marked" for v in values)
+    return f"{label}: " + ("  ".join(f"{k} [b]{v}[/]" for k, v in sorted(counts.items())) or "[dim]none[/]")
+
+
 def pipeline_lines(data: dict) -> list[str]:
-    counts = Counter(s["rstatus"] or "not marked" for s in data["sessions"])
-    lines = ["  ".join(f"{k}: [b]{v}[/]" for k, v in sorted(counts.items()))]
-    tok = [(s["in_tok"] or 0) + (s["out_tok"] or 0) for s in data["sessions"]]
-    lines.append(
-        f"memory cost: [b]{sum(tok)}[/] tokens"
-        if any(tok)
-        else "memory cost: [dim]not recorded yet (#381 write-side task)[/]"
-    )
-    for s in data["sessions"]:
-        if s["rstatus"] == "failed":
-            lines.append(f"[red]✕ {s['id'][:8]}[/] {str(s['rerror'])[:70]}")
+    sessions = data["sessions"]
+    # Every TURN_END flips a session back to pending, so an active session reads `pending` even after a reconcile.
+    lines = [
+        count_line("sessions", (s["rstatus"] for s in sessions)) + "  [dim](pending returns after each turn)[/]",
+        count_line("memory files", (m["status"] for m in data["memories"])),
+        count_line("embeddings", (s["estatus"] for s in sessions)),
+    ]
+    for o in data["ontology"]:
+        version = "default (v0)" if o["version"] is None else f"v{o['version']}"
+        lines.append(f"ontology for {o['user']}: [b]{version}[/]  derive milestone {o['milestone'] or '—'}")
+    backends = Counter(s["backend"] for s in sessions if s["backend"])
+    if backends:
+        lines.append("extracted by: " + ", ".join(f"{b} {n}" for b, n in backends.items()))
+    tokens = sum((s["in_tok"] or 0) + (s["out_tok"] or 0) for s in sessions)
+    # Reconcile makes no LLM call since #520, so the only token spend to show is the harness's own (capture side).
+    lines.append(f"capture tokens: [b]{tokens}[/]" if tokens else "capture tokens: [dim]not reported by the runtime[/]")
+    for s in sessions:
+        for kind, err in (("reconcile", s["rerror"]), ("re-extract", s["reerror"]), ("embed", s["eerror"])):
+            if err and (kind != "reconcile" or s["rstatus"] == "failed"):
+                lines.append(f"[red]✕ {s['id'][:8]} {kind}[/] {esc(str(err)[:60])}")
+    for m in data["memories"]:
+        if m["status"] == "failed":
+            lines.append(f"[red]✕ memory {esc(str(m['path']))}[/] {esc(str(m['error'])[:50])}")
     return lines
 
 
@@ -238,7 +343,7 @@ def session_row(s: dict, variant: str) -> list:
     tokens = (s["in_tok"] or 0) + (s["out_tok"] or 0)
     return [
         s["id"][:8],
-        s["owner"] or Text("unattributed", style="dim"),
+        Text("unattributed", style="dim") if s["unattributed"] else s["owner"],
         Path(s["wd"]).name if s["wd"] else Text("—", style="dim"),
         s["status"] or "—",
         s["actions"],
@@ -342,6 +447,13 @@ def action_label(a: dict) -> str:
     return a["type"] or "?"
 
 
+def touch_marker(touches: list[dict] | None) -> str:
+    """A resources-graph Touch caused by this tool call: ◆ resolved, ◇ still pending/unresolved."""
+    if not touches:
+        return ""
+    return "".join("◆" if t["status"] == "resolved" else "◇" for t in touches) + " "
+
+
 def duration(a: dict) -> str:
     s, e = parse_ts(a["at"]), parse_ts(a["result_at"])
     if not (s and e):
@@ -406,18 +518,19 @@ class SessionScreen(Screen):
                     tree.root if agent is None else tree.root.add(f"▾ subagent {agent} ({len(items)})", expand=True)
                 )
                 for a in items:
-                    err = " [red]✕[/]" if is_true(a["result_error"]) else ""
-                    b = bar(parse_ts(a["at"]), parse_ts(a["result_at"]), t0, t1)
-                    parent.add_leaf(
-                        Text.from_markup(f"{action_label(a)[:44]:<44} {duration(a):>7}{err} [cyan]{b}[/]"), data=a["id"]
-                    )
+                    label = Text(f"{action_label(a)[:44]:<44} {duration(a):>7}")
+                    if is_true(a["result_error"]):
+                        label.append(" ✕", style="red")
+                    label.append(f" {touch_marker(data['touches'].get(a['id']))}", style="magenta")
+                    label.append(bar(parse_ts(a["at"]), parse_ts(a["result_at"]), t0, t1), style="cyan")
+                    parent.add_leaf(label, data=a["id"])
         else:
             table = self.query_one("#timeline", DataTable)
             table.clear(columns=True)
-            table.add_columns("", "action", "dur", "err", "timeline")
+            table.add_columns("", "action", "dur", "err", "res", "timeline")
             for agent, items in sorted(groups.items(), key=lambda kv: kv[0] is not None):
                 if agent is not None:
-                    table.add_row("▾", Text(f"subagent {agent}", style="bold"), "", "", "")
+                    table.add_row("▾", Text(f"subagent {agent}", style="bold"), "", "", "", "")
                 for a in items:
                     indent = "  " if agent is None else "    "
                     table.add_row(
@@ -425,18 +538,25 @@ class SessionScreen(Screen):
                         action_label(a)[:50],
                         duration(a),
                         Text("✕", style="red") if is_true(a["result_error"]) else "",
+                        Text(touch_marker(data["touches"].get(a["id"])), style="magenta"),
                         Text(bar(parse_ts(a["at"]), parse_ts(a["result_at"]), t0, t1), style="cyan"),
                         key=a["id"],
                     )
 
+        self._touches = data["touches"]
         d = data["derived"]
-        ents = ", ".join(str(e) for e in d.get("entities", []) if e)
-        self.query_one("#derived", Static).update(
-            f"[b]Produced[/] (linked at session level, #381)  reconcile: {d.get('rstatus') or '—'}"
-            f"  ·  Chunks {d.get('chunks', 0)} · Entities {d.get('entity_count', 0)}\n"
-            f"[dim]{ents[:220]}[/]\n"
-            f"Episode: {d.get('summary') or '[dim]none yet[/]'}"
-        )
+        version = d.get("ontology_version")
+        out = Text()
+        out.append("Produced", style="bold").append(" (linked at session level, #381)  ")
+        out.append(f"reconcile {d.get('rstatus') or '—'}  ·  backend {d.get('backend') or '—'}  ·  ")
+        out.append(f"ontology {'—' if version is None else f'v{version}'}  ·  embeddings {d.get('estatus') or '—'}\n")
+        out.append(f"Chunks {d.get('chunks', 0)} · Entities {d.get('entity_count', 0)}  ")
+        out.append(", ".join(str(e) for e in d.get("entities", []) if e)[:200], style="dim")
+        if d.get("memories"):
+            out.append("\nMemory files written: " + ", ".join(str(p) for p in d["memories"])[:200])
+        if d.get("rstatus") == "failed" and d.get("rerror"):
+            out.append(f"\n✕ {str(d['rerror'])[:200]}", style="red")
+        self.query_one("#derived", Static).update(out)
 
     def _show_details(self, action_id) -> None:
         a = self._actions.get(action_id) if action_id else None
@@ -446,9 +566,14 @@ class SessionScreen(Screen):
             inp = json.dumps(json.loads(a["props"] or "{}").get("tool_input", {}), indent=1)[:900]
         except ValueError:
             inp = str(a["props"])[:900]
-        self.query_one("#details", Static).update(
-            f"[b]{a['type']}[/] {a['tool'] or ''}\nat  {a['at']}\ndur {duration(a)}\nagent {a['agent'] or 'main'}\n\n{inp}"
-        )
+        out = Text()
+        out.append(f"{a['type']}", style="bold").append(f" {a['tool'] or ''}\nat  {a['at']}\ndur {duration(a)}\n")
+        out.append(f"agent {a['agent'] or 'main'}\n")
+        for t in getattr(self, "_touches", {}).get(a["id"], []):
+            source = "memory" if is_true(t["from_memory"]) else "live"
+            out.append(f"touched {t['kind']} {t['address']} · {t['status']} · {source}\n", style="magenta")
+        out.append(f"\n{inp}")
+        self.query_one("#details", Static).update(out)
 
     def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
         self._show_details(event.node.data)
@@ -493,6 +618,10 @@ class Viewer(App):
         self.session_data: dict = {}
         self.last_ok = None
         self.error = None
+
+    def scope_user(self):
+        """The user whose memory files count, or None for scope `all`."""
+        return None if self.scope == "all" else self.graph.user_id
 
     def status_line(self) -> str:
         state = f"⚠ stale: {self.error[:60]}" if self.error else "● live"

@@ -27,9 +27,14 @@ from textual.widgets import DataTable, Footer, Header, Input, Static, Tree
 PER_GROUP = 12
 VARIANTS = ["A", "B", "C"]
 
-# Entities are whatever MENTIONED_IN a Chunk (unstructured2graph owns that contract), so the queries
-# don't depend on LightRAG's `base` label. Name falls back across backends' id properties.
-NAME = "coalesce(e.entity_id, e.name, e.id)"
+# Entities are whatever MENTIONED_IN a Chunk (unstructured2graph owns that contract), plus (:User), which facts
+# about the user point at but which is never mentioned (main@1b046f6). The key falls back across backends: GLiNER2's
+# entity_id is a sha256, LightRAG's is the name, a User's is user_id. Display labels come from `text` (below).
+NAME = "coalesce(e.entity_id, e.name, e.id, e.user_id)"
+ENTITY = "(e:gliner2 OR e:base OR e:User)"
+NEIGHBOUR = "(f:gliner2 OR f:base OR f:User)"
+# hygm.VALUE_LABELS: one node per mention ("every 3 is a different fact"), so they swamp lists (#383).
+VALUE_LABELS = ["Duration", "Quantity", "Money", "Date", "TimeWindow"]
 LABELS: dict[str, str] = {}  # entity key -> display label, filled from every query result
 
 
@@ -37,27 +42,41 @@ def name(key) -> str:
     return LABELS.get(key) or str(key)
 
 
-def entity_list(graph, session_ids: list[str], only_session: str | None) -> list[dict]:
+def entity_list(graph, session_ids: list[str], only_session: str | None, user_id, hide_values: bool) -> list[dict]:
+    # Support counts sessions *and* the user's memory files (#498 reconciles those on their own).
     return graph.rows(
         f"""
-        MATCH (s:Session)-[:HAS_ACTION]->(:Action)-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(e)
-        WHERE s.session_id IN $ids AND ($only IS NULL OR s.session_id = $only)
-        WITH e, count(DISTINCT s) AS support
+        CALL {{
+          MATCH (s:Session)-[:HAS_ACTION]->(:Action)-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(e)
+          WHERE s.session_id IN $ids AND ($only IS NULL OR s.session_id = $only)
+          RETURN e, s.session_id AS source
+          UNION
+          MATCH (u:User)-[:HAS_MEMORY]->(m:Memory)-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(e)
+          WHERE $only IS NULL AND ($uid IS NULL OR u.user_id = $uid)
+          RETURN e, 'memory:' + m.path AS source
+        }}
+        WITH e, count(DISTINCT source) AS support
+        WHERE NOT ($hide AND any(l IN labels(e) WHERE l IN $values))
         OPTIONAL MATCH (e)-[r]-(f)
         WHERE type(r) <> 'MENTIONED_IN'
-        WITH e, support, count(DISTINCT r) AS degree
-        RETURN {NAME} AS id, coalesce(e.text, {NAME}) AS label, e.entity_type AS type, support, degree, e.created_at AS created
+        WITH e, support, count(DISTINCT f) AS degree
+        OPTIONAL MATCH (e)-[mi:MENTIONED_IN]->()
+        RETURN {NAME} AS id, coalesce(e.text, {NAME}) AS label, e.entity_type AS type, support, degree,
+               count(mi) AS mentions
         ORDER BY support DESC, degree DESC, id
         LIMIT 1000
         """,
         ids=session_ids,
         only=only_session,
+        uid=user_id,
+        hide=hide_values,
+        values=VALUE_LABELS,
     )
 
 
-def entity_provenance(graph, entity_id: str, session_ids: list[str]) -> dict:
+def entity_provenance(graph, entity_id: str, session_ids: list[str], user_id) -> dict:
     head = graph.rows(
-        f"MATCH (e) WHERE {NAME} = $id AND exists((e)-[:MENTIONED_IN]->()) "
+        f"MATCH (e) WHERE {NAME} = $id AND {ENTITY} "
         "RETURN coalesce(e.description, e.text) AS description, e.entity_type AS type, labels(e) AS labels LIMIT 1",
         id=entity_id,
     )
@@ -65,27 +84,44 @@ def entity_provenance(graph, entity_id: str, session_ids: list[str]) -> dict:
         f"""
         MATCH (e)-[:MENTIONED_IN]->(c:Chunk)<-[:HAS_CHUNK]-(:Action)<-[:HAS_ACTION]-(s:Session)
         WHERE {NAME} = $id AND s.session_id IN $ids
-        OPTIONAL MATCH (s)-[:HAS_EPISODE]->(ep:Episode)
-        RETURN s.session_id AS session, s.reconciled_at AS reconciled_at, ep.summary AS summary,
+        RETURN s.session_id AS session, s.reconciled_at AS reconciled_at, s.working_directory AS wd,
                count(DISTINCT c) AS chunks
         ORDER BY reconciled_at DESC
         """,
         id=entity_id,
         ids=session_ids,
     )
-    return {**(head[0] if head else {}), "sessions": sessions}
+    memories = graph.rows(
+        f"""
+        MATCH (e)-[:MENTIONED_IN]->(:Chunk)<-[:HAS_CHUNK]-(m:Memory)<-[:HAS_MEMORY]-(u:User)
+        WHERE {NAME} = $id AND ($uid IS NULL OR u.user_id = $uid)
+        RETURN DISTINCT m.path AS path
+        """,
+        id=entity_id,
+        uid=user_id,
+    )
+    return {**(head[0] if head else {}), "sessions": sessions, "memories": [m["path"] for m in memories]}
 
 
 def neighbours(graph, entity_id: str) -> list[dict]:
+    # GLiNER2 keys relations per chunk and source turn, so one fact is often several parallel edges: fold them into
+    # one row per (direction, type, neighbour) and keep the strongest evidence.
     return graph.rows(
         f"""
         MATCH (e)-[r]-(f)
-        WHERE {NAME} = $id AND type(r) <> 'MENTIONED_IN' AND exists((f)-[:MENTIONED_IN]->())
-        RETURN startNode(r) = e AS outgoing, type(r) AS rel_type, r.keywords AS keywords,
-               coalesce(r.weight, r.confidence) AS weight, coalesce(r.description, r.text) AS description,
-               coalesce(r.created_at, r.valid_at) AS created, r.ontology_conformant AS conformant,
-               coalesce(f.entity_id, f.name, f.id) AS id, coalesce(f.text, f.entity_id, f.name, f.id) AS label,
-               f.entity_type AS type
+        WHERE {NAME} = $id AND type(r) <> 'MENTIONED_IN' AND {NEIGHBOUR}
+        WITH startNode(r) = e AS outgoing, type(r) AS rel_type, f, r
+        ORDER BY coalesce(r.weight, r.confidence) DESC
+        WITH outgoing, rel_type, f, collect(r) AS rs
+        WITH outgoing, rel_type, f, rs, rs[0] AS best
+        RETURN outgoing, rel_type, best.keywords AS keywords,
+               coalesce(best.weight, best.confidence) AS weight, coalesce(best.description, best.text) AS description,
+               toString(coalesce(best.created_at, best.valid_at)) AS created,
+               any(x IN rs WHERE toString(x.ontology_conformant) = 'false') AS nonconformant,
+               best.role AS role, size(rs) AS edges,
+               coalesce(f.entity_id, f.name, f.id, f.user_id) AS id,
+               coalesce(f.text, f.entity_id, f.name, f.id, 'you (' + f.user_id + ')') AS label,
+               coalesce(f.entity_type, CASE WHEN f:User THEN 'User' END) AS type
         """,
         id=entity_id,
     )
@@ -105,7 +141,7 @@ def arrow(n: dict) -> str:
 
 
 def off_ontology(n: dict) -> bool:
-    return str(n.get("conformant")).lower() == "false"
+    return bool(n.get("nonconformant"))
 
 
 def fmt_epoch(value) -> str:
@@ -129,11 +165,14 @@ def provenance_markup(entity_id: str, prov: dict) -> Text:
     out.append(f"\nSessions in scope ({len(sessions)})", style="bold")
     out.append("  provenance is session-level (#381)\n", style="dim")
     for s in sessions[:6]:
-        out.append(f"▸ {s['session'][:8]}  {str(s['reconciled_at'] or '')[:10]}  chunks {s['chunks']}\n")
-        if s["summary"]:
-            out.append(f"  {str(s['summary'])[:160]}\n", style="dim")
+        project = str(s["wd"]).rstrip("/").rsplit("/", 1)[-1] if s.get("wd") else "—"
+        out.append(f"▸ {s['session'][:8]}  {str(s['reconciled_at'] or '')[:10]}  {project}  chunks {s['chunks']}\n")
     if not sessions:
         out.append("none in the current scope — press a on the dashboard to widen\n", style="dim")
+    if prov.get("memories"):
+        out.append(f"\nMemory files ({len(prov['memories'])})\n", style="bold")
+        for path in prov["memories"][:6]:
+            out.append(f"▸ {path}\n")
     return out
 
 
@@ -143,13 +182,14 @@ class EntityList(Screen):
         Binding("escape", "app.pop_screen", "back"),
         Binding("slash", "filter", "filter"),
         Binding("r", "reload", "reload"),
+        Binding("h", "toggle_values", "value types"),
     ]
 
     def __init__(self, session_id: str | None = None):
         super().__init__()
         self.session_id = session_id
         self.rows: list[dict] = []
-        self._prov_target = None
+        self.hide_values = True  # value types swamp the list (#383); `h` shows them
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -172,7 +212,9 @@ class EntityList(Screen):
     @work(thread=True, exclusive=True, group="entities")
     def load(self) -> None:
         try:
-            rows = entity_list(self.app.graph, scoped_session_ids(self.app), self.session_id)
+            rows = entity_list(
+                self.app.graph, scoped_session_ids(self.app), self.session_id, self.app.scope_user(), self.hide_values
+            )
             self.app.call_from_thread(self._apply, rows)
         except Exception as exc:
             self.app.call_from_thread(self.app._fail, exc)
@@ -185,13 +227,15 @@ class EntityList(Screen):
     def _fill(self, needle: str) -> None:
         table = self.query_one("#entities", DataTable)
         table.clear(columns=True)
-        table.add_columns("entity", "type", "support", "degree", "first seen")
+        table.add_columns("entity", "type", "support", "degree", "mentions")
         shown = [r for r in self.rows if needle.lower() in str(r["label"]).lower()]
         for r in shown:
-            table.add_row(
-                str(r["label"])[:48], r["type"] or "—", r["support"], r["degree"], fmt_epoch(r["created"]), key=r["id"]
-            )
+            table.add_row(str(r["label"])[:48], r["type"] or "—", r["support"], r["degree"], r["mentions"], key=r["id"])
         self.sub_title = f"{len(shown)} of {len(self.rows)} entities · {self.app.status_line()}"
+
+    def action_toggle_values(self) -> None:
+        self.hide_values = not self.hide_values
+        self.load()
 
     def action_filter(self) -> None:
         self.query_one("#filter", Input).focus()
@@ -209,7 +253,7 @@ class EntityList(Screen):
     @work(thread=True, exclusive=True, group="prov")
     def load_prov(self, entity_id: str) -> None:
         try:
-            prov = entity_provenance(self.app.graph, entity_id, scoped_session_ids(self.app))
+            prov = entity_provenance(self.app.graph, entity_id, scoped_session_ids(self.app), self.app.scope_user())
             self.app.call_from_thread(self.query_one("#prov", Static).update, provenance_markup(entity_id, prov))
         except Exception as exc:
             self.app.call_from_thread(self.app._fail, exc)
@@ -255,7 +299,9 @@ class Neighbourhood(Screen):
     def load(self) -> None:
         try:
             items = neighbours(self.app.graph, self.entity_id)
-            prov = entity_provenance(self.app.graph, self.entity_id, scoped_session_ids(self.app))
+            prov = entity_provenance(
+                self.app.graph, self.entity_id, scoped_session_ids(self.app), self.app.scope_user()
+            )
             self.app.call_from_thread(self._apply, items, prov)
         except Exception as exc:
             self.app.call_from_thread(self.app._fail, exc)
@@ -316,7 +362,8 @@ class Neighbourhood(Screen):
         out.append(name(self.entity_id), style="bold").append(f" {arrow(n)} ")
         out.append(relation_name(n), style="bold").append(f" {arrow(n)} ").append(str(n["label"]), style="bold")
         out.append(
-            f"\nrel type {n['rel_type']} · keywords {n['keywords'] or '—'} · weight {n['weight'] or '—'}"
+            f"\nrel type {n['rel_type']} · role {n.get('role') or '—'} · {n['edges']} edge(s)"
+            f" · keywords {n['keywords'] or '—'} · confidence/weight {n['weight'] or '—'}"
             f" · {fmt_epoch(n['created'])}\n",
             style="dim",
         )
