@@ -17,8 +17,8 @@ _PLUGINS = Path(__file__).resolve().parents[2] / "plugins"
 @pytest.mark.parametrize(
     ("plugin_dir", "spec"),
     [
-        pytest.param("memgraph-context-graph-claude", claude_code.SPEC, id="claude-code"),
-        pytest.param("memgraph-context-graph-codex", codex.SPEC, id="codex"),
+        pytest.param("agent-context-graph-claude", claude_code.SPEC, id="claude-code"),
+        pytest.param("agent-context-graph-codex", codex.SPEC, id="codex"),
     ],
 )
 def test_plugin_registers_every_adapter_hook(plugin_dir, spec):
