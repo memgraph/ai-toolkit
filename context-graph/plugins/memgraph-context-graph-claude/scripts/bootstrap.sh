@@ -15,10 +15,10 @@ EOF
   exit 1
 fi
 
-uv tool install "memgraph-context-graph[mcp]>=0.4.0" \
+uv tool install "memgraph-context-graph[mcp]>=0.5.0" \
   --with "skills-graph[memgraph-context-graph]>=0.2.1" \
   --with "actions-graph[memgraph-context-graph]>=0.4.1" \
-  --with "sessions-graph[memgraph-context-graph]>=0.7.1" \
+  --with "sessions-graph[memgraph-context-graph]>=0.8.0" \
   --upgrade \
   --refresh-package memgraph-context-graph \
   --refresh-package skills-graph \
