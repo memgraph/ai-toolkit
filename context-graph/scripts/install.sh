@@ -2,7 +2,7 @@
 # One-command setup for Context Graph on a supported agent runtime: start Memgraph
 # if nothing is reachable, register the plugin marketplace, install the
 # plugin (this is what actually wires hooks into the runtime -- `bootstrap`
-# alone does not), install the agent-context-graph CLI with all three
+# alone does not), install the memgraph-context-graph CLI with all three
 # connectors, set your identity, and verify with `doctor`.
 #
 # Usage:
@@ -14,7 +14,7 @@
 #                                 cursor, opencode, antigravity-cli, or grok
 #   CONTEXT_GRAPH_PROJECT_DIR     project to wire for copilot-cli, cursor,
 #                                 opencode, antigravity-cli, grok (default: current directory)
-#   AGENT_CONTEXT_GRAPH_USER_ID   identity to record (default: git user.name, else $USER)
+#   MEMGRAPH_CONTEXT_GRAPH_USER_ID   identity to record (default: git user.name, else $USER)
 #   MEMGRAPH_HOST / MEMGRAPH_PORT default localhost:7687
 #   CONTEXT_GRAPH_MEMGRAPH_CONTAINER default context-graph-memgraph (existing data preserved)
 #   SKIP_MEMGRAPH=1               don't start a local Memgraph even if none is reachable
@@ -99,7 +99,7 @@ if ! command -v uv >/dev/null 2>&1; then
   if [[ "${SKIP_UV_INSTALL:-0}" == "1" ]]; then
     fail "uv not found and SKIP_UV_INSTALL=1: https://astral.sh/uv/install.sh"
   fi
-  log "Installing uv (manages Python for the agent-context-graph tool)"
+  log "Installing uv (manages Python for the memgraph-context-graph tool)"
   curl -LsSf https://astral.sh/uv/install.sh | sh
   export PATH="$HOME/.local/bin:$PATH"
   command -v uv >/dev/null 2>&1 || fail "uv install did not put 'uv' on PATH -- open a new shell and rerun."
@@ -160,27 +160,27 @@ case "$RUNTIME" in
     ;;
 esac
 
-# ---- 4. agent-context-graph CLI + connectors ---------------------------------
-log "Installing agent-context-graph with skills-graph, actions-graph, sessions-graph"
-uv tool install "agent-context-graph>=0.1.9" \
-  --with "skills-graph[agent-context-graph]>=0.1.3" \
-  --with "actions-graph[agent-context-graph]>=0.1.1" \
-  --with "sessions-graph[agent-context-graph]>=0.1.2" \
+# ---- 4. memgraph-context-graph CLI + connectors -------------------------------
+log "Installing memgraph-context-graph with skills-graph, actions-graph, sessions-graph"
+uv tool install "memgraph-context-graph>=0.5.0" \
+  --with "skills-graph[memgraph-context-graph]>=0.2.1" \
+  --with "actions-graph[memgraph-context-graph]>=0.4.1" \
+  --with "sessions-graph[memgraph-context-graph]>=0.8.0" \
   --upgrade \
-  --refresh-package agent-context-graph \
+  --refresh-package memgraph-context-graph \
   --refresh-package skills-graph \
   --refresh-package actions-graph
 
 # uv tool shims land in `uv tool dir --bin` (usually ~/.local/bin), which may
 # not be on PATH yet even when uv itself came from elsewhere (Homebrew, pipx).
 export PATH="$(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin"):$PATH"
-command -v agent-context-graph >/dev/null 2>&1 || fail "agent-context-graph installed but not on PATH -- add $(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin") to PATH and rerun."
+command -v memgraph-context-graph >/dev/null 2>&1 || fail "memgraph-context-graph installed but not on PATH -- add $(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin") to PATH and rerun."
 
 log "Bootstrapping ($RUNTIME)"
 connector_flags=()
 for c in "${CONNECTORS[@]}"; do connector_flags+=(--connector "$c"); done
 MEMGRAPH_HOST="$MEMGRAPH_HOST" MEMGRAPH_PORT="$MEMGRAPH_PORT" \
-  agent-context-graph bootstrap --runtime "$RUNTIME" "${connector_flags[@]}" --no-reinstall
+  memgraph-context-graph bootstrap --runtime "$RUNTIME" "${connector_flags[@]}" --no-reinstall
 
 if [[ "$RUNTIME_WIRING" == project ]]; then
   log "Installing project-local $RUNTIME_LABEL capture wiring in $PROJECT_DIR"
@@ -189,18 +189,18 @@ if [[ "$RUNTIME_WIRING" == project ]]; then
   # repeated installs; the JSON hook files are merged instead.
   [[ "$RUNTIME" == opencode ]] && init_flags+=(--force)
   # The `+` expansion keeps an empty array safe under `set -u` on bash 3.2 (macOS).
-  agent-context-graph hook init "$RUNTIME" --project-dir "$PROJECT_DIR" "${connector_flags[@]}" ${init_flags[@]+"${init_flags[@]}"}
+  memgraph-context-graph hook init "$RUNTIME" --project-dir "$PROJECT_DIR" "${connector_flags[@]}" ${init_flags[@]+"${init_flags[@]}"}
 fi
 
 # ---- 5. Identity --------------------------------------------------------------
-USER_ID="${AGENT_CONTEXT_GRAPH_USER_ID:-$(git config --get user.name 2>/dev/null || true)}"
+USER_ID="${MEMGRAPH_CONTEXT_GRAPH_USER_ID:-$(git config --get user.name 2>/dev/null || true)}"
 USER_ID="${USER_ID:-$USER}"
 log "Setting identity.user_id = ${USER_ID}"
-agent-context-graph config set identity.user_id "$USER_ID"
+memgraph-context-graph config set identity.user_id "$USER_ID"
 
 # ---- 6. Verify -----------------------------------------------------------------
 log "Verifying"
-agent-context-graph doctor --runtime "$RUNTIME" "${connector_flags[@]}"
+memgraph-context-graph doctor --runtime "$RUNTIME" "${connector_flags[@]}"
 
 echo ""
 echo -e "\033[1;32m✓ Context Graph is live.\033[0m Use $RUNTIME_LABEL normally -- every session now"

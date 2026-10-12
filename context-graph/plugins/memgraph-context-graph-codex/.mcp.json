@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "context-graph": {
-      "command": "agent-context-graph",
+      "command": "memgraph-context-graph",
       "args": ["mcp"],
       "env_vars": ["CONTEXT_GRAPH_CONFIG"]
     }

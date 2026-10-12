@@ -1,11 +1,11 @@
-# Agent Context Graph for Claude Code
+# Memgraph Context Graph for Claude Code
 
-Claude Code runtime plugin for Agent Context Graph.
+Claude Code runtime plugin for Memgraph Context Graph.
 
 The plugin installs Claude Code lifecycle hooks that call:
 
 ```bash
-agent-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
+memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
 Flow:
@@ -14,7 +14,7 @@ Flow:
 Claude Code Plugin -> Claude Code Runtime Adapter -> Event Protocol -> Graph Connector -> Memgraph
 ```
 
-The plugin is only deployment wiring. Agent Context Graph normalizes runtime events. Graph connectors decide what to persist.
+The plugin is only deployment wiring. Memgraph Context Graph normalizes runtime events. Graph connectors decide what to persist.
 
 ## First Run
 
@@ -35,22 +35,22 @@ docker run --rm -p 7687:7687 memgraph/memgraph-mage
 Bootstrap installs and verifies:
 
 ```bash
-agent-context-graph bootstrap --runtime claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
+memgraph-context-graph bootstrap --runtime claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
 ## Recall
 
-The plugin also bundles an MCP server, `agent-context-graph mcp` (see `.mcp.json`), which gives the model a `recall` tool (`mcp__plugin_context-graph_context-graph__recall`) over the user's own past sessions. At session start the hook adds one line telling the model the tool is there; the model calls it when a question needs memory. Recall needs the `mcp` extra, which `bootstrap.sh` installs, and Memgraph with MAGE for its vector search. See [agent-context-graph § Recall](../../agent-context-graph/README.md#recall-memory-for-the-harnesss-model).
+The plugin also bundles an MCP server, `memgraph-context-graph mcp` (see `.mcp.json`), which gives the model a `recall` tool (`mcp__plugin_context-graph_context-graph__recall`) over the user's own past sessions. At session start the hook adds one line telling the model the tool is there; the model calls it when a question needs memory. Recall needs the `mcp` extra, which `bootstrap.sh` installs, and Memgraph with MAGE for its vector search. See [memgraph-context-graph § Recall](../../memgraph-context-graph/README.md#recall-memory-for-the-harnesss-model).
 
 ## Configure
 
 Bootstrap writes `~/.config/context-graph/config.toml`; hooks read it at runtime (not environment variables). Set your identity — **required** for sessions-graph to attach sessions to a user:
 
 ```bash
-agent-context-graph config set identity.user_id "your-name"
+memgraph-context-graph config set identity.user_id "your-name"
 ```
 
-For a remote/HA Memgraph, also `agent-context-graph config set memgraph.url "neo4j://<host>:7687"` (and `memgraph.user`/`memgraph.password`/`memgraph.database`). The default is `bolt://localhost:7687`. See the [agent-context-graph README](../../agent-context-graph/README.md#configuration).
+For a remote/HA Memgraph, also `memgraph-context-graph config set memgraph.url "neo4j://<host>:7687"` (and `memgraph.user`/`memgraph.password`/`memgraph.database`). The default is `bolt://localhost:7687`. See the [memgraph-context-graph README](../../memgraph-context-graph/README.md#configuration).
 
 ## Reconciliation (optional)
 
@@ -66,7 +66,7 @@ sessions-graph reconcile --pending
 
 - Memgraph running and reachable over Bolt.
 - `uv` available on `PATH`.
-- `agent-context-graph` available on `PATH` after bootstrap.
+- `memgraph-context-graph` available on `PATH` after bootstrap.
 
 ## Local Test
 
@@ -96,10 +96,10 @@ Install:
 /plugin install context-graph@context-graph-plugins
 ```
 
-The Agent Context Graph skill is exposed as:
+The Memgraph Context Graph skill is exposed as:
 
 ```text
-/context-graph:agent-context-graph
+/context-graph:memgraph-context-graph
 ```
 
 This is a Claude Code marketplace only. Codex uses the separate marketplace at `.agents/plugins/marketplace.json`.
