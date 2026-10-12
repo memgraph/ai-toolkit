@@ -2,9 +2,9 @@
 description: Set up and check Claude Code context capture into Memgraph.
 ---
 
-# Agent Context Graph
+# Memgraph Context Graph
 
-Use this skill when the user asks whether Claude Code activity is being captured, how Agent Context Graph hooks work, or why graph facts are missing.
+Use this skill when the user asks whether Claude Code activity is being captured, how Memgraph Context Graph hooks work, or why graph facts are missing.
 
 ## Model
 
@@ -14,7 +14,7 @@ The plugin only installs runtime hook wiring. It must not assign graph meaning. 
 
 ## Checks
 
-For first-time setup, run the plugin bootstrap once. It delegates to the CLI bootstrap and falls back to `uvx` if `agent-context-graph` is not installed yet:
+For first-time setup, run the plugin bootstrap once. It delegates to the CLI bootstrap and falls back to `uvx` if `memgraph-context-graph` is not installed yet:
 
 ```bash
 ./scripts/bootstrap.sh
@@ -29,17 +29,17 @@ docker run --rm -p 7687:7687 memgraph/memgraph-mage
 Run the single CLI doctor first. It checks the same Python environment that the hook command uses:
 
 ```bash
-agent-context-graph doctor --runtime claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
+memgraph-context-graph doctor --runtime claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
 If `doctor` is not available, use the strict hook smoke:
 
 ```bash
 printf '{"hook_event_name":"Stop","session_id":"doctor"}' \
-  | agent-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph --strict
+  | memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph --strict
 ```
 
-Do not check `skills_graph` with system `python3`; `agent-context-graph` may be installed in an isolated `uv tool` or `pipx` environment.
+Do not check `skills_graph` with system `python3`; `memgraph-context-graph` may be installed in an isolated `uv tool` or `pipx` environment.
 
 ## Configuration
 
@@ -50,23 +50,23 @@ If `MEMGRAPH_URL`, `MEMGRAPH_USER`, `MEMGRAPH_PASSWORD`, or `MEMGRAPH_DATABASE` 
 View current config:
 
 ```bash
-agent-context-graph config show
+memgraph-context-graph config show
 ```
 
 Set values:
 
 ```bash
-agent-context-graph config set identity.user_id "username"
-agent-context-graph config set memgraph.url "neo4j://coordinator:7687"
-agent-context-graph config set memgraph.user "username"
-agent-context-graph config set memgraph.password
-agent-context-graph config set memgraph.database "dbname"
+memgraph-context-graph config set identity.user_id "username"
+memgraph-context-graph config set memgraph.url "neo4j://coordinator:7687"
+memgraph-context-graph config set memgraph.user "username"
+memgraph-context-graph config set memgraph.password
+memgraph-context-graph config set memgraph.database "dbname"
 ```
 
 For HA clusters, use the `neo4j://` scheme pointing to any coordinator. The driver handles routing and failover automatically:
 
 ```bash
-agent-context-graph config set memgraph.url "neo4j://memgraph-coordinator-1:7687"
+memgraph-context-graph config set memgraph.url "neo4j://memgraph-coordinator-1:7687"
 ```
 
 Supported keys: `identity.user_id`, `memgraph.url`, `memgraph.user`, `memgraph.password`, `memgraph.database`.

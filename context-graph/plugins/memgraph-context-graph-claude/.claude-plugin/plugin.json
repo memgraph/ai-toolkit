@@ -1,13 +1,13 @@
 {
   "name": "context-graph",
-  "description": "Capture Claude Code runtime activity through Agent Context Graph hooks, and recall past sessions.",
-  "version": "0.2.0",
+  "description": "Capture Claude Code runtime activity through Memgraph Context Graph hooks, and recall past sessions.",
+  "version": "0.3.0",
   "author": {
     "name": "Memgraph"
   },
   "homepage": "https://github.com/memgraph/ai-toolkit",
   "repository": "https://github.com/memgraph/ai-toolkit",
   "license": "MIT",
-  "keywords": ["claude-code", "context-graph", "agent-context-graph", "memgraph"],
+  "keywords": ["claude-code", "context-graph", "memgraph-context-graph", "memgraph"],
   "skills": "./skills/"
 }
