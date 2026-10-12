@@ -263,9 +263,10 @@ embedding_model = "BAAI/bge-small-en-v1.5"
 turns_k = "8"
 ```
 
-`[llm]` and `[reconcile]` are only relevant if you enable sessions-graph's
-auto-trigger reconciliation (see
-[sessions-graph § reconciliation](../sessions-graph/README.md#session-reconciliation)).
+`[reconcile]` turns on sessions-graph's auto-trigger reconciliation (see
+[sessions-graph § reconciliation](../sessions-graph/README.md#session-reconciliation)),
+which needs no LLM. `[llm]` is optional: a key only lets reconciliation learn
+the user's own ontology (`sessions-graph derive`).
 `[reconcile]` is omitted entirely from a freshly-bootstrapped file — absent
 means "never configured," distinct from an explicit `auto_reconcile = false`.
 `[recall]` is optional too: without it, recall runs with the widths the

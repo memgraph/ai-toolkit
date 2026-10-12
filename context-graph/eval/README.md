@@ -56,9 +56,8 @@ experiment, flagged loudly rather than refused).
 `--extraction-backend {gliner2,lightrag}` (default `gliner2`) picks what
 reconciliation uses to extract entities -- `gliner2` is local and LLM-free
 (`unstructured2graph.gliner2_backend.GLiNER2Backend`, over the LongMemEval
-vocabulary), and an LLM key is still needed regardless: narrative
-summarization has no GLiNER2 equivalent and always runs through the LightRAG
-wrapper's LLM.
+vocabulary), so a GLiNER2 build needs no LLM until it answers; `lightrag`
+extracts with an LLM.
 `RunMeta` records which backend built a saved run, and `compare()` refuses
 across a mismatch the same way it refuses across a judge or tokenizer
 mismatch.
@@ -158,7 +157,7 @@ The first carrier is a fact that exists **only inside a subagent**, because:
 - the nested carrier has a demonstrated silent-failure mode. #281 found
   `get_session_actions()` does a single-hop `HAS_ACTION` match, so once subagent
   activity moved under `(:Agent)`, reconciliation would stop seeing it — no
-  entities, no Episode mention, **no error**. Caught once by reading code; as a
+  entities, **no error**. Caught once by reading code; as a
   gold-slice question it is caught automatically, forever.
 
 Three constraints shape the planting prompt, and each is load-bearing:
@@ -196,12 +195,12 @@ another session.
 
 ## Reconciliation
 
-Injection stages raw turns; **reconciliation** is what turns them into memory —
-the same pass a real harness session gets, producing `Chunk`s and entities
-(semantic) plus the session's `Episode` (episodic). Retrieval is therefore
+Injection stages raw turns; **reconciliation** indexes them — the same pass a
+real harness session gets, producing `Chunk`s and entities. Retrieval is therefore
 scored against the genuine emerged graph, not a shortcut built for eval.
 
-It is far more expensive than "a call or two per session". Measured on 39
+With `--extraction-backend lightrag` it is far more expensive than "a call or
+two per session". Measured on 39
 sessions: extraction runs per chunk, in two passes each (an initial extraction
 and a gleaning pass), which came to **~46 LLM calls per session** — and ~89
 before the chunk sizing was fixed. Reconciliation is ~97% of all LLM calls in a
@@ -513,9 +512,6 @@ context-graph-eval beam --size 100K --chats 1-20 --limit 100 \
     --save runs/beam-100k-q100.json
 ```
 
-- **`--no-summaries`** (also on `run`) skips each session's summary LLM
-  call when reconciling. Recall never reads the summaries, so a GLiNER2 build
-  then needs no LLM until it answers.
 - **`--ontology learned`** (also on `run`, GLiNER2 only) measures map #431's
   learned ontology instead of the fixed LongMemEval vocabulary. Sessions are
   reconciled under hygm's default model, then each user's own model is

@@ -14,8 +14,7 @@ The first carrier is a fact that exists **only inside a subagent**. Top-level
 recall is already covered by Tier 1's fixtures, whereas the nested carrier has a
 demonstrated silent-failure mode: #281 found ``get_session_actions()`` does a
 single-hop ``HAS_ACTION`` match, so once subagent activity moved under
-``(:Agent)`` (#278), reconciliation would stop seeing it -- no entities, no
-Episode mention, and no error. That was caught once by reading code. As a
+``(:Agent)`` (#278), reconciliation would stop seeing it -- no entities and no error. That was caught once by reading code. As a
 gold-slice question it is caught automatically, forever.
 """
 

@@ -120,7 +120,6 @@ async def run_beam(
     hybrid: RecallConfig | None = None,
     max_concurrent: int = 4,
     limit: int | None = None,
-    summaries: bool = True,
     ontology: str = "fixed",
     derive_seeds: int = 1,
     derive_workers: int = 4,
@@ -146,7 +145,6 @@ async def run_beam(
             graph.db,
             memgraph_url=memgraph_url,
             extraction_backend=extraction_backend,
-            summaries=summaries,
             ontology=ontology,
         )
         reconciled, failures = outcome.reconciled, outcome.failed

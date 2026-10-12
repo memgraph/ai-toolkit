@@ -1,6 +1,6 @@
 # Context Graph Eval
 
-Measures whether Memory-Tier output can answer recall questions. Separate from the production pipeline it measures.
+Measures whether recall over History and Memory can answer recall questions. Separate from the production pipeline it measures.
 
 ## Language
 

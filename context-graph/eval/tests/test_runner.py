@@ -468,8 +468,8 @@ async def test_reusing_an_empty_graph_is_refused(eval_graph: ActionsGraph):
 
 
 async def test_reusing_an_undistilled_graph_is_refused(eval_graph: ActionsGraph):
-    """Sessions present but pending means injection ran without distillation:
-    no Chunk, Episode or entity to retrieve, only the raw collection tier --
+    """Sessions present but pending means injection ran without reconciliation:
+    no Chunk or entity to retrieve, only the raw collection tier --
     a different system from the one under test, scored as if it were not."""
     from context_graph_eval.convert.longmemeval import to_session_fixtures
     from context_graph_eval.inject import inject_batch

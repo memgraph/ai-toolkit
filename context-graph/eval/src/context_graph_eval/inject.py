@@ -124,10 +124,9 @@ def _wipe(graph: "ActionsGraph") -> None:
     """Delete everything in the eval graph, vector indexes included.
 
     Deliberately not ``ActionsGraph.clear()``, which only removes
-    ``Session|Agent|Action|Tool``. That leaves ``Chunk``, ``Entity``,
-    ``Episode`` and ``Memory`` standing -- precisely what reconciliation
-    produces. Relying on it would let the previous batch's *distilled memory*
-    survive, so a question could be answered from the last run instead of this
+    ``Session|Agent|Action|Tool``. That leaves ``Chunk``, ``Entity`` and
+    ``Memory`` standing -- precisely what reconciliation produces or reads.
+    Relying on it would let the previous batch's index survive, so a question could be answered from the last run instead of this
     batch's fixtures: the leak #309 exists to prevent, and it would inflate
     scores invisibly.
 

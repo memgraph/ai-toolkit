@@ -25,7 +25,7 @@ Aggregated insight over tool call actions, tool result actions, errors, sequence
 _Avoid_: Skill usage, raw hook logging
 
 **Collection-Tier Data**:
-Raw, short-lived observability data captured at hook time. Other components may distill it into an Episode or (future) Procedure. Actions Graph itself doesn't produce memory.
+Observability data captured at hook time. Its messages are the user's History, which Sessions Graph indexes and recall reads; a future procedure miner may distill Procedures from it. Actions Graph itself doesn't produce memory.
 _Avoid_: Memory, durable record (Action Node is neither — see [context-graph#261](https://github.com/memgraph/ai-toolkit/issues/261))
 
 **Confirmation-Gated Deletion** (designed, not implemented — [context-graph#267](https://github.com/memgraph/ai-toolkit/issues/267)):
@@ -44,7 +44,7 @@ _Avoid_: `SubagentEvent`/`ActionType.SUBAGENT_START`/`SUBAGENT_STOP` (deleted ou
 - **Tool Result Action** created from tool-end event.
 - **Tool Usage Analytics** derived from action nodes + relationships.
 - **Actions Graph** observes tool usage; doesn't decide if a tool call = **Skill Usage**.
-- Sessions Graph reads Action Nodes to produce an Episode. `get_session_actions()` covers both `Session -> Action` and `Session -> Agent -> Action`. Future procedure miner reads same `FOLLOWED_BY` sequences.
+- Sessions Graph reads Action Nodes to extract entities from them (Session Reconciliation). `get_session_actions()` covers both `Session -> Action` and `Session -> Agent -> Action`. Future procedure miner reads same `FOLLOWED_BY` sequences.
 - Every Agent has `(:Session)-[:HAS_AGENT]->(:Agent)`, even when spawning Action can't be inferred. Agent nodes never orphaned.
 - `(:Action)-[:SPAWNED]->(:Agent)` links spawning tool call to its subagent when temporal inference finds one unambiguous match: first considers open spawn calls, then matches `agent_type` to `tool_input.subagent_type`. Ambiguity -> link unset ([#277](https://github.com/memgraph/ai-toolkit/issues/277)). Claude Code reports tool as `Agent`, some surfaces call it `Task` -> `agent_spawning_tool_names` defaults to both. Codex support + concurrent-agent inference unverified ([#286](https://github.com/memgraph/ai-toolkit/issues/286), [#287](https://github.com/memgraph/ai-toolkit/issues/287)). Adapters with subagent support use this common inference rule — even where a better signal exists: Claude Agent SDK's message-stream API exposes real `parent_tool_use_id` that'd link a spawn exactly, but `claude.py` deliberately stays on the inferred rule so all four runtime adapters behave the same ([#294](https://github.com/memgraph/ai-toolkit/issues/294)). Revisit only if that asymmetry becomes worth taking on.
 - `(:Agent)-[:HAS_ACTION]->(:Action)` = subagent's actions. Top-level actions use `(:Session)-[:HAS_ACTION]->(:Action)`. Each container own `FOLLOWED_BY` chain.

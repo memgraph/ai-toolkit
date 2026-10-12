@@ -205,30 +205,24 @@ outlives the session that first wrote it.
   previous text produced. That covers relations carrying its id as
   `source_id`, its share of `MENTIONED_IN.sources`, and any chunks and
   entities nothing else backs. It then extracts from the current text, with
-  no LLM and no Episode.
+  no LLM.
 - **Sweep.** `sessions-graph reconcile --pending` processes pending files
   before sessions.
 - **Deletes.** Deleting a file removes what it produced the same way.
 - **No double extraction.** `memory` tool calls are left out of session
   content, so their text isn't extracted twice.
 
-The same pass also writes the session's **episodic memory**: an
-`(:Episode {summary, summarized_at})` node linked via
-`(:Session)-[:HAS_EPISODE]->(:Episode)` (at most one per session — re-running
-reconciliation updates it rather than adding another), produced by a
-dedicated LLM call over the same deduped session text — a "what happened in
-this session" gist, not the structured entity graph. This gist can be
-queried directly. The `recall` tool retrieves
-source turns, entities, and typed facts; it does not read Episode summaries.
+Reconciliation writes no session summary. Recall answers from the turns
+themselves and uses the extracted graph as an index into them, so a summary
+would be one more LLM call whose output nothing reads.
 
-This requires the `sessions-graph[reconciliation]` extra and an LLM API key
-(`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`) for LightRAG. The CLI uses OpenAI
-when its key is present, otherwise Anthropic with `claude-sonnet-5-5` — see the
-[lightrag-memgraph README](../../integrations/lightrag-memgraph/README.md).
+This requires the `sessions-graph[reconciliation]` extra and no LLM API key.
+A key (`llm.anthropic_api_key` or `llm.openai_api_key`) only enables
+[ontology derivation](#ontology-versions); without one, users stay on their
+adopted ontology.
 
 **Reconciliation never runs inside a hook itself.** Local GLiNER2 extraction
-and the LLM summary can exceed the timeout that hook runtimes enforce on hook
-commands. Instead:
+can exceed the timeout that hook runtimes enforce on hook commands. Instead:
 
 - On `SESSION_END` and on `TURN_END`, `SessionsGraphConnector` cheaply marks
   the session `reconciliation_status = 'pending'` — no LLM calls, safe inside
@@ -243,9 +237,6 @@ commands. Instead:
 
   # Sweep every session still marked 'pending' (e.g. from cron)
   sessions-graph reconcile --pending --limit 50
-
-  # Optional: override LightRAG's working dir (default ./lightrag_storage)
-  sessions-graph reconcile --pending --working-dir ./lightrag_storage
   ```
 
   The CLI runs with **`enforce_ontology=True`**: extracted entities get real
@@ -279,20 +270,15 @@ Programmatically:
 
 ```python
 from sessions_graph import SessionsGraph
-from lightrag_memgraph import MemgraphLightRAGWrapper
 
 graph = SessionsGraph()
 graph.setup()
 
-lightrag_wrapper = MemgraphLightRAGWrapper()
-await lightrag_wrapper.initialize(working_dir="./lightrag_storage")
-
 summary = await graph.reconcile_session(
     "s-abc123",
-    lightrag_wrapper=lightrag_wrapper,
     enforce_ontology=True,  # match the CLI: promote entity_type to real labels
 )
-print(summary.status, summary.texts_considered, summary.texts_deduped, summary.summary_written)
+print(summary.status, summary.texts_considered, summary.texts_deduped)
 ```
 
 Label promotion is opt-in and mirrors unstructured2graph's flags: the default
@@ -309,7 +295,7 @@ into one node. Pass `entity_workspace=` explicitly to `reconcile_session()` to
 isolate them instead.
 
 Content is deduplicated by hash before extraction, so re-running a sweep over
-already-processed content never re-extracts it or re-bills the summary. Each reconcilable unit
+already-processed content never re-extracts it. Each reconcilable unit
 (a message, tool call, tool result, or memory) is truncated to
 `MAX_RECONCILABLE_CHARS` (8000) before extraction, but a chatty session still
 has many units, so the first run can be substantial. Consider this before
@@ -388,7 +374,8 @@ rolls into the next run.
 Every version records its changelog, observation counts, retired-type pool and
 the gate's numbers. The LLM is Anthropic when `llm.anthropic_api_key` is set
 (default `claude-sonnet-5-5`), else OpenAI (default `gpt-5`); `--model`
-overrides it. A version with `derive = off` is never derived from.
+overrides it. A version with `derive = off` is never derived from. Without
+either key, `reconcile` never spawns `derive` and the adopted version stays.
 
 ## Recall
 
@@ -498,7 +485,7 @@ sessions-graph embed --pending --limit 50 --model BAAI/bge-small-en-v1.5
 | `search_memories(user_id, query, *, limit=10)` | Full-text search over Memory content. |
 | `update_memory(memory_id, content)` | Replace the content of an existing Memory. Returns `None` if not found. |
 | `delete_memory(memory_id)` | Remove a Memory and all its relationships. |
-| `async reconcile_session(session_id, *, lightrag_wrapper, extraction_backend=None, actions_graph=None, entity_workspace=None, promote_labels=False, enforce_ontology=False, ontology_path=None, embedding_model=DEFAULT_EMBEDDING_MODEL)` | Run session reconciliation for one session, then embed what it wrote (see [Embeddings for recall](#embeddings-for-recall)). `extraction_backend` overrides entity extraction to another `ExtractionBackend` (default: GLiNER2 over `hygm.default_model()`, built once per instance); `lightrag_wrapper` is always required regardless, since the narrative summary is always produced via its LLM. `promote_labels`/`enforce_ontology`/`ontology_path` control entity-type label promotion (see above). Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
+| `async reconcile_session(session_id, *, extraction_backend=None, actions_graph=None, entity_workspace=None, promote_labels=False, enforce_ontology=False, ontology_path=None, embedding_model=DEFAULT_EMBEDDING_MODEL)` | Run session reconciliation for one session, then embed what it wrote (see [Embeddings for recall](#embeddings-for-recall)). `extraction_backend` overrides entity extraction to another `ExtractionBackend` (default: GLiNER2 over `hygm.default_model()`, built once per instance); `lightrag_wrapper` is always required regardless, since the narrative summary is always produced via its LLM. `promote_labels`/`enforce_ontology`/`ontology_path` control entity-type label promotion (see above). Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
 | `get_pending_reconciliation_sessions(*, limit=100)` | Return session IDs marked `reconciliation_status = 'pending'`. |
 | `recall(user_id, question, *, config=None, model=DEFAULT_EMBEDDING_MODEL)` | What the user's own sessions hold about `question`, as `Recalled` (turns and facts; `lines()`, `render(today)`, `to_json()`). See [Recall](#recall). |
 | `embed_session(session_id, *, model=DEFAULT_EMBEDDING_MODEL)` | Embed the session's messages, entities and edges that lack a vector from `model`, inside Memgraph. Returns counts as `Embedded`; records the outcome on the Session. Raises `EmbeddingUnavailableError` without MAGE or when the model can't load. |
