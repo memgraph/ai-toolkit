@@ -182,14 +182,15 @@ esac
 
 # ---- 4. memgraph-context-graph CLI + connectors -------------------------------
 log "Installing memgraph-context-graph with skills-graph, actions-graph, sessions-graph"
-uv tool install "memgraph-context-graph>=0.5.0" \
+uv tool install "memgraph-context-graph[mcp]>=0.5.0" \
   --with "skills-graph[memgraph-context-graph]>=0.2.1" \
   --with "actions-graph[memgraph-context-graph]>=0.4.1" \
   --with "sessions-graph[memgraph-context-graph]>=0.8.0" \
   --upgrade \
   --refresh-package memgraph-context-graph \
   --refresh-package skills-graph \
-  --refresh-package actions-graph
+  --refresh-package actions-graph \
+  --refresh-package sessions-graph
 
 # uv tool shims land in `uv tool dir --bin` (usually ~/.local/bin), which may
 # not be on PATH yet even when uv itself came from elsewhere (Homebrew, pipx).
