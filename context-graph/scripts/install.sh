@@ -15,7 +15,8 @@
 #   CONTEXT_GRAPH_PROJECT_DIR     project to wire for copilot-cli, cursor,
 #                                 opencode, antigravity-cli, grok (default: current directory)
 #   MEMGRAPH_CONTEXT_GRAPH_USER_ID   identity to record (default: git user.name, else $USER)
-#   MEMGRAPH_HOST / MEMGRAPH_PORT default localhost:7687
+#   MEMGRAPH_HOST / MEMGRAPH_PORT default localhost:7687; a busy default port
+#                                 falls back to a Docker-assigned port
 #   CONTEXT_GRAPH_MEMGRAPH_CONTAINER default context-graph-memgraph (existing data preserved)
 #   SKIP_MEMGRAPH=1               don't start a local Memgraph even if none is reachable
 #   SKIP_UV_INSTALL=1             don't auto-install uv if missing (just fail with instructions)
@@ -41,6 +42,7 @@ esac
 PROJECT_DIR="${CONTEXT_GRAPH_PROJECT_DIR:-$PWD}"
 CONNECTORS=(skills-graph actions-graph sessions-graph)
 MEMGRAPH_HOST="${MEMGRAPH_HOST:-localhost}"
+MEMGRAPH_PORT_EXPLICIT="${MEMGRAPH_PORT:+1}"
 MEMGRAPH_PORT="${MEMGRAPH_PORT:-7687}"
 CONTAINER_NAME="${CONTEXT_GRAPH_MEMGRAPH_CONTAINER:-context-graph-memgraph}"
 MAGE_IMAGE="memgraph/memgraph-mage:latest"
@@ -58,7 +60,27 @@ bolt_reachable() {
 # container ourselves, gate readiness on a real query via the mgconsole
 # bundled in the image, not just the socket.
 bolt_query_ready() {
-  docker exec "$CONTAINER_NAME" mgconsole --host 127.0.0.1 --port 7687 <<<"RETURN 1;" >/dev/null 2>&1
+  docker exec -i "$CONTAINER_NAME" mgconsole --host 127.0.0.1 --port 7687 <<<"RETURN 1;" >/dev/null 2>&1
+}
+
+start_memgraph() {
+  local output
+  if output=$(docker run -d --name "$CONTAINER_NAME" -p "127.0.0.1:${MEMGRAPH_PORT}:7687" \
+    "$MAGE_IMAGE" --schema-info-enabled=True 2>&1); then
+    return
+  fi
+  if [[ "$output" != *"port is already allocated"* && "$output" != *"address already in use"* ]]; then
+    fail "could not start Memgraph: $output"
+  fi
+  # A failed port binding leaves a newly created container behind. Only remove
+  # that failed attempt; the process already holding the port stays untouched.
+  docker rm "$CONTAINER_NAME" >/dev/null
+  [[ -z "$MEMGRAPH_PORT_EXPLICIT" ]] ||
+    fail "port $MEMGRAPH_PORT is already allocated; rerun with MEMGRAPH_PORT set to a free port."
+  echo "Port $MEMGRAPH_PORT is already allocated -- asking Docker for a free Bolt port."
+  docker run -d --name "$CONTAINER_NAME" -p 127.0.0.1::7687 \
+    "$MAGE_IMAGE" --schema-info-enabled=True >/dev/null
+  MEMGRAPH_PORT=$(docker inspect --format '{{(index (index .NetworkSettings.Ports "7687/tcp") 0).HostPort}}' "$CONTAINER_NAME")
 }
 
 # ---- 1. Memgraph ------------------------------------------------------------
@@ -81,9 +103,7 @@ else
     docker start "$CONTAINER_NAME" >/dev/null
   else
     echo "Nothing reachable -- starting a local Memgraph ($MAGE_IMAGE)."
-    docker run -d --name "$CONTAINER_NAME" \
-      -p "127.0.0.1:${MEMGRAPH_PORT}:7687" -p 127.0.0.1:7444:7444 \
-      "$MAGE_IMAGE" --schema-info-enabled=True >/dev/null
+    start_memgraph
   fi
   ready=0
   for _ in $(seq 1 90); do
@@ -179,7 +199,7 @@ command -v memgraph-context-graph >/dev/null 2>&1 || fail "memgraph-context-grap
 log "Bootstrapping ($RUNTIME)"
 connector_flags=()
 for c in "${CONNECTORS[@]}"; do connector_flags+=(--connector "$c"); done
-MEMGRAPH_HOST="$MEMGRAPH_HOST" MEMGRAPH_PORT="$MEMGRAPH_PORT" \
+MEMGRAPH_URL="bolt://${MEMGRAPH_HOST}:${MEMGRAPH_PORT}" \
   memgraph-context-graph bootstrap --runtime "$RUNTIME" "${connector_flags[@]}" --no-reinstall
 
 if [[ "$RUNTIME_WIRING" == project ]]; then

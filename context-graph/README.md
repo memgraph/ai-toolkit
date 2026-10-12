@@ -52,7 +52,7 @@ Requires Docker (only if no Memgraph is already reachable) and the runtime's CLI
 | `CONTEXT_GRAPH_PROJECT_DIR` | current directory | Project to wire, for the runtimes with project-local hooks |
 | `MEMGRAPH_CONTEXT_GRAPH_USER_ID` | `git config user.name`, else `$USER` | Identity recorded on every session (`identity.user_id`) |
 | `MEMGRAPH_HOST` | `localhost` | Host to bootstrap against. Auto-start supports `localhost`/`127.0.0.1` and publishes on loopback; an unreachable remote host fails without changing containers |
-| `MEMGRAPH_PORT` | `7687` | Bolt port to connect to and publish locally |
+| `MEMGRAPH_PORT` | `7687` | Bolt port. If the default is unavailable when Docker creates a container, Docker assigns a free port; an explicitly set busy port fails with instructions. Bootstrap saves the selected port. |
 | `CONTEXT_GRAPH_MEMGRAPH_CONTAINER` | `context-graph-memgraph` | Container to create or resume; incompatible port mappings fail while preserving its data |
 | `SKIP_MEMGRAPH` | unset | Set to `1` to fail instead of auto-starting a local Memgraph when none is reachable |
 | `SKIP_UV_INSTALL` | unset | Set to `1` to fail instead of auto-installing `uv` when missing |
@@ -62,6 +62,14 @@ CONTEXT_GRAPH_RUNTIME=codex ./context-graph/scripts/install.sh
 ```
 
 Already reachable Memgraph, already-registered marketplace, already-installed plugin — each is detected and skipped, so rerunning is safe (e.g. to pick up a new context-graph version). A stopped container is resumed with its data intact. An existing container with incompatible port publication is preserved and reported for correction.
+
+When using the [AI Memory demo](https://github.com/memgraph/memgraph-platform/blob/main/code-examples/ai-memory.sh), pass its printed Bolt port to this installer so capture uses the same database:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/memgraph/ai-toolkit/main/context-graph/scripts/install.sh | MEMGRAPH_PORT=7688 bash
+```
+
+Replace `7688` with the demo's port. Install-time settings are saved in the config file; hooks read that file at runtime.
 
 Once it finishes, use the runtime normally — every session writes to the graph automatically: `(:User)-[:HAD_SESSION]->(:Session)`, tool actions, skill usage, and any Memories the agent records.
 
