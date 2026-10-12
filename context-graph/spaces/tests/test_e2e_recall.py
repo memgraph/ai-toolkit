@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from sessions_graph.tool import MemoryTool, RecallTool
 
-from agent_context_graph.adapters import _identity
 from context_graph_spaces.provision import apply
 from context_graph_spaces.spec import parse_spec
+from memgraph_context_graph.adapters import _identity
 
 
 @pytest.fixture

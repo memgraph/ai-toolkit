@@ -9,7 +9,7 @@ import pytest
 
 from actions_graph import ActionsGraph
 from actions_graph.connector import ActionsGraphConnector
-from agent_context_graph.events import AgentStartEvent, SessionStartEvent, ToolStartEvent
+from memgraph_context_graph.events import AgentStartEvent, SessionStartEvent, ToolStartEvent
 from resources_graph.sweep import sweep
 
 

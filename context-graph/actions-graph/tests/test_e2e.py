@@ -18,14 +18,14 @@ from actions_graph import (
     ToolResult,
 )
 from actions_graph.connector import ActionsGraphConnector
-from agent_context_graph import AgentLink
-from agent_context_graph.adapters.antigravity_cli import AntigravityCLIHooksAdapter
-from agent_context_graph.adapters.claude_code import ClaudeCodeHooksAdapter
-from agent_context_graph.adapters.codex import CodexHooksAdapter
-from agent_context_graph.adapters.copilot_cli import CopilotCLIHooksAdapter
-from agent_context_graph.adapters.cursor import CursorHooksAdapter
-from agent_context_graph.adapters.grok import GrokHooksAdapter
-from agent_context_graph.adapters.opencode import OpenCodeHooksAdapter
+from memgraph_context_graph import AgentLink
+from memgraph_context_graph.adapters.antigravity_cli import AntigravityCLIHooksAdapter
+from memgraph_context_graph.adapters.claude_code import ClaudeCodeHooksAdapter
+from memgraph_context_graph.adapters.codex import CodexHooksAdapter
+from memgraph_context_graph.adapters.copilot_cli import CopilotCLIHooksAdapter
+from memgraph_context_graph.adapters.cursor import CursorHooksAdapter
+from memgraph_context_graph.adapters.grok import GrokHooksAdapter
+from memgraph_context_graph.adapters.opencode import OpenCodeHooksAdapter
 
 
 @pytest.fixture
@@ -797,7 +797,7 @@ def _connector(graph: ActionsGraph) -> AgentLink:
 
 def test_session_start_after_the_first_event_still_records_start_fields(graph: ActionsGraph):
     """Copilot delivers the first prompt before sessionStart (#368)."""
-    from agent_context_graph.events import MessageEvent, SessionStartEvent
+    from memgraph_context_graph.events import MessageEvent, SessionStartEvent
 
     link = _connector(graph)
     link.emit(MessageEvent(session_id="late-start", role="user", content="hi", source_sdk="copilot-cli"))
@@ -815,7 +815,7 @@ def test_concurrent_first_events_create_one_session_and_keep_every_event():
     """OpenCode runs hooks in parallel; each hook is its own process and connection (#370)."""
     import threading
 
-    from agent_context_graph.events import MessageEvent, SessionStartEvent, ToolStartEvent
+    from memgraph_context_graph.events import MessageEvent, SessionStartEvent, ToolStartEvent
 
     setup_graph = ActionsGraph()
     setup_graph.clear()
@@ -849,7 +849,7 @@ def test_concurrent_first_events_create_one_session_and_keep_every_event():
 
 def test_results_without_ids_pair_with_the_oldest_open_call_of_the_same_tool(graph: ActionsGraph):
     """Copilot sends no tool-call id; parallel calls of one tool pair in start order."""
-    from agent_context_graph.events import ToolEndEvent, ToolStartEvent
+    from memgraph_context_graph.events import ToolEndEvent, ToolStartEvent
 
     link = _connector(graph)
     for tool_name, tool_input in (
@@ -880,7 +880,7 @@ def test_results_without_ids_pair_with_the_oldest_open_call_of_the_same_tool(gra
 
 def test_tool_calls_and_results_carry_the_harness_tool_use_id(graph: ActionsGraph):
     """Promoted to a node property so other components can join on it (resources-graph's Touches do)."""
-    from agent_context_graph.events import SessionStartEvent, ToolEndEvent, ToolStartEvent
+    from memgraph_context_graph.events import SessionStartEvent, ToolEndEvent, ToolStartEvent
 
     link = _connector(graph)
     link.emit(SessionStartEvent(session_id="tool-use-id-session"))

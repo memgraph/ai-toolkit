@@ -16,8 +16,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-agent-context-graph = [
-    "agent-context-graph>=0.4.0",
+memgraph-context-graph = [
+    "memgraph-context-graph>=0.4.0",
 ]
 test = [
     "pytest>=9.0.3",
@@ -29,11 +29,11 @@ test = [
 [project.scripts]
 resources-graph = "resources_graph.cli:main"
 
-[project.entry-points."agent_context_graph.tools"]
+[project.entry-points."memgraph_context_graph.tools"]
 resource = "resources_graph.tool:RESOURCE"
 
 [tool.uv.sources]
-agent-context-graph = { workspace = true }
+memgraph-context-graph = { workspace = true }
 memgraph-toolbox = { workspace = true }
 sessions-graph = { workspace = true }
 actions-graph = { workspace = true }

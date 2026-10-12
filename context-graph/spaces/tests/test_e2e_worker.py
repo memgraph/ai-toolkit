@@ -8,10 +8,10 @@ import neo4j
 import pytest
 from sessions_graph.tool import MemoryTool
 
-from agent_context_graph.adapters import _identity
 from context_graph_spaces.provision import SERVICE_ACCOUNT, apply
 from context_graph_spaces.spec import parse_spec
 from context_graph_spaces.worker import reconcile_spaces
+from memgraph_context_graph.adapters import _identity
 
 pytest.importorskip("unstructured2graph", reason="the worker needs sessions-graph[reconciliation]")
 

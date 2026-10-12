@@ -5,7 +5,7 @@
 Context Graph is a family of components that capture what your coding agents actually do — the tools they call, the skills they use, the memories they record — and persist it into a single Memgraph graph you can query across every session. Install it as a plugin, and every session your agent runs quietly builds up a graph of your work.
 
 ```text
-Agent CLI hooks     ──────────▶  agent-context-graph  ──▶  Memgraph
+Agent CLI hooks     ──────────▶  memgraph-context-graph  ──▶  Memgraph
 (Claude Code, Codex, …)            (routes events)          (:User)-[:HAD_SESSION]->(:Session)
                                                               ├─[:HAS_ACTION]->(:Action)   ← actions-graph
                                                               ├─[:USED_SKILL]->(:Skill)    ← skills-graph
@@ -26,7 +26,7 @@ Everything is joined by a shared `(:Session {session_id})` node, so one graph an
 
 | Component | What it captures | Owns |
 |---|---|---|
-| **[agent-context-graph](./agent-context-graph/)** | The event hub. Normalizes runtime hooks/SDK activity into a shared event stream and routes it to the connectors below. | Adapters + connectors wiring |
+| **[memgraph-context-graph](./memgraph-context-graph/)** | The event hub. Normalizes runtime hooks/SDK activity into a shared event stream and routes it to the connectors below. | Adapters + connectors wiring |
 | **[actions-graph](./actions-graph/)** | Tool calls, tool results, messages, subagent/error events — the raw activity of a session. | `(:Action)`, `(:Tool)` |
 | **[skills-graph](./skills-graph/)** | Which reusable [Agent Skills](https://docs.claude.com/en/docs/claude-code/skills) a session used, and stored skill definitions. | `(:Skill)` |
 | **[resources-graph](./resources-graph/)** | GitHub resources touched by agents, their shared cache, and the `resource` MCP read tool. Enabled explicitly; see its installation guide. | `(:Resource)`, `(:Touch)`, `(:Listing)` |
@@ -36,7 +36,7 @@ Everything is joined by a shared `(:Session {session_id})` node, so one graph an
 
 ## Getting started
 
-One command does everything below: starts a local Memgraph if none is reachable, registers the plugin marketplace, installs the plugin (this is the step that actually wires hooks into the runtime — running `bootstrap` on its own does not), installs the `agent-context-graph` CLI with all three connectors, sets your identity, and verifies with `doctor`.
+One command does everything below: starts a local Memgraph if none is reachable, registers the plugin marketplace, installs the plugin (this is the step that actually wires hooks into the runtime — running `bootstrap` on its own does not), installs the `memgraph-context-graph` CLI with all three connectors, sets your identity, and verifies with `doctor`.
 
 ```bash
 ./context-graph/scripts/install.sh
@@ -50,7 +50,7 @@ Requires Docker (only if no Memgraph is already reachable) and the runtime's CLI
 | --- | --- | --- |
 | `CONTEXT_GRAPH_RUNTIME` | `claude-code` | `claude-code`, `codex`, `copilot-cli`, `cursor`, `opencode`, `antigravity-cli`, or `grok` |
 | `CONTEXT_GRAPH_PROJECT_DIR` | current directory | Project to wire, for the runtimes with project-local hooks |
-| `AGENT_CONTEXT_GRAPH_USER_ID` | `git config user.name`, else `$USER` | Identity recorded on every session (`identity.user_id`) |
+| `MEMGRAPH_CONTEXT_GRAPH_USER_ID` | `git config user.name`, else `$USER` | Identity recorded on every session (`identity.user_id`) |
 | `MEMGRAPH_HOST` | `localhost` | Host to bootstrap against. Auto-start supports `localhost`/`127.0.0.1` and publishes on loopback; an unreachable remote host fails without changing containers |
 | `MEMGRAPH_PORT` | `7687` | Bolt port to connect to and publish locally |
 | `CONTEXT_GRAPH_MEMGRAPH_CONTAINER` | `context-graph-memgraph` | Container to create or resume; incompatible port mappings fail while preserving its data |
@@ -101,10 +101,10 @@ codex plugin add context-graph@context-graph-plugins
 
 ### 3. Bootstrap and configure
 
-The plugin's first run installs the `agent-context-graph` tool (with all three connector extras), writes `~/.config/context-graph/config.toml`, and runs `doctor`:
+The plugin's first run installs the `memgraph-context-graph` tool (with all three connector extras), writes `~/.config/context-graph/config.toml`, and runs `doctor`:
 
 ```bash
-agent-context-graph bootstrap --runtime claude-code \
+memgraph-context-graph bootstrap --runtime claude-code \
   --connector skills-graph --connector actions-graph --connector sessions-graph
 # Codex: --runtime codex
 ```
@@ -112,23 +112,23 @@ agent-context-graph bootstrap --runtime claude-code \
 Set your identity — **required** for sessions-graph to attach sessions to a user:
 
 ```bash
-agent-context-graph config set identity.user_id "your-name"
+memgraph-context-graph config set identity.user_id "your-name"
 ```
 
-The default Memgraph connection is `bolt://localhost:7687`. To point at a remote or HA instance, set it in the config file (hooks read this file, **not** environment variables, at runtime — see [ADR 0002](./agent-context-graph/docs/adr/0002-config-file-only-hook-resolution.md)):
+The default Memgraph connection is `bolt://localhost:7687`. To point at a remote or HA instance, set it in the config file (hooks read this file, **not** environment variables, at runtime — see [ADR 0002](./memgraph-context-graph/docs/adr/0002-config-file-only-hook-resolution.md)):
 
 ```bash
-agent-context-graph config set memgraph.url "neo4j://<coordinator-host>:7687"
-agent-context-graph config set memgraph.user "<user>"
-agent-context-graph config set memgraph.password        # prompts; stored 0600
-agent-context-graph config set memgraph.database "memgraph"
+memgraph-context-graph config set memgraph.url "neo4j://<coordinator-host>:7687"
+memgraph-context-graph config set memgraph.user "<user>"
+memgraph-context-graph config set memgraph.password        # prompts; stored 0600
+memgraph-context-graph config set memgraph.database "memgraph"
 ```
 
 ### 4. Verify
 
 ```bash
-agent-context-graph config show
-agent-context-graph doctor --runtime claude-code \
+memgraph-context-graph config show
+memgraph-context-graph doctor --runtime claude-code \
   --connector skills-graph --connector actions-graph --connector sessions-graph
 # Codex: --runtime codex
 ```
@@ -141,7 +141,7 @@ From here, every session writes to the graph automatically: `(:User)-[:HAD_SESSI
 
 </details>
 
-See [agent-context-graph](./agent-context-graph/) for both runtimes' adapter details and for the in-process SDK path (no plugin).
+See [memgraph-context-graph](./memgraph-context-graph/) for both runtimes' adapter details and for the in-process SDK path (no plugin).
 
 ## Turning sessions into an entity graph (reconciliation)
 
@@ -174,9 +174,9 @@ Run these in [Memgraph Lab](https://memgraph.com/docs/data-visualization) or any
 
 ## Using components directly (without a plugin)
 
-Each component is a standalone Python library with its own README and can be used on its own or wired into `agent-context-graph` for the SDK path (Claude Agent SDK, OpenAI Agents SDK):
+Each component is a standalone Python library with its own README and can be used on its own or wired into `memgraph-context-graph` for the SDK path (Claude Agent SDK, OpenAI Agents SDK):
 
-- [agent-context-graph](./agent-context-graph/) — the adapter/connector layer and SDK quick starts
+- [memgraph-context-graph](./memgraph-context-graph/) — the adapter/connector layer and SDK quick starts
 - [actions-graph](./actions-graph/) — record and query session actions
 - [skills-graph](./skills-graph/) — persist and track skills
 - [sessions-graph](./sessions-graph/) — memories and reconciliation

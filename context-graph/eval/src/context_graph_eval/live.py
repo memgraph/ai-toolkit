@@ -2,7 +2,7 @@
 
 Tier 1 injects fixtures straight into the graph, which never exercises the
 capture layer. The gold slice instead runs a genuine session with hooks live, so
-what gets scored is what `agent-context-graph` actually recorded -- the only
+what gets scored is what `memgraph-context-graph` actually recorded -- the only
 coverage `skills-graph` and subagent nesting get at all (#308).
 
 Ordering matters and is the whole reason this is separate from injection:
@@ -99,7 +99,7 @@ def hooks_settings(path: Path) -> Path:
     cannot shadow the checkout under test and have the session exercise the
     wrong version of the code.
 
-    Deliberately **without** ``--package agent-context-graph``. That flag
+    Deliberately **without** ``--package memgraph-context-graph``. That flag
     re-resolves the environment to that one package's closure, which excludes
     the connector packages -- so every hook raised
     ``ImportError: skills-graph is required`` and, because the runner swallows
@@ -107,10 +107,10 @@ def hooks_settings(path: Path) -> Path:
     A whole billed session recorded no data and reported success. The workspace
     venv already has every package; asking for a subset is what broke it.
     """
-    from agent_context_graph.adapters.claude_code import PLUGIN
+    from memgraph_context_graph.adapters.claude_code import PLUGIN
 
     connectors = " ".join(f"--connector {name}" for name in CONNECTORS)
-    command = f"uv run agent-context-graph hook run claude-code {connectors}"
+    command = f"uv run memgraph-context-graph hook run claude-code {connectors}"
     path.write_text(json.dumps({"hooks": PLUGIN.build_hooks_config(command)}), encoding="utf-8")
     return path
 

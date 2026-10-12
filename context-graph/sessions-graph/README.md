@@ -10,10 +10,10 @@ Requires **Memgraph ≥ 3.6** (text search is stable from that release).
 pip install sessions-graph
 ```
 
-To use with Agent Context Graph:
+To use with Memgraph Context Graph:
 
 ```bash
-pip install sessions-graph[agent-context-graph]
+pip install sessions-graph[memgraph-context-graph]
 ```
 
 To use [session reconciliation](#session-reconciliation) (entity extraction from session content):
@@ -48,15 +48,15 @@ graph.update_memory(mem.memory_id, "Prefers Python, especially for data tooling"
 graph.delete_memory(mem.memory_id)
 ```
 
-## Integration with Agent Context Graph
+## Integration with Memgraph Context Graph
 
 Wire the `SessionsGraphConnector` into an `AgentLink` to get automatic session provenance — the connector tracks the active `session_id` and `user_id` from `SessionStartEvent` so you can reference them when saving memories.
 
 ```python
 from sessions_graph import SessionsGraph
 from sessions_graph.connector import SessionsGraphConnector
-from agent_context_graph import AgentLink
-from agent_context_graph.adapters.claude import ClaudeAdapter
+from memgraph_context_graph import AgentLink
+from memgraph_context_graph.adapters.claude import ClaudeAdapter
 
 graph = SessionsGraph()
 graph.setup()
@@ -160,9 +160,9 @@ memory = MemgraphMemoryTool(graph, user_id="alice", session_id="request-42")
 client.beta.messages.tool_runner(model=..., max_tokens=..., tools=[memory], messages=[...]).until_done()
 ```
 
-Harnesses reach it as the `memory` tool, which agent-context-graph serves once
+Harnesses reach it as the `memory` tool, which memgraph-context-graph serves once
 the user makes Context Graph their memory backend; see
-[agent-context-graph § Memory](../agent-context-graph/README.md#memory-context-graph-as-the-harnesss-memory).
+[memgraph-context-graph § Memory](../memgraph-context-graph/README.md#memory-context-graph-as-the-harnesss-memory).
 
 ## Text search
 
@@ -250,12 +250,12 @@ can exceed the timeout that hook runtimes enforce on hook commands. Instead:
   persistently:
 
   ```bash
-  agent-context-graph config set reconcile.auto_reconcile true
+  memgraph-context-graph config set reconcile.auto_reconcile true
   ```
 
   This writes `[reconcile] auto_reconcile = true` to
   `~/.config/context-graph/config.toml`, which
-  `agent_context_graph.hooks.runner._add_sessions_graph_connector` reads on
+  `memgraph_context_graph.hooks.runner._add_sessions_graph_connector` reads on
   every hook invocation via `resolve_auto_reconcile()` — no shell/session
   restart quirks, since hook subprocesses don't reliably inherit shell
   profile environment variables. Direct SDK integrations that construct
@@ -332,8 +332,8 @@ sessions-graph ontology show
 Or set it in the config file, so it follows edits:
 
 ```bash
-agent-context-graph config set ontology.path ~/schemas/coding.yaml
-agent-context-graph config set ontology.derive extend
+memgraph-context-graph config set ontology.path ~/schemas/coding.yaml
+memgraph-context-graph config set ontology.derive extend
 ```
 
 Each `sessions-graph reconcile` applies that file to the configured user
@@ -412,10 +412,10 @@ their history: about 0.6 s for a few hundred messages, 0.7 s at 10k, 6.7 s at
 100k. Without MAGE, recall runs text search alone and says so in its result.
 
 Harnesses reach it as the `recall` tool: sessions-graph registers it under
-agent-context-graph's `agent_context_graph.tools` entry point
-(`sessions_graph.tool:RECALL`), and `agent-context-graph mcp` serves it, taking
+memgraph-context-graph's `memgraph_context_graph.tools` entry point
+(`sessions_graph.tool:RECALL`), and `memgraph-context-graph mcp` serves it, taking
 the user and the `[recall]` overrides from the config file. See
-[agent-context-graph § Recall](../agent-context-graph/README.md#recall-memory-for-the-harnesss-model).
+[memgraph-context-graph § Recall](../memgraph-context-graph/README.md#recall-memory-for-the-harnesss-model).
 
 With [memory files](#memory-files), recall also searches them: the
 `memories` lane matches their passages by vector and their text by full-text
@@ -443,7 +443,7 @@ mix. The default model is `BAAI/bge-small-en-v1.5` (384 dimensions); change
 it with:
 
 ```bash
-agent-context-graph config set recall.embedding_model <huggingface-model-name>
+memgraph-context-graph config set recall.embedding_model <huggingface-model-name>
 ```
 
 When it runs:
@@ -464,7 +464,7 @@ The outcome is on the Session: `embedding_status` is `completed` (with
 This needs Memgraph with MAGE (`memgraph/memgraph-mage`), with 2 GiB of
 memory or more for the default model. The model downloads inside Memgraph on
 first use. On plain `memgraph/memgraph` every session records `failed`, and
-`agent-context-graph doctor --connector sessions-graph` reports the
+`memgraph-context-graph doctor --connector sessions-graph` reports the
 `embeddings` check as failing.
 
 ```bash

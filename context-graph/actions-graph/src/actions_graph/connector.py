@@ -1,8 +1,8 @@
-"""Agent Context Graph connector for ActionsGraph.
+"""Memgraph Context Graph connector for ActionsGraph.
 
 The connector lives inside actions-graph because ActionsGraph owns the
 interpretation of Event Protocol events as persisted action/session graph data.
-Agent Context Graph only routes normalized runtime events.
+Memgraph Context Graph only routes normalized runtime events.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING, Any, cast
 
-from agent_context_graph.events import (
+from memgraph_context_graph.events import (
     AgentEndEvent,
     AgentStartEvent,
     ErrorOccurredEvent,
@@ -22,7 +22,7 @@ from agent_context_graph.events import (
     ToolEndEvent,
     ToolStartEvent,
 )
-from agent_context_graph.protocols import GraphConnector
+from memgraph_context_graph.protocols import GraphConnector
 
 from .models import (
     ActionStatus,

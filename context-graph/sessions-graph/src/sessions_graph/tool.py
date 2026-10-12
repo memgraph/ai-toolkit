@@ -2,8 +2,8 @@
 
 ``recall`` asks the user's memory a question.
 
-Registered under agent-context-graph's ``agent_context_graph.tools`` entry
-point, so ``agent-context-graph mcp`` serves it and ``agent-context-graph
+Registered under memgraph-context-graph's ``memgraph_context_graph.tools`` entry
+point, so ``memgraph-context-graph mcp`` serves it and ``memgraph-context-graph
 recall`` runs it. It returns context, not an answer: the harness's own model
 answers from the rows, following the reading rules at their head (#394).
 
@@ -30,8 +30,8 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from neo4j.exceptions import Neo4jError
 
-from agent_context_graph.spaces import PERSONAL, MemgraphTarget, Space, SpaceError, SpaceResolver, spaces_for
-from agent_context_graph.tools import ToolError, ToolResult
+from memgraph_context_graph.spaces import PERSONAL, MemgraphTarget, Space, SpaceError, SpaceResolver, spaces_for
+from memgraph_context_graph.tools import ToolError, ToolResult
 
 from .core import SessionsGraph
 from .embeddings import DEFAULT_EMBEDDING_MODEL
@@ -41,7 +41,7 @@ from .models import MEMORY_ROOT, MemoryValidationError, normalize_memory_path
 from .recall import RecallConfig, Recalled, fuse
 
 if TYPE_CHECKING:
-    from agent_context_graph.adapters._identity import HookConfig
+    from memgraph_context_graph.adapters._identity import HookConfig
 
 _DESCRIPTION = """\
 Search the user's memory: their own past conversations with you and other agents, \
@@ -117,7 +117,7 @@ class RecallTool(_GraphPerConfig):
         if not user_id:
             raise ToolError(
                 "No user is configured, so there is no memory to search. "
-                "Set one with: agent-context-graph config set identity.user_id <name>"
+                "Set one with: memgraph-context-graph config set identity.user_id <name>"
             )
         try:
             settings = RecallConfig.from_mapping(config.recall_settings)
@@ -260,7 +260,7 @@ class MemoryTool(_GraphPerConfig):
         if not user_id:
             raise ToolError(
                 "No user is configured, so there is no memory to use. "
-                "Set one with: agent-context-graph config set identity.user_id <name>"
+                "Set one with: memgraph-context-graph config set identity.user_id <name>"
             )
         spaces = _spaces(config)
         try:
@@ -387,7 +387,7 @@ def _list_spaces(spaces: SpaceResolver) -> str:
 
 
 def _config_path() -> str:
-    from agent_context_graph.adapters._identity import config_file
+    from memgraph_context_graph.adapters._identity import config_file
 
     return str(config_file())
 

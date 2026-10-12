@@ -9,12 +9,12 @@ import subprocess
 
 import pytest
 
-pytest.importorskip("agent_context_graph")
+pytest.importorskip("memgraph_context_graph")
 
-from agent_context_graph.adapters import _identity
-from agent_context_graph.adapters.claude_code import PLUGIN
-from agent_context_graph.cli import main as top_level_main
-from agent_context_graph.memory_backend import MemoryBackendError, use_graph_memory, use_native_memory
+from memgraph_context_graph.adapters import _identity
+from memgraph_context_graph.adapters.claude_code import PLUGIN
+from memgraph_context_graph.cli import main as top_level_main
+from memgraph_context_graph.memory_backend import MemoryBackendError, use_graph_memory, use_native_memory
 
 
 @pytest.fixture
@@ -108,7 +108,7 @@ def test_setup_cli_and_doctor_agree(home, capsys):
     assert "Set memory.backend = context-graph" in capsys.readouterr().out
     _identity._reset_cache()
 
-    from agent_context_graph.cli import _check_memory_backend
+    from memgraph_context_graph.cli import _check_memory_backend
 
     check = _check_memory_backend("claude-code")
     assert check is not None and check["ok"]

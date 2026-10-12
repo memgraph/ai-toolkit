@@ -6,15 +6,15 @@ import os
 
 import pytest
 
-pytest.importorskip("agent_context_graph")
+pytest.importorskip("memgraph_context_graph")
 pytest.importorskip("actions_graph")
 
 from sessions_graph.embeddings import EmbeddingUnavailableError, check_available
 from sessions_graph.tool import RecallTool
 
 from actions_graph import MessageRole, Session
-from agent_context_graph.adapters._identity import HookConfig
-from agent_context_graph.tools import ToolError, load_tools
+from memgraph_context_graph.adapters._identity import HookConfig
+from memgraph_context_graph.tools import ToolError, load_tools
 
 
 @pytest.fixture

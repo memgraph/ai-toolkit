@@ -1,17 +1,17 @@
 """Agent-link connector for SkillGraph.
 
-This module implements the :class:`agent_context_graph.GraphConnector` interface
+This module implements the :class:`memgraph_context_graph.GraphConnector` interface
 so that a ``SkillGraph`` can receive events directly from an ``AgentLink``
 hub.  The connector lives *inside* skills-graph because **the library
 itself** knows which events are relevant and how to persist them — the
-agent-context-graph package only provides the plumbing.
+memgraph-context-graph package only provides the plumbing.
 
 Usage::
 
     from skills_graph import SkillGraph
     from skills_graph.connector import SkillGraphConnector
-    from agent_context_graph import AgentLink
-    from agent_context_graph.adapters.claude import ClaudeAdapter
+    from memgraph_context_graph import AgentLink
+    from memgraph_context_graph.adapters.claude import ClaudeAdapter
 
     link = AgentLink()
     link.add_connector(SkillGraphConnector(SkillGraph()))
@@ -25,8 +25,8 @@ import shlex
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from agent_context_graph.events import Event, EventType, MessageEvent, ToolEndEvent, ToolStartEvent
-from agent_context_graph.protocols import GraphConnector
+from memgraph_context_graph.events import Event, EventType, MessageEvent, ToolEndEvent, ToolStartEvent
+from memgraph_context_graph.protocols import GraphConnector
 
 if TYPE_CHECKING:
     from .core import SkillGraph
@@ -42,7 +42,7 @@ _SKILL_FILE_NAME = "SKILL.md"
 
 
 class SkillGraphConnector(GraphConnector):
-    """Receives agent-context-graph events and records skill usage in a SkillGraph.
+    """Receives memgraph-context-graph events and records skill usage in a SkillGraph.
 
     Watches for tool calls whose name matches a skill access operation
     (``get_skill``, ``update_skill``, search/list tools, etc.) and creates

@@ -54,10 +54,10 @@ def test_get_memories_for_session(graph):
 
 
 def test_connector_session_start_creates_user_and_session(graph, memgraph):
-    pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
+    pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
     from sessions_graph.connector import SessionsGraphConnector
 
-    from agent_context_graph.events import SessionStartEvent
+    from memgraph_context_graph.events import SessionStartEvent
 
     connector = SessionsGraphConnector(graph)
     connector.on_event(SessionStartEvent(session_id="s-1", user_id="alice"))
@@ -69,10 +69,10 @@ def test_connector_session_start_creates_user_and_session(graph, memgraph):
 
 
 def test_connector_session_end_marks_reconciliation_pending(graph, memgraph):
-    pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
+    pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
     from sessions_graph.connector import SessionsGraphConnector
 
-    from agent_context_graph.events import SessionEndEvent, SessionStartEvent
+    from memgraph_context_graph.events import SessionEndEvent, SessionStartEvent
 
     connector = SessionsGraphConnector(graph)
     connector.on_event(SessionStartEvent(session_id="s-1", user_id="alice"))
@@ -86,11 +86,11 @@ def test_connector_session_end_marks_reconciliation_pending(graph, memgraph):
 
 
 def test_connector_turn_end_embeds_and_marks_pending_without_reconciling(graph, memgraph, monkeypatch):
-    pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
+    pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
     from sessions_graph import connector as connector_module
     from sessions_graph.connector import SessionsGraphConnector
 
-    from agent_context_graph.events import SessionStartEvent, TurnEndEvent
+    from memgraph_context_graph.events import SessionStartEvent, TurnEndEvent
 
     spawned = []
     monkeypatch.setattr(connector_module, "_spawn_detached", lambda args, *, env: spawned.append(args[0]))

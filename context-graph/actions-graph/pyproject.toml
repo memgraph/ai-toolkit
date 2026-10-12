@@ -1,6 +1,6 @@
 [project]
 name = "actions-graph"
-version = "0.4.0"
+version = "0.4.1"
 description = "Store and track LLM actions, tool calls, and sessions in Memgraph"
 readme = "README.md"
 license = { text = "MIT" }
@@ -18,8 +18,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-agent-context-graph = [
-    "agent-context-graph>=0.1.2",
+memgraph-context-graph = [
+    "memgraph-context-graph>=0.4.0",
 ]
 claude-agent = [
     "claude-agent-sdk>=0.1.0",
@@ -30,7 +30,7 @@ test = [
 ]
 
 [tool.uv.sources]
-agent-context-graph = { workspace = true }
+memgraph-context-graph = { workspace = true }
 memgraph-toolbox = { workspace = true }
 
 [build-system]

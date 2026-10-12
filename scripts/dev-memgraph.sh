@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Local dev lifecycle for exploring/dogfooding unstructured2graph and the
-# context-graph family (agent-context-graph, actions-graph, skills-graph,
+# context-graph family (memgraph-context-graph, actions-graph, skills-graph,
 # sessions-graph, resources-graph) against an isolated local Memgraph -- including pointing
 # the real live Claude Code plugin at it. That exploration instance's data
 # persists until you explicitly `down` it. `test` is a separate concern with
@@ -59,7 +59,7 @@ CONFIG_DIR="$(dirname "$CONFIG_FILE")"
 CONFIG_BACKUP="${CONFIG_FILE}.pre-local-test-backup"
 CONFIG_ABSENT="${CONFIG_BACKUP}.absent"
 
-ALL_PACKAGES=(unstructured2graph actions-graph agent-context-graph skills-graph sessions-graph resources-graph hygm context-graph-eval)
+ALL_PACKAGES=(unstructured2graph actions-graph memgraph-context-graph skills-graph sessions-graph resources-graph hygm context-graph-eval)
 
 _HELP="usage: $(basename "$0") <command> [args]
 
@@ -92,7 +92,7 @@ Commands:
                      Verifies the SPAWNED inference rule and the skill-attachment
                      rule against a real session instead of synthetic e2e data.
                      Needs ANTHROPIC_API_KEY (env, or .env at the repo root) and
-                     'claude' + 'agent-context-graph' on PATH. Costs a real LLM
+                     'claude' + 'memgraph-context-graph' on PATH. Costs a real LLM
                      call; Tier 1 only (one subagent, no concurrent-subagent
                      disambiguation).
   dogfood-env         Create a private config enabling auto_reconcile on SESSION_END.
@@ -153,7 +153,7 @@ _bolt_roundtrip_ok() {
   local port="$1"
   # An authentication error is a full Bolt round trip too: a provisioned (Enterprise) instance has users,
   # so it refuses the anonymous login, but only once it is ready to answer.
-  uv run --package agent-context-graph python3 -c "
+  uv run --package memgraph-context-graph python3 -c "
 import neo4j
 driver = neo4j.GraphDatabase.driver('bolt://localhost:${port}', auth=('', ''))
 try:
@@ -351,7 +351,7 @@ _resolve_anthropic_api_key() {
 
 # Create a private, session-scoped config; only its path reaches stdout.
 cmd_dogfood_env() {
-  (cd "$REPO_ROOT" && uv run --package agent-context-graph python - "$LOCAL_MEMGRAPH_URL" "$REPO_ROOT" <<'PYCONFIG'
+  (cd "$REPO_ROOT" && uv run --package memgraph-context-graph python - "$LOCAL_MEMGRAPH_URL" "$REPO_ROOT" <<'PYCONFIG'
 import os
 import shlex
 import shutil
@@ -360,7 +360,7 @@ import tempfile
 from pathlib import Path
 
 from dotenv import dotenv_values
-from agent_context_graph.adapters import _identity
+from memgraph_context_graph.adapters import _identity
 
 source = _identity.config_file()
 config = _identity.load_config()
@@ -421,7 +421,7 @@ cmd_test() {
   fi
 
   # Only exported for the packages that actually talk to Memgraph in their own
-  # tests. agent-context-graph is a pure event-routing/adapter layer -- its
+  # tests. memgraph-context-graph is a pure event-routing/adapter layer -- its
   # own suite is fully mocked and some tests assert on the hardcoded DEFAULT
   # bolt://localhost:7687, so leaking MEMGRAPH_URL into it would break them;
   # it's run with those vars explicitly unset instead, regardless of what's
@@ -446,23 +446,23 @@ cmd_test() {
           pytest unstructured2graph/tests/ -v) || failed+=("$pkg")
         ;;
       actions-graph)
-        (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package actions-graph --extra test --extra agent-context-graph \
+        (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package actions-graph --extra test --extra memgraph-context-graph \
           pytest context-graph/actions-graph/tests/ -v) || failed+=("$pkg")
         ;;
-      agent-context-graph)
-        (cd "$REPO_ROOT" && "${without_memgraph_env[@]}" uv run --package agent-context-graph --extra test \
-          pytest context-graph/agent-context-graph/tests/ -v) || failed+=("$pkg")
+      memgraph-context-graph)
+        (cd "$REPO_ROOT" && "${without_memgraph_env[@]}" uv run --package memgraph-context-graph --extra test \
+          pytest context-graph/memgraph-context-graph/tests/ -v) || failed+=("$pkg")
         ;;
       skills-graph)
-        (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package skills-graph --extra test --extra agent-context-graph \
+        (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package skills-graph --extra test --extra memgraph-context-graph \
           pytest context-graph/skills-graph/tests/ -v) || failed+=("$pkg")
         ;;
       sessions-graph)
-        (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package sessions-graph --extra test --extra reconciliation --extra agent-context-graph \
+        (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package sessions-graph --extra test --extra reconciliation --extra memgraph-context-graph \
           pytest context-graph/sessions-graph/tests/ -v) || failed+=("$pkg")
         ;;
       resources-graph)
-        (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package resources-graph --extra test --extra agent-context-graph \
+        (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package resources-graph --extra test --extra memgraph-context-graph \
           pytest context-graph/resources-graph/tests/ -v) || failed+=("$pkg")
         ;;
       hygm)
@@ -489,9 +489,9 @@ cmd_test() {
 }
 
 cmd_hooks_local() {
-  if ! command -v agent-context-graph >/dev/null 2>&1; then
-    echo "ERROR: agent-context-graph is not on PATH." >&2
-    echo "Install it first, e.g. via context-graph/plugins/agent-context-graph-claude/scripts/bootstrap.sh" >&2
+  if ! command -v memgraph-context-graph >/dev/null 2>&1; then
+    echo "ERROR: memgraph-context-graph is not on PATH." >&2
+    echo "Install it first, e.g. via context-graph/plugins/memgraph-context-graph-claude/scripts/bootstrap.sh" >&2
     exit 1
   fi
 
@@ -507,10 +507,10 @@ cmd_hooks_local() {
     echo "No existing config file at ${CONFIG_FILE} -- recording its absence."
   fi
 
-  agent-context-graph config set memgraph.url "${LOCAL_MEMGRAPH_URL}"
-  agent-context-graph config set memgraph.user ""
-  agent-context-graph config set memgraph.password ""
-  agent-context-graph config set memgraph.database "${LOCAL_MEMGRAPH_DATABASE}"
+  memgraph-context-graph config set memgraph.url "${LOCAL_MEMGRAPH_URL}"
+  memgraph-context-graph config set memgraph.user ""
+  memgraph-context-graph config set memgraph.password ""
+  memgraph-context-graph config set memgraph.database "${LOCAL_MEMGRAPH_DATABASE}"
 
   echo ""
   echo "Live hooks now point at the local instance (${LOCAL_MEMGRAPH_URL})."
@@ -531,7 +531,7 @@ cmd_hooks_restore() {
   fi
   mv "${CONFIG_BACKUP}" "${CONFIG_FILE}"
   echo "Restored your real hook config from backup."
-  agent-context-graph config show 2>/dev/null || true
+  memgraph-context-graph config show 2>/dev/null || true
 }
 
 # Verifies a broad slice of the actions-graph/skills-graph model against a
@@ -553,9 +553,9 @@ cmd_test_graph_model() {
     echo "ERROR: claude is not on PATH." >&2
     exit 1
   fi
-  if ! command -v agent-context-graph >/dev/null 2>&1; then
-    echo "ERROR: agent-context-graph is not on PATH." >&2
-    echo "Install it first, e.g. via context-graph/plugins/agent-context-graph-claude/scripts/bootstrap.sh" >&2
+  if ! command -v memgraph-context-graph >/dev/null 2>&1; then
+    echo "ERROR: memgraph-context-graph is not on PATH." >&2
+    echo "Install it first, e.g. via context-graph/plugins/memgraph-context-graph-claude/scripts/bootstrap.sh" >&2
     exit 1
   fi
   if ! _resolve_anthropic_api_key; then
@@ -566,14 +566,14 @@ cmd_test_graph_model() {
 
   local settings_file
   settings_file="$(mktemp -t test-graph-model-settings.XXXXXX.json)"
-  uv run --package agent-context-graph python3 - "${settings_file}" <<'PYEOF'
+  uv run --package memgraph-context-graph python3 - "${settings_file}" <<'PYEOF'
 import json
 import sys
 
-from agent_context_graph.adapters.claude_code import PLUGIN
+from memgraph_context_graph.adapters.claude_code import PLUGIN
 
-# `uv run --package agent-context-graph agent-context-graph ...` rather than a
-# bare `agent-context-graph` -- a real, discovered-the-hard-way ambiguity: a
+# `uv run --package memgraph-context-graph memgraph-context-graph ...` rather than a
+# bare `memgraph-context-graph` -- a real, discovered-the-hard-way ambiguity: a
 # stale globally `uv tool install`ed copy can shadow (or be shadowed by) this
 # repo's own workspace venv on PATH, silently testing the wrong version of
 # this code. This form always resolves to the exact checkout being verified,
@@ -583,7 +583,7 @@ from agent_context_graph.adapters.claude_code import PLUGIN
 # `hook run` does nothing (a second real, silent gap this verification
 # tripped over).
 command = (
-    "uv run --package agent-context-graph agent-context-graph hook run claude-code "
+    "uv run --package memgraph-context-graph memgraph-context-graph hook run claude-code "
     "--connector skills-graph --connector actions-graph --connector sessions-graph"
 )
 with open(sys.argv[1], "w") as f:
@@ -610,11 +610,11 @@ PYEOF
     # done when we own this swap -- if hooks-local was already active
     # (someone else's real, still-running local-mode session), we have no
     # restore path for this and must not clobber their identity.
-    agent-context-graph config set identity.user_id "test-graph-model"
+    memgraph-context-graph config set identity.user_id "test-graph-model"
   fi
 
   local session_id
-  session_id="$(uv run --package agent-context-graph python3 -c 'import uuid; print(uuid.uuid4())')"
+  session_id="$(uv run --package memgraph-context-graph python3 -c 'import uuid; print(uuid.uuid4())')"
   echo "Driving a real Claude Code session (session_id=${session_id})..."
 
   # Restricting the top-level session to ONLY the Task tool -- Claude Code's
@@ -641,7 +641,7 @@ PYEOF
   output_file="$(mktemp -t test-graph-model-output.XXXXXX.json)"
   set +e
   # Explicit cd: the hooks config's command embeds `uv run --package
-  # agent-context-graph ...`, which resolves relative to the hook
+  # memgraph-context-graph ...`, which resolves relative to the hook
   # subprocess's cwd -- which Claude Code sets to wherever `claude` itself
   # was launched from. Must be $REPO_ROOT regardless of where this script
   # was invoked from, or `uv run` won't find the workspace.

@@ -55,7 +55,6 @@ resolution-markers = [
 [manifest]
 members = [
     "actions-graph",
-    "agent-context-graph",
     "context-graph-eval",
     "context-graph-spaces",
     "hygm",
@@ -63,6 +62,7 @@ members = [
     "lightrag-memgraph",
     "mcp-memgraph",
     "memgraph-ai",
+    "memgraph-context-graph",
     "memgraph-toolbox",
     "resources-graph",
     "sessions-graph",
@@ -188,7 +188,7 @@ wheels = [
 
 [[package]]
 name = "actions-graph"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "context-graph/actions-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -196,11 +196,11 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-agent-context-graph = [
-    { name = "agent-context-graph" },
-]
 claude-agent = [
     { name = "claude-agent-sdk" },
+]
+memgraph-context-graph = [
+    { name = "memgraph-context-graph" },
 ]
 test = [
     { name = "pytest" },
@@ -209,52 +209,14 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-context-graph", marker = "extra == 'agent-context-graph'", editable = "context-graph/agent-context-graph" },
     { name = "claude-agent-sdk", marker = "extra == 'claude-agent'", specifier = ">=0.1.0" },
+    { name = "memgraph-context-graph", marker = "extra == 'memgraph-context-graph'", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "neo4j", specifier = ">=5.28.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
 ]
-provides-extras = ["agent-context-graph", "claude-agent", "test"]
-
-[[package]]
-name = "agent-context-graph"
-version = "0.4.0"
-source = { editable = "context-graph/agent-context-graph" }
-dependencies = [
-    { name = "memgraph-toolbox" },
-    { name = "tomlkit" },
-]
-
-[package.optional-dependencies]
-claude = [
-    { name = "claude-agent-sdk" },
-]
-mcp = [
-    { name = "mcp" },
-]
-openai = [
-    { name = "openai-agents" },
-]
-test = [
-    { name = "mcp" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "claude-agent-sdk", marker = "extra == 'claude'", specifier = ">=0.1.0" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.23.0,<3" },
-    { name = "mcp", marker = "extra == 'test'", specifier = ">=1.23.0,<3" },
-    { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
-    { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.1.0" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
-    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
-    { name = "tomlkit", specifier = ">=0.13,<1" },
-]
-provides-extras = ["claude", "mcp", "openai", "test"]
+provides-extras = ["memgraph-context-graph", "claude-agent", "test"]
 
 [[package]]
 name = "aiofile"
@@ -1184,8 +1146,8 @@ dependencies = [
 [package.optional-dependencies]
 pipeline = [
     { name = "actions-graph" },
-    { name = "agent-context-graph" },
     { name = "lightrag-memgraph" },
+    { name = "memgraph-context-graph" },
     { name = "sessions-graph" },
     { name = "unstructured2graph" },
 ]
@@ -1197,9 +1159,9 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "actions-graph", marker = "extra == 'pipeline'", editable = "context-graph/actions-graph" },
-    { name = "agent-context-graph", marker = "extra == 'pipeline'", editable = "context-graph/agent-context-graph" },
     { name = "deepeval", specifier = ">=3.5.2" },
     { name = "lightrag-memgraph", marker = "extra == 'pipeline'", editable = "integrations/lightrag-memgraph" },
+    { name = "memgraph-context-graph", marker = "extra == 'pipeline'", editable = "context-graph/memgraph-context-graph" },
     { name = "nltk", specifier = ">=3.9.4" },
     { name = "openai", specifier = ">=1.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
@@ -1215,7 +1177,7 @@ name = "context-graph-spaces"
 version = "0.1.0"
 source = { editable = "context-graph/spaces" }
 dependencies = [
-    { name = "agent-context-graph" },
+    { name = "memgraph-context-graph" },
     { name = "memgraph-toolbox" },
     { name = "neo4j" },
     { name = "sessions-graph", extra = ["reconciliation"] },
@@ -1225,16 +1187,16 @@ dependencies = [
 [package.optional-dependencies]
 test = [
     { name = "pytest" },
-    { name = "sessions-graph", extra = ["agent-context-graph", "reconciliation"] },
+    { name = "sessions-graph", extra = ["memgraph-context-graph", "reconciliation"] },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-context-graph", editable = "context-graph/agent-context-graph" },
+    { name = "memgraph-context-graph", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "neo4j", specifier = ">=5.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
-    { name = "sessions-graph", extras = ["agent-context-graph", "reconciliation"], marker = "extra == 'test'", editable = "context-graph/sessions-graph" },
+    { name = "sessions-graph", extras = ["memgraph-context-graph", "reconciliation"], marker = "extra == 'test'", editable = "context-graph/sessions-graph" },
     { name = "sessions-graph", extras = ["reconciliation"], editable = "context-graph/sessions-graph" },
     { name = "tomli", specifier = ">=2.0" },
 ]
@@ -4076,6 +4038,44 @@ requires-dist = [
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "neo4j", specifier = ">=5.28.1" },
 ]
+
+[[package]]
+name = "memgraph-context-graph"
+version = "0.4.0"
+source = { editable = "context-graph/memgraph-context-graph" }
+dependencies = [
+    { name = "memgraph-toolbox" },
+    { name = "tomlkit" },
+]
+
+[package.optional-dependencies]
+claude = [
+    { name = "claude-agent-sdk" },
+]
+mcp = [
+    { name = "mcp" },
+]
+openai = [
+    { name = "openai-agents" },
+]
+test = [
+    { name = "mcp" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "claude-agent-sdk", marker = "extra == 'claude'", specifier = ">=0.1.0" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.23.0,<3" },
+    { name = "mcp", marker = "extra == 'test'", specifier = ">=1.23.0,<3" },
+    { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
+    { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.1.0" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
+    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
+    { name = "tomlkit", specifier = ">=0.13,<1" },
+]
+provides-extras = ["claude", "mcp", "openai", "test"]
 
 [[package]]
 name = "memgraph-toolbox"
@@ -7943,8 +7943,8 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-agent-context-graph = [
-    { name = "agent-context-graph" },
+memgraph-context-graph = [
+    { name = "memgraph-context-graph" },
 ]
 test = [
     { name = "actions-graph" },
@@ -7955,12 +7955,12 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "actions-graph", marker = "extra == 'test'", editable = "context-graph/actions-graph" },
-    { name = "agent-context-graph", marker = "extra == 'agent-context-graph'", editable = "context-graph/agent-context-graph" },
+    { name = "memgraph-context-graph", marker = "extra == 'memgraph-context-graph'", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "sessions-graph", marker = "extra == 'test'", editable = "context-graph/sessions-graph" },
 ]
-provides-extras = ["agent-context-graph", "test"]
+provides-extras = ["memgraph-context-graph", "test"]
 
 [[package]]
 name = "rich"
@@ -8510,18 +8510,18 @@ wheels = [
 
 [[package]]
 name = "sessions-graph"
-version = "0.7.0"
+version = "0.7.1"
 source = { editable = "context-graph/sessions-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
 ]
 
 [package.optional-dependencies]
-agent-context-graph = [
-    { name = "agent-context-graph" },
-]
 anthropic = [
     { name = "anthropic" },
+]
+memgraph-context-graph = [
+    { name = "memgraph-context-graph" },
 ]
 reconciliation = [
     { name = "actions-graph" },
@@ -8538,17 +8538,17 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "actions-graph", marker = "extra == 'reconciliation'", editable = "context-graph/actions-graph" },
-    { name = "agent-context-graph", marker = "extra == 'agent-context-graph'", editable = "context-graph/agent-context-graph" },
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.74.0" },
     { name = "anthropic", marker = "extra == 'reconciliation'", specifier = ">=0.74.0" },
     { name = "hygm", marker = "extra == 'reconciliation'", editable = "hygm" },
+    { name = "memgraph-context-graph", marker = "extra == 'memgraph-context-graph'", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "openai", marker = "extra == 'reconciliation'", specifier = ">=2.0.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
     { name = "unstructured2graph", marker = "extra == 'reconciliation'", editable = "unstructured2graph" },
 ]
-provides-extras = ["anthropic", "agent-context-graph", "reconciliation", "test"]
+provides-extras = ["anthropic", "memgraph-context-graph", "reconciliation", "test"]
 
 [[package]]
 name = "setuptools"
@@ -8579,15 +8579,15 @@ wheels = [
 
 [[package]]
 name = "skills-graph"
-version = "0.2.0"
+version = "0.2.1"
 source = { editable = "context-graph/skills-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
 ]
 
 [package.optional-dependencies]
-agent-context-graph = [
-    { name = "agent-context-graph" },
+memgraph-context-graph = [
+    { name = "memgraph-context-graph" },
 ]
 test = [
     { name = "openai-agents" },
@@ -8597,13 +8597,13 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-context-graph", marker = "extra == 'agent-context-graph'", editable = "context-graph/agent-context-graph" },
+    { name = "memgraph-context-graph", marker = "extra == 'memgraph-context-graph'", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "openai-agents", marker = "extra == 'test'", specifier = ">=0.1.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
 ]
-provides-extras = ["agent-context-graph", "test"]
+provides-extras = ["memgraph-context-graph", "test"]
 
 [[package]]
 name = "smart-open"

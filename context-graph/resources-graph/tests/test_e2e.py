@@ -10,9 +10,9 @@ import os
 
 import pytest
 
-from agent_context_graph.adapters._identity import HookConfig
-from agent_context_graph.events import MessageEvent, SessionStartEvent, ToolEndEvent, ToolStartEvent
-from agent_context_graph.tools import ToolError
+from memgraph_context_graph.adapters._identity import HookConfig
+from memgraph_context_graph.events import MessageEvent, SessionStartEvent, ToolEndEvent, ToolStartEvent
+from memgraph_context_graph.tools import ToolError
 from resources_graph.address import parse_address
 from resources_graph.sweep import sweep
 from resources_graph.tool import ResourceTool

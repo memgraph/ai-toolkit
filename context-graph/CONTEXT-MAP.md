@@ -31,7 +31,7 @@ _Avoid_: required credential
 
 ## Contexts
 
-- [Agent Context Graph](./agent-context-graph/CONTEXT.md) — translates agent SDK/runtime hook activity into shared event stream, routes to graph connectors.
+- [Memgraph Context Graph](./memgraph-context-graph/CONTEXT.md) — translates agent SDK/runtime hook activity into shared event stream, routes to graph connectors.
 - [Skills Graph](./skills-graph/CONTEXT.md) — stores reusable agent skills in Memgraph, records session skill usage.
 - [Actions Graph](./actions-graph/CONTEXT.md) — records agent session activity as action nodes for observability + tool usage analytics.
 - [Sessions Graph](./sessions-graph/CONTEXT.md) — stores Memory files, indexes History and Memory into extracted entities, serves recall. Named `sessions-graph`: `memory-graph` taken on PyPI. Domain = memory recall.
@@ -40,7 +40,7 @@ _Avoid_: required credential
 
 ## Relationships
 
-- **Agent Context Graph -> graph components**: emits normalized events. Each component-owned connector decides what to persist. `ActionsGraphConnector` records observability data, `SkillGraphConnector` records skill activity, `SessionsGraphConnector` records session/user lifecycle data.
+- **Memgraph Context Graph -> graph components**: emits normalized events. Each component-owned connector decides what to persist. `ActionsGraphConnector` records observability data, `SkillGraphConnector` records skill activity, `SessionsGraphConnector` records session/user lifecycle data.
 - **Session Node (shared)**: `(:Session {session_id})` joins component data. Any component may `MERGE` it; none owns it. Adapter sets `session_id`.
 - **Actions Graph -> Skills Graph**: both consume tool activity. Actions Graph records it; Skills Graph decides if it proves skill usage.
 - **Actions Graph -> Sessions Graph**: reconciliation reads top-level + subagent actions via `get_session_actions()`. Never modifies Actions Graph data ([#275](https://github.com/memgraph/ai-toolkit/issues/275), ticket #281).

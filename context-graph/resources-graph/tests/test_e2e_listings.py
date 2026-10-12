@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent_context_graph.events import SessionStartEvent, ToolStartEvent
+from memgraph_context_graph.events import SessionStartEvent, ToolStartEvent
 from resources_graph import tool as tool_module
 from resources_graph.address import parse_address
 from resources_graph.sweep import sweep

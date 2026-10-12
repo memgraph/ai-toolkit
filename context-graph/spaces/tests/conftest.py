@@ -113,8 +113,8 @@ def connect(enterprise_url: str) -> Iterator[Callable[..., Any]]:
 @pytest.fixture(autouse=True)
 def config_file(monkeypatch, tmp_path):
     """A private Context Graph config file per test; the config and resolver caches start empty."""
-    from agent_context_graph import spaces
-    from agent_context_graph.adapters import _identity
+    from memgraph_context_graph import spaces
+    from memgraph_context_graph.adapters import _identity
 
     path = tmp_path / "config.toml"
     monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(path))
@@ -128,9 +128,9 @@ def config_file(monkeypatch, tmp_path):
 @pytest.fixture
 def join() -> Callable[..., Any]:
     """``join(url, login, password)``: point the config at *login* the way a member does, return the resolver."""
-    from agent_context_graph import cli
-    from agent_context_graph.adapters import _identity
-    from agent_context_graph.spaces import spaces_for
+    from memgraph_context_graph import cli
+    from memgraph_context_graph.adapters import _identity
+    from memgraph_context_graph.spaces import spaces_for
 
     def run(url: str, login: str, password: str) -> Any:
         assert cli.main(["join", url, login, f"--password={password}"]) == 0

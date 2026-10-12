@@ -169,7 +169,7 @@ def _configured_embedding_model() -> str:
     from sessions_graph.embeddings import DEFAULT_EMBEDDING_MODEL
 
     try:
-        from agent_context_graph.adapters._identity import resolve_embedding_model
+        from memgraph_context_graph.adapters._identity import resolve_embedding_model
     except ImportError:
         return DEFAULT_EMBEDDING_MODEL
     return resolve_embedding_model() or DEFAULT_EMBEDDING_MODEL
@@ -182,11 +182,11 @@ def _fill_env_from_context_graph_config() -> None:
     context-graph's config.toml onto this subprocess's environment (see
     sessions_graph.connector._child_env). Run standalone, there's no
     such parent, so fill in the same values here -- only for keys not already
-    set, so explicit ambient env always wins. agent-context-graph is an
+    set, so explicit ambient env always wins. memgraph-context-graph is an
     optional extra; silently skip if it isn't installed.
     """
     try:
-        from agent_context_graph.adapters._identity import resolve_llm_env, resolve_memgraph_env
+        from memgraph_context_graph.adapters._identity import resolve_llm_env, resolve_memgraph_env
     except ImportError:
         return
     for key, value in {**resolve_memgraph_env(), **resolve_llm_env()}.items():
@@ -258,7 +258,7 @@ def _describe(version: OntologyVersion) -> str:
 
 def _configured_user_id() -> str | None:
     try:
-        from agent_context_graph.adapters._identity import resolve_user_id
+        from memgraph_context_graph.adapters._identity import resolve_user_id
     except ImportError:
         return None
     return resolve_user_id({})
@@ -271,7 +271,7 @@ def _sync_configured_ontology(graph: SessionsGraph) -> None:
     in it never stops reconciliation.
     """
     try:
-        from agent_context_graph.adapters._identity import resolve_ontology, resolve_user_id
+        from memgraph_context_graph.adapters._identity import resolve_ontology, resolve_user_id
     except ImportError:
         return
     path, derive = resolve_ontology()

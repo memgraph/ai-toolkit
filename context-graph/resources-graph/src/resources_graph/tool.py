@@ -1,7 +1,7 @@
 """The ``resource`` tool: the harness's model reads a GitHub resource from memory.
 
-Registered under agent-context-graph's ``agent_context_graph.tools`` entry
-point, so ``agent-context-graph mcp`` serves it. It never calls GitHub and
+Registered under memgraph-context-graph's ``memgraph_context_graph.tools`` entry
+point, so ``memgraph-context-graph mcp`` serves it. It never calls GitHub and
 writes nothing: it returns what is stored with ``fetched_at`` and the source's
 ``updated_at`` — facts, so the model judges staleness for its own task. The
 Cache Read is recorded by the connector from the first line of the answer
@@ -13,15 +13,15 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from agent_context_graph.spaces import MemgraphTarget, SpaceError, SpaceResolver, spaces_for
-from agent_context_graph.tools import ToolError, ToolResult
+from memgraph_context_graph.spaces import MemgraphTarget, SpaceError, SpaceResolver, spaces_for
+from memgraph_context_graph.tools import ToolError, ToolResult
 
 from .address import parse_address
 from .core import ResourcesGraph
 from .models import MISS, SUBSUMED, Served
 
 if TYPE_CHECKING:
-    from agent_context_graph.adapters._identity import HookConfig
+    from memgraph_context_graph.adapters._identity import HookConfig
 
 _DESCRIPTION = """\
 Read a public GitHub issue, pull request, repository or issue/PR list from memory instead of \
@@ -75,7 +75,7 @@ class ResourceTool:
         if not _spaces(config).user_id():
             raise ToolError(
                 "No user is configured, so memory can't be read. "
-                "Set one with: agent-context-graph config set identity.user_id <name>"
+                "Set one with: memgraph-context-graph config set identity.user_id <name>"
             )
         address = parse_address(text)
         if address is None:

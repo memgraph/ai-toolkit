@@ -13,11 +13,11 @@ import neo4j
 import pytest
 from sessions_graph.tool import MemoryTool, RecallTool
 
-from agent_context_graph.adapters import _identity
-from agent_context_graph.tools import ToolError
 from context_graph_spaces import resolver
 from context_graph_spaces.provision import apply
 from context_graph_spaces.spec import parse_spec
+from memgraph_context_graph.adapters import _identity
+from memgraph_context_graph.tools import ToolError
 
 CANARY = "canary-ante-4417"
 SHARED = "/memories/spaces/launch/decision.md"

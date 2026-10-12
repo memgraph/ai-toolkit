@@ -4,9 +4,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
+pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
 
-from agent_context_graph.events import ToolEndEvent, ToolStartEvent
+from memgraph_context_graph.events import ToolEndEvent, ToolStartEvent
 from skills_graph.connector import SkillGraphConnector
 
 if TYPE_CHECKING:

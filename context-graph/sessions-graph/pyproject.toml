@@ -1,6 +1,6 @@
 [project]
 name = "sessions-graph"
-version = "0.7.0"
+version = "0.7.1"
 description = "Cross-session memory store for agents, backed by Memgraph"
 readme = "README.md"
 license = { text = "MIT" }
@@ -20,8 +20,8 @@ dependencies = [
 anthropic = [
     "anthropic>=0.74.0",
 ]
-agent-context-graph = [
-    "agent-context-graph>=0.4.0",
+memgraph-context-graph = [
+    "memgraph-context-graph>=0.4.0",
 ]
 reconciliation = [
     "actions-graph>=0.4.0",
@@ -39,12 +39,12 @@ test = [
 [project.scripts]
 sessions-graph = "sessions_graph.cli:main"
 
-[project.entry-points."agent_context_graph.tools"]
+[project.entry-points."memgraph_context_graph.tools"]
 recall = "sessions_graph.tool:RECALL"
 memory = "sessions_graph.tool:MEMORY"
 
 [tool.uv.sources]
-agent-context-graph = { workspace = true }
+memgraph-context-graph = { workspace = true }
 memgraph-toolbox = { workspace = true }
 actions-graph = { workspace = true }
 hygm = { workspace = true }

@@ -30,7 +30,7 @@ A database, role, user or tenant profile with a `u_`, `space_` or `cg_` prefix, 
 ## Relationships
 
 - **Spaces Spec -> Memgraph**: `apply` creates databases, versioned roles (named by a hash of their grants), users, role assignments scoped to one database, tenant profiles and Space Memberships. Removing a member or a space revokes access; `--prune` also drops users and databases.
-- **Context Graph config -> EnterpriseSpaces**: with `edition = "enterprise"`, agent-context-graph's `SpaceResolver` is this package's resolver, found through the `agent_context_graph.editions` entry point.
+- **Context Graph config -> EnterpriseSpaces**: with `edition = "enterprise"`, memgraph-context-graph's `SpaceResolver` is this package's resolver, found through the `memgraph_context_graph.editions` entry point.
 
 ## Flagged ambiguities
 
