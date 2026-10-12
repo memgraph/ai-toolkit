@@ -41,7 +41,7 @@ jobs:
       # OPENAI_API_KEY is set for the codex leg since it's already an
       # available secret and a real Codex install would have one configured
       # too, but it isn't actually required: plugin marketplace/install is
-      # local config + a public git clone, and memgraph-context-graph's
+      # local config + a public git clone, and agent-context-graph's
       # bootstrap/doctor hook smoke test calls the runtime adapter in-process
       # rather than the real claude/codex binary, so it never calls a model
       # either -- confirmed by a full green run on both runtimes with no key
@@ -49,6 +49,6 @@ jobs:
       - name: Run install.sh end-to-end
         env:
           CONTEXT_GRAPH_RUNTIME: ${{ matrix.runtime }}
-          MEMGRAPH_CONTEXT_GRAPH_USER_ID: ci-test-user
+          AGENT_CONTEXT_GRAPH_USER_ID: ci-test-user
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: ./context-graph/scripts/install.sh

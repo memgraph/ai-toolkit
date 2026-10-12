@@ -3,17 +3,17 @@
   "owner": {
     "name": "Memgraph"
   },
-  "description": "Runtime plugins for Memgraph Context Graph.",
+  "description": "Runtime plugins for Agent Context Graph.",
   "plugins": [
     {
       "name": "context-graph",
       "source": {
         "source": "git-subdir",
         "url": "https://github.com/memgraph/ai-toolkit.git",
-        "path": "context-graph/plugins/memgraph-context-graph-claude"
+        "path": "context-graph/plugins/agent-context-graph-claude"
       },
-      "description": "Capture Claude Code runtime activity through Memgraph Context Graph hooks, and recall past sessions.",
-      "version": "0.3.0",
+      "description": "Capture Claude Code runtime activity through Agent Context Graph hooks, and recall past sessions.",
+      "version": "0.2.0",
       "author": {
         "name": "Memgraph"
       },
