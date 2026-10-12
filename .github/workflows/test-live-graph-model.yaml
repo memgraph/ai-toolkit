@@ -6,7 +6,7 @@ name: Test graph model against a live Claude Code session (manual)
 # bad fit for gating every PR. Run this deliberately when changing something
 # heavily around actions-graph's Agent node / SPAWNED inference rule,
 # skills-graph's Agent-scoped skill-usage attachment, or
-# agent-context-graph's Claude Code adapter.
+# memgraph-context-graph's Claude Code adapter.
 on:
   workflow_dispatch: {}
 
@@ -28,11 +28,11 @@ jobs:
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
 
-      # Populates the shared workspace .venv with agent-context-graph and the
-      # three connector packages' agent-context-graph extra -- the same
+      # Populates the shared workspace .venv with memgraph-context-graph and the
+      # three connector packages' memgraph-context-graph extra -- the same
       # combination `scripts/dev-memgraph.sh test` already relies on. Doing
       # this explicitly (rather than a bare `uv sync`) is what makes
-      # `agent-context-graph hook run claude-code --connector ...` actually
+      # `memgraph-context-graph hook run claude-code --connector ...` actually
       # resolve real connectors instead of silently no-op'ing.
       #
       # Must be ONE `uv sync` call with every --package flag together --
@@ -40,16 +40,16 @@ jobs:
       # so separate sequential calls each uninstall whatever the previous
       # call just installed (confirmed live: a fresh runner ended up with
       # only sessions-graph installed, skills-graph and actions-graph both
-      # uninstalled by the later sync calls -- `agent-context-graph hook run`
+      # uninstalled by the later sync calls -- `memgraph-context-graph hook run`
       # then hit a bare `ModuleNotFoundError: No module named 'skills_graph'`
       # on its very first live workflow_dispatch run).
       - name: Sync workspace environment
         run: |
-          uv sync --package agent-context-graph --package actions-graph --package skills-graph --package sessions-graph --extra agent-context-graph
+          uv sync --package memgraph-context-graph --package actions-graph --package skills-graph --package sessions-graph --extra memgraph-context-graph
 
       # Puts this checkout's own workspace venv ahead of anything else on
       # PATH -- a real, discovered-the-hard-way risk: a stale globally
-      # `uv tool install`ed agent-context-graph can otherwise shadow (or be
+      # `uv tool install`ed memgraph-context-graph can otherwise shadow (or be
       # shadowed by) this one, silently testing the wrong version of the code
       # under review.
       - name: Add workspace venv to PATH

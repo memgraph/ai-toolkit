@@ -144,7 +144,7 @@ def test_cli_refuses_without_a_user(graph, capsys):
 def test_reconcile_applies_the_configured_file_and_survives_a_broken_one(graph, schema, capsys):
     from sessions_graph.cli import _sync_configured_ontology
 
-    from agent_context_graph.adapters import _identity
+    from memgraph_context_graph.adapters import _identity
 
     _identity.write_config(user_id="alice", ontology_path=str(schema))
     _sync_configured_ontology(graph)

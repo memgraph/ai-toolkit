@@ -29,7 +29,7 @@ Which memory a harness's model uses: its own built-in memory (`native`) or Conte
 _Avoid_: Memory mode, memory provider
 
 **Memory Write**:
-Persisting a Memory via Sessions Graph Python API, or by the model through the `memory` tool (memory tool commands, ADR 0006 in agent-context-graph). The only write a model makes over MCP; everything derived stays background-only.
+Persisting a Memory via Sessions Graph Python API, or by the model through the `memory` tool (memory tool commands, ADR 0006 in memgraph-context-graph). The only write a model makes over MCP; everything derived stays background-only.
 _Avoid_: Memory extraction, LLM distillation, passive capture, tool-intercepted write
 
 **Memory Recall**:

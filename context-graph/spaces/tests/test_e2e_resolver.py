@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from agent_context_graph import cli
-from agent_context_graph.adapters import _identity
-from agent_context_graph.spaces import SpaceError, spaces_for
 from context_graph_spaces.provision import apply
 from context_graph_spaces.resolver import EnterpriseSpaces
 from context_graph_spaces.spec import parse_spec
+from memgraph_context_graph import cli
+from memgraph_context_graph.adapters import _identity
+from memgraph_context_graph.spaces import SpaceError, spaces_for
 
 
 @pytest.fixture
@@ -87,8 +87,8 @@ def test_a_real_hook_records_the_session_under_the_login(enterprise_url, team, a
     import io
     import json
 
-    from agent_context_graph.hooks.runner import run_hook
-    from agent_context_graph.hooks.runtime_plugin import load_runtime_plugins
+    from memgraph_context_graph.hooks.runner import run_hook
+    from memgraph_context_graph.hooks.runtime_plugin import load_runtime_plugins
 
     join(enterprise_url, "alice", team["alice"])
     payload = {"hook_event_name": "SessionStart", "session_id": "alice-s1", "cwd": "/tmp", "user_id": "mallory"}
@@ -104,8 +104,8 @@ def test_a_real_hook_records_the_session_under_the_login(enterprise_url, team, a
 def test_a_hook_with_a_refused_config_skips_quietly(config_file, monkeypatch, capsys):
     import io
 
-    from agent_context_graph.hooks.runner import run_hook
-    from agent_context_graph.hooks.runtime_plugin import load_runtime_plugins
+    from memgraph_context_graph.hooks.runner import run_hook
+    from memgraph_context_graph.hooks.runtime_plugin import load_runtime_plugins
 
     config_file.write_text('edition = "enterprise"\n[identity]\nuser_id = "mallory"\n[memgraph]\nuser = "alice"\n')
     monkeypatch.setattr("sys.stdin", io.StringIO('{"hook_event_name": "SessionStart", "session_id": "s"}'))

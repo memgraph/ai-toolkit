@@ -21,10 +21,10 @@ Quick Start:
         tool_input={"file_path": "/path/to/file"},
     )
 
-Integration with Agent Context Graph:
+Integration with Memgraph Context Graph:
     from actions_graph import ActionsGraph
     from actions_graph.connector import ActionsGraphConnector
-    from agent_context_graph import AgentLink
+    from memgraph_context_graph import AgentLink
 
     graph = ActionsGraph()
     graph.setup()

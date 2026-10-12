@@ -7,12 +7,12 @@ from dataclasses import replace
 
 import pytest
 
-pytest.importorskip("agent_context_graph")
+pytest.importorskip("memgraph_context_graph")
 
 from sessions_graph.tool import MemoryTool
 
-from agent_context_graph.adapters._identity import HookConfig
-from agent_context_graph.tools import ToolError, available_tools, load_tools
+from memgraph_context_graph.adapters._identity import HookConfig
+from memgraph_context_graph.tools import ToolError, available_tools, load_tools
 
 
 @pytest.fixture

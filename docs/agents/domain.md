@@ -20,7 +20,7 @@ Multi-context uv workspace. `CONTEXT-MAP.md` at the root lists every context.
 │   ├── CONTEXT.md
 │   └── docs/adr/
 └── context-graph/
-    ├── agent-context-graph/{CONTEXT.md, docs/adr/}
+    ├── memgraph-context-graph/{CONTEXT.md, docs/adr/}
     ├── actions-graph/CONTEXT.md
     ├── skills-graph/CONTEXT.md
     ├── sessions-graph/CONTEXT.md

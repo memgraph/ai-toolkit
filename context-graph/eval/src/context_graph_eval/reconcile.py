@@ -43,12 +43,12 @@ def _resolve_llm_credentials() -> None:
     Per ADR 0002, the config file is the canonical source; env vars are a
     write-time convenience. Eval runs standalone, so nothing has overlaid the
     config for us. Existing env always wins, so an explicit key stays in charge.
-    agent-context-graph is an optional extra -- skip quietly without it.
+    memgraph-context-graph is an optional extra -- skip quietly without it.
     """
     import os
 
     try:
-        from agent_context_graph.adapters._identity import resolve_llm_env
+        from memgraph_context_graph.adapters._identity import resolve_llm_env
     except ImportError:
         return
     for key, value in resolve_llm_env().items():

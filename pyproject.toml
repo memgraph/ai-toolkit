@@ -53,7 +53,7 @@ members = [
     "unstructured2graph",
     "context-graph/skills-graph",
     "context-graph/actions-graph",
-    "context-graph/agent-context-graph",
+    "context-graph/memgraph-context-graph",
     "context-graph/sessions-graph",
     "context-graph/resources-graph",
     "context-graph/spaces",
@@ -96,7 +96,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["hygm", "memgraph_toolbox", "mcp_memgraph", "langchain_memgraph", "lightrag_memgraph", "unstructured2graph", "skills_graph", "actions_graph", "agent_context_graph", "resources_graph", "context_graph_spaces"]
+known-first-party = ["hygm", "memgraph_toolbox", "mcp_memgraph", "langchain_memgraph", "lightrag_memgraph", "unstructured2graph", "skills_graph", "actions_graph", "memgraph_context_graph", "resources_graph", "context_graph_spaces"]
 
 [tool.ruff.lint.per-file-ignores]
 # Notebook cells reference variables from earlier cells — not actual undefined names

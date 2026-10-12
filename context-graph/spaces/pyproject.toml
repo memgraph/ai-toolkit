@@ -12,7 +12,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "agent-context-graph>=0.4.0",
+    "memgraph-context-graph>=0.5.0",
     "memgraph-toolbox",
     # Shared spaces hold sessions-graph's memory files: apply sets up its schema there, and the
     # worker reconciles them (the reconciliation extra brings unstructured2graph).
@@ -25,17 +25,17 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest>=9.0.3",
-    "sessions-graph[agent-context-graph,reconciliation]>=0.6.0",
+    "sessions-graph[memgraph-context-graph,reconciliation]>=0.8.0",
 ]
 
 [project.scripts]
 context-graph-spaces = "context_graph_spaces.cli:main"
 
-[project.entry-points."agent_context_graph.editions"]
+[project.entry-points."memgraph_context_graph.editions"]
 enterprise = "context_graph_spaces.resolver:EnterpriseSpaces"
 
 [tool.uv.sources]
-agent-context-graph = { workspace = true }
+memgraph-context-graph = { workspace = true }
 memgraph-toolbox = { workspace = true }
 sessions-graph = { workspace = true }
 

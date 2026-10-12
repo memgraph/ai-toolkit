@@ -32,7 +32,7 @@ Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable Memgraph graph.
 
 | Package | Role |
 |---|---|
-| `agent-context-graph` | Event hub. Normalizes runtime hooks / SDK activity into a shared Event Protocol and routes it to graph connectors. Also serves components' read tools (e.g. sessions-graph's `recall`) to the harness's model over stdio MCP (`agent-context-graph mcp`). |
+| `memgraph-context-graph` | Event hub. Normalizes runtime hooks / SDK activity into a shared Event Protocol and routes it to graph connectors. Also serves components' read tools (e.g. sessions-graph's `recall`) to the harness's model over stdio MCP (`memgraph-context-graph mcp`). |
 | `actions-graph` | Records tool calls/results/messages/subagent activity as `(:Action)`/`(:Agent)` nodes — observability, not memory. |
 | `skills-graph` | Tracks Agent-Skills-spec `(:Skill)` usage per session. |
 | `sessions-graph` | Owns `(:User)`/`(:Session)`, durable `(:Memory)` writes/recall, and session reconciliation into extracted entities (local, no LLM). |
@@ -77,7 +77,7 @@ gh issue list --label wayfinder:map --state open
 - Run a workspace package's own suite via `uv run --package <name> --extra test pytest ...`
   (see `.github/workflows/tests.yaml` for the exact invocation per package,
   including which extras each one needs — e.g. `skills-graph`, `actions-graph`,
-  and `sessions-graph` all also need `--extra agent-context-graph`, and
+  and `sessions-graph` all also need `--extra memgraph-context-graph`, and
   `sessions-graph` additionally needs `--extra reconciliation`).
 
 ## Common commands
@@ -171,7 +171,7 @@ checker — same vendor as `uv`/`ruff`), not `mypy` or `pyright`. **Enforced in
 CI**, blocking: `.github/workflows/lint.yaml`'s `typecheck` job. `ty` resolves
 imports through installed packages (unlike `ruff`, which is purely
 syntactic), and cross-package imports span the whole workspace (e.g.
-`agent-context-graph` optionally imports `skills-graph`/`actions-graph`/
+`memgraph-context-graph` optionally imports `skills-graph`/`actions-graph`/
 `sessions-graph`), so CI syncs the full workspace before checking:
 ```bash
 uv sync --all-packages --all-extras
@@ -241,10 +241,10 @@ LLM config **values** — URLs, keys, flags — **only** from the config file,
 never from environment variables at runtime. Non-interactive hook subprocesses
 don't source shell profiles, so an env-var-only path would silently work in
 your interactive shell and silently fail in the hook. Keep that boundary when
-touching `agent-context-graph`'s hook/config code.
+touching `memgraph-context-graph`'s hook/config code.
 
 A user can make Context Graph their harness memory with
-`agent-context-graph setup <claude-code|codex> --memory-backend context-graph`
+`memgraph-context-graph setup <claude-code|codex> --memory-backend context-graph`
 (map #484, ADR 0006). This switch is per user, never per project. It turns
 the harness's built-in memory off in its user-level config, imports what that
 memory held, and sets `[memory] backend` in the config file. That setting is

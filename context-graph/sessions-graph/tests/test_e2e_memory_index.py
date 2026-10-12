@@ -102,9 +102,9 @@ def test_empty_memory_says_so(store):
 
 def test_session_start_hook_output_carries_the_index(graph, tmp_path, monkeypatch, capsys):
     """The SessionStart hook as a harness runs it, for an opted-in user in a git checkout."""
-    pytest.importorskip("agent_context_graph")
-    from agent_context_graph.adapters import _identity
-    from agent_context_graph.hooks.runner import session_start_context
+    pytest.importorskip("memgraph_context_graph")
+    from memgraph_context_graph.adapters import _identity
+    from memgraph_context_graph.hooks.runner import session_start_context
 
     monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "config.toml"))
     _identity._reset_cache()

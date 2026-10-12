@@ -1,4 +1,4 @@
-"""Agent Context Graph connector for SessionsGraph.
+"""Memgraph Context Graph connector for SessionsGraph.
 
 The connector is intentionally thin: it watches ``SessionStartEvent`` and
 ``SessionEndEvent`` to MERGE ``(:User)`` and ``(:Session)`` nodes so that
@@ -10,8 +10,8 @@ Usage::
 
     from sessions_graph import SessionsGraph
     from sessions_graph.connector import SessionsGraphConnector
-    from agent_context_graph import AgentLink
-    from agent_context_graph.adapters.claude import ClaudeAdapter
+    from memgraph_context_graph import AgentLink
+    from memgraph_context_graph.adapters.claude import ClaudeAdapter
 
     graph = SessionsGraph()
     graph.setup()
@@ -39,7 +39,7 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING
 
-from agent_context_graph.events import (
+from memgraph_context_graph.events import (
     Event,
     EventType,
     SessionEndEvent,
@@ -47,7 +47,7 @@ from agent_context_graph.events import (
     ToolEndEvent,
     TurnEndEvent,
 )
-from agent_context_graph.protocols import GraphConnector
+from memgraph_context_graph.protocols import GraphConnector
 
 if TYPE_CHECKING:
     from .core import SessionsGraph
@@ -58,7 +58,7 @@ _SUPPORTED_EVENTS = {EventType.SESSION_START, EventType.SESSION_END, EventType.T
 
 
 class SessionsGraphConnector(GraphConnector):
-    """Receives Agent Context Graph session events for memory provenance.
+    """Receives Memgraph Context Graph session events for memory provenance.
 
     On ``SESSION_START``:
       - MERGEs ``(:User {user_id})`` and ``(:Session {session_id})`` nodes.
@@ -223,7 +223,7 @@ def _child_env(*, llm: bool) -> dict[str, str]:
     environment entries, including ``CONTEXT_GRAPH_CONFIG``, remain inherited.
     ``llm=False`` omits provider keys because embedding runs inside Memgraph.
     """
-    from agent_context_graph.adapters._identity import resolve_llm_env, resolve_memgraph_env
+    from memgraph_context_graph.adapters._identity import resolve_llm_env, resolve_memgraph_env
 
     env = dict(os.environ)
     # LightRAG bridges these aliases from the canonical connection values.

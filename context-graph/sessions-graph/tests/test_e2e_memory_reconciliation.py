@@ -143,7 +143,7 @@ def test_written_paths_from_tool_input():
 def test_the_hook_records_which_session_wrote_a_file(graph, memgraph):
     from sessions_graph.connector import SessionsGraphConnector
 
-    from agent_context_graph.events import SessionStartEvent, ToolEndEvent
+    from memgraph_context_graph.events import SessionStartEvent, ToolEndEvent
 
     connector = SessionsGraphConnector(graph)
     connector.on_event(SessionStartEvent(session_id="s-9", user_id="alice"))

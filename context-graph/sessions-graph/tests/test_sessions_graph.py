@@ -120,11 +120,11 @@ class TestSessionsGraphCore:
 class TestSessionsGraphConnector:
     @pytest.fixture()
     def context_graph_config(self, monkeypatch, tmp_path):
-        """Point agent_context_graph's hook config at a temp dir so tests never
+        """Point memgraph_context_graph's hook config at a temp dir so tests never
         touch a real ~/.config/context-graph/config.toml on the host running them.
         """
-        pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
-        from agent_context_graph.adapters import _identity
+        pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
+        from memgraph_context_graph.adapters import _identity
 
         # The supported override (ADR 0003), not module privates: those were
         # removed when the config path became a lookup, and monkeypatching a
@@ -137,10 +137,10 @@ class TestSessionsGraphConnector:
         _identity._reset_cache()
 
     def _make(self):
-        pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
+        pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
         from sessions_graph.connector import SessionsGraphConnector
 
-        from agent_context_graph.events import SessionEndEvent, SessionStartEvent
+        from memgraph_context_graph.events import SessionEndEvent, SessionStartEvent
 
         db = MagicMock()
         db.query.return_value = []
@@ -229,7 +229,7 @@ class TestSessionsGraphConnector:
 
     def test_supports_session_events_only(self):
         connector, _, _, SessionStartEvent, SessionEndEvent = self._make()
-        from agent_context_graph.events import ToolStartEvent
+        from memgraph_context_graph.events import ToolStartEvent
 
         assert connector.supports(SessionStartEvent(session_id="s-1"))
         assert connector.supports(SessionEndEvent(session_id="s-1"))
@@ -243,8 +243,8 @@ class TestReconciliationEnv:
 
     @pytest.fixture()
     def context_graph_config(self, monkeypatch, tmp_path):
-        pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
-        from agent_context_graph.adapters import _identity
+        pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
+        from memgraph_context_graph.adapters import _identity
 
         # The supported override (ADR 0003), not module privates: those were
         # removed when the config path became a lookup, and monkeypatching a

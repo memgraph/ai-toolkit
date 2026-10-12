@@ -6,13 +6,13 @@ import os
 
 import pytest
 
-pytest.importorskip("agent_context_graph")
+pytest.importorskip("memgraph_context_graph")
 
 import tomlkit
 
-from agent_context_graph.adapters import _identity
-from agent_context_graph.adapters.codex import PLUGIN, SPEC
-from agent_context_graph.memory_backend import MemoryBackendError, use_graph_memory, use_native_memory
+from memgraph_context_graph.adapters import _identity
+from memgraph_context_graph.adapters.codex import PLUGIN, SPEC
+from memgraph_context_graph.memory_backend import MemoryBackendError, use_graph_memory, use_native_memory
 
 ORIGINAL = """# my settings
 model = "gpt-x"
@@ -21,7 +21,7 @@ model = "gpt-x"
 memories = true # I like them
 
 [mcp_servers.context-graph]
-command = "agent-context-graph"
+command = "memgraph-context-graph"
 args = ["mcp"]
 enabled_tools = ["recall"]
 """

@@ -1,7 +1,7 @@
 """The Enterprise edition's space resolver: the Memgraph login is the user.
 
-agent-context-graph finds :class:`EnterpriseSpaces` through the
-``agent_context_graph.editions`` entry point when the config file says
+memgraph-context-graph finds :class:`EnterpriseSpaces` through the
+``memgraph_context_graph.editions`` entry point when the config file says
 ``edition = "enterprise"``. Map #501's rules, as code:
 
 - Identity is the login (``[memgraph] user``). Memgraph authenticates it on
@@ -22,12 +22,12 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING, Any
 
-from agent_context_graph.spaces import EDITION_ENTERPRISE, PERSONAL, MemgraphTarget, Space, SpaceError
+from memgraph_context_graph.spaces import EDITION_ENTERPRISE, PERSONAL, MemgraphTarget, Space, SpaceError
 
 from .provision import MEMBERSHIP_LABEL
 
 if TYPE_CHECKING:
-    from agent_context_graph.adapters._identity import HookConfig
+    from memgraph_context_graph.adapters._identity import HookConfig
 
 #: The longest a connection outlives a revoked grant, in seconds. Memgraph checks grants when a connection
 #: opens, so a long-lived reader (the MCP server) would otherwise keep a removed member's access until restart.

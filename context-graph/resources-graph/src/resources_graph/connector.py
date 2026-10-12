@@ -16,8 +16,8 @@ import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from agent_context_graph.events import Event, EventType, MessageEvent, ToolEndEvent, ToolStartEvent
-from agent_context_graph.protocols import GraphConnector
+from memgraph_context_graph.events import Event, EventType, MessageEvent, ToolEndEvent, ToolStartEvent
+from memgraph_context_graph.protocols import GraphConnector
 
 from .address import Address, addresses_from_text, addresses_from_tool
 from .models import FETCHED, PROMPTED

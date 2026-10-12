@@ -53,10 +53,10 @@ Inside Claude Code:
 Then bootstrap, set your identity, and verify:
 
 ```bash
-agent-context-graph bootstrap --runtime claude-code \
+memgraph-context-graph bootstrap --runtime claude-code \
   --connector skills-graph --connector actions-graph --connector sessions-graph
-agent-context-graph config set identity.user_id "your-name"
-agent-context-graph doctor --runtime claude-code \
+memgraph-context-graph config set identity.user_id "your-name"
+memgraph-context-graph doctor --runtime claude-code \
   --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
@@ -206,7 +206,7 @@ A family of components that persist your coding-agent sessions (Claude Code, Cod
 
 | Package                                                          | Description                                    | Install                             |
 | --------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------- |
-| [agent-context-graph](/context-graph/agent-context-graph/)      | Event hub: routes runtime hooks to connectors  | `pip install agent-context-graph`   |
+| [memgraph-context-graph](/context-graph/memgraph-context-graph/)      | Event hub: routes runtime hooks to connectors  | `pip install memgraph-context-graph`   |
 | [actions-graph](/context-graph/actions-graph/)                  | Tool calls, results, messages as action nodes  | `pip install actions-graph`         |
 | [skills-graph](/context-graph/skills-graph/)                    | Skill definitions and per-session skill usage  | `pip install skills-graph`          |
 | [sessions-graph](/context-graph/sessions-graph/)                | User/session provenance, memories, reconciliation | `pip install sessions-graph`     |

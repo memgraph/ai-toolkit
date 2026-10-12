@@ -28,11 +28,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        from agent_context_graph.adapters._identity import load_config
-        from agent_context_graph.spaces import spaces_for
+        from memgraph_context_graph.adapters._identity import load_config
+        from memgraph_context_graph.spaces import spaces_for
     except ImportError:
         print(
-            "resources-graph needs agent-context-graph for its config: pip install 'resources-graph[agent-context-graph]'"
+            "resources-graph needs memgraph-context-graph for its config: pip install 'resources-graph[memgraph-context-graph]'"
         )
         return 2
     config = load_config()
@@ -58,7 +58,7 @@ def _sweep(graph: ResourcesGraph, token: str | None, *, limit: int | None, quiet
         print(
             "No GitHub credentials: fetching single issues, PRs and repositories without them "
             "(60 requests an hour); listings wait.\n"
-            "Log in with `gh auth login`, or set a token: agent-context-graph config set github.token",
+            "Log in with `gh auth login`, or set a token: memgraph-context-graph config set github.token",
             file=sys.stderr,
         )
         source = RestSource(http_rest_transport())

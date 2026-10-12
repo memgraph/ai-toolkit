@@ -8,8 +8,8 @@ import os
 
 import pytest
 
-from agent_context_graph.adapters import _identity
-from agent_context_graph.hooks.cli import main as hook_main
+from memgraph_context_graph.adapters import _identity
+from memgraph_context_graph.hooks.cli import main as hook_main
 from resources_graph.address import parse_address
 from resources_graph.models import FETCHED
 from resources_graph.sweep import sweep
