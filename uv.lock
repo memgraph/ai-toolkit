@@ -3163,7 +3163,7 @@ wheels = [
 
 [[package]]
 name = "langchain-memgraph"
-version = "0.1.15"
+version = "0.1.16"
 source = { editable = "integrations/langchain-memgraph" }
 dependencies = [
     { name = "langchain" },
@@ -4079,7 +4079,7 @@ provides-extras = ["claude", "mcp", "openai", "test"]
 
 [[package]]
 name = "memgraph-toolbox"
-version = "0.2.0"
+version = "0.2.1"
 source = { editable = "memgraph-toolbox" }
 dependencies = [
     { name = "neo4j" },
@@ -7936,7 +7936,7 @@ wheels = [
 
 [[package]]
 name = "resources-graph"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "context-graph/resources-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -10020,7 +10020,7 @@ wheels = [
 
 [[package]]
 name = "unstructured2graph"
-version = "0.7.0"
+version = "0.7.1"
 source = { editable = "unstructured2graph" }
 dependencies = [
     { name = "gliner2" },

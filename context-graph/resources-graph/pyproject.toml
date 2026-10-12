@@ -1,6 +1,6 @@
 [project]
 name = "resources-graph"
-version = "0.1.0"
+version = "0.2.0"
 description = "Public GitHub resources an agent explored, remembered in Memgraph and served from memory"
 readme = "README.md"
 license = { text = "MIT" }
