@@ -72,9 +72,9 @@ def eval_graph():
         graph.setup()  # constraints may already exist
 
     # Deliberately not ActionsGraph.clear(), which removes only
-    # Session|Agent|Action|Tool and leaves Chunk, Entity, Episode and Memory
+    # Session|Agent|Action|Tool and leaves Chunk, Entity and Memory
     # standing. The reconciliation tests create exactly those, so clear() alone
-    # let a test's distilled memory survive into the next one -- the same leak
+    # let a test's index survive into the next one -- the same leak
     # inject._wipe exists to prevent, reintroduced here in the fixture.
     _wipe(graph)
     yield graph

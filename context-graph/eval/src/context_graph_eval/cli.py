@@ -11,6 +11,9 @@ import re
 import sys
 from pathlib import Path
 
+from .beam_judge import BEAM_JUDGE_MODEL
+from .convert.beam import CHAT_COUNTS as BEAM_CHAT_COUNTS
+from .convert.beam import DEFAULT_REVISION as BEAM_REVISION
 from .convert.longmemeval import DEFAULT_REVISION, build_corpus, fetch, haystack_path, load_raw
 from .corpus import write_corpus
 from .hybrid import LANES as HYBRID_LANES
@@ -111,13 +114,11 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument(
         "--extraction-backend",
         choices=EXTRACTION_BACKENDS,
-        default="lightrag",
-        help="what reconciliation uses to extract entities: 'lightrag' (default, LLM-based) or "
-        "'gliner2' (local, LLM-free -- requires 'pip install gliner2[local]>=2.0.0' manually, see "
-        "unstructured2graph.gliner2_backend's module docstring). Narrative summarization always "
-        "runs via a LightRAG wrapper's own LLM regardless of this choice -- GLiNER2 has no "
-        "generative capability -- so an LLM key is still needed either way.",
+        default="gliner2",
+        help="what reconciliation uses to extract entities: 'gliner2' (default, local and LLM-free, "
+        "over the LongMemEval vocabulary) or 'lightrag' (LLM-based, needs an LLM key).",
     )
+    _learned_args(run)
     run.add_argument(
         "--retrieval-strategy",
         choices=RETRIEVAL_STRATEGIES,
@@ -192,8 +193,80 @@ def main(argv: list[str] | None = None) -> int:
         "rather than a guess.",
     )
 
+    beam = subcommands.add_parser(
+        "beam",
+        help="run BEAM's probing questions through the hybrid read path, judged by BEAM's own judge",
+    )
+    beam.add_argument("--size", default="100K", choices=sorted(BEAM_CHAT_COUNTS), help="BEAM chat size")
+    beam.add_argument(
+        "--chats",
+        default="1",
+        help="which chats of that size, e.g. '1', '1,3' or '1-20'. Each chat is one user's history "
+        "and carries 20 questions, two per ability.",
+    )
+    beam.add_argument("--revision", default=BEAM_REVISION, help="pinned upstream BEAM commit")
+    beam.add_argument(
+        "--memgraph-url",
+        default="bolt://localhost:7689",
+        help="the DEDICATED eval instance. It is wiped before each batch -- never point this at a "
+        "shared or development database.",
+    )
+    beam.add_argument(
+        "--skip-reconcile",
+        action="store_true",
+        help="reuse the already-reconciled graph: no wipe, no injection, no distillation. Refuses "
+        "unless the graph holds these chats' sessions, reconciled.",
+    )
+    beam.add_argument("--extraction-backend", choices=EXTRACTION_BACKENDS, default="lightrag")
+    _learned_args(beam)
+    beam.add_argument(
+        "--hybrid-lanes",
+        default=",".join(HYBRID_LANES),
+        help=f"comma-separated recall lanes, from {', '.join(HYBRID_LANES)}",
+    )
+    beam.add_argument(
+        "--agent-model",
+        default=None,
+        help="'provider:model_id' for the answering model; the same default as `run`'s.",
+    )
+    beam.add_argument(
+        "--judge-model",
+        default=BEAM_JUDGE_MODEL,
+        help=f"OpenAI model for BEAM's judge (default {BEAM_JUDGE_MODEL}, upstream's). 'none' skips judging.",
+    )
+    beam.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="ask only this many questions, balanced across abilities and spread across the chats. Every "
+        "chat is still loaded, so the graph is the full run's.",
+    )
+    beam.add_argument("--max-concurrent", type=int, default=4)
+    beam.add_argument("--save", type=Path, default=None, help="write every row and the report to this JSON file")
+    beam.add_argument("--label", default="beam", help="name recorded in the saved run")
+
+    kg = subcommands.add_parser(
+        "kg",
+        help="measure the default knowledge-graph construction on BEAM, against the committed baseline",
+    )
+    kg.add_argument("--size", default="100K", choices=sorted(BEAM_CHAT_COUNTS), help="BEAM chat size")
+    kg.add_argument("--chats", default="1-20", help="which chats, e.g. '1-20' (the baseline's)")
+    kg.add_argument("--revision", default=BEAM_REVISION, help="pinned upstream BEAM commit")
+    kg.add_argument("--windows", type=int, default=200, help="windows sampled, evenly spread (default 200)")
+    kg.add_argument("--observe", action="store_true", help="also time the open-endpoint pass derivation runs")
+    kg.add_argument(
+        "--baseline",
+        type=Path,
+        default=None,
+        help="compare against this saved run (the committed one: context-graph/eval/baselines/kg-beam-100k.json)",
+    )
+    kg.add_argument("--save", type=Path, default=None, help="write the run (metrics and fingerprints) here")
+    kg.add_argument("--label", default="kg", help="name recorded in the saved run")
+
     args = parser.parse_args(argv)
 
+    if args.command == "kg":
+        return _kg(args)
     if args.command == "build-corpus":
         return _build_corpus(args)
     if args.command == "run":
@@ -204,7 +277,141 @@ def main(argv: list[str] | None = None) -> int:
         return _calibrate(args)
     if args.command == "gold-slice":
         return _gold_slice(args)
+    if args.command == "beam":
+        return _beam(args)
     return 1
+
+
+def parse_chat_ids(spec: str) -> list[int]:
+    """Chat ids from '1', '1,3' or '1-20' (inclusive), in order, without repeats.
+
+    Raises:
+        ValueError: anything else.
+    """
+    ids: list[int] = []
+    for part in spec.split(","):
+        start, _, end = part.strip().partition("-")
+        ids.extend(range(int(start), int(end or start) + 1))
+    return list(dict.fromkeys(ids))
+
+
+def _beam(args) -> int:
+    import asyncio
+
+    from actions_graph import ActionsGraph
+    from memgraph_toolbox.api.memgraph import Memgraph
+
+    from .beam import render, run_beam, save
+    from .beam_judge import BeamJudge
+    from .convert.beam import fetch_chat
+    from .reconcile import _resolve_llm_credentials, _resolve_reconciliation_tuning
+    from .retrieval import DeepEvalLLM
+    from .runner import check_offline
+
+    check_offline()
+    _resolve_llm_credentials()
+    _resolve_reconciliation_tuning()
+
+    chat_ids = parse_chat_ids(args.chats)
+    chats = [fetch_chat(args.size, chat_id, revision=args.revision) for chat_id in chat_ids]
+    total = sum(len(group) for chat in chats for group in chat.probing_questions.values())
+    questions = min(total, args.limit) if args.limit is not None else total
+    print(f"running {questions} of {total} questions over {len(chats)} BEAM {args.size} chats @ {args.revision[:12]}")
+
+    agent_provider, agent_model_id = _parse_model_spec(args.agent_model, default_provider=DEFAULT_AGENT_PROVIDER)
+    agent = _build_model(agent_provider, agent_model_id)
+    if agent is None:
+        print("no agent model configured: set --agent-model or an OPENAI_API_KEY", file=sys.stderr)
+        return 1
+    judge = None
+    if args.judge_model != "none":
+        if not os.environ.get("OPENAI_API_KEY"):
+            print("BEAM's judge needs an OPENAI_API_KEY; pass --judge-model none to skip judging", file=sys.stderr)
+            return 1
+        judge = BeamJudge(model=args.judge_model, max_concurrent=args.max_concurrent * 2)
+
+    db = Memgraph(url=args.memgraph_url, username="", password="")
+    run = asyncio.run(
+        run_beam(
+            chats,
+            graph=ActionsGraph(memgraph=db),
+            llm=DeepEvalLLM(agent),
+            judge=judge,
+            memgraph_url=args.memgraph_url,
+            reuse_graph=args.skip_reconcile,
+            extraction_backend=args.extraction_backend,
+            hybrid=RecallConfig.from_mapping({"lanes": args.hybrid_lanes}),
+            max_concurrent=args.max_concurrent,
+            limit=args.limit,
+            ontology=args.ontology,
+            derive_seeds=args.derive_seeds,
+            derive_workers=args.derive_workers,
+        )
+    )
+    print(render(run))
+
+    if args.save:
+        saved = save(
+            run,
+            args.save,
+            meta={
+                "label": args.label,
+                "benchmark": f"beam-{args.size}",
+                "revision": args.revision,
+                "chats": chat_ids,
+                "limit": args.limit,
+                "judge_model": args.judge_model,
+                "agent_model": _resolved_spec(agent_provider, agent_model_id),
+                "extraction_backend": args.extraction_backend,
+                "hybrid_lanes": args.hybrid_lanes,
+                "ontology": args.ontology,
+                "derive_seeds": args.derive_seeds if args.ontology == "learned" else None,
+            },
+        )
+        print(f"\nsaved run to {saved}")
+    return 0
+
+
+def _kg(args) -> int:
+    from .convert.beam import fetch_chat
+    from .kg import compare as compare_kg
+    from .kg import load, render, run_kg, save
+
+    chat_ids = parse_chat_ids(args.chats)
+    chats = [fetch_chat(args.size, chat_id, revision=args.revision) for chat_id in chat_ids]
+    print(f"kg: {len(chats)} BEAM {args.size} chats @ {args.revision[:12]}, {args.windows} windows", flush=True)
+    run = run_kg(
+        chats,
+        windows=args.windows,
+        observe=args.observe,
+        meta={
+            "label": args.label,
+            "benchmark": f"beam-{args.size}",
+            "revision": args.revision,
+            "chats": chat_ids,
+            "windows_requested": args.windows,
+        },
+    )
+    print(render(run))
+    if args.baseline:
+        print("\n" + "\n".join(compare_kg(run, load(args.baseline))))
+    if args.save:
+        print(f"\nsaved run to {save(run, args.save)}")
+    return 0
+
+
+def _learned_args(parser) -> None:
+    """The reconcile options `run` and `beam` share: a learned ontology (map #431)."""
+    parser.add_argument(
+        "--ontology",
+        choices=("fixed", "default", "learned"),
+        default="fixed",
+        help="'fixed': extract against the LongMemEval vocabulary. 'default': extract under hygm's default "
+        "model, nothing derived. 'learned': the same, then derive and adopt each user's own model "
+        "(sessions-graph derive) before answering. The last two need GLiNER2.",
+    )
+    parser.add_argument("--derive-seeds", type=int, default=1, help="candidates per user derivation (learned)")
+    parser.add_argument("--derive-workers", type=int, default=4, help="user derivations at once (learned)")
 
 
 def _gold_slice(args) -> int:
@@ -474,6 +681,9 @@ def _run(args) -> int:
                 text_search_limit=args.text_search_limit,
                 hybrid=RecallConfig.from_mapping({"lanes": args.hybrid_lanes}),
                 official_judge_model=official_model,
+                ontology=args.ontology,
+                derive_seeds=args.derive_seeds,
+                derive_workers=args.derive_workers,
             ),
         )
     )
@@ -516,6 +726,7 @@ def _run(args) -> int:
                     # that value rather than treating it as a mismatch.
                     extraction_backend=args.extraction_backend if args.retrieval_strategy == "graph-agent" else "none",
                     retrieval_strategy=args.retrieval_strategy,
+                    ontology=args.ontology,
                     coverage_gate=COVERAGE_GATE if official_model else RUBRIC_GATE,
                     official_judge_model=official_model or "none",
                 ),

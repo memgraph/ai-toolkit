@@ -3,9 +3,9 @@ Unstructured2Graph - Convert unstructured documents into knowledge graphs.
 
 This package provides utilities for parsing various document formats and
 ingesting them into Memgraph knowledge graphs via a pluggable extraction
-backend (LightRAG by default; see gliner2_backend.GLiNER2Backend for a
-local, LLM-free alternative -- not exported here since it requires the
-optional `gliner2` dependency).
+backend (GLiNER2 by default for sessions-graph; LightRAG remains available
+for LLM-based extraction). GLiNER2Backend is imported from gliner2_backend
+because it requires the optional `gliner2` dependency.
 """
 
 from importlib import metadata

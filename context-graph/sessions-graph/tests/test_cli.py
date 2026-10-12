@@ -16,6 +16,12 @@ from sessions_graph.cli import main
 from sessions_graph.reconciliation import ReconciliationSummary
 
 
+@pytest.fixture(autouse=True)
+def _no_derive_spawn(monkeypatch):
+    """These tests mock the graph; spawning `derive` is tested against a real one in test_e2e_derivation.py."""
+    monkeypatch.setattr("sessions_graph.cli._spawn_due_derivations", lambda graph, session_ids: None)
+
+
 def test_main_no_args_prints_help_and_returns_2(capsys):
     assert main([]) == 2
     assert "usage" in capsys.readouterr().out
@@ -40,14 +46,8 @@ def test_reconcile_single_session_success(capsys):
     fake_graph.reconcile_session = AsyncMock(
         return_value=ReconciliationSummary(session_id="s-1", status="completed", texts_considered=2, texts_deduped=1)
     )
-    fake_wrapper = MagicMock()
-    fake_wrapper.initialize = AsyncMock()
-    fake_wrapper.afinalize = AsyncMock()
 
-    with (
-        patch("sessions_graph.SessionsGraph", return_value=fake_graph),
-        patch("lightrag_memgraph.MemgraphLightRAGWrapper", return_value=fake_wrapper),
-    ):
+    with patch("sessions_graph.SessionsGraph", return_value=fake_graph):
         exit_code = main(["reconcile", "--session", "s-1"])
 
     assert exit_code == 0
@@ -66,14 +66,8 @@ def test_reconcile_pending_sweeps_all_sessions_and_reports_failure(capsys):
             ReconciliationSummary(session_id="s-2", status="failed", texts_considered=1, texts_deduped=1, error="boom"),
         ]
     )
-    fake_wrapper = MagicMock()
-    fake_wrapper.initialize = AsyncMock()
-    fake_wrapper.afinalize = AsyncMock()
 
-    with (
-        patch("sessions_graph.SessionsGraph", return_value=fake_graph),
-        patch("lightrag_memgraph.MemgraphLightRAGWrapper", return_value=fake_wrapper),
-    ):
+    with patch("sessions_graph.SessionsGraph", return_value=fake_graph):
         exit_code = main(["reconcile", "--pending", "--limit", "5"])
 
     assert exit_code == 1  # one session failed
@@ -84,16 +78,26 @@ def test_reconcile_pending_sweeps_all_sessions_and_reports_failure(capsys):
     assert "boom" in out.err
 
 
-def test_reconcile_pending_with_no_sessions_returns_0_without_constructing_lightrag(capsys):
+def test_reconcile_pending_with_no_sessions_returns_0(capsys):
     fake_graph = MagicMock()
     fake_graph.get_pending_reconciliation_sessions.return_value = []
 
-    with (
-        patch("sessions_graph.SessionsGraph", return_value=fake_graph),
-        patch("lightrag_memgraph.MemgraphLightRAGWrapper") as mock_wrapper_cls,
-    ):
+    with patch("sessions_graph.SessionsGraph", return_value=fake_graph):
         exit_code = main(["reconcile", "--pending"])
 
     assert exit_code == 0
     assert "No sessions to reconcile" in capsys.readouterr().out
-    mock_wrapper_cls.assert_not_called()
+
+
+def test_reconcile_needs_no_llm_key(monkeypatch):
+    """Extraction is local GLiNER2: a config with no provider key still reconciles."""
+    monkeypatch.setattr("sessions_graph.cli._fill_env_from_context_graph_config", lambda: None)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    fake_graph = MagicMock()
+    fake_graph.reconcile_session = AsyncMock(
+        return_value=ReconciliationSummary(session_id="s-1", status="completed", texts_considered=1, texts_deduped=1)
+    )
+
+    with patch("sessions_graph.SessionsGraph", return_value=fake_graph):
+        assert main(["reconcile", "--session", "s-1"]) == 0

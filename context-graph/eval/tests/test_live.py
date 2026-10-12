@@ -73,15 +73,15 @@ def test_hook_settings_name_every_connector(tmp_path: Path):
 
 
 def test_hook_settings_resolve_this_checkout(tmp_path: Path):
-    """A globally installed agent-context-graph can shadow the checkout under
+    """A globally installed memgraph-context-graph can shadow the checkout under
     test, so the session would exercise the wrong version of the code."""
     settings = live.hooks_settings(tmp_path / "s.json").read_text(encoding="utf-8")
 
-    assert "uv run agent-context-graph" in settings
+    assert "uv run memgraph-context-graph" in settings
 
 
 def test_hook_settings_do_not_narrow_the_environment(tmp_path: Path):
-    """`uv run --package agent-context-graph` re-resolves to that package's own
+    """`uv run --package memgraph-context-graph` re-resolves to that package's own
     closure, which excludes the connector packages. Every hook then raised
     ImportError and -- because the runner swallows hook errors so a broken hook
     cannot break the harness -- exited 0 having written nothing. Two billed

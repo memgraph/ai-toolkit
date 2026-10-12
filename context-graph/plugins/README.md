@@ -1,6 +1,6 @@
 # Context Graph Runtime Plugins
 
-Runtime plugins install host-specific hook wiring for Agent Context Graph.
+Runtime plugins install host-specific hook wiring for Memgraph Context Graph.
 
 ```text
 Runtime Plugin -> Runtime Adapter -> Event Protocol -> Graph Connector -> Memgraph
@@ -8,14 +8,14 @@ Runtime Plugin -> Runtime Adapter -> Event Protocol -> Graph Connector -> Memgra
 
 This directory contains plugin packages for multiple runtimes:
 
-- `agent-context-graph-codex`: OpenAI Codex plugin, published as `context-graph`.
-- `agent-context-graph-claude`: Claude Code plugin, published as `context-graph`.
+- `memgraph-context-graph-codex`: OpenAI Codex plugin, published as `context-graph`.
+- `memgraph-context-graph-claude`: Claude Code plugin, published as `context-graph`.
 
 GitHub Copilot CLI, Cursor, OpenCode, Antigravity CLI, and Grok Build are built-in Runtime
 Registrations but do not have marketplace packages in this directory. Their
-host-facing files are generated with `agent-context-graph hook init <runtime>`.
+host-facing files are generated with `memgraph-context-graph hook init <runtime>`.
 
-The platform-specific directory names stay explicit, while the marketplace-facing plugin name is short so skills appear as `context-graph:agent-context-graph`.
+The platform-specific directory names stay explicit, while the marketplace-facing plugin name is short so skills appear as `context-graph:memgraph-context-graph`.
 
 ## Marketplace Files
 

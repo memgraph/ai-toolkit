@@ -33,6 +33,12 @@ from utils import (  # noqa: E402
 )
 from core import SQLToMemgraphAgent  # noqa: E402
 from core.hygm import GraphModelingStrategy, ModelingMode  # noqa: E402
+from core.memgql_mapping import (  # noqa: E402
+    graph_model_to_mapping,
+    mapping_connector,
+    mapping_to_graph_model,
+    print_mapping_summary,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -139,7 +145,18 @@ def parse_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         metavar="PATH",
         help=(
             "Generate a mapping JSON file instead of running the migration. "
-            "The file maps graph nodes/edges back to SQL tables and columns."
+            "The file is a MemGQL graph body (vertices/edges over the SQL "
+            "tables), loadable with CREATE GRAPH <name> FROM FILE '<path>'."
+        ),
+    )
+
+    parser.add_argument(
+        "--connector",
+        default=None,
+        metavar="NAME",
+        help=(
+            "MemGQL connector name stamped on every element of the mapping. "
+            "Without it the mapping resolves when exactly one connector is registered."
         ),
     )
 
@@ -448,142 +465,6 @@ def print_migration_results(result: Dict[str, Any]) -> None:
     print("=" * 60)
 
 
-def graph_model_to_mapping(graph_model: Any) -> Dict[str, Any]:
-    """
-    Convert an internal GraphModel into the federated-GQL mapping format.
-
-    The output JSON contains ``nodes`` and ``edges`` arrays that map graph
-    labels / relationship types back to their source SQL tables and columns.
-    """
-    nodes = []
-    for node in graph_model.nodes:
-        id_column = node.source.mapping.get("id_field", "") if node.source else ""
-        entry: Dict[str, Any] = {
-            "label": node.primary_label,
-            "table": node.source.name if node.source else "",
-            "id_column": id_column,
-            "properties": {},
-        }
-        for prop in node.properties:
-            # prop.source.field is "table.column"; we only need the column part
-            if prop.source and prop.source.field:
-                column = prop.source.field.split(".", 1)[-1]
-            else:
-                column = prop.key
-            # Skip the id column — it's already represented by id_column
-            if id_column and column == id_column:
-                continue
-            entry["properties"][prop.key] = column
-        nodes.append(entry)
-
-    edges = []
-    for edge in graph_model.edges:
-        source_mapping = edge.source.mapping if edge.source else {}
-        # start_node / end_node are stored as "table.column"
-        start_node_ref = source_mapping.get("start_node", "")
-        end_node_ref = source_mapping.get("end_node", "")
-
-        # For many-to-many relationships, prefer the join table name
-        table_name = source_mapping.get("join_table", "")
-        if not table_name:
-            table_name = edge.source.name if edge.source else ""
-
-        entry: Dict[str, Any] = {
-            "rel_type": edge.edge_type,
-            "table": table_name,
-            "source_column": start_node_ref.split(".", 1)[-1] if start_node_ref else "",
-            "target_column": end_node_ref.split(".", 1)[-1] if end_node_ref else "",
-            "source_label": edge.start_node_labels[0] if edge.start_node_labels else "",
-            "target_label": edge.end_node_labels[0] if edge.end_node_labels else "",
-        }
-        # Include edge properties when present
-        if edge.properties:
-            entry["properties"] = {}
-            for prop in edge.properties:
-                if prop.source and prop.source.field:
-                    column = prop.source.field.split(".", 1)[-1]
-                else:
-                    column = prop.key
-                entry["properties"][prop.key] = column
-        edges.append(entry)
-
-    return {"nodes": nodes, "edges": edges}
-
-
-def mapping_to_graph_model(mapping: Dict[str, Any]) -> Any:
-    """Convert a mapping JSON dict back into a GraphModel."""
-    from core.hygm.models.graph_models import (
-        GraphModel,
-        GraphNode,
-        GraphRelationship,
-        GraphProperty,
-    )
-    from core.hygm.models.sources import (
-        NodeSource,
-        PropertySource,
-        RelationshipSource,
-    )
-
-    nodes = []
-    for entry in mapping.get("nodes", []):
-        table = entry.get("table", "")
-        id_column = entry.get("id_column", "")
-        label = entry.get("label", "")
-
-        source = NodeSource(
-            type="table",
-            name=table,
-            location=f"database.schema.{table}",
-            mapping={"labels": [label], "id_field": id_column},
-        )
-
-        properties = []
-        for prop_key, col_name in entry.get("properties", {}).items():
-            prop_source = PropertySource(field=f"{table}.{col_name}")
-            properties.append(GraphProperty(key=prop_key, source=prop_source))
-
-        nodes.append(GraphNode(labels=[label], properties=properties, source=source))
-
-    edges = []
-    for entry in mapping.get("edges", []):
-        table = entry.get("table", "")
-        source_col = entry.get("source_column", "")
-        target_col = entry.get("target_column", "")
-
-        rel_mapping: Dict[str, Any] = {
-            "start_node": f"{table}.{source_col}",
-            "end_node": f"{table}.{target_col}",
-            "edge_type": entry.get("rel_type", ""),
-        }
-        # Preserve join table info so round-trips are lossless
-        if table:
-            rel_mapping["join_table"] = table
-
-        rel_source = RelationshipSource(
-            type="table",
-            name=table,
-            location=f"database.schema.{table}",
-            mapping=rel_mapping,
-        )
-
-        properties = []
-        for prop_key, col_name in entry.get("properties", {}).items():
-            prop_source = PropertySource(field=f"{table}.{col_name}")
-            properties.append(GraphProperty(key=prop_key, source=prop_source))
-
-        edges.append(
-            GraphRelationship(
-                edge_type=entry.get("rel_type", ""),
-                start_node_labels=[entry.get("source_label", "")],
-                end_node_labels=[entry.get("target_label", "")],
-                properties=properties,
-                source=rel_source,
-            )
-        )
-
-    return GraphModel(nodes=nodes, edges=edges)
-
-
 # ---------------------------------------------------------------------------
 # Editor integration
 # ---------------------------------------------------------------------------
@@ -664,33 +545,6 @@ def _edit_mapping_in_editor(mapping: Dict[str, Any]) -> Optional[Dict[str, Any]]
             pass
 
 
-def print_mapping_summary(mapping: Dict[str, Any], max_lines: int = 5) -> None:
-    """Print a concise summary of a mapping file (first *max_lines* of each section)."""
-    nodes = mapping.get("nodes", [])
-    edges = mapping.get("edges", [])
-    print()
-    print(f"  Nodes ({len(nodes)}):")
-    for n in nodes[:max_lines]:
-        props = ", ".join(n.get("properties", {}).keys())
-        print(f"    :{n['label']}  (table: {n['table']}, id: {n['id_column']})")
-        if props:
-            print(f"      properties: {props}")
-    if len(nodes) > max_lines:
-        print(f"    ... and {len(nodes) - max_lines} more (use /edit to see all)")
-
-    print(f"  Edges ({len(edges)}):")
-    for e in edges[:max_lines]:
-        src = e.get("source_label", "?")
-        tgt = e.get("target_label", "?")
-        print(
-            f"    (:{src})-[:{e['rel_type']}]->(:{tgt})  "
-            f"(table: {e['table']}, {e['source_column']} -> {e['target_column']})"
-        )
-    if len(edges) > max_lines:
-        print(f"    ... and {len(edges) - max_lines} more (use /edit to see all)")
-    print()
-
-
 def _detect_llm() -> Any:
     """Try to create an LLM client from available API keys. Returns None on failure."""
     try:
@@ -720,6 +574,7 @@ def edit_mapping_interactive(
     mapping: Dict[str, Any],
     llm: Any,
     mapping_path: str,
+    connector: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Interactive loop: let the user edit a mapping via natural language.
@@ -805,7 +660,7 @@ def edit_mapping_interactive(
 
             if operations and operations.operations:
                 graph_model = modeler._apply_operations_to_model(graph_model, operations)
-                mapping = graph_model_to_mapping(graph_model)
+                mapping = graph_model_to_mapping(graph_model, connector or mapping_connector(mapping))
                 print(f"Applied: {operations.reasoning}")
                 print_mapping_summary(mapping)
                 _print_editor_banner()
@@ -827,6 +682,7 @@ def edit_mapping_interactive(
 def _generate_fresh_mapping(
     agent: SQLToMemgraphAgent,
     source_db_config: Dict[str, Any],
+    connector: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Analyse the source database and return a new mapping dict."""
     from database.factory import DatabaseAnalyzerFactory
@@ -856,13 +712,14 @@ def _generate_fresh_mapping(
     )
     print(f"  {len(graph_model.nodes)} node types, {len(graph_model.edges)} relationship types")
 
-    return graph_model_to_mapping(graph_model)
+    return graph_model_to_mapping(graph_model, connector)
 
 
 def generate_mapping(
     agent: SQLToMemgraphAgent,
     source_db_config: Dict[str, Any],
     mapping_path: str,
+    connector: Optional[str] = None,
 ) -> None:
     """
     Generate or edit a mapping file.
@@ -878,8 +735,11 @@ def generate_mapping(
         with open(output, "r", encoding="utf-8") as f:
             mapping = json.load(f)
         print(f"📄 Loaded existing mapping from {output}")
+        if "nodes" in mapping and "vertices" not in mapping:
+            mapping = graph_model_to_mapping(mapping_to_graph_model(mapping), connector)
+            print("   Converted from the legacy sql2graph format; /save writes the MemGQL format.")
     else:
-        mapping = _generate_fresh_mapping(agent, source_db_config)
+        mapping = _generate_fresh_mapping(agent, source_db_config, connector)
         output.parent.mkdir(parents=True, exist_ok=True)
         with open(output, "w", encoding="utf-8") as f:
             json.dump(mapping, f, indent=2)
@@ -888,11 +748,11 @@ def generate_mapping(
     print_mapping_summary(mapping)
 
     while True:
-        result = edit_mapping_interactive(mapping, agent.llm, mapping_path)
+        result = edit_mapping_interactive(mapping, agent.llm, mapping_path, connector)
         if result is not None:
             break
         print("\n🔄 Resetting mapping — regenerating from source database...\n")
-        mapping = _generate_fresh_mapping(agent, source_db_config)
+        mapping = _generate_fresh_mapping(agent, source_db_config, connector)
         output.parent.mkdir(parents=True, exist_ok=True)
         with open(output, "w", encoding="utf-8") as f:
             json.dump(mapping, f, indent=2)
@@ -946,7 +806,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                     llm_provider=args.provider,
                     llm_model=args.model,
                 )
-                generate_mapping(agent, source_db_config, args.mapping)
+                generate_mapping(agent, source_db_config, args.mapping, args.connector)
             else:
                 # Generate new mapping — needs source DB
                 db_type = source_db_config.get("database_type", "mysql")
@@ -980,7 +840,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                     llm_provider=args.provider,
                     llm_model=args.model,
                 )
-                generate_mapping(agent, source_db_config, args.mapping)
+                generate_mapping(agent, source_db_config, args.mapping, args.connector)
         else:
             # Full migration (original flow)
             # Probe database connections

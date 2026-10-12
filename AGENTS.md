@@ -21,8 +21,8 @@ Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable Memgraph graph.
 | `integrations/langchain-memgraph/` | LangChain graph store, QA chain, toolkit. |
 | `integrations/mcp-memgraph/` | MCP server exposing Memgraph to LLMs. |
 | `integrations/lightrag-memgraph/` | LightRAG storage backends (KV/vector/doc-status/graph) on Memgraph. |
-| `hygm/` | Shared graph schema/ontology model (`NodeType`, `RelationType` with `start_labels`/`end_labels`, `identity`), its validation gate, and the strategies that produce one (`ManualStrategy` YAML; `LlmRecommendationStrategy` interface only). Pure Python, no Memgraph. Not the same package as `agents/sql2graph`'s HyGM. |
-| `unstructured2graph/` | Chunks unstructured input (files/URLs/text) and runs entity/relation extraction through a pluggable `ExtractionBackend` (`LightRAGBackend` by default; `GLiNER2Backend` for local, LLM-free extraction, manual-install only -- see its module docstring). Outside the Context Graph family but shares its testing conventions. |
+| `hygm/` | Shared graph schema/ontology model (`NodeType`, `RelationType` with `start_labels`/`end_labels`, `identity`), its validation gate, the generic default model (`default_model()`, core and catch-all labels), and the strategies that produce one (`ManualStrategy` YAML; `LlmRecommendationStrategy`, which grows a model from new sessions with a caller-supplied LLM and observer). Pure Python, no Memgraph. Not the same package as `agents/sql2graph`'s HyGM. |
+| `unstructured2graph/` | Chunks unstructured input (files/URLs/text) and runs entity/relation extraction through a pluggable `ExtractionBackend` (`GLiNER2Backend` by default -- local and LLM-free; `LightRAGBackend` retained -- LLM-based). Outside the Context Graph family but shares its testing conventions. |
 | `agents/sql2graph/` | MySQL/Postgres → Memgraph migration agent. Has its own `uv.lock`/`.python-version`; run it with `cd agents/sql2graph && uv run main.py`. |
 | `context-graph/` | The Context Graph family — see below. |
 | `scripts/dev-memgraph.sh` | Local dev lifecycle: exploration Memgraph + isolated test Memgraph for the context-graph family and unstructured2graph. |
@@ -32,10 +32,12 @@ Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable Memgraph graph.
 
 | Package | Role |
 |---|---|
-| `agent-context-graph` | Event hub. Normalizes runtime hooks / SDK activity into a shared Event Protocol and routes it to graph connectors. Also serves components' read tools (e.g. sessions-graph's `recall`) to the harness's model over stdio MCP (`agent-context-graph mcp`). |
+| `memgraph-context-graph` | Event hub. Normalizes runtime hooks / SDK activity into a shared Event Protocol and routes it to graph connectors. Also serves components' read tools (e.g. sessions-graph's `recall`) to the harness's model over stdio MCP (`memgraph-context-graph mcp`). |
 | `actions-graph` | Records tool calls/results/messages/subagent activity as `(:Action)`/`(:Agent)` nodes — observability, not memory. |
 | `skills-graph` | Tracks Agent-Skills-spec `(:Skill)` usage per session. |
-| `sessions-graph` | Owns `(:User)`/`(:Session)`, durable `(:Memory)` writes/recall, and session reconciliation into `(:Episode)` + extracted entities. |
+| `sessions-graph` | Owns `(:User)`/`(:Session)`, durable `(:Memory)` writes/recall, and session reconciliation into extracted entities (local, no LLM). |
+| `spaces` (`context-graph-spaces`) | The Enterprise edition: personal and shared spaces for many users on one licensed Memgraph, isolated by Memgraph's own multi-tenancy and access control. Provisions from an admin's spec (`context-graph-spaces plan|apply`). Community (the default `edition`) never imports it. |
+| `resources-graph` | Remembers public GitHub resources the agent touched: hooks record private `(:Touch)` nodes, the out-of-band `resources-graph sweep` stores shared `(:Resource)`s, and the `resource` tool serves them from memory. |
 
 Everything joins on a shared, idempotently-`MERGE`d `(:Session {session_id})`
 node; only `sessions-graph` owns `(:User)` and `HAD_SESSION`.
@@ -44,15 +46,23 @@ Substantial design work in this family is tracked as GitHub issues labeled
 `wayfinder:map` (title `Map: ...`), broken into `wayfinder:grilling` /
 `wayfinder:research` / `wayfinder:prototype` / `wayfinder:task` child issues,
 using this repo's `/grilling`, `/domain-modeling`, and `/research` skills.
-Check open maps before starting non-trivial work here:
+Closed maps preserve design decisions; their implementation plans may describe work
+that has already shipped. Verify linked implementation PRs, current code, and package
+releases before treating those plans as pending. Check open maps before starting non-trivial work here:
 ```bash
 gh issue list --label wayfinder:map --state open
 ```
 
 ## Environment & setup
 
+- Use a separate git worktree for each repository task so existing work stays isolated.
+
 - Python `>=3.10`, dependency/workspace manager is `uv`. Workspace members are
   listed in the root `pyproject.toml` under `[tool.uv.workspace]`.
+- `unstructured2graph` declares GLiNER2's local inference dependencies directly
+  because upstream's `[local]` extra caps Transformers below v5. GLiNER2 2.0.0
+  and Transformers 5.5.4 are pinned together; validate real model extraction and
+  embedding consumers before widening them.
 - Install a package editable with its test extras, e.g.:
   ```bash
   uv pip install -e memgraph-toolbox"[test]"   # quote extras on zsh/macOS
@@ -67,7 +77,7 @@ gh issue list --label wayfinder:map --state open
 - Run a workspace package's own suite via `uv run --package <name> --extra test pytest ...`
   (see `.github/workflows/tests.yaml` for the exact invocation per package,
   including which extras each one needs — e.g. `skills-graph`, `actions-graph`,
-  and `sessions-graph` all also need `--extra agent-context-graph`, and
+  and `sessions-graph` all also need `--extra memgraph-context-graph`, and
   `sessions-graph` additionally needs `--extra reconciliation`).
 
 ## Common commands
@@ -94,13 +104,32 @@ stray container for these; `scripts/dev-memgraph.sh` owns the disposable test
 instance so the automated suite can never collide with or wipe your
 exploration data:
 ```bash
-./scripts/dev-memgraph.sh test                  # all packages
+./scripts/dev-memgraph.sh test                  # Context Graph + HyGM + unstructured2graph
 ./scripts/dev-memgraph.sh test sessions-graph    # one package
 ./scripts/dev-memgraph.sh test-down              # reclaim the test container when done
+./scripts/dev-memgraph.sh test-enterprise        # context-graph-spaces, on its own licensed container
 ```
+`test-enterprise` needs `MEMGRAPH_ENTERPRISE_LICENSE` and `MEMGRAPH_ORGANIZATION_NAME`
+(environment, or `.env` at the repo root); the Community suites stay on an
+unlicensed container on purpose.
+For parallel checkouts, override `AI_TOOLKIT_TEST_CONTAINER` and
+`AI_TOOLKIT_TEST_PORT` together to select an isolated test instance. Exploration
+uses `AI_TOOLKIT_DEV_CONTAINER`/`AI_TOOLKIT_DEV_PORT`. Test fixtures must honor
+`MEMGRAPH_URL` (and eval's `EVAL_MEMGRAPH_URL`) instead of hardcoding port 7687.
+`dogfood-env` creates a private session config and prints only its
+`CONTEXT_GRAPH_CONFIG` export; remove that temporary file after the session.
+`hooks-local`/`hooks-restore` back up and restore the selected config file.
+
 The same script also drives a disposable *exploration* Memgraph
 (`up`/`hooks-local`/`inspect`/`reconcile`/`down`) for dogfooding against your
 own real Claude Code session — see `./scripts/dev-memgraph.sh --help`.
+
+**Changing how the graph is built by default.** The GLiNER2 checkpoint,
+decoder or caps, hygm's default model, the value pass, the user resolver,
+windowing: any of these changes what every user's graph holds. Run
+`context-graph-eval kg --observe --baseline context-graph/eval/baselines/kg-beam-100k.json`
+before and after, put the comparison in the PR, and save a new baseline in the
+same PR when the change is intended. See the eval README's `kg` section.
 
 ## Code style
 
@@ -142,7 +171,7 @@ checker — same vendor as `uv`/`ruff`), not `mypy` or `pyright`. **Enforced in
 CI**, blocking: `.github/workflows/lint.yaml`'s `typecheck` job. `ty` resolves
 imports through installed packages (unlike `ruff`, which is purely
 syntactic), and cross-package imports span the whole workspace (e.g.
-`agent-context-graph` optionally imports `skills-graph`/`actions-graph`/
+`memgraph-context-graph` optionally imports `skills-graph`/`actions-graph`/
 `sessions-graph`), so CI syncs the full workspace before checking:
 ```bash
 uv sync --all-packages --all-extras
@@ -184,7 +213,7 @@ silently drift from the real shape as that package evolves.
 ## Commit conventions
 
 Subject line is `<package>: <imperative, lowercase summary> (#PR)`, e.g.
-`sessions-graph: reconcile_session() now writes episodic Session.summary`.
+`sessions-graph: recall reads memory files first, through a memories lane`.
 Cross-cutting family changes use `context-graph: ...`.
 
 **Issue numbers in code comments.** The provenance of a *change* — which PR
@@ -212,7 +241,16 @@ LLM config **values** — URLs, keys, flags — **only** from the config file,
 never from environment variables at runtime. Non-interactive hook subprocesses
 don't source shell profiles, so an env-var-only path would silently work in
 your interactive shell and silently fail in the hook. Keep that boundary when
-touching `agent-context-graph`'s hook/config code.
+touching `memgraph-context-graph`'s hook/config code.
+
+A user can make Context Graph their harness memory with
+`memgraph-context-graph setup <claude-code|codex> --memory-backend context-graph`
+(map #484, ADR 0006). This switch is per user, never per project. It turns
+the harness's built-in memory off in its user-level config, imports what that
+memory held, and sets `[memory] backend` in the config file. That setting is
+the one source of truth that switches on the MCP `memory` tool and the
+session-start memory index. The `memory` tool writes only `(:Memory)` files;
+everything derived stays background-only.
 
 One env var is read at hook runtime, and it is not an exception to the rule
 above so much as a different question: `CONTEXT_GRAPH_CONFIG` selects **which
@@ -229,3 +267,17 @@ session on the machine. Config *values* stay file-only.
 All release workflows are manual (`workflow_dispatch` from the Actions tab);
 bump the subproject's `pyproject.toml` version before dispatching. Full
 package-to-workflow mapping and required secrets: `skills/release/SKILL.md`.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues in `memgraph/ai-toolkit`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Multi-context: root `CONTEXT-MAP.md` points to per-package `CONTEXT.md` files and package-level `docs/adr/`. See `docs/agents/domain.md`.

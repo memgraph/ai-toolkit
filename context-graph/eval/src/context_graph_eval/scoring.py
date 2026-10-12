@@ -237,9 +237,8 @@ def bleu_score(expected_output: str | None, answer: str) -> float:
         return Scorer.sentence_bleu_score(references=expected_output, prediction=answer, bleu_type="bleu1")
 
 
-#: How much of an evidence turn must appear in a retrieved row for it to count
-#: as found: its opening, whitespace-collapsed. Rows truncate long turns
-#: (hybrid's turn_chars), so the whole turn can't be required.
+#: How much of an evidence passage must appear in a retrieved row for its turn
+#: to count as found: its opening, whitespace-collapsed.
 EVIDENCE_MATCH_CHARS = 200
 
 
@@ -248,20 +247,28 @@ def _collapsed(text: str) -> str:
 
 
 def evidence_recall(evidence: list[str] | None, retrieved: list[str]) -> float | None:
-    """The share of ``evidence`` turns whose opening appears in a ``retrieved`` row, or None without evidence.
+    """The share of ``evidence`` turns of which some passage appears in a ``retrieved`` row, or None without evidence.
 
     Evidence turns are the corpus's ``"role: content"`` strings (see
     ``convert.longmemeval._evidence_turns``). Unlike Contextual Recall this
     checks the turns an answer is built from, not the answer itself, so a
     computed answer ("17 days") whose parts were all retrieved scores 1.0.
+
+    Recall shows a long turn as its matched passages, so any one of the
+    turn's passages counts. Neither benchmark marks where in a turn its fact
+    is, so for a long turn this is an upper bound: the passage shown may not
+    be the one holding the fact.
     """
+    from sessions_graph.passages import split_passages
+
     if not evidence:
         return None
     haystack = _collapsed("\n".join(retrieved))
     found = 0
     for turn in evidence:
         _, _, content = turn.partition(": ")
-        if _collapsed(content)[:EVIDENCE_MATCH_CHARS] in haystack:
+        openings = (_collapsed(passage)[:EVIDENCE_MATCH_CHARS] for passage in split_passages(content))
+        if any(opening and opening in haystack for opening in openings):
             found += 1
     return found / len(evidence)
 

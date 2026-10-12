@@ -120,11 +120,11 @@ class TestSessionsGraphCore:
 class TestSessionsGraphConnector:
     @pytest.fixture()
     def context_graph_config(self, monkeypatch, tmp_path):
-        """Point agent_context_graph's hook config at a temp dir so tests never
+        """Point memgraph_context_graph's hook config at a temp dir so tests never
         touch a real ~/.config/context-graph/config.toml on the host running them.
         """
-        pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
-        from agent_context_graph.adapters import _identity
+        pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
+        from memgraph_context_graph.adapters import _identity
 
         # The supported override (ADR 0003), not module privates: those were
         # removed when the config path became a lookup, and monkeypatching a
@@ -137,10 +137,10 @@ class TestSessionsGraphConnector:
         _identity._reset_cache()
 
     def _make(self):
-        pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
+        pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
         from sessions_graph.connector import SessionsGraphConnector
 
-        from agent_context_graph.events import SessionEndEvent, SessionStartEvent
+        from memgraph_context_graph.events import SessionEndEvent, SessionStartEvent
 
         db = MagicMock()
         db.query.return_value = []
@@ -229,7 +229,7 @@ class TestSessionsGraphConnector:
 
     def test_supports_session_events_only(self):
         connector, _, _, SessionStartEvent, SessionEndEvent = self._make()
-        from agent_context_graph.events import ToolStartEvent
+        from memgraph_context_graph.events import ToolStartEvent
 
         assert connector.supports(SessionStartEvent(session_id="s-1"))
         assert connector.supports(SessionEndEvent(session_id="s-1"))
@@ -243,8 +243,8 @@ class TestReconciliationEnv:
 
     @pytest.fixture()
     def context_graph_config(self, monkeypatch, tmp_path):
-        pytest.importorskip("agent_context_graph", reason="agent-context-graph not installed")
-        from agent_context_graph.adapters import _identity
+        pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
+        from memgraph_context_graph.adapters import _identity
 
         # The supported override (ADR 0003), not module privates: those were
         # removed when the config path became a lookup, and monkeypatching a
@@ -269,21 +269,31 @@ class TestReconciliationEnv:
         assert env["MEMGRAPH_URL"] == "bolt://remote:7687"
         assert env["OPENAI_API_KEY"] == "sk-test"
 
-    def test_ambient_llm_key_preserved_when_config_empty(self, context_graph_config, monkeypatch):
+    def test_empty_config_clears_ambient_credentials(self, context_graph_config, monkeypatch):
         from sessions_graph.connector import _child_env
 
         monkeypatch.setenv("OPENAI_API_KEY", "ambient-key")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient-key")
+        monkeypatch.setenv("MEMGRAPH_USER", "ambient-user")
+        monkeypatch.setenv("MEMGRAPH_PASSWORD", "ambient-password")
+        monkeypatch.setenv("MEMGRAPH_URI", "bolt://ambient:7687")
+        monkeypatch.setenv("MEMGRAPH_USERNAME", "ambient-user")
 
         env = _child_env(llm=True)
 
-        # config.toml has no openai_api_key set -> must not clobber the ambient value
-        assert env["OPENAI_API_KEY"] == "ambient-key"
+        assert env["OPENAI_API_KEY"] == ""
+        assert env["ANTHROPIC_API_KEY"] == ""
+        assert env["MEMGRAPH_USER"] == ""
+        assert env["MEMGRAPH_PASSWORD"] == ""
+        assert "MEMGRAPH_URI" not in env
+        assert "MEMGRAPH_USERNAME" not in env
 
     def test_embedding_env_gets_memgraph_but_not_configured_llm_keys(self, context_graph_config, monkeypatch):
         """Embedding runs inside Memgraph; the child needs the connection, not the keys."""
         from sessions_graph.connector import _child_env
 
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "ambient-key")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient-key")
         context_graph_config.write_full_config(memgraph_url="bolt://remote:7687", openai_api_key="sk-test")
         context_graph_config._reset_cache()
 
@@ -291,3 +301,4 @@ class TestReconciliationEnv:
 
         assert env["MEMGRAPH_URL"] == "bolt://remote:7687"
         assert "OPENAI_API_KEY" not in env
+        assert "ANTHROPIC_API_KEY" not in env

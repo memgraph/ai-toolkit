@@ -2,7 +2,7 @@
 
 Store and track LLM actions, tool calls, and sessions in Memgraph.
 
-> Part of the [Context Graph](../README.md) family — usually wired into `agent-context-graph` to capture Claude Code / Codex sessions automatically. This README covers using it directly.
+> Part of the [Context Graph](../README.md) family — usually wired into `memgraph-context-graph` to capture Claude Code / Codex sessions automatically. This README covers using it directly.
 
 Actions Graph provides a graph-based storage system for tracking all LLM interactions, including:
 - **Tool Calls**: Function/tool invocations by the LLM
@@ -19,7 +19,7 @@ Actions Graph provides a graph-based storage system for tracking all LLM interac
 - 🌳 **Nested Actions**: Support for parent-child action relationships (e.g., subagents)
 - 🏷️ **Session Management**: Create, track, and query sessions
 - 📈 **Analytics**: Built-in queries for tool usage stats and session summaries
-- 🔌 **Agent Context Graph Integration**: Consume normalized runtime events through `ActionsGraphConnector`
+- 🔌 **Memgraph Context Graph Integration**: Consume normalized runtime events through `ActionsGraphConnector`
 
 ## Installation
 
@@ -27,9 +27,9 @@ Actions Graph provides a graph-based storage system for tracking all LLM interac
 pip install actions-graph
 ```
 
-For Agent Context Graph integration:
+For Memgraph Context Graph integration:
 ```bash
-pip install "actions-graph[agent-context-graph]"
+pip install "actions-graph[memgraph-context-graph]"
 ```
 
 Needs a running Memgraph (default `bolt://localhost:7687`); `ActionsGraph()` reads `MEMGRAPH_URL`, `MEMGRAPH_USER`, `MEMGRAPH_PASSWORD`, `MEMGRAPH_DATABASE` (or takes them as kwargs):
@@ -78,13 +78,13 @@ summary = graph.get_session_summary("session-123")
 print(f"Actions: {summary['action_count']}, Tools: {summary['tool_call_count']}")
 ```
 
-### Agent Context Graph Integration
+### Memgraph Context Graph Integration
 
 ```python
 from actions_graph import ActionsGraph
 from actions_graph.connector import ActionsGraphConnector
-from agent_context_graph import AgentLink
-from agent_context_graph.adapters.claude import ClaudeAdapter
+from memgraph_context_graph import AgentLink
+from memgraph_context_graph.adapters.claude import ClaudeAdapter
 
 graph = ActionsGraph()
 graph.setup()
@@ -96,7 +96,7 @@ adapter = ClaudeAdapter(link, session_id="my-session-123")
 hooks = adapter.get_runtime_hooks()
 ```
 
-Actions Graph should consume runtime activity through Agent Context Graph when possible. Runtime adapters normalize SDK callbacks and command hooks into the shared Event Protocol; `ActionsGraphConnector` decides which events become session and action nodes.
+Actions Graph should consume runtime activity through Memgraph Context Graph when possible. Runtime adapters normalize SDK callbacks and command hooks into the shared Event Protocol; `ActionsGraphConnector` decides which events become session and action nodes.
 
 ## Graph Schema
 
@@ -107,7 +107,7 @@ Actions Graph should consume runtime activity through Agent Context Graph when p
 
 - **Action**: Individual actions with type-specific labels
   - Labels: `ToolCall`, `ToolResult`, `Message` (plus a role label `UserMessage`/`AssistantMessage`/`SystemMessage`), `StructuredOutput`, `SubagentEvent`, `PermissionRequest`, `ErrorEvent`, `RateLimitEvent`
-  - Properties: `action_id`, `action_type`, `timestamp`, `status`, `duration_ms`, `parent_action_id`, `tool_name`, `is_error`, `is_mcp`, `text` (user and assistant messages only: the plain message text), `properties` (type-specific), `metadata`
+  - Properties: `action_id`, `action_type`, `timestamp`, `status`, `duration_ms`, `parent_action_id`, `tool_name`, `tool_use_id` (tool calls and results: the harness's id for the call), `is_error`, `is_mcp`, `text` (user and assistant messages only: the plain message text), `properties` (type-specific), `metadata`
   - The session link is the `HAS_ACTION` edge, not a property — there is no `session_id` on `(:Action)`.
 
 - **Tool**: Tool definitions
@@ -173,7 +173,7 @@ graph.get_session_summary(session_id)
 | `permission_request` | `PermissionRequest` | Permission requested |
 | `rate_limit` | `RateLimitEvent` | Rate limit event |
 
-### Agent Context Graph Connector
+### Memgraph Context Graph Connector
 
 ```python
 from actions_graph.connector import ActionsGraphConnector
@@ -191,7 +191,7 @@ The connector records:
 
 ### Claude Agent SDK Hooks
 
-Direct Claude Agent SDK hooks remain available for standalone use, but Agent Context Graph is the preferred integration path when multiple graph components need the same runtime event stream.
+Direct Claude Agent SDK hooks remain available for standalone use, but Memgraph Context Graph is the preferred integration path when multiple graph components need the same runtime event stream.
 
 For Claude Agent SDK integration:
 

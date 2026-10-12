@@ -1,15 +1,21 @@
 """Recall: what one user's past sessions say about a question (#394).
 
 Turns are the answer store and the extracted graph is an index into them.
-Five lanes, each over the user's own history only:
+Six lanes, each over the user's own history only:
 
-    turns       messages nearest the question by vector
+    memories    memory files the user's agents saved deliberately, by vector and full text
+    turns       message passages nearest the question by vector
     text        messages matching it by full-text search
     entities    entities nearest it by vector, and each one's facts
     facts       extracted facts nearest it by vector
-    user_facts  the user's own facts of the relation types nearest it
+    user_facts  every fact of the relation types nearest it, from the user's turns
 
-then the turns the facts were read from. The result is the evidence, not an
+then the turns the facts were read from. Memory files come first: they are
+curated, where turns are everything that was said. A user with no memory
+files gets exactly what the five conversation lanes give, header included. A turn too long to show whole is
+shown as the passages that matched (:mod:`.passages`): the one a vector
+hit, the one a fact was read from, the one sharing most words with the
+question. The result is the evidence, not an
 answer: the caller's model answers from it. This is the hybrid retrieval the
 eval benchmarks (``context-graph-eval run --retrieval-strategy hybrid``),
 which calls this same code.
@@ -23,13 +29,15 @@ turns it found, and :attr:`Recalled.vector_lanes_off` says why.
 
 from __future__ import annotations
 
+import json
 import re
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from typing import Any
 
 from .embeddings import DEFAULT_EMBEDDING_MODEL, EmbeddingUnavailableError, embed_texts
+from .passages import best_passage, excerpt, split_passages
 
-LANES = ("turns", "text", "entities", "facts", "user_facts")
+LANES = ("memories", "turns", "text", "entities", "facts", "user_facts")
 
 #: bge's retrieval instruction, prepended to the question only, never to what is searched.
 QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
@@ -43,6 +51,8 @@ class RecallConfig:
     """Which lanes run and how wide each is: the setup the hybrid benchmark measured."""
 
     lanes: tuple[str, ...] = LANES
+    #: Memory files shown at most, found by vector and full text together.
+    memories_k: int = 5
     turns_k: int = 8
     text_k: int = 8
     entities_k: int = 15
@@ -53,7 +63,7 @@ class RecallConfig:
     #: user_facts: how many relation types to pick, and facts to keep across them.
     user_fact_types: int = 2
     user_facts_k: int = 30
-    #: Characters of each turn shown.
+    #: Characters of each turn shown: a longer turn shows its matched passages instead of its opening.
     turn_chars: int = 1500
 
     @classmethod
@@ -91,9 +101,27 @@ class Turn:
     timestamp: str
     speaker: str
     text: str
+    #: Indices of the passages that matched, most relevant first; what a turn too long to show whole shows.
+    passages: tuple[int, ...] = ()
 
     def line(self, chars: int) -> str:
-        return f"TURN [session {self.session_id}, {self.timestamp[:16]}, {self.speaker}]: {self.text[:chars]}"
+        shown = excerpt(self.text, list(self.passages), chars)
+        return f"TURN [session {self.session_id}, {self.timestamp[:16]}, {self.speaker}]: {shown}"
+
+
+@dataclass(frozen=True)
+class MemoryNote:
+    """One memory file, as recall shows it."""
+
+    path: str
+    updated_at: str
+    text: str
+    #: Indices of the passages that matched, most relevant first; what a file too long to show whole shows.
+    passages: tuple[int, ...] = ()
+
+    def line(self, chars: int) -> str:
+        shown = excerpt(self.text, list(self.passages), chars)
+        return f"MEMORY [{self.path}, updated {self.updated_at[:10]}]: {shown}"
 
 
 @dataclass(frozen=True)
@@ -127,6 +155,11 @@ READING_RULES = (
     "- When the rows never mention what is asked, or don't show what the question assumes, say it is not "
     "in memory rather than answering a related question."
 )
+#: Added only when memory files are shown, so recall over conversations alone reads exactly as benchmarked.
+MEMORY_RULE = (
+    "- MEMORY rows are notes saved deliberately to remember; trust them over a TURN about the same thing, "
+    "unless the TURN is more recent."
+)
 
 
 @dataclass(frozen=True)
@@ -136,22 +169,31 @@ class Recalled:
     question: str
     turns: list[Turn] = field(default_factory=list)
     facts: list[Fact] = field(default_factory=list)
+    memories: list[MemoryNote] = field(default_factory=list)
     #: Why the vector lanes didn't run, or None when they did.
     vector_lanes_off: str | None = None
     turn_chars: int = RecallConfig.turn_chars
+    #: Spaces that couldn't be searched, each with why; their rows are missing.
+    missing_spaces: tuple[str, ...] = ()
 
     def lines(self) -> list[str]:
         """The rows as text: exactly what the benchmark's answerer was shown."""
-        return [turn.line(self.turn_chars) for turn in self.turns] + [fact.line() for fact in self.facts]
+        return (
+            [note.line(self.turn_chars) for note in self.memories]
+            + [turn.line(self.turn_chars) for turn in self.turns]
+            + [fact.line() for fact in self.facts]
+        )
 
     def render(self, today: str | None = None) -> str:
         """The rows behind a header with the reading rules, for a model to answer from."""
         header = [f"Memory recall for: {self.question}"]
         if today:
             header.append(f"Today is {today}.")
-        header.append(READING_RULES)
+        header.append(READING_RULES + ("\n" + MEMORY_RULE if self.memories else ""))
         if self.vector_lanes_off:
             header.append(f"Vector search is off ({self.vector_lanes_off}); these rows come from text search only.")
+        if self.missing_spaces:
+            header.append(f"Not searched, so rows from them are missing: {'; '.join(self.missing_spaces)}.")
         rows = "\n".join(self.lines()) or "(nothing in memory matched)"
         return "\n".join(header) + "\n\nRows:\n" + rows
 
@@ -160,7 +202,9 @@ class Recalled:
             "question": self.question,
             "turns": [asdict(turn) for turn in self.turns],
             "facts": [asdict(fact) for fact in self.facts],
+            "memories": [asdict(note) for note in self.memories],
             "vector_lanes_off": self.vector_lanes_off,
+            **({"missing_spaces": list(self.missing_spaces)} if self.missing_spaces else {}),
         }
 
 
@@ -173,8 +217,10 @@ _OWN_TURNS = (
 _SCORE = "vector_search.cosine_similarity({x}.embedding, $query)"
 
 _TURNS = (
-    _OWN_TURNS + "AND a.embedding_model = $model WITH DISTINCT a "
-    "WITH a, " + _SCORE.format(x="a") + " AS score ORDER BY score DESC LIMIT $k RETURN a.action_id AS id"
+    _OWN_TURNS + "AND a.embedding_model = $model AND a.passage_embeddings IS NOT NULL WITH DISTINCT a "
+    "UNWIND range(0, size(a.passage_embeddings) - 1) AS i "
+    "WITH a, i, vector_search.cosine_similarity(a.passage_embeddings[i], $query) AS score "
+    "ORDER BY score DESC LIMIT $k RETURN a.action_id AS id, i AS passage"
 )
 # An entity is the user's when one of its mentions is from the user's turn:
 # chunks are content-addressed, so another user's identical text shares the chunk.
@@ -205,13 +251,18 @@ _ENTITY_FACTS = (
     "WITH n, r ORDER BY r.confidence DESC WITH n, collect(DISTINCT r) AS rs UNWIND rs[0..$per] AS r "
     "WITH DISTINCT r WITH startNode(r) AS h, r, endNode(r) AS t " + _FACT_FIELDS
 )
-_USER_FACT_TYPES = (
-    "MATCH (:User {user_id: $user})-[r]->() WHERE r.source_id IS NOT NULL RETURN DISTINCT type(r) AS type"
-)
+# Every relation type on a fact read from the user's turns, whatever its head:
+# a learned domain relation (Project depends_on Library) needn't start at the
+# User (#439). Types come from the data, not the model, so facts under a type
+# a later version retired stay reachable.
+_USER_FACT_TYPES = _OWN_FACTS + "RETURN DISTINCT type(r) AS type"
 _USER_FACTS = (
-    "MATCH (h:User {user_id: $user})-[r]->(t) WHERE r.source_id IS NOT NULL AND type(r) IN $types "
-    "AND r.embedding_model = $model "
-    "WITH h, r, t, " + _SCORE.format(x="r") + " AS score ORDER BY score DESC LIMIT $k " + _FACT_FIELDS
+    _OWN_FACTS + "AND type(r) IN $types AND r.embedding_model = $model WITH DISTINCT r "
+    "WITH r, " + _SCORE.format(x="r") + " AS score ORDER BY score DESC LIMIT $k "
+    "WITH startNode(r) AS h, r, endNode(r) AS t " + _FACT_FIELDS
+)
+_TYPE_DESCRIPTIONS = (
+    "MATCH (:User {user_id: $user})-[:ADOPTED]->(v:OntologyVersion) RETURN v.model AS model, v.pool AS pool"
 )
 _TEXT = (
     f"CALL text_search.search_all('{TURN_TEXT_INDEX}', $text, {{limit: $pool}}) YIELD node, score "
@@ -232,7 +283,25 @@ _FACTS_OF_TURNS = (
     "WITH startNode(r) AS h, r, endNode(r) AS t " + _FACT_FIELDS
 )
 
-#: Relation-type label vectors, per model: types are few and reused across questions.
+_MEMORY_VECTORS = (
+    "MATCH (m:Memory {user_id: $user}) WHERE m.embedding_model = $model AND m.passage_embeddings IS NOT NULL "
+    "UNWIND range(0, size(m.passage_embeddings) - 1) AS i "
+    "WITH m, i, vector_search.cosine_similarity(m.passage_embeddings[i], $query) AS score "
+    "ORDER BY score DESC LIMIT $k RETURN m.memory_id AS id, i AS passage"
+)
+_MEMORY_TEXT = (
+    "CALL text_search.search_all($index, $text, {limit: $pool}) YIELD node, score "
+    "WITH node, score WHERE node.user_id = $user "
+    "WITH node, score ORDER BY score DESC LIMIT $k RETURN node.memory_id AS id"
+)
+_MEMORY_ROWS = (
+    "UNWIND $ids AS id MATCH (m:Memory {memory_id: id}) "
+    "RETURN m.memory_id AS id, m.path AS path, m.updated_at AS updated_at, m.content AS text"
+)
+#: Full-text index over memory content; created by ``SessionsGraph.setup``.
+MEMORY_TEXT_INDEX = "memory_content_index"
+
+#: Relation-type vectors, per model and text embedded: types are few and reused across questions.
 _type_vectors: dict[tuple[str, str], list[float]] = {}
 
 
@@ -263,10 +332,14 @@ def recall(
         return _text_only(db, user_id, question, config, reason=str(exc))
 
     params = {"user": user_id, "query": query, "model": model}
+    memories = _memories(db, user_id, question, config, query=query, model=model)
     turn_ids: list[str] = []
+    vector_hits: dict[str, list[int]] = {}
     facts: list[dict[str, Any]] = []
     if "turns" in config.lanes:
-        turn_ids += [row["id"] for row in db.query(_TURNS, {**params, "k": config.turns_k})]
+        for row in db.query(_TURNS, {**params, "k": config.turns_k}):
+            turn_ids.append(row["id"])
+            vector_hits.setdefault(row["id"], []).append(row["passage"])
     if "text" in config.lanes:
         turn_ids += _text_lane(db, user_id, question, config.text_k)
     if "entities" in config.lanes:
@@ -277,7 +350,44 @@ def recall(
         facts += db.query(_FACTS, {**params, "k": config.facts_k})
     if "user_facts" in config.lanes:
         facts += _user_facts(db, user_id, query, model, config)
-    return _assemble(db, question, turn_ids, facts, config)
+    return replace(_assemble(db, question, turn_ids, facts, config, vector_hits), memories=memories)
+
+
+def _memories(
+    db: Any, user_id: str, question: str, config: RecallConfig, *, query: list[float] | None, model: str
+) -> list[MemoryNote]:
+    """The user's memory files nearest the question: vector hits first, then full-text ones."""
+    if "memories" not in config.lanes or config.memories_k == 0:
+        return []
+    hits: dict[str, list[int]] = {}
+    if query is not None:
+        for row in db.query(_MEMORY_VECTORS, {"user": user_id, "query": query, "model": model, "k": config.memories_k}):
+            hits.setdefault(row["id"], []).append(row["passage"])
+    text = _safe_query(question)
+    if text:
+        pool = db.query("MATCH (m:Memory) RETURN count(m) AS n")[0]["n"]
+        if pool:
+            for row in db.query(
+                _MEMORY_TEXT,
+                {"index": MEMORY_TEXT_INDEX, "text": text, "pool": pool, "user": user_id, "k": config.memories_k},
+            ):
+                hits.setdefault(row["id"], [])
+    ids = list(hits)[: config.memories_k]
+    if not ids:
+        return []
+    rows = {row["id"]: row for row in db.query(_MEMORY_ROWS, {"ids": ids})}
+    notes = []
+    for memory_id in ids:
+        row = rows.get(memory_id)
+        if row is None:
+            continue
+        note = MemoryNote(path=row["path"], updated_at=row["updated_at"] or "", text=row["text"] or "")
+        if len(note.text) > config.turn_chars:
+            passages = split_passages(note.text)
+            found = [*hits[memory_id], best_passage(passages, question, ignore=_STOPWORDS)]
+            note = replace(note, passages=tuple(dict.fromkeys(found)))
+        notes.append(note)
+    return notes
 
 
 def _text_lane(db: Any, user_id: str, question: str, k: int) -> list[str]:
@@ -294,23 +404,56 @@ def _text_lane(db: Any, user_id: str, question: str, k: int) -> list[str]:
 
 
 def _user_facts(db: Any, user_id: str, query: list[float], model: str, config: RecallConfig) -> list[dict[str, Any]]:
-    """The user's facts of the relation types whose names are nearest the question.
+    """Facts from the user's turns of the relation types nearest the question.
 
     What "how many weddings did I attend" needs and top-k similarity over
     turns can't gather: every fact of the right type, across all sessions.
+    A type is ranked by its name and description (#439): a learned name can
+    be terse (`pins`), and the description is what a question matches.
     """
     types = sorted(row["type"] for row in db.query(_USER_FACT_TYPES, {"user": user_id}))
     if not types:
         return []
-    missing = [t for t in types if (model, t) not in _type_vectors]
+    descriptions = _type_descriptions(db, user_id)
+    texts = {t: _type_text(t, descriptions.get(t, "")) for t in types}
+    missing = sorted({text for text in texts.values() if (model, text) not in _type_vectors})
     if missing:
-        vectors = embed_texts(db, [t.replace("_", " ") for t in missing], model)
-        _type_vectors.update({(model, t): v for t, v in zip(missing, vectors, strict=True)})
-    ranked = sorted(types, key=lambda t: -_dot(_type_vectors[(model, t)], query))
+        vectors = embed_texts(db, missing, model)
+        _type_vectors.update({(model, text): v for text, v in zip(missing, vectors, strict=True)})
+    ranked = sorted(types, key=lambda t: -_dot(_type_vectors[(model, texts[t])], query))
     wanted = ranked[: config.user_fact_types]
     return db.query(
         _USER_FACTS, {"user": user_id, "types": wanted, "query": query, "model": model, "k": config.user_facts_k}
     )
+
+
+def _type_descriptions(db: Any, user_id: str) -> dict[str, str]:
+    """Relation descriptions from the user's adopted ontology version, then its pool of retired types.
+
+    A user with no stored version is on hygm's default model. Recall can run
+    without hygm (the MCP server needs only sessions-graph), and then a type
+    ranks by its name alone.
+    """
+    rows = db.query(_TYPE_DESCRIPTIONS, {"user": user_id})
+    if rows:
+        mappings = [json.loads(rows[0][key]) for key in ("model", "pool") if rows[0].get(key)]
+    else:
+        try:
+            from hygm import default_model, model_to_mapping
+        except ImportError:
+            return {}
+        mappings = [model_to_mapping(default_model())]
+    descriptions: dict[str, str] = {}
+    for mapping in mappings:
+        for relation in mapping.get("relation_types", []):
+            if relation.get("description"):
+                descriptions.setdefault(relation["label"], relation["description"])
+    return descriptions
+
+
+def _type_text(name: str, description: str) -> str:
+    words = name.replace("_", " ")
+    return f"{words}: {description}" if description else words
 
 
 def _text_only(db: Any, user_id: str, question: str, config: RecallConfig, *, reason: str) -> Recalled:
@@ -321,23 +464,53 @@ def _text_only(db: Any, user_id: str, question: str, config: RecallConfig, *, re
         question=question,
         turns=recalled.turns,
         facts=recalled.facts,
+        memories=_memories(db, user_id, question, config, query=None, model=""),
         vector_lanes_off=reason,
         turn_chars=config.turn_chars,
     )
 
 
 def _assemble(
-    db: Any, question: str, turn_ids: list[str], fact_rows: list[dict[str, Any]], config: RecallConfig
+    db: Any,
+    question: str,
+    turn_ids: list[str],
+    fact_rows: list[dict[str, Any]],
+    config: RecallConfig,
+    vector_hits: dict[str, list[int]] | None = None,
 ) -> Recalled:
     unique: dict[tuple[Any, ...], dict[str, Any]] = {}
     for row in fact_rows:
         unique.setdefault((row["head"], row["type"], row["tail"], row["turn"], row["sentence"]), row)
     # The turns the facts were read from, in the order the lanes found them.
     turn_ids += [row["turn"] for row in unique.values() if row.get("turn")][: config.fact_turns_k]
-    turns = _turns(db, list(dict.fromkeys(turn_ids)))
+    sentences: dict[str, list[str]] = {}
+    for row in unique.values():
+        if row.get("turn") and row.get("sentence"):
+            sentences.setdefault(row["turn"], []).append(row["sentence"])
+    turns = [
+        _with_passages(
+            turn, question, (vector_hits or {}).get(turn.action_id, []), sentences.get(turn.action_id, []), config
+        )
+        for turn in _turns(db, list(dict.fromkeys(turn_ids)))
+    ]
     # Both in time order: a knowledge-update question wants the latest value, a temporal one the sequence.
     facts = sorted((Fact(**row) for row in unique.values()), key=lambda f: f.valid_at or "")
     return Recalled(question=question, turns=turns, facts=facts, turn_chars=config.turn_chars)
+
+
+def _with_passages(
+    turn: Turn, question: str, vector_hits: list[int], sentences: list[str], config: RecallConfig
+) -> Turn:
+    """``turn`` with the passages worth showing: vector hits, then each fact's sentence, then the question's words.
+
+    Only a turn too long to show whole needs them.
+    """
+    if len(turn.text) <= config.turn_chars:
+        return turn
+    passages = split_passages(turn.text)
+    found = [*vector_hits, *(best_passage(passages, sentence) for sentence in sentences)]
+    found.append(best_passage(passages, question, ignore=_STOPWORDS))
+    return replace(turn, passages=tuple(dict.fromkeys(found)))
 
 
 def _turns(db: Any, turn_ids: list[str]) -> list[Turn]:
@@ -426,3 +599,47 @@ def _safe_query(question: str) -> str:
     reducing to words makes any question parseable.
     """
     return " ".join(t for t in _QUERY_TOKEN.findall(question) if t.lower() not in _STOPWORDS)
+
+
+#: Reciprocal rank fusion's damping constant: the usual 60, so a list's top few ranks don't drown the rest.
+RRF_K = 60
+
+
+def fuse(question: str, results: list[Recalled], *, memories_k: int, missing: tuple[str, ...] = ()) -> Recalled:
+    """One recall result from several spaces' results, the personal space's first.
+
+    Memories compete for one budget, so they are merged by reciprocal rank fusion
+    (each space ranks its own; raw scores from different databases aren't
+    comparable) and cut to *memories_k*. A note whose text another space already
+    holds is dropped, keeping the later space's copy: shared spaces come after
+    the personal one, and a promoted file belongs where it was shared. Turns and
+    facts, each already chosen by its space's own widths, are kept whole: turns
+    in time order, as recall shows them.
+    """
+    if len(results) == 1 and not missing:
+        return results[0]
+    scores: dict[int, float] = {}
+    notes: dict[int, MemoryNote] = {}
+    owner: dict[str, int] = {}
+    for space_index, result in enumerate(results):
+        for rank, note in enumerate(result.memories):
+            key = space_index * 1_000_000 + rank
+            scores[key] = 1.0 / (RRF_K + rank + 1)
+            notes[key] = note
+            if (previous := owner.get(note.text)) is not None:
+                scores[key] = max(scores[key], scores.pop(previous))
+                notes.pop(previous)
+            owner[note.text] = key
+    memories = [notes[key] for key in sorted(scores, key=lambda key: (-scores[key], key))][:memories_k]
+    turns = sorted((turn for result in results for turn in result.turns), key=lambda turn: turn.timestamp)
+    facts = [fact for result in results for fact in result.facts]
+    off = next((result.vector_lanes_off for result in results if result.vector_lanes_off), None)
+    return Recalled(
+        question=question,
+        turns=turns,
+        facts=facts,
+        memories=memories,
+        vector_lanes_off=off,
+        turn_chars=results[0].turn_chars if results else RecallConfig.turn_chars,
+        missing_spaces=missing,
+    )

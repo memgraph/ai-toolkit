@@ -16,9 +16,8 @@ pass -- never point this at a shared or development database):
         memgraph/memgraph-mage:latest
 
 LightRAGBackend additionally needs OPENAI_API_KEY (or another configured
-LLM); GLiNER2Backend needs `gliner2` installed manually -- not a
-pyproject.toml extra, see gliner2_backend.py's module docstring for why
-(`pip install 'gliner2[local]>=2.0.0'`). Missing either skips that backend
+LLM); GLiNER2Backend uses the local inference dependencies installed with
+unstructured2graph. Missing either backend's dependencies skips that backend
 with a clear message rather than failing the whole run.
 """
 

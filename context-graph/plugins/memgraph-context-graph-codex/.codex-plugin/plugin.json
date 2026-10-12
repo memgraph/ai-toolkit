@@ -1,0 +1,28 @@
+{
+  "name": "context-graph",
+  "version": "0.3.0",
+  "description": "Capture Codex runtime activity through Memgraph Context Graph hooks.",
+  "author": {
+    "name": "Memgraph"
+  },
+  "repository": "https://github.com/memgraph/ai-toolkit",
+  "license": "MIT",
+  "keywords": ["codex", "context-graph", "memgraph-context-graph", "memgraph"],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Context Graph",
+    "shortDescription": "Send Codex lifecycle events to Memgraph Context Graph and recall past sessions.",
+    "longDescription": "Installs Codex lifecycle hooks that call the Memgraph Context Graph hook CLI, allowing graph connectors such as Skills Graph to persist useful runtime context in Memgraph.",
+    "developerName": "Memgraph",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": [
+      "Check whether context graph hooks are installed.",
+      "Explain what Codex events are captured.",
+      "Show recent skill usage in Memgraph."
+    ],
+    "brandColor": "#24C6DC"
+  }
+}

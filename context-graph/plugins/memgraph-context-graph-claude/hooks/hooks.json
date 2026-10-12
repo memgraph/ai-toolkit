@@ -1,0 +1,152 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptExpansion": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

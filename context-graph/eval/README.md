@@ -53,12 +53,11 @@ keeps that role's default provider (#329 -- the judge stays on a different
 provider from the pipeline by default, but a shared provider is a legitimate
 experiment, flagged loudly rather than refused).
 
-`--extraction-backend {lightrag,gliner2}` (default `lightrag`) picks what
+`--extraction-backend {gliner2,lightrag}` (default `gliner2`) picks what
 reconciliation uses to extract entities -- `gliner2` is local and LLM-free
-(`unstructured2graph.gliner2_backend.GLiNER2Backend`), needs `pip install
-'gliner2[local]>=2.0.0'` installed manually (see that module's own
-docstring), and still needs an LLM key regardless: narrative summarization
-has no GLiNER2 equivalent and always runs through the LightRAG wrapper's LLM.
+(`unstructured2graph.gliner2_backend.GLiNER2Backend`, over the LongMemEval
+vocabulary), so a GLiNER2 build needs no LLM until it answers; `lightrag`
+extracts with an LLM.
 `RunMeta` records which backend built a saved run, and `compare()` refuses
 across a mismatch the same way it refuses across a judge or tokenizer
 mismatch.
@@ -158,7 +157,7 @@ The first carrier is a fact that exists **only inside a subagent**, because:
 - the nested carrier has a demonstrated silent-failure mode. #281 found
   `get_session_actions()` does a single-hop `HAS_ACTION` match, so once subagent
   activity moved under `(:Agent)`, reconciliation would stop seeing it — no
-  entities, no Episode mention, **no error**. Caught once by reading code; as a
+  entities, **no error**. Caught once by reading code; as a
   gold-slice question it is caught automatically, forever.
 
 Three constraints shape the planting prompt, and each is load-bearing:
@@ -196,12 +195,12 @@ another session.
 
 ## Reconciliation
 
-Injection stages raw turns; **reconciliation** is what turns them into memory —
-the same pass a real harness session gets, producing `Chunk`s and entities
-(semantic) plus the session's `Episode` (episodic). Retrieval is therefore
+Injection stages raw turns; **reconciliation** indexes them — the same pass a
+real harness session gets, producing `Chunk`s and entities. Retrieval is therefore
 scored against the genuine emerged graph, not a shortcut built for eval.
 
-It is far more expensive than "a call or two per session". Measured on 39
+With `--extraction-backend lightrag` it is far more expensive than "a call or
+two per session". Measured on 39
 sessions: extraction runs per chunk, in two passes each (an initial extraction
 and a gleaning pass), which came to **~46 LLM calls per session** — and ~89
 before the chunk sizing was fixed. Reconciliation is ~97% of all LLM calls in a
@@ -460,6 +459,84 @@ session. Letting it become one node matches how a real organizational graph
 would hold it; namespacing per question would store byte-identical copies and
 pay to reconcile each. The duplicate-turns hazard that implies is handled by
 deduplicating at injection instead.
+
+
+## Knowledge-graph construction (`kg`)
+
+`context-graph-eval kg` measures what reconcile's default graph construction
+does on BEAM's long multi-domain chats. It needs no Memgraph and no LLM, and
+takes a few minutes on a laptop CPU:
+
+```bash
+context-graph-eval kg --observe --baseline context-graph/eval/baselines/kg-beam-100k.json
+```
+
+It runs the extraction `sessions-graph reconcile` runs by default: GLiNER2
+under hygm's default model, its value-only pass and the user resolver. The
+input is a fixed, evenly spread sample of windows (`--windows`, 200) from
+BEAM 100K chats 1–20 at the pinned revision, each session built as reconcile
+builds it. It reports:
+
+- **Speed:** seconds per window, plus with `--observe` the open-endpoint pass
+  `sessions-graph derive` pays.
+- **Volume:** mentions and relations per window, and their distributions by type.
+- **Fit:** catch-all share (`Topic`/`Artifact`), value-type share,
+  User-headed relations, and coverage (user turns with at least one typed
+  relation, the adoption gate's number).
+- **Probes:** known facts, the 25:50 personal best and the MoMA visit, taken
+  from the cached LongMemEval corpus when it's present. They show `None`
+  otherwise.
+- **Stability:** with `--baseline`, how many of the baseline's mentions and
+  relations this run reproduces.
+
+`baselines/kg-beam-100k.json` is committed. It holds only metrics and
+fingerprints (hashes of session, offsets and type), never BEAM's text, so the
+licence point above still holds. **A PR that changes how the graph is built by
+default** (the GLiNER2 checkpoint, decoder or caps, the default model, the
+value pass, the resolver, windowing) reruns this against the baseline and
+pastes the comparison into the PR. If the change is intended, it saves a new
+baseline in the same PR. Seconds per window depend on the machine, so read
+them as a ratio against a baseline taken on the same hardware.
+
+## BEAM: a second benchmark
+
+`context-graph-eval beam` runs [BEAM](https://github.com/mohammadtavakoli78/BEAM)'s
+probing questions through the same read path as a hybrid LongMemEval run:
+injection, reconciliation, `sessions_graph.recall`, and the same answering
+prompt. BEAM's long multi-domain chats (coding, math, writing, advice) test
+whether recall holds beyond personal-assistant chat (#395).
+
+```bash
+context-graph-eval beam --size 100K --chats 1-20 --limit 100 \
+    --extraction-backend gliner2 --memgraph-url bolt://localhost:<port> \
+    --save runs/beam-100k-q100.json
+```
+
+- **`--ontology learned`** (also on `run`, GLiNER2 only) measures map #431's
+  learned ontology instead of the fixed LongMemEval vocabulary. Sessions are
+  reconciled under hygm's default model, then each user's own model is
+  derived and adopted (`sessions-graph derive --user U --force --seeds
+  N`, `--derive-workers` users at a time), which re-extracts their sessions
+  under it before any question is asked. `--ontology default` stops before
+  deriving: the graph is built under hygm's default model alone, which shows
+  how the generic model does on its own. The default, `fixed`, keeps runs
+  comparable.
+- **One chat is one user.** Each of its time-anchored batches becomes one
+  dated session; every question of the chat is asked of the whole chat.
+- **Nothing converted is committed.** BEAM's data is CC BY-SA, so it is
+  fetched from a pinned upstream commit (`convert/beam.py`); the pin is what
+  keeps two runs comparable. `chat_trunecated.json` is used where upstream has
+  one, as upstream's own answering does.
+- **BEAM's judge decides every score** (`beam_judge.py`, vendored verbatim:
+  gpt-4.1-mini, temperature 0). Each rubric item scores 1, 0.5 or 0 and a
+  question scores their mean; event ordering is scored by normalised Kendall
+  tau, as upstream's report does. The headline is the mean over abilities.
+  The judge is noisy both ways and is never shown the question; read
+  per-question verdicts before trusting a small delta.
+- **`--limit`** asks a balanced subset: an equal share per ability, spread
+  evenly across the chats. Every chat is still loaded, so a limited run and a
+  full one use the same graph. `--skip-reconcile` reuses it.
+- **`--hybrid-lanes turns,text`** is the graph ablation.
 
 ## Building the Tier 1 corpus
 

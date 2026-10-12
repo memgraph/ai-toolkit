@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import pytest
 from sessions_graph import RecallConfig
-from sessions_graph.embeddings import EmbeddingUnavailableError, check_available
+from sessions_graph.embeddings import EmbeddingUnavailableError, check_available, embed_memory
+from sessions_graph.recall import LANES, MEMORY_RULE
 
 pytest.importorskip("actions_graph")
 
@@ -169,6 +170,37 @@ def test_an_empty_memory_says_so(graph, memgraph):
     assert "(nothing in memory matched)" in recalled.render()
 
 
+def test_a_fact_deep_in_a_long_reply_is_found_by_vector_and_shown(graph, memgraph, actions_graph):
+    """The embedder reads a message's opening only, and a turn shows only turn_chars: a passage carries both."""
+    filler = "".join(f"Step {i}: review the module and tidy its imports before the next sprint. " for i in range(60))
+    _session(
+        actions_graph,
+        memgraph,
+        user="u1",
+        session="s1",
+        when="2024-04-05T10:00:00+00:00",
+        said="Can you plan my onboarding?",
+        reply=filler + "\n\nYour onboarding modules must all be finished by April 22.",
+    )
+    _ready(graph, memgraph)
+
+    recalled = graph.recall(
+        "u1", "By what date must I finish my onboarding modules?", config=RecallConfig(lanes=("turns",), turns_k=2)
+    )
+
+    reply = next(line for line in recalled.lines() if ", assistant]" in line)
+    assert "April 22" in reply
+    assert len(reply) < len(filler)
+
+
+def test_a_session_embedded_under_another_passage_split_is_pending_again(graph, memgraph, moma):
+    assert graph.get_pending_embedding_sessions() == []
+
+    memgraph.query("MATCH (s:Session {session_id: 's1'}) SET s.embedding_scheme = 'whole-messages'")
+
+    assert graph.get_pending_embedding_sessions() == ["s1"]
+
+
 def test_config_overrides_widths_and_lanes_and_rejects_nonsense():
     config = RecallConfig.from_mapping({"turns_k": "4", "lanes": "turns,text", "unrelated": "x"})
 
@@ -177,3 +209,125 @@ def test_config_overrides_widths_and_lanes_and_rejects_nonsense():
         RecallConfig.from_mapping({"lanes": "turns,telepathy"})
     with pytest.raises(ValueError, match=">= 0"):
         RecallConfig.from_mapping({"turns_k": -1})
+
+
+def _entity_fact(memgraph, *, turn, relation, head, tail, sentence):
+    """An extracted edge between two entities, read from ``turn``: a learned domain fact not headed by the User."""
+    memgraph.query(
+        "MATCH (a:Action {action_id: $turn}) "
+        "MERGE (c:Chunk {hash: $turn}) MERGE (a)-[:HAS_CHUNK]->(c) "
+        "MERGE (h:Entity {text: $head}) MERGE (t:Entity {text: $tail}) "
+        "MERGE (h)-[m:MENTIONED_IN]->(c) SET m.sources = [$turn] "
+        "MERGE (t)-[n:MENTIONED_IN]->(c) SET n.sources = [$turn] "
+        f"CREATE (h)-[:{relation} {{chunk: $turn, source_id: $turn, role: 'user', confidence: 0.9, "
+        "valid_at: datetime('2023-05-30T17:27:00+00:00'), text: $sentence}]->(t)",
+        {"turn": turn, "head": head, "tail": tail, "sentence": sentence},
+    )
+
+
+def test_user_facts_reads_facts_whose_head_is_not_the_user(graph, memgraph, actions_graph):
+    """A learned relation like `depends_on` hangs off a project, not the user (#439); another user's stays out."""
+    for i, (user, project, library) in enumerate(
+        (("u1", "ingest", "tokio"), ("u1", "billing", "serde"), ("u2", "crawler", "reqwest"))
+    ):
+        turn = _session(actions_graph, memgraph, user=user, session=f"s{i}", when=f"2023-0{i + 1}-01T10:00:00+00:00",
+                        said=f"Our {project} service depends on {library}.")  # fmt: skip
+        _entity_fact(memgraph, turn=turn, relation="depends_on", head=project, tail=library,
+                     sentence=f"Our {project} service depends on {library}.")  # fmt: skip
+    _ready(graph, memgraph)
+
+    recalled = graph.recall(
+        "u1", "What do my services depend on?", config=RecallConfig(lanes=("user_facts",), user_fact_types=1)
+    )
+
+    assert sorted((fact.head, fact.tail) for fact in recalled.facts) == [("billing", "serde"), ("ingest", "tokio")]
+
+
+def test_user_fact_types_rank_by_their_description_from_the_adopted_version(graph, memgraph, actions_graph, tmp_path):
+    """`pins` says nothing on its own; its description is what a question about locked versions matches."""
+    turn = _session(actions_graph, memgraph, user="u1", session="s1", when="2023-01-01T10:00:00+00:00",
+                    said="I pinned serde to 1.0.188 and use tokio everywhere.")  # fmt: skip
+    _entity_fact(memgraph, turn=turn, relation="pins", head="ingest", tail="serde 1.0.188",
+                 sentence="I pinned serde to 1.0.188.")  # fmt: skip
+    _entity_fact(memgraph, turn=turn, relation="uses_library", head="ingest", tail="tokio",
+                 sentence="I use tokio everywhere.")  # fmt: skip
+    schema = tmp_path / "coding.yaml"
+    schema.write_text(
+        "entity_types:\n"
+        "  - {label: User, description: the user, identity: global}\n"
+        "  - {label: Person, description: someone else, identity: global}\n"
+        "  - {label: Project, description: a code project, identity: global}\n"
+        "  - {label: Library, description: a code library, identity: global}\n"
+        "relation_types:\n"
+        "  - {label: pins, description: 'locks a dependency to one exact release number', "
+        "start_labels: [Project], end_labels: [Library]}\n"
+        "  - {label: uses_library, description: 'calls into a package at runtime', "
+        "start_labels: [Project], end_labels: [Library]}\n"
+    )
+    graph.supply_ontology_file("u1", schema, derive="off")
+    _ready(graph, memgraph)
+
+    recalled = graph.recall(
+        "u1", "Which exact release did I lock it to?", config=RecallConfig(lanes=("user_facts",), user_fact_types=1)
+    )
+
+    assert [fact.type for fact in recalled.facts] == ["pins"]
+
+
+def test_a_user_without_a_version_ranks_types_by_the_default_models_descriptions(memgraph):
+    from sessions_graph.recall import _type_descriptions
+
+    descriptions = _type_descriptions(memgraph, "nobody")
+
+    assert descriptions["works_for"] == "is employed by or works at"
+
+
+# The memory lane: memory files first, and nothing changes without them.
+
+
+def _memory(graph, memgraph, path, text, user="u1"):
+    graph.memory_store(user).create(path, text)
+    memory_id = memgraph.query(
+        "MATCH (m:Memory {path: $p, user_id: $u}) RETURN m.memory_id AS id", {"p": path, "u": user}
+    )
+    embed_memory(memgraph, memory_id[0]["id"])
+
+
+def test_memory_files_come_first_with_their_reading_rule(graph, memgraph, moma):
+    _memory(graph, memgraph, "/memories/user/museums.md", "The user's favourite museum is the Museum of Modern Art.")
+
+    recalled = graph.recall("u1", "Which museum does the user like most?")
+
+    assert recalled.lines()[0].startswith("MEMORY [/memories/user/museums.md, updated ")
+    assert recalled.lines()[0].endswith("The user's favourite museum is the Museum of Modern Art.")
+    assert MEMORY_RULE in recalled.render()
+
+
+def test_full_text_finds_a_file_without_vectors(graph, memgraph, moma):
+    graph.memory_store("u1").create("/memories/user/tools.md", "Ante prefers uv over pip for Python tooling.")
+
+    recalled = graph.recall("u1", "uv pip tooling", config=RecallConfig(lanes=("memories",)))
+
+    assert [note.path for note in recalled.memories] == ["/memories/user/tools.md"]
+
+
+def test_other_users_files_are_never_recalled(graph, memgraph, moma):
+    _memory(
+        graph, memgraph, "/memories/user/museums.md", "Favourite museum: Museum of Modern Art.", user="someone-else"
+    )
+
+    assert graph.recall("u1", "favourite museum Museum of Modern Art").memories == []
+
+
+def test_without_memory_files_recall_reads_exactly_as_benchmarked(graph, moma):
+    """The benchmark corpora hold no memory files, so the lane must leave their recall byte-identical."""
+    question = "When did I visit the Museum of Modern Art?"
+    conversation_lanes = tuple(lane for lane in LANES if lane != "memories")
+
+    with_lane = graph.recall("u1", question).render(today="2026-10-10")
+    without_lane = graph.recall("u1", question, config=RecallConfig(lanes=conversation_lanes)).render(
+        today="2026-10-10"
+    )
+
+    assert with_lane == without_lane
+    assert MEMORY_RULE not in with_lane

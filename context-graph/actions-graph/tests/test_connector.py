@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, cast
 
 from actions_graph.connector import ActionsGraphConnector
 from actions_graph.models import ActionStatus, Agent, ErrorEvent, Message, Session, ToolCall, ToolResult
-from agent_context_graph.events import (
+from memgraph_context_graph.events import (
     AgentEndEvent,
     AgentStartEvent,
     ErrorOccurredEvent,

@@ -269,6 +269,7 @@ async def _ingest_chunks(
     promote_labels: bool = False,
     enforce_ontology: bool = False,
     ontology_path: str | Path | None = None,
+    ontology: Ontology | None = None,
 ) -> list[Chunk]:
     """
     Ingest an already-produced flat list of chunks into Memgraph: upsert Chunk
@@ -305,6 +306,8 @@ async def _ingest_chunks(
             the extraction backend wrote them -- no label promotion at all.
         ontology_path: Path to an ontology YAML config file. Only consulted when
             enforce_ontology=True; defaults to DEFAULT_ONTOLOGY_PATH.
+        ontology: An already-loaded ontology to enforce; takes precedence over
+            ontology_path. Only consulted when enforce_ontology=True.
     Returns:
         The same chunks that were passed in, for convenience chaining.
     """
@@ -317,6 +320,8 @@ async def _ingest_chunks(
 
     if ontology_path and not enforce_ontology:
         logger.warning("ontology_path was provided but enforce_ontology=False; ignoring ontology_path")
+    if ontology and not enforce_ontology:
+        logger.warning("ontology was provided but enforce_ontology=False; ignoring ontology")
 
     memgraph_node_props = []
     for chunk in chunks:
@@ -348,9 +353,9 @@ async def _ingest_chunks(
         hashes = [chunk.hash for chunk in chunks]
         connect_chunks_to_entities(memgraph, "Chunk", resolved_workspace, chunk_hashes=hashes)
         if enforce_ontology:
-            ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
-            promote_entity_types_to_labels(memgraph, resolved_workspace, ontology, chunk_hashes=hashes)
-            _enforce_relations(memgraph, resolved_workspace, ontology, hashes)
+            enforced = ontology or (load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY)
+            promote_entity_types_to_labels(memgraph, resolved_workspace, enforced, chunk_hashes=hashes)
+            _enforce_relations(memgraph, resolved_workspace, enforced, hashes)
         elif promote_labels:
             promote_all_entity_types_to_labels(memgraph, resolved_workspace)
 
@@ -449,6 +454,7 @@ async def from_documents(
     promote_labels: bool = False,
     enforce_ontology: bool = False,
     ontology_path: str | Path | None = None,
+    ontology: Ontology | None = None,
 ) -> list[list[Chunk]]:
     """
     Ingest Documents verbatim, one Chunk each, through the same Chunk-node +
@@ -466,6 +472,8 @@ async def from_documents(
         extraction_backend: The ExtractionBackend to run over each chunk.
         entity_workspace, promote_labels, enforce_ontology, ontology_path: As
             for from_texts().
+        ontology: An already-loaded ontology to enforce, e.g. a model held in
+            the graph rather than a file; takes precedence over ontology_path.
 
     Returns:
         One list per input document, in input order, holding its one Chunk (or
@@ -503,6 +511,7 @@ async def from_documents(
         promote_labels=promote_labels,
         enforce_ontology=enforce_ontology,
         ontology_path=ontology_path,
+        ontology=ontology,
     )
     return grouped_chunks
 

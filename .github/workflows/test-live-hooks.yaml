@@ -10,7 +10,7 @@ name: Live hooks e2e (real agent CLIs)
 on:
   pull_request:
     paths:
-      - "context-graph/agent-context-graph/**"
+      - "context-graph/memgraph-context-graph/**"
       - "context-graph/actions-graph/src/**"
       - "context-graph/sessions-graph/src/**"
       - "context-graph/plugins/**"
@@ -78,7 +78,7 @@ jobs:
       # venv to their own package's closure (see test-live-graph-model.yaml).
       - name: Sync workspace environment
         run: |
-          uv sync --package agent-context-graph --package actions-graph --package sessions-graph --extra agent-context-graph
+          uv sync --package memgraph-context-graph --package actions-graph --package sessions-graph --extra memgraph-context-graph
 
       - name: Start Memgraph and generate the hook wiring
         run: ./context-graph/scripts/live-hooks-e2e/live-hooks-e2e.sh up "$RUNNER_TEMP/live-hooks" 7699

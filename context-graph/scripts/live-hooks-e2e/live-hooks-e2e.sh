@@ -36,7 +36,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-CLI="$REPO_ROOT/.venv/bin/agent-context-graph"
+CLI="$REPO_ROOT/.venv/bin/memgraph-context-graph"
 PYTHON="$REPO_ROOT/.venv/bin/python"
 IMAGE="memgraph/memgraph-mage:latest"
 PROMPT="Run the shell command 'ls', then read README.md and summarize it in one sentence."
@@ -117,7 +117,7 @@ EOF
   fi
   "$PYTHON" - "$WORK" <<'PY'
 import json, sys
-from agent_context_graph.adapters.claude_code import PLUGIN
+from memgraph_context_graph.adapters.claude_code import PLUGIN
 work = sys.argv[1]
 hooks = PLUGIN.build_hooks_config(f"{work}/capture-hook.sh claude-code", timeout=30)
 json.dump({"hooks": hooks}, open(f"{work}/claude-code-settings.json", "w"), indent=2)

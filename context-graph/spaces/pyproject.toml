@@ -1,0 +1,44 @@
+[project]
+name = "context-graph-spaces"
+version = "0.1.0"
+description = "The Enterprise edition of Context Graph: personal and shared memory spaces for many users on one Memgraph"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "memgraph-context-graph>=0.5.0",
+    "memgraph-toolbox",
+    # Shared spaces hold sessions-graph's memory files: apply sets up its schema there, and the
+    # worker reconciles them (the reconciliation extra brings unstructured2graph).
+    "sessions-graph[reconciliation]>=0.6.0",
+    "neo4j>=5.0",
+    # tomllib on 3.11+; tomli for 3.10, which ty checks against.
+    "tomli>=2.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=9.0.3",
+    "sessions-graph[memgraph-context-graph,reconciliation]>=0.8.0",
+]
+
+[project.scripts]
+context-graph-spaces = "context_graph_spaces.cli:main"
+
+[project.entry-points."memgraph_context_graph.editions"]
+enterprise = "context_graph_spaces.resolver:EnterpriseSpaces"
+
+[tool.uv.sources]
+memgraph-context-graph = { workspace = true }
+memgraph-toolbox = { workspace = true }
+sessions-graph = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

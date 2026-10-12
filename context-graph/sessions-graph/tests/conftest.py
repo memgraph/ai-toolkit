@@ -25,7 +25,7 @@ def _isolated_context_graph_config(monkeypatch, tmp_path):
     would pick up whatever the developer's machine has configured.
     """
     try:
-        from agent_context_graph.adapters import _identity
+        from memgraph_context_graph.adapters import _identity
     except ImportError:
         yield
         return

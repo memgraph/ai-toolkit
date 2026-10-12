@@ -59,11 +59,38 @@ uv run main --mode incremental --strategy llm --meta-graph reset --log-level DEB
 | `--meta-graph {auto,skip,reset}`       | `SQL2MG_META_POLICY` | Controls how stored meta graph data is used (default `auto`). |
 | `--log-level LEVEL`                    | `SQL2MG_LOG_LEVEL`   | Sets logging verbosity (`DEBUG`, `INFO`, etc.).               |
 | `--mapping PATH`                       | —                    | Generate/edit a mapping JSON file instead of running migration.|
+| `--connector NAME`                     | —                    | MemGQL connector name stamped on every mapping element.       |
 | `--editor CMD`                         | `EDITOR`             | Editor for opening mapping files (e.g. `vim`, `code --wait`). |
 
 ## Mapping Mode
 
 Use `--mapping` to generate or edit a mapping file that describes how SQL tables and columns map to graph nodes and edges — without running an actual migration.
+
+The file is a [MemGQL](https://memgraph.com/docs/memgraph-zero/memgql) graph body: one vertex per entity table and one edge per foreign key or join table, each backed by a `mappedTableSource`:
+
+```json
+{
+  "vertices": [
+    { "label": "Orders",
+      "mappedTableSource": { "connector": "shop", "table": "orders", "metaFields": { "id": "id" } },
+      "attributes": [ { "name": "id" }, { "name": "quantity" } ] }
+  ],
+  "edges": [
+    { "label": "ORDERS_TO_CUSTOMERS", "from": "Orders", "to": "Customers",
+      "mappedTableSource": { "connector": "shop", "table": "orders",
+                             "metaFields": { "id": "id", "from": "id", "to": "customer_id" } } }
+  ]
+}
+```
+
+A foreign key edge reads the table that holds the key; a many-to-many edge reads the join table, with both foreign key columns as its composite `id`. Load the file into MemGQL once a connector to the same database is registered:
+
+```gql
+ADD CONNECTOR shop TYPE mysql URI 'mysql://user:password@host:3306/shop';
+CREATE GRAPH shop FROM FILE '/output/mapping.json';
+```
+
+`--connector shop` stamps the connector name on every element; without it the mapping resolves when exactly one connector is registered. Mapping files written in the earlier `nodes` / `id_column` / `rel_type` format still open in the editor and are saved in the new format.
 
 ```bash
 # Generate a new mapping from the source database

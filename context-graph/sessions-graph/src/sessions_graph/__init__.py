@@ -10,12 +10,12 @@ Quick start::
     mem = graph.save_memory(user_id="alice", content="Prefers Python over TypeScript")
     results = graph.search_memories(user_id="alice", query="Python")
 
-Integration with Agent Context Graph::
+Integration with Memgraph Context Graph::
 
     from sessions_graph import SessionsGraph
     from sessions_graph.connector import SessionsGraphConnector
-    from agent_context_graph import AgentLink
-    from agent_context_graph.adapters.claude import ClaudeAdapter
+    from memgraph_context_graph import AgentLink
+    from memgraph_context_graph.adapters.claude import ClaudeAdapter
 
     graph = SessionsGraph()
     graph.setup()

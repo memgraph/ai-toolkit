@@ -4,19 +4,21 @@ Graph schema
 ------------
 Nodes:
     (:User  {user_id})
-    (:Memory {memory_id, user_id, content, created_at, session_id?})
+    (:Memory {memory_id, user_id, path, content, created_at, updated_at})
+    (:Project {key})                      — a folder under /memories/projects/
+    (:MemoryVersion {memory_id, path, content, replaced_at, session_id, deleted})
     (:Session {session_id})
-    (:Episode {summary, summarized_at})   — written by reconcile_session(), see below
 
 Relationships:
     (:User)-[:HAS_MEMORY]->(:Memory)
-    (:Session)-[:PRODUCED_MEMORY]->(:Memory)   — only when session_id is provided
-    (:Session)-[:HAS_EPISODE]->(:Episode)      — at most one per session
+    (:Session)-[:PRODUCED_MEMORY]->(:Memory)   — every session that wrote it, when known
+    (:Memory)-[:ABOUT]->(:Project)             — memories under /memories/projects/<key>/
+    (:User)-[:HAS_MEMORY_VERSION]->(:MemoryVersion)  — text a memory-tool write replaced or deleted
+    (:Memory)-[:PREVIOUS_VERSION]->(:MemoryVersion)  — the same, while the file still exists
 """
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -24,26 +26,32 @@ from typing import TYPE_CHECKING, Any
 
 from memgraph_toolbox.api.memgraph import Memgraph
 
-from .embeddings import DEFAULT_EMBEDDING_MODEL, Embedded, EmbeddingUnavailableError, embed_session
-from .models import Memory, validate_content, validate_memory_id, validate_user_id
-from .recall import TURN_TEXT_INDEX, RecallConfig, Recalled, recall
+from .embeddings import DEFAULT_EMBEDDING_MODEL, Embedded, EmbeddingUnavailableError, embed_memory, embed_session
+from .memory_store import MemoryStore
+from .models import Memory, project_key, validate_content, validate_memory_id, validate_user_id
+from .passages import PASSAGE_SCHEME
+from .recall import MEMORY_TEXT_INDEX, TURN_TEXT_INDEX, RecallConfig, Recalled, recall
 from .reconciliation import (
     MAX_SESSION_BATCH_CHARS,
     NODE_LABELS,
+    MemoryReconciliation,
     ReconciliationSource,
     ReconciliationSummary,
     build_reconciliation_sources,
     content_hash,
-    summarize_session_texts,
+    normalize_timestamp,
 )
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from actions_graph import ActionsGraph
-    from unstructured2graph import Document, ExtractionBackend
+    from hygm import HygmModel
+    from unstructured2graph import Document, ExtractionBackend, Ontology
 
-_FULLTEXT_INDEX = "memory_content_index"
+    from .ontology import Derive, OntologyVersion
+
+_FULLTEXT_INDEX = MEMORY_TEXT_INDEX
 
 
 @dataclass(frozen=True)
@@ -91,6 +99,7 @@ class SessionsGraph:
     - :meth:`search_memories` — full-text search over Memory content
     - :meth:`update_memory` — replace the content of an existing Memory
     - :meth:`delete_memory` — remove a Memory by ID
+    - :meth:`memory_store` — the memory tool's file commands over a user's Memories
     - :meth:`embed_session` — embed a session's messages, entities and edges for recall
     - :meth:`recall` — what a user's past sessions hold about a question
     """
@@ -104,6 +113,8 @@ class SessionsGraph:
             **kwargs: Forwarded to :class:`Memgraph` when *memgraph* is ``None``.
         """
         self._db = memgraph or Memgraph(**kwargs)
+        # One GLiNER2 backend per distinct model, all sharing the first one's loaded weights.
+        self._extraction_backends: dict[str, ExtractionBackend] = {}
 
     # ------------------------------------------------------------------
     # Schema setup
@@ -113,8 +124,16 @@ class SessionsGraph:
         """Create constraints, indexes, and the full-text index."""
         self._db.query("CREATE CONSTRAINT ON (u:User) ASSERT u.user_id IS UNIQUE;")
         self._db.query("CREATE CONSTRAINT ON (m:Memory) ASSERT m.memory_id IS UNIQUE;")
+        # A path names one file per user; the memory tool relies on this to make
+        # concurrent creates of the same path converge on one node.
+        self._db.query("CREATE CONSTRAINT ON (m:Memory) ASSERT m.user_id, m.path IS UNIQUE;")
+        self._db.query("CREATE CONSTRAINT ON (p:Project) ASSERT p.key IS UNIQUE;")
+        self._db.query("CREATE CONSTRAINT ON (v:OntologyVersion) ASSERT v.user_id, v.version IS UNIQUE;")
         self._db.query("CREATE INDEX ON :Memory(user_id);")
         self._db.query("CREATE INDEX ON :Memory(created_at);")
+        self._db.query("CREATE INDEX ON :Memory(path);")
+        self._db.query("CREATE INDEX ON :MemoryVersion(memory_id);")
+        self._db.query("CREATE INDEX ON :Memory(extraction_status);")
         self._db.query(f"CREATE TEXT INDEX {_FULLTEXT_INDEX} ON :Memory(content);")
         self._db.query("CREATE INDEX ON :Session(reconciliation_status);")
         self._db.query("CREATE INDEX ON :Session(embedding_status);")
@@ -133,6 +152,40 @@ class SessionsGraph:
             self._db.query(f"DROP TEXT INDEX {_FULLTEXT_INDEX};")
 
     # ------------------------------------------------------------------
+    # Ontology versions
+    # ------------------------------------------------------------------
+
+    def adopted_ontology(self, user_id: str) -> OntologyVersion:
+        """The ontology version *user_id*'s sessions are extracted under; see ``sessions_graph.ontology``."""
+        from .ontology import adopted
+
+        return adopted(self._db, user_id)
+
+    def supply_ontology_file(self, user_id: str, path: str | Path, *, derive: str = "extend") -> OntologyVersion:
+        """Adopt the schema at *path* as *user_id*'s next version; see ``ontology.supply``.
+
+        Raises:
+            ValueError: if the file can't be read or parsed, *derive* is not
+                "extend"/"off", or the model fails validation.
+        """
+        from .ontology import supply_file
+
+        return supply_file(self._db, user_id, path, derive=_derive_mode(derive))
+
+    def sync_ontology_file(self, user_id: str, path: str | Path, *, derive: str = "extend") -> OntologyVersion | None:
+        """Adopt *path* as a new version only if it changed since the adopted one came from it.
+
+        Returns:
+            The new version, or None when the file is unchanged.
+
+        Raises:
+            ValueError: as for :meth:`supply_ontology_file`.
+        """
+        from .ontology import sync_file
+
+        return sync_file(self._db, user_id, path, derive=_derive_mode(derive))
+
+    # ------------------------------------------------------------------
     # Write
     # ------------------------------------------------------------------
 
@@ -143,6 +196,7 @@ class SessionsGraph:
         *,
         session_id: str | None = None,
         memory_id: str | None = None,
+        path: str | None = None,
     ) -> Memory:
         """Persist a new Memory for *user_id*.
 
@@ -151,14 +205,21 @@ class SessionsGraph:
             content:    The free-form text assertion to store.
             session_id: Optional session that produced this memory (for provenance).
             memory_id:  Override the auto-generated UUID (useful in tests).
+            path:       Where the memory lives under ``/memories``; defaults to
+                        ``/memories/notes/<memory_id>.md``.
 
         Returns:
             The persisted :class:`Memory` instance.
+
+        Raises:
+            MemoryValidationError: an invalid user, content or path.
+            Exception: the database's constraint error when *path* is already taken.
         """
         memory = Memory(
             user_id=validate_user_id(user_id),
             content=validate_content(content),
             session_id=session_id,
+            path=path or "",
             **({"memory_id": memory_id} if memory_id else {}),
         )
 
@@ -169,18 +230,30 @@ class SessionsGraph:
             CREATE (m:Memory {
                 memory_id: $memory_id,
                 user_id:   $user_id,
+                path:      $path,
                 content:   $content,
-                created_at: $created_at
+                created_at: $created_at,
+                updated_at: $created_at
             })
             CREATE (u)-[:HAS_MEMORY]->(m)
             """,
             params={
                 "user_id": memory.user_id,
                 "memory_id": memory.memory_id,
+                "path": memory.path,
                 "content": memory.content,
                 "created_at": memory.created_at,
             },
         )
+        if key := project_key(memory.path):
+            self._db.query(
+                """
+                MATCH (m:Memory {memory_id: $memory_id})
+                MERGE (p:Project {key: $key})
+                MERGE (m)-[:ABOUT]->(p)
+                """,
+                params={"memory_id": memory.memory_id, "key": key},
+            )
 
         # Wire session provenance when a session_id is supplied
         if session_id:
@@ -207,11 +280,14 @@ class SessionsGraph:
             """
             MATCH (u:User {user_id: $user_id})-[:HAS_MEMORY]->(m:Memory)
             OPTIONAL MATCH (s:Session)-[:PRODUCED_MEMORY]->(m)
+            WITH m, min(s.session_id) AS producing_session
             RETURN m.memory_id  AS memory_id,
                    m.user_id    AS user_id,
                    m.content    AS content,
+                   m.path       AS path,
                    m.created_at AS created_at,
-                   s.session_id AS session_id
+                   m.updated_at AS updated_at,
+                   producing_session AS session_id
             ORDER BY m.created_at DESC
             """,
             params={"user_id": user_id},
@@ -231,7 +307,9 @@ class SessionsGraph:
             RETURN m.memory_id  AS memory_id,
                    m.user_id    AS user_id,
                    m.content    AS content,
+                   m.path       AS path,
                    m.created_at AS created_at,
+                   m.updated_at AS updated_at,
                    $session_id  AS session_id
             ORDER BY m.created_at DESC
             """,
@@ -261,17 +339,51 @@ class SessionsGraph:
             WITH m, score
             WHERE m.user_id = $user_id
             OPTIONAL MATCH (s:Session)-[:PRODUCED_MEMORY]->(m)
+            WITH m, score, min(s.session_id) AS producing_session
             RETURN m.memory_id  AS memory_id,
                    m.user_id    AS user_id,
                    m.content    AS content,
+                   m.path       AS path,
                    m.created_at AS created_at,
-                   s.session_id AS session_id
+                   m.updated_at AS updated_at,
+                   producing_session AS session_id
             ORDER BY score DESC
             LIMIT {int(limit)}
             """,
             params={"user_id": user_id, "query": query.strip()},
         )
         return [self._row_to_memory(r) for r in rows]
+
+    def record_memory_provenance(self, session_id: str, paths: list[str]) -> None:
+        """Record that *session_id* wrote the memory files at *paths*, owned by that session's user.
+
+        For writes made where the session isn't known (the MCP server), so the
+        session's hook records it afterwards.
+        """
+        self._db.query(
+            """
+            MATCH (u:User)-[:HAD_SESSION]->(s:Session {session_id: $session_id})
+            MATCH (u)-[:HAS_MEMORY]->(m:Memory)
+            WHERE m.path IN $paths
+            MERGE (s)-[:PRODUCED_MEMORY]->(m)
+            """,
+            params={"session_id": session_id, "paths": paths},
+        )
+
+    def memory_store(
+        self,
+        user_id: str,
+        *,
+        session_id: str | None = None,
+        author: str | None = None,
+        forget_derived: bool = True,
+    ) -> MemoryStore:
+        """The memory tool's commands over *user_id*'s memory files; see :mod:`sessions_graph.memory_store`.
+
+        Raises:
+            MemoryValidationError: *user_id* is invalid.
+        """
+        return MemoryStore(self._db, user_id, session_id=session_id, author=author, forget_derived=forget_derived)
 
     # ------------------------------------------------------------------
     # Update / Delete
@@ -288,16 +400,19 @@ class SessionsGraph:
         rows = self._db.query(
             """
             MATCH (m:Memory {memory_id: $memory_id})
-            SET m.content = $content
+            SET m.content = $content, m.updated_at = $updated_at
             WITH m
             OPTIONAL MATCH (s:Session)-[:PRODUCED_MEMORY]->(m)
+            WITH m, min(s.session_id) AS producing_session
             RETURN m.memory_id  AS memory_id,
                    m.user_id    AS user_id,
                    m.content    AS content,
+                   m.path       AS path,
                    m.created_at AS created_at,
-                   s.session_id AS session_id
+                   m.updated_at AS updated_at,
+                   producing_session AS session_id
             """,
-            params={"memory_id": memory_id, "content": content},
+            params={"memory_id": memory_id, "content": content, "updated_at": datetime.now(timezone.utc).isoformat()},
         )
         if not rows:
             return None
@@ -334,21 +449,24 @@ class SessionsGraph:
         content hash -- the read-only half of reconciliation shared by
         ``reconcile_session`` and ``reconcile_sessions_batch``."""
         actions = actions_graph.get_session_actions(session_id)
-        memories = self.get_memories_for_session(session_id)
-        sources = build_reconciliation_sources(actions, memories)
+        # Memories aren't session content any more: each file is reconciled
+        # on its own when it changes (reconcile_memory), since a file outlives
+        # the session that first wrote it.
+        sources = build_reconciliation_sources(actions, [])
         unique_texts: dict[str, str] = {}
         for source in sources:
             unique_texts.setdefault(content_hash(source.text), source.text)
         return _PreparedSession(session_id=session_id, sources=sources, unique_texts=unique_texts)
 
     def _write_completed(
-        self, session_id: str, *, summary_text: str | None, extraction_backend: str | None = None
+        self,
+        session_id: str,
+        *,
+        extraction_backend: str | None = None,
+        ontology_version: int | None = None,
     ) -> str:
-        """Mark *session_id* completed and, if a narrative summary was
-        produced, MERGE its Episode -- both stamped with the SAME timestamp,
-        computed here at actual completion time (not earlier, e.g. when a
-        batch started), so ``reconciled_at``/``summarized_at`` reflect when
-        this specific session actually finished. Returns that timestamp.
+        """Mark *session_id* completed, stamped with the time it actually
+        finished (not when its batch started). Returns that timestamp.
 
         ``extraction_backend`` records which backend's class
         (``type(backend).__name__``, e.g. ``"LightRAGBackend"``,
@@ -361,29 +479,43 @@ class SessionsGraph:
         added after a real bug where ``--skip-reconcile
         --extraction-backend gliner2`` against a LightRAG-built graph
         recorded ``gliner2`` in ``RunMeta`` despite every entity in the graph
-        coming from LightRAG."""
+        coming from LightRAG.
+
+        ``ontology_version`` is the user's model version the session was
+        extracted under, or ``None`` when the caller supplied its own backend."""
         reconciled_at = datetime.now(timezone.utc).isoformat()
         self._db.query(
             """
             MATCH (s:Session {session_id: $session_id})
             SET s.reconciliation_status = 'completed', s.reconciled_at = $reconciled_at,
-                s.extraction_backend = $extraction_backend
+                s.extraction_backend = $extraction_backend, s.ontology_version = $ontology_version
             """,
-            params={"session_id": session_id, "reconciled_at": reconciled_at, "extraction_backend": extraction_backend},
+            params={
+                "session_id": session_id,
+                "reconciled_at": reconciled_at,
+                "extraction_backend": extraction_backend,
+                "ontology_version": ontology_version,
+            },
         )
-        if summary_text:
-            # MERGE on the (Session)-[:HAS_EPISODE]->(Episode) pattern (not just CREATE)
-            # so re-reconciling a session updates its one Episode instead of accumulating
-            # duplicates -- Episode has no natural external id of its own to dedupe on.
-            self._db.query(
-                """
-                MATCH (s:Session {session_id: $session_id})
-                MERGE (s)-[:HAS_EPISODE]->(e:Episode)
-                SET e.summary = $summary, e.summarized_at = $summarized_at
-                """,
-                params={"session_id": session_id, "summary": summary_text, "summarized_at": reconciled_at},
-            )
         return reconciled_at
+
+    def _write_reextracted(
+        self, session_id: str, *, extraction_backend: str | None, ontology_version: int | None
+    ) -> None:
+        """Record a re-extraction: what extracted the session now, leaving when it was reconciled alone."""
+        self._db.query(
+            """
+            MATCH (s:Session {session_id: $session_id})
+            SET s.reextracted_at = $now, s.extraction_backend = $extraction_backend,
+                s.ontology_version = $ontology_version
+            """,
+            params={
+                "session_id": session_id,
+                "now": datetime.now(timezone.utc).isoformat(),
+                "extraction_backend": extraction_backend,
+                "ontology_version": ontology_version,
+            },
+        )
 
     def _write_failed(self, session_id: str, error: str) -> None:
         """Mark *session_id* failed, recording *error* for later inspection."""
@@ -399,7 +531,6 @@ class SessionsGraph:
         self,
         session_id: str,
         *,
-        lightrag_wrapper: Any,
         extraction_backend: ExtractionBackend | None = None,
         actions_graph: ActionsGraph | None = None,
         entity_workspace: str | None = None,
@@ -407,52 +538,46 @@ class SessionsGraph:
         enforce_ontology: bool = False,
         ontology_path: str | Path | None = None,
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
+        reextract: bool = False,
     ) -> ReconciliationSummary:
-        """Batch-extract entities and a narrative summary from a session's content.
+        """Batch-extract entities from a session's content.
 
         Pulls all reconcilable Message/ToolCall/ToolResult text recorded for
-        *session_id* in Actions Graph, plus this session's Memories, dedupes
+        *session_id* in Actions Graph (Memories are reconciled per file by
+        :meth:`reconcile_memory`), dedupes
         by content hash, and runs the result through unstructured2graph's
-        chunk + entity-extraction pipeline -- LightRAG by default, or
-        whatever ``extraction_backend`` overrides it to (e.g. GLiNER2).
+        chunk + entity-extraction pipeline -- GLiNER2 over the session user's
+        adopted ontology version by default (see ``sessions_graph.ontology``;
+        ``hygm.default_model()`` until they have one), or whatever
+        ``extraction_backend`` overrides it to. The version used is recorded
+        on the Session as ``ontology_version``.
         Resulting Chunk nodes are linked back to their source Action/Memory
         node via ``HAS_CHUNK`` so entities trace back to the session that
         produced them.
 
-        This same pass also produces the session's episodic memory: an
-        ``(:Episode {summary, summarized_at})`` node linked from the session
-        via ``HAS_EPISODE``, via a second, dedicated LLM call (entity
-        extraction and narrative summarization are different task shapes, so
-        this doesn't piggyback on LightRAG's own extraction prompt) -- but
-        it's still one trigger, one fetch/dedupe of session text, no separate
-        schedule. Re-reconciling a session updates its one Episode rather
-        than creating another.
+        No LLM unless *extraction_backend* brings one: recall answers from the
+        turns themselves and uses the extracted graph as an index into them,
+        so nothing here writes a session summary.
 
-        This is deliberately not wired to run automatically inside the
-        ``SESSION_END`` hook — LightRAG extraction is LLM-backed and slow, and
-        hook subprocesses run under a runtime timeout. Call this from a
-        separate process (e.g. the ``sessions-graph reconcile`` CLI) instead.
+        This is deliberately not wired to run inside the ``SESSION_END`` hook:
+        extraction is slow and hook subprocesses run under a runtime timeout.
+        Call this from a separate process (e.g. the ``sessions-graph
+        reconcile`` CLI) instead.
 
         Requires the ``sessions-graph[reconciliation]`` extra (actions-graph +
         unstructured2graph).
 
         Args:
             session_id: Session to reconcile.
-            lightrag_wrapper: An initialised ``MemgraphLightRAGWrapper``. Always
-                required, even when ``extraction_backend`` overrides entity
-                extraction to a different backend: the narrative summary above
-                is always produced via this wrapper's own LLM
-                (``summarize_session_texts``), since summarization is a
-                generative task no non-LLM backend (e.g. GLiNER2) can do.
-            extraction_backend: Overrides what runs entity extraction, for a
-                backend other than LightRAG (e.g. ``GLiNER2Backend``).
-                Defaults to ``LightRAGBackend(lightrag_wrapper)`` -- the
-                original, only behavior before this parameter existed -- so
-                every existing caller is unaffected.
+            extraction_backend: Overrides what runs entity extraction (e.g.
+                ``LightRAGBackend(lightrag_wrapper)``); the user's ontology
+                version is then not consulted. Defaults to a ``GLiNER2Backend``
+                over the user's adopted model, one per distinct model, all
+                sharing one loaded GLiNER2 checkpoint.
             actions_graph: An ``ActionsGraph`` instance sharing this graph's
                 Memgraph connection. Constructed automatically if omitted.
-            entity_workspace: Passed through to ``unstructured2graph.from_texts``.
-                Defaults to whatever the LightRAG wrapper resolves to, so
+            entity_workspace: Passed through to ``unstructured2graph.from_documents``.
+                Defaults to the extraction backend's own workspace, so
                 session-derived entities land in the same workspace as
                 document-ingested ones and can merge.
             promote_labels: Passed through to ``unstructured2graph.from_texts``.
@@ -461,8 +586,9 @@ class SessionsGraph:
                 enforce_ontology is also True. Both default to False, matching
                 unstructured2graph's own default: no label promotion unless
                 explicitly requested.
-            enforce_ontology: Passed through to ``unstructured2graph.from_texts``.
-                Restricts entity_type promotion to ontology_path's vocabulary (or
+            enforce_ontology: Passed through to ``unstructured2graph.from_documents``.
+                Restricts entity_type promotion to ontology_path's vocabulary (or,
+                without one, the vocabulary the backend extracted against, else
                 unstructured2graph's bundled default), flagging anything outside it
                 ontology_conformant=false instead of promoting a label. Takes
                 precedence over promote_labels.
@@ -472,6 +598,12 @@ class SessionsGraph:
                 edges are embedded with once extraction completes (see
                 :meth:`embed_session`). An embedding failure is recorded on the
                 Session and never fails the reconciliation.
+            reextract: True re-reads an already reconciled session: the
+                Session keeps its ``reconciled_at``, recording
+                ``reextracted_at`` instead -- how derivation re-reads its delta
+                under a new model (#434) without the delta counting as new
+                sessions again. A failed re-read records ``reextraction_error``
+                and leaves the session reconciled as it was.
 
         Returns:
             An :class:`ReconciliationSummary` describing what happened. Never
@@ -489,7 +621,7 @@ class SessionsGraph:
         actions_graph = self._default_actions_graph(actions_graph, "reconcile_session")
 
         try:
-            from unstructured2graph import LightRAGBackend, from_documents
+            from unstructured2graph import from_documents
         except ImportError as exc:
             msg = "unstructured2graph is required for reconcile_session; install sessions-graph[reconciliation]"
             raise ImportError(msg) from exc
@@ -497,9 +629,9 @@ class SessionsGraph:
         prepared = self._prepare_session(session_id, actions_graph)
 
         try:
-            summary_text: str | None = None
             used_backend: str | None = None
             integrity: tuple[int, int] | None = None
+            ontology_version: int | None = None
             if prepared.unique_texts:
                 # The whole session's deduped texts as ONE document, not one
                 # per turn. Each turn used to be extracted in total isolation
@@ -529,8 +661,18 @@ class SessionsGraph:
                 # offsets. The segments are what the GLiNER2 backend windows on
                 # (one turn each, #352) and resolves the user's own mentions
                 # with (#358); LightRAG reads the text alone.
-                backend = extraction_backend or LightRAGBackend(lightrag_wrapper)
                 user_id = self._session_user(session_id)
+                if extraction_backend is None:
+                    from .ontology import adopted
+
+                    version = adopted(self._db, user_id)
+                    backend = self._extraction_backend_for(version.model)
+                    ontology_version = version.version
+                else:
+                    backend = extraction_backend
+                # A backend that extracts against a vocabulary (GLiNER2) is
+                # enforced against that same vocabulary unless a file overrides it.
+                ontology = None if ontology_path else getattr(backend, "ontology", None)
                 grouped_chunks = await from_documents(
                     [prepared.document(user_id)],
                     memgraph=self._db,
@@ -539,27 +681,36 @@ class SessionsGraph:
                     promote_labels=promote_labels,
                     enforce_ontology=enforce_ontology,
                     ontology_path=ontology_path,
+                    ontology=ontology,
                 )
                 used_backend = type(backend).__name__
                 session_chunks = grouped_chunks[0] if grouped_chunks else []
                 self._link_chunks_to_sources(prepared.sources, session_chunks)
                 if enforce_ontology and session_chunks:
-                    integrity = self._integrity(backend.workspace_label, ontology_path, session_chunks)
-                summary_text = await summarize_session_texts(lightrag_wrapper, list(prepared.unique_texts.values()))
+                    integrity = self._integrity(backend.workspace_label, ontology_path, ontology, session_chunks)
 
-            self._write_completed(session_id, summary_text=summary_text, extraction_backend=used_backend)
+            if not reextract:
+                self._write_completed(session_id, extraction_backend=used_backend, ontology_version=ontology_version)
+            else:
+                self._write_reextracted(session_id, extraction_backend=used_backend, ontology_version=ontology_version)
             self._embed_after_reconcile(session_id, embedding_model)
             return ReconciliationSummary(
                 session_id=session_id,
                 status="completed",
                 texts_considered=len(prepared.sources),
                 texts_deduped=len(prepared.unique_texts),
-                summary_written=summary_text is not None,
                 nonconformant_entities=integrity[0] if integrity else None,
                 nonconformant_relations=integrity[1] if integrity else None,
             )
         except Exception as e:
-            self._write_failed(session_id, str(e))
+            if reextract:
+                # The session stays reconciled under what it was extracted with before.
+                self._db.query(
+                    "MATCH (s:Session {session_id: $session_id}) SET s.reextraction_error = $error",
+                    params={"session_id": session_id, "error": str(e)},
+                )
+            else:
+                self._write_failed(session_id, str(e))
             return ReconciliationSummary(
                 session_id=session_id,
                 status="failed",
@@ -578,7 +729,6 @@ class SessionsGraph:
         promote_labels: bool = False,
         enforce_ontology: bool = False,
         ontology_path: str | Path | None = None,
-        summary_concurrency: int = 4,
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     ) -> list[ReconciliationSummary]:
         """Reconcile many sessions as ONE LightRAG processing pass, not one per session.
@@ -599,12 +749,8 @@ class SessionsGraph:
         (``unstructured2graph.enqueue_texts``), then triggers LightRAG's
         processing pass exactly once (``process_enqueued_and_finalize``) for
         the whole group, so its worker pool has something real to
-        parallelize. Per-session bookkeeping that has no shared-state
-        contention -- the episode-summary LLM call, HAS_CHUNK linking,
-        ``reconciliation_status`` -- happens after, fanned out with its own
-        bounded concurrency (``summary_concurrency``); it doesn't go through
-        LightRAG's pipeline at all, so the "busy" lock above doesn't apply to
-        it.
+        parallelize. Per-session bookkeeping -- HAS_CHUNK linking,
+        ``reconciliation_status``, embedding -- happens after, per session.
 
         Known limitation: if the shared processing pass raises outright (e.g.
         a Memgraph connection error), every session in this call is marked
@@ -647,10 +793,6 @@ class SessionsGraph:
             enforce_ontology: Passed through; see ``reconcile_session``.
                 Takes precedence over ``promote_labels``.
             ontology_path: Only consulted when ``enforce_ontology=True``.
-            summary_concurrency: Bound on concurrent episode-summary LLM
-                calls during finalize. Independent of LightRAG's own
-                ``MAX_ASYNC_LLM``, since this call never enters its pipeline.
-                Must be at least 1.
             embedding_model: Passed through; see ``reconcile_session``.
 
         Returns:
@@ -658,17 +800,9 @@ class SessionsGraph:
             same order as ``session_ids``.
 
         Raises:
-            ValueError: if ``summary_concurrency`` is less than 1 -- checked
-                up front, before any paid extraction work, since
-                ``asyncio.Semaphore(0)`` would otherwise deadlock the
-                finalize step forever *after* the batch has already been
-                billed.
             ImportError: if ``actions-graph`` or ``unstructured2graph`` (the
                 ``sessions-graph[reconciliation]`` extra) is not installed.
         """
-        if summary_concurrency < 1:
-            raise ValueError(f"summary_concurrency must be >= 1, got {summary_concurrency}")
-
         actions_graph = self._default_actions_graph(actions_graph, "reconcile_sessions_batch")
 
         try:
@@ -689,7 +823,7 @@ class SessionsGraph:
         for p in prepared:
             if p.unique_texts:
                 continue
-            self._write_completed(p.session_id, summary_text=None, extraction_backend=None)
+            self._write_completed(p.session_id, extraction_backend=None)
             results[p.session_id] = ReconciliationSummary(
                 session_id=p.session_id, status="completed", texts_considered=len(p.sources), texts_deduped=0
             )
@@ -732,9 +866,7 @@ class SessionsGraph:
                 )
             return [results[sid] for sid in session_ids]
 
-        semaphore = asyncio.Semaphore(summary_concurrency)
-
-        async def _finalize_one(prepared_session: _PreparedSession, session_chunks: list[Any]) -> None:
+        def _finalize_one(prepared_session: _PreparedSession, session_chunks: list[Any]) -> None:
             # process_enqueued_and_finalize returning is not proof this
             # session's own document succeeded -- it reports every document's
             # real, final status (including per-document failures LightRAG
@@ -759,24 +891,17 @@ class SessionsGraph:
 
             try:
                 self._link_chunks_to_sources(prepared_session.sources, session_chunks)
-                async with semaphore:
-                    summary_text = await summarize_session_texts(
-                        lightrag_wrapper, list(prepared_session.unique_texts.values())
-                    )
                 # Literal, not type(...).__name__: this whole method only ever
                 # drives LightRAG's enqueue/process pipeline (map #322), so
                 # there is no backend instance here to introspect -- unlike
                 # reconcile_session, which accepts an arbitrary one.
-                self._write_completed(
-                    prepared_session.session_id, summary_text=summary_text, extraction_backend="LightRAGBackend"
-                )
+                self._write_completed(prepared_session.session_id, extraction_backend="LightRAGBackend")
                 self._embed_after_reconcile(prepared_session.session_id, embedding_model)
                 results[prepared_session.session_id] = ReconciliationSummary(
                     session_id=prepared_session.session_id,
                     status="completed",
                     texts_considered=len(prepared_session.sources),
                     texts_deduped=len(prepared_session.unique_texts),
-                    summary_written=summary_text is not None,
                 )
             except Exception as e:
                 # Isolated per session, unlike the shared pass above: nothing
@@ -791,9 +916,8 @@ class SessionsGraph:
                     error=str(e),
                 )
 
-        await asyncio.gather(
-            *(_finalize_one(p, grouped_chunks[i] if i < len(grouped_chunks) else []) for i, p in enumerate(to_enqueue))
-        )
+        for i, p in enumerate(to_enqueue):
+            _finalize_one(p, grouped_chunks[i] if i < len(grouped_chunks) else [])
 
         return [results[sid] for sid in session_ids]
 
@@ -820,8 +944,9 @@ class SessionsGraph:
             raise
         self._db.query(
             "MATCH (s:Session {session_id: $session_id}) "
-            "SET s.embedding_status = 'completed', s.embedding_model = $model, s.embedding_error = null",
-            params={"session_id": session_id, "model": model},
+            "SET s.embedding_status = 'completed', s.embedding_model = $model, s.embedding_scheme = $scheme, "
+            "s.embedding_error = null",
+            params={"session_id": session_id, "model": model, "scheme": PASSAGE_SCHEME},
         )
         return embedded
 
@@ -842,16 +967,17 @@ class SessionsGraph:
         return recall(self._db, validate_user_id(user_id), question, config=config, model=model)
 
     def get_pending_embedding_sessions(self, *, model: str = DEFAULT_EMBEDDING_MODEL, limit: int = 100) -> list[str]:
-        """Session ids whose embedding failed, never ran, or ran with a model other than *model*."""
+        """Session ids whose embedding failed, never ran, or ran with a model or passage split other than today's."""
         rows = self._db.query(
             """
             MATCH (s:Session)
             WHERE s.embedding_status IS NULL OR s.embedding_status <> 'completed' OR s.embedding_model <> $model
+               OR coalesce(s.embedding_scheme, '') <> $scheme
             RETURN s.session_id AS session_id
             ORDER BY s.session_id
             LIMIT $limit
             """,
-            params={"model": model, "limit": limit},
+            params={"model": model, "limit": limit, "scheme": PASSAGE_SCHEME},
         )
         return [row["session_id"] for row in rows]
 
@@ -864,6 +990,107 @@ class SessionsGraph:
         """
         with contextlib.suppress(EmbeddingUnavailableError):
             self.embed_session(session_id, model=model)
+
+    def get_pending_memory_reconciliations(self, *, limit: int = 100) -> list[str]:
+        """Return memory_ids whose file changed since it was last reconciled (``extraction_status = 'pending'``)."""
+        rows = self._db.query(
+            """
+            MATCH (m:Memory {extraction_status: 'pending'})
+            RETURN m.memory_id AS memory_id
+            ORDER BY m.updated_at
+            LIMIT $limit
+            """,
+            params={"limit": limit},
+        )
+        return [row["memory_id"] for row in rows]
+
+    async def reconcile_memory(
+        self,
+        memory_id: str,
+        *,
+        extraction_backend: ExtractionBackend | None = None,
+        entity_workspace: str | None = None,
+        enforce_ontology: bool = True,
+        embedding_model: str = DEFAULT_EMBEDDING_MODEL,
+    ) -> MemoryReconciliation:
+        """Extract entities and relations from one memory file, replacing what its last version gave.
+
+        A memory file outlives the session that wrote it and changes across
+        many, so it is reconciled on its own whenever it changes, not with a
+        session. What the previous version produced is removed first
+        (:func:`~sessions_graph.memory_store.forget_extraction`); the file's
+        chunks link back to it via ``HAS_CHUNK`` and its relations carry its
+        id as ``source_id``. No summary and no LLM: GLiNER2 over the owner's
+        adopted ontology version, unless *extraction_backend* overrides it.
+        The file's passages are then embedded with *embedding_model* for
+        recall's memory lane.
+
+        Returns:
+            A :class:`MemoryReconciliation`. Never raises for a failure of
+            this file, which is recorded on it as ``extraction_error``.
+
+        Raises:
+            ImportError: the ``reconciliation`` extra isn't installed.
+        """
+        try:
+            from unstructured2graph import Document, Segment, from_documents
+        except ImportError as exc:
+            msg = "unstructured2graph is required for reconcile_memory; install sessions-graph[reconciliation]"
+            raise ImportError(msg) from exc
+
+        rows = self._db.query(
+            """
+            MATCH (m:Memory {memory_id: $memory_id})
+            RETURN m.user_id AS user_id, m.path AS path, m.content AS content, m.updated_at AS updated_at
+            """,
+            params={"memory_id": memory_id},
+        )
+        if not rows:
+            return MemoryReconciliation(memory_id, None, "failed", error="no such memory")
+        row = rows[0]
+        try:
+            from .memory_store import forget_extraction
+            from .ontology import adopted
+
+            forget_extraction(self._db, memory_id)
+            if extraction_backend is None:
+                backend = self._extraction_backend_for(adopted(self._db, row["user_id"]).model)
+            else:
+                backend = extraction_backend
+            text = row["content"].strip()
+            document = Document(
+                text=text,
+                segments=(Segment(0, len(text), None, normalize_timestamp(row["updated_at"]), memory_id),),
+                user_id=row["user_id"],
+            )
+            grouped = await from_documents(
+                [document],
+                memgraph=self._db,
+                extraction_backend=backend,
+                entity_workspace=entity_workspace,
+                enforce_ontology=enforce_ontology,
+                ontology=getattr(backend, "ontology", None),
+            )
+            chunks = grouped[0] if grouped else []
+            self._link_chunks_to_sources([ReconciliationSource(kind="memory", node_id=memory_id, text=text)], chunks)
+            # Recall's memory lane searches these; without MAGE it falls back to text search.
+            with contextlib.suppress(EmbeddingUnavailableError):
+                embed_memory(self._db, memory_id, embedding_model)
+            self._db.query(
+                """
+                MATCH (m:Memory {memory_id: $memory_id})
+                SET m.extraction_status = 'completed', m.extracted_at = $now
+                REMOVE m.extraction_error
+                """,
+                params={"memory_id": memory_id, "now": datetime.now(timezone.utc).isoformat()},
+            )
+            return MemoryReconciliation(memory_id, row["path"], "completed", chunks=len(chunks))
+        except Exception as exc:
+            self._db.query(
+                "MATCH (m:Memory {memory_id: $memory_id}) SET m.extraction_status = 'failed', m.extraction_error = $error",
+                params={"memory_id": memory_id, "error": str(exc)},
+            )
+            return MemoryReconciliation(memory_id, row["path"], "failed", error=str(exc))
 
     def get_pending_reconciliation_sessions(self, *, limit: int = 100) -> list[str]:
         """Return session_ids marked ``reconciliation_status = 'pending'``."""
@@ -904,12 +1131,29 @@ class SessionsGraph:
         )
         return user_id
 
-    def _integrity(self, workspace: str, ontology_path: str | Path | None, chunks: list[Any]) -> tuple[int, int]:
+    def _extraction_backend_for(self, model: HygmModel) -> ExtractionBackend:
+        """A GLiNER2 backend over `model`, kept for reuse: loading the checkpoint is the slow part, so it loads once."""
+        import json
+
+        from hygm import model_to_mapping
+        from unstructured2graph import Ontology
+        from unstructured2graph.gliner2_backend import GLiNER2Backend
+
+        key = json.dumps(model_to_mapping(model), sort_keys=True)
+        if key not in self._extraction_backends:
+            loaded = next(iter(self._extraction_backends.values()), None)
+            engine = loaded.engine if isinstance(loaded, GLiNER2Backend) else None
+            self._extraction_backends[key] = GLiNER2Backend(ontology=Ontology.from_model(model), model=engine)
+        return self._extraction_backends[key]
+
+    def _integrity(
+        self, workspace: str, ontology_path: str | Path | None, ontology: Ontology | None, chunks: list[Any]
+    ) -> tuple[int, int]:
         """(non-conformant entities, non-conformant relationships) over *chunks*, for ReconciliationSummary."""
         from unstructured2graph import DEFAULT_ONTOLOGY, load_ontology, ontology_report
 
-        ontology = load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY
-        report = ontology_report(self._db, workspace, ontology, chunk_hashes=[chunk.hash for chunk in chunks])
+        enforced = ontology or (load_ontology(ontology_path) if ontology_path else DEFAULT_ONTOLOGY)
+        report = ontology_report(self._db, workspace, enforced, chunk_hashes=[chunk.hash for chunk in chunks])
         return report.nonconformant_entities, report.nonconformant_relations
 
     def _link_chunks_to_sources(
@@ -960,4 +1204,13 @@ class SessionsGraph:
             content=row["content"],
             created_at=row["created_at"],
             session_id=row.get("session_id"),
+            path=row.get("path") or "",
+            updated_at=row.get("updated_at") or "",
         )
+
+
+def _derive_mode(derive: str) -> Derive:
+    """*derive* as a mode, so a bad config value fails as ValueError like every other schema problem."""
+    if derive not in ("extend", "off"):
+        raise ValueError(f"derive must be 'extend' or 'off', got {derive!r}")
+    return "extend" if derive == "extend" else "off"

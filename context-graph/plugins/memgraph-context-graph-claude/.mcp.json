@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "context-graph": {
+      "command": "memgraph-context-graph",
+      "args": ["mcp"]
+    }
+  }
+}

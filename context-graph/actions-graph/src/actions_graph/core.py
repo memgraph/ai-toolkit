@@ -162,6 +162,7 @@ class ActionsGraph:
 
         # Promoted action field indexes
         self._db.query("CREATE INDEX ON :Action(tool_name);")
+        self._db.query("CREATE INDEX ON :Action(tool_use_id);")
         self._db.query("CREATE INDEX ON :Action(is_error);")
 
     def drop(self) -> None:
@@ -743,6 +744,9 @@ class ActionsGraph:
 
         # Promoted fields: first-class node properties for graph traversal
         _tool_name: str | None = props.get("tool_name") or getattr(action, "tool_name", None)
+        # Promoted so other components can join on the harness's own id for the call
+        # (resources-graph links a Touch to the ToolCall that fetched it).
+        _tool_use_id: str | None = props.get("tool_use_id") or None
         _is_error: bool = bool(props.get("is_error", False))
         _is_mcp: bool = bool(props.get("is_mcp", False))
         text = _message_text(action)
@@ -759,6 +763,7 @@ class ActionsGraph:
                 parent_action_id: $parent_action_id,
                 metadata: $metadata,
                 tool_name: $tool_name,
+                tool_use_id: $tool_use_id,
                 is_error: $is_error,
                 is_mcp: $is_mcp,
                 text: $text,
@@ -774,6 +779,7 @@ class ActionsGraph:
                 "parent_action_id": action.parent_action_id,
                 "metadata": json.dumps(action.metadata),
                 "tool_name": _tool_name,
+                "tool_use_id": _tool_use_id,
                 "is_error": _is_error,
                 "is_mcp": _is_mcp,
                 "text": text,

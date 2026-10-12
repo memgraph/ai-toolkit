@@ -17,7 +17,7 @@ class TestCypherIntegration(ToolsIntegrationTests):
 
     @property
     def tool_constructor_params(self) -> dict:
-        return {"db": Memgraph("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph()}
 
     @property
     def tool_invoke_params_example(self) -> dict:
@@ -31,7 +31,7 @@ class TestSearchSchemaIntegration(ToolsIntegrationTests):
 
     @property
     def tool_constructor_params(self) -> dict:
-        return {"db": Memgraph("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph()}
 
     @property
     def tool_invoke_params_example(self) -> dict:
@@ -45,7 +45,7 @@ class TestNodeSchemaIntegration(ToolsIntegrationTests):
 
     @property
     def tool_constructor_params(self) -> dict:
-        return {"db": Memgraph("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph()}
 
     @property
     def tool_invoke_params_example(self) -> dict:
@@ -59,7 +59,7 @@ class TestRelationshipSchemaIntegration(ToolsIntegrationTests):
 
     @property
     def tool_constructor_params(self) -> dict:
-        return {"db": Memgraph("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph()}
 
     @property
     def tool_invoke_params_example(self) -> dict:
@@ -77,7 +77,7 @@ class TestEnumSchemaIntegration(ToolsIntegrationTests):
 
     @property
     def tool_constructor_params(self) -> dict:
-        return {"db": Memgraph("bolt://localhost:7687", "", "")}
+        return {"db": Memgraph()}
 
     @property
     def tool_invoke_params_example(self) -> dict:

@@ -1,4 +1,4 @@
-"""Agent Context Graph connector for SessionsGraph.
+"""Memgraph Context Graph connector for SessionsGraph.
 
 The connector is intentionally thin: it watches ``SessionStartEvent`` and
 ``SessionEndEvent`` to MERGE ``(:User)`` and ``(:Session)`` nodes so that
@@ -10,8 +10,8 @@ Usage::
 
     from sessions_graph import SessionsGraph
     from sessions_graph.connector import SessionsGraphConnector
-    from agent_context_graph import AgentLink
-    from agent_context_graph.adapters.claude import ClaudeAdapter
+    from memgraph_context_graph import AgentLink
+    from memgraph_context_graph.adapters.claude import ClaudeAdapter
 
     graph = SessionsGraph()
     graph.setup()
@@ -39,19 +39,26 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING
 
-from agent_context_graph.events import Event, EventType, SessionEndEvent, SessionStartEvent, TurnEndEvent
-from agent_context_graph.protocols import GraphConnector
+from memgraph_context_graph.events import (
+    Event,
+    EventType,
+    SessionEndEvent,
+    SessionStartEvent,
+    ToolEndEvent,
+    TurnEndEvent,
+)
+from memgraph_context_graph.protocols import GraphConnector
 
 if TYPE_CHECKING:
     from .core import SessionsGraph
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_EVENTS = {EventType.SESSION_START, EventType.SESSION_END, EventType.TURN_END}
+_SUPPORTED_EVENTS = {EventType.SESSION_START, EventType.SESSION_END, EventType.TURN_END, EventType.TOOL_END}
 
 
 class SessionsGraphConnector(GraphConnector):
-    """Receives Agent Context Graph session events for memory provenance.
+    """Receives Memgraph Context Graph session events for memory provenance.
 
     On ``SESSION_START``:
       - MERGEs ``(:User {user_id})`` and ``(:Session {session_id})`` nodes.
@@ -66,9 +73,14 @@ class SessionsGraphConnector(GraphConnector):
         LLM, so it doesn't wait on ``auto_reconcile``; the hook never waits on
         the model. ``sessions-graph embed --pending`` retries what fails.
       - If ``auto_reconcile`` is enabled, best-effort spawns a **detached**
-        background process to run the actual (slow, LLM-backed) reconciliation,
+        background process to run the actual (slow, CPU-bound) reconciliation,
         so this hook call itself never waits on it. The reliable path if that
         detached process dies is the ``sessions-graph reconcile --pending`` CLI.
+
+    On ``TOOL_END`` of a successful ``memory`` tool write:
+      - Records ``(:Session)-[:PRODUCED_MEMORY]->(:Memory)`` for the file it
+        wrote. The MCP server that served the call doesn't know the session;
+        the hook does.
 
     On ``TURN_END``:
       - Marks the Session node ``reconciliation_status = 'pending'``.
@@ -76,8 +88,8 @@ class SessionsGraphConnector(GraphConnector):
         it needs no LLM, so recall covers each turn as soon as it ends, and
         runtimes without a session-end hook (Codex, Antigravity,
         ``opencode run``) get embedded at all.
-      - Never spawns reconciliation: the session is still open and that step
-        costs LLM calls. The ``--pending`` sweep reconciles it, and a later
+      - Never spawns reconciliation: the session is still open and extraction
+        is slow. The ``--pending`` sweep reconciles it, and a later
         turn marks it pending again.
 
     Args:
@@ -86,7 +98,7 @@ class SessionsGraphConnector(GraphConnector):
             SESSION_END. Hook-based runtimes pass this explicitly, resolved
             from the persistent ``reconcile.auto_reconcile`` config-file
             setting. Defaults to ``False`` (off) when not given explicitly --
-            given LightRAG entity extraction's LLM cost, and per ADR 0002
+            local extraction is CPU-heavy, and per ADR 0002
             (config-file-only-hook-resolution): no ambient environment
             variable is consulted here. A caller constructing
             ``SessionsGraphConnector`` directly (not through the hook config
@@ -113,6 +125,8 @@ class SessionsGraphConnector(GraphConnector):
             self._on_session_end(event)
         elif isinstance(event, TurnEndEvent):
             self._on_turn_end(event)
+        elif isinstance(event, ToolEndEvent):
+            self._on_tool_end(event)
 
     # ------------------------------------------------------------------
     # Active session context (convenience for callers)
@@ -131,6 +145,15 @@ class SessionsGraphConnector(GraphConnector):
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _on_tool_end(self, event: ToolEndEvent) -> None:
+        from .memory_store import is_memory_tool, memory_paths_written
+
+        if event.is_error or not is_memory_tool(event.tool_name):
+            return
+        paths = memory_paths_written(event.metadata.get("tool_input"))
+        if paths:
+            self._graph.record_memory_provenance(event.session_id, paths)
 
     def _on_session_start(self, event: SessionStartEvent) -> None:
         user_id: str | None = getattr(event, "user_id", None)
@@ -195,23 +218,18 @@ def _spawn_detached(args: list[str], *, env: dict[str, str]) -> None:
 def _child_env(*, llm: bool) -> dict[str, str]:
     """Build the environment for a detached ``sessions-graph`` subprocess.
 
-    This hook process resolves Memgraph connection settings from
-    ``~/.config/context-graph/config.toml`` (per ADR 0002) purely as constructor
-    kwargs -- never writing them into ``os.environ``. A plain ``Popen`` without an
-    explicit ``env=`` would therefore leave the detached reconciliation subprocess
-    with ambient ``os.environ`` only, missing both the configured Memgraph
-    connection and any LLM API key LightRAG needs. Overlay the same config-file
-    resolution onto a copy of the ambient environment so the child gets what this
-    process would have used, without discarding real ambient values (e.g. an
-    OPENAI_API_KEY already exported) when config-file values are unset.
-
-    ``llm`` adds the configured LLM keys: reconciliation needs them, embedding
-    runs inside Memgraph and doesn't.
+    Connection values and provider keys come only from the selected config file.
+    Empty configured values must clear ambient credentials too. Unrelated
+    environment entries, including ``CONTEXT_GRAPH_CONFIG``, remain inherited.
+    ``llm=False`` omits provider keys because embedding runs inside Memgraph.
     """
-    from agent_context_graph.adapters._identity import resolve_llm_env, resolve_memgraph_env
+    from memgraph_context_graph.adapters._identity import resolve_llm_env, resolve_memgraph_env
 
     env = dict(os.environ)
-    env.update({k: v for k, v in resolve_memgraph_env().items() if v})
+    # LightRAG bridges these aliases from the canonical connection values.
+    for key in ("MEMGRAPH_URI", "MEMGRAPH_USERNAME", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+        env.pop(key, None)
+    env.update(resolve_memgraph_env())
     if llm:
-        env.update({k: v for k, v in resolve_llm_env().items() if v})
+        env.update(resolve_llm_env())
     return env

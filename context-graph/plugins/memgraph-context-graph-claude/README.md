@@ -1,0 +1,105 @@
+# Memgraph Context Graph for Claude Code
+
+Claude Code runtime plugin for Memgraph Context Graph.
+
+The plugin installs Claude Code lifecycle hooks that call:
+
+```bash
+memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
+```
+
+Flow:
+
+```text
+Claude Code Plugin -> Claude Code Runtime Adapter -> Event Protocol -> Graph Connector -> Memgraph
+```
+
+The plugin is only deployment wiring. Memgraph Context Graph normalizes runtime events. Graph connectors decide what to persist.
+
+## First Run
+
+The plugin installs hook wiring, while the runtime package is installed by the CLI bootstrap:
+
+```bash
+./scripts/bootstrap.sh
+```
+
+Bootstrap expects `uv` and a reachable Memgraph instance. If Memgraph is not running, start it and rerun bootstrap:
+
+```bash
+docker run --rm -p 7687:7687 memgraph/memgraph-mage
+```
+
+`uv` manages Python for the tool. If uv-managed Python downloads are blocked in your environment, install Python 3.10+ and rerun bootstrap.
+
+Bootstrap installs and verifies:
+
+```bash
+memgraph-context-graph bootstrap --runtime claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
+```
+
+## Recall
+
+The plugin also bundles an MCP server, `memgraph-context-graph mcp` (see `.mcp.json`), which gives the model a `recall` tool (`mcp__plugin_context-graph_context-graph__recall`) over the user's own past sessions. At session start the hook adds one line telling the model the tool is there; the model calls it when a question needs memory. Recall needs the `mcp` extra, which `bootstrap.sh` installs, and Memgraph with MAGE for its vector search. See [memgraph-context-graph § Recall](../../memgraph-context-graph/README.md#recall-memory-for-the-harnesss-model).
+
+## Configure
+
+Bootstrap writes `~/.config/context-graph/config.toml`; hooks read it at runtime (not environment variables). Set your identity — **required** for sessions-graph to attach sessions to a user:
+
+```bash
+memgraph-context-graph config set identity.user_id "your-name"
+```
+
+For a remote/HA Memgraph, also `memgraph-context-graph config set memgraph.url "neo4j://<host>:7687"` (and `memgraph.user`/`memgraph.password`/`memgraph.database`). The default is `bolt://localhost:7687`. See the [memgraph-context-graph README](../../memgraph-context-graph/README.md#configuration).
+
+## Reconciliation (optional)
+
+Captured sessions are marked `reconciliation_status = 'pending'` on end. To extract entities from that content into the graph:
+
+```bash
+pip install "sessions-graph[reconciliation]"
+export OPENAI_API_KEY=...    # or ANTHROPIC_API_KEY
+sessions-graph reconcile --pending
+```
+
+## Prerequisites
+
+- Memgraph running and reachable over Bolt.
+- `uv` available on `PATH`.
+- `memgraph-context-graph` available on `PATH` after bootstrap.
+
+## Local Test
+
+From the plugin directory:
+
+```bash
+./scripts/doctor.sh
+```
+
+## Git Marketplace
+
+Register this repo as a Claude Code marketplace:
+
+```text
+/plugin marketplace add memgraph/ai-toolkit
+```
+
+CLI equivalent:
+
+```bash
+claude plugin marketplace add memgraph/ai-toolkit --sparse .claude-plugin
+```
+
+Install:
+
+```text
+/plugin install context-graph@context-graph-plugins
+```
+
+The Memgraph Context Graph skill is exposed as:
+
+```text
+/context-graph:memgraph-context-graph
+```
+
+This is a Claude Code marketplace only. Codex uses the separate marketplace at `.agents/plugins/marketplace.json`.

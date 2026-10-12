@@ -50,7 +50,7 @@ jobs:
       - name: Sync workspace
         # ty resolves imports through installed packages (unlike ruff, which is
         # purely syntactic), and cross-package imports span the whole workspace
-        # (e.g. agent-context-graph optionally imports skills-graph/actions-graph/
+        # (e.g. memgraph-context-graph optionally imports skills-graph/actions-graph/
         # sessions-graph) -- a single full sync, not a per-package one, is what
         # lets ty see all of it and avoid spurious unresolved-import diagnostics.
         run: uv sync --all-packages --all-extras
