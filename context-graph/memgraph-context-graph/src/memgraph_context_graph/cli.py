@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
-import socket
-import subprocess
 import sys
 from importlib import metadata
 from typing import TYPE_CHECKING, Any, TypedDict, cast
@@ -18,11 +15,11 @@ if TYPE_CHECKING:
 _HELP = """usage: memgraph-context-graph <command> [options]
 
 Commands:
-  bootstrap        Install runtime dependencies and verify hook capture.
+  setup [runtime ...]  Install Context Graph for your agents (interactive on a terminal);
+                   --memory-backend context-graph|native switches whose memory they use.
+  uninstall [runtime ...]  Remove the agents' wiring; your graph and config stay.
   config           Get or set persistent configuration values.
   doctor           Check runtime hook dependencies and Memgraph connectivity.
-  setup <runtime>  Configure an agent runtime; --memory-backend context-graph|native
-                   switches whose memory its model uses.
   join <url> <login>  Use an Enterprise Memgraph as <login> (edition = enterprise); --password or prompt.
   hook <command>  Configure or run command hooks.
   mcp              Serve the registered tools (recall, ...) over stdio MCP.
@@ -45,8 +42,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     command = args[0]
-    if command == "bootstrap":
-        return _bootstrap(args[1:])
+    if command == "setup":
+        from memgraph_context_graph.setup.cli import setup_main
+
+        return setup_main(args[1:])
+
+    if command == "uninstall":
+        from memgraph_context_graph.setup.cli import uninstall_main
+
+        return uninstall_main(args[1:])
 
     if command == "config":
         return _config(args[1:])
@@ -70,11 +74,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         from memgraph_context_graph.hooks.cli import main as hook_main
 
         return hook_main(args[1:])
-
-    if command == "setup":
-        from memgraph_context_graph.hooks.cli import main as hook_main
-
-        return hook_main(["init", *args[1:]])
 
     print(f"Unknown command: {command}", file=sys.stderr)
     print(_HELP)
@@ -329,160 +328,6 @@ def _join(argv: list[str]) -> int:
     return 0
 
 
-def _bootstrap(argv: list[str]) -> int:
-    from memgraph_context_graph.hooks.runtime_plugin import load_runtime_plugins
-
-    parser = argparse.ArgumentParser(description="Install and verify Memgraph Context Graph runtime dependencies.")
-    parser.add_argument(
-        "--runtime",
-        choices=sorted(load_runtime_plugins()),
-        required=True,
-        help="Runtime hook adapter to bootstrap.",
-    )
-    parser.add_argument(
-        "--connector",
-        action="append",
-        default=None,
-        help="Graph connector to enable. Defaults to skills-graph.",
-    )
-    parser.add_argument(
-        "--memgraph-host",
-        default=None,
-        help="Memgraph host. Defaults to MEMGRAPH_HOST or localhost.",
-    )
-    parser.add_argument(
-        "--memgraph-port",
-        type=int,
-        default=None,
-        help="Memgraph Bolt port. Defaults to MEMGRAPH_PORT or 7687.",
-    )
-    parser.add_argument(
-        "--no-reinstall",
-        action="store_true",
-        help="Do not pass --reinstall to uv tool install.",
-    )
-    args = parser.parse_args(argv)
-
-    connectors = args.connector or ["skills-graph"]
-    # Resolve Memgraph URL: MEMGRAPH_URL env takes priority (supports neo4j:// for HA).
-    # Falls back to host:port construction for backward compatibility.
-    memgraph_url_env = os.environ.get("MEMGRAPH_URL")
-    if memgraph_url_env:
-        memgraph_url = memgraph_url_env
-        # For connectivity check, we still need host:port — skip if using neo4j:// routing.
-        from urllib.parse import urlparse
-
-        parsed = urlparse(memgraph_url)
-        host = parsed.hostname or "localhost"
-        port = parsed.port or 7687
-    else:
-        host = args.memgraph_host if args.memgraph_host is not None else os.environ.get("MEMGRAPH_HOST", "localhost")
-        port = args.memgraph_port if args.memgraph_port is not None else int(os.environ.get("MEMGRAPH_PORT", "7687"))
-        memgraph_url = f"bolt://{host}:{port}"
-
-    uv = shutil.which("uv")
-    if not uv:
-        print("FAIL uv: not found on PATH", file=sys.stderr)
-        print("Install uv first:", file=sys.stderr)
-        print("  curl -LsSf https://astral.sh/uv/install.sh | sh", file=sys.stderr)
-        print(
-            "uv manages Python for the tool. If uv-managed Python downloads are blocked, install Python 3.10+.",
-            file=sys.stderr,
-        )
-        return 1
-
-    if not _memgraph_reachable(host, port):
-        print(f"FAIL memgraph: bolt://{host}:{port} is not reachable", file=sys.stderr)
-        print("Start Memgraph, then rerun bootstrap:", file=sys.stderr)
-        print(f"  {_memgraph_command(port)}", file=sys.stderr)
-        print("Or point bootstrap at an existing instance:", file=sys.stderr)
-        print(
-            f"  memgraph-context-graph bootstrap --runtime {args.runtime} "
-            f"--connector {' --connector '.join(connectors)} --memgraph-host <host> --memgraph-port <port>",
-            file=sys.stderr,
-        )
-        return 1
-
-    print(f"OK uv: {uv}")
-    print(f"OK memgraph: bolt://{host}:{port} reachable")
-
-    install_cmd = [uv, "tool", "install", "memgraph-context-graph[mcp]"]
-    for connector in connectors:
-        requirement = _connector_requirement(connector)
-        if requirement is None:
-            print(f"FAIL connector:{connector}: unsupported connector", file=sys.stderr)
-            return 1
-        install_cmd.extend(["--with", requirement])
-    if not args.no_reinstall:
-        install_cmd.append("--reinstall")
-
-    try:
-        subprocess.run(install_cmd, check=True)
-    except subprocess.CalledProcessError as exc:
-        print(f"FAIL install: uv tool install exited with status {exc.returncode}", file=sys.stderr)
-        return exc.returncode
-
-    executable = shutil.which("memgraph-context-graph")
-    if not executable:
-        print("FAIL memgraph-context-graph: installed but not on PATH", file=sys.stderr)
-        print("uv usually installs tools into ~/.local/bin.", file=sys.stderr)
-        print("Add that directory to PATH, restart your shell, then rerun doctor.", file=sys.stderr)
-        return 1
-
-    print(f"OK memgraph-context-graph executable: {executable}")
-
-    # Write hook configuration file (auto-write + inform).
-    from memgraph_context_graph.adapters._identity import write_full_config
-
-    user_id = os.environ.get("MEMGRAPH_CONTEXT_GRAPH_USER_ID", "")
-    memgraph_user = os.environ.get("MEMGRAPH_USER", "")
-    memgraph_password = os.environ.get("MEMGRAPH_PASSWORD", "")
-    memgraph_database = os.environ.get("MEMGRAPH_DATABASE", "memgraph")
-    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
-    anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-
-    # auto_reconcile is deliberately NOT captured from SESSIONS_GRAPH_AUTO_RECONCILE
-    # here, unlike the keys above: those have a legitimate ambient-env source
-    # (people already have OPENAI_API_KEY/MEMGRAPH_PASSWORD exported for other
-    # tools), but nobody has this env var set for an unrelated reason -- it's
-    # only ever set via `config set reconcile.auto_reconcile`. write_full_config
-    # preserves the existing value when auto_reconcile isn't passed, so
-    # re-running bootstrap can't silently revert it to off.
-    config_path = write_full_config(
-        user_id=user_id,
-        memgraph_url=memgraph_url,
-        memgraph_user=memgraph_user,
-        memgraph_password=memgraph_password,
-        memgraph_database=memgraph_database,
-        openai_api_key=openai_api_key,
-        anthropic_api_key=anthropic_api_key,
-    )
-    print(f"OK config: wrote {config_path}")
-    if user_id:
-        print(f"   identity.user_id = {user_id!r}")
-    else:
-        print(
-            "   identity.user_id is empty — set it with: memgraph-context-graph config set identity.user_id <your-name>"
-        )
-    print(f"   memgraph.url = {memgraph_url!r}")
-    if openai_api_key or anthropic_api_key:
-        found = ", ".join(
-            name
-            for name, value in (("llm.openai_api_key", openai_api_key), ("llm.anthropic_api_key", anthropic_api_key))
-            if value
-        )
-        print(f"   {found} captured from environment")
-    else:
-        print(
-            "   no LLM API key found in environment — sessions-graph reconciliation needs one; "
-            "set with: memgraph-context-graph config set llm.openai_api_key"
-        )
-    doctor_args = ["--runtime", args.runtime]
-    for connector in connectors:
-        doctor_args.extend(["--connector", connector])
-    return _doctor(doctor_args)
-
-
 def _doctor(argv: list[str]) -> int:
     from memgraph_context_graph.hooks.runtime_plugin import load_runtime_plugins
 
@@ -506,7 +351,18 @@ def _doctor(argv: list[str]) -> int:
     )
     args = parser.parse_args(argv)
 
-    connectors = args.connector or ["skills-graph"]
+    checks = doctor_checks([args.runtime], args.connector or ["skills-graph"])
+    ok = all(check["ok"] for check in checks)
+    payload: _DoctorPayload = {"ok": ok, "checks": checks}
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        _print_doctor(payload)
+    return 0 if ok else 1
+
+
+def doctor_checks(runtimes: Sequence[str], connectors: Sequence[str]) -> list[_CheckResult]:
+    """Everything ``doctor`` checks: shared checks once, then each runtime's hook probe and memory backend."""
     checks = [
         _check_cli(),
         _check_package("memgraph-context-graph"),
@@ -521,18 +377,12 @@ def _doctor(argv: list[str]) -> int:
         if any(connector.strip().replace("_", "-") == "sessions-graph" for connector in connectors):
             checks.append(_check_embeddings())
             checks.append(_check_mcp())
-        checks.append(_check_runtime(args.runtime, connectors))
-        if (memory_check := _check_memory_backend(args.runtime)) is not None:
-            checks.append(memory_check)
+        for runtime in runtimes:
+            checks.append(_check_runtime(runtime, list(connectors)))
+            if (memory_check := _check_memory_backend(runtime)) is not None:
+                checks.append(memory_check)
     checks.append(_check_capture_failures())
-
-    ok = all(check["ok"] for check in checks)
-    payload: _DoctorPayload = {"ok": ok, "checks": checks}
-    if args.json:
-        print(json.dumps(payload, indent=2))
-    else:
-        _print_doctor(payload)
-    return 0 if ok else 1
+    return checks
 
 
 class _RequiredCheckFields(TypedDict):
@@ -572,7 +422,7 @@ def _check_config() -> _CheckResult:
         return {
             "name": "config",
             "ok": False,
-            "detail": f"{path} not found — run: memgraph-context-graph bootstrap or memgraph-context-graph config set identity.user_id <name>",
+            "detail": f"{path} not found — run: memgraph-context-graph setup",
         }
     from memgraph_context_graph.spaces import SpaceError, spaces_for
 
@@ -928,33 +778,6 @@ def _package_version(package_name: str) -> str:
         return metadata.version(package_name)
     except metadata.PackageNotFoundError:
         return "unknown"
-
-
-def _memgraph_reachable(host: str, port: int) -> bool:
-    try:
-        with socket.create_connection((host, port), timeout=2):
-            return True
-    except OSError:
-        return False
-
-
-def _memgraph_command(port: int) -> str:
-    published = f"{port}:7687"
-    # MAGE, not plain memgraph: sessions-graph embeds for recall with its embeddings module.
-    return f"docker run --rm -p {published} memgraph/memgraph-mage"
-
-
-def _connector_requirement(connector: str) -> str | None:
-    normalized = connector.strip().replace("_", "-")
-    if normalized == "skills-graph":
-        return "skills-graph[memgraph-context-graph]"
-    if normalized == "actions-graph":
-        return "actions-graph[memgraph-context-graph]"
-    if normalized == "sessions-graph":
-        return "sessions-graph[memgraph-context-graph]"
-    if normalized == "resources-graph":
-        return "resources-graph[memgraph-context-graph]"
-    return None
 
 
 if __name__ == "__main__":

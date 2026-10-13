@@ -32,7 +32,7 @@ Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable Memgraph graph.
 
 | Package | Role |
 |---|---|
-| `memgraph-context-graph` | Event hub. Normalizes runtime hooks / SDK activity into a shared Event Protocol and routes it to graph connectors. Also serves components' read tools (e.g. sessions-graph's `recall`) to the harness's model over stdio MCP (`memgraph-context-graph mcp`). |
+| `memgraph-context-graph` | Event hub. Normalizes runtime hooks / SDK activity into a shared Event Protocol and routes it to graph connectors. Also serves components' read tools (e.g. sessions-graph's `recall`) to the harness's model over stdio MCP (`memgraph-context-graph mcp`), and installs the family: `setup`/`uninstall` find or start Memgraph and wire every agent, interactive in Textual on a terminal (`context-graph/scripts/install.sh` and the plugins' `bootstrap.sh` are shims onto it). |
 | `actions-graph` | Records tool calls/results/messages/subagent activity as `(:Action)`/`(:Agent)` nodes — observability, not memory. |
 | `skills-graph` | Tracks Agent-Skills-spec `(:Skill)` usage per session. |
 | `sessions-graph` | Owns `(:User)`/`(:Session)`, durable `(:Memory)` writes/recall, and session reconciliation into extracted entities (local, no LLM). |

@@ -41,23 +41,12 @@ pip install unstructured2graph
 
 ### Context Graph - Capture Your Agent Sessions
 
-Turn your Claude Code and Codex sessions into a queryable knowledge graph. Install the plugin and every session records the tools it called, the skills it used, and the memories it wrote — all joined on a shared `(:Session)` node in Memgraph.
+Turn your coding agents' sessions (Claude Code, Codex, Copilot CLI, Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable knowledge graph. Every session records the tools it called, the skills it used, and the memories it wrote — all joined on a shared `(:Session)` node in Memgraph.
 
-Inside Claude Code:
-
-```text
-/plugin marketplace add memgraph/ai-toolkit
-/plugin install context-graph@context-graph-plugins
-```
-
-Then bootstrap, set your identity, and verify:
+One command finds or starts Memgraph, wires every agent it finds, sets your identity and checks the result (interactive on a terminal):
 
 ```bash
-memgraph-context-graph bootstrap --runtime claude-code \
-  --connector skills-graph --connector actions-graph --connector sessions-graph
-memgraph-context-graph config set identity.user_id "your-name"
-memgraph-context-graph doctor --runtime claude-code \
-  --connector skills-graph --connector actions-graph --connector sessions-graph
+curl -fsSL https://raw.githubusercontent.com/memgraph/ai-toolkit/main/context-graph/scripts/install.sh | bash
 ```
 
 Query across every session — e.g. which skills a user has used:

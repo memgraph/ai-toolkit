@@ -12,8 +12,8 @@ polls Memgraph every few seconds, and never writes to the graph.
 
 ## Install
 
-The viewer runs in the same tool environment as `memgraph-context-graph`. Add it to the `uv tool install` command
-your plugin's bootstrap runs:
+`memgraph-context-graph setup` installs it unless you pass `--no-viewer`. It runs in the same tool environment as
+`memgraph-context-graph`, so to add it by hand, add it to that tool's `uv tool install`:
 
 ```bash
 uv tool install "memgraph-context-graph[mcp]" \

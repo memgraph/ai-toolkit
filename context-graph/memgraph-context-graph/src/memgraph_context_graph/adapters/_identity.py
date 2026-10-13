@@ -330,18 +330,11 @@ def write_full_config(
     anthropic_api_key: str = _LLM_DEFAULTS["anthropic_api_key"],
     auto_reconcile: bool | None = _RECONCILE_DEFAULTS["auto_reconcile"],
 ) -> Path:
-    """Write a complete config file with all sections (used by bootstrap).
+    """Write a complete config file, resetting identity, Memgraph and LLM settings to what is given.
 
-    Overwrites every section except ``[reconcile]``, ``[recall]``, ``[ontology]``, ``[github]`` and ``[memory]``: unlike identity/Memgraph/LLM
-    settings, ``auto_reconcile`` has no legitimate ambient-env source for
-    ``bootstrap`` to capture (nobody has ``SESSIONS_GRAPH_AUTO_RECONCILE``
-    exported for an unrelated reason the way they might already have
-    ``OPENAI_API_KEY``/`MEMGRAPH_PASSWORD` set) — it is only ever set via
-    ``config set reconcile.auto_reconcile``. Re-running bootstrap must not
-    silently revert it to off, so ``auto_reconcile`` is preserved from the
-    existing file unless explicitly given here. ``[recall]``, ``[ontology]`` and
-    ``[github]`` are preserved the same way: they are only ever set via ``config set`` or by
-    editing the file. ``[memory]`` is set by ``setup --memory-backend`` and kept likewise.
+    Every other section (``[reconcile]``, ``[recall]``, ``[ontology]``, ``[github]``, ``[memory]``) and the
+    edition are kept from the existing file, since only ``config set`` or a hand edit ever sets them.
+    ``auto_reconcile`` is kept likewise unless given here. :func:`write_config` is the partial update.
     """
     global _cached_config
 

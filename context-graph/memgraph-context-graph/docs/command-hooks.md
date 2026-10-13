@@ -234,14 +234,11 @@ memgraph-context-graph config set memgraph.url "bolt://localhost:7687"
 memgraph-context-graph config show
 ```
 
-Bootstrap captures supported environment variables into that file as a
-write-time convenience:
+`memgraph-context-graph setup` writes `memgraph.url` and `identity.user_id` there,
+and wires the project in one go:
 
 ```bash
-memgraph-context-graph bootstrap --runtime antigravity-cli \
-  --connector skills-graph \
-  --connector actions-graph \
-  --connector sessions-graph
+memgraph-context-graph setup antigravity-cli --project-dir "$PWD"
 ```
 
 ## Verification

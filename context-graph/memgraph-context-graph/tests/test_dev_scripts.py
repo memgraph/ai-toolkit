@@ -87,22 +87,26 @@ def test_hooks_restore_selected_config(shell_env, existing):
     assert not list(source.parent.glob("*.pre-local-test-backup*"))
 
 
-def test_installer_preserves_container_with_different_port(shell_env, tmp_path):
-    """An unreachable endpoint must never authorize removing a named container."""
-    env, bins = shell_env
-    calls = tmp_path / "docker-calls"
-    docker = bins / "docker"
-    docker.write_text(
-        "#!/bin/sh\n"
-        f'echo "$*" >> {shlex.quote(str(calls))}\n'
-        'case "$1" in\ninfo) exit 0;;\ninspect) [ "$2" != --format ] || echo 7687; exit 0;;\n'
-        "*) exit 99;;\nesac\n"
-    )
-    docker.chmod(0o700)
-    env.update(MEMGRAPH_HOST="127.0.0.1", MEMGRAPH_PORT="65530", CONTEXT_GRAPH_MEMGRAPH_CONTAINER="preserve-me")
-    result = subprocess.run(["bash", str(INSTALL)], env=env, capture_output=True, text=True)
-    assert result.returncode == 1
-    assert "container preserved" in result.stderr
-    assert "rm " not in calls.read_text()
-    assert "run " not in calls.read_text()
-    assert "start " not in calls.read_text()
+def test_installer_installs_the_tool_then_hands_its_arguments_to_setup(tmp_path):
+    """Without a terminal the shim must take setup's plain path: a TUI there could never receive a key (#534)."""
+    bins = tmp_path / "bin"
+    bins.mkdir()
+    calls = tmp_path / "calls"
+    for name, extra in (
+        ("uv", f'[ "$1 $2" != "tool dir" ] || echo {shlex.quote(str(bins))}\n'),
+        ("memgraph-context-graph", ""),
+    ):
+        command = bins / name
+        command.write_text(f'#!/bin/sh\necho "{name} $*" >> {shlex.quote(str(calls))}\n{extra}exit 0\n')
+        command.chmod(0o700)
+    env = {"PATH": f"{bins}:/usr/bin:/bin", "HOME": str(tmp_path)}
+
+    subprocess.run(
+        ["bash", str(INSTALL), "codex", "--memgraph-url", "bolt://my-host:7687"],
+        env=env, check=True, capture_output=True, stdin=subprocess.DEVNULL, start_new_session=True,
+    )  # fmt: skip
+
+    lines = calls.read_text().splitlines()
+    assert lines[0].startswith("uv tool install memgraph-context-graph[mcp]>=")
+    assert "--with sessions-graph[memgraph-context-graph]>=" in lines[0]
+    assert lines[-1] == "memgraph-context-graph setup --no-tui codex --memgraph-url bolt://my-host:7687"

@@ -1,211 +1,44 @@
 #!/usr/bin/env bash
-# One-command setup for Context Graph on a supported agent runtime: start Memgraph
-# if nothing is reachable, register the plugin marketplace, install the
-# plugin (this is what actually wires hooks into the runtime -- `bootstrap`
-# alone does not), install the memgraph-context-graph CLI with all three
-# connectors, set your identity, and verify with `doctor`.
+# Install Context Graph for your coding agents. This script only gets Python's
+# tooling in place; `memgraph-context-graph setup` does the rest: it finds or
+# starts Memgraph, wires every agent it finds, sets your identity and checks
+# the result. On a terminal it is interactive; otherwise it prints its plan
+# and runs it.
 #
 # Usage:
-#   ./context-graph/scripts/install.sh
 #   curl -fsSL https://raw.githubusercontent.com/memgraph/ai-toolkit/main/context-graph/scripts/install.sh | bash
+#   ... | bash -s -- codex --memgraph-url bolt://my-host:7687    # any `setup` flags
+#   ./context-graph/scripts/install.sh --help                   # setup's own help
 #
-# Env overrides:
-#   CONTEXT_GRAPH_RUNTIME         claude-code (default), codex, copilot-cli,
-#                                 cursor, opencode, antigravity-cli, or grok
-#   CONTEXT_GRAPH_PROJECT_DIR     project to wire for copilot-cli, cursor,
-#                                 opencode, antigravity-cli, grok (default: current directory)
-#   MEMGRAPH_CONTEXT_GRAPH_USER_ID   identity to record (default: git user.name, else $USER)
-#   MEMGRAPH_HOST / MEMGRAPH_PORT default localhost:7687
-#   CONTEXT_GRAPH_MEMGRAPH_CONTAINER default context-graph-memgraph (existing data preserved)
-#   SKIP_MEMGRAPH=1               don't start a local Memgraph even if none is reachable
-#   SKIP_UV_INSTALL=1             don't auto-install uv if missing (just fail with instructions)
+# Undo with `memgraph-context-graph uninstall`.
 
 set -euo pipefail
 
-RUNTIME="${CONTEXT_GRAPH_RUNTIME:-claude-code}"
-# RUNTIME_WIRING: "plugin" installs a distributable Runtime Plugin (user-wide);
-# "project" writes project-local wiring with `hook init`.
-case "$RUNTIME" in
-  claude-code) RUNTIME_LABEL="Claude Code"; RUNTIME_BINS=(claude); RUNTIME_WIRING=plugin ;;
-  codex) RUNTIME_LABEL="Codex"; RUNTIME_BINS=(codex); RUNTIME_WIRING=plugin ;;
-  copilot-cli) RUNTIME_LABEL="GitHub Copilot CLI"; RUNTIME_BINS=(copilot); RUNTIME_WIRING=project ;;
-  cursor) RUNTIME_LABEL="Cursor"; RUNTIME_BINS=(cursor cursor-agent); RUNTIME_WIRING=project ;;
-  opencode) RUNTIME_LABEL="OpenCode"; RUNTIME_BINS=(opencode); RUNTIME_WIRING=project ;;
-  antigravity-cli) RUNTIME_LABEL="Antigravity CLI"; RUNTIME_BINS=(agy); RUNTIME_WIRING=project ;;
-  grok) RUNTIME_LABEL="Grok Build"; RUNTIME_BINS=(grok); RUNTIME_WIRING=project ;;
-  *)
-    echo "FAIL unknown CONTEXT_GRAPH_RUNTIME: $RUNTIME (expected claude-code, codex, copilot-cli, cursor, opencode, antigravity-cli, or grok)" >&2
-    exit 1
-    ;;
-esac
-PROJECT_DIR="${CONTEXT_GRAPH_PROJECT_DIR:-$PWD}"
-CONNECTORS=(skills-graph actions-graph sessions-graph)
-MEMGRAPH_HOST="${MEMGRAPH_HOST:-localhost}"
-MEMGRAPH_PORT="${MEMGRAPH_PORT:-7687}"
-CONTAINER_NAME="${CONTEXT_GRAPH_MEMGRAPH_CONTAINER:-context-graph-memgraph}"
-MAGE_IMAGE="memgraph/memgraph-mage:latest"
-
-log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 fail() { printf 'FAIL %s\n' "$*" >&2; exit 1; }
 
-bolt_reachable() {
-  (exec 3<>"/dev/tcp/${MEMGRAPH_HOST}/${MEMGRAPH_PORT}") 2>/dev/null
-}
-
-# A plain TCP accept happens well before Memgraph can actually complete a Bolt
-# handshake -- the MAGE image in particular preloads heavy ML query-module
-# dependencies after the socket is already listening. Once we start the
-# container ourselves, gate readiness on a real query via the mgconsole
-# bundled in the image, not just the socket.
-bolt_query_ready() {
-  docker exec "$CONTAINER_NAME" mgconsole --host 127.0.0.1 --port 7687 <<<"RETURN 1;" >/dev/null 2>&1
-}
-
-# ---- 1. Memgraph ------------------------------------------------------------
-log "Checking Memgraph at bolt://${MEMGRAPH_HOST}:${MEMGRAPH_PORT}"
-if bolt_reachable; then
-  echo "Already reachable -- using it as-is."
-elif [[ "${SKIP_MEMGRAPH:-0}" == "1" ]]; then
-  fail "memgraph: not reachable and SKIP_MEMGRAPH=1 -- start one and rerun."
-else
-  command -v docker >/dev/null 2>&1 || fail "docker is required to auto-start Memgraph: https://docs.docker.com/get-docker/ (or start your own and rerun with SKIP_MEMGRAPH=1)"
-  case "$MEMGRAPH_HOST" in
-    localhost|127.0.0.1) ;;
-    *) fail "remote memgraph is unreachable; start it at $MEMGRAPH_HOST:$MEMGRAPH_PORT and rerun (no local container was changed)" ;;
-  esac
-  docker info >/dev/null 2>&1 || fail "docker daemon is unavailable"
-  if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
-    published="$(docker inspect --format '{{range (index .HostConfig.PortBindings "7687/tcp")}}{{println .HostPort}}{{end}}' "$CONTAINER_NAME")"
-    [[ "$published" == "$MEMGRAPH_PORT" ]] || fail "existing $CONTAINER_NAME does not publish port $MEMGRAPH_PORT; choose its published port or a different CONTEXT_GRAPH_MEMGRAPH_CONTAINER (container preserved)"
-    echo "Restarting existing Memgraph container $CONTAINER_NAME (data preserved)."
-    docker start "$CONTAINER_NAME" >/dev/null
-  else
-    echo "Nothing reachable -- starting a local Memgraph ($MAGE_IMAGE)."
-    docker run -d --name "$CONTAINER_NAME" \
-      -p "127.0.0.1:${MEMGRAPH_PORT}:7687" -p 127.0.0.1:7444:7444 \
-      "$MAGE_IMAGE" --schema-info-enabled=True >/dev/null
-  fi
-  ready=0
-  for _ in $(seq 1 90); do
-    if bolt_reachable && bolt_query_ready; then ready=1; break; fi
-    sleep 2
-  done
-  [[ "$ready" == "1" ]] || { docker logs "$CONTAINER_NAME" || true; fail "memgraph did not become ready in time"; }
-  echo "Memgraph is up on bolt://${MEMGRAPH_HOST}:${MEMGRAPH_PORT} (container: $CONTAINER_NAME)"
-fi
-
-# ---- 2. uv -------------------------------------------------------------------
 if ! command -v uv >/dev/null 2>&1; then
-  if [[ "${SKIP_UV_INSTALL:-0}" == "1" ]]; then
-    fail "uv not found and SKIP_UV_INSTALL=1: https://astral.sh/uv/install.sh"
-  fi
-  log "Installing uv (manages Python for the memgraph-context-graph tool)"
+  echo "Installing uv (it manages Python for the memgraph-context-graph tool)"
   curl -LsSf https://astral.sh/uv/install.sh | sh
   export PATH="$HOME/.local/bin:$PATH"
-  command -v uv >/dev/null 2>&1 || fail "uv install did not put 'uv' on PATH -- open a new shell and rerun."
+  command -v uv >/dev/null 2>&1 || fail "uv was installed but isn't on PATH; open a new shell and run this again."
 fi
-echo "OK uv: $(command -v uv)"
 
-# ---- 3. Runtime plugin (marketplace + install) -------------------------------
-# This is the step the plain `bootstrap` command cannot do for you: it's what
-# wires hooks into the runtime so sessions actually get captured. Without it,
-# `doctor` below will look all-green but no real session will write anything.
-case "$RUNTIME" in
-  claude-code)
-    command -v claude >/dev/null 2>&1 || fail "claude (Claude Code CLI) not found on PATH -- install Claude Code first."
-
-    log "Registering the ai-toolkit plugin marketplace"
-    if claude plugin marketplace list --json 2>/dev/null | grep -q '"context-graph-plugins"'; then
-      echo "Already registered."
-    else
-      claude plugin marketplace add memgraph/ai-toolkit --sparse .claude-plugin
-    fi
-
-    log "Installing the context-graph plugin"
-    if claude plugin list --json 2>/dev/null | grep -q '"context-graph"'; then
-      echo "Already installed."
-    else
-      claude plugin install context-graph@context-graph-plugins -y
-    fi
-    ;;
-  codex)
-    command -v codex >/dev/null 2>&1 || fail "codex (Codex CLI) not found on PATH -- install Codex first."
-
-    log "Registering the ai-toolkit plugin marketplace"
-    if codex plugin marketplace list --json 2>/dev/null | grep -q '"context-graph-plugins"'; then
-      echo "Already registered."
-    else
-      codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins
-    fi
-
-    log "Installing the context-graph plugin"
-    if codex plugin list --json 2>/dev/null | grep -q '"context-graph"'; then
-      echo "Already installed."
-    else
-      codex plugin add context-graph@context-graph-plugins
-    fi
-    ;;
-  *)
-    runtime_bin_found=false
-    for bin in "${RUNTIME_BINS[@]}"; do
-      command -v "$bin" >/dev/null 2>&1 && runtime_bin_found=true
-    done
-    $runtime_bin_found || fail "${RUNTIME_BINS[*]} not found on PATH -- install $RUNTIME_LABEL first."
-    [[ -d "$PROJECT_DIR" ]] || fail "CONTEXT_GRAPH_PROJECT_DIR is not a directory: $PROJECT_DIR"
-    # Under `curl | bash` the current directory is wherever the user happened
-    # to be; wiring $HOME would capture every session started anywhere below it.
-    [[ "$(cd "$PROJECT_DIR" && pwd -P)" != "$(cd "$HOME" && pwd -P)" ]] ||
-      fail "refusing to write $RUNTIME_LABEL project wiring into \$HOME -- cd into a project or set CONTEXT_GRAPH_PROJECT_DIR."
-    echo "$RUNTIME_LABEL uses project-local wiring for $PROJECT_DIR; it is written after the CLI install."
-    ;;
-esac
-
-# ---- 4. memgraph-context-graph CLI + connectors -------------------------------
-log "Installing memgraph-context-graph with skills-graph, actions-graph, sessions-graph"
-uv tool install "memgraph-context-graph>=0.5.0" \
+# The same set setup checks for (memgraph_context_graph/setup/tool.py) and the plugins' bootstrap installs.
+echo "Installing memgraph-context-graph with skills-graph, actions-graph and sessions-graph"
+uv tool install "memgraph-context-graph[mcp]>=0.6.0" \
   --with "skills-graph[memgraph-context-graph]>=0.2.1" \
-  --with "actions-graph[memgraph-context-graph]>=0.4.1" \
-  --with "sessions-graph[memgraph-context-graph]>=0.8.0" \
-  --upgrade \
-  --refresh-package memgraph-context-graph \
-  --refresh-package skills-graph \
-  --refresh-package actions-graph
+  --with "actions-graph[memgraph-context-graph]>=0.4.2" \
+  --with "sessions-graph[memgraph-context-graph]>=0.8.1" \
+  --upgrade
 
-# uv tool shims land in `uv tool dir --bin` (usually ~/.local/bin), which may
-# not be on PATH yet even when uv itself came from elsewhere (Homebrew, pipx).
+# uv's tool shims live in `uv tool dir --bin` (usually ~/.local/bin), which may not be on PATH yet.
 export PATH="$(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin"):$PATH"
-command -v memgraph-context-graph >/dev/null 2>&1 || fail "memgraph-context-graph installed but not on PATH -- add $(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin") to PATH and rerun."
+command -v memgraph-context-graph >/dev/null 2>&1 ||
+  fail "memgraph-context-graph was installed but isn't on PATH; add $(uv tool dir --bin) to PATH and run this again."
 
-log "Bootstrapping ($RUNTIME)"
-connector_flags=()
-for c in "${CONNECTORS[@]}"; do connector_flags+=(--connector "$c"); done
-MEMGRAPH_HOST="$MEMGRAPH_HOST" MEMGRAPH_PORT="$MEMGRAPH_PORT" \
-  memgraph-context-graph bootstrap --runtime "$RUNTIME" "${connector_flags[@]}" --no-reinstall
-
-if [[ "$RUNTIME_WIRING" == project ]]; then
-  log "Installing project-local $RUNTIME_LABEL capture wiring in $PROJECT_DIR"
-  init_flags=()
-  # OpenCode's plugin is a dedicated generated file, safe to refresh on
-  # repeated installs; the JSON hook files are merged instead.
-  [[ "$RUNTIME" == opencode ]] && init_flags+=(--force)
-  # The `+` expansion keeps an empty array safe under `set -u` on bash 3.2 (macOS).
-  memgraph-context-graph hook init "$RUNTIME" --project-dir "$PROJECT_DIR" "${connector_flags[@]}" ${init_flags[@]+"${init_flags[@]}"}
+# Piped into bash, stdin is the rest of this script, so a TUI would draw but never receive a key.
+# Reattach the terminal when there is one; without one, setup runs its plain, non-interactive path.
+if (exec </dev/tty) 2>/dev/null; then
+  exec memgraph-context-graph setup "$@" </dev/tty
 fi
-
-# ---- 5. Identity --------------------------------------------------------------
-USER_ID="${MEMGRAPH_CONTEXT_GRAPH_USER_ID:-$(git config --get user.name 2>/dev/null || true)}"
-USER_ID="${USER_ID:-$USER}"
-log "Setting identity.user_id = ${USER_ID}"
-memgraph-context-graph config set identity.user_id "$USER_ID"
-
-# ---- 6. Verify -----------------------------------------------------------------
-log "Verifying"
-memgraph-context-graph doctor --runtime "$RUNTIME" "${connector_flags[@]}"
-
-echo ""
-echo -e "\033[1;32m✓ Context Graph is live.\033[0m Use $RUNTIME_LABEL normally -- every session now"
-echo "writes Actions/Skills/Memories to bolt://${MEMGRAPH_HOST}:${MEMGRAPH_PORT}."
-echo ""
-echo "Explore the graph: docker run -d -p 3000:3000 --add-host=host.docker.internal:host-gateway \\"
-echo "  -e QUICK_CONNECT_MG_HOST=host.docker.internal -e QUICK_CONNECT_MG_PORT=${MEMGRAPH_PORT} memgraph/lab:latest"
-echo "Docs: https://github.com/memgraph/ai-toolkit/tree/main/context-graph"
+exec memgraph-context-graph setup --no-tui "$@"

@@ -18,25 +18,21 @@ The plugin is only deployment wiring. Memgraph Context Graph normalizes runtime 
 
 ## First Run
 
-The plugin installs hook wiring, while the runtime package is installed by the CLI bootstrap:
+The plugin installs hook wiring; the runtime package and the rest come from one script:
 
 ```bash
 ./scripts/bootstrap.sh
 ```
 
-Bootstrap expects `uv` and a reachable Memgraph instance. If Memgraph is not running, start it and rerun bootstrap:
+It installs the `memgraph-context-graph` CLI with its connectors through `uv`, then runs
+`memgraph-context-graph setup codex --no-tui`: it uses the Memgraph your config names, or one on
+`localhost:7687`, or starts one in Docker (with a volume, on a free port if 7687 is taken), sets your
+identity, and checks the hooks with `doctor`. Running it again skips what is already done.
 
-```bash
-docker run --rm -p 7687:7687 memgraph/memgraph-mage
-```
+`uv` manages Python for the tool. If uv-managed Python downloads are blocked in your environment, install Python 3.10+ and rerun it.
 
-`uv` manages Python for the tool. If uv-managed Python downloads are blocked in your environment, install Python 3.10+ and rerun bootstrap.
-
-Bootstrap installs and verifies:
-
-```bash
-memgraph-context-graph bootstrap --runtime codex --connector skills-graph --connector actions-graph --connector sessions-graph
-```
+To set up every agent on the machine at once, interactively, run `memgraph-context-graph setup` instead.
+`memgraph-context-graph uninstall codex` removes the wiring and keeps your graph.
 
 ## Recall
 
@@ -78,7 +74,7 @@ sessions-graph reconcile --pending
 
 - Memgraph running and reachable over Bolt.
 - `uv` available on `PATH`.
-- `memgraph-context-graph` available on `PATH` after bootstrap.
+- `memgraph-context-graph` available on `PATH` after `bootstrap.sh`.
 
 ## Local Test
 
