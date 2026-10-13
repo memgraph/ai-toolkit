@@ -140,6 +140,25 @@ class TestActionOperations:
         assert result.content == "file contents"
         assert result.is_error is False
 
+    def test_a_failed_tool_end_is_stored_as_an_error(self, graph: ActionsGraph):
+        """The stored node, not just the model: is_error was dropped on the way to Memgraph (#544)."""
+        from memgraph_context_graph.events import ToolEndEvent
+
+        ActionsGraphConnector(graph).on_event(
+            ToolEndEvent(
+                session_id="failed-result-session",
+                tool_name="Bash",
+                tool_use_id="tool-failed",
+                is_error=True,
+                error_message="exit 1",
+            )
+        )
+
+        stored = graph._db.query(
+            "MATCH (a:Action:ToolResult {tool_use_id: 'tool-failed'}) RETURN a.is_error AS is_error, a.status AS status"
+        )
+        assert stored == [{"is_error": True, "status": "failed"}]
+
     def test_record_message(self, graph: ActionsGraph):
         """Test recording a message."""
         session = Session(session_id="message-session")
@@ -787,6 +806,26 @@ class TestMCPTools:
         assert len(stats) == 1
         assert stats[0]["is_mcp"] is True
         assert stats[0]["mcp_server"] == "playwright"
+
+        stored = graph._db.query(
+            "MATCH (a:Action:ToolCall {action_id: $id}) RETURN a.is_mcp AS is_mcp, a.mcp_server AS mcp_server",
+            params={"id": tool_call.action_id},
+        )
+        assert stored == [{"is_mcp": True, "mcp_server": "playwright"}]
+
+
+class TestNoToolHub:
+    """Tool calls carry their tool as properties, never as a shared hub node."""
+
+    def test_tool_calls_across_sessions_share_no_node(self, graph: ActionsGraph):
+        for session_id in ("hub-a", "hub-b"):
+            graph.create_session(Session(session_id=session_id))
+            graph.record_tool_call(session_id=session_id, tool_name="Bash", tool_input={"command": "ls"})
+
+        assert graph._db.query("MATCH (t:Tool) RETURN count(t) AS c")[0]["c"] == 0
+        assert graph._db.query("MATCH ()-[r:USED_TOOL]->() RETURN count(r) AS c")[0]["c"] == 0
+        stats = graph.get_tool_usage_stats()
+        assert [(s["tool_name"], s["call_count"]) for s in stats] == [("Bash", 2)]
 
 
 def _connector(graph: ActionsGraph) -> AgentLink:

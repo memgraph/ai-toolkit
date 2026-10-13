@@ -87,7 +87,7 @@ Commands:
                      the result: Session-HAS_AGENT->Agent, the real spawning tool
                      call-SPAWNED->Agent, Agent-HAS_ACTION->its own tool calls,
                      per-container FOLLOWED_BY chains (and that they never cross),
-                     PARENT_OF (ToolCall->ToolResult) at both levels, USED_TOOL,
+                     PARENT_OF (ToolCall->ToolResult) at both levels, tool_name,
                      and USED_SKILL attaching to the Agent (not the Session).
                      Verifies the SPAWNED inference rule and the skill-attachment
                      rule against a real session instead of synthetic e2e data.
@@ -793,16 +793,16 @@ if nested_calls:
     parent_of_nested_ok = rows[0]["c"] == 1
 checks.append(("PARENT_OF: a nested tool call inside the Agent -> its ToolResult", parent_of_nested_ok))
 
-# USED_TOOL: the Agent's own tool calls link to real Tool nodes.
-used_tool_ok = False
+# tool_name: the Agent's own tool calls name the tool they called.
+tool_name_ok = False
 if agent:
     rows = db.query(
-        "MATCH (:Agent {agent_id: $agent_id})-[:HAS_ACTION]->(:Action)-[:USED_TOOL]->(t:Tool) "
-        "RETURN count(DISTINCT t) AS c",
+        "MATCH (:Agent {agent_id: $agent_id})-[:HAS_ACTION]->(a:Action:ToolCall) "
+        "RETURN count(a) AS calls, count(a.tool_name) AS named",
         params={"agent_id": agent.agent_id},
     )
-    used_tool_ok = rows[0]["c"] >= 1
-checks.append(("USED_TOOL: Agent's tool calls link to Tool nodes", used_tool_ok))
+    tool_name_ok = rows[0]["calls"] >= 1 and rows[0]["named"] == rows[0]["calls"]
+checks.append(("tool_name: every Agent tool call names its tool", tool_name_ok))
 
 # USED_SKILL (skills-graph): attaches to the Agent, not the Session --
 # reading skills/release/SKILL.md happened inside the subagent, so the

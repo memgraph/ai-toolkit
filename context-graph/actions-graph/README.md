@@ -107,11 +107,8 @@ Actions Graph should consume runtime activity through Memgraph Context Graph whe
 
 - **Action**: Individual actions with type-specific labels
   - Labels: `ToolCall`, `ToolResult`, `Message` (plus a role label `UserMessage`/`AssistantMessage`/`SystemMessage`), `StructuredOutput`, `SubagentEvent`, `PermissionRequest`, `ErrorEvent`, `RateLimitEvent`
-  - Properties: `action_id`, `action_type`, `timestamp`, `status`, `duration_ms`, `parent_action_id`, `tool_name`, `tool_use_id` (tool calls and results: the harness's id for the call), `is_error`, `is_mcp`, `text` (user and assistant messages only: the plain message text), `properties` (type-specific), `metadata`
+  - Properties: `action_id`, `action_type`, `timestamp`, `status`, `duration_ms`, `parent_action_id`, `tool_name`, `tool_use_id` (tool calls and results: the harness's id for the call), `is_error`, `is_mcp`, `mcp_server` (MCP tool calls: the server name), `text` (user and assistant messages only: the plain message text), `properties` (type-specific), `metadata`
   - The session link is the `HAS_ACTION` edge, not a property — there is no `session_id` on `(:Action)`.
-
-- **Tool**: Tool definitions
-  - Properties: `name`, `is_mcp`, `mcp_server`
 
 ### Relationships
 
@@ -120,7 +117,6 @@ Actions Graph should consume runtime activity through Memgraph Context Graph whe
 (:Action)-[:FOLLOWED_BY]->(:Action)   # temporal sequence
 (:Action)-[:PARENT_OF]->(:Action)     # nested, e.g. subagent
 (:Session)-[:FORKED_FROM]->(:Session)
-(:Action)-[:USED_TOOL]->(:Tool)       # ToolCall actions only
 ```
 
 ## API Reference

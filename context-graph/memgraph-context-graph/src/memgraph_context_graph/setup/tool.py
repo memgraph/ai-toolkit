@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 BASE = "memgraph-context-graph[mcp]>=0.6.0"
 CONNECTORS = {
     "skills-graph": "skills-graph[memgraph-context-graph]>=0.2.1",
-    "actions-graph": "actions-graph[memgraph-context-graph]>=0.4.2",
+    "actions-graph": "actions-graph[memgraph-context-graph]>=0.5.0",
     "sessions-graph": "sessions-graph[memgraph-context-graph]>=0.8.1",
 }
 VIEWER = ("context-graph-viewer", "context-graph-viewer>=0.1.0")
