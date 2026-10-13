@@ -1,7 +1,7 @@
 {
   "name": "context-graph",
   "description": "Capture Claude Code runtime activity through Memgraph Context Graph hooks, and recall past sessions.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "author": {
     "name": "Memgraph"
   },

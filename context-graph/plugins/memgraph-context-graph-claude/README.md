@@ -95,7 +95,7 @@ Install:
 The Memgraph Context Graph skill is exposed as:
 
 ```text
-/context-graph:memgraph-context-graph
+/context-graph:setup
 ```
 
 This is a Claude Code marketplace only. Codex uses the separate marketplace at `.agents/plugins/marketplace.json`.

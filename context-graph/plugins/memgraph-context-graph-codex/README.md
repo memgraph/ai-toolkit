@@ -104,7 +104,7 @@ Both are non-interactive; `codex plugin add` installs and enables the plugin in 
 The Memgraph Context Graph skill is exposed as:
 
 ```text
-context-graph:memgraph-context-graph
+context-graph:setup
 ```
 
 This is a Codex marketplace only. Claude Code uses the separate marketplace at `.claude-plugin/marketplace.json`.
