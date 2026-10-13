@@ -4,7 +4,7 @@ import math
 from types import SimpleNamespace
 
 import pytest
-from context_graph_eval.beam import BeamRow, summarize
+from context_graph_eval.beam import BeamRow, latency, summarize
 from context_graph_eval.beam_judge import BeamJudge, kendall_tau_b, ordering_score, rubric_prompt, rubric_score
 from context_graph_eval.cli import parse_chat_ids
 from context_graph_eval.convert.beam import BeamChat, to_goldens, to_session_fixtures
@@ -169,6 +169,28 @@ def test_summary_weights_abilities_equally_and_skips_unjudged_questions():
         ("summarization", 1, 1, 0.0),
     ]
     assert overall == 0.5
+
+
+def test_recall_latency_skips_rows_whose_retrieval_raised():
+    def row(e2e, recall):
+        return BeamRow(
+            name="",
+            user_id="u",
+            ability="abstention",
+            question="",
+            expected="",
+            answer="",
+            rubric=[],
+            latency_seconds=e2e,
+            recall_seconds=recall,
+        )
+
+    times = latency([row(4.0, 1.0), row(2.0, 3.0), row(0.1, None)])
+
+    assert times["mean_e2e_seconds"] == pytest.approx(6.1 / 3)
+    assert times["median_e2e_seconds"] == 2.0
+    assert times["mean_recall_seconds"] == 2.0
+    assert times["p95_recall_seconds"] == 3.0
 
 
 def test_a_limited_run_asks_an_equal_share_per_ability_spread_over_the_chats():
