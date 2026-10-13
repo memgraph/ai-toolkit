@@ -27,6 +27,7 @@ Commands:
   hook <command>  Configure or run command hooks.
   mcp              Serve the registered tools (recall, ...) over stdio MCP.
   recall <question>  Search your own past sessions; --json for the data.
+  ui               Open the read-only terminal viewer (needs context-graph-viewer).
 """
 
 
@@ -58,6 +59,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "recall":
         return _recall(args[1:])
+
+    if command == "ui":
+        return _ui(args[1:])
 
     if command == "join":
         return _join(args[1:])
@@ -247,6 +251,20 @@ def _mcp(argv: list[str]) -> int:
               file=sys.stderr)  # fmt: skip
         return 1
     return serve()
+
+
+def _ui(argv: list[str]) -> int:
+    try:
+        from context_graph_viewer.cli import main as viewer_main
+    except ImportError:
+        print(
+            "memgraph-context-graph ui needs the context-graph-viewer package in the same tool environment.\n"
+            "Add it to the `uv tool install memgraph-context-graph ...` command your plugin's bootstrap runs:\n"
+            "  --with context-graph-viewer",
+            file=sys.stderr,
+        )
+        return 1
+    return viewer_main(argv)
 
 
 def _recall(argv: list[str]) -> int:
