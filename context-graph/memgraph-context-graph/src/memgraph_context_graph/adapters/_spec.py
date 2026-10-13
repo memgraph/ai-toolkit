@@ -298,7 +298,9 @@ def write_hook_config(
     """Write a runtime's project-local JSON hook configuration.
 
     Existing settings files are merged only when the runtime declares
-    ``merge=True``. Otherwise callers must pass ``force=True`` to replace one.
+    ``merge=True``: every hook entry this runtime's command didn't write is
+    kept, and this runtime's own entries are replaced, so writing twice leaves
+    one copy. Otherwise callers must pass ``force=True`` to replace the file.
 
     Raises:
         ValueError: if *spec* declares no config path, or an existing file to
@@ -326,11 +328,80 @@ def write_hook_config(
     existing_hooks = document.get(spec.config.root_key, {})
     if not isinstance(existing_hooks, dict):
         raise ValueError(f"Expected {spec.config.root_key!r} to be an object in {config_path}")
-    document[spec.config.root_key] = {**existing_hooks, **hooks}
+    merged = _without_own_entries(spec, existing_hooks)
+    for event, entries in hooks.items():
+        merged[event] = [*merged.get(event, []), *entries]
+    document[spec.config.root_key] = merged
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
     return config_path
+
+
+def has_hook_config(spec: RuntimeSpec, project_dir: Path) -> bool:
+    """Whether *project_dir*'s hook file for *spec* holds an entry this runtime's command wrote."""
+    hooks = _read_hooks(spec, project_dir)
+    return hooks is not None and any(_is_own_entry(spec, entry) for entries in hooks.values() for entry in entries)
+
+
+def remove_hook_config(spec: RuntimeSpec, project_dir: Path) -> bool:
+    """Remove this runtime's entries from *project_dir*'s hook file, keeping everything else.
+
+    A file left with nothing but an empty hook map (and ``version``) is deleted. Returns whether anything
+    was removed.
+
+    Raises:
+        ValueError: if the file exists but isn't a JSON object with an object-valued hook map.
+    """
+    if not has_hook_config(spec, project_dir):
+        return False
+    config_path = project_dir / str(spec.config.path)
+    document = json.loads(config_path.read_text(encoding="utf-8"))
+    remaining = _without_own_entries(spec, document[spec.config.root_key])
+    if remaining:
+        document[spec.config.root_key] = remaining
+    else:
+        del document[spec.config.root_key]
+    if set(document) <= {"version"}:
+        config_path.unlink()
+    else:
+        config_path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    return True
+
+
+def _read_hooks(spec: RuntimeSpec, project_dir: Path) -> dict[str, list[Any]] | None:
+    if spec.config.path is None:
+        return None
+    config_path = project_dir / spec.config.path
+    if not config_path.is_file():
+        return None
+    document = json.loads(config_path.read_text(encoding="utf-8"))
+    if not isinstance(document, dict) or not isinstance(document.get(spec.config.root_key, {}), dict):
+        raise ValueError(f"Expected a JSON object with an object {spec.config.root_key!r} in {config_path}")
+    return {
+        event: entries for event, entries in document.get(spec.config.root_key, {}).items() if isinstance(entries, list)
+    }
+
+
+def _without_own_entries(spec: RuntimeSpec, hooks: dict[str, Any]) -> dict[str, Any]:
+    """*hooks* minus this runtime's own entries; events left empty are dropped."""
+    kept: dict[str, Any] = {}
+    for event, entries in hooks.items():
+        if not isinstance(entries, list):
+            kept[event] = entries
+            continue
+        others = [entry for entry in entries if not _is_own_entry(spec, entry)]
+        if others:
+            kept[event] = others
+    return kept
+
+
+def _is_own_entry(spec: RuntimeSpec, entry: Any) -> bool:
+    """Whether a hook entry (flat, or a matcher group holding ``hooks``) runs this runtime's capture command."""
+    marker = f"hook run {spec.name}"
+    if isinstance(entry, dict) and isinstance(entry.get("hooks"), list):
+        return any(_is_own_entry(spec, inner) for inner in entry["hooks"])
+    return isinstance(entry, dict) and marker in str(entry.get(spec.config.command_key, ""))
 
 
 def hook_command_argv(runtime: str, connectors: list[str]) -> list[str]:

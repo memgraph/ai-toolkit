@@ -103,9 +103,28 @@ def test_no_user_means_no_switch_and_nothing_changed(home):
     assert not _identity.load_config().graph_memory
 
 
-def test_setup_cli_and_doctor_agree(home, capsys):
-    assert top_level_main(["setup", "claude-code", "--memory-backend", "context-graph"]) == 0
-    assert "Set memory.backend = context-graph" in capsys.readouterr().out
+@pytest.fixture
+def claude_with_plugin(tmp_path, monkeypatch):
+    """A `claude` on PATH that reports the Context Graph plugin installed, so setup never runs the real one."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    claude = bin_dir / "claude"
+    claude.write_text(
+        "#!/bin/sh\n"
+        'if [ "$*" = "plugin list --json" ]; then echo \'[{"id": "context-graph@context-graph-plugins"}]\'; exit 0; fi\n'
+        'if [ "$*" = "plugin marketplace list --json" ]; then echo "[]"; exit 0; fi\n'
+        'if [ "$1 $2" = "plugin uninstall" ]; then exit 0; fi\n'
+        "exit 1\n"
+    )
+    claude.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}/usr/bin{os.pathsep}/bin")
+
+
+def test_setup_cli_and_doctor_agree(home, claude_with_plugin, capsys):
+    top_level_main(["setup", "claude-code", "--memory-backend", "context-graph", "--no-tui", "--no-viewer"])
+    out = capsys.readouterr().out
+    assert "OK    Claude Code memory: memory.backend = context-graph" in out
+    assert "Set memory.backend = context-graph" in out
     _identity._reset_cache()
 
     from memgraph_context_graph.cli import _check_memory_backend
@@ -115,3 +134,16 @@ def test_setup_cli_and_doctor_agree(home, capsys):
     (home / ".claude" / "settings.json").write_text("{}")
     check = _check_memory_backend("claude-code")
     assert check is not None and not check["ok"] and "two memories" in check["detail"]
+
+
+def test_uninstall_gives_claude_code_its_own_memory_back(home, claude_with_plugin, capsys):
+    """Without the plugin there would be no memory at all, so uninstall turns Claude Code's own back on."""
+    use_graph_memory(PLUGIN, home=home)
+    assert _settings(home)["autoMemoryEnabled"] is False
+
+    assert top_level_main(["uninstall", "claude-code"]) == 0
+
+    out = capsys.readouterr().out
+    assert "OK    Claude Code memory: its own memory is back on" in out
+    assert _settings(home) == {"theme": "dark"}
+    assert _identity.load_config().memory_backend == "native"
