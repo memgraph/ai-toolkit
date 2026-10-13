@@ -15,7 +15,7 @@ GitHub Copilot CLI, Cursor, OpenCode, Antigravity CLI, and Grok Build are built-
 Registrations but do not have marketplace packages in this directory. Their
 host-facing files are generated with `memgraph-context-graph hook init <runtime>`.
 
-The platform-specific directory names stay explicit, while the marketplace-facing plugin name is short so skills appear as `context-graph:memgraph-context-graph`.
+The platform-specific directory names stay explicit, while the marketplace-facing plugin name is short so skills appear as `context-graph:setup`.
 
 ## Marketplace Files
 

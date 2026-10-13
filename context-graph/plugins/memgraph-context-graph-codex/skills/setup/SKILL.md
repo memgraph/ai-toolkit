@@ -1,20 +1,21 @@
 ---
-description: Set up and check Claude Code context capture into Memgraph.
+name: setup
+description: Set up and check Codex context capture into Memgraph.
 ---
 
 # Memgraph Context Graph
 
-Use this skill when the user asks whether Claude Code activity is being captured, how Memgraph Context Graph hooks work, or why graph facts are missing.
+Use this skill when the user asks whether Codex activity is being captured, how Memgraph Context Graph hooks work, or why graph facts are missing.
 
 ## Model
 
-Claude Code Plugin -> Claude Code Runtime Adapter -> Event Protocol -> Graph Connector -> Memgraph.
+Codex Plugin -> Codex Runtime Adapter -> Event Protocol -> Graph Connector -> Memgraph.
 
 The plugin only installs runtime hook wiring. It must not assign graph meaning. Graph connectors decide which normalized events matter.
 
 ## Checks
 
-For first-time setup, run the plugin bootstrap once. It installs the CLI and runs `memgraph-context-graph setup claude-code --no-tui`, which finds or starts Memgraph, sets the user's identity and checks the hooks:
+For first-time setup, run the plugin bootstrap once. It installs the CLI and runs `memgraph-context-graph setup codex --no-tui`, which finds or starts Memgraph, sets the user's identity and checks the hooks:
 
 ```bash
 ./scripts/bootstrap.sh
@@ -25,14 +26,14 @@ If setup reports a failure, show the user its "To fix" line; it is the exact com
 Run the single CLI doctor first. It checks the same Python environment that the hook command uses:
 
 ```bash
-memgraph-context-graph doctor --runtime claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
+memgraph-context-graph doctor --runtime codex --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
 If `doctor` is not available, use the strict hook smoke:
 
 ```bash
 printf '{"hook_event_name":"Stop","session_id":"doctor"}' \
-  | memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph --strict
+  | memgraph-context-graph hook run codex --connector skills-graph --connector actions-graph --connector sessions-graph --strict
 ```
 
 Do not check `skills_graph` with system `python3`; `memgraph-context-graph` may be installed in an isolated `uv tool` or `pipx` environment.
