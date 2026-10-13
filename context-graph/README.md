@@ -27,7 +27,7 @@ Everything is joined by a shared `(:Session {session_id})` node, so one graph an
 | Component | What it captures | Owns |
 |---|---|---|
 | **[memgraph-context-graph](./memgraph-context-graph/)** | The event hub. Normalizes runtime hooks/SDK activity into a shared event stream and routes it to the connectors below. | Adapters + connectors wiring |
-| **[actions-graph](./actions-graph/)** | Tool calls, tool results, messages, subagent/error events — the raw activity of a session. | `(:Action)`, `(:Tool)` |
+| **[actions-graph](./actions-graph/)** | Tool calls, tool results, messages, subagent/error events — the raw activity of a session. | `(:Action)` |
 | **[skills-graph](./skills-graph/)** | Which reusable [Agent Skills](https://docs.claude.com/en/docs/claude-code/skills) a session used, and stored skill definitions. | `(:Skill)` |
 | **[resources-graph](./resources-graph/)** | GitHub resources touched by agents, their shared cache, and the `resource` MCP read tool. Enabled explicitly; see its installation guide. | `(:Resource)`, `(:Touch)`, `(:Listing)` |
 | **[sessions-graph](./sessions-graph/)** | User/session provenance, durable **Memories**, and session **reconciliation** into entities. | `(:User)`, `(:Session)`, `(:Memory)` |

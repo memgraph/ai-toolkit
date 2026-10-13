@@ -8,7 +8,6 @@ Graph Schema:
         - (:Session) - LLM conversation sessions
         - (:Agent) - Subagent lifecycle (start/stop folded into one node)
         - (:Action) - Individual actions with labels for type (ToolCall, Message, etc.)
-        - (:Tool) - Tool definitions
 
     Relationships:
         - (:Session)-[:HAS_ACTION]->(:Action) - top-level actions
@@ -19,7 +18,10 @@ Graph Schema:
           (the Session's own chain, and each Agent's own separate chain)
         - (:Action)-[:PARENT_OF]->(:Action) - ToolResult/error back to its ToolCall
           (tool-call/result correlation; unrelated to subagent nesting)
-        - (:Action)-[:USED_TOOL]->(:Tool)
+
+    Tools are a property of the call (``tool_name``, ``is_mcp``, ``mcp_server``),
+    not shared nodes: a per-tool node becomes a hub joining every session that
+    ever called it, and nothing traverses it.
 """
 
 from __future__ import annotations
@@ -157,9 +159,6 @@ class ActionsGraph:
         self._db.query("CREATE INDEX ON :Agent(agent_id);")
         self._db.query("CREATE INDEX ON :Agent(agent_type);")
 
-        # Tool indexes
-        self._db.query("CREATE INDEX ON :Tool(name);")
-
         # Promoted action field indexes
         self._db.query("CREATE INDEX ON :Action(tool_name);")
         self._db.query("CREATE INDEX ON :Action(tool_use_id);")
@@ -179,7 +178,7 @@ class ActionsGraph:
 
     def clear(self) -> None:
         """Remove all session and action data from the graph."""
-        self._db.query("MATCH (n) WHERE n:Session OR n:Agent OR n:Action OR n:Tool DETACH DELETE n;")
+        self._db.query("MATCH (n) WHERE n:Session OR n:Agent OR n:Action DETACH DELETE n;")
         self._last_action_id.clear()
 
     # ------------------------------------------------------------------
@@ -748,7 +747,8 @@ class ActionsGraph:
         # (resources-graph links a Touch to the ToolCall that fetched it).
         _tool_use_id: str | None = props.get("tool_use_id") or None
         _is_error: bool = bool(props.get("is_error", False))
-        _is_mcp: bool = bool(props.get("is_mcp", False))
+        _is_mcp: bool = bool(getattr(action, "is_mcp", False))
+        _mcp_server: str | None = getattr(action, "mcp_server", None)
         text = _message_text(action)
 
         # Create the action node
@@ -766,6 +766,7 @@ class ActionsGraph:
                 tool_use_id: $tool_use_id,
                 is_error: $is_error,
                 is_mcp: $is_mcp,
+                mcp_server: $mcp_server,
                 text: $text,
                 properties: $properties
             }})
@@ -782,6 +783,7 @@ class ActionsGraph:
                 "tool_use_id": _tool_use_id,
                 "is_error": _is_error,
                 "is_mcp": _is_mcp,
+                "mcp_server": _mcp_server,
                 "text": text,
                 "properties": json.dumps(props),
             },
@@ -830,23 +832,6 @@ class ActionsGraph:
                 MERGE (parent)-[:PARENT_OF]->(child)
                 """,
                 params={"parent_id": action.parent_action_id, "child_id": action.action_id},
-            )
-
-        # Handle tool references
-        if isinstance(action, ToolCall):
-            self._db.query(
-                """
-                MATCH (a:Action {action_id: $action_id})
-                MERGE (t:Tool {name: $tool_name})
-                ON CREATE SET t.is_mcp = $is_mcp, t.mcp_server = $mcp_server
-                MERGE (a)-[:USED_TOOL]->(t)
-                """,
-                params={
-                    "action_id": action.action_id,
-                    "tool_name": action.tool_name,
-                    "is_mcp": action.is_mcp,
-                    "mcp_server": action.mcp_server,
-                },
             )
 
         return action
@@ -1080,19 +1065,17 @@ class ActionsGraph:
         """
         params: dict[str, Any] = {}
         if session_id:
-            match_clause = (
-                "MATCH (s:Session {session_id: $session_id})-[:HAS_ACTION]->(a:Action:ToolCall)-[:USED_TOOL]->(t:Tool)"
-            )
+            match_clause = "MATCH (s:Session {session_id: $session_id})-[:HAS_ACTION]->(a:Action:ToolCall)"
             params["session_id"] = session_id
         else:
-            match_clause = "MATCH (a:Action:ToolCall)-[:USED_TOOL]->(t:Tool)"
+            match_clause = "MATCH (a:Action:ToolCall)"
 
         rows = self._db.query(
             f"""
             {match_clause}
-            RETURN t.name AS tool_name,
-                   t.is_mcp AS is_mcp,
-                   t.mcp_server AS mcp_server,
+            RETURN a.tool_name AS tool_name,
+                   a.is_mcp AS is_mcp,
+                   a.mcp_server AS mcp_server,
                    count(a) AS call_count,
                    avg(a.duration_ms) AS avg_duration_ms,
                    sum(CASE WHEN a.status = 'failed' THEN 1 ELSE 0 END) AS error_count
@@ -1343,7 +1326,7 @@ class ActionsGraph:
                 tool_input=props.get("tool_input", {}),
                 tool_use_id=props.get("tool_use_id"),
                 is_mcp=(row["is_mcp"] if row.get("is_mcp") is not None else props.get("is_mcp", False)),
-                mcp_server=props.get("mcp_server"),
+                mcp_server=row.get("mcp_server") or props.get("mcp_server"),
             )
         elif action_type == ActionType.TOOL_RESULT:
             return ToolResult(
