@@ -189,7 +189,7 @@ wheels = [
 
 [[package]]
 name = "actions-graph"
-version = "0.4.2"
+version = "0.5.0"
 source = { editable = "context-graph/actions-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },

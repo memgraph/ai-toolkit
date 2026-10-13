@@ -24,7 +24,7 @@ test = [
     "pytest>=9.0.3",
     "pytest-asyncio>=0.26.0",
     # The tests write sessions through the real hooks pipeline rather than hand-written Cypher.
-    "actions-graph[memgraph-context-graph]>=0.4.2",
+    "actions-graph[memgraph-context-graph]>=0.5.0",
     "sessions-graph[memgraph-context-graph]>=0.8.1",
     "resources-graph[memgraph-context-graph]",
 ]

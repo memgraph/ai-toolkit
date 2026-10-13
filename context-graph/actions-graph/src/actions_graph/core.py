@@ -786,7 +786,7 @@ class ActionsGraph:
         # Promoted so other components can join on the harness's own id for the call
         # (resources-graph links a Touch to the ToolCall that fetched it).
         _tool_use_id: str | None = props.get("tool_use_id") or None
-        _is_error: bool = bool(props.get("is_error", False))
+        _is_error: bool = bool(getattr(action, "is_error", False))
         _is_mcp: bool = bool(getattr(action, "is_mcp", False))
         _mcp_server: str | None = getattr(action, "mcp_server", None)
         text = _message_text(action)

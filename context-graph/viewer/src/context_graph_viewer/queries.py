@@ -136,7 +136,7 @@ def dashboard(reader: Reader, scope: Scope) -> Dashboard:
         WITH s, owner, unattributed,
              count(CASE WHEN a.action_type <> 'tool_result' THEN 1 END) AS actions,
              max(a.timestamp) AS last_event,
-             count(CASE WHEN a.is_error = true OR (a.action_type = 'tool_result' AND a.status = 'failed') THEN 1 END) AS errors
+             count(CASE WHEN a.is_error = true THEN 1 END) AS errors
         OPTIONAL MATCH (s)-[:HAS_ACTION]->(:Action)-[:HAS_CHUNK]->(c:Chunk)
         WITH s, owner, unattributed, actions, last_event, errors, count(DISTINCT c) AS chunks
         OPTIONAL MATCH (t:Touch)-[:IN_SESSION]->(s)
@@ -295,7 +295,7 @@ def session_anatomy(reader: Reader, session_id: str) -> SessionAnatomy | None:
                a.timestamp AS at, a.status AS status, a.is_error AS is_error, agent_id,
                CASE WHEN a.action_type = 'tool_call' THEN a.properties END AS props,
                substring(coalesce(a.text, ''), 0, 400) AS text,
-               r.timestamp AS result_at, coalesce(r.is_error = true OR r.status = 'failed', false) AS result_error
+               r.timestamp AS result_at, coalesce(r.is_error = true, false) AS result_error
         ORDER BY at
         LIMIT $limit
         """,

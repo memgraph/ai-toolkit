@@ -27,7 +27,7 @@ fi
 echo "Installing memgraph-context-graph with skills-graph, actions-graph and sessions-graph"
 uv tool install "memgraph-context-graph[mcp]>=0.6.0" \
   --with "skills-graph[memgraph-context-graph]>=0.2.1" \
-  --with "actions-graph[memgraph-context-graph]>=0.4.2" \
+  --with "actions-graph[memgraph-context-graph]>=0.5.0" \
   --with "sessions-graph[memgraph-context-graph]>=0.8.1" \
   --upgrade
 
