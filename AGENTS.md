@@ -32,11 +32,12 @@ Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable Memgraph graph.
 
 | Package | Role |
 |---|---|
-| `memgraph-context-graph` | Event hub. Normalizes runtime hooks / SDK activity into a shared Event Protocol and routes it to graph connectors. Also serves components' read tools (e.g. sessions-graph's `recall`) to the harness's model over stdio MCP (`memgraph-context-graph mcp`). |
+| `memgraph-context-graph` | Event hub. Normalizes runtime hooks / SDK activity into a shared Event Protocol and routes it to graph connectors. Also serves components' read tools (e.g. sessions-graph's `recall`) to the harness's model over stdio MCP (`memgraph-context-graph mcp`), and installs the family: `setup`/`uninstall` find or start Memgraph and wire every agent, interactive in Textual on a terminal (`context-graph/scripts/install.sh` and the plugins' `bootstrap.sh` are shims onto it). |
 | `actions-graph` | Records tool calls/results/messages/subagent activity as `(:Action)`/`(:Agent)` nodes — observability, not memory. |
 | `skills-graph` | Tracks Agent-Skills-spec `(:Skill)` usage per session. |
 | `sessions-graph` | Owns `(:User)`/`(:Session)`, durable `(:Memory)` writes/recall, and session reconciliation into extracted entities (local, no LLM). |
 | `spaces` (`context-graph-spaces`) | The Enterprise edition: personal and shared spaces for many users on one licensed Memgraph, isolated by Memgraph's own multi-tenancy and access control. Provisions from an admin's spec (`context-graph-spaces plan|apply`). Community (the default `edition`) never imports it. |
+| `viewer` (`context-graph-viewer`) | Read-only Textual terminal viewer for plugin users (`memgraph-context-graph ui`): capture health (the hooks' local capture-failure log plus the graph), pipeline state, session anatomy and the knowledge graph. Polls Memgraph, never writes; every Cypher it sends lives in `queries.py`. |
 | `resources-graph` | Remembers public GitHub resources the agent touched: hooks record private `(:Touch)` nodes, the out-of-band `resources-graph sweep` stores shared `(:Resource)`s, and the `resource` tool serves them from memory. |
 
 Everything joins on a shared, idempotently-`MERGE`d `(:Session {session_id})`

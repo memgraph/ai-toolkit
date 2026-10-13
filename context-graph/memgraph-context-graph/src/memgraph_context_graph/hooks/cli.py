@@ -41,7 +41,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if command == "run":
         if len(args) == 1:
             print("usage: memgraph-context-graph hook run <runtime> [options]", file=sys.stderr)
-            return 2
+            return _hook_misconfigured(None, "MissingRuntime", "hook run was given no runtime")
         runtime = args[1]
         runtime_args = args[2:]
         return _run_runtime(runtime, runtime_args)
@@ -59,11 +59,27 @@ def _run_runtime(runtime: str, runtime_args: list[str]) -> int:
 
     try:
         plugin = get_runtime_plugin(runtime)
-    except UnknownRuntimeError as exc:
+    except Exception as exc:
+        # An unknown runtime, or a registered one that fails to import (a broken install, version skew).
         print(str(exc), file=sys.stderr)
-        return 2
+        error_type = "UnknownRuntime" if isinstance(exc, UnknownRuntimeError) else None
+        return _hook_misconfigured(runtime, error_type, str(exc), exc)
 
     return run_hook(plugin, runtime_args)
+
+
+def _hook_misconfigured(runtime: str | None, error_type: str | None, error: str, exc: Exception | None = None) -> int:
+    """Log a hook command the runtime can't even dispatch, and exit 1.
+
+    Never 2: on Claude Code's ``PreToolUse`` exit 2 blocks the tool call, and a
+    capture problem must never block the agent. 1 is a non-blocking error the
+    runtime shows as a hook notice, which is the right signal for a hooks
+    config that names no runtime or one that isn't installed.
+    """
+    from memgraph_context_graph import capture_log
+
+    capture_log.record_failure("args", exc, runtime=runtime, error_type=error_type, error=error)
+    return 1
 
 
 def _init(argv: list[str]) -> int:
@@ -80,39 +96,12 @@ def _init(argv: list[str]) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    if any(arg.split("=", 1)[0] == "--memory-backend" for arg in init_argv):
-        return _switch_memory_backend(plugin, init_argv)
-
     init = getattr(plugin, "init", None)
     if init is None:
         print(f"{plugin.name} hook setup is not implemented yet.", file=sys.stderr)
         return 2
 
     return _run_generic_init(plugin.name, init, init_argv)
-
-
-def _switch_memory_backend(plugin: Any, argv: list[str]) -> int:
-    """``setup <runtime> --memory-backend context-graph|native``: whose memory the harness's model uses."""
-    from memgraph_context_graph.adapters._identity import MEMORY_BACKEND_GRAPH, MEMORY_BACKEND_NATIVE
-    from memgraph_context_graph.memory_backend import MemoryBackendError, use_graph_memory, use_native_memory
-
-    parser = argparse.ArgumentParser(
-        prog=f"memgraph-context-graph setup {plugin.name}",
-        description=(
-            f"Make Context Graph {plugin.name}'s memory (turning its built-in memory off and importing it), "
-            "or hand memory back to the built-in one."
-        ),
-    )
-    parser.add_argument("--memory-backend", required=True, choices=[MEMORY_BACKEND_GRAPH, MEMORY_BACKEND_NATIVE])
-    args = parser.parse_args(argv)
-    switch = use_graph_memory if args.memory_backend == MEMORY_BACKEND_GRAPH else use_native_memory
-    try:
-        lines = switch(plugin)
-    except MemoryBackendError as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
-    print("\n".join(lines))
-    return 0
 
 
 def _run_generic_init(runtime_name: str, init: Any, argv: list[str]) -> int:

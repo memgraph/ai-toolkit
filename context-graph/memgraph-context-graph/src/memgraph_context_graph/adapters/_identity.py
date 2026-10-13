@@ -49,7 +49,12 @@ _DEFAULT_CONFIG_DIR = Path.home() / ".config" / "context-graph"
 def config_file() -> Path:
     """The config file hooks read, honouring :data:`CONFIG_PATH_ENV`."""
     override = os.environ.get(CONFIG_PATH_ENV)
-    return Path(override) if override else _DEFAULT_CONFIG_DIR / "config.toml"
+    return Path(override) if override else default_config_file()
+
+
+def default_config_file() -> Path:
+    """The config file used when :data:`CONFIG_PATH_ENV` is unset."""
+    return _DEFAULT_CONFIG_DIR / "config.toml"
 
 
 # Defaults matching memgraph-toolbox's MEMGRAPH_ENV_DEFAULTS.
@@ -116,6 +121,10 @@ class HookConfig:
     #: "left at the default" from "written": Enterprise refuses an explicit ``identity.user_id`` or
     #: ``memgraph.database``, which would quietly override what the login decides.
     present: frozenset[str] = frozenset()
+    #: Why the file could not be read as written: unreadable, or lines that are not ``key = value``.
+    #: Values those lines meant to set fell back to defaults, which can point hooks at the wrong
+    #: Memgraph, so hooks log these to the capture-failure log and ``doctor`` fails on them.
+    problems: tuple[str, ...] = ()
 
     @property
     def graph_memory(self) -> bool:
@@ -321,18 +330,11 @@ def write_full_config(
     anthropic_api_key: str = _LLM_DEFAULTS["anthropic_api_key"],
     auto_reconcile: bool | None = _RECONCILE_DEFAULTS["auto_reconcile"],
 ) -> Path:
-    """Write a complete config file with all sections (used by bootstrap).
+    """Write a complete config file, resetting identity, Memgraph and LLM settings to what is given.
 
-    Overwrites every section except ``[reconcile]``, ``[recall]``, ``[ontology]``, ``[github]`` and ``[memory]``: unlike identity/Memgraph/LLM
-    settings, ``auto_reconcile`` has no legitimate ambient-env source for
-    ``bootstrap`` to capture (nobody has ``SESSIONS_GRAPH_AUTO_RECONCILE``
-    exported for an unrelated reason the way they might already have
-    ``OPENAI_API_KEY``/`MEMGRAPH_PASSWORD` set) — it is only ever set via
-    ``config set reconcile.auto_reconcile``. Re-running bootstrap must not
-    silently revert it to off, so ``auto_reconcile`` is preserved from the
-    existing file unless explicitly given here. ``[recall]``, ``[ontology]`` and
-    ``[github]`` are preserved the same way: they are only ever set via ``config set`` or by
-    editing the file. ``[memory]`` is set by ``setup --memory-backend`` and kept likewise.
+    Every other section (``[reconcile]``, ``[recall]``, ``[ontology]``, ``[github]``, ``[memory]``) and the
+    edition are kept from the existing file, since only ``config set`` or a hand edit ever sets them.
+    ``auto_reconcile`` is kept likewise unless given here. :func:`write_config` is the partial update.
     """
     global _cached_config
 
@@ -380,14 +382,19 @@ def config_dir_path() -> Path:
 
 
 def _read_config_file() -> HookConfig:
-    """Parse the config file. Returns defaults if file is missing or malformed."""
-    if not config_file().is_file():
-        return HookConfig()
+    """Parse the config file.
 
+    A missing file gives defaults. An unreadable or partly unparsable one also
+    gives defaults for whatever it failed to set, never an exception (a hook
+    must not crash on its config), and says so in :attr:`HookConfig.problems`.
+    """
+    problems: list[str] = []
     try:
-        sections = _parse_toml(config_file())
-    except Exception:
-        return HookConfig()
+        if not config_file().is_file():
+            return HookConfig()
+        sections = _parse_toml(config_file(), problems)
+    except Exception as exc:
+        return HookConfig(problems=(f"unreadable: {type(exc).__name__}: {exc}",))
 
     identity = sections.get("identity", {})
     memgraph = sections.get("memgraph", {})
@@ -421,19 +428,21 @@ def _read_config_file() -> HookConfig:
             for key, value in keys.items()
             if value
         ),
+        problems=tuple(problems),
     )
 
 
-def _parse_toml(path: Path) -> dict[str, dict[str, str]]:
+def _parse_toml(path: Path, problems: list[str] | None = None) -> dict[str, dict[str, str]]:
     """Minimal TOML parser — handles [section] and key = "value" pairs.
 
     Only supports string values (quoted or bare). Sufficient for our config shape.
-    Keys before the first section header land in the ``""`` section.
+    Keys before the first section header land in the ``""`` section. A line that
+    is none of these is skipped and, when *problems* is given, reported there.
     """
     sections: dict[str, dict[str, str]] = {"": {}}
     current_section = ""
 
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
@@ -441,15 +450,18 @@ def _parse_toml(path: Path) -> dict[str, dict[str, str]]:
             current_section = stripped[1:-1].strip()
             sections.setdefault(current_section, {})
             continue
-        if "=" in stripped:
-            key, _, value = stripped.partition("=")
-            key = key.strip()
-            value = value.strip()
-            if value[:1] not in {'"', "'"} and "#" in value:
-                # Bare (unquoted) value with a trailing comment, e.g. `auto_reconcile = true  # off for now`.
-                value = value.partition("#")[0].strip()
-            value = value.strip('"').strip("'")
-            sections[current_section][key] = value
+        if "=" not in stripped or not stripped.partition("=")[0].strip():
+            if problems is not None:
+                problems.append(f"line {number} is not `key = value` and was ignored")
+            continue
+        key, _, value = stripped.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if value[:1] not in {'"', "'"} and "#" in value:
+            # Bare (unquoted) value with a trailing comment, e.g. `auto_reconcile = true  # off for now`.
+            value = value.partition("#")[0].strip()
+        value = value.strip('"').strip("'")
+        sections[current_section][key] = value
 
     return sections
 

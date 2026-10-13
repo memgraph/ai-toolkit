@@ -36,6 +36,7 @@ _Avoid_: required credential
 - [Actions Graph](./actions-graph/CONTEXT.md) — records agent session activity as action nodes for observability + tool usage analytics.
 - [Sessions Graph](./sessions-graph/CONTEXT.md) — stores Memory files, indexes History and Memory into extracted entities, serves recall. Named `sessions-graph`: `memory-graph` taken on PyPI. Domain = memory recall.
 - [Context Graph Spaces](./spaces/CONTEXT.md) — Enterprise edition: personal + shared spaces for many users on one licensed Memgraph, isolated by Memgraph access control.
+- [Context Graph Viewer](./viewer/README.md) — read-only terminal views of capture health, pipeline state, sessions and the knowledge graph. Reads what the others write; never writes.
 - [Context Graph Eval](./eval/CONTEXT.md) — measures whether recall finds what History and Memory hold. Not part of the pipeline it measures.
 
 ## Relationships

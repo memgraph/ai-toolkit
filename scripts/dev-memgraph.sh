@@ -59,7 +59,7 @@ CONFIG_DIR="$(dirname "$CONFIG_FILE")"
 CONFIG_BACKUP="${CONFIG_FILE}.pre-local-test-backup"
 CONFIG_ABSENT="${CONFIG_BACKUP}.absent"
 
-ALL_PACKAGES=(unstructured2graph actions-graph memgraph-context-graph skills-graph sessions-graph resources-graph hygm context-graph-eval)
+ALL_PACKAGES=(unstructured2graph actions-graph memgraph-context-graph skills-graph sessions-graph resources-graph hygm context-graph-eval context-graph-viewer)
 
 _HELP="usage: $(basename "$0") <command> [args]
 
@@ -471,6 +471,10 @@ cmd_test() {
       context-graph-eval)
         (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package context-graph-eval --extra test --extra pipeline \
           pytest context-graph/eval/tests/ -v) || failed+=("$pkg")
+        ;;
+      context-graph-viewer)
+        (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package context-graph-viewer --extra test \
+          pytest context-graph/viewer/tests/ -v) || failed+=("$pkg")
         ;;
       *)
         echo "Unknown package: $pkg (expected one of: ${ALL_PACKAGES[*]})" >&2

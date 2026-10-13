@@ -32,7 +32,6 @@ Usage::
 
 from __future__ import annotations
 
-import logging
 import os
 import shutil
 import subprocess
@@ -52,7 +51,6 @@ from memgraph_context_graph.protocols import GraphConnector
 if TYPE_CHECKING:
     from .core import SessionsGraph
 
-logger = logging.getLogger(__name__)
 
 _SUPPORTED_EVENTS = {EventType.SESSION_START, EventType.SESSION_END, EventType.TURN_END, EventType.TOOL_END}
 
@@ -212,7 +210,10 @@ def _spawn_detached(args: list[str], *, env: dict[str, str]) -> None:
             env=env,
         )
     except OSError as e:
-        logger.warning(f"Could not spawn detached `sessions-graph {' '.join(args)}`: {e}")
+        from memgraph_context_graph.capture_log import record_failure
+
+        session_id = args[args.index("--session") + 1] if "--session" in args else None
+        record_failure("spawn", e, connector="sessions-graph", session_id=session_id)
 
 
 def _child_env(*, llm: bool) -> dict[str, str]:

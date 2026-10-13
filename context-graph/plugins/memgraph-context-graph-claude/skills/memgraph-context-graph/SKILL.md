@@ -14,17 +14,13 @@ The plugin only installs runtime hook wiring. It must not assign graph meaning. 
 
 ## Checks
 
-For first-time setup, run the plugin bootstrap once. It delegates to the CLI bootstrap and falls back to `uvx` if `memgraph-context-graph` is not installed yet:
+For first-time setup, run the plugin bootstrap once. It installs the CLI and runs `memgraph-context-graph setup claude-code --no-tui`, which finds or starts Memgraph, sets the user's identity and checks the hooks:
 
 ```bash
 ./scripts/bootstrap.sh
 ```
 
-If bootstrap says Memgraph is not reachable, tell the user to start Memgraph:
-
-```bash
-docker run --rm -p 7687:7687 memgraph/memgraph-mage
-```
+If setup reports a failure, show the user its "To fix" line; it is the exact command to run next.
 
 Run the single CLI doctor first. It checks the same Python environment that the hook command uses:
 
@@ -45,7 +41,7 @@ Do not check `skills_graph` with system `python3`; `memgraph-context-graph` may 
 
 Connection settings live in `~/.config/context-graph/config.toml`. Hook subprocesses read from this file (not environment variables).
 
-If `MEMGRAPH_URL`, `MEMGRAPH_USER`, `MEMGRAPH_PASSWORD`, or `MEMGRAPH_DATABASE` environment variables are set when bootstrap runs, they are automatically written to the config file. No manual `config set` needed in that case.
+setup writes `memgraph.url` and `identity.user_id`; other values (credentials, keys) are set with `config set`.
 
 View current config:
 

@@ -131,7 +131,7 @@ class OpenCodeHooksAdapter(SpecAdapter):
     SPEC = SPEC
 
 
-_PLUGIN_PATH = ".opencode/plugins/memgraph-context-graph/index.js"
+PLUGIN_PATH = ".opencode/plugins/memgraph-context-graph/index.js"
 
 
 def init(
@@ -151,7 +151,7 @@ def init(
     Raises:
         FileExistsError: if the plugin file exists and *force* is false.
     """
-    target = project_dir / _PLUGIN_PATH
+    target = project_dir / PLUGIN_PATH
     if target.exists() and not force:
         raise FileExistsError(f"Refusing to overwrite existing OpenCode plugin: {target} (pass force=True)")
 
