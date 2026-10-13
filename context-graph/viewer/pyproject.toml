@@ -13,7 +13,7 @@ classifiers = [
 ]
 dependencies = [
     # Config, identity and spaces come from the hub, so the viewer reads exactly what the hooks write to.
-    "memgraph-context-graph>=0.5.0",
+    "memgraph-context-graph>=0.6.0",
     "memgraph-toolbox",
     # Pinned to one major: Textual's maintenance has slowed and majors break widget APIs (#382).
     "textual>=8.2,<9",
@@ -24,8 +24,8 @@ test = [
     "pytest>=9.0.3",
     "pytest-asyncio>=0.26.0",
     # The tests write sessions through the real hooks pipeline rather than hand-written Cypher.
-    "actions-graph[memgraph-context-graph]>=0.4.1",
-    "sessions-graph[memgraph-context-graph]>=0.8.0",
+    "actions-graph[memgraph-context-graph]>=0.4.2",
+    "sessions-graph[memgraph-context-graph]>=0.8.1",
     "resources-graph[memgraph-context-graph]",
 ]
 

@@ -17,8 +17,8 @@ fi
 
 uv tool install "memgraph-context-graph[mcp]>=0.6.0" \
   --with "skills-graph[memgraph-context-graph]>=0.2.1" \
-  --with "actions-graph[memgraph-context-graph]>=0.4.1" \
-  --with "sessions-graph[memgraph-context-graph]>=0.8.0" \
+  --with "actions-graph[memgraph-context-graph]>=0.4.2" \
+  --with "sessions-graph[memgraph-context-graph]>=0.8.1" \
   --upgrade \
   --refresh-package memgraph-context-graph \
   --refresh-package skills-graph \
