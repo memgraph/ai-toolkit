@@ -6,6 +6,8 @@ decides how a score is *composed*: the deterministic efficiency count, the
 coverage gate, and how tiers are kept apart.
 """
 
+from dataclasses import replace
+
 import pytest
 from context_graph_eval.retrieval import Retrieved
 from context_graph_eval.scoring import (
@@ -503,3 +505,16 @@ def test_evidence_recall_is_reported_per_tier():
 
     assert (report.evidence_complete, report.evidence_judged) == (1, 2)
     assert report.mean_evidence_recall == 0.75
+
+
+def test_recall_latency_is_summarised_over_rows_that_report_it():
+    """Recall-only timings come from strategies whose read path is separable;
+    rows without one don't drag the percentiles toward zero."""
+    rows = [_scored(f"q{i}") for i in range(20)]
+    rows[:10] = [replace(row, recall_seconds=(i + 1) / 10) for i, row in enumerate(rows[:10])]
+    summary = aggregate(rows).by_tier[1]
+
+    assert summary.mean_recall_seconds == pytest.approx(0.55)
+    assert summary.median_recall_seconds == pytest.approx(0.55)
+    assert summary.p95_recall_seconds == 1.0
+    assert aggregate([_scored("none")]).by_tier[1].mean_recall_seconds is None

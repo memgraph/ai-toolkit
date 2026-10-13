@@ -1005,6 +1005,12 @@ def _print_report(report, *, judged: bool) -> None:
             )
         if summary.mean_latency_seconds is not None:
             print(f"  latency       mean {summary.mean_latency_seconds:.1f}s per question")
+        if summary.mean_recall_seconds is not None:
+            print(
+                f"  recall only   mean {summary.mean_recall_seconds * 1000:.0f}ms, "
+                f"median {summary.median_recall_seconds * 1000:.0f}ms, "
+                f"p95 {summary.p95_recall_seconds * 1000:.0f}ms (no answering LLM)"
+            )
 
         # Gate-then-rank made visible (#309): only questions that cleared
         # coverage are ranked, cheapest payload first. Showing the extremes is
