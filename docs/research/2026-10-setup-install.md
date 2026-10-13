@@ -15,7 +15,7 @@ The scripts that produced every number here are in [`setup-install/`](setup-inst
 | Textual in the base install or an extra? | **Base.** It adds ~6 MB (rich is already installed) and costs hooks nothing: `import memgraph_context_graph.cli` takes 38 ms and doesn't load Textual. Textual is imported only when the TUI starts (~100 ms warm). |
 | Docker SDK or CLI? | **The `docker` CLI via subprocess.** It needs no new dependency and works wherever `docker` works (Desktop, Colima, OrbStack, Podman's `docker` shim). |
 | What does a busy port look like? | `docker run` exits 125 with `Bind for 0.0.0.0:7687 failed: port is already allocated` (`address already in use` when a non-Docker process holds it). **Docker keeps the failed container**, so it has to be removed before retrying under the same name. |
-| How do you get a free port? | `-p 127.0.0.1::7687` (empty host port), then `docker port <name> 7687/tcp` gives `127.0.0.1:62646`. |
+| How do you get a free port? | ~~`-p 127.0.0.1::7687` (empty host port), then `docker port`~~ **Corrected while implementing:** Docker reassigns that port on every container start, so after a restart or reboot the config points at a dead port. Pick a free port in Python (bind port 0) and publish it explicitly; the binding is kept across restarts. setup's Docker test asserts the port survives a stop/start. |
 | How long until it answers? | **12.9 s** from `docker run` to a real query on a cached MAGE image. A TCP accept comes much earlier; the Bolt handshake fails until Memgraph is ready. |
 | How do you know it's Memgraph? | `SHOW VERSION` returns `{'version': '3.13.1'}`. **It has to be sent auto-commit** (`session.run`). Through the driver's managed transactions (`execute_query`) Memgraph rejects it with a `ClientError`, so a readiness loop written that way never succeeds. |
 | Which image? | Pin `memgraph/memgraph-mage:3.13.1`: the newest release, what `latest` resolves to today, and what CI tests. The demo pins 3.12.0; `install.sh` used `latest`. |
@@ -52,7 +52,7 @@ The middle case is the trap. The screen looks right, so a user would sit at an i
    - a container labelled disposable (the AI Memory demo, see #536): don't adopt it; start our own;
    - otherwise: use it, as `install.sh` did.
 5. **Nothing**: `docker run -d --name context-graph-memgraph -v context-graph-memgraph-data:/var/lib/memgraph -p 127.0.0.1:7687:7687 memgraph/memgraph-mage:3.13.1 --schema-info-enabled=True`.
-   - On a busy port: remove the failed container and retry with `-p 127.0.0.1::7687`.
+   - On a busy port: remove the failed container and retry on a free port chosen in Python, published explicitly (not `127.0.0.1::7687`, which changes on every start).
    - An explicitly requested port that's busy fails with instructions.
    - Never stop what owns the port.
    - Then poll an auto-commit `SHOW VERSION` for up to 180 s.
