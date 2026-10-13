@@ -16,6 +16,7 @@ whether it works for what is actually being built. One averaged number would let
 an organizational-recall regression hide behind a personal-memory gain.
 """
 
+import math
 from dataclasses import dataclass, field, replace
 from statistics import mean, median
 from typing import TYPE_CHECKING, Any
@@ -70,6 +71,9 @@ class Scored:
     f1: float = 0.0
     #: Wall-clock seconds for retrieval and answering, including a failed attempt.
     latency_seconds: float = 0.0
+    #: Wall-clock seconds of recall alone, with no answering LLM; None for
+    #: strategies whose read path isn't a separate step.
+    recall_seconds: float | None = None
     #: Share of the question's evidence turns found in what retrieval returned;
     #: None when the question marks no evidence, as abstention questions don't.
     evidence_recall: float | None = None
@@ -108,6 +112,10 @@ class TierReport:
     mean_bleu: float | None = None
     mean_f1: float | None = None
     mean_latency_seconds: float | None = None
+    #: Recall-only latency (no answering LLM), over the questions that report it.
+    mean_recall_seconds: float | None = None
+    median_recall_seconds: float | None = None
+    p95_recall_seconds: float | None = None
     #: The deepeval answer rubrics' own coverage count, shown beside the
     #: official judge's when that decides ``covered``; None when it doesn't.
     rubric_covered: int | None = None
@@ -270,11 +278,18 @@ def gate_and_rank(scored: list[Scored]) -> list[Scored]:
     return sorted(passed, key=lambda s: (s.efficiency_tokens, s.name))
 
 
+def _percentile(values: list[float], pct: float) -> float:
+    """Nearest-rank percentile of ``values`` (non-empty), as latency tails are reported."""
+    ordered = sorted(values)
+    return ordered[max(0, math.ceil(pct / 100 * len(ordered)) - 1)]
+
+
 def aggregate(scored: list[Scored]) -> RunReport:
     """Summarise a run, per tier."""
     by_tier: dict[int, TierReport] = {}
     for tier in sorted({s.tier for s in scored}):
         all_rows = [s for s in scored if s.tier == tier]
+        recall_times = [s.recall_seconds for s in all_rows if s.recall_seconds is not None]
         # An unjudged row is an outage, not a failure: excluded from coverage
         # and gated efficiency, and counted as unscored instead.
         judge_scored_rows = [s for s in all_rows if s.judged]
@@ -299,6 +314,9 @@ def aggregate(scored: list[Scored]) -> RunReport:
             mean_bleu=(mean(s.bleu for s in all_rows) if all_rows else None),
             mean_f1=(mean(s.f1 for s in all_rows) if all_rows else None),
             mean_latency_seconds=(mean(s.latency_seconds for s in all_rows) if all_rows else None),
+            mean_recall_seconds=(mean(recall_times) if recall_times else None),
+            median_recall_seconds=(median(recall_times) if recall_times else None),
+            p95_recall_seconds=(_percentile(recall_times, 95) if recall_times else None),
             rubric_covered=(
                 sum(1 for s in judge_scored_rows if s.metric_scores and s.coverage >= DEFAULT_COVERAGE_THRESHOLD)
                 if official

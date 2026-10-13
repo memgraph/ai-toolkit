@@ -68,10 +68,16 @@ async def retrieve_hybrid(
     # recall is several blocking Memgraph round-trips; a worker thread lets
     # concurrent questions overlap them. The neo4j driver is thread-safe and
     # ReadOnlyGraph holds no per-call state.
+    recall_started = time.monotonic()
     recalled = await asyncio.to_thread(recall, graph, user_id, question, config=config, model=model)
+    recall_seconds = time.monotonic() - recall_started
     seen = recalled.lines()
     answer = await llm.complete(answer_prompt(question, seen, today))
     errors = [f"vector lanes off: {recalled.vector_lanes_off}"] if recalled.vector_lanes_off else []
     return Retrieved(
-        answer=answer.strip(), retrieval_context=seen, errors=errors, latency_seconds=time.monotonic() - started
+        answer=answer.strip(),
+        retrieval_context=seen,
+        errors=errors,
+        latency_seconds=time.monotonic() - started,
+        recall_seconds=recall_seconds,
     )
