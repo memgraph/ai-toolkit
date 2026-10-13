@@ -119,16 +119,23 @@ def test_a_connector_that_cannot_be_set_up_does_not_drop_the_others(monkeypatch,
 
 
 def test_connectors_share_one_connection(monkeypatch, graph, config):
-    built = []
+    built, handed = [], []
     original = runner._hook_memgraph
 
     def counting(env):
         built.append(env)
         return original(env)
 
+    def second_connector(link, env, *, memgraph):
+        # Stands in for skills-graph, which isn't installed beside actions-graph: what matters is the
+        # connection it is handed.
+        handed.append(memgraph)
+
     monkeypatch.setattr(runner, "_hook_memgraph", counting)
+    monkeypatch.setitem(runner._CONNECTOR_ADDERS, "skills_graph", second_connector)
     assert _run_hook(monkeypatch, ["--connector", "actions-graph", "--connector", "skills-graph"], _PRE_TOOL_USE) == 0
     assert len(built) == 1
+    assert len(handed) == 1 and handed[0] is not None
     assert _actions(graph, "cf-1") == [{"tool": "Bash"}]
     assert _log_lines() == []
 

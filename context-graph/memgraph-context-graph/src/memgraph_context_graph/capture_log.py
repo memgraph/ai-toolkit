@@ -180,10 +180,13 @@ def read_recent(*, since: datetime | None = None, limit: int = 1000, log_path: P
     """
     target = log_path or path()
     failures: list[Failure] = []
-    for file in (target, target.with_name(target.name + ".1")):
+    for file in (target.with_name(target.name + ".1"), target):  # oldest first: append order
         failures.extend(_parse_lines(_tail(file)))
     if since is not None:
         failures = [failure for failure in failures if failure.at >= since]
+    # Timestamps are millisecond-precise, so failures can tie; reversed append order breaks ties newest
+    # first, and the sort is stable.
+    failures.reverse()
     failures.sort(key=lambda failure: failure.at, reverse=True)
     return failures[:limit]
 
