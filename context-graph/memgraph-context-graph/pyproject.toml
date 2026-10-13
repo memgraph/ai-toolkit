@@ -15,9 +15,6 @@ dependencies = [
     "memgraph-toolbox>=0.1.11",
     # Edits ~/.codex/config.toml when switching Codex's memory, keeping the user's comments and layout.
     "tomlkit>=0.13,<1",
-    # setup's interactive installer. Imported only when it runs, so hooks never load it; pinned to the
-    # major the viewer uses, since Textual's API moves between majors.
-    "textual>=8.2,<9",
 ]
 
 [project.scripts]
