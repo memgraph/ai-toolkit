@@ -511,6 +511,14 @@ class ActionsGraph:
                 a.status = $status,
                 a.description = $description,
                 a.metadata = $metadata
+            ON MATCH SET
+                a.agent_type = CASE WHEN coalesce(a.agent_type, '') = '' THEN $agent_type ELSE a.agent_type END,
+                a.started_at = CASE
+                    WHEN a.started_at IS NULL OR $started_at < a.started_at THEN $started_at
+                    ELSE a.started_at
+                END,
+                a.description = CASE WHEN coalesce(a.description, '') = '' THEN $description ELSE a.description END,
+                a.metadata = CASE WHEN coalesce(a.metadata, '{}') = '{}' THEN $metadata ELSE a.metadata END
             """,
             params={
                 "agent_id": agent.agent_id,
@@ -543,6 +551,38 @@ class ActionsGraph:
             )
 
         return agent
+
+    def ensure_agent(self, agent_id: str, session_id: str, *, agent_type: str = "", started_at: str) -> None:
+        """Make sure a subagent's Agent node exists and hangs off its Session.
+
+        For actions the runtime attributes to a subagent that arrive before (or
+        without) its start event: hook processes run concurrently, and a start
+        hook can fail or be lost. Without this, :meth:`record_action` finds no
+        Agent and files the subagent's actions under the parent session,
+        flattening the timeline. A later :meth:`start_agent` fills in what this
+        couldn't know and still infers the spawning action.
+        """
+        self._db.query(
+            """
+            MERGE (a:Agent {agent_id: $agent_id})
+            ON CREATE SET
+                a.agent_type = $agent_type,
+                a.started_at = $started_at,
+                a.status = $status,
+                a.description = '',
+                a.metadata = '{}'
+            WITH a
+            MATCH (s:Session {session_id: $session_id})
+            MERGE (s)-[:HAS_AGENT]->(a)
+            """,
+            params={
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "agent_type": agent_type,
+                "started_at": started_at,
+                "status": ActionStatus.IN_PROGRESS.value,
+            },
+        )
 
     def end_agent(
         self,

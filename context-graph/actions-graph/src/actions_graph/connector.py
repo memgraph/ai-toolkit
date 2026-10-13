@@ -51,6 +51,10 @@ _SUPPORTED_EVENTS = {
 }
 
 
+#: What a Session keeps from the event that created it.
+_SESSION_METADATA_KEYS = ("cwd", "permission_mode", "source", "model")
+
+
 class ActionsGraphConnector(GraphConnector):
     """Receives Event Protocol events and records session observability data."""
 
@@ -85,7 +89,7 @@ class ActionsGraphConnector(GraphConnector):
                 started_at=event.timestamp,
                 model=event.model,
                 working_directory=event.working_directory,
-                metadata=self._metadata(event),
+                metadata=self._session_metadata(event),
             )
         )
 
@@ -112,7 +116,7 @@ class ActionsGraphConnector(GraphConnector):
                 tool_use_id=event.tool_use_id,
                 metadata=self._metadata(event, agent_name=event.agent_name),
             ),
-            container_agent_id=event.agent_name,
+            container_agent_id=self._container(event, event.agent_name),
         )
 
     def _on_tool_end(self, event: ToolEndEvent) -> None:
@@ -131,7 +135,7 @@ class ActionsGraphConnector(GraphConnector):
                 error_message=event.error_message,
                 metadata=self._metadata(event, agent_name=event.agent_name),
             ),
-            container_agent_id=event.agent_name,
+            container_agent_id=self._container(event, event.agent_name),
         )
 
     def _on_agent_start(self, event: AgentStartEvent) -> None:
@@ -171,7 +175,7 @@ class ActionsGraphConnector(GraphConnector):
                 model=event.model,
                 metadata=self._metadata(event, agent_name=event.agent_name),
             ),
-            container_agent_id=event.agent_name,
+            container_agent_id=self._container(event, event.agent_name),
         )
 
     def _on_error(self, event: ErrorOccurredEvent) -> None:
@@ -198,7 +202,7 @@ class ActionsGraphConnector(GraphConnector):
                 Session(
                     session_id=event.session_id,
                     started_at=event.timestamp,
-                    metadata=self._metadata(event),
+                    metadata=self._session_metadata(event),
                 )
             )
             return
@@ -206,9 +210,35 @@ class ActionsGraphConnector(GraphConnector):
             Session(
                 session_id=event.session_id,
                 started_at=event.timestamp,
-                metadata=self._metadata(event),
+                metadata=self._session_metadata(event),
             )
         )
+
+    def _container(self, event: Event, agent_name: str | None) -> str | None:
+        """The subagent an action belongs to, creating its Agent node if the runtime named one we haven't seen.
+
+        Only when the runtime itself said the event came from a subagent (its
+        payload carried ``agent_id``): some adapters name the running agent on
+        every event, top-level included, and those must stay on the Session.
+        """
+        ensure_agent = getattr(self._graph, "ensure_agent", None)
+        if agent_name and ensure_agent is not None and event.metadata.get("agent_id") == agent_name:
+            ensure_agent(
+                agent_name,
+                event.session_id,
+                agent_type=self._metadata_value(event, "agent_type", ""),
+                started_at=event.timestamp,
+            )
+        return agent_name
+
+    @staticmethod
+    def _session_metadata(event: Event) -> dict[str, Any]:
+        """Session-level facts only. The first event's full metadata can be a tool call's input and output
+        or the last assistant message, which don't belong on the Session and may hold secrets."""
+        metadata = {key: event.metadata[key] for key in _SESSION_METADATA_KEYS if event.metadata.get(key) is not None}
+        if event.source_sdk:
+            metadata["source_sdk"] = event.source_sdk
+        return metadata
 
     @staticmethod
     def _metadata(event: Event, **extra: Any) -> dict[str, Any]:
