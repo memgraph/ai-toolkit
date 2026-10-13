@@ -27,6 +27,7 @@ Commands:
   hook <command>  Configure or run command hooks.
   mcp              Serve the registered tools (recall, ...) over stdio MCP.
   recall <question>  Search your own past sessions; --json for the data.
+  ui               Open the read-only terminal viewer (needs context-graph-viewer).
 """
 
 
@@ -58,6 +59,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "recall":
         return _recall(args[1:])
+
+    if command == "ui":
+        return _ui(args[1:])
 
     if command == "join":
         return _join(args[1:])
@@ -127,6 +131,8 @@ def _config(argv: list[str]) -> int:
     if action == "show":
         config = load_config()
         print(f"# {config_path}")
+        for problem in config.problems:
+            print(f"# WARNING: malformed config, {problem}; values it meant to set are defaults below")
         print(f"edition = {config.edition or EDITION_COMMUNITY!r}")
         print(f"identity.user_id = {config.user_id!r}")
         print(f"memgraph.url = {config.memgraph_url!r}")
@@ -245,6 +251,20 @@ def _mcp(argv: list[str]) -> int:
               file=sys.stderr)  # fmt: skip
         return 1
     return serve()
+
+
+def _ui(argv: list[str]) -> int:
+    try:
+        from context_graph_viewer.cli import main as viewer_main
+    except ImportError:
+        print(
+            "memgraph-context-graph ui needs the context-graph-viewer package in the same tool environment.\n"
+            "Add it to the `uv tool install memgraph-context-graph ...` command your plugin's bootstrap runs:\n"
+            "  --with context-graph-viewer",
+            file=sys.stderr,
+        )
+        return 1
+    return viewer_main(argv)
 
 
 def _recall(argv: list[str]) -> int:
@@ -504,6 +524,7 @@ def _doctor(argv: list[str]) -> int:
         checks.append(_check_runtime(args.runtime, connectors))
         if (memory_check := _check_memory_backend(args.runtime)) is not None:
             checks.append(memory_check)
+    checks.append(_check_capture_failures())
 
     ok = all(check["ok"] for check in checks)
     payload: _DoctorPayload = {"ok": ok, "checks": checks}
@@ -514,10 +535,17 @@ def _doctor(argv: list[str]) -> int:
     return 0 if ok else 1
 
 
-class _CheckResult(TypedDict):
+class _RequiredCheckFields(TypedDict):
     name: str
     ok: bool
     detail: str
+
+
+class _CheckResult(_RequiredCheckFields, total=False):
+    #: Reporting only: shown, never part of pass/fail (its ``ok`` is always True).
+    info: bool
+    #: Structured detail for ``--json``.
+    data: Any
 
 
 class _DoctorPayload(TypedDict):
@@ -549,6 +577,9 @@ def _check_config() -> _CheckResult:
     from memgraph_context_graph.spaces import SpaceError, spaces_for
 
     config = load_config()
+    if config.problems:
+        # Whatever those lines meant to set fell back to defaults, which can point capture at the wrong Memgraph.
+        return {"name": "config", "ok": False, "detail": f"{path} is malformed — {'; '.join(config.problems)}"}
     try:
         spaces = spaces_for(config)
     except SpaceError as exc:
@@ -788,22 +819,107 @@ def _check_memory_backend(runtime: str) -> _CheckResult | None:
 
 
 def _check_runtime(runtime: str, connectors: list[str]) -> _CheckResult:
+    """Replay the runtime's probe payload through real connectors, against the configured Memgraph.
+
+    The probe runs under a throwaway session id and its Session is deleted
+    afterwards, so ``doctor`` never leaves a session in the user's graph. It
+    runs strict (no error handler) and writes nothing to the capture-failure
+    log: doctor reports its own result.
+    """
+    import uuid
+
+    from memgraph_context_graph.adapters._identity import resolve_memgraph_env
+
+    probe_session_id = f"doctor-probe-{uuid.uuid4().hex}"
+    memgraph_env: dict[str, str] | None = None
     try:
         from memgraph_context_graph.hooks.runner import create_link
         from memgraph_context_graph.hooks.runtime_plugin import get_runtime_plugin
 
         plugin = get_runtime_plugin(runtime)
-        link = create_link(connectors)
-        adapter = plugin.adapter_class(link)
+        memgraph_env = resolve_memgraph_env()
+        link = create_link(connectors, memgraph_env=memgraph_env)
+        adapter = plugin.adapter_class(link, session_id=probe_session_id)
         adapter.handle_payload(dict(plugin.probe_payload))
         return {"name": f"runtime:{runtime}", "ok": True, "detail": "strict hook smoke passed"}
     except Exception as exc:
         return {"name": f"runtime:{runtime}", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+    finally:
+        if memgraph_env is not None:
+            _delete_probe_session(memgraph_env, probe_session_id)
+
+
+def _delete_probe_session(memgraph_env: dict[str, str], session_id: str) -> None:
+    """Remove the probe's Session and the nodes only it owns; best effort, the probe result stands either way."""
+    try:
+        from memgraph_toolbox.api.memgraph import Memgraph
+
+        db = Memgraph(
+            url=memgraph_env["MEMGRAPH_URL"],
+            username=memgraph_env["MEMGRAPH_USER"],
+            password=memgraph_env["MEMGRAPH_PASSWORD"],
+            database=memgraph_env["MEMGRAPH_DATABASE"],
+        )
+    except Exception:
+        return
+    try:
+        # The id is doctor's own uuid, so this can only ever match the probe's nodes.
+        db.query(
+            """
+            MATCH (s:Session {session_id: $session_id})
+            OPTIONAL MATCH (s)-[:HAS_AGENT]->(agent:Agent)
+            OPTIONAL MATCH (agent)-[:HAS_ACTION]->(nested:Action)
+            OPTIONAL MATCH (s)-[:HAS_ACTION]->(action:Action)
+            OPTIONAL MATCH (touch:Touch)-[:IN_SESSION]->(s)
+            DETACH DELETE nested, agent, action, touch, s
+            """,
+            params={"session_id": session_id},
+        )
+    except Exception:
+        pass
+    finally:
+        db.driver.close()
+
+
+def _check_capture_failures() -> _CheckResult:
+    """What the hooks failed to capture in the last day, from the local capture-failure log. Reporting only.
+
+    It never fails doctor: the runtime probe is the gate on health now, and the
+    log is history -- a failure an hour ago that has since been fixed is not a
+    reason to fail today.
+    """
+    from memgraph_context_graph import capture_log
+
+    path = capture_log.path()
+    groups = capture_log.recent_summary(hours=24)
+    total = sum(group.count for group in groups)
+    data = [
+        {
+            "stage": group.stage,
+            "connector": group.connector,
+            "error_type": group.error_type,
+            "count": group.count,
+            "last_at": group.last_at.isoformat(),
+            "last_error": group.last_error,
+            "level": group.level,
+        }
+        for group in groups
+    ]
+    if not groups:
+        detail = f"none in the last 24h ({path})"
+    else:
+        last = groups[0]
+        where = f"{last.stage}/{last.connector}" if last.connector else last.stage
+        detail = (
+            f"{total} in the last 24h; last: {where} {last.error_type} at {last.last_at.isoformat(timespec='seconds')}"
+            f" — {last.last_error} ({path})"
+        )
+    return {"name": "capture-failures", "ok": True, "detail": detail, "info": True, "data": data}
 
 
 def _print_doctor(payload: _DoctorPayload) -> None:
     for check in payload["checks"]:
-        status = "OK" if check["ok"] else "FAIL"
+        status = "INFO" if check.get("info") else "OK" if check["ok"] else "FAIL"
         print(f"{status} {check['name']}: {check['detail']}")
 
 

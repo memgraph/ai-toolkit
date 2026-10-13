@@ -1,0 +1,48 @@
+[project]
+name = "context-graph-viewer"
+version = "0.1.0"
+description = "Read-only terminal viewer for a Context Graph: capture health, pipeline state, session anatomy and the knowledge graph"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    # Config, identity and spaces come from the hub, so the viewer reads exactly what the hooks write to.
+    "memgraph-context-graph>=0.5.0",
+    "memgraph-toolbox",
+    # Pinned to one major: Textual's maintenance has slowed and majors break widget APIs (#382).
+    "textual>=8.2,<9",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=9.0.3",
+    "pytest-asyncio>=0.26.0",
+    # The tests write sessions through the real hooks pipeline rather than hand-written Cypher.
+    "actions-graph[memgraph-context-graph]>=0.4.1",
+    "sessions-graph[memgraph-context-graph]>=0.8.0",
+    "resources-graph[memgraph-context-graph]",
+]
+
+[project.scripts]
+context-graph-viewer = "context_graph_viewer.cli:main"
+
+[tool.uv.sources]
+memgraph-context-graph = { workspace = true }
+memgraph-toolbox = { workspace = true }
+actions-graph = { workspace = true }
+sessions-graph = { workspace = true }
+resources-graph = { workspace = true }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -58,6 +58,7 @@ members = [
     "context-graph/resources-graph",
     "context-graph/spaces",
     "context-graph/eval",
+    "context-graph/viewer",
 ]
 
 [tool.ty.environment]
@@ -96,7 +97,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["hygm", "memgraph_toolbox", "mcp_memgraph", "langchain_memgraph", "lightrag_memgraph", "unstructured2graph", "skills_graph", "actions_graph", "memgraph_context_graph", "resources_graph", "context_graph_spaces"]
+known-first-party = ["hygm", "memgraph_toolbox", "mcp_memgraph", "langchain_memgraph", "lightrag_memgraph", "unstructured2graph", "skills_graph", "actions_graph", "memgraph_context_graph", "resources_graph", "context_graph_spaces", "context_graph_viewer"]
 
 [tool.ruff.lint.per-file-ignores]
 # Notebook cells reference variables from earlier cells — not actual undefined names

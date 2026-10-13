@@ -36,12 +36,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import os
 import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
     from sessions_graph import SessionsGraph
     from sessions_graph.derivation import RunReport
@@ -142,8 +143,9 @@ def _embed(argv: list[str]) -> int:
     from sessions_graph.embeddings import EmbeddingUnavailableError
 
     model = parsed.model or _configured_embedding_model()
-    graph = SessionsGraph()
-    graph.setup()
+    with _logged_before_session("embed", parsed.session):
+        graph = SessionsGraph()
+        graph.setup()
     session_ids = (
         [parsed.session] if parsed.session else graph.get_pending_embedding_sessions(model=model, limit=parsed.limit)
     )
@@ -163,6 +165,26 @@ def _embed(argv: list[str]) -> int:
             f"{embedded.edges} edges embedded with {model}"
         )
     return 0
+
+
+@contextlib.contextmanager
+def _logged_before_session(stage: str, session_id: str | None) -> Iterator[None]:
+    """Log a failure that happens before this run can record anything on the Session, then re-raise.
+
+    A hook starts these runs detached with stderr discarded, so a Memgraph it
+    can't reach, or a schema it can't set up, would otherwise vanish. Failures
+    after this point land on the Session (``reconciliation_error``,
+    ``embedding_error``), which is where the graph keeps memory state (#381).
+    """
+    try:
+        yield
+    except Exception as exc:
+        try:
+            from memgraph_context_graph.capture_log import record_failure
+        except ImportError:
+            raise exc from None
+        record_failure(stage, exc, connector="sessions-graph", session_id=session_id)
+        raise
 
 
 def _configured_embedding_model() -> str:
@@ -390,8 +412,9 @@ async def _run_reconcile(parsed: argparse.Namespace) -> int:
 
     from sessions_graph import SessionsGraph
 
-    graph = SessionsGraph()
-    graph.setup()
+    with _logged_before_session("reconcile", parsed.session):
+        graph = SessionsGraph()
+        graph.setup()
     _sync_configured_ontology(graph)
 
     exit_code = 0

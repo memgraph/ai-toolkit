@@ -31,6 +31,7 @@ Everything is joined by a shared `(:Session {session_id})` node, so one graph an
 | **[skills-graph](./skills-graph/)** | Which reusable [Agent Skills](https://docs.claude.com/en/docs/claude-code/skills) a session used, and stored skill definitions. | `(:Skill)` |
 | **[resources-graph](./resources-graph/)** | GitHub resources touched by agents, their shared cache, and the `resource` MCP read tool. Enabled explicitly; see its installation guide. | `(:Resource)`, `(:Touch)`, `(:Listing)` |
 | **[sessions-graph](./sessions-graph/)** | User/session provenance, durable **Memories**, and session **reconciliation** into entities. | `(:User)`, `(:Session)`, `(:Memory)` |
+| **[context-graph-viewer](./viewer/)** | Nothing: a read-only terminal viewer (`memgraph-context-graph ui`) for capture health, pipeline state, sessions and the entity graph. | — |
 
 > `(:Session)` is a shared coordination point — every component `MERGE`s it idempotently, but only sessions-graph owns `(:User)` and the `HAD_SESSION` edge. Entity extraction is powered by [unstructured2graph](../unstructured2graph/), which lives outside this family.
 
@@ -156,6 +157,14 @@ sessions-graph reconcile --pending
 ```
 
 This pulls each session's actions and memories, runs them through [unstructured2graph](../unstructured2graph/)'s chunk + entity-extraction pipeline, and writes extracted entities (with typed labels like `:Person`, `:Organization`) linked back via `(:Action|:Memory)-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(:Entity)`. The `sessions-graph reconcile` CLI extracts locally with GLiNER2 over the user's adopted HyGM model, or `hygm.default_model()` when none is adopted. LightRAG supplies the separate LLM session summary. Programmatic callers can swap in another `ExtractionBackend` — see [sessions-graph § reconciliation](./sessions-graph/README.md#session-reconciliation).
+
+## Seeing the graph
+
+```bash
+memgraph-context-graph ui
+```
+
+A read-only terminal viewer: whether capture is failing (the hooks' local failure log plus the graph), where reconciliation stands, each session's timeline and what it produced, and the entities and relations it learned. It needs the `context-graph-viewer` package in the tool environment; see [its README](./viewer/README.md).
 
 ## Querying the graph
 
