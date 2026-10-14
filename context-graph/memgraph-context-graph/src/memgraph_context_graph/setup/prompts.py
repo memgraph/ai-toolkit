@@ -71,8 +71,10 @@ _PALETTE = {
     "error": ((0xDC, 0x22, 0x23), 160),
     "warning": ((0xFF, 0xC5, 0x00), 220),
 }
-# The brand gradient, used once: on the edges of the graph under the wordmark.
-_GRADIENT = ((0xFF, 0xC5, 0x00), (0xDC, 0x22, 0x23), (0x72, 0x00, 0x96))
+# The brand gradient (yellow, orange, red, purple), used once: on the nodes of the graph under the wordmark.
+_GRADIENT = ((0xFF, 0xC5, 0x00), (0xFB, 0x6E, 0x00), (0xDC, 0x22, 0x23), (0x72, 0x00, 0x96))
+# The nearest xterm-256 colour of each stop, for terminals without truecolor.
+_GRADIENT_XTERM = (220, 208, 160, 90)
 
 WORDMARK = (
     "███╗   ███╗███████╗███╗   ███╗ ██████╗ ██████╗  █████╗ ██████╗ ██╗  ██╗",
@@ -82,12 +84,18 @@ WORDMARK = (
     "██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║╚██████╔╝██║  ██║██║  ██║██║     ██║  ██║",
     "╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝",
 )
-# Under the wordmark, as wide as it: a small graph, nodes joined by edges.
+# Under the wordmark, as wide as it: a graph of nodes joined by edges.
 GRAPH = (
-    "●───────●──────────────●─────────●────────────────●──────────●────────●",
-    " ╲     ╱ ╲            ╱           ╲              ╱            ╲      ╱",
-    "  ●───●   ●──────────●             ●────────────●              ●────●",
+    "●───────────────●                 ●─────────────────●─────────────────●",
+    " ╲             ╱ ╲               ╱ ╲               ╱ ╲               ╱",
+    "  ●           ●───●             ●───●             ●───●             ●",
+    "   ╲         ╱     ╲           ╱     ╲           ╱     ╲           ╱",
+    "    ●───────●       ●─────────●       ●─────────●       ●─────────●",
+    "     ╲     ╱       ╱         ╱         ╲         ╲     ╱         ╱",
+    "      ●───●           ●─────●           ●─────●           ●─────●",
 )
+# The divider between the banner and the first question: a short stretch of graph, in orange.
+RULE = "●──────●─────────●────●───────●──────────●─────●────────●───────●─────────●"
 
 
 class _Style:
@@ -133,20 +141,20 @@ class _Style:
         return "".join(self.accent(char) if char == "█" else self.muted(char) if char != " " else char for char in line)
 
     def graph(self, line: str, width: int) -> str:
-        """A line of :data:`GRAPH`: nodes in orange, edges in the brand gradient (gray without truecolor)."""
+        """A line of :data:`GRAPH`: nodes in the brand gradient, edges in gray."""
         if not self.color:
             return line
         cells = []
         for column, char in enumerate(line):
             if char == " ":
                 cells.append(char)
-            elif char == "●":
-                cells.append(self.accent(char))
-            elif self.color == "truecolor":
-                rgb = _gradient_at(column / max(width - 1, 1))
-                cells.append(f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m{char}\033[0m")
-            else:
+            elif char != "●":
                 cells.append(self.muted(char))
+            else:
+                position = column / max(width - 1, 1)
+                rgb = _gradient_at(position)
+                xterm = _GRADIENT_XTERM[round(position * (len(_GRADIENT) - 1))]
+                cells.append(self._fg(rgb, xterm, char))
         return "".join(cells)
 
 
@@ -216,6 +224,9 @@ class Prompts:
         self.write("".join(f"{self.style.graph(row, width)}\n" for row in GRAPH) + "\n")
 
     def intro(self, title: str, subtitle: str = "") -> None:
+        """The orange graph divider, some space, then the title: the questions start apart from what came before."""
+        rule = RULE[: max(min(len(WORDMARK[0]), self.term.columns - 1), 1)]
+        self.write(f"\n{self.style.accent(rule)}\n\n")
         self.write(f"{self.style.accent('◆')}  {self.style.bold(title)}\n")
         self.line(self.style.muted(subtitle))
 

@@ -384,6 +384,17 @@ def test_no_banner_leaves_the_wordmark_to_whoever_drew_it(fake_agents, setup_hom
     assert "◆  Context Graph setup" in term.text
 
 
+def test_the_questions_start_apart_from_what_came_before(fake_agents, setup_home, project):
+    from memgraph_context_graph.setup.prompts import RULE, run_setup_prompts
+
+    env = engine.look_around()
+    term = ScriptedTerminal(keys=["ctrl-c"])
+    run_setup_prompts(engine.default_choices(env, cwd=project, user_id="carol"), env, term, banner=False)
+    before_title = term.text.split("◆  Context Graph setup")[0]
+    assert before_title.endswith(RULE[:71] + "\n\n")
+    assert before_title.startswith("\n")
+
+
 def test_a_second_run_starts_from_what_is_set_up(fake_agents, setup_home, project):
     from memgraph_context_graph.adapters._identity import write_config
     from memgraph_context_graph.setup.prompts import ENTER, Prompts, ask
