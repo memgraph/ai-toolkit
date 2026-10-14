@@ -305,6 +305,7 @@ def _join(argv: list[str]) -> int:
     parser.add_argument("--password", default=None, help="Prompted for when omitted.")
     args = parser.parse_args(argv)
     password = args.password if args.password is not None else getpass.getpass(f"Password for {args.login}: ")
+    _ensure_enterprise_package()
 
     write_config(
         edition=EDITION_ENTERPRISE, memgraph_url=args.url, memgraph_user=args.login, memgraph_password=password
@@ -326,6 +327,21 @@ def _join(argv: list[str]) -> int:
     print(f"Personal space: {row['Current']}. Shared spaces: {', '.join(shared) or 'none yet'}.")
     print("Next: memgraph-context-graph setup <runtime> (e.g. claude-code) if this machine isn't set up yet.")
     return 0
+
+
+def _ensure_enterprise_package() -> None:
+    """Install ``context-graph-spaces`` when this is the uv tool and it is missing; else the error says how."""
+    from memgraph_context_graph.setup import tool
+    from memgraph_context_graph.spaces import EDITION_ENTERPRISE, _edition_factory
+
+    if _edition_factory(EDITION_ENTERPRISE) is not None or not tool.uv_tool_environment():
+        return
+    print("Enterprise spaces need one more package, with the local extraction models; installing it.", flush=True)
+    print("This can take a minute.", flush=True)
+    try:
+        tool.install(viewer=False, spaces=True, log=lambda line: None)
+    except tool.ToolError as exc:
+        print(str(exc), file=sys.stderr)
 
 
 def _doctor(argv: list[str]) -> int:

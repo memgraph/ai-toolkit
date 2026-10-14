@@ -462,6 +462,62 @@ def test_codex_is_reported_with_the_trust_it_still_needs_and_claude_code_is_not(
     assert "trust" not in claude.summary
 
 
+def test_reinstalling_the_tool_keeps_the_spaces_package_once_it_is_there(monkeypatch):
+    from memgraph_context_graph.setup import tool
+
+    monkeypatch.setattr(tool, "installed", lambda package: package == "context-graph-spaces")
+
+    argv = tool.requirements()
+
+    assert tool.BASE in argv
+    assert all(requirement in argv for requirement in tool.CONNECTORS.values())
+    assert tool.SPACES[1] in argv
+    assert tool.VIEWER[1] not in argv
+
+    monkeypatch.setattr(tool, "installed", lambda package: False)
+    assert tool.SPACES[1] not in tool.requirements()
+    assert tool.SPACES[1] in tool.requirements(spaces=True)
+
+
+def test_the_enterprise_hint_names_the_whole_install_not_just_the_spaces_package(monkeypatch):
+    import pytest
+
+    from memgraph_context_graph import spaces
+    from memgraph_context_graph.adapters._identity import HookConfig
+
+    monkeypatch.setattr(spaces, "_edition_factory", lambda edition: None)
+    spaces._reset_cache()
+
+    with pytest.raises(spaces.SpaceError) as excinfo:
+        spaces.spaces_for(HookConfig(edition="enterprise"))
+
+    hint = str(excinfo.value)
+    assert "context-graph-spaces" in hint
+    assert "skills-graph" in hint and "sessions-graph" in hint
+    spaces._reset_cache()
+
+
+def test_join_installs_the_spaces_package_inside_the_uv_tool_and_not_elsewhere(monkeypatch, setup_home, capsys):
+    from memgraph_context_graph import spaces
+    from memgraph_context_graph.setup import tool
+
+    installs = []
+    monkeypatch.setattr(spaces, "_edition_factory", lambda edition: None)
+    monkeypatch.setattr(tool, "install", lambda **kwargs: installs.append(kwargs))
+
+    monkeypatch.setattr(tool, "uv_tool_environment", lambda: False)
+    spaces._reset_cache()
+    assert main(["join", "bolt://localhost:1", "ante", "--password=x"]) == 1
+    assert installs == []
+    assert "uv tool install" in capsys.readouterr().err
+
+    monkeypatch.setattr(tool, "uv_tool_environment", lambda: True)
+    spaces._reset_cache()
+    main(["join", "bolt://localhost:1", "ante", "--password=x"])
+    assert [kwargs["spaces"] for kwargs in installs] == [True]
+    spaces._reset_cache()
+
+
 def test_the_welcome_says_what_the_user_is_getting_before_any_question(fake_agents, setup_home, project):
     from memgraph_context_graph.setup.prompts import ENTER, Prompts, ask
 
