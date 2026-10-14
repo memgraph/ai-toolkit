@@ -24,7 +24,6 @@ Multi-context uv workspace. `CONTEXT-MAP.md` at the root lists every context.
     ├── actions-graph/CONTEXT.md
     ├── skills-graph/CONTEXT.md
     ├── sessions-graph/CONTEXT.md
-    ├── memory-graph/CONTEXT.md   ← redirect only: old name for sessions-graph
     └── eval/CONTEXT.md
 ```
 

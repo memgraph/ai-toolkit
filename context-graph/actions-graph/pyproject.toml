@@ -21,9 +21,6 @@ dependencies = [
 memgraph-context-graph = [
     "memgraph-context-graph>=0.5.0",
 ]
-claude-agent = [
-    "claude-agent-sdk>=0.1.0",
-]
 test = [
     "pytest>=9.0.3",
     "pytest-asyncio>=0.24.0",

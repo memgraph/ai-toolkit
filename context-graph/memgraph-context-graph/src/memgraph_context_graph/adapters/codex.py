@@ -42,7 +42,7 @@ def _permission(context: EventContext) -> MessageEvent:
 def _turn_end(context: EventContext) -> list[Event]:
     # Codex has no session-end hook, and Stop fires after every turn, so it is
     # only ever a turn end.
-    return turn_end(context, reply=context.payload.get("last_assistant_message"))
+    return turn_end(context, reply=context.value("reply"))
 
 
 _HOOKS_PATH = ".codex/hooks.json"

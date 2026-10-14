@@ -85,7 +85,7 @@ _Avoid_: MCP tool (the protocol it is served over, not the thing), Graph Connect
 - **Claude Code Plugin** installs Claude Code hook wiring invoking the Claude Code runtime adapter command.
 - **Event Protocol** carries agent activity, not graph semantics.
 - **Agent Session** may be persisted as a session node by a graph component; **Event Protocol** only carries the session identifier.
-- Tool/message events carry `agent_name` when runtime identifies a subagent. Memgraph Context Graph only transports this id; Graph Connectors decide how to use it. Codex adapter doesn't yet handle subagent lifecycle/ids ([#275](https://github.com/memgraph/ai-toolkit/issues/275)).
+- Tool/message events carry `agent_name` when runtime identifies a subagent. Memgraph Context Graph only transports this id; Graph Connectors decide how to use it. The Codex adapter emits no subagent lifecycle events.
 - Runtime Plugin's generated command calls `hook run <name>`. CLI resolves name via Runtime Registration; plugin never names an adapter class directly.
 - Built-in Runtime Registrations: `codex`, `claude-code`, `copilot-cli`, `cursor`, `opencode`, `antigravity-cli`, and `grok`. Other packages may publish more.
 
@@ -110,4 +110,4 @@ _Avoid_: MCP tool (the protocol it is served over, not the thing), Graph Connect
 - "Session" = activity or graph state? Use **Agent Session** for activity, "session node" for persisted state.
 - "Plugin" can sound like a graph extension. Use **Runtime Plugin** for host-specific distribution; Graph Connectors own graph interpretation.
 - Entry-point discovery = **Runtime Registration**, not a runtime/CLI plugin ([#269](https://github.com/memgraph/ai-toolkit/issues/269)).
-- Code hasn't fully caught up to **Runtime Adapter** terminology: Event Protocol's `source_sdk` field (`events.py`, set by all 4 adapters, read by Actions Graph's connector) still names the rejected term (ADR 0001). Rename to e.g. `source_adapter` tracked, not done.
+- Code hasn't fully caught up to **Runtime Adapter** terminology: Event Protocol's `source_sdk` field (`events.py`, set by every adapter, read by Actions Graph's connector) still names the rejected term (ADR 0001); a rename to e.g. `source_adapter` is not done.

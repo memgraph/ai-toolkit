@@ -96,11 +96,8 @@ def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph")
             )
         )
         for index, turn in enumerate(fixture.turns):
-            # Stamped with the session's own date, not left at ingest time:
-            # an extracted fact's valid_at is its source turn's timestamp
-            # (#364), and ingest time would date every fact to the eval run.
-            # One second apart because get_session_actions orders by
-            # timestamp, so identical stamps would lose the turn order.
+            # The session's own date, since a fact's valid_at is its turn's
+            # timestamp; one second apart to keep turn order.
             stamp = {"timestamp": (started + timedelta(seconds=index)).isoformat()} if started else {}
             graph.record_message(
                 session_id=fixture.session_id,
@@ -123,26 +120,12 @@ def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph")
 def _wipe(graph: "ActionsGraph") -> None:
     """Delete everything in the eval graph, vector indexes included.
 
-    Deliberately not ``ActionsGraph.clear()``, which only removes
-    ``Session|Agent|Action|Tool``. That leaves ``Chunk``, ``Entity`` and
-    ``Memory`` standing -- precisely what reconciliation produces or reads.
-    Relying on it would let the previous batch's index survive, so a question could be answered from the last run instead of this
-    batch's fixtures: the leak #309 exists to prevent, and it would inflate
-    scores invisibly.
-
-    Deleting nodes is not enough on its own. lightrag-memgraph's vector
-    storage creates its index once and treats a second ``CREATE VECTOR
-    INDEX`` as a no-op "already exists" for *any* failure reason, dimension
-    mismatch included (confirmed by reading ``vector_impl.py``'s
-    ``_ensure_vector_index`` -- it logs and moves on rather than checking
-    why creation failed). A prior batch's embedding model leaves its
-    index's dimension behind otherwise, and the next batch's writes fail --
-    or worse, silently mismatch -- against a leftover index sized for a
-    different model. Dropping each existing vector index here means a batch
-    that changes embedding model is exactly as safe as one that doesn't.
-
-    Deleting the whole graph is only safe because the eval instance is
-    dedicated. **This must never point at a shared or development database.**
+    Not ``ActionsGraph.clear()``, which leaves the previous batch's distilled
+    memory (Chunk, Entity, Memory) standing (#309). Vector indexes are
+    dropped because lightrag-memgraph treats any failed ``CREATE VECTOR
+    INDEX`` as "already exists", so a leftover index sized for another
+    embedding model would survive. Safe only because the eval instance is
+    dedicated: **never point this at a shared or development database.**
     """
     graph.db.query("MATCH (n) DETACH DELETE n")
     for row in graph.db.query("SHOW VECTOR INDEX INFO"):

@@ -10,29 +10,22 @@ from __future__ import annotations
 
 import pytest
 from sessions_graph import RecallConfig
-from sessions_graph.embeddings import EmbeddingUnavailableError, check_available, embed_memory
+from sessions_graph.embeddings import embed_memory
 from sessions_graph.recall import LANES, MEMORY_RULE
 
 pytest.importorskip("actions_graph")
 
 from actions_graph import MessageRole, Session
 
+from .conftest import link_user
 
-@pytest.fixture(autouse=True)
-def _requires_mage(memgraph):
-    try:
-        check_available(memgraph)
-    except EmbeddingUnavailableError as exc:
-        pytest.skip(f"Memgraph can't embed (needs MAGE): {exc}")
+pytestmark = pytest.mark.usefixtures("requires_mage")
 
 
 def _session(actions_graph, memgraph, *, user, session, when, said, reply=None):
     """One session of ``user``: their message (and an optional reply), returning the message's action id."""
     actions_graph.ensure_session(Session(session_id=session, started_at=when))
-    memgraph.query(
-        "MERGE (u:User {user_id: $u}) WITH u MATCH (s:Session {session_id: $s}) MERGE (u)-[:HAD_SESSION]->(s)",
-        {"u": user, "s": session},
-    )
+    link_user(memgraph, user, session)
     turn = actions_graph.record_message(session_id=session, role=MessageRole.USER, content=said, timestamp=when)
     if reply:
         actions_graph.record_message(session_id=session, role=MessageRole.ASSISTANT, content=reply, timestamp=when)

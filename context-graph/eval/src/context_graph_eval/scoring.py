@@ -30,16 +30,14 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
 #: visible rather than buried in metric configuration.
 DEFAULT_COVERAGE_THRESHOLD = 0.7
 
-#: deepeval's name for ContextualRecallMetric: the retrieval signal. Reported
-#: per question, never gating -- it asks whether one retrieved row supports the
-#: expected answer, so a correct computed answer ("17 days", "3") has no row to
-#: point at and scored 0. 11 of 52 misses in a 100-question hybrid run were
-#: correct answers failed this way (#397).
+#: deepeval's name for ContextualRecallMetric: the retrieval signal. Reported,
+#: never gating: a correct computed answer ("17 days") has no single row
+#: supporting it, so it scores 0 (#397).
 RETRIEVAL_SIGNAL = "Contextual Recall"
 
 #: Which judge decides ``covered``, recorded on every saved run so compare()
-#: refuses across a gate change: "official" -- LongMemEval's own judge (#409) --
-#: or, when it isn't configured, "answer" -- the deepeval answer rubric alone.
+#: refuses across a gate change: LongMemEval's own judge (#409), or the
+#: deepeval answer rubric when that isn't configured.
 COVERAGE_GATE = "official"
 RUBRIC_GATE = "answer"
 
@@ -66,28 +64,13 @@ class Scored:
     #: Abstention questions carry no retrieval signal.
     metric_scores: dict[str, float] = field(default_factory=dict)
     #: The judge's own explanation behind each metric_scores entry, same keys.
-    #: deepeval generates this whether or not anyone keeps it -- it cost
-    #: nothing extra to keep. ContextualRecallMetric's reason already
-    #: synthesizes its per-sentence supported/unsupported verdicts into prose;
-    #: deepeval's public evaluate() API surfaces that text but not the raw
-    #: verdict list underneath it, so this is the finest attribution available
-    #: without reaching into deepeval's own metric internals.
     metric_reasons: dict[str, str] = field(default_factory=dict)
-    #: Deterministic, judge-free cross-checks against the answer key -- not
-    #: gated by coverage, unlike efficiency_tokens (#309's gate is specific
-    #: to that axis). Computed regardless of whether a judge ran, same
-    #: reasoning as efficiency_tokens: no LLM call needed for either.
+    #: Judge-free cross-checks against the answer key, not gated by coverage.
     bleu: float = 0.0
     f1: float = 0.0
-    #: Wall-clock seconds retrieve() took for this question -- unlike bleu/f1
-    #: above, not deterministic (it's timing, not counting), but likewise
-    #: independent of whether a judge ran. Reflects real elapsed time even for
-    #: a question whose retrieval raised outright: runner._retrieve_all times
-    #: the attempt itself in that case, since retrieve() has no Retrieved to
-    #: report the elapsed time through when it never returns.
+    #: Wall-clock seconds for retrieval and answering, including a failed attempt.
     latency_seconds: float = 0.0
-    #: Share of the question's evidence turns (LongMemEval's ``has_answer``)
-    #: found in what retrieval returned -- deterministic, no judge (#403).
+    #: Share of the question's evidence turns found in what retrieval returned;
     #: None when the question marks no evidence, as abstention questions don't.
     evidence_recall: float | None = None
     #: Who decided ``covered``: "official" (LongMemEval's judge) or "answer"
@@ -110,10 +93,7 @@ class TierReport:
     #: rate below is over what was measured rather than what was attempted.
     questions: int
     covered: int
-    #: None when nothing in the tier could be scored. Deliberately not 0.0:
-    #: observed live, the judge's provider ran out of credit, every metric
-    #: errored, and the run reported "coverage 0/2 (0%)" -- an outage presented
-    #: as a measurement.
+    #: None, not 0.0, when nothing in the tier could be scored: an outage is not a measurement.
     coverage_rate: float | None
     median_efficiency_tokens: int | None
     abstention_total: int = 0
@@ -124,14 +104,7 @@ class TierReport:
     #: Contextual Recall at the threshold. Reported, not gated.
     retrieval_supported: int = 0
     retrieval_judged: int = 0
-    #: Mean, not median: unlike efficiency_tokens (#309's gate, deliberately
-    #: robust to one pathological payload), these are the blog-comparison
-    #: metrics themselves -- a single outlier answer should show up in the
-    #: mean, not be shrugged off by a robust statistic. Aggregated over every
-    #: question in the tier, not just the judge-scored subset coverage and
-    #: efficiency use above: BLEU, F1 and latency are their own judge-free
-    #: signal, so a judge-free run -- or a judge that failed on some
-    #: questions -- must still report all three rather than three Nones.
+    #: Means over every question in the tier, judged or not: these need no judge.
     mean_bleu: float | None = None
     mean_f1: float | None = None
     mean_latency_seconds: float | None = None
@@ -156,19 +129,11 @@ class RunReport:
 
 
 def efficiency_tokens(retrieved: "Retrieved", tokenizer: str = DEFAULT_TOKENIZER) -> int:
-    """Tokens handed back to answer the question (#309).
+    """Tokens of retrieval payload handed back to answer the question (#309), not the agent's own consumption.
 
-    Counts the retrieval payload, not the agent's own consumption: for the same
-    answer quality, returning less is better.
-
-    Raises rather than falling back if the tokenizer is unavailable. There used
-    to be a whitespace-splitting fallback, which was worse than useless: it
-    produced numbers roughly a third smaller while the run still recorded the
-    pinned tokenizer's name, so two runs counted in different units compared
-    cleanly and ``compare()`` -- which checks that recorded name -- saw a match.
-    An efficiency figure that quietly changes units is more dangerous than one
-    that fails, so ``tiktoken`` is a declared dependency and its absence is an
-    error.
+    Raises rather than falling back when the tokenizer is unavailable: a
+    fallback count would silently change units while the run still records
+    the pinned tokenizer's name.
     """
     payload = "\n".join(retrieved.retrieval_context)
     if not payload:
@@ -176,13 +141,8 @@ def efficiency_tokens(retrieved: "Retrieved", tokenizer: str = DEFAULT_TOKENIZER
     return len(_encoding(tokenizer).encode(payload))
 
 
-#: word_tokenize (which Scorer.sentence_bleu_score calls) needs this data
-#: package on disk; nltk does not bundle it. Downloaded lazily, once per
-#: process, rather than assumed present -- a fresh CI runner or a
-#: contributor's first run has no reason to already have it, and deepeval's
-#: own import of nltk is guarded by a try/except that only prints on
-#: failure, so an absent download would otherwise surface as a LookupError
-#: raised deep inside nltk's tokenizer, not at an obvious call site.
+#: Scorer.sentence_bleu_score needs nltk's punkt_tab data, which nltk does not
+#: bundle; downloaded lazily, once per process.
 _nltk_tokenizer_data_ready = False
 
 
@@ -200,25 +160,10 @@ def _ensure_nltk_tokenizer_data() -> None:
 
 
 def bleu_score(expected_output: str | None, answer: str) -> float:
-    """BLEU-1 similarity between the retrieved answer and the expected
-    output -- a standard NLP metric other memory-benchmark suites (LoCoMo,
-    LongMemEval, BEAM) also report, added so a run here is comparable on the
-    same axis.
+    """BLEU-1 between the answer and the expected output, via deepeval's ``Scorer``; 0.0 when either is empty.
 
-    Not reimplemented: this calls deepeval's own ``Scorer.sentence_bleu_score``
-    (nltk's n-gram BLEU under the hood, already a workspace dependency via
-    deepeval itself) rather than hand-rolling n-gram/brevity-penalty math
-    deepeval already ships correctly.
-
-    BLEU-1 (unigram overlap), not BLEU-4: an answer here is a sentence or
-    two, not a paragraph, so there usually is not enough text for 4-grams to
-    match at all -- BLEU-4 would floor near zero regardless of answer
-    quality and measure sentence length more than correctness.
-
-    Returns 0.0 for an empty answer or expected_output rather than raising:
-    an abstention question's correct answer can legitimately be a short
-    refusal, and a failed retrieval's answer can legitimately be empty --
-    both are real "no similarity" outcomes, not scoring errors.
+    Unigram rather than BLEU-4: answers are a sentence or two, too short for
+    4-grams to match regardless of quality.
     """
     if not answer or not expected_output:
         return 0.0
@@ -228,11 +173,7 @@ def bleu_score(expected_output: str | None, answer: str) -> float:
 
     _ensure_nltk_tokenizer_data()
     with warnings.catch_warnings():
-        # nltk warns whenever the candidate has zero 2/3/4-gram matches, even
-        # though bleu1's weights=(1,0,0,0) never uses those orders in the
-        # returned score -- expected for a short answer (most of them here),
-        # not a real problem, and noisy enough over a whole run to bury
-        # anything that IS worth seeing in the output.
+        # nltk warns on zero 2/3/4-gram matches, which bleu1's weights never use.
         warnings.simplefilter("ignore", UserWarning)
         return Scorer.sentence_bleu_score(references=expected_output, prediction=answer, bleu_type="bleu1")
 
@@ -274,23 +215,10 @@ def evidence_recall(evidence: list[str] | None, retrieved: list[str]) -> float |
 
 
 def token_f1_score(expected_output: str | None, answer: str) -> float:
-    """Token-level F1 between the retrieved answer and the expected output --
-    precision and recall over shared tokens, the same formula LongMemEval's
-    own evaluation script reports as "F1 Score".
+    """Token-level F1 between the answer and the expected output, as LongMemEval's script reports it.
 
-    deepeval's ``Scorer`` ships ROUGE (summarization-oriented, weights
-    matches differently) and BERTScore (needs its own model download) but
-    not this specific, simpler formula, so it is computed directly here --
-    not a reimplementation of a metric deepeval already provides, since
-    neither of deepeval's options is the same metric.
-
-    Tokenization is case-insensitive word characters only (``\\w+``), not
-    whitespace-splitting: "A beagle." against "A beagle" must not score a
-    partial match just because one has a trailing period glued onto its last
-    token -- an answer's punctuation is not a fact the judge cares about.
-    Counts token *multiplicity* (``Counter`` intersection, not set
-    intersection): "the the the" against "the" should not score a perfect
-    match on either precision or recall either.
+    Tokens are case-insensitive ``\\w+`` runs, so punctuation never splits a
+    match, counted with multiplicity. 0.0 when either side is empty.
     """
     if not answer or not expected_output:
         return 0.0
@@ -347,11 +275,8 @@ def aggregate(scored: list[Scored]) -> RunReport:
     by_tier: dict[int, TierReport] = {}
     for tier in sorted({s.tier for s in scored}):
         all_rows = [s for s in scored if s.tier == tier]
-        # A row with no metric scores was never judged -- the judge errored, or
-        # none ran. Counting it as a failure turns an outage into a reported
-        # score, so it is excluded from the rate and surfaced separately.
-        # Coverage and (gated) efficiency need a judge's verdict, so they are
-        # aggregated over this judge-scored subset only, not over all_rows.
+        # An unjudged row is an outage, not a failure: excluded from coverage
+        # and gated efficiency, and counted as unscored instead.
         judge_scored_rows = [s for s in all_rows if s.judged]
         official = any(s.judged_by == "official" for s in all_rows)
         unscored = len(all_rows) - len(judge_scored_rows)
@@ -364,18 +289,13 @@ def aggregate(scored: list[Scored]) -> RunReport:
             questions=len(judge_scored_rows),
             covered=len(covered),
             coverage_rate=(len(covered) / len(judge_scored_rows) if judge_scored_rows else None),
-            # Median, not mean: one pathological payload should not drag the
-            # number that gets compared across schema versions.
+            # Median, not mean: robust to one pathological payload.
             median_efficiency_tokens=(int(median([s.efficiency_tokens for s in covered])) if covered else None),
             abstention_total=len(abstentions),
             abstention_correct=sum(1 for s in abstentions if s.covered),
             retrieval_supported=sum(1 for score in recall if score >= DEFAULT_COVERAGE_THRESHOLD),
             retrieval_judged=len(recall),
-            # Over all_rows, not judge_scored_rows: BLEU/F1/latency need no
-            # judge, so a judge-free run (or one where the judge errored on
-            # some questions) must still aggregate them over everything that
-            # was actually scored, rather than over an empty or shrunken
-            # judge-scored subset (#342).
+            # Judge-free metrics, so over all_rows.
             mean_bleu=(mean(s.bleu for s in all_rows) if all_rows else None),
             mean_f1=(mean(s.f1 for s in all_rows) if all_rows else None),
             mean_latency_seconds=(mean(s.latency_seconds for s in all_rows) if all_rows else None),
@@ -384,7 +304,6 @@ def aggregate(scored: list[Scored]) -> RunReport:
                 if official
                 else None
             ),
-            # Judge-free like BLEU/F1, so over all_rows too.
             evidence_judged=len(evidence),
             evidence_complete=sum(1 for share in evidence if share == 1.0),
             mean_evidence_recall=(mean(evidence) if evidence else None),
@@ -393,26 +312,12 @@ def aggregate(scored: list[Scored]) -> RunReport:
 
 
 def enforce_retrieval_floor(scored: list[Scored], *, retrieved_tokens: dict[str, int]) -> list[Scored]:
-    """Fail any question that was answered without retrieving anything.
+    """Fail any question answered without retrieving anything.
 
-    A question whose retrieval payload was empty told the graph nothing and
-    learned nothing from it, so whatever the judge made of the answer, it is not
-    evidence of recall.
-
-    The judge cannot catch this on its own. ``ContextualRecallMetric`` asks
-    whether the retrieved context supports the expected output, and an empty
-    context satisfies that vacuously -- observed live in a calibration run:
-    ``gpt4_59149c77``, a temporal-reasoning question whose expected answer is
-    "7 days", retrieved zero tokens, replied "not in memory", and scored 1.0 on
-    both metrics. A perfect pass for consulting nothing.
-
-    That inflates coverage, which is the direction nobody audits: a zero gets
-    investigated, a pass gets believed.
-
-    Abstention questions are exempt, and must be. For those the correct answer
-    really is "not in memory", so an empty payload is right rather than
-    degenerate -- applying the floor to them would make them unpassable by
-    construction, which is a bug this rubric has already had once.
+    An empty payload is not evidence of recall, whatever the judge made of the
+    answer -- ``ContextualRecallMetric`` is vacuously satisfied by an empty
+    context. Abstention questions are exempt: for them an empty payload is
+    correct.
     """
     floored: list[Scored] = []
     for row in scored:
@@ -468,51 +373,22 @@ def rubric_for(metadata: dict[str, Any]) -> str:
 
 
 def build_metrics(judge: Any | None = None, *, rubric: str = "answer") -> list[Any]:
-    """The judged half of the rubric: a deliberately minimal pair (#304).
+    """The deepeval metrics for ``rubric``: a deliberately minimal set (#304).
 
-    One ``GEval`` rubric scores the answer itself, since no built-in asks
-    whether ``actual_output`` contains every fact in ``expected_output``, which
-    is the real question when an answer key exists; it alone gates (see
-    gate_score). ``ContextualRecallMetric`` scores retrieval-side coverage --
-    its required params are exactly the Golden fields #302 locked -- and is
-    reported beside it.
-
-    ``Faithfulness`` and ``AnswerRelevancy`` are deliberately omitted: both
-    exist mainly for the no-ground-truth case, and every extra metric is another
-    judge call per question, multiplied again by re-running per schema
-    candidate.
-
-    **Preference questions swap Coverage for a Preference rubric.** Their
-    expected output describes a good personalized answer rather than stating
-    facts, so they are judged on whether the answer uses the user's stated
-    preferences, as LongMemEval's own judge does.
-
-    **Abstention questions drop ContextualRecall entirely.** That metric asks
-    whether the retrieved context supports the expected output -- but for a
-    question whose correct answer is "that isn't in memory", the correct
-    retrieved context is *empty*. It therefore scores near zero by
-    construction, and back when coverage took the weakest of every metric, it
-    made every abstention question unpassable however well the agent behaved. Measured
-    before this fix: abstention scored 0/8 while the agent had correctly
-    declined on at least four. Only the rubric, which knows to require a
-    refusal, applies to these.
+    "answer": a ``GEval`` Coverage rubric (does the answer state every
+    expected fact; it gates) plus ``ContextualRecallMetric`` (reported).
+    "preference": Coverage swapped for a Preference rubric, since the
+    expected output describes a good personalized answer, as LongMemEval's
+    own judge treats it. "abstention": an Abstention rubric alone --
+    Contextual Recall scores an empty, correct context near zero.
     """
     from deepeval.metrics import ContextualRecallMetric, GEval
     from deepeval.test_case import LLMTestCaseParams
 
     metrics: list[Any] = []
     if rubric == "abstention":
-        # Its own rubric, because these questions measure a different thing.
-        # Upstream pairs the refusal with a contrastive fact -- "You mentioned
-        # your cat Luna but not your hamster" -- so the Coverage rubric below,
-        # which demands every fact in the expected output, marked a correct
-        # "not in memory" down for omitting the near-miss detail. Measured: the
-        # agent declined on 5/8, 3/8 and 5/8 across three runs and scored 0/8
-        # every time, landing at 0.3-0.6 against a 0.7 gate.
-        #
-        # What abstention is for is not fabricating an answer, so that is what
-        # is scored. Naming the near-miss is a finer-grained skill and would be
-        # its own metric, not a silent precondition of this one.
+        # Scores not fabricating. Upstream pairs the refusal with a contrastive
+        # fact ("your cat Luna but not your hamster"); naming it is not required.
         return [
             GEval(
                 name="Abstention",
@@ -536,9 +412,6 @@ def build_metrics(judge: Any | None = None, *, rubric: str = "answer") -> list[A
 
     metrics.append(ContextualRecallMetric(threshold=DEFAULT_COVERAGE_THRESHOLD, model=judge))
     if rubric == "preference":
-        # The expected output describes a good recommendation ("would prefer
-        # Sony-compatible accessories"), so Coverage's every-fact check failed
-        # answers that did exactly that: 0/6, scoring 0.2-0.6 (#404).
         metrics.append(
             GEval(
                 name="Preference",

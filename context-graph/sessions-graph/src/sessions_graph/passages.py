@@ -31,24 +31,18 @@ _UNIT = re.compile(r".*?(?:\n\s*\n|\n|[.!?](?:\s+|$)|$)", re.DOTALL)
 _WORD = re.compile(r"\w+")
 
 
-def split_passages(text: str, size: int = PASSAGE_CHARS) -> list[str]:
-    """``text`` as consecutive passages of at most ``size`` characters; ``"".join`` gives ``text`` back.
-
-    Raises:
-        ValueError: ``size`` is not positive.
-    """
-    if size <= 0:
-        raise ValueError(f"passage size must be positive, got {size}")
+def split_passages(text: str) -> list[str]:
+    """``text`` as consecutive passages of at most :data:`PASSAGE_CHARS` characters; ``"".join`` gives ``text`` back."""
     units: list[str] = []
     for match in _UNIT.finditer(text):
         unit = match.group(0)
         # A unit longer than a passage (code, a list without full stops) is cut hard.
-        units.extend(unit[start : start + size] for start in range(0, len(unit), size))
+        units.extend(unit[start : start + PASSAGE_CHARS] for start in range(0, len(unit), PASSAGE_CHARS))
 
     passages: list[str] = []
     current = ""
     for unit in units:
-        if current and len(current) + len(unit) > size:
+        if current and len(current) + len(unit) > PASSAGE_CHARS:
             passages.append(current)
             current = ""
         current += unit

@@ -26,7 +26,6 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -39,6 +38,8 @@ from hygm import (
     validate_model,
     with_core,
 )
+
+from .models import _utc_now
 
 if TYPE_CHECKING:
     from memgraph_toolbox.api.memgraph import Memgraph
@@ -119,17 +120,17 @@ def supply(
     result = validate_model(model)
     if not result.success:
         raise ValueError("; ".join(issue.message for issue in result.critical_issues))
-    return _adopt(
+    return adopt(
         db,
         OntologyVersion(
             user_id=user_id,
-            version=_next_version(db, user_id),
+            version=next_version(db, user_id),
             model=model,
             source="supplied",
             derive=derive,
             pinned=pinned,
             source_hash=source_hash,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=_utc_now(),
         ),
     )
 
@@ -198,7 +199,8 @@ def _carry_learned(model: HygmModel, current: OntologyVersion) -> HygmModel:
     return HygmModel(node_types=nodes, relation_types=relations)
 
 
-def _next_version(db: Memgraph, user_id: str) -> int:
+def next_version(db: Memgraph, user_id: str) -> int:
+    """The number the user's next stored version, adopted or rejected, takes."""
     rows = db.query(
         "MATCH (v:OntologyVersion {user_id: $user_id}) RETURN max(v.version) AS latest",
         params={"user_id": user_id},
@@ -207,9 +209,12 @@ def _next_version(db: Memgraph, user_id: str) -> int:
     return (latest or 0) + 1
 
 
-def adopt(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
-    """Store `version` and make it the user's adopted one."""
-    return _adopt(db, version)
+# Every stored property but `status`, as parameters :func:`_params` supplies.
+_VERSION_PROPERTIES = (
+    "user_id: $user_id, version: $version, created_at: $created_at, source: $source, derive: $derive, "
+    "model: $model, pinned: $pinned, source_hash: $source_hash, counts: $counts, pool: $pool, "
+    "changelog: $changelog, report: $report"
+)
 
 
 def reject(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
@@ -217,21 +222,14 @@ def reject(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
     db.query(
         """
         MERGE (u:User {user_id: $user_id})
-        CREATE (v:OntologyVersion {
-            user_id: $user_id, version: $version, created_at: $created_at, status: 'rejected',
-            source: $source, derive: $derive, model: $model, pinned: $pinned, source_hash: $source_hash,
-            counts: $counts, pool: $pool, changelog: $changelog, report: $report
-        })
+        CREATE (v:OntologyVersion {status: 'rejected', """
+        + _VERSION_PROPERTIES
+        + """})
         CREATE (u)-[:REJECTED]->(v)
         """,
         params=_params(version),
     )
     return version
-
-
-def next_version(db: Memgraph, user_id: str) -> int:
-    """The number the user's next stored version, adopted or rejected, takes."""
-    return _next_version(db, user_id)
 
 
 def _params(version: OntologyVersion) -> dict[str, Any]:
@@ -251,7 +249,8 @@ def _params(version: OntologyVersion) -> dict[str, Any]:
     }
 
 
-def _adopt(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
+def adopt(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
+    """Store `version` and make it the user's adopted one."""
     # One query is one transaction: readers see the old ADOPTED edge or the
     # new one, never a user with none or two.
     db.query(
@@ -259,11 +258,9 @@ def _adopt(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
         MERGE (u:User {user_id: $user_id})
         WITH u
         OPTIONAL MATCH (u)-[adopted:ADOPTED]->(previous:OntologyVersion)
-        CREATE (v:OntologyVersion {
-            user_id: $user_id, version: $version, created_at: $created_at, status: 'adopted',
-            source: $source, derive: $derive, model: $model, pinned: $pinned, source_hash: $source_hash,
-            counts: $counts, pool: $pool, changelog: $changelog, report: $report
-        })
+        CREATE (v:OntologyVersion {status: 'adopted', """
+        + _VERSION_PROPERTIES
+        + """})
         CREATE (u)-[:ADOPTED]->(v)
         FOREACH (_ IN CASE WHEN previous IS NULL THEN [] ELSE [1] END |
             SET previous.status = 'superseded'

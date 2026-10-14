@@ -34,6 +34,8 @@ from sessions_graph.reconciliation import (
 from actions_graph.models import ErrorEvent, Message, MessageRole, ToolCall, ToolResult
 from unstructured2graph import Chunk
 
+from .conftest import link_user
+
 # ---------------------------------------------------------------------------
 # extract_reconcilable_text
 # ---------------------------------------------------------------------------
@@ -145,20 +147,6 @@ class TestBuildReconciliationSources:
 # where test_e2e_reconciliation.py runs GLiNER2 for real.
 
 
-def _stub_db():
-    db = MagicMock()
-    db.query.return_value = []
-    return db
-
-
-def _graph(db=None):
-    from sessions_graph.core import SessionsGraph
-
-    g = SessionsGraph.__new__(SessionsGraph)
-    g._db = db or _stub_db()
-    return g
-
-
 def _fake_lightrag_wrapper():
     """reconcile_sessions_batch drives LightRAG's own pipeline, patched out in every test here."""
     return MagicMock()
@@ -246,9 +234,7 @@ async def test_reconcile_session_extracts_under_the_users_adopted_version_and_re
     actions_graph.create_session(Session(session_id="s-1"))
     actions_graph.record_message(session_id="s-1", role=MessageRole.USER, content="I maintain pytest.")
     # What the connector writes when a harness reports the session's user.
-    memgraph.query(
-        "MERGE (u:User {user_id: 'alice'}) WITH u MATCH (s:Session {session_id: 's-1'}) MERGE (u)-[:HAD_SESSION]->(s)"
-    )
+    link_user(memgraph, "alice", "s-1")
     version = graph.supply_ontology_file("alice", schema)
 
     fake_chunk = Chunk(text="I maintain pytest.", hash=content_hash("I maintain pytest."))
@@ -658,32 +644,6 @@ async def test_reconcile_sessions_batch_reports_a_real_per_document_failure(grap
 
     rows = graph._db.query("MATCH (s:Session {session_id: 's-2'}) RETURN s.reconciliation_status AS status")
     assert rows[0]["status"] == "failed"
-
-
-def test_get_pending_reconciliation_sessions_maps_rows():
-    db = _stub_db()
-    db.query.return_value = [{"session_id": "s-1"}, {"session_id": "s-2"}]
-    g = _graph(db)
-
-    assert g.get_pending_reconciliation_sessions() == ["s-1", "s-2"]
-
-
-def test_get_memories_for_session_maps_rows():
-    db = _stub_db()
-    db.query.return_value = [
-        {
-            "memory_id": "m-1",
-            "user_id": "alice",
-            "content": "Prefers Python",
-            "created_at": "2026-01-01T00:00:00+00:00",
-            "session_id": "s-1",
-        }
-    ]
-    g = _graph(db)
-
-    result = g.get_memories_for_session("s-1")
-    assert len(result) == 1
-    assert result[0].content == "Prefers Python"
 
 
 class TestSpeakerAttribution:

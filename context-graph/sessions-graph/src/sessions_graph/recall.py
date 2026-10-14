@@ -459,14 +459,10 @@ def _type_text(name: str, description: str) -> str:
 def _text_only(db: Any, user_id: str, question: str, config: RecallConfig, *, reason: str) -> Recalled:
     turn_ids = _text_lane(db, user_id, question, config.text_k) if "text" in config.lanes else []
     facts = db.query(_FACTS_OF_TURNS, {"ids": turn_ids, "k": config.facts_k}) if turn_ids else []
-    recalled = _assemble(db, question, turn_ids, facts, config)
-    return Recalled(
-        question=question,
-        turns=recalled.turns,
-        facts=recalled.facts,
+    return replace(
+        _assemble(db, question, turn_ids, facts, config),
         memories=_memories(db, user_id, question, config, query=None, model=""),
         vector_lanes_off=reason,
-        turn_chars=config.turn_chars,
     )
 
 

@@ -4,22 +4,7 @@ Store and track LLM actions, tool calls, and sessions in Memgraph.
 
 > Part of the [Context Graph](../README.md) family — usually wired into `memgraph-context-graph` to capture Claude Code / Codex sessions automatically. This README covers using it directly.
 
-Actions Graph provides a graph-based storage system for tracking all LLM interactions, including:
-- **Tool Calls**: Function/tool invocations by the LLM
-- **Tool Results**: Outputs from tool executions
-- **Messages**: User, assistant, and system messages
-- **Structured Outputs**: Validated JSON outputs from the LLM
-- **Subagent Events**: Subagent lifecycle tracking
-- **Sessions**: Conversation session management
-
-## Features
-
-- 📊 **Graph-based Storage**: Store actions as nodes with relationships in Memgraph
-- 🔗 **Temporal Sequences**: Track action order with `FOLLOWED_BY` relationships
-- 🌳 **Nested Actions**: Support for parent-child action relationships (e.g., subagents)
-- 🏷️ **Session Management**: Create, track, and query sessions
-- 📈 **Analytics**: Built-in queries for tool usage stats and session summaries
-- 🔌 **Memgraph Context Graph Integration**: Consume normalized runtime events through `ActionsGraphConnector`
+Records each agent session's tool calls, tool results, messages, errors, and subagents as `(:Action)`/`(:Agent)` nodes for observability and tool-usage analytics. Collection-tier data, not memory.
 
 ## Installation
 
@@ -102,21 +87,21 @@ Actions Graph should consume runtime activity through Memgraph Context Graph whe
 
 ### Nodes
 
-- **Session**: LLM conversation sessions
-  - Properties: `session_id`, `started_at`, `ended_at`, `status`, `model`, `total_cost_usd`, etc.
-
-- **Action**: Individual actions with type-specific labels
-  - Labels: `ToolCall`, `ToolResult`, `Message` (plus a role label `UserMessage`/`AssistantMessage`/`SystemMessage`), `StructuredOutput`, `SubagentEvent`, `PermissionRequest`, `ErrorEvent`, `RateLimitEvent`
-  - Properties: `action_id`, `action_type`, `timestamp`, `status`, `duration_ms`, `parent_action_id`, `tool_name`, `tool_use_id` (tool calls and results: the harness's id for the call), `is_error`, `is_mcp`, `mcp_server` (MCP tool calls: the server name), `text` (user and assistant messages only: the plain message text), `properties` (type-specific), `metadata`
-  - The session link is the `HAS_ACTION` edge, not a property — there is no `session_id` on `(:Action)`.
+- **Session**: `session_id`, `started_at`, `ended_at`, `status`, `model`, `total_cost_usd`, token totals, `working_directory`, `git_branch`, `metadata`.
+- **Agent**: one subagent's lifecycle (`agent_id`, `agent_type`, `started_at`, `ended_at`, `status`, `description`, `last_assistant_message`).
+- **Action**: one event, with a type label: `ToolCall`, `ToolResult`, `Message` (plus `UserMessage`/`AssistantMessage`/`SystemMessage`), `StructuredOutput`, `PermissionRequest`, `ErrorEvent`, `RateLimitEvent`.
+  Properties: `action_id`, `action_type`, `timestamp`, `status`, `duration_ms`, `parent_action_id`, `tool_name`, `tool_use_id` (the harness's id for the call), `is_error`, `is_mcp`, `mcp_server` (MCP tool calls), `text` (user and assistant messages only), `properties` (type-specific JSON), `metadata`.
+  The session link is the `HAS_ACTION` edge; there is no `session_id` on `(:Action)`.
 
 ### Relationships
 
 ```
-(:Session)-[:HAS_ACTION]->(:Action)
-(:Action)-[:FOLLOWED_BY]->(:Action)   # temporal sequence
-(:Action)-[:PARENT_OF]->(:Action)     # nested, e.g. subagent
-(:Session)-[:FORKED_FROM]->(:Session)
+(:Session)-[:HAS_ACTION]->(:Action)   # top-level actions
+(:Session)-[:HAS_AGENT]->(:Agent)     # every agent, even when its spawner is unknown
+(:Agent)-[:HAS_ACTION]->(:Action)     # actions inside a subagent
+(:Action)-[:SPAWNED]->(:Agent)        # spawning tool call, when unambiguous
+(:Action)-[:FOLLOWED_BY]->(:Action)   # temporal sequence, one chain per Session/Agent
+(:Action)-[:PARENT_OF]->(:Action)     # ToolCall -> its ToolResult
 ```
 
 ## API Reference
@@ -147,6 +132,12 @@ graph.record_message(session_id, role, content, ...)
 graph.get_action(action_id)
 graph.get_session_actions(session_id, action_type=None, limit=1000)
 
+# Subagents
+graph.start_agent(agent)
+graph.end_agent(agent_id, status=ActionStatus.COMPLETED)
+graph.get_agent(agent_id)
+graph.get_session_agents(session_id)
+
 # Analytics
 graph.get_tool_usage_stats(session_id=None)
 graph.get_action_sequence(session_id, include_content=False)
@@ -163,8 +154,6 @@ graph.get_session_summary(session_id)
 | `assistant_message` | `Message` | LLM response |
 | `system_message` | `Message` | System messages |
 | `structured_output` | `StructuredOutput` | Validated JSON output |
-| `subagent_start` | `SubagentEvent` | Subagent started |
-| `subagent_stop` | `SubagentEvent` | Subagent completed |
 | `error` | `ErrorEvent` | Error occurred |
 | `permission_request` | `PermissionRequest` | Permission requested |
 | `rate_limit` | `RateLimitEvent` | Rate limit event |
@@ -181,34 +170,9 @@ link.add_connector(connector)
 The connector records:
 
 - `SessionStartEvent` and `SessionEndEvent` as session lifecycle data
-- `ToolStartEvent` as `ToolCall` action nodes
-- `ToolEndEvent` as `ToolResult` action nodes
-- `MessageEvent`, `AgentStartEvent`, `AgentEndEvent`, and `ErrorOccurredEvent` as action nodes
-
-### Claude Agent SDK Hooks
-
-Direct Claude Agent SDK hooks remain available for standalone use, but Memgraph Context Graph is the preferred integration path when multiple graph components need the same runtime event stream.
-
-For Claude Agent SDK integration:
-
-```python
-from actions_graph.hooks import create_tracking_hooks, ActionTracker
-
-# Simple usage
-hooks = create_tracking_hooks(graph, session_id)
-
-# Advanced usage with custom tracker
-tracker = ActionTracker(
-    graph,
-    session_id,
-    track_tool_calls=True,
-    track_tool_results=True,
-    track_messages=True,
-    track_subagents=True,
-    track_permissions=True,
-    track_errors=True,
-)
-```
+- `ToolStartEvent`/`ToolEndEvent` as `ToolCall`/`ToolResult` actions
+- `MessageEvent` and `ErrorOccurredEvent` as `Message`/`ErrorEvent` actions
+- `AgentStartEvent`/`AgentEndEvent` as one `Agent` node
 
 ## Example Queries
 
@@ -232,7 +196,7 @@ tool_calls = graph.get_session_actions(
 ### Custom Cypher queries
 
 ```python
-rows = graph._db.query(
+rows = graph.db.query(
     """
     MATCH (s:Session {session_id: $session_id})-[:HAS_ACTION]->(a:ToolCall)
     RETURN a.tool_name AS tool, count(*) AS count

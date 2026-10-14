@@ -35,7 +35,7 @@ def test_mcp_tool_name_is_treated_as_skill_tool():
     assert params["session_id"] == "s1"
     assert params["skill_name"] == "cypher-basics"
     assert params["action"] == "get_skill"
-    assert params["create_missing"] is False
+    assert params.get("create_missing", False) is False
 
 
 def test_tool_call_inside_subagent_attaches_usage_to_agent_container():

@@ -13,6 +13,7 @@ from memgraph_context_graph.adapters._spec import (
     SpecPlugin,
     event_user_id,
     json_hook_installer,
+    string_or_none,
     tool_end,
     tool_start,
     turn_end,
@@ -36,7 +37,7 @@ def _session_start(context: EventContext) -> SessionStartEvent:
     return SessionStartEvent(
         **context.base(),
         model=context.optional_text("model"),
-        working_directory=None if cwd is None else str(cwd),
+        working_directory=string_or_none(cwd),
         user_id=event_user_id(context),
     )
 
@@ -75,8 +76,8 @@ def _tool_failure(context: EventContext) -> ToolEndEvent:
 
 def _agent_start(context: EventContext) -> AgentStartEvent:
     agent_type = context.text("agent_type")
-    # Cursor's stop payload omits subagent_id. Use subagent_type as the common
-    # lifecycle key and preserve the start-only ID in metadata.
+    # Cursor's stop payload omits subagent_id, so subagent_type is the key both share;
+    # the start-only id stays in metadata.
     return AgentStartEvent(
         **context.base(),
         agent_name=agent_type,
@@ -90,7 +91,7 @@ def _agent_end(context: EventContext) -> AgentEndEvent:
         **context.base(),
         agent_name=agent_type,
         agent_type=agent_type,
-        output=str(context.payload.get("summary")) if context.payload.get("summary") is not None else None,
+        output=string_or_none(context.payload.get("summary")),
     )
 
 
@@ -154,7 +155,6 @@ SPEC = RuntimeSpec(
         layout="flat",
         version=1,
         merge=True,
-        timeout_key="timeout",
         matchers={
             "preToolUse": "*",
             "postToolUse": "*",

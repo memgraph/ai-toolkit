@@ -22,6 +22,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from .judge_client import BoundedChat
+
 UPSTREAM = (
     "mohammadtavakoli78/BEAM@b2da22eac88bb0874c64665f13457eb99835774a src/evaluation/compute_metrics.py, src/prompts.py"
 )
@@ -217,23 +219,11 @@ class BeamJudge:
     """Upstream's evaluator, calling the OpenAI API with its settings."""
 
     def __init__(self, *, model: str = BEAM_JUDGE_MODEL, client: Any = None, max_concurrent: int = 8):
-        if client is None:
-            from openai import AsyncOpenAI
-
-            client = AsyncOpenAI(max_retries=5)
-        self._client: Any = client
+        self._chat = BoundedChat(client=client, max_concurrent=max_concurrent)
         self._model = model
-        self._limiter = asyncio.Semaphore(max_concurrent)
 
     async def _complete(self, messages: list[dict[str, str]]) -> str | None:
-        async with self._limiter:
-            try:
-                completion = await self._client.chat.completions.create(
-                    model=self._model, messages=messages, temperature=0
-                )
-            except Exception:
-                return None
-        return completion.choices[0].message.content or ""
+        return await self._chat.complete(model=self._model, messages=messages, temperature=0)
 
     async def _item(self, rubric_item: str, response: str) -> tuple[float | None, str]:
         reply = await self._complete([{"role": "user", "content": rubric_prompt(rubric_item, response)}])

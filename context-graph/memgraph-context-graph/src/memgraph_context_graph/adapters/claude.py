@@ -3,16 +3,10 @@
 Translates Claude Agent SDK hook callbacks into the common Event protocol
 and forwards them to the AgentLink hub.
 
-Note: this adapter only wires up the ``hooks={...}`` callback API. The SDK's
-separate message-stream API (``query()``/``ClaudeSDKClient.receive_response()``,
-yielding ``UserMessage``/``AssistantMessage``) carries a genuine
-``parent_tool_use_id`` field that would let a subagent's spawning tool call be
-linked directly rather than inferred -- verified empirically, not just in
-docs. Deliberately not consumed here: doing so would make this one adapter
-strictly better than the other three (Claude Code, Codex, OpenAI Agents SDK),
-which have no equivalent field and stay on the general temporal/agent_type
-inference rule uniformly. Revisit only if that asymmetry becomes worth
-taking on.
+Only the ``hooks={...}`` callback API is wired. The message stream's
+``parent_tool_use_id`` would link a subagent to its spawning tool call directly,
+but is deliberately not consumed: other runtimes have no equivalent, so every
+adapter stays on the same temporal/agent_type inference rule.
 
 Usage::
 
@@ -69,7 +63,6 @@ class ClaudeAdapter(RuntimeAdapter):
     ) -> None:
         self._link = link
         self._session_id = session_id
-        self._tool_use_to_action: dict[str, str] = {}
 
         if auto_session:
             kw = session_kwargs or {}
@@ -83,10 +76,6 @@ class ClaudeAdapter(RuntimeAdapter):
                     metadata=kw.get("metadata", {}),
                 )
             )
-
-    # ------------------------------------------------------------------
-    # Runtime adapter interface
-    # ------------------------------------------------------------------
 
     def get_runtime_hooks(self) -> dict[str, list[Any]]:
         """Return a hooks dict suitable for ``ClaudeAgentOptions(hooks=...)``."""
@@ -105,10 +94,7 @@ class ClaudeAdapter(RuntimeAdapter):
                     self.hooks = hooks or []
                     self.timeout = timeout
 
-        # Our hook callbacks return a permissive dict[str, Any] rather than the
-        # SDK's precise AsyncHookJSONOutput/SyncHookJSONOutput shapes, matching
-        # the try/except HookMatcher shim above: this module treats the SDK as
-        # optional/duck-typed rather than taking a hard type dependency on it.
+        # The SDK is optional, so callbacks return a plain dict rather than its precise hook-output types.
         return {
             "PreToolUse": [HookMatcher(hooks=[cast("Any", self._pre_tool_use)])],
             "PostToolUse": [HookMatcher(hooks=[cast("Any", self._post_tool_use)])],
@@ -119,10 +105,6 @@ class ClaudeAdapter(RuntimeAdapter):
             "Notification": [HookMatcher(hooks=[cast("Any", self._notification)])],
             "Stop": [HookMatcher(hooks=[cast("Any", self._stop)])],
         }
-
-    # ------------------------------------------------------------------
-    # Hook callbacks (async, matching Claude SDK signature)
-    # ------------------------------------------------------------------
 
     async def _pre_tool_use(
         self,

@@ -62,43 +62,10 @@ def _graph(rows=None):
 
 
 class TestSessionsGraphCore:
-    def test_save_memory_runs_two_queries(self):
-        g = _graph()
-        mem = g.save_memory("alice", "Prefers dark mode")
-
-        assert mem.user_id == "alice"
-        assert mem.content == "Prefers dark mode"
-        assert g._db.query.call_count == 1  # no session_id → one query only
-
-    def test_save_memory_with_session_runs_two_queries(self):
-        g = _graph()
-        g.save_memory("alice", "Fact", session_id="s-1")
-        assert g._db.query.call_count == 2  # main + provenance
-
     def test_save_memory_rejects_empty_content(self):
         g = _graph()
         with pytest.raises(MemoryValidationError):
             g.save_memory("alice", "")
-
-    def test_get_memories_returns_empty_list(self):
-        g = _graph(rows=[])
-        result = g.get_memories("alice")
-        assert result == []
-
-    def test_get_memories_maps_rows(self):
-        rows = [
-            {
-                "memory_id": "m-1",
-                "user_id": "alice",
-                "content": "Prefers Python",
-                "created_at": "2026-01-01T00:00:00+00:00",
-                "session_id": None,
-            }
-        ]
-        g = _graph(rows=rows)
-        result = g.get_memories("alice")
-        assert len(result) == 1
-        assert result[0].content == "Prefers Python"
 
     def test_search_memories_skips_empty_query(self):
         g = _graph()
@@ -117,25 +84,16 @@ class TestSessionsGraphCore:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture()
+def context_graph_config():
+    """The config module, already pointed at a temp file by conftest's autouse fixture."""
+    pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
+    from memgraph_context_graph.adapters import _identity
+
+    return _identity
+
+
 class TestSessionsGraphConnector:
-    @pytest.fixture()
-    def context_graph_config(self, monkeypatch, tmp_path):
-        """Point memgraph_context_graph's hook config at a temp dir so tests never
-        touch a real ~/.config/context-graph/config.toml on the host running them.
-        """
-        pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
-        from memgraph_context_graph.adapters import _identity
-
-        # The supported override (ADR 0003), not module privates: those were
-        # removed when the config path became a lookup, and monkeypatching a
-        # missing attribute raises -- while silencing that with raising=False
-        # would point these tests at the real host config, which is exactly
-        # what this fixture exists to prevent.
-        monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "context-graph" / "config.toml"))
-        _identity._reset_cache()
-        yield _identity
-        _identity._reset_cache()
-
     def _make(self):
         pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
         from sessions_graph.connector import SessionsGraphConnector
@@ -237,24 +195,7 @@ class TestSessionsGraphConnector:
 
 
 class TestReconciliationEnv:
-    """Unit tests for connector._child_env(), the fix for the detached
-    ``sessions-graph`` subprocesses never seeing resolved Memgraph/LLM config.
-    """
-
-    @pytest.fixture()
-    def context_graph_config(self, monkeypatch, tmp_path):
-        pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
-        from memgraph_context_graph.adapters import _identity
-
-        # The supported override (ADR 0003), not module privates: those were
-        # removed when the config path became a lookup, and monkeypatching a
-        # missing attribute raises -- while silencing that with raising=False
-        # would point these tests at the real host config, which is exactly
-        # what this fixture exists to prevent.
-        monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "context-graph" / "config.toml"))
-        _identity._reset_cache()
-        yield _identity
-        _identity._reset_cache()
+    """connector._child_env(): what a detached ``sessions-graph`` child inherits."""
 
     def test_merges_config_onto_ambient_env(self, context_graph_config, monkeypatch):
         from sessions_graph.connector import _child_env

@@ -25,22 +25,12 @@ from __future__ import annotations
 
 import os
 import stat
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-#: Points hooks at a different config *file*. Not a way to supply configuration
-#: values -- ADR 0002 removed those from the environment deliberately, because
-#: hook subprocesses do not source shell profiles and relying on ambient env
-#: caused `doctor` and hooks to disagree about what was configured.
-#:
-#: This is the opposite situation: a parent process that spawns a session hands
-#: the path down explicitly to its own child, so nothing is ambient and nothing
-#: can drift. It exists because the config file is otherwise a single global,
-#: which means pointing ONE session at a different Memgraph silently redirects
-#: every other Claude Code session running on the machine -- observed while
-#: building the eval gold slice, where an unrelated session's activity landed
-#: in the graph under test.
+#: Selects which config *file* hooks read, never a value in it (ADR 0003): a parent
+#: process hands the path to the session it spawns, so nothing is ambient.
 CONFIG_PATH_ENV = "CONTEXT_GRAPH_CONFIG"
 
 _DEFAULT_CONFIG_DIR = Path.home() / ".config" / "context-graph"
@@ -75,13 +65,7 @@ MEMORY_BACKEND_GRAPH = "context-graph"
 MEMORY_BACKEND_NATIVE = "native"
 MEMORY_BACKENDS = frozenset({MEMORY_BACKEND_GRAPH, MEMORY_BACKEND_NATIVE})
 
-_RECONCILE_DEFAULTS = {
-    "auto_reconcile": None,
-}
-
-#: Shared truthy/falsy vocabulary for TOML/CLI boolean flags — kept here so
-#: cli.py can validate `config set` input against the same set parse_bool_flag
-#: accepts, instead of redefining it inline.
+#: The boolean spellings parse_bool_flag accepts, shared with ``config set`` validation.
 TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
 FALSY_VALUES = frozenset({"0", "false", "no", "off"})
 
@@ -101,7 +85,7 @@ class HookConfig:
     memgraph_database: str = _MEMGRAPH_DEFAULTS["database"]
     openai_api_key: str = _LLM_DEFAULTS["openai_api_key"]
     anthropic_api_key: str = _LLM_DEFAULTS["anthropic_api_key"]
-    auto_reconcile: bool | None = _RECONCILE_DEFAULTS["auto_reconcile"]
+    auto_reconcile: bool | None = None
     #: The model recall embeds with; None means the consumer's own default.
     embedding_model: str | None = None
     #: Every other ``[recall]`` key (lanes and widths), as written: the recall
@@ -133,18 +117,11 @@ class HookConfig:
 
 
 def load_config() -> HookConfig:
-    """Load hook configuration from the config file.
-
-    Returns a HookConfig with defaults for any missing values.
-    Caches the result for the lifetime of the process.
-    """
+    """Load hook configuration from the config file, with defaults for missing values; cached per process."""
     global _cached_config
-    if _cached_config is not None:
-        return _cached_config
-
-    config = _read_config_file()
-    _cached_config = config
-    return config
+    if _cached_config is None:
+        _cached_config = _read_config_file()
+    return _cached_config
 
 
 def reload_config() -> HookConfig:
@@ -190,13 +167,10 @@ def resolve_memgraph_env(
 
 
 def resolve_llm_env() -> dict[str, str]:
-    """Resolve LLM API key settings for hook subprocesses.
+    """Resolve LLM API keys for hook subprocesses, from the config file only.
 
-    Config file only — mirrors :func:`resolve_memgraph_env`, but there is no
-    CLI-flag override path for these since nothing resolves them from argparse.
-    Values are empty strings when not configured. Hook-spawned children must
-    overlay these empty values too so ambient credentials cannot supply a key
-    absent from the selected config file.
+    An unconfigured key is an empty string. Hook-spawned children must overlay these
+    empty values too, so ambient credentials cannot supply a key the config file lacks.
     """
     config = load_config()
     return {
@@ -208,42 +182,25 @@ def resolve_llm_env() -> dict[str, str]:
 def resolve_auto_reconcile() -> bool:
     """Resolve whether sessions-graph should auto-trigger reconciliation on SESSION_END.
 
-    Config file only — mirrors :func:`resolve_llm_env`. The config-file value
-    is ``None`` when never configured; per ADR 0002 (config-file-only-hook-
-    resolution) there is no ambient env var fallback to preserve here, so
-    "never configured" collapses to ``False``, matching
-    ``SessionsGraphConnector``'s own default. Off by default given LightRAG
-    entity extraction's LLM cost; opt in with
-    ``memgraph-context-graph config set reconcile.auto_reconcile true``.
+    Config file only (ADR 0002); never configured means ``False``, matching
+    ``SessionsGraphConnector``'s default, since reconciliation costs LLM calls.
     """
     return bool(load_config().auto_reconcile)
 
 
 def resolve_embedding_model() -> str | None:
-    """The configured ``[recall] embedding_model``, or None when unset.
-
-    Config file only, like :func:`resolve_auto_reconcile`. None leaves the
-    choice to sessions-graph's own default rather than duplicating it here.
-    """
+    """The configured ``[recall] embedding_model``, or None to leave sessions-graph's default."""
     return load_config().embedding_model
 
 
 def resolve_ontology() -> tuple[str | None, str | None]:
-    """The configured ``[ontology]`` (path, derive), each None when unset.
-
-    Config file only, like :func:`resolve_auto_reconcile`. sessions-graph owns
-    what the values mean and their defaults.
-    """
+    """The configured ``[ontology]`` (path, derive), each None when unset; sessions-graph owns their meaning."""
     config = load_config()
     return config.ontology_path, config.ontology_derive
 
 
 def parse_bool_flag(value: str | bool) -> bool:
-    """Parse a TOML/CLI boolean flag string. Truthy: "1"/"true"/"yes"/"on" (case-insensitive).
-
-    Passing an actual ``bool`` through unchanged guards against a future
-    swap to a real TOML parser (which would hand back native booleans).
-    """
+    """Parse a TOML/CLI boolean flag: :data:`TRUTHY_VALUES` (case-insensitive) is true, a ``bool`` passes through."""
     if isinstance(value, bool):
         return value
     return value.strip().lower() in TRUTHY_VALUES
@@ -271,52 +228,24 @@ def write_config(
     Only updates supplied values; preserves existing values for unspecified keys.
     Creates the file with 0600 permissions if it does not exist.
     """
-    global _cached_config
-
-    # Read existing config as base.
-    existing = _read_config_file()
-
-    final_edition = edition if edition is not None else existing.edition
-    final_user_id = user_id if user_id is not None else existing.user_id
-    final_url = memgraph_url if memgraph_url is not None else existing.memgraph_url
-    final_user = memgraph_user if memgraph_user is not None else existing.memgraph_user
-    final_password = memgraph_password if memgraph_password is not None else existing.memgraph_password
-    final_database = memgraph_database if memgraph_database is not None else existing.memgraph_database
-    final_openai_api_key = openai_api_key if openai_api_key is not None else existing.openai_api_key
-    final_anthropic_api_key = anthropic_api_key if anthropic_api_key is not None else existing.anthropic_api_key
-    final_auto_reconcile = auto_reconcile if auto_reconcile is not None else existing.auto_reconcile
-    final_embedding_model = embedding_model if embedding_model is not None else existing.embedding_model
-    final_ontology_path = ontology_path if ontology_path is not None else existing.ontology_path
-    final_ontology_derive = ontology_derive if ontology_derive is not None else existing.ontology_derive
-    final_github_token = github_token if github_token is not None else existing.github_token
-    final_memory_backend = memory_backend if memory_backend is not None else existing.memory_backend
-
-    content = _render_config(
-        edition=final_edition,
-        user_id=final_user_id or "",
-        url=final_url,
-        user=final_user,
-        password=final_password,
-        database=final_database,
-        openai_api_key=final_openai_api_key,
-        anthropic_api_key=final_anthropic_api_key,
-        auto_reconcile=final_auto_reconcile,
-        embedding_model=final_embedding_model,
-        recall_settings=existing.recall_settings,
-        ontology_path=final_ontology_path,
-        ontology_derive=final_ontology_derive,
-        github_token=final_github_token,
-        memory_backend=final_memory_backend,
-    )
-
-    path = config_file()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    path.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600
-
-    # Invalidate cache.
-    _cached_config = None
-    return config_file()
+    updates = {
+        "edition": edition,
+        "user_id": user_id,
+        "memgraph_url": memgraph_url,
+        "memgraph_user": memgraph_user,
+        "memgraph_password": memgraph_password,
+        "memgraph_database": memgraph_database,
+        "openai_api_key": openai_api_key,
+        "anthropic_api_key": anthropic_api_key,
+        "auto_reconcile": auto_reconcile,
+        "embedding_model": embedding_model,
+        "ontology_path": ontology_path,
+        "ontology_derive": ontology_derive,
+        "github_token": github_token,
+        "memory_backend": memory_backend,
+    }
+    config = replace(_read_config_file(), **{key: value for key, value in updates.items() if value is not None})
+    return _write_config_file(_render_config(config))
 
 
 def write_full_config(
@@ -328,7 +257,7 @@ def write_full_config(
     memgraph_database: str = _MEMGRAPH_DEFAULTS["database"],
     openai_api_key: str = _LLM_DEFAULTS["openai_api_key"],
     anthropic_api_key: str = _LLM_DEFAULTS["anthropic_api_key"],
-    auto_reconcile: bool | None = _RECONCILE_DEFAULTS["auto_reconcile"],
+    auto_reconcile: bool | None = None,
 ) -> Path:
     """Write a complete config file, resetting identity, Memgraph and LLM settings to what is given.
 
@@ -336,49 +265,29 @@ def write_full_config(
     edition are kept from the existing file, since only ``config set`` or a hand edit ever sets them.
     ``auto_reconcile`` is kept likewise unless given here. :func:`write_config` is the partial update.
     """
-    global _cached_config
-
     existing = _read_config_file()
-    final_auto_reconcile = auto_reconcile if auto_reconcile is not None else existing.auto_reconcile
-
-    content = _render_config(
-        edition=existing.edition,
+    config = replace(
+        existing,
         user_id=user_id,
-        url=memgraph_url,
-        user=memgraph_user,
-        password=memgraph_password,
-        database=memgraph_database,
+        memgraph_url=memgraph_url,
+        memgraph_user=memgraph_user,
+        memgraph_password=memgraph_password,
+        memgraph_database=memgraph_database,
         openai_api_key=openai_api_key,
         anthropic_api_key=anthropic_api_key,
-        auto_reconcile=final_auto_reconcile,
-        embedding_model=existing.embedding_model,
-        recall_settings=existing.recall_settings,
-        ontology_path=existing.ontology_path,
-        ontology_derive=existing.ontology_derive,
-        github_token=existing.github_token,
-        memory_backend=existing.memory_backend,
+        auto_reconcile=auto_reconcile if auto_reconcile is not None else existing.auto_reconcile,
     )
+    return _write_config_file(_render_config(config))
 
+
+def _write_config_file(content: str) -> Path:
+    global _cached_config
     path = config_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
-    path.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600
-
+    path.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600: the file holds credentials.
     _cached_config = None
-    return config_file()
-
-
-def config_file_path() -> Path:
-    """Return the config file path (for display purposes)."""
-    return config_file()
-
-
-def config_dir_path() -> Path:
-    """Return the directory holding the config file actually in use."""
-    return config_file().parent
-
-
-# --- Internal helpers ---
+    return path
 
 
 def _read_config_file() -> HookConfig:
@@ -466,62 +375,50 @@ def _parse_toml(path: Path, problems: list[str] | None = None) -> dict[str, dict
     return sections
 
 
-def _render_config(
-    *,
-    edition: str | None = None,
-    user_id: str,
-    url: str,
-    user: str,
-    password: str,
-    database: str,
-    openai_api_key: str,
-    anthropic_api_key: str,
-    auto_reconcile: bool | None,
-    embedding_model: str | None = None,
-    recall_settings: dict[str, str] | None = None,
-    ontology_path: str | None = None,
-    ontology_derive: str | None = None,
-    github_token: str | None = None,
-    memory_backend: str | None = None,
-) -> str:
+def _render_config(config: HookConfig) -> str:
     """Render the full config file content.
 
-    The ``[reconcile]`` section is omitted entirely when ``auto_reconcile`` is
-    ``None`` (never configured), so a fresh read of the file resolves it back
-    to ``None`` rather than a concrete ``false`` — see
-    :func:`resolve_auto_reconcile` for why that distinction matters.
-    ``[recall]``, ``[ontology]``, ``[github]`` and ``[memory]`` are likewise omitted while they hold nothing.
+    ``[reconcile]`` is omitted while ``auto_reconcile`` is ``None`` so a re-read keeps "never configured"
+    distinct from an explicit ``false``; ``[recall]``, ``[ontology]``, ``[github]`` and ``[memory]`` are
+    omitted while they hold nothing.
     """
+    user_id = config.user_id or ""
     lines = [
         "# Context Graph hook configuration",
         "# Generated by: memgraph-context-graph config set / bootstrap",
         f"# Location: {config_file()}",
         "",
-        *([f'edition = "{edition}"', ""] if edition else []),
+        *([f'edition = "{config.edition}"', ""] if config.edition else []),
         # Enterprise takes the user and their database from the Memgraph login, so it writes neither.
-        *(["[identity]", f'user_id = "{user_id}"', ""] if edition != "enterprise" else []),
+        *(["[identity]", f'user_id = "{user_id}"', ""] if config.edition != "enterprise" else []),
         "[memgraph]",
-        f'url = "{url}"',
-        f'user = "{user}"',
-        f'password = "{password}"',
-        *([f'database = "{database}"'] if edition != "enterprise" else []),
+        f'url = "{config.memgraph_url}"',
+        f'user = "{config.memgraph_user}"',
+        f'password = "{config.memgraph_password}"',
+        *([f'database = "{config.memgraph_database}"'] if config.edition != "enterprise" else []),
         "",
         "[llm]",
-        f'openai_api_key = "{openai_api_key}"',
-        f'anthropic_api_key = "{anthropic_api_key}"',
+        f'openai_api_key = "{config.openai_api_key}"',
+        f'anthropic_api_key = "{config.anthropic_api_key}"',
     ]
-    if auto_reconcile is not None:
-        lines += ["", "[reconcile]", f"auto_reconcile = {'true' if auto_reconcile else 'false'}"]
-    recall = {"embedding_model": embedding_model, **(recall_settings or {})} if embedding_model else recall_settings
+    if config.auto_reconcile is not None:
+        lines += ["", "[reconcile]", f"auto_reconcile = {'true' if config.auto_reconcile else 'false'}"]
+    recall = (
+        {"embedding_model": config.embedding_model, **config.recall_settings}
+        if config.embedding_model
+        else config.recall_settings
+    )
     if recall:
         lines += ["", "[recall]", *(f'{key} = "{value}"' for key, value in recall.items())]
-    ontology = {key: value for key, value in (("path", ontology_path), ("derive", ontology_derive)) if value}
+    ontology = {
+        key: value for key, value in (("path", config.ontology_path), ("derive", config.ontology_derive)) if value
+    }
     if ontology:
         lines += ["", "[ontology]", *(f'{key} = "{value}"' for key, value in ontology.items())]
-    if github_token:
-        lines += ["", "[github]", f'token = "{github_token}"']
-    if memory_backend:
-        lines += ["", "[memory]", f'backend = "{memory_backend}"']
+    if config.github_token:
+        lines += ["", "[github]", f'token = "{config.github_token}"']
+    if config.memory_backend:
+        lines += ["", "[memory]", f'backend = "{config.memory_backend}"']
     lines.append("")
     return "\n".join(lines)
 

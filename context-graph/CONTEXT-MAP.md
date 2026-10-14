@@ -31,9 +31,10 @@ _Avoid_: required credential
 
 ## Contexts
 
-- [Memgraph Context Graph](./memgraph-context-graph/CONTEXT.md) — translates agent SDK/runtime hook activity into shared event stream, routes to graph connectors.
+- [Memgraph Context Graph](./memgraph-context-graph/CONTEXT.md) — translates agent SDK/runtime hook activity into shared event stream, routes to graph connectors. Also serves components' read tools (recall, resource) to the model over stdio MCP.
 - [Skills Graph](./skills-graph/CONTEXT.md) — stores reusable agent skills in Memgraph, records session skill usage.
 - [Actions Graph](./actions-graph/CONTEXT.md) — records agent session activity as action nodes for observability + tool usage analytics.
+- [Resources Graph](./resources-graph/CONTEXT.md) — remembers the public GitHub issues, PRs and repositories an agent explored as shared Resources, and serves them back through the `resource` tool.
 - [Sessions Graph](./sessions-graph/CONTEXT.md) — stores Memory files, indexes History and Memory into extracted entities, serves recall. Named `sessions-graph`: `memory-graph` taken on PyPI. Domain = memory recall.
 - [Context Graph Spaces](./spaces/CONTEXT.md) — Enterprise edition: personal + shared spaces for many users on one licensed Memgraph, isolated by Memgraph access control.
 - [Context Graph Viewer](./viewer/README.md) — read-only terminal views of capture health, pipeline state, sessions and the knowledge graph. Reads what the others write; never writes.
@@ -44,9 +45,9 @@ _Avoid_: required credential
 - **Memgraph Context Graph -> graph components**: emits normalized events. Each component-owned connector decides what to persist. `ActionsGraphConnector` records observability data, `SkillGraphConnector` records skill activity, `SessionsGraphConnector` records session/user lifecycle data.
 - **Session Node (shared)**: `(:Session {session_id})` joins component data. Any component may `MERGE` it; none owns it. Adapter sets `session_id`.
 - **Actions Graph -> Skills Graph**: both consume tool activity. Actions Graph records it; Skills Graph decides if it proves skill usage.
-- **Actions Graph -> Sessions Graph**: reconciliation reads top-level + subagent actions via `get_session_actions()`. Never modifies Actions Graph data ([#275](https://github.com/memgraph/ai-toolkit/issues/275), ticket #281).
-- **Actions Graph -> Skills Graph (`Agent` nodes)**: Actions Graph owns each subagent's `Agent` node. Skills Graph may attach `USED_SKILL` to it by `agent_id` — mirrors `HAS_ACTION`/`USED_SKILL` on a top-level Session ([#275](https://github.com/memgraph/ai-toolkit/issues/275)).
-- **Sessions Graph -> [unstructured2graph](../unstructured2graph/CONTEXT.md)**: `SESSION_END` only marks Session `reconciliation_status = 'pending'`. Later, out-of-band reconciliation run sends Action + Memory content to `unstructured2graph`: links source nodes to `Chunk` nodes via `HAS_CHUNK`, builds entity graph. No LLM. `unstructured2graph` is outside the Context Graph family.
+- **Actions Graph -> Sessions Graph**: reconciliation reads top-level + subagent actions via `get_session_actions()`. Never modifies Actions Graph data.
+- **Actions Graph -> Skills Graph (`Agent` nodes)**: Actions Graph owns each subagent's `Agent` node. Skills Graph may attach `USED_SKILL` to it by `agent_id` — mirrors `HAS_ACTION`/`USED_SKILL` on a top-level Session.
+- **Sessions Graph -> [unstructured2graph](../unstructured2graph/CONTEXT.md)**: `SESSION_END`/`TURN_END` only mark Session `reconciliation_status = 'pending'`. Later, out-of-band reconciliation run sends Action + Memory content to `unstructured2graph`: links source nodes to `Chunk` nodes via `HAS_CHUNK`, builds entity graph. No LLM. `unstructured2graph` is outside the Context Graph family.
 - **Actions/Sessions Graph -> Context Graph Eval**: Eval Batch stages Action fixtures + runs Session Reconciliation in dedicated Memgraph instance. Retrieval + scoring then read resulting Action/Chunk/entity data, no modification.
 
 ## Cross-component graph patterns

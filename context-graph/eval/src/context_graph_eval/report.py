@@ -42,41 +42,20 @@ class RunMeta:
     tokenizer: str
     questions: int
     changed: str = ""
-    #: 'provider:model_id' actually used for retrieval, e.g. 'openai:gpt-4o'.
-    #: Answers depend on this model too, so compare() pins it for the same
-    #: reason it already pins judge_model -- previously untracked (#329).
+    #: 'provider:model_id' actually used for answering, e.g. 'openai:gpt-4o'.
     agent_model: str = ""
-    #: True when judge_model and agent_model resolved to the same provider.
-    #: #304's cross-provider independence does not hold for such a run -- a
-    #: legitimate experiment (#329, #324's model-vs-rubric diagnosis needs
-    #: it), just never a silent one. Defaults to False for runs saved before
-    #: this field existed, which were always cross-provider by construction.
+    #: Judge and agent resolved to the same provider: #304's independence does not hold.
     same_provider: bool = False
-    #: "lightrag" or "gliner2" -- see reconcile.EXTRACTION_BACKENDS. Defaults
-    #: to "lightrag" for runs saved before this field existed, which is what
-    #: every one of them actually used (GLiNER2 wasn't reachable from this
-    #: CLI until this field was added). "none" when retrieval_strategy is
-    #: "text-search": that strategy never reconciles anything, so no backend
-    #: extracted anything -- compare() exempts the pin below when either side
-    #: is "none" rather than treating "text-search never reconciled" as a
-    #: backend mismatch.
+    #: See reconcile.EXTRACTION_BACKENDS; "none" for text-search, which never reconciles.
     extraction_backend: str = "lightrag"
-    #: "graph-agent" or "text-search" -- see runner.RETRIEVAL_STRATEGIES.
-    #: Deliberately NOT pinned by compare() below: unlike every other field
-    #: here, this is usually the thing a comparison exists to measure, not a
-    #: nuisance variable that would make one incomparable to the other.
-    #: Defaults to "graph-agent" for runs saved before this field existed,
-    #: which is the only strategy that existed then.
+    #: See runner.RETRIEVAL_STRATEGIES. The one field compare() does not pin.
     retrieval_strategy: str = "graph-agent"
     #: "fixed" (the LongMemEval vocabulary), "default" (hygm's default model) or
-    #: "learned" (each user's derived model, map #431): different graphs, so
-    #: different systems under test.
+    #: "learned" (each user's derived model): different graphs, so different systems under test.
     ontology: str = "fixed"
-    #: Which judge scores decided ``covered`` -- see scoring.COVERAGE_GATE.
-    #: Defaults to "min" for runs saved before this field existed, which gated
-    #: on the weakest of every metric, Contextual Recall included.
+    #: Which judge decided ``covered`` -- see scoring.COVERAGE_GATE.
     coverage_gate: str = "min"
-    #: LongMemEval's judge model when it decided ``covered`` (#409), else "none".
+    #: LongMemEval's judge model when it decided ``covered``, else "none".
     official_judge_model: str = "none"
 
 
@@ -138,26 +117,14 @@ def compare(baseline: SavedRun, candidate: SavedRun, noise_floor_pp: float | Non
     _require_same(baseline.meta, candidate.meta, "corpus_revision", "corpus")
     _require_same(baseline.meta, candidate.meta, "corpus_variant", "corpus")
     _require_same(baseline.meta, candidate.meta, "judge_model", "judge")
-    # Answers depend on the agent model too (#329) -- previously untracked, so
-    # this comparison silently ran across two agent models with nothing to
-    # say so, the same failure mode the other refusals here exist to prevent.
     _require_same(baseline.meta, candidate.meta, "agent_model", "agent model")
-    # A LightRAG-built and a GLiNER2-built graph are different systems under
-    # test -- comparing across them would measure the backend swap as though
-    # it were the schema/retrieval change under test. Exempted when either
-    # side is "none" (a text-search run, which never reconciled): that is not
-    # a backend disagreement, it is one side not having a backend at all --
-    # exactly the comparison retrieval_strategy below exists to allow.
+    # "none" is a text-search run with no backend at all, not a disagreement.
     if "none" not in (baseline.meta.extraction_backend, candidate.meta.extraction_backend):
         _require_same(baseline.meta, candidate.meta, "extraction_backend", "extraction backend")
     _require_same(baseline.meta, candidate.meta, "tokenizer", "tokenizer")
     _require_same(baseline.meta, candidate.meta, "coverage_gate", "coverage gate")
     _require_same(baseline.meta, candidate.meta, "official_judge_model", "official judge")
-    # Question count too: coverage is reported as a rate, so a 20-question
-    # baseline and a 60-question candidate produce comparable-looking
-    # percentages over different corpora. That is the same "measures the
-    # sampling change as though it were the change under test" failure the
-    # other three refusals exist to prevent.
+    # Rates over different corpus sizes only look comparable.
     _require_same(baseline.meta, candidate.meta, "questions", "corpus size")
 
     tiers: dict[int, TierComparison] = {}
@@ -191,9 +158,7 @@ def _compare_tier(
     before = {s.name: s for s in baseline if s.tier == tier}
     after = {s.name: s for s in candidate if s.tier == tier}
     shared = before.keys() & after.keys()
-    # Efficiency is only meaningful where both runs actually cleared the gate on
-    # the SAME question: #309 defines it as the payload behind a passing answer,
-    # so a question only one run passed has no counterpart to compare against.
+    # Efficiency compares only questions both runs passed (#309).
     shared_passing = sorted(n for n in shared if before[n].covered and after[n].covered)
 
     baseline_covered = sum(1 for s in before.values() if s.covered)
@@ -210,14 +175,8 @@ def _compare_tier(
         questions=questions,
         coverage_delta_pp=delta_pp,
         coverage_is_real=is_real,
-        # Over the questions BOTH runs passed, not each run's own passing set.
-        # Those sets differ, so the old form compared medians taken over
-        # different -- sometimes disjoint -- samples and reported the difference
-        # as a change in retrieval cost.
         baseline_efficiency=_median_efficiency(before[n] for n in shared_passing),
         candidate_efficiency=_median_efficiency(after[n] for n in shared_passing),
-        # Named, not just counted: a rate tells a human something moved, but
-        # only the names tell them where to look.
         regressions=sorted(n for n in shared if before[n].covered and not after[n].covered),
         improvements=sorted(n for n in shared if not before[n].covered and after[n].covered),
     )
@@ -257,10 +216,7 @@ def render(comparison: Comparison) -> str:
         f"VERDICT  {comparison.verdict.value}",
     ]
 
-    # Named on its own line, not folded into the header above: this is
-    # deliberately the one axis compare() does not pin, so a reader must not
-    # mistake "not pinned" for "the same" -- a text-search-vs-graph-agent
-    # comparison should be unmissable at a glance.
+    # Its own line: the one axis compare() does not pin must be unmissable.
     if comparison.baseline.retrieval_strategy != meta.retrieval_strategy:
         lines.append(
             f"retrieval  {comparison.baseline.retrieval_strategy} (baseline) vs {meta.retrieval_strategy} (candidate)"
@@ -291,10 +247,6 @@ def render(comparison: Comparison) -> str:
             f"{_efficiency_delta(t):>10}"
         )
         if t.baseline_efficiency is None:
-            # Said out loud rather than left as a bare "n/a": the number is
-            # absent because the runs share no passing question, which is itself
-            # the finding -- at low coverage there is nothing to compare, and a
-            # reader who does not know that reads the blank as "unchanged".
             lines.append("                   (no question cleared coverage in both runs -- nothing comparable)")
         if t.regressions:
             lines.append(f"  regressions      {', '.join(t.regressions)}")
@@ -304,7 +256,6 @@ def render(comparison: Comparison) -> str:
     if meta.changed:
         lines += ["", f"changed  {meta.changed}"]
 
-    # Stated outright: the report informs a decision, it does not make one.
     lines += ["", "This report is input to a human promotion decision (#299), not a gate."]
     return "\n".join(lines)
 

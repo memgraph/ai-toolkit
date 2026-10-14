@@ -10,10 +10,10 @@ A small library to persist, retrieve and evolve AI skills in [Memgraph](https://
 (:Skill {name, description, content, license, compatibility,
          allowed_tools, metadata, created_at, updated_at, source_path?})
 (:Skill)-[:DEPENDS_ON]->(:Skill)
-(:Session)-[:USED_SKILL {first_access, last_access, access_count, actions}]->(:Skill)
+(:Session|:Agent)-[:USED_SKILL {first_access, last_access, access_count, actions}]->(:Skill)
 ```
 
-`USED_SKILL` is written from a `MERGE (:Session {session_id})` — skills-graph MERGEs the shared Session node it does not own (see the [Context Graph map](../CONTEXT-MAP.md)). `source_path` is set only when a skill is created by observing a local `SKILL.md` read.
+`USED_SKILL` starts at the subagent's `(:Agent)` when actions-graph has created it, otherwise at a `MERGE (:Session {session_id})` — skills-graph MERGEs the shared Session node it does not own (see the [Context Graph map](../CONTEXT-MAP.md)). `source_path` is set only when a skill is created by observing a local `SKILL.md` read.
 
 ## Quick Start
 

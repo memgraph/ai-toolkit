@@ -42,15 +42,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         if len(args) == 1:
             print("usage: memgraph-context-graph hook run <runtime> [options]", file=sys.stderr)
             return _hook_misconfigured(None, "MissingRuntime", "hook run was given no runtime")
-        runtime = args[1]
-        runtime_args = args[2:]
-        return _run_runtime(runtime, runtime_args)
+        return _run_runtime(args[1], args[2:])
 
-    # Backward-compatible module form:
-    # python -m memgraph_context_graph.hooks.cli codex --connector skills-graph
-    runtime = command
-    runtime_args = args[1:]
-    return _run_runtime(runtime, runtime_args)
+    print(f"Unknown hook command: {command}", file=sys.stderr)
+    print(_HELP, file=sys.stderr)
+    return _hook_misconfigured(None, "UnknownHookCommand", f"unknown hook command: {command}")
 
 
 def _run_runtime(runtime: str, runtime_args: list[str]) -> int:

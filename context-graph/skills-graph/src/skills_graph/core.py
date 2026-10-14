@@ -1,3 +1,5 @@
+"""SkillGraph: persist Agent Skills and their per-session usage in Memgraph."""
+
 import json
 from datetime import datetime, timezone
 
@@ -169,24 +171,16 @@ class SkillGraph:
         metadata: dict[str, str] | None = None,
         container_agent_id: str | None = None,
     ) -> None:
-        """Record that a session (or a specific Agent within it) used a skill.
+        """Record that a session (or a subagent within it) used a skill.
 
-        By default this preserves the historical behavior and only records
-        usage for skills that already exist. Inferred local SKILL.md reads can
-        opt into creating a minimal Skill node so filesystem-based skill use is
-        not dropped.
+        Only existing skills are recorded unless ``create_missing`` is set, which
+        local ``SKILL.md`` reads use to create a minimal Skill node.
 
         Args:
-            container_agent_id: If set AND a matching Agent node already
-                exists, USED_SKILL attaches to it instead of the Session
-                directly, mirroring HAS_ACTION's either-container pattern
-                (actions-graph's Agent node, #278). Some adapters (e.g. the
-                OpenAI Agents SDK one) set an agent name for every running
-                agent, not just genuine nested subagents, and not every
-                caller wires actions-graph's connector to create the node at
-                all -- falling back to the Session when no such Agent node
-                exists (rather than a hard MATCH that would silently drop
-                the whole usage record) keeps this correct either way.
+            container_agent_id: Attach USED_SKILL to this Agent when that node
+                exists, else to the Session. Some adapters name every running
+                agent, and actions-graph may not be wired to create the node,
+                so a missing Agent falls back rather than dropping the record.
         """
         resolved_agent_id = None
         if container_agent_id:

@@ -18,11 +18,12 @@ import pytest
 pytest.importorskip("memgraph_context_graph")
 pytest.importorskip("actions_graph")
 
-from sessions_graph.embeddings import EmbeddingUnavailableError, check_available
 from sessions_graph.tool import RecallTool
 
 from actions_graph import MessageRole, Session
 from memgraph_context_graph.adapters._identity import HookConfig
+
+from .conftest import link_user
 
 EXPECTED = Path(__file__).parent / "fixtures" / "recall_community_gate.json"
 
@@ -58,20 +59,13 @@ QUESTIONS = (
 
 
 @pytest.fixture
-def community_graph(graph, memgraph, actions_graph):
+def community_graph(graph, memgraph, actions_graph, requires_mage):
     """Two users' sessions and one memory file, embedded the way session end does it."""
-    try:
-        check_available(memgraph)
-    except EmbeddingUnavailableError as exc:
-        pytest.skip(f"Memgraph can't embed (needs MAGE): {exc}")
     for user, turns in _TURNS.items():
         for index, (timestamp, text) in enumerate(turns):
             session = f"{user}-s{index}"
             actions_graph.ensure_session(Session(session_id=session, started_at=timestamp))
-            memgraph.query(
-                "MERGE (u:User {user_id: $u}) WITH u MATCH (s:Session {session_id: $s}) MERGE (u)-[:HAD_SESSION]->(s)",
-                {"u": user, "s": session},
-            )
+            link_user(memgraph, user, session)
             actions_graph.record_message(session_id=session, role=MessageRole.USER, content=text, timestamp=timestamp)
             graph.embed_session(session)
     store = graph.memory_store("u1")

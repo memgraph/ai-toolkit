@@ -1,22 +1,20 @@
 """Drive a whole eval batch: inject, reconcile, retrieve, score.
 
-This is the *pipeline* loop. deepeval owns the scoring loop underneath, but it
-knows nothing about injection, reconciliation, or retrieval -- all of which must
-happen before an ``actual_output`` exists for it to score. The division is:
+The runner owns the pipeline loop; deepeval owns the scoring loop underneath:
 
     runner  ->  inject -> reconcile -> retrieve  ->  deepeval  ->  metrics
 
-Ordering is the runner's real responsibility. Retrieving before injection would
-query an empty graph and score every question a miss; scoring before
-reconciliation would score raw turns rather than emerged memory, which is the
-thing actually under test.
+Ordering is the runner's real responsibility: retrieving before injection
+scores every question a miss, and scoring before reconciliation scores raw
+turns rather than emerged memory.
 """
 
 import asyncio
 import os
 import time
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 from . import official_judge
 from .convert.longmemeval import to_session_fixtures
@@ -47,67 +45,40 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
 
     from .retrieval import LLM
 
-#: "graph-agent" (default, #300's existing baseline: an agent writes its own
-#: Cypher against the reconciled memory) or "text-search" (this eval's cheaper
-#: comparison point: Memgraph's own full-text index over raw, unreconciled
-#: turns -- see text_search.py). Deliberately the one axis report.compare()
-#: does NOT pin: it is usually the thing a run using this field is measuring.
+T = TypeVar("T")
+
+#: retrieval.py, text_search.py and hybrid.py respectively. The one axis
+#: report.compare() does not pin: it is usually what a comparison measures.
 RetrievalStrategyName = Literal["graph-agent", "text-search", "hybrid"]
 RETRIEVAL_STRATEGIES: tuple[RetrievalStrategyName, ...] = ("graph-agent", "text-search", "hybrid")
 
 
 @dataclass(frozen=True)
 class RunPlan:
-    """What a run does, and how much of it.
+    """What a run does, and how much of it."""
 
-    ``reconcile`` is separable because it dominates cost: an LLM-backed pass
-    over a batch's sessions is far more expensive than the retrieval it
-    enables, so iterating on retrieval or scoring against an already-reconciled
-    graph should not pay for it again.
-    """
-
+    #: Separable because it dominates run cost.
     reconcile: bool = True
-    #: Reuse whatever is already in the graph instead of wiping and re-injecting.
-    #: Without this, skipping reconciliation does not save anything: injection
-    #: wipes first, so the run would re-inject raw sessions with no memory tier
-    #: and silently measure retrieval against the collection tier alone (#322).
+    #: Reuse the graph as-is instead of wiping and re-injecting; checked by _require_reconciled.
     reuse_graph: bool = False
     judge: Any | None = None
-    reconcile_limit: int | None = None
     #: "fixed" extracts against the LongMemEval vocabulary; "default" under hygm's
     #: default model; "learned" the same, then derived once per user (learned.py).
     ontology: str = "fixed"
     derive_seeds: int = 1
     derive_workers: int = 4
     max_concurrent: int = 4
-    coverage_threshold: float = DEFAULT_COVERAGE_THRESHOLD
-    #: LongMemEval's own judge (official_judge.py), which decides ``covered``
-    #: when set; None leaves the deepeval answer rubrics deciding it.
+    #: LongMemEval's own judge, which decides ``covered`` when set; None leaves the deepeval answer rubrics deciding.
     official_judge_model: str | None = None
-    #: Trim each question's haystack. Reconciliation cost scales with sessions
-    #: while coverage needs questions, and upstream couples them ~47:1. Any
-    #: score measured with this set is an UPPER BOUND: fewer distractors make
-    #: retrieval easier, so it is not comparable to a full-haystack run.
+    #: Trim each question's distractors. A score measured this way is an upper bound.
     max_sessions_per_question: int | None = None
-    #: Which Memgraph reconciliation writes to. Not optional in practice:
-    #: LightRAG's storage backends resolve their connection from the
-    #: environment rather than the client passed in, so without this
-    #: reconciliation either refuses to start or writes to whatever
-    #: MEMGRAPH_URL happens to name -- a different graph than the one being
-    #: evaluated, silently.
+    #: The Memgraph reconciliation writes to; see reconcile_batch for why it is needed.
     memgraph_url: str | None = None
-    #: "gliner2" (default) or "lightrag" -- see reconcile.EXTRACTION_BACKENDS
-    #: and reconcile_batch's docstring for what each implies. Meaningless when
-    #: retrieval_strategy="text-search" (nothing reconciles), and ignored then.
+    #: Ignored by "text-search", which never reconciles.
     extraction_backend: ExtractionBackendName = "gliner2"
-    #: "graph-agent" (default) or "text-search" -- see RETRIEVAL_STRATEGIES
-    #: above. "text-search" forces reconciliation off regardless of
-    #: ``reconcile`` above: the whole point of that baseline is to skip the
-    #: dominant cost, and running reconciliation anyway would just discard its
-    #: output unused.
+    #: "text-search" forces reconciliation off: it reads only raw turns.
     retrieval_strategy: RetrievalStrategyName = "graph-agent"
-    #: How many text-search hits to hand the answering LLM. Ignored for
-    #: "graph-agent". See text_search.DEFAULT_LIMIT for why this is not tuned.
+    #: "text-search" only.
     text_search_limit: int = DEFAULT_TEXT_SEARCH_LIMIT
     #: "hybrid" only: which recall lanes run and how wide (sessions_graph.RecallConfig).
     hybrid: RecallConfig = field(default_factory=RecallConfig)
@@ -121,34 +92,21 @@ class BatchReport:
     scored: list[Scored] = field(default_factory=list)
     reconciled: int = 0
     reconcile_failures: int = 0
-    #: Turns text_search.ensure_turn_text_index indexed.
-    #: Always 0 for retrieval_strategy="graph-agent", which never calls it.
+    #: Turns text_search.ensure_turn_text_index indexed; 0 for other strategies.
     indexed_turns: int = 0
 
 
 def _require_reconciled(fixtures: list, *, graph: "ActionsGraph", extraction_backend: ExtractionBackendName) -> None:
     """Refuse to reuse a graph that cannot answer the questions about to be run.
 
-    Reuse exists to skip the dominant cost (#322), but it hands the run a graph
-    nobody just built, so the ways it can be wrong are all silent. Each would
-    score every affected question as a recall miss and report it as an
-    ordinary result -- the same manufactured-zero shape as abstention questions
-    judged on ContextualRecall, or a judge outage rendered as 0%.
+    A reused graph was built by nobody this run, so every way it can be wrong
+    is silent and would score as ordinary recall misses: sessions missing,
+    sessions still pending reconciliation, or sessions reconciled by a
+    different backend than ``extraction_backend`` -- which ``RunMeta`` would
+    otherwise record unverified.
 
-    Missing sessions: the graph holds a different batch, or none.
-
-    Present but unreconciled: injection ran without reconciliation, so there is no
-    Chunk or entity to retrieve -- only the raw collection tier, which
-    is a different system from the one under test.
-
-    Reconciled by a different backend: ``extraction_backend`` names what this
-    run is *claiming* built the graph (recorded on ``RunMeta`` so ``compare()``
-    can refuse across a mismatch), but ``--skip-reconcile`` never actually
-    builds anything -- without this check the claim was trusted, not verified.
-    A LightRAG-built graph reused with ``--extraction-backend gliner2`` would
-    silently save "gliner2" in ``RunMeta`` despite every entity in the graph
-    coming from LightRAG, letting two runs that used the same real backend
-    compare as a mismatch, or two that didn't compare as identical.
+    Raises:
+        ValueError: on any of the three.
     """
     wanted = {fixture.session_id for fixture in fixtures}
     if not wanted:
@@ -177,11 +135,7 @@ def _require_reconciled(fixtures: list, *, graph: "ActionsGraph", extraction_bac
             "from -- only the raw collection tier. Run once without --skip-reconcile first."
         )
 
-    # None (no reconcilable content, or a graph built before this property
-    # existed) is not attributable to any backend -- excluded rather than
-    # treated as a mismatch, the same reasoning enforce_retrieval_floor's
-    # abstention exemption and aggregate()'s unscored rows already use
-    # elsewhere in this package for "not applicable" vs. "wrong".
+    # None (no reconcilable content) is not attributable to any backend, so it is not a mismatch.
     expected_label = BACKEND_CLASS_NAMES[extraction_backend]
     mismatched = sorted(
         sid
@@ -198,13 +152,10 @@ def _require_reconciled(fixtures: list, *, graph: "ActionsGraph", extraction_bac
 
 
 def check_offline() -> None:
-    """Refuse to run if results would be exported to a third party.
+    """Refuse to run if deepeval would upload results to Confident AI (#302 keeps eval results local).
 
-    #302 kept the corpus out of a vendor cloud on this project's own owned-IP
-    grounds -- the accumulated graph is the thing you own, unlike rented
-    intelligence. deepeval uploads a test run whenever a Confident AI key is
-    present, so a stray environment variable would quietly send eval results
-    there. Fail loudly instead.
+    Raises:
+        RuntimeError: ``CONFIDENT_API_KEY`` is set.
     """
     if os.environ.get("CONFIDENT_API_KEY"):
         raise RuntimeError(
@@ -229,12 +180,7 @@ async def run_batch(
     plan = plan or RunPlan()
     check_offline()
 
-    # Every score, report row, and comparison in a run is keyed by question
-    # name, so a nameless golden is unattributable: its scores would collide
-    # with every other nameless one under a single key, and the questions it
-    # displaced would report as unscored. Checked here rather than at scoring
-    # time because by then the run has already paid for injection, distillation
-    # and retrieval.
+    # Every score is keyed by question name; checked before paying for the pipeline.
     unnamed = [i for i, g in enumerate(goldens) if not g.name]
     if unnamed:
         raise ValueError(f"every golden must carry a name to be scored; goldens at {unnamed} have none")
@@ -244,11 +190,7 @@ async def run_batch(
         for record in records
         for fixture in to_session_fixtures(record, max_sessions=plan.max_sessions_per_question)
     ]
-    # reuse_graph exists to skip reconciliation's dominant LLM cost (#322) --
-    # text-search has no such cost to skip (indexing is deterministic and
-    # cheap), and _require_reconciled's pending-status check is meaningless
-    # for a strategy that never reconciles anything, so text-search always
-    # re-injects rather than reusing.
+    # text-search never reconciles, so it has nothing to reuse and always re-injects.
     if plan.reuse_graph and plan.retrieval_strategy != "text-search":
         _require_reconciled(fixtures, graph=graph, extraction_backend=plan.extraction_backend)
     else:
@@ -256,14 +198,10 @@ async def run_batch(
 
     reconciled = failures = indexed_turns = 0
     if plan.retrieval_strategy == "text-search":
-        # No reconciliation regardless of plan.reconcile: this baseline's
-        # whole point is to skip the dominant cost, and reconciling anyway
-        # would just build memory this strategy never reads.
         indexed_turns = ensure_turn_text_index(graph).turns
     elif plan.reconcile:
         outcome = await reconcile_batch(
             graph.db,
-            limit=plan.reconcile_limit,
             memgraph_url=plan.memgraph_url,
             extraction_backend=plan.extraction_backend,
             ontology=plan.ontology,
@@ -295,64 +233,62 @@ async def run_batch(
     )
 
 
+async def retrieve_concurrently(
+    items: Sequence[T], retrieve_one: Callable[[T], Awaitable[Retrieved]], *, max_concurrent: int
+) -> list[Retrieved]:
+    """Run ``retrieve_one`` over ``items``, at most ``max_concurrent`` at once, in input order.
+
+    An item whose retrieval raises becomes an empty, timed result -- a
+    reported miss rather than a silently shorter run.
+    """
+    limiter = asyncio.Semaphore(max_concurrent)
+
+    async def one(item: T) -> Retrieved:
+        async with limiter:
+            started = time.monotonic()
+            try:
+                return await retrieve_one(item)
+            except Exception as exc:
+                return Retrieved(answer="", errors=[str(exc)], latency_seconds=time.monotonic() - started)
+
+    return list(await asyncio.gather(*(one(item) for item in items)))
+
+
 async def _retrieve_all(
     goldens: list["Golden"],
     graph: ReadOnlyGraph,
     llm: "LLM",
     plan: RunPlan,
 ) -> list[Retrieved]:
-    """Retrieve for every question, bounded so a batch cannot stampede the model.
-
-    A question whose retrieval raises becomes an empty result rather than
-    propagating: a coverage rate computed over a silently shortened corpus is
-    wrong, not merely noisy, so a failure has to be reported as a miss.
-    """
-    limiter = asyncio.Semaphore(plan.max_concurrent)
+    """Retrieve for every question with ``plan``'s strategy, at most ``plan.max_concurrent`` at once."""
 
     async def one(golden: "Golden") -> Retrieved:
-        async with limiter:
-            started = time.monotonic()
-            # When the question is asked -- the corpus's question_date, as a
-            # real session's "now" -- without which "how many days ago" and
-            # "this year" have nothing to count from (#367).
-            today = (golden.additional_metadata or {}).get("question_date")
-            try:
-                if plan.retrieval_strategy == "hybrid":
-                    # Each question is its own user's history (to_session_fixtures).
-                    if golden.name is None:
-                        raise ValueError("hybrid recall needs the question's user, carried as the golden's name")
-                    return await retrieve_hybrid(
-                        golden.input,
-                        graph=graph,
-                        llm=llm,
-                        config=plan.hybrid,
-                        today=today,
-                        user_id=golden.name,
-                    )
-                if plan.retrieval_strategy == "text-search":
-                    return await retrieve_by_text_search(
-                        golden.input, graph=graph, llm=llm, limit=plan.text_search_limit, today=today
-                    )
-                return await retrieve(golden.input, graph=graph, llm=llm, today=today)
-            except Exception as exc:
-                # retrieve() times itself, but that timing rides out on the
-                # Retrieved it returns -- a raise never produces one, so the
-                # attempt is timed here too. A failure can have spent real
-                # time (a slow model call that then errored) before raising;
-                # reporting a hard-coded 0.0 there would make it look instant.
-                return Retrieved(answer="", errors=[str(exc)], latency_seconds=time.monotonic() - started)
+        # The corpus's question_date, the "now" relative dates count from.
+        today = (golden.additional_metadata or {}).get("question_date")
+        if plan.retrieval_strategy == "hybrid":
+            # Each question is its own user's history (to_session_fixtures).
+            if golden.name is None:
+                raise ValueError("hybrid recall needs the question's user, carried as the golden's name")
+            return await retrieve_hybrid(
+                golden.input,
+                graph=graph,
+                llm=llm,
+                config=plan.hybrid,
+                today=today,
+                user_id=golden.name,
+            )
+        if plan.retrieval_strategy == "text-search":
+            return await retrieve_by_text_search(
+                golden.input, graph=graph, llm=llm, limit=plan.text_search_limit, today=today
+            )
+        return await retrieve(golden.input, graph=graph, llm=llm, today=today)
 
-    return list(await asyncio.gather(*(one(golden) for golden in goldens)))
+    return await retrieve_concurrently(goldens, one, max_concurrent=plan.max_concurrent)
 
 
 @dataclass(frozen=True)
 class _Judged:
-    """One question's judge output: the gating scores, and why.
-
-    Kept as one unit rather than two parallel dicts so ``_judge``'s two-pass
-    ``dict.update`` (ordinary questions, then abstention) cannot update scores
-    for a question without also updating its reasons.
-    """
+    """One question's judge output: per-metric scores and the judge's reasons, kept as one unit."""
 
     scores: dict[str, float] = field(default_factory=dict)
     reasons: dict[str, str] = field(default_factory=dict)
@@ -384,11 +320,9 @@ def _score(
 ) -> list[Scored]:
     """Turn retrieval results into per-question scores.
 
-    Efficiency, BLEU, F1 and latency are all computed regardless of whether a
-    judge ran, so none of them wait on an LLM. Efficiency, BLEU and F1 are
-    deterministic (#304); latency is not -- it is wall-clock time, which
-    varies run to run -- but it needs no judge either, so it belongs in this
-    same judge-free group despite not sharing that reason.
+    ``covered`` comes from LongMemEval's judge where it judged the question,
+    else from the deepeval answer rubric. Efficiency, BLEU, F1, latency and
+    evidence recall need no judge and are always computed.
     """
     judged = _judge(goldens, retrieved, plan) if plan.judge is not None else {}
 
@@ -396,12 +330,8 @@ def _score(
     for golden, result in zip(goldens, retrieved, strict=True):
         metadata = golden.additional_metadata or {}
         outcome = judged.get(golden.name, _Judged())
-        # The answer rubric's score -- the gate when LongMemEval's judge didn't
-        # run; Contextual Recall rides along in metric_scores as the retrieval
-        # signal (scoring.RETRIEVAL_SIGNAL).
         coverage = gate_score(outcome.scores)
-        # LongMemEval's judge decides when it judged this question (#409); its
-        # failed call is unjudged, never a fallback to our own rubrics.
+        # A failed official-judge call is unjudged, never a fallback to our own rubrics.
         judged_by = "official" if official and golden.name in official else "answer"
         verdict = official.get(golden.name) if official and golden.name else None
         scored.append(
@@ -409,7 +339,7 @@ def _score(
                 name=golden.name or golden.input,
                 tier=metadata.get("tier", 1),
                 coverage=coverage,
-                covered=bool(verdict) if judged_by == "official" else coverage >= plan.coverage_threshold,
+                covered=bool(verdict) if judged_by == "official" else coverage >= DEFAULT_COVERAGE_THRESHOLD,
                 judged_by=judged_by,
                 official_correct=verdict,
                 efficiency_tokens=efficiency_tokens(result),
@@ -425,9 +355,7 @@ def _score(
                 ),
             )
         )
-    # Applied after judging, not before: the per-metric scores are kept as the
-    # judge reported them so attribution still shows what it thought, while the
-    # gate stops an empty payload from counting as recall.
+    # After judging, so metric_scores keep what the judge said while the floor overrides ``covered``.
     return enforce_retrieval_floor(
         scored,
         retrieved_tokens={s.name: s.efficiency_tokens for s in scored},
@@ -435,17 +363,11 @@ def _score(
 
 
 def _judge(goldens: list["Golden"], retrieved: list[Retrieved], plan: RunPlan) -> dict[str, _Judged]:
-    """Score answer quality with deepeval, returning per-metric scores per question.
+    """Score answer quality with deepeval, one pass per answer rubric (``scoring.rubric_for``).
 
-    Each answer rubric is judged in its **own pass** (``scoring.rubric_for``),
-    because the metrics differ: ContextualRecall is structurally inapplicable
-    to an abstention question, whose correct retrieved context is empty, and a
-    preference question's expected output is a rubric rather than facts (see
-    ``scoring.build_metrics``). Scoring them together made every abstention
-    question unpassable.
-
-    deepeval's ``evaluate`` is synchronous and drives its own event loop, so it
-    runs after all pipeline work rather than inside it.
+    The rubrics take different metrics (see ``scoring.build_metrics``).
+    deepeval's ``evaluate`` drives its own event loop, so it runs after all
+    pipeline work rather than inside it.
     """
     paired = list(zip(goldens, retrieved, strict=True))
     judged: dict[str, _Judged] = {}
@@ -469,36 +391,20 @@ def _judge_group(group: list[tuple["Golden", Retrieved]], plan: RunPlan, *, rubr
         metrics=build_metrics(plan.judge, rubric=rubric),
         async_config=AsyncConfig(max_concurrent=plan.max_concurrent),
         display_config=DisplayConfig(print_results=False, show_indicator=False),
-        # One question the judge cannot score should not abandon the batch --
-        # the same reasoning reconciliation uses for an undistillable session.
+        # One unscoreable question must not abandon the batch.
         error_config=ErrorConfig(ignore_errors=True),
     )
 
     judged: dict[str, _Judged] = {}
-    # Matched by name, never by position: deepeval returns test results in
-    # completion order under async concurrency, so zipping them with the input
-    # order handed every question another question's scores -- verified with a
-    # fake metric of random latency, and visible in saved runs as Contextual
-    # Recall reasons quoting a different question's expected answer.
+    # Matched by name, never position: deepeval returns results in completion order.
     by_name = {test_result.name: test_result for test_result in result.test_results}
     for golden in goldens:
         test_result = by_name.get(golden.name)
         if test_result is None:
             continue
-        # Kept per metric, not collapsed: the answer rubric decides the gate,
-        # and the retrieval signal beside it tells you whether retrieval or the
-        # answer was at fault -- #304 pointed out that attribution is free here.
-        # run_batch has already rejected nameless goldens; asserted rather than
-        # re-checked so the type narrows and the invariant stays stated once.
+        # run_batch has already rejected nameless goldens.
         assert golden.name is not None
         metrics = test_result.metrics_data or []
-        # deepeval already generates `reason` alongside every score -- for
-        # ContextualRecallMetric it is itself a synthesis of that metric's
-        # per-sentence supported/unsupported verdicts (see contextual_recall.py
-        # in deepeval) -- so keeping it costs no extra judge call. Previously
-        # discarded here, which meant a failed question said only "0.4" with no
-        # way to tell whether retrieval or the answer was at fault without
-        # rerunning by hand.
         judged[golden.name] = _Judged(
             scores={m.name: m.score for m in metrics if m.score is not None},
             reasons={m.name: m.reason for m in metrics if m.reason},

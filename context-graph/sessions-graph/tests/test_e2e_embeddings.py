@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 from sessions_graph.cli import main
-from sessions_graph.embeddings import DEFAULT_EMBEDDING_MODEL, EmbeddingUnavailableError, check_available
+from sessions_graph.embeddings import DEFAULT_EMBEDDING_MODEL, EmbeddingUnavailableError
 from sessions_graph.passages import split_passages
 
 pytest.importorskip("actions_graph")
@@ -20,12 +20,7 @@ from actions_graph import MessageRole, Session
 BGE_SMALL_DIMENSION = 384
 
 
-@pytest.fixture(autouse=True)
-def _requires_mage(memgraph):
-    try:
-        check_available(memgraph)
-    except EmbeddingUnavailableError as exc:
-        pytest.skip(f"Memgraph can't embed (needs MAGE): {exc}")
+pytestmark = pytest.mark.usefixtures("requires_mage")
 
 
 @pytest.fixture

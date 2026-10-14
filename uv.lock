@@ -197,9 +197,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-claude-agent = [
-    { name = "claude-agent-sdk" },
-]
 memgraph-context-graph = [
     { name = "memgraph-context-graph" },
 ]
@@ -210,14 +207,13 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "claude-agent-sdk", marker = "extra == 'claude-agent'", specifier = ">=0.1.0" },
     { name = "memgraph-context-graph", marker = "extra == 'memgraph-context-graph'", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "neo4j", specifier = ">=5.28.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
 ]
-provides-extras = ["memgraph-context-graph", "claude-agent", "test"]
+provides-extras = ["memgraph-context-graph", "test"]
 
 [[package]]
 name = "aiofile"

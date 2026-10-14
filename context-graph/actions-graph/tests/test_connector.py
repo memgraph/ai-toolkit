@@ -31,11 +31,11 @@ class FakeActionsGraph:
         return self.sessions.get(session_id)
 
     def record_session_start(self, session: Session):
-        return self.create_session(session)
-
-    def create_session(self, session: Session):
         self.sessions[session.session_id] = session
         return session
+
+    def ensure_session(self, session: Session):
+        return self.sessions.setdefault(session.session_id, session)
 
     def end_session(self, session_id: str, **kwargs):
         self.ended_sessions.append((session_id, kwargs))

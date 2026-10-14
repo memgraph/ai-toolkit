@@ -15,6 +15,7 @@ the run would report that as the strategy's score.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import TYPE_CHECKING
 
@@ -64,7 +65,10 @@ async def retrieve_hybrid(
 ) -> Retrieved:
     """Answer ``question`` from what ``sessions_graph.recall`` finds in ``user_id``'s history."""
     started = time.monotonic()
-    recalled = recall(graph, user_id, question, config=config, model=model)
+    # recall is several blocking Memgraph round-trips; a worker thread lets
+    # concurrent questions overlap them. The neo4j driver is thread-safe and
+    # ReadOnlyGraph holds no per-call state.
+    recalled = await asyncio.to_thread(recall, graph, user_id, question, config=config, model=model)
     seen = recalled.lines()
     answer = await llm.complete(answer_prompt(question, seen, today))
     errors = [f"vector lanes off: {recalled.vector_lanes_off}"] if recalled.vector_lanes_off else []

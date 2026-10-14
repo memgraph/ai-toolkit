@@ -1,33 +1,10 @@
 """Memgraph Context Graph connector for SessionsGraph.
 
-The connector is intentionally thin: it watches ``SessionStartEvent`` and
-``SessionEndEvent`` to MERGE ``(:User)`` and ``(:Session)`` nodes so that
-provenance relationships can be wired when memories are saved.  Memory writes
-themselves happen through the :class:`SessionsGraph` Python API directly,
-not through the event stream.
-
-Usage::
-
-    from sessions_graph import SessionsGraph
-    from sessions_graph.connector import SessionsGraphConnector
-    from memgraph_context_graph import AgentLink
-    from memgraph_context_graph.adapters.claude import ClaudeAdapter
-
-    graph = SessionsGraph()
-    graph.setup()
-
-    connector = SessionsGraphConnector(graph)
-
-    link = AgentLink()
-    link.add_connector(connector)
-    adapter = ClaudeAdapter(link, session_id="s-1", session_kwargs={"user_id": "alice"})
-
-    # Later, from within the agent:
-    graph.save_memory(
-        user_id=connector.active_user_id,
-        content="User prefers concise answers",
-        session_id=connector.active_session_id,
-    )
+Watches session start, turn end, session end and memory-tool writes to MERGE
+``(:User)`` and ``(:Session)`` nodes, link sessions to the memory files they
+wrote, mark sessions for reconciliation, and spawn the detached
+``sessions-graph`` processes that embed and reconcile them. Memory writes go
+through the :class:`SessionsGraph` API, not the event stream.
 """
 
 from __future__ import annotations
@@ -93,14 +70,9 @@ class SessionsGraphConnector(GraphConnector):
     Args:
         graph: An initialised :class:`SessionsGraph` instance.
         auto_reconcile: Whether to spawn a detached reconciliation process on
-            SESSION_END. Hook-based runtimes pass this explicitly, resolved
-            from the persistent ``reconcile.auto_reconcile`` config-file
-            setting. Defaults to ``False`` (off) when not given explicitly --
-            local extraction is CPU-heavy, and per ADR 0002
-            (config-file-only-hook-resolution): no ambient environment
-            variable is consulted here. A caller constructing
-            ``SessionsGraphConnector`` directly (not through the hook config
-            layer) must pass ``auto_reconcile=True`` explicitly to enable it.
+            SESSION_END. Off by default, since local extraction is CPU-heavy;
+            hook runtimes pass the config file's ``reconcile.auto_reconcile``,
+            and no environment variable is consulted (ADR 0002).
     """
 
     def __init__(self, graph: SessionsGraph, *, auto_reconcile: bool = False) -> None:
@@ -159,7 +131,6 @@ class SessionsGraphConnector(GraphConnector):
         if user_id:
             self._active_user_id = user_id
             self._active_session_id = event.session_id
-            # MERGE User and Session together so the relationship is always wired
             self._graph._db.query(
                 """
                 MERGE (u:User {user_id: $user_id})
@@ -170,7 +141,6 @@ class SessionsGraphConnector(GraphConnector):
             )
         else:
             self._active_session_id = event.session_id
-            # No user — still ensure the Session node exists for provenance wiring
             self._graph._db.query(
                 "MERGE (:Session {session_id: $session_id});",
                 params={"session_id": event.session_id},

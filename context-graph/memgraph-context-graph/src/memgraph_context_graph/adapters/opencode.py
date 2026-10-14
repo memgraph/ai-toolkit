@@ -14,20 +14,17 @@ from memgraph_context_graph.adapters._spec import (
     SpecAdapter,
     SpecPlugin,
     hook_command_argv,
+    session_end,
     session_start,
     tool_start,
     turn_end,
 )
-from memgraph_context_graph.events import ErrorOccurredEvent, MessageEvent, SessionEndEvent, ToolEndEvent
+from memgraph_context_graph.events import ErrorOccurredEvent, MessageEvent, ToolEndEvent
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from memgraph_context_graph.events import Event
-
-
-def _session_end(context: EventContext) -> SessionEndEvent:
-    return SessionEndEvent(**context.base(), status="completed")
 
 
 def _prompt(context: EventContext) -> MessageEvent:
@@ -108,7 +105,7 @@ SPEC = RuntimeSpec(
     hooks=(),
     rules={
         "session.created": session_start,
-        "session.deleted": _session_end,
+        "session.deleted": session_end,
         "session.prompt": _prompt,
         # Emitted once per completed assistant text part, unlike the streamed
         # session.text.delta, so each assistant message is recorded once.

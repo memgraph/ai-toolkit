@@ -15,6 +15,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from .judge_client import BoundedChat
+
 UPSTREAM = "xiaowu0162/LongMemEval@d6dc8b50a2d9ac0c99485ea28fa5755c62414c34 src/evaluation/evaluate_qa.py"
 
 #: The upstream script's 'gpt-4o' judge.
@@ -103,21 +105,13 @@ async def judge_all(
     A failed call is unjudged, not wrong: counting it as a miss would report
     an outage as a score, the failure ``aggregate`` already refuses.
     """
-    if client is None:
-        from openai import AsyncOpenAI
-
-        client = AsyncOpenAI(max_retries=5)
-    limiter = asyncio.Semaphore(max_concurrent)
+    chat = BoundedChat(client=client, max_concurrent=max_concurrent)
 
     async def one(prompt: str) -> bool | None:
-        async with limiter:
-            try:
-                completion = await client.chat.completions.create(
-                    model=model, messages=[{"role": "user", "content": prompt}], n=1, temperature=0, max_tokens=10
-                )
-            except Exception:
-                return None
-            return is_correct(completion.choices[0].message.content or "")
+        reply = await chat.complete(
+            model=model, messages=[{"role": "user", "content": prompt}], n=1, temperature=0, max_tokens=10
+        )
+        return None if reply is None else is_correct(reply)
 
     labels = await asyncio.gather(*(one(prompt) for prompt in prompts.values()))
     return dict(zip(prompts, labels, strict=True))

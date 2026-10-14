@@ -37,7 +37,7 @@ _Avoid_: Mined Skill, Skill candidate (implies sharing Skill's namespace/guarant
 - **Skills Graph** belongs to broader **Context Graph** family.
 - **Skill** follows Agent Skills specification: https://agentskills.io/specification
 - **Skill Definition** can be represented as a **Skill Node**.
-- **Skill Usage** links Session or subagent **Agent Node** to a **Skill** via `USED_SKILL`. `SkillGraphConnector` uses event's `agent_name` to pick container ([#275](https://github.com/memgraph/ai-toolkit/issues/275), ticket #280). Same relationship also used for **Skill Surfacing**; `actions` records whether evidence = list/search result or direct use.
+- **Skill Usage** links Session or subagent **Agent Node** to a **Skill** via `USED_SKILL`. `SkillGraphConnector` uses event's `agent_name` to pick container. Same relationship also used for **Skill Surfacing**; `actions` records whether evidence = list/search result or direct use.
 - **Skills Graph** consumes relevant **Event Protocol** events via `SkillGraphConnector`.
 - **Skills Graph** treats activity as skill usage when it refs a known skill or local `SKILL.md` file.
 - Reading a local path ending `SKILL.md` creates **Skill Usage**. Readable file -> its metadata populates Skill Node; else fallback metadata used. Reading other Markdown or mentioning a skill in prose doesn't count.

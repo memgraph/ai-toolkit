@@ -50,12 +50,12 @@ def run(
 
 def leftovers(container: str = CONTAINER) -> list[str]:
     """What uninstall leaves on purpose, with the commands that remove it."""
-    from memgraph_context_graph.adapters._identity import config_file_path
+    from memgraph_context_graph.adapters._identity import config_file
 
     return [
         "Kept on purpose; remove them yourself if you want them gone:",
         f"  the graph:   docker rm -f {container} && docker volume rm {container}-data",
-        f"  the config:  rm {config_file_path()}",
+        f"  the config:  rm {config_file()}",
         "  the tool:    uv tool uninstall memgraph-context-graph",
     ]
 

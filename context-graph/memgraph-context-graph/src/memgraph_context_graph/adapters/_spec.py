@@ -17,7 +17,16 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 from memgraph_context_graph.adapters._identity import resolve_user_id
-from memgraph_context_graph.events import MessageEvent, SessionStartEvent, ToolEndEvent, ToolStartEvent, TurnEndEvent
+from memgraph_context_graph.events import (
+    AgentEndEvent,
+    AgentStartEvent,
+    MessageEvent,
+    SessionEndEvent,
+    SessionStartEvent,
+    ToolEndEvent,
+    ToolStartEvent,
+    TurnEndEvent,
+)
 from memgraph_context_graph.protocols import RuntimeAdapter
 
 if TYPE_CHECKING:
@@ -57,6 +66,7 @@ class FieldMap:
         "subagent_type",
         "subagentType",
     )
+    reply: tuple[str, ...] = ("last_assistant_message",)
 
 
 @dataclass(frozen=True)
@@ -76,9 +86,6 @@ class HookConfig:
     version: int | None = None
     merge: bool = False
     timeout_key: str | None = "timeout"
-    timeout_multiplier: int = 1
-    command_key: str = "command"
-    include_type: bool = True
     inject_event_name: bool = False
     matchers: Mapping[str, str] = field(default_factory=dict)
     flat_hooks: frozenset[str] = frozenset()
@@ -269,11 +276,9 @@ def build_hooks_config(spec: RuntimeSpec, command: str, *, timeout: int = 30) ->
         hook_command = command
         if spec.config.inject_event_name:
             hook_command = f"{command} --event-name {shlex.quote(hook_name)}"
-        command_entry: dict[str, Any] = {spec.config.command_key: hook_command}
-        if spec.config.include_type:
-            command_entry["type"] = "command"
+        command_entry: dict[str, Any] = {"command": hook_command, "type": "command"}
         if spec.config.timeout_key is not None:
-            command_entry[spec.config.timeout_key] = timeout * spec.config.timeout_multiplier
+            command_entry[spec.config.timeout_key] = timeout
 
         if spec.config.layout == "nested" and hook_name not in spec.config.flat_hooks:
             entry: dict[str, Any] = {"hooks": [command_entry]}
@@ -401,7 +406,7 @@ def _is_own_entry(spec: RuntimeSpec, entry: Any) -> bool:
     marker = f"hook run {spec.name}"
     if isinstance(entry, dict) and isinstance(entry.get("hooks"), list):
         return any(_is_own_entry(spec, inner) for inner in entry["hooks"])
-    return isinstance(entry, dict) and marker in str(entry.get(spec.config.command_key, ""))
+    return isinstance(entry, dict) and marker in str(entry.get("command", ""))
 
 
 def hook_command_argv(runtime: str, connectors: list[str]) -> list[str]:
@@ -485,6 +490,40 @@ def tool_end(context: EventContext) -> ToolEndEvent:
         error_message=error_message,
         agent_name=context.optional_text("agent_id"),
     )
+
+
+def tool_failure(context: EventContext, error_message: str | None) -> ToolEndEvent:
+    """Tool-failure rule: a failed tool end carrying *error_message*, which each runtime sources differently."""
+    return ToolEndEvent(
+        **context.base(),
+        tool_name=context.text("tool_name"),
+        tool_use_id=context.optional_text("tool_use_id"),
+        is_error=True,
+        error_message=error_message,
+        agent_name=context.optional_text("agent_id"),
+    )
+
+
+def agent_start(context: EventContext) -> AgentStartEvent:
+    """Subagent-start rule: the agent is named by its id, falling back to its type."""
+    agent_type = context.text("agent_type")
+    return AgentStartEvent(**context.base(), agent_name=context.text("agent_id", agent_type), agent_type=agent_type)
+
+
+def agent_end(context: EventContext) -> AgentEndEvent:
+    """Subagent-stop rule: named as in :func:`agent_start`, with the subagent's final reply as its output."""
+    agent_type = context.text("agent_type")
+    return AgentEndEvent(
+        **context.base(),
+        agent_name=context.text("agent_id", agent_type),
+        agent_type=agent_type,
+        output=context.value("reply"),
+    )
+
+
+def session_end(context: EventContext) -> SessionEndEvent:
+    """Session-end rule for runtimes whose payload carries no end status."""
+    return SessionEndEvent(**context.base(), status="completed")
 
 
 def turn_end(context: EventContext, *, reply: Any = None, reason: Any = None) -> list[Event]:
