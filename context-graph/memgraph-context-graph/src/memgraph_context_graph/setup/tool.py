@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 #: Kept in step with the plugins' bootstrap scripts and install.sh, which install the same set first.
-BASE = "memgraph-context-graph[mcp]>=0.6.0"
+BASE = "memgraph-context-graph[mcp]>=0.7.0"
 CONNECTORS = {
     "skills-graph": "skills-graph[memgraph-context-graph]>=0.2.1",
     "actions-graph": "actions-graph[memgraph-context-graph]>=0.5.0",
