@@ -107,6 +107,6 @@ def test_installer_installs_the_tool_then_hands_its_arguments_to_setup(tmp_path)
     )  # fmt: skip
 
     lines = calls.read_text().splitlines()
-    assert lines[0].startswith("uv tool install memgraph-context-graph[mcp]>=")
+    assert lines[0].startswith("uv tool install --quiet memgraph-context-graph[mcp]>=")
     assert "--with sessions-graph[memgraph-context-graph]>=" in lines[0]
     assert lines[-1] == "memgraph-context-graph setup --no-tui codex --memgraph-url bolt://my-host:7687"

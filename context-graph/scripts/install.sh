@@ -25,7 +25,7 @@ fi
 
 # The same set setup checks for (memgraph_context_graph/setup/tool.py) and the plugins' bootstrap installs.
 echo "Installing memgraph-context-graph with skills-graph, actions-graph and sessions-graph"
-uv tool install "memgraph-context-graph[mcp]>=0.7.2" \
+uv tool install --quiet "memgraph-context-graph[mcp]>=0.7.2" \
   --with "skills-graph[memgraph-context-graph]>=0.2.1" \
   --with "actions-graph[memgraph-context-graph]>=0.5.0" \
   --with "sessions-graph[memgraph-context-graph]>=0.8.1" \
