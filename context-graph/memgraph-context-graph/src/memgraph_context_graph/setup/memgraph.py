@@ -180,6 +180,11 @@ def _restart(
                 f"See `docker logs {name}`. Setup never removes it, because it holds your graph.",
             )
     port = _published_port(docker, name)
+    if port is None and (current := _inspect(docker, name)) is not None and _lost_its_network(current):
+        log(f"The container {name} lost its network, so its port isn't published; reattaching it")
+        _run([docker, "network", "connect", "bridge", name])
+        _run([docker, "restart", name])
+        port = _published_port(docker, name)
     if port is None:
         raise ProvisionError(
             f"The container {name} doesn't publish Memgraph's Bolt port 7687",
@@ -189,6 +194,16 @@ def _restart(
     version = _wait_ready(url, user, password, ready_seconds, name, docker)
     how = "found" if info["State"]["Running"] else "restarted"
     return Memgraph(url, version, how, container=name)
+
+
+def _lost_its_network(info: dict) -> bool:
+    """Whether a container asked for Bolt's port but is attached to no network, so Docker can't publish it.
+
+    Docker leaves a container in this state after its network is removed underneath it; the binding is still
+    in its config, and reattaching it (then a restart) makes Docker apply it. Its data is never touched.
+    """
+    bindings = info["HostConfig"].get("PortBindings") or {}
+    return "7687/tcp" in bindings and not info["NetworkSettings"].get("Networks")
 
 
 def _start(
