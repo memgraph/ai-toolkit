@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,7 @@ CONNECTORS = {
     "sessions-graph": "sessions-graph[memgraph-context-graph]>=0.8.1",
 }
 VIEWER = ("context-graph-viewer", "context-graph-viewer>=0.1.0")
+SPACES = ("context-graph-spaces", "context-graph-spaces>=0.1.0")
 
 
 class ToolError(Exception):
@@ -59,8 +61,29 @@ def uv_tool_environment() -> bool:
     return Path(sys.prefix).resolve() == tool_dir.resolve()
 
 
-def install(*, viewer: bool, log: Callable[[str], None]) -> None:
-    """Install the tool with every connector (and the viewer), keeping what is already there.
+def requirements(*, viewer: bool = False, spaces: bool = False) -> list[str]:
+    """The ``uv tool install`` arguments for the tool, every connector, and the optional packages.
+
+    An optional package already installed is kept: ``uv tool install`` replaces the tool's requirements with
+    what it is given, so leaving one out would remove it.
+    """
+    argv = [BASE]
+    for requirement in CONNECTORS.values():
+        argv += ["--with", requirement]
+    if viewer or installed(VIEWER[0]):
+        argv += ["--with", VIEWER[1]]
+    if spaces or installed(SPACES[0]):
+        argv += ["--with", SPACES[1]]
+    return argv
+
+
+def install_command(*, spaces: bool = False) -> str:
+    """The whole ``uv tool install`` command as one line a person can paste, with *spaces* added."""
+    return " ".join(["uv tool install", *map(shlex.quote, requirements(spaces=spaces))])
+
+
+def install(*, viewer: bool, log: Callable[[str], None], spaces: bool = False) -> None:
+    """Install the tool with every connector (and the viewer, and the spaces package), keeping what is already there.
 
     The full set is always passed: ``uv tool install`` replaces the tool's requirements with what it is
     given, so naming only the missing package would drop the others.
@@ -71,11 +94,7 @@ def install(*, viewer: bool, log: Callable[[str], None]) -> None:
     uv = shutil.which("uv")
     if uv is None:
         raise ToolError("uv isn't on PATH")
-    argv = [uv, "--color", "never", "tool", "install", BASE]
-    for requirement in CONNECTORS.values():
-        argv += ["--with", requirement]
-    if viewer or installed(VIEWER[0]):
-        argv += ["--with", VIEWER[1]]
+    argv = [uv, "--color", "never", "tool", "install", *requirements(viewer=viewer, spaces=spaces)]
     log(" ".join(["uv", *argv[3:]]))
     process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     last = ""

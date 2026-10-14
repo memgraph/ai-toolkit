@@ -192,9 +192,11 @@ def _build(config: HookConfig) -> SpaceResolver:
     if edition == EDITION_ENTERPRISE:
         factory = _edition_factory(edition)
         if factory is None:
+            from memgraph_context_graph.setup import tool
+
             raise SpaceError(
-                "edition = enterprise needs the context-graph-spaces package: "
-                "uv tool install 'memgraph-context-graph[mcp]' --with context-graph-spaces"
+                f"edition = enterprise needs the context-graph-spaces package. Install it, with the rest: "
+                f"{tool.install_command(spaces=True)}"
             )
         return factory(config)
     raise SpaceError(f"Unknown edition {edition!r} in the config file; use one of: {', '.join(sorted(EDITIONS))}.")
