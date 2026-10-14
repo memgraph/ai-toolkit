@@ -4100,7 +4100,7 @@ requires-dist = [
 
 [[package]]
 name = "memgraph-context-graph"
-version = "0.6.0"
+version = "0.7.0"
 source = { editable = "context-graph/memgraph-context-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
