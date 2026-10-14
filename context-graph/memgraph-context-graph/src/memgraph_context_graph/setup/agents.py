@@ -12,6 +12,7 @@ import io
 import json
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -220,11 +221,26 @@ def _require(agent: Agent) -> str:
 
 
 def _json(argv: list[str]):
-    result = subprocess.run(argv, capture_output=True, text=True, check=False)
-    if result.returncode != 0:
+    """What an agent CLI's ``--json`` listing printed, or None when it didn't print one.
+
+    A listing that fails once (the CLI busy updating itself, a notice printed ahead of the JSON) would read as
+    "not installed" and mislabel a wired agent, so it is asked twice and the JSON is taken from where it starts.
+    """
+    for attempt in range(2):
+        if attempt:
+            time.sleep(0.5)
+        result = subprocess.run(argv, capture_output=True, text=True, check=False)
+        if result.returncode == 0 and (found := _json_in(result.stdout)) is not None:
+            return found
+    return None
+
+
+def _json_in(text: str):
+    start = min((i for i in (text.find("["), text.find("{")) if i >= 0), default=-1)
+    if start < 0:
         return None
     try:
-        return json.loads(result.stdout)
+        return json.loads(text[start:])
     except json.JSONDecodeError:
         return None
 

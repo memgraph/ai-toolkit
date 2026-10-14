@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import json
 import re
+import subprocess
 
 import pytest
 
@@ -562,3 +563,18 @@ def test_every_line_of_the_welcome_and_the_last_screen_fits_a_narrow_terminal():
 
     for line in (*engine.WELCOME, *engine.next_steps(choices, env)):
         assert len(line) <= 78, line
+
+
+def test_a_listing_that_fails_once_does_not_make_a_wired_agent_look_unwired(monkeypatch):
+    listing = json.dumps([{"id": agents.PLUGIN_ID}])
+    replies = iter(
+        [
+            subprocess.CompletedProcess([], 1, "", "busy"),
+            subprocess.CompletedProcess([], 0, f"Checking for updates...\n{listing}", ""),
+        ]
+    )
+    monkeypatch.setattr(agents.subprocess, "run", lambda *a, **k: next(replies))
+    monkeypatch.setattr(agents.time, "sleep", lambda _: None)
+    monkeypatch.setattr(agents.shutil, "which", lambda name: f"/bin/{name}")
+
+    assert agents.plugin_wired(BY_RUNTIME["claude-code"])
