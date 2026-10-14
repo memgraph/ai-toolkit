@@ -54,7 +54,7 @@ def _query(url: str, cypher: LiteralString) -> list[dict]:
 def names():
     """Container names for this run, and the cleanup of whatever setup made under them."""
     prefix = f"cg-setup-test-{uuid.uuid4().hex[:8]}"
-    made = {"own": f"{prefix}-own", "demo": f"{prefix}-demo", "other": f"{prefix}-other"}
+    made = {"own": f"{prefix}-own", "demo": f"{prefix}-demo", "other": f"{prefix}-other", "lost": f"{prefix}-lost"}
     yield made
     for name in made.values():
         _docker("rm", "-f", name)
@@ -121,6 +121,22 @@ def test_our_stopped_container_comes_back_on_its_port_with_its_data(names, demo)
 
     assert (found.how, found.url) == ("restarted", url)
     assert _query(url, "MATCH (n:SetupProbe) RETURN count(n) AS n") == [{"n": 1}]
+
+
+def test_a_container_that_lost_its_network_is_reattached_and_published(names):
+    port = _free_port()
+    volume = f"{names['lost']}-data:/var/lib/memgraph"
+    run = ["run", "-d", "--name", names["lost"], "-v", volume, "-p", f"127.0.0.1:{port}:7687", mg.IMAGE]
+    assert _docker(*run).returncode == 0
+    # Docker keeps the binding in the config but publishes nothing once the container has no network.
+    assert _docker("network", "disconnect", "bridge", names["lost"]).returncode == 0
+    assert _docker("restart", names["lost"]).returncode == 0
+    assert _docker("port", names["lost"], "7687/tcp").stdout.strip() == ""
+
+    found = mg.find_or_start(configured_url=None, default_port=port, container=names["lost"], log=lambda _: None)
+
+    assert found.url == mg.local_url(port)
+    assert _query(found.url, "RETURN 1 AS ok") == [{"ok": 1}]
 
 
 def test_setup_then_uninstall_end_to_end(names, demo, fake_agents, setup_home, tmp_path, capsys):
