@@ -440,6 +440,16 @@ def test_the_uv_tool_is_recognised_even_when_the_shell_forces_colour(monkeypatch
     assert tool.uv_tool_environment()
 
 
+def test_grok_is_reported_with_the_trust_it_still_needs(fake_agents, setup_home, project):
+    env = engine.look_around(cwd=project)
+    choices = engine.default_choices(env, cwd=project)
+
+    grok = engine._agent(BY_RUNTIME["grok"], choices, lambda _: None)
+
+    assert grok.status == "ok"
+    assert "/hooks-trust" in grok.summary
+
+
 def test_codex_is_reported_with_the_trust_it_still_needs_and_claude_code_is_not(fake_agents, setup_home, project):
     env = engine.look_around(cwd=project)
     choices = engine.default_choices(env, cwd=project)

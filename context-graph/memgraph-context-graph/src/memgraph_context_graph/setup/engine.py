@@ -269,11 +269,7 @@ def _agent(agent: agents_mod.Agent, choices: Choices, log: Callable[[str], None]
     fix = f"memgraph-context-graph setup {agent.runtime}"
     if agent.wiring == "plugin":
         try:
-            summary = agents_mod.wire_plugin(agent, log)
-            if agent.runtime == "codex":
-                # Codex skips an untrusted plugin's hooks without a word, and `codex exec` never asks.
-                summary += "; Codex records nothing until you trust its hooks: open codex and accept them (/hooks)"
-            return Outcome(agent.label, "ok", summary)
+            return Outcome(agent.label, "ok", _with_trust_note(agent, agents_mod.wire_plugin(agent, log)))
         except agents_mod.WiringError as exc:
             return Outcome(agent.label, "fail", str(exc), fix=fix)
     if not choices.project_dirs:
@@ -287,7 +283,19 @@ def _agent(agent: agents_mod.Agent, choices: Choices, log: Callable[[str], None]
     if errors:
         dirs = " ".join(f"--project-dir {path}" for path in choices.project_dirs)
         return Outcome(agent.label, "fail", "; ".join(errors + summaries), fix=f"{fix} {dirs}")
-    return Outcome(agent.label, "ok", "; ".join(summaries))
+    return Outcome(agent.label, "ok", _with_trust_note(agent, "; ".join(summaries)))
+
+
+#: Agents that skip hooks they haven't been told to trust, without a word: nothing is recorded until then.
+_TRUST_NOTES = {
+    "codex": "Codex records nothing until you trust its hooks: open codex and accept them (/hooks)",
+    "grok": "Grok records nothing until you trust this project's hooks: run /hooks-trust in grok",
+}
+
+
+def _with_trust_note(agent: agents_mod.Agent, summary: str) -> str:
+    note = _TRUST_NOTES.get(agent.runtime)
+    return f"{summary}; {note}" if note else summary
 
 
 def _memory(runtime: str, backend: str) -> Outcome | None:
