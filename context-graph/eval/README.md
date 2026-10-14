@@ -537,6 +537,72 @@ context-graph-eval beam --size 100K --chats 1-20 --limit 100 \
   evenly across the chats. Every chat is still loaded, so a limited run and a
   full one use the same graph. `--skip-reconcile` reuses it.
 - **`--hybrid-lanes turns,text`** is the graph ablation.
+- **A saved run also records** end-to-end and recall-only latency (mean,
+  median, p95), the build's wall-clock, the commit, the Memgraph version and
+  the GLiNER2 settings.
+
+### Version point: BEAM 100K, hybrid recall over a GLiNER2 graph (2026-10-14)
+
+The full BEAM 100K benchmark through the shipped read path: all 20 chats and
+400 questions, the graph built by GLiNER2 (no LLM in the build or the recall),
+answered by gpt-4.1 and scored by BEAM's own judge.
+`baselines/beam-100k-gliner2.json` holds the settings, the report and each
+question's scores and latencies, but no BEAM text.
+
+```bash
+context-graph-eval beam --size 100K --chats 1-20 --extraction-backend gliner2 \
+    --ontology default --agent-model openai:gpt-4.1 \
+    --memgraph-url bolt://localhost:<port> --save runs/beam-100k-gliner2.json
+```
+
+| Ability | Score | Evidence recall |
+|---|---|---|
+| preference_following | 0.906 | 0.59 |
+| multi_session_reasoning | 0.829 | 0.56 |
+| information_extraction | 0.778 | 0.73 |
+| instruction_following | 0.700 | 0.25 |
+| contradiction_resolution | 0.675 | 0.89 |
+| knowledge_update | 0.625 | 0.85 |
+| abstention | 0.600 | – |
+| temporal_reasoning | 0.475 | 0.94 |
+| summarization | 0.468 | 0.26 |
+| event_ordering | 0.303 | 0.28 |
+| **BEAM score (mean of abilities)** | **0.636** | |
+
+| | Mean | Median | p95 |
+|---|---|---|---|
+| End to end (recall, answer) | 31.8 s | 28.2 s | 66.6 s |
+| Recall only (`sessions_graph.recall`, no answering model) | 8.8 s | 8.9 s | 10.4 s |
+
+- **Setup:** commit `d585cea`, Memgraph 3.13.2
+  (`memgraph/memgraph-mage@sha256:e28eea42…`), `fastino/gliner2.5-base-v1`
+  with the greedy decoder, hygm's default model, every recall lane, BEAM
+  revision `b2da22ea`. Four questions are answered at a time.
+- **Build:** 478 min for the 82 sessions (1.59M words) on an AMD Ryzen 5 2600
+  (6 cores, 16 GB, no GPU). Most of it is GLiNER2 on the CPU, then
+  Memgraph embedding the passages, entities and facts.
+- **Noise:** the run that built the graph also answered and judged it, and
+  scored 0.628 (`rerun` in the JSON); the headline is a second answering pass
+  over the same graph. Abilities moved by up to 0.075 between the two (40
+  questions each); retrieval, and so evidence recall, was identical. Read an
+  ability's delta under ~0.08 as noise.
+- **One question is a timeout, scored 0:** the answering call to OpenAI timed
+  out on `beam-100K-8-summarization-1` (on two other questions in the first
+  pass). That costs the headline about 0.003.
+- **Recall is slow on long histories.** A BEAM user has ~250 long turns, and
+  recall scores every one of that user's passages, entities and facts by
+  brute-force cosine. One chat alone recalls in ~4.8 s; with all 20 loaded
+  and four questions at once it is 8.8 s, against ~1 s on LongMemEval.
+- **Where it loses:** event ordering, summarization and temporal reasoning.
+  Temporal reasoning finds 94% of the cited evidence, so its misses are in
+  answering from it, not in recall.
+- **Truncation:** reconciliation extracts at most 8,000 characters of a
+  message (`MAX_RECONCILABLE_CHARS`). 20 of BEAM's 5,094 messages are longer,
+  3.9% of its text, nearly all of it one 349k-character paste in chat 4;
+  those messages are still embedded in full for the turn lanes.
+- **"82 failed"** in the reconcile line counts sessions with relationships
+  outside the default model's declared domain/range; every session was
+  reconciled.
 
 ## Building the Tier 1 corpus
 
