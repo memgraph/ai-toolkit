@@ -237,11 +237,11 @@ def _memgraph(choices: Choices, env: Environment, log: Callable[[str], None]) ->
 
 def _config(choices: Choices, url: str) -> Outcome:
     from memgraph_context_graph import spaces
-    from memgraph_context_graph.adapters._identity import config_file_path, write_config
+    from memgraph_context_graph.adapters._identity import config_file, write_config
 
     write_config(memgraph_url=url, user_id=choices.user_id)
     spaces._reset_cache()
-    return Outcome("Config", "ok", f"{config_file_path()}: memgraph.url = {url}, identity.user_id = {choices.user_id}")
+    return Outcome("Config", "ok", f"{config_file()}: memgraph.url = {url}, identity.user_id = {choices.user_id}")
 
 
 def _packages(choices: Choices, log: Callable[[str], None]) -> Outcome:

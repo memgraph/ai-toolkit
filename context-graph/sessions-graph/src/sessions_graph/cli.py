@@ -1,35 +1,8 @@
-"""CLI for Sessions Graph session-content reconciliation and embedding.
+"""The ``sessions-graph`` CLI: reconcile, embed, ontology and derive (see ``_HELP``).
 
-    sessions-graph reconcile --session SESSION_ID
-    sessions-graph reconcile --pending [--limit N]
-    sessions-graph embed --session SESSION_ID [--model MODEL]
-    sessions-graph embed --pending [--limit N] [--model MODEL]
-    sessions-graph ontology load --file SCHEMA.yaml [--user USER_ID] [--derive extend|off]
-    sessions-graph ontology show [--user USER_ID]
-    sessions-graph derive [--user USER_ID] [--force] [--seeds N] [--model MODEL]
-
-Batch-extracts entities from a session's Action/Memory content via
-unstructured2graph's GLiNER2 backend over the user's adopted ontology (see
-reconcile_session() in core.py). This is the intended way to run
-reconciliation — deliberately a separate process from the SESSION_END hook,
-since local extraction is slow and hook subprocesses run under a runtime
-timeout.
-
-Requires the ``sessions-graph[reconciliation]`` extra. No LLM API key: one
-only enables ``derive``.
-
-``ontology`` supplies a schema as a user's next ontology version, or shows
-the adopted one (see ``ontology.py``). ``reconcile`` also applies the config
-file's ``[ontology] path`` to the configured user whenever the file changes.
-
-``derive`` learns the user's next ontology version from their recent sessions
-and adopts it if it passes the gate (see ``derivation.py``). ``reconcile``
-spawns it, detached, for every user it reconciled who reached a milestone,
-when an LLM key is configured; run by hand, ``--force`` derives without waiting for one.
-
-``embed`` computes recall's vectors inside Memgraph (see ``embeddings.py``):
-no LLM and no extra, but a Memgraph with MAGE. The SESSION_END hook runs it
-for every session; ``--pending`` retries sessions that failed or never ran.
+Every command runs out of band, never inside a hook: hooks spawn ``embed``
+and ``reconcile`` detached, ``reconcile`` spawns ``derive`` at a milestone,
+and ``--pending`` sweeps retry what those missed.
 """
 
 from __future__ import annotations
@@ -39,14 +12,14 @@ import asyncio
 import contextlib
 import os
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
     from sessions_graph import SessionsGraph
     from sessions_graph.derivation import RunReport
-    from sessions_graph.ontology import OntologyVersion
+    from sessions_graph.ontology import Derive, OntologyVersion
 
 _HELP = """usage: sessions-graph reconcile (--session SESSION_ID | --pending) [--limit N]
        sessions-graph embed (--session SESSION_ID | --pending) [--limit N] [--model MODEL]
@@ -139,13 +112,11 @@ def _embed(argv: list[str]) -> int:
 
     _fill_env_from_context_graph_config()
 
-    from sessions_graph import SessionsGraph
     from sessions_graph.embeddings import EmbeddingUnavailableError
 
     model = parsed.model or _configured_embedding_model()
     with _logged_before_session("embed", parsed.session):
-        graph = SessionsGraph()
-        graph.setup()
+        graph = _setup_graph()
     session_ids = (
         [parsed.session] if parsed.session else graph.get_pending_embedding_sessions(model=model, limit=parsed.limit)
     )
@@ -198,14 +169,10 @@ def _configured_embedding_model() -> str:
 
 
 def _fill_env_from_context_graph_config() -> None:
-    """Best-effort fallback for standalone (manual/cron) ``reconcile`` runs.
+    """Fill unset Memgraph and LLM variables from the config file, for runs no hook spawned.
 
-    When spawned by the SESSION_END hook, the parent process already overlays
-    context-graph's config.toml onto this subprocess's environment (see
-    sessions_graph.connector._child_env). Run standalone, there's no
-    such parent, so fill in the same values here -- only for keys not already
-    set, so explicit ambient env always wins. memgraph-context-graph is an
-    optional extra; silently skip if it isn't installed.
+    A hook-spawned run already has them (``connector._child_env``); ambient
+    values win. Skipped when memgraph-context-graph isn't installed.
     """
     try:
         from memgraph_context_graph.adapters._identity import resolve_llm_env, resolve_memgraph_env
@@ -236,13 +203,9 @@ def _ontology(argv: list[str]) -> int:
     _fill_env_from_context_graph_config()
     user_id = parsed.user or _configured_user_id()
     if not user_id:
-        print("No user: pass --user or set identity.user_id in the config file.", file=sys.stderr)
-        return 2
+        return _no_user()
 
-    from sessions_graph import SessionsGraph
-
-    graph = SessionsGraph()
-    graph.setup()
+    graph = _setup_graph()
     if parsed.action == "load":
         try:
             version = graph.supply_ontology_file(user_id, parsed.file, derive=parsed.derive)
@@ -278,6 +241,19 @@ def _describe(version: OntologyVersion) -> str:
     return "\n".join(lines)
 
 
+def _no_user() -> int:
+    print("No user: pass --user or set identity.user_id in the config file.", file=sys.stderr)
+    return 2
+
+
+def _setup_graph() -> SessionsGraph:
+    from sessions_graph import SessionsGraph
+
+    graph = SessionsGraph()
+    graph.setup()
+    return graph
+
+
 def _configured_user_id() -> str | None:
     try:
         from memgraph_context_graph.adapters._identity import resolve_user_id
@@ -293,16 +269,17 @@ def _sync_configured_ontology(graph: SessionsGraph) -> None:
     in it never stops reconciliation.
     """
     try:
-        from memgraph_context_graph.adapters._identity import resolve_ontology, resolve_user_id
+        from memgraph_context_graph.adapters._identity import resolve_ontology
     except ImportError:
         return
     path, derive = resolve_ontology()
-    user_id = resolve_user_id({})
+    user_id = _configured_user_id()
     if not path or not user_id:
         return
 
     try:
-        version = graph.sync_ontology_file(user_id, path, derive=derive or "extend")
+        # An unknown mode is rejected by ontology.supply as ValueError, reported below.
+        version = graph.sync_ontology_file(user_id, path, derive=cast("Derive", derive or "extend"))
     except ValueError as exc:
         print(f"WARNING: ontology file {path} not applied, keeping the adopted version: {exc}", file=sys.stderr)
         return
@@ -311,12 +288,14 @@ def _sync_configured_ontology(graph: SessionsGraph) -> None:
 
 
 def _derive(argv: list[str]) -> int:
+    from sessions_graph.derivation import SEEDS
+
     parser = argparse.ArgumentParser(
         prog="sessions-graph derive", description="Learn and gate the user's next ontology version."
     )
     parser.add_argument("--user", help="Whose model (default: the config file's identity.user_id).")
     parser.add_argument("--force", action="store_true", help="Derive now, without waiting for the next milestone.")
-    parser.add_argument("--seeds", type=int, default=3, help="Candidates to derive and gate (default: 3).")
+    parser.add_argument("--seeds", type=int, default=SEEDS, help=f"Candidates to derive and gate (default: {SEEDS}).")
     parser.add_argument("--model", help="The LLM (default: claude-sonnet-5-5 with Anthropic, gpt-5 with OpenAI).")
     parser.add_argument(
         "--threads",
@@ -328,10 +307,8 @@ def _derive(argv: list[str]) -> int:
     _fill_env_from_context_graph_config()
     user_id = parsed.user or _configured_user_id()
     if not user_id:
-        print("No user: pass --user or set identity.user_id in the config file.", file=sys.stderr)
-        return 2
+        return _no_user()
 
-    from sessions_graph import SessionsGraph
     from sessions_graph.derivation import run
     from sessions_graph.derive_llm import DerivationLlm, NoLlmConfiguredError
     from unstructured2graph.gliner2_observer import GLiNER2Observer
@@ -345,8 +322,7 @@ def _derive(argv: list[str]) -> int:
     except NoLlmConfiguredError as exc:
         print(f"FAILED: {exc}", file=sys.stderr)
         return 2
-    graph = SessionsGraph()
-    graph.setup()
+    graph = _setup_graph()
     report = asyncio.run(
         run(
             graph, user_id, llm=llm, observer=GLiNER2Observer(), force=parsed.force, seeds=parsed.seeds, usage=llm.usage
@@ -410,11 +386,8 @@ def _spawn_due_derivations(graph: SessionsGraph, session_ids: list[str]) -> None
 async def _run_reconcile(parsed: argparse.Namespace) -> int:
     _fill_env_from_context_graph_config()
 
-    from sessions_graph import SessionsGraph
-
     with _logged_before_session("reconcile", parsed.session):
-        graph = SessionsGraph()
-        graph.setup()
+        graph = _setup_graph()
     _sync_configured_ontology(graph)
 
     exit_code = 0

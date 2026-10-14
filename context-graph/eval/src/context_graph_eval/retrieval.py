@@ -1,12 +1,7 @@
-"""The v1 retrieval baseline: an agent writing its own Cypher.
+"""The graph-agent strategy: an agent writing its own read-only Cypher (#300), plus shared retrieval types.
 
-#300 fixed this deliberately as the *existing* query surface rather than a
-purpose-built retrieval layer. Ranking, query templates, and vector search are
-all deferred until this baseline's failures say what they should actually be --
-building them first would be designing against a score nobody has seen.
-
-What lives here is plumbing, not retrieval strategy: execute read-only Cypher,
-describe the graph's shape, and loop an LLM over the two.
+``Retrieved``, the ``LLM`` protocol, ``ReadOnlyGraph`` and ``answer_prompt``
+are shared by every strategy.
 """
 
 import re
@@ -41,17 +36,8 @@ _CYPHER_FENCE = re.compile(r"```(?:cypher)?\s*(.+?)```", re.DOTALL | re.IGNORECA
 #: indefinitely could buy coverage with an unbounded payload.
 DEFAULT_MAX_STEPS = 4
 
-#: Ceiling on the payload handed back for one question.
-#:
-#: Efficiency is a scored axis (#309), so an unbounded payload is not merely
-#: untidy -- and it is not hypothetical: measured at scale, the median payload
-#: reached ~19k tokens and one question returned 1,067,650. Beyond the score, a
-#: payload that size risks exhausting the judge's context window and costs real
-#: money per question.
-#:
-#: Set above the observed median rather than below it: the job here is to clip
-#: the pathological tail, not to squeeze the typical case, which belongs to
-#: retrieval v2 and should be driven by measurement rather than a guess.
+#: Ceiling on one question's payload: clips the pathological tail (one question
+#: once returned ~1M tokens), set above the observed ~19k median.
 MAX_PAYLOAD_TOKENS = 20_000
 
 #: Conservative characters-per-token ratio for the cheap size estimate in
@@ -72,20 +58,10 @@ class InternalLabelRefusedError(QueryRefusedError):
     """Raised when retrieval reaches into LightRAG's own storage (#321)."""
 
 
-#: LightRAG's storage backends persist their bookkeeping into the same Memgraph
-#: graph as the domain model -- KV stores, vector stores, doc status, and an LLM
-#: response cache. Eleven such labels appeared after reconciling two sessions.
-#:
-#: They are refused rather than merely hidden because the response cache holds
-#: the *answers*: `LightRAGKV_base_llm_response_cache` was found containing the
-#: expected output of corpus question 6a1eabeb. An agent querying it scores
-#: coverage while exercising none of the graph model -- a false pass, where
-#: every other harness bug here produced a false zero. A pass gets believed.
-#:
-#: Matched by prefix, and deliberately NOT including LightRAG's `base` label:
-#: that one is stamped on the extracted entities themselves (309 of them in a
-#: two-session run, mixed with Concept, Person, Event and the rest), so
-#: refusing it would block most of the memory tier.
+#: LightRAG persists its KV, vector, doc-status and LLM-response-cache stores
+#: into the same graph. Refused rather than hidden: the response cache holds
+#: the answers, so querying it is a false pass. Matched by prefix, deliberately
+#: not LightRAG's `base` label, which is stamped on the extracted entities.
 _INTERNAL_LABEL_PREFIX = "LightRAG"
 
 #: Label positions in Cypher: a colon, optional whitespace, an optional
@@ -112,15 +88,7 @@ class LLM(Protocol):
 
 
 class DeepEvalLLM:
-    """Adapts a deepeval model to the :class:`LLM` protocol.
-
-    Reuses deepeval's provider wrappers rather than adding an API client, so the
-    retrieval agent and the judge (#304) are configured the same way.
-
-    Note this is the *agent under test*, not the judge -- #304 deliberately runs
-    the judge on a different provider from the pipeline so their blind spots do
-    not correlate. Keep them distinct when configuring a run.
-    """
+    """Adapts a deepeval model, the answering model under test, to the :class:`LLM` protocol."""
 
     def __init__(self, model: Any):
         self._model = model
@@ -145,16 +113,7 @@ class ReadOnlyGraph:
 
     @property
     def db(self) -> "Memgraph":
-        """The underlying client, for callers needing the toolbox's own tools.
-
-        Public for the same reason ``ActionsGraph.db`` is: ``graph_schema`` has
-        to hand a real client to ``SearchSchemaTool``, and reaching into ``_db``
-        to do it is the same borrowed-internals smell one level down.
-
-        Note this deliberately bypasses :meth:`query`'s guards, so it is for
-        introspection the tools perform themselves -- not a back door for
-        retrieval, which must stay on the guarded path.
-        """
+        """The unguarded client, for tool introspection such as ``SearchSchemaTool`` -- never for retrieval."""
         return self._db
 
     def query(self, cypher: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -172,29 +131,16 @@ class ReadOnlyGraph:
 
 
 def is_write_query(cypher: str) -> bool:
-    # Case-insensitive matching rather than upper-casing the query first. That
-    # earlier form silently disabled any pattern containing lowercase letters:
-    # the apoc rule could never fire against an upper-cased string, so
-    # `CALL apoc.refactor.rename.label(...)` passed the guard -- `refactor` is
-    # matched by no other pattern.
+    """Whether ``cypher`` matches any write pattern, case-insensitively (the apoc pattern is lowercase)."""
     return any(re.search(pattern, cypher, re.IGNORECASE) for pattern in _WRITE_PATTERNS)
 
 
 def graph_schema(graph: ReadOnlyGraph) -> str:
     """A description of what is in the graph, for the agent to write Cypher against.
 
-    Uses ``memgraph_toolbox``'s ``SearchSchemaTool`` -- the same implementation
-    the MCP server's ``search_schema`` tool wraps -- so the baseline really is
-    the existing query surface (#300) rather than a reimplementation of it,
-    while still being pointed at the dedicated eval instance.
-
-    Property-level detail matters here beyond tidiness: injected turn text lives
-    inside ``Action.properties`` as JSON rather than in a ``content`` property,
-    so an agent given only label names would have to guess that.
-
-    Falls back to labels and relationship types when Memgraph was started
-    without ``--schema-info-enabled``, so a contributor whose instance lacks the
-    flag gets a weaker prompt rather than a crash.
+    Uses ``memgraph_toolbox``'s ``SearchSchemaTool``, the MCP server's own
+    schema tool (#300). Falls back to bare labels and relationship types when
+    Memgraph runs without ``--schema-info-enabled``.
     """
     detailed = _detailed_schema(graph)
     if detailed:
@@ -269,13 +215,7 @@ _TEMPORAL_TYPES = {"ZONED_DATE_TIME": "datetime", "LOCAL_DATE_TIME": "datetime",
 
 
 def _describe_relationship_properties(graph: ReadOnlyGraph, edge_types: list[str]) -> list[str]:
-    """One line per relationship type that carries properties: each key and its value type.
-
-    Without it the agent cannot see what an edge carries -- e.g. that an
-    extracted fact's `valid_at` is a datetime it can compare or subtract (#364)
-    -- and goes looking for date nodes instead. Only keys and types are shown,
-    never values, for the same reason node properties hide free text.
-    """
+    """One line per relationship type that carries properties: each key and its value type, never values."""
     described: list[str] = []
     for edge_type in edge_types:
         rows = graph.query(
@@ -297,10 +237,8 @@ def _label_sets(graph: ReadOnlyGraph) -> list[list[str]]:
     Combinations, not individual labels: a node carrying ``:Action:Message`` is
     one thing with one property set, and splitting it would suggest two.
     """
-    # Sorted in Python: Memgraph refuses ORDER BY on a list value.
-    # Filtered in the query, not afterwards: the LIMIT is a budget, and with
-    # eleven storage labels present they displaced real domain label sets out of
-    # the schema entirely.
+    # Sorted in Python: Memgraph refuses ORDER BY on a list value. Filtered in
+    # the query so storage labels cannot use up the LIMIT.
     rows = graph.query(
         "MATCH (n) WITH labels(n) AS labels "
         f"WHERE none(l IN labels WHERE l STARTS WITH '{_INTERNAL_LABEL_PREFIX}') "
@@ -324,10 +262,7 @@ def _describe_properties(graph: ReadOnlyGraph, labels: list[str]) -> list[str]:
 
         json_keys = _json_keys(sample)
         if json_keys:
-            # The blob that made this whole change necessary: turn text lives
-            # inside Action.properties as JSON, so an agent told only that
-            # "properties" exists still cannot find any content. Inner keys are
-            # structure and safe; inner values are data and stay hidden.
+            # Turn text lives inside Action.properties as JSON: keys are structure, values stay hidden.
             described.append(f"    {key}: JSON string, keys: {', '.join(json_keys)} (values are free text)")
             continue
 
@@ -366,18 +301,11 @@ class Retrieved:
     """What retrieval produced for one question."""
 
     answer: str
-    #: Rows the graph actually returned, rendered as text. This -- not the
-    #: model's prose about it -- is what ContextualRecall scores and what the
-    #: efficiency metric counts tokens over (#309).
+    #: Rows the graph returned, rendered as text: what is scored and token-counted (#309).
     retrieval_context: list[str] = field(default_factory=list)
     queries: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
-    #: Wall-clock seconds for the whole retrieve() call: every query/observe
-    #: round plus the final answer call. Measured here on a successful
-    #: return; a question whose retrieval raises (caught in
-    #: runner._retrieve_all) never gets a Retrieved out of this function to
-    #: carry that timing, so the caller times the attempt itself instead --
-    #: the 0.0 default below is never actually used for that path.
+    #: Wall-clock seconds for retrieval plus the final answer call.
     latency_seconds: float = 0.0
 
 
@@ -405,12 +333,7 @@ async def retrieve(
         reply = await llm.complete(_query_prompt(question, schema, seen, errors, insist=not seen))
         cypher = _extract_cypher(reply)
         if cypher is None:
-            # A reply with no query means "I have enough" -- but only once
-            # something has actually been retrieved. Breaking unconditionally
-            # meant an opening line of prose ended the loop before it began:
-            # measured at scale, 4 of 20 questions issued zero queries and
-            # answered from an empty context, one of them a question whose
-            # answer was sitting in the graph untouched.
+            # No query means "I have enough" -- but only once something was retrieved.
             if seen:
                 break
             continue
@@ -424,22 +347,14 @@ async def retrieve(
 
         rendered, dropped = _fit_payload(seen, rows)
         if dropped:
-            # Recorded, never silent. Truncating without telling the agent
-            # would cost coverage for a reason nothing captures -- it would
-            # believe it had seen everything its query matched, and stop.
+            # Told to the agent, or it would believe it had seen everything its query matched.
             errors.append(
                 f"{cypher}: matched too much -- {dropped} rows dropped at the "
                 f"{MAX_PAYLOAD_TOKENS}-token payload cap. Narrow the query or add LIMIT."
             )
 
         if not rows:
-            # A query that is valid Cypher but matches nothing used to be
-            # invisible: the loop recorded errors only, so the agent saw no
-            # difference between "I have not queried yet" and "my assumption
-            # was wrong". Observed against a real model -- it invented an
-            # action_type from the question's wording, got zero rows four times
-            # running with nothing to contradict it, and concluded the fact was
-            # not in memory. Reporting the empty result is what lets it revise.
+            # Reported so the agent revises its assumptions instead of concluding "not in memory".
             errors.append(f"{cypher}: returned 0 rows")
             continue
         seen.extend(rendered)
@@ -496,23 +411,12 @@ def _query_prompt(question: str, schema: str, seen: list[str], errors: list[str]
             # legitimate reason to reply in prose.
             "Reply with the query and NOTHING else -- no preamble, no explanation."
             if insist
-            # A named exit token, offered up front. "Reply with prose if you
-            # have enough" was too weak against a model primed to emit queries:
-            # it spent the whole step budget every run, long after the answer
-            # was already in hand, and every extra query enlarges the payload
-            # the efficiency metric counts (#309).
+            # A named exit token: without one the model spent its whole step budget.
             else "If the rows below already answer the question, reply with exactly STOP "
             "and nothing else. Otherwise return only the next query."
         ),
         "",
-        # States a fact about the environment the agent is querying -- it was
-        # otherwise reaching for Neo4j functions this database does not have.
-        # Deliberately NOT accompanied by search strategy: #300 defers retrieval
-        # v2 to be shaped by where this baseline actually fails, and advice on
-        # HOW to search is that design happening early and unmeasured. Guidance
-        # to prefer broad single terms and to add LIMITs lived here briefly and
-        # was reverted for exactly that reason; what it was hiding is recorded
-        # on #300.
+        # A fact about the environment, deliberately not search strategy (#300).
         "This is Memgraph, not Neo4j: APOC is NOT available, so JSON-valued "
         "properties cannot be parsed in Cypher. Match substrings inside them "
         "with CONTAINS instead.",
@@ -538,16 +442,8 @@ def _query_prompt(question: str, schema: str, seen: list[str], errors: list[str]
 
 
 def answer_prompt(question: str, seen: list[str], today: str | None = None) -> str:
-    """The final-answer prompt, shared by every retrieval strategy.
-
-    Public rather than private: ``text_search.py``'s baseline uses this exact
-    prompt too, deliberately -- a quality difference between two retrieval
-    strategies should be attributable to what was retrieved, not to two
-    different answering prompts.
-    """
+    """The final-answer prompt, shared by every strategy so a quality difference is down to what was retrieved."""
     rows = "\n".join(seen[:200]) if seen else "(nothing was retrieved)"
-    # "How many days ago" is unanswerable without knowing when the question is
-    # asked, whatever the graph holds (#367).
     asked = f"The question is being asked on {today}.\n" if today else ""
     return (
         "Answer the user's question from their memory: the rows below, retrieved from their past "

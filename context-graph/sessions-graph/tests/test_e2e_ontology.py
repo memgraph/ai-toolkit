@@ -112,7 +112,7 @@ def test_extend_carries_learned_types_that_do_not_clash(graph, memgraph, schema)
             RelationType("fixed", "", ("User", "Person"), ("Bug",)),
         ),
     )
-    ontology._adopt(
+    ontology.adopt(
         memgraph,
         ontology.OntologyVersion(user_id="alice", version=1, model=learned, source="derived", created_at="t"),
     )
@@ -159,7 +159,7 @@ def test_reconcile_applies_the_configured_file_and_survives_a_broken_one(graph, 
 def test_a_version_whose_pool_names_types_it_does_not_hold_reads_back(graph, memgraph):
     """Retiring `paid` pools it with its User -> Money endpoints; the pool holds neither type."""
     pool = HygmModel(node_types=(), relation_types=(RelationType("paid", "", ("User", "Person"), ("Money",)),))
-    ontology._adopt(
+    ontology.adopt(
         memgraph,
         ontology.OntologyVersion(
             user_id="alice", version=1, model=default_model(), source="derived", created_at="t", pool=pool

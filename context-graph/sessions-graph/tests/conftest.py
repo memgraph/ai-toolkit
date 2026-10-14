@@ -36,6 +36,25 @@ def _isolated_context_graph_config(monkeypatch, tmp_path):
 
 
 @pytest.fixture
+def requires_mage(memgraph):
+    """Skip the test unless this Memgraph can embed (MAGE with its embeddings module)."""
+    from sessions_graph.embeddings import EmbeddingUnavailableError, check_available
+
+    try:
+        check_available(memgraph)
+    except EmbeddingUnavailableError as exc:
+        pytest.skip(f"Memgraph can't embed (needs MAGE): {exc}")
+
+
+def link_user(memgraph, user_id, session_id):
+    """Attach an existing session to ``user_id``, as the connector does when a harness reports the user."""
+    memgraph.query(
+        "MERGE (u:User {user_id: $u}) WITH u MATCH (s:Session {session_id: $s}) MERGE (u)-[:HAD_SESSION]->(s)",
+        {"u": user_id, "s": session_id},
+    )
+
+
+@pytest.fixture
 def memgraph():
     """A real Memgraph client, wiped clean before and after each test.
 

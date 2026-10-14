@@ -15,6 +15,7 @@ from memgraph_context_graph.adapters._spec import (
     extract_tool_result,
     json_hook_installer,
     session_start,
+    string_or_none,
     tool_start,
     turn_end,
 )
@@ -127,7 +128,7 @@ def _agent_end(context: EventContext) -> AgentEndEvent:
         **context.base(),
         agent_name=agent_name,
         agent_type=context.text("agent_type", agent_name),
-        output=None if output is None else str(output),
+        output=string_or_none(output),
     )
 
 

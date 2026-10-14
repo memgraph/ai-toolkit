@@ -19,17 +19,19 @@ questions.
 from __future__ import annotations
 
 import json
-import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from deepeval.dataset import Golden
 
-from .longmemeval import SessionFixture, Turn
+from ..inject import CORPUS_DATE_FORMAT
+from .longmemeval import SessionFixture, Turn, cache_root
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 SOURCE = "beam"
 
@@ -61,9 +63,6 @@ _REFERENCE_FIELDS = ("answer", "ideal_answer", "ideal_response", "ideal_summary"
 #: Upstream's batch time anchors, e.g. 'March-15-2024'.
 _ANCHOR_FORMAT = "%B-%d-%Y"
 
-#: inject.CORPUS_DATE_FORMAT, which session dates must be in to be stamped on turns.
-_SESSION_DATE_FORMAT = "%Y/%m/%d (%a) %H:%M"
-
 
 @dataclass(frozen=True)
 class BeamChat:
@@ -83,8 +82,7 @@ class BeamChat:
 
 def cache_dir(revision: str = DEFAULT_REVISION) -> Path:
     """Where a pinned revision's files are cached between runs."""
-    root = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "context-graph-eval"
-    return root / f"beam-{revision[:12]}"
+    return cache_root() / f"beam-{revision[:12]}"
 
 
 def _raw_url(path: str, revision: str) -> str:
@@ -148,7 +146,7 @@ def _batch_date(batch: dict[str, Any]) -> str:
     )
     if anchor is None:
         raise ValueError(f"BEAM batch {batch.get('batch_number')} has no time anchor")
-    return datetime.strptime(anchor, _ANCHOR_FORMAT).strftime(_SESSION_DATE_FORMAT)
+    return datetime.strptime(anchor, _ANCHOR_FORMAT).strftime(CORPUS_DATE_FORMAT)
 
 
 def to_session_fixtures(chat: BeamChat) -> list[SessionFixture]:

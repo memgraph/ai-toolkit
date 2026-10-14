@@ -82,21 +82,9 @@ def describe_stability(passing_sets: list[set[str]]) -> str:
 
 
 def per_question_pass_rate(passing_sets: list[set[str]], all_names: set[str]) -> dict[str, float]:
-    """Each question's own pass rate across repeats.
+    """Each question in ``all_names``'s pass rate across repeats; one that never passed gets 0.0.
 
-    ``describe_stability`` answers "is this batch stable" with one aggregate
-    ratio; it cannot say which questions are the flaky ones, or distinguish a
-    question that always fails from one that passes half the time -- both
-    read as "not always" in the intersection/union it computes. #324: a
-    single run's ``covered`` is a coin flip for a question whose real
-    behaviour is "passes about half the time", and reporting only the coin
-    flip is what let a retrieval-nondeterminism-driven flip get read as a
-    coverage regression instead of the noise it was.
-
-    ``all_names`` (not just the union of ``passing_sets``) matters here in a
-    way it doesn't for ``describe_stability``: a question that never once
-    passed must still get a rate of 0.0, not be silently absent from the
-    result.
+    Names the flaky questions, which ``describe_stability``'s aggregate cannot.
     """
     if len(passing_sets) < MIN_RUNS:
         raise ValueError(f"per-question pass rates need at least {MIN_RUNS} runs; got {len(passing_sets)}")
@@ -105,10 +93,7 @@ def per_question_pass_rate(passing_sets: list[set[str]], all_names: set[str]) ->
 
 
 def describe_per_question_rates(rates: dict[str, float]) -> str:
-    """Render each question's pass rate, isolating the flaky ones (neither
-    always nor never pass) as the concrete evidence behind an aggregate
-    instability verdict -- naming them, not just counting them, is what lets
-    someone go look at what's actually happening on that question."""
+    """Render per-question pass rates, listing the flaky ones (neither always nor never pass) by name."""
     if not rates:
         return "no questions scored."
 

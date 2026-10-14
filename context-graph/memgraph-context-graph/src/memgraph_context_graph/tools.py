@@ -108,10 +108,10 @@ def session_hints(
         from memgraph_context_graph.adapters._identity import load_config
 
         config = load_config()
-    enabled = {_normalize(connector) for connector in connectors}
+    enabled = {normalize_connector_name(connector) for connector in connectors}
     hints = []
     for tool in available_tools(config).values():
-        if _normalize(tool.connector) in enabled and (hint := _session_text(tool, config, payload or {})):
+        if normalize_connector_name(tool.connector) in enabled and (hint := _session_text(tool, config, payload or {})):
             hints.append(hint)
     return hints
 
@@ -126,5 +126,6 @@ def _session_text(tool: Tool, config: HookConfig, payload: dict[str, Any]) -> st
     return tool.session_hint
 
 
-def _normalize(name: str) -> str:
+def normalize_connector_name(name: str) -> str:
+    """The canonical spelling of a connector or runtime name: ``skills_graph`` and ``skills-graph`` match."""
     return name.strip().replace("_", "-")

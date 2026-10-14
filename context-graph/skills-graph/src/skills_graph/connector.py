@@ -1,10 +1,7 @@
-"""Agent-link connector for SkillGraph.
+"""Memgraph Context Graph connector for SkillGraph.
 
-This module implements the :class:`memgraph_context_graph.GraphConnector` interface
-so that a ``SkillGraph`` can receive events directly from an ``AgentLink``
-hub.  The connector lives *inside* skills-graph because **the library
-itself** knows which events are relevant and how to persist them — the
-memgraph-context-graph package only provides the plumbing.
+Lives in skills-graph because this package decides which events prove skill
+usage; memgraph-context-graph only routes them.
 
 Usage::
 
@@ -39,41 +36,29 @@ _SUPPORTED_EVENTS = {
 }
 _MAX_RESULT_DEPTH = 10
 _SKILL_FILE_NAME = "SKILL.md"
+_SKILL_TOOLS = frozenset(
+    {
+        "get_skill",
+        "add_skill",
+        "update_skill",
+        "delete_skill",
+        "list_skills",
+        "search_skills",
+        "search_by_name",
+    }
+)
 
 
 class SkillGraphConnector(GraphConnector):
-    """Receives memgraph-context-graph events and records skill usage in a SkillGraph.
-
-    Watches for tool calls whose name matches a skill access operation
-    (``get_skill``, ``update_skill``, search/list tools, etc.) and creates
-    ``(:Session)-[:USED_SKILL]->(:Skill)`` relationships.
+    """Records ``(:Session|:Agent)-[:USED_SKILL]->(:Skill)`` from skill tool calls, ``SKILL.md`` reads, and
+    skill content injected into prompts.
 
     Args:
         graph: An initialised SkillGraph instance.
-        skill_tool_names: Override the set of tool names that indicate
-            skill access. Defaults to built-in read/update/search names.
     """
 
-    DEFAULT_SKILL_TOOLS: frozenset[str] = frozenset(
-        {
-            "get_skill",
-            "add_skill",
-            "update_skill",
-            "delete_skill",
-            "list_skills",
-            "search_skills",
-            "search_by_name",
-        }
-    )
-
-    def __init__(
-        self,
-        graph: SkillGraph,
-        *,
-        skill_tool_names: set[str] | None = None,
-    ) -> None:
+    def __init__(self, graph: SkillGraph) -> None:
         self._graph = graph
-        self._skill_tool_names = skill_tool_names or set(self.DEFAULT_SKILL_TOOLS)
 
     # ------------------------------------------------------------------
     # GraphConnector interface
@@ -83,14 +68,14 @@ class SkillGraphConnector(GraphConnector):
         if event.event_type not in _SUPPORTED_EVENTS:
             return False
         if isinstance(event, ToolStartEvent):
-            if self._operation_name(event.tool_name) in self._skill_tool_names:
+            if self._operation_name(event.tool_name) in _SKILL_TOOLS:
                 return True
             return self._extract_skill_file_read(event.tool_input, event.metadata) is not None
         if isinstance(event, ToolEndEvent):
             skill_file = self._extract_skill_file_read(tool_input=None, metadata=event.metadata)
             if self._extract_skill_content(event.result, skill_file=skill_file) is not None:
                 return True
-            return self._operation_name(event.tool_name) in self._skill_tool_names
+            return self._operation_name(event.tool_name) in _SKILL_TOOLS
         if isinstance(event, MessageEvent):
             return self._extract_skill_content(event.content) is not None
         return False
@@ -113,7 +98,7 @@ class SkillGraphConnector(GraphConnector):
         if skill_file is not None:
             metadata = self._metadata_from_skill_file(skill_file)
             skill_name = metadata.get("name") or skill_file.parent.name
-            self._record_skill_access(
+            self._graph.record_skill_usage(
                 session_id=event.session_id,
                 skill_name=skill_name,
                 action="read_skill_file",
@@ -129,7 +114,7 @@ class SkillGraphConnector(GraphConnector):
 
         skill_name = self._extract_skill_name(event.tool_input)
         if skill_name:
-            self._record_skill_access(
+            self._graph.record_skill_usage(
                 session_id=event.session_id,
                 skill_name=skill_name,
                 action=self._operation_name(event.tool_name),
@@ -148,7 +133,7 @@ class SkillGraphConnector(GraphConnector):
             )
             skill_name = metadata.get("name")
             if isinstance(skill_name, str) and skill_name:
-                self._record_skill_access(
+                self._graph.record_skill_usage(
                     session_id=event.session_id,
                     skill_name=skill_name,
                     action="read_skill_file",
@@ -166,7 +151,7 @@ class SkillGraphConnector(GraphConnector):
         if operation_name not in {"list_skills", "search_skills", "search_by_name"}:
             return
         for name in self._extract_result_skill_names(event.result):
-            self._record_skill_access(
+            self._graph.record_skill_usage(
                 session_id=event.session_id,
                 skill_name=name,
                 action=f"{operation_name}_result",
@@ -182,7 +167,7 @@ class SkillGraphConnector(GraphConnector):
         metadata = self._metadata_from_skill_content(skill_content)
         skill_name = metadata.get("name")
         if isinstance(skill_name, str) and skill_name:
-            self._record_skill_access(
+            self._graph.record_skill_usage(
                 session_id=event.session_id,
                 skill_name=skill_name,
                 action="prompt_expansion",
@@ -373,38 +358,6 @@ class SkillGraphConnector(GraphConnector):
                     if content is not None:
                         return content
         return None
-
-    def _record_skill_access(
-        self,
-        *,
-        session_id: str,
-        skill_name: str,
-        action: str,
-        timestamp: str,
-        create_missing: bool = False,
-        description: str = "",
-        content: str = "",
-        source_path: str | None = None,
-        metadata: dict[str, str] | None = None,
-        container_agent_id: str | None = None,
-    ) -> None:
-        """Persist a ``(:Session|:Agent)-[:USED_SKILL]->(:Skill)`` edge.
-
-        Attaches to the specific Agent when usage happened inside a subagent
-        (#280), mirroring actions-graph's HAS_ACTION either-container pattern.
-        """
-        self._graph.record_skill_usage(
-            session_id=session_id,
-            skill_name=skill_name,
-            action=action,
-            timestamp=timestamp,
-            create_missing=create_missing,
-            description=description,
-            content=content,
-            source_path=source_path,
-            metadata=metadata,
-            container_agent_id=container_agent_id,
-        )
 
 
 def _parse_frontmatter(content: str) -> dict[str, Any]:

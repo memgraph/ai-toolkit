@@ -1,7 +1,4 @@
-"""Core ActionsGraph class for storing and querying LLM actions in Memgraph.
-
-This module provides the main interface for persisting and analyzing
-LLM actions, tool calls, and sessions in a Memgraph graph database.
+"""ActionsGraph: persist and query agent-session actions in Memgraph.
 
 Graph Schema:
     Nodes:
@@ -26,6 +23,7 @@ Graph Schema:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from datetime import datetime, timezone
@@ -93,15 +91,24 @@ def _message_text(action: Action) -> str | None:
     return text or None
 
 
-class ActionsGraph:
-    """Store and query LLM actions and sessions in Memgraph.
+def _session_params(session: Session) -> dict[str, Any]:
+    return {
+        "session_id": session.session_id,
+        "started_at": session.started_at,
+        "ended_at": session.ended_at,
+        "status": session.status.value,
+        "model": session.model,
+        "total_cost_usd": session.total_cost_usd,
+        "total_input_tokens": session.total_input_tokens,
+        "total_output_tokens": session.total_output_tokens,
+        "working_directory": session.working_directory,
+        "git_branch": session.git_branch,
+        "metadata": json.dumps(session.metadata),
+    }
 
-    Provides methods for:
-    - Creating and managing sessions
-    - Recording tool calls, messages, and other actions
-    - Querying action history and analytics
-    - Building action sequence graphs
-    """
+
+class ActionsGraph:
+    """Store and query agent sessions, subagents, and their actions in Memgraph."""
 
     def __init__(self, memgraph: Memgraph | None = None, **kwargs: Any):
         """Initialize ActionsGraph.
@@ -112,13 +119,9 @@ class ActionsGraph:
             **kwargs: Forwarded to Memgraph() when memgraph is None.
         """
         self._db = memgraph or Memgraph(**kwargs)
-        # container key -> last action_id, where container key is ("session", session_id)
-        # or ("agent", agent_id) -- FOLLOWED_BY is scoped per-container, not one flat chain.
+        # FOLLOWED_BY is one chain per container: ("session", session_id) or ("agent", agent_id).
         self._last_action_id: dict[tuple[str, str], str] = {}
-        # Verified against a real live Claude Code session: the tool
-        # that actually launches a subagent is named "Agent" in tool-call
-        # payloads, not "Task" as originally assumed from docs alone. Keeping
-        # both names since harness/version differences aren't fully known.
+        # Claude Code names the subagent-launching tool "Agent"; other surfaces call it "Task".
         self.agent_spawning_tool_names: set[str] = {"Agent", "Task"}
 
     # ------------------------------------------------------------------
@@ -127,54 +130,34 @@ class ActionsGraph:
 
     @property
     def db(self) -> Memgraph:
-        """The Memgraph client this graph reads and writes through.
-
-        Exposed because callers legitimately need Cypher this class does not
-        wrap -- the eval harness counts nodes, wipes between batches, and runs
-        an agent's own generated queries -- and the alternative was every one of
-        them reaching into ``_db``, which is a private attribute promising
-        nothing about its lifetime or type.
-
-        Read as: this class owns the connection, and hands it out rather than
-        hiding it badly.
-        """
+        """The Memgraph client this graph reads and writes through, for Cypher this class does not wrap."""
         return self._db
 
     def setup(self) -> None:
         """Create constraints and indexes required for action storage."""
-        # Session constraints and indexes
         self._db.query("CREATE CONSTRAINT ON (s:Session) ASSERT s.session_id IS UNIQUE;")
         self._db.query("CREATE INDEX ON :Session(session_id);")
         self._db.query("CREATE INDEX ON :Session(started_at);")
         self._db.query("CREATE INDEX ON :Session(status);")
-
-        # Action constraints and indexes
         self._db.query("CREATE CONSTRAINT ON (a:Action) ASSERT a.action_id IS UNIQUE;")
         self._db.query("CREATE INDEX ON :Action(action_id);")
         self._db.query("CREATE INDEX ON :Action(timestamp);")
         self._db.query("CREATE INDEX ON :Action(action_type);")
-
-        # Agent constraints and indexes
         self._db.query("CREATE CONSTRAINT ON (a:Agent) ASSERT a.agent_id IS UNIQUE;")
         self._db.query("CREATE INDEX ON :Agent(agent_id);")
         self._db.query("CREATE INDEX ON :Agent(agent_type);")
-
-        # Promoted action field indexes
         self._db.query("CREATE INDEX ON :Action(tool_name);")
         self._db.query("CREATE INDEX ON :Action(tool_use_id);")
         self._db.query("CREATE INDEX ON :Action(is_error);")
 
     def drop(self) -> None:
-        """Remove all action-related constraints and indexes."""
-        import contextlib
-
+        """Remove the uniqueness constraints this class creates."""
         with contextlib.suppress(Exception):
             self._db.query("DROP CONSTRAINT ON (s:Session) ASSERT s.session_id IS UNIQUE;")
         with contextlib.suppress(Exception):
             self._db.query("DROP CONSTRAINT ON (a:Action) ASSERT a.action_id IS UNIQUE;")
         with contextlib.suppress(Exception):
             self._db.query("DROP CONSTRAINT ON (a:Agent) ASSERT a.agent_id IS UNIQUE;")
-        # Indexes are dropped with constraints in most cases
 
     def clear(self) -> None:
         """Remove all session and action data from the graph."""
@@ -210,19 +193,7 @@ class ActionsGraph:
                 metadata: $metadata
             })
             """,
-            params={
-                "session_id": session.session_id,
-                "started_at": session.started_at,
-                "ended_at": session.ended_at,
-                "status": session.status.value,
-                "model": session.model,
-                "total_cost_usd": session.total_cost_usd,
-                "total_input_tokens": session.total_input_tokens,
-                "total_output_tokens": session.total_output_tokens,
-                "working_directory": session.working_directory,
-                "git_branch": session.git_branch,
-                "metadata": json.dumps(session.metadata),
-            },
+            params=_session_params(session),
         )
 
         return session
@@ -248,19 +219,7 @@ class ActionsGraph:
                 s.git_branch = $git_branch,
                 s.metadata = $metadata
             """,
-            params={
-                "session_id": session.session_id,
-                "started_at": session.started_at,
-                "ended_at": session.ended_at,
-                "status": session.status.value,
-                "model": session.model,
-                "total_cost_usd": session.total_cost_usd,
-                "total_input_tokens": session.total_input_tokens,
-                "total_output_tokens": session.total_output_tokens,
-                "working_directory": session.working_directory,
-                "git_branch": session.git_branch,
-                "metadata": json.dumps(session.metadata),
-            },
+            params=_session_params(session),
         )
         return session
 
@@ -295,19 +254,7 @@ class ActionsGraph:
                 s.working_directory = coalesce(s.working_directory, $working_directory),
                 s.git_branch = coalesce(s.git_branch, $git_branch)
             """,
-            params={
-                "session_id": session.session_id,
-                "started_at": session.started_at,
-                "ended_at": session.ended_at,
-                "status": session.status.value,
-                "model": session.model,
-                "total_cost_usd": session.total_cost_usd,
-                "total_input_tokens": session.total_input_tokens,
-                "total_output_tokens": session.total_output_tokens,
-                "working_directory": session.working_directory,
-                "git_branch": session.git_branch,
-                "metadata": json.dumps(session.metadata),
-            },
+            params=_session_params(session),
         )
         return session
 
@@ -428,7 +375,6 @@ class ActionsGraph:
             params=params,
         )
 
-        # Clean up last action tracking
         self._last_action_id.pop(("session", session_id), None)
 
         return self.get_session(session_id)
@@ -753,15 +699,11 @@ class ActionsGraph:
 
         Args:
             action: Action to record
-            container_agent_id: If set AND a matching Agent node already
-                exists, the action links via (:Agent)-[:HAS_ACTION]->(:Action)
-                and its FOLLOWED_BY chain is scoped to that agent, instead of
-                linking directly to the Session. Some adapters (e.g. the
-                OpenAI Agents SDK one) set an agent name for every running
-                agent, not just genuine nested subagents -- falling back to
-                the Session when no such Agent node exists (rather than a
-                hard MATCH that would silently drop the link) keeps this
-                correct either way.
+            container_agent_id: Links the action under this Agent (and its
+                FOLLOWED_BY chain) when that Agent node exists; otherwise under
+                the Session. Some adapters (e.g. OpenAI Agents SDK) name every
+                running agent, not only real subagents, so a missing Agent
+                falls back rather than dropping the link.
 
         Returns:
             The recorded action
@@ -774,11 +716,9 @@ class ActionsGraph:
             action.session_id, container_agent_id=container_agent_id
         )
 
-        # Determine additional labels based on action type
         type_labels = self._get_type_labels(action)
         labels_str = ":Action" + "".join(f":{lbl}" for lbl in type_labels)
 
-        # Build properties based on action type
         props = self._action_to_props(action)
 
         # Promoted fields: first-class node properties for graph traversal
@@ -791,7 +731,6 @@ class ActionsGraph:
         _mcp_server: str | None = getattr(action, "mcp_server", None)
         text = _message_text(action)
 
-        # Create the action node
         self._db.query(
             f"""
             CREATE (a{labels_str} {{
@@ -829,8 +768,6 @@ class ActionsGraph:
             },
         )
 
-        # Link to container: the specific Agent this action happened inside,
-        # or the Session directly when there's no such Agent.
         if container_agent_id:
             self._db.query(
                 """
@@ -850,7 +787,6 @@ class ActionsGraph:
                 params={"session_id": action.session_id, "action_id": action.action_id},
             )
 
-        # Create temporal sequence, scoped to this same container
         if last_action_id:
             self._db.query(
                 """
@@ -863,7 +799,6 @@ class ActionsGraph:
 
         self._last_action_id[container_key] = action.action_id
 
-        # Handle parent action relationship
         if action.parent_action_id:
             self._db.query(
                 """
@@ -928,7 +863,8 @@ class ActionsGraph:
             tool_use_id=tool_use_id,
             **kwargs,
         )
-        return self.record_action(action)  # type: ignore
+        self.record_action(action)
+        return action
 
     def record_tool_result(
         self,
@@ -963,7 +899,8 @@ class ActionsGraph:
             error_message=error_message,
             **kwargs,
         )
-        return self.record_action(action)  # type: ignore
+        self.record_action(action)
+        return action
 
     def record_message(
         self,
@@ -989,7 +926,8 @@ class ActionsGraph:
             content=content,
             **kwargs,
         )
-        return self.record_action(action)  # type: ignore
+        self.record_action(action)
+        return action
 
     def get_action(self, action_id: str) -> Action | None:
         """Retrieve an action by ID.
@@ -1362,7 +1300,7 @@ class ActionsGraph:
         if action_type == ActionType.TOOL_CALL:
             return ToolCall(
                 **base_kwargs,
-                tool_name=row.get("tool_name") or props.get("tool_name", ""),
+                tool_name=row.get("tool_name") or "",
                 tool_input=props.get("tool_input", {}),
                 tool_use_id=props.get("tool_use_id"),
                 is_mcp=(row["is_mcp"] if row.get("is_mcp") is not None else props.get("is_mcp", False)),
@@ -1372,9 +1310,9 @@ class ActionsGraph:
             return ToolResult(
                 **base_kwargs,
                 tool_use_id=props.get("tool_use_id", ""),
-                tool_name=row.get("tool_name") or props.get("tool_name", ""),
+                tool_name=row.get("tool_name") or "",
                 content=props.get("content"),
-                is_error=(row["is_error"] if row.get("is_error") is not None else props.get("is_error", False)),
+                is_error=bool(row.get("is_error")),
                 error_message=props.get("error_message"),
             )
         elif action_type in (
@@ -1402,7 +1340,7 @@ class ActionsGraph:
         elif action_type == ActionType.PERMISSION_REQUEST:
             return PermissionRequest(
                 **base_kwargs,
-                tool_name=row.get("tool_name") or props.get("tool_name", ""),
+                tool_name=row.get("tool_name") or "",
                 tool_input=props.get("tool_input", {}),
                 decision=props.get("decision"),
                 reason=props.get("reason"),

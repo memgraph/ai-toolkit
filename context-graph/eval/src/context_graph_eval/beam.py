@@ -15,19 +15,19 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from statistics import mean
 from typing import TYPE_CHECKING, Any
 
+from .beam_judge import BeamJudge, BeamVerdict
 from .convert.beam import ABILITIES, BeamChat, to_goldens, to_session_fixtures
 from .hybrid import RecallConfig, ensure_recall_ready, retrieve_hybrid
 from .inject import inject_batch
 from .reconcile import ExtractionBackendName, reconcile_batch
 from .retrieval import ReadOnlyGraph, Retrieved
-from .runner import _require_reconciled, check_offline
+from .runner import _require_reconciled, check_offline, retrieve_concurrently
 from .scoring import efficiency_tokens, evidence_recall
 
 if TYPE_CHECKING:
@@ -35,7 +35,6 @@ if TYPE_CHECKING:
 
     from actions_graph import ActionsGraph
 
-    from .beam_judge import BeamJudge
     from .retrieval import LLM
 
 
@@ -171,18 +170,13 @@ async def _retrieve_all(
     A question whose retrieval raises is an empty answer, kept and judged, so
     a failure is a reported miss rather than a silently shorter run.
     """
-    limiter = asyncio.Semaphore(max_concurrent)
+    asked = [(golden.input, (golden.additional_metadata or {})["user_id"]) for golden in goldens]
 
-    async def one(golden: Golden) -> Retrieved:
-        async with limiter:
-            started = time.monotonic()
-            user_id = (golden.additional_metadata or {})["user_id"]
-            try:
-                return await retrieve_hybrid(golden.input, graph=graph, llm=llm, user_id=user_id, config=config)
-            except Exception as exc:
-                return Retrieved(answer="", errors=[str(exc)], latency_seconds=time.monotonic() - started)
+    async def one(question: tuple[str, str]) -> Retrieved:
+        text, user_id = question
+        return await retrieve_hybrid(text, graph=graph, llm=llm, user_id=user_id, config=config)
 
-    return list(await asyncio.gather(*(one(golden) for golden in goldens)))
+    return await retrieve_concurrently(asked, one, max_concurrent=max_concurrent)
 
 
 async def _judge_all(goldens: list[Golden], retrieved: list[Retrieved], judge: BeamJudge | None) -> list[BeamRow]:
@@ -199,11 +193,7 @@ async def _judge_all(goldens: list[Golden], retrieved: list[Retrieved], judge: B
             expected=golden.expected_output or "",
             answer=result.answer,
             rubric=rubric,
-            score=verdict.score if verdict else None,
-            llm_judge_score=verdict.llm_judge_score if verdict else None,
-            item_scores=verdict.item_scores if verdict else [],
-            item_reasons=verdict.item_reasons if verdict else [],
-            ordering=verdict.ordering if verdict else None,
+            **asdict(verdict or BeamVerdict(score=None, llm_judge_score=None)),
             evidence_recall=evidence_recall(golden.context, result.retrieval_context),
             efficiency_tokens=efficiency_tokens(result),
             latency_seconds=result.latency_seconds,
@@ -283,9 +273,3 @@ def save(run: BeamRun, path: Path, *, meta: dict[str, Any]) -> Path:
     }
     path.write_text(json.dumps(payload, indent=1, ensure_ascii=False), encoding="utf-8")
     return path
-
-
-def load_rows(path: Path) -> list[BeamRow]:
-    """The rows of a saved run."""
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    return [BeamRow(**row) for row in payload["rows"]]

@@ -13,13 +13,9 @@ The live session plants ON TOP of an already-injected graph, so the gold-slice
 fact sits among Tier 1's distractors. Running it before injection would simply
 have the wipe destroy it.
 
-Hooks resolve configuration only from a config file (ADR 0002), and that file's
-path was a single global -- so pointing this session at the eval instance by
-rewriting it would have redirected *every* Claude Code session on the machine.
-That is not hypothetical: it happened here, and an unrelated session's activity
-landed in the graph under test. ADR 0003 added `CONTEXT_GRAPH_CONFIG` so a
-throwaway config can be handed to one session alone, which is what this module
-uses.
+Hooks read configuration only from a config file (ADR 0002), so the session
+is handed a throwaway one through `CONTEXT_GRAPH_CONFIG` (ADR 0003) rather
+than rewriting the global file every other session reads.
 """
 
 import json
@@ -50,16 +46,8 @@ def hooks_pointed_at(memgraph_url: str, *, user_id: str = "context-graph-eval"):
     """Yield an environment whose hooks write to ``memgraph_url``.
 
     Writes a throwaway config file and points ``CONTEXT_GRAPH_CONFIG`` at it
-    (ADR 0003), rather than rewriting the user's real one.
-
-    That distinction is the whole point. The config path is otherwise a single
-    global, so repointing it redirects **every** Claude Code session on the
-    machine, not just the one being driven. Found the hard way: an unrelated
-    session's activity was recorded into the eval graph mid-run, which is
-    exactly the contamination a dedicated eval instance exists to prevent.
-
-    Nothing outside the yielded environment is modified, so there is nothing to
-    restore and no window in which a crash leaves the machine misconfigured.
+    (ADR 0003). Nothing outside the yielded environment is modified, so a
+    crash cannot leave other sessions pointed at the eval instance.
     """
     with tempfile.TemporaryDirectory(prefix="context-graph-eval-") as workdir:
         config = Path(workdir) / "config.toml"
@@ -82,12 +70,8 @@ def hooks_pointed_at(memgraph_url: str, *, user_id: str = "context-graph-eval"):
             encoding="utf-8",
         )
         env = {**os.environ, CONFIG_PATH_ENV: str(config)}
-        # The driven session authenticates the way the user's CLI normally
-        # does. An ANTHROPIC_API_KEY inherited from the eval process takes
-        # precedence over that login and makes the CLI refuse to start -- and
-        # the eval process legitimately has one, because #304 runs the judge on
-        # Anthropic. The judge's credential has no business steering the
-        # session under test.
+        # The judge's ANTHROPIC_API_KEY would override the CLI's own login and
+        # make it refuse to start.
         env.pop("ANTHROPIC_API_KEY", None)
         yield env
 
@@ -99,13 +83,9 @@ def hooks_settings(path: Path) -> Path:
     cannot shadow the checkout under test and have the session exercise the
     wrong version of the code.
 
-    Deliberately **without** ``--package memgraph-context-graph``. That flag
-    re-resolves the environment to that one package's closure, which excludes
-    the connector packages -- so every hook raised
-    ``ImportError: skills-graph is required`` and, because the runner swallows
-    hook errors to avoid breaking the harness, exited 0 having written nothing.
-    A whole billed session recorded no data and reported success. The workspace
-    venv already has every package; asking for a subset is what broke it.
+    Deliberately without ``--package memgraph-context-graph``: that narrows the
+    environment to exclude the connector packages, and hooks swallow the
+    resulting ImportError, so a billed session would record nothing.
     """
     from memgraph_context_graph.adapters.claude_code import PLUGIN
 

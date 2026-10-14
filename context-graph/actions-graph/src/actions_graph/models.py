@@ -1,16 +1,4 @@
-"""Data models for tracking LLM actions and sessions in Memgraph.
-
-This module defines the core data structures for representing:
-- Sessions: LLM conversation sessions with metadata
-- Actions: Base class for all trackable LLM actions
-- ToolCalls: Invocations of tools by the LLM
-- ToolResults: Results returned from tool executions
-- Messages: User and assistant messages in the conversation
-- StructuredOutputs: Validated structured outputs from the LLM
-
-These models are designed to be compatible with the Claude Agent SDK
-and can be extended for other LLM frameworks.
-"""
+"""Dataclasses for the sessions, subagents, and actions ActionsGraph persists."""
 
 from __future__ import annotations
 
@@ -26,40 +14,35 @@ class ActionValidationError(ValueError):
     """Raised when an action field violates validation rules."""
 
 
-# Validation patterns
-_SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
-_ACTION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
-_AGENT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
+_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
 
 
 def _utc_now() -> str:
-    """Return current UTC timestamp in ISO format."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _generate_id() -> str:
-    """Generate a unique action ID."""
     return str(uuid4())
 
 
 def validate_session_id(session_id: str) -> str:
     """Validate session ID format."""
-    if not session_id or not _SESSION_ID_RE.match(session_id):
-        raise ActionValidationError(f"session_id must match pattern {_SESSION_ID_RE.pattern}, got: {session_id!r}")
+    if not session_id or not _ID_RE.match(session_id):
+        raise ActionValidationError(f"session_id must match pattern {_ID_RE.pattern}, got: {session_id!r}")
     return session_id
 
 
 def validate_action_id(action_id: str) -> str:
     """Validate action ID format."""
-    if not action_id or not _ACTION_ID_RE.match(action_id):
-        raise ActionValidationError(f"action_id must match pattern {_ACTION_ID_RE.pattern}, got: {action_id!r}")
+    if not action_id or not _ID_RE.match(action_id):
+        raise ActionValidationError(f"action_id must match pattern {_ID_RE.pattern}, got: {action_id!r}")
     return action_id
 
 
 def validate_agent_id(agent_id: str) -> str:
     """Validate agent ID format."""
-    if not agent_id or not _AGENT_ID_RE.match(agent_id):
-        raise ActionValidationError(f"agent_id must match pattern {_AGENT_ID_RE.pattern}, got: {agent_id!r}")
+    if not agent_id or not _ID_RE.match(agent_id):
+        raise ActionValidationError(f"agent_id must match pattern {_ID_RE.pattern}, got: {agent_id!r}")
     return agent_id
 
 
@@ -72,8 +55,6 @@ class ActionType(str, Enum):
     ASSISTANT_MESSAGE = "assistant_message"
     SYSTEM_MESSAGE = "system_message"
     STRUCTURED_OUTPUT = "structured_output"
-    SESSION_START = "session_start"
-    SESSION_END = "session_end"
     ERROR = "error"
     PERMISSION_REQUEST = "permission_request"
     RATE_LIMIT = "rate_limit"
@@ -274,11 +255,7 @@ class StructuredOutput(Action):
 
 @dataclass
 class Agent:
-    """Represents a subagent's full lifecycle as a first-class node.
-
-    Unlike a flat Action pair (one for start, one for stop), an Agent is a
-    single entity whose lifecycle (start/stop, outcome) lives on its own
-    properties -- populated once at start, updated once at stop.
+    """One subagent's lifecycle as a single node: set at start, updated at stop.
 
     Attributes:
         agent_id: Unique identifier for the agent (harness-provided)

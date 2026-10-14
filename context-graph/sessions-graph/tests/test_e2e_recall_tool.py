@@ -9,12 +9,13 @@ import pytest
 pytest.importorskip("memgraph_context_graph")
 pytest.importorskip("actions_graph")
 
-from sessions_graph.embeddings import EmbeddingUnavailableError, check_available
 from sessions_graph.tool import RecallTool
 
 from actions_graph import MessageRole, Session
 from memgraph_context_graph.adapters._identity import HookConfig
 from memgraph_context_graph.tools import ToolError, load_tools
+
+from .conftest import link_user
 
 
 @pytest.fixture
@@ -35,19 +36,12 @@ def test_config(memgraph):
 
 
 @pytest.fixture
-def remembered(graph, memgraph, actions_graph):
+def remembered(graph, memgraph, actions_graph, requires_mage):
     """Two users who each said where staging lives, embedded the way session end does it."""
-    try:
-        check_available(memgraph)
-    except EmbeddingUnavailableError as exc:
-        pytest.skip(f"Memgraph can't embed (needs MAGE): {exc}")
     for user, cluster in (("u1", "kestrel"), ("u2", "osprey")):
         session = f"{user}-s"
         actions_graph.ensure_session(Session(session_id=session, started_at="2026-09-01T10:00:00+00:00"))
-        memgraph.query(
-            "MERGE (u:User {user_id: $u}) WITH u MATCH (s:Session {session_id: $s}) MERGE (u)-[:HAD_SESSION]->(s)",
-            {"u": user, "s": session},
-        )
+        link_user(memgraph, user, session)
         actions_graph.record_message(
             session_id=session,
             role=MessageRole.USER,

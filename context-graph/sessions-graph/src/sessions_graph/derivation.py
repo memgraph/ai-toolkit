@@ -28,12 +28,14 @@ from __future__ import annotations
 
 import random
 import time
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Protocol
 
 from hygm import CATCH_ALL_LABELS, DerivationError, LlmRecommendationStrategy, require_valid_identifier
 
+from .models import _utc_now
 from .ontology import OntologyVersion, adopt, adopted, next_version, reject
 
 if TYPE_CHECKING:
@@ -152,9 +154,6 @@ class RunReport:
     base_seconds: float = 0.0
     reextract_seconds: float = 0.0
 
-    def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
 
 async def run(
     graph: SessionsGraph,
@@ -247,9 +246,12 @@ async def run(
             candidate.score = GateScore.of(measured)
             candidate.passed = candidate.score.passes_against(report.base)
             candidate.agreement = _agreement(base_measured, measured, derivation)
-            candidate.added = sum(c.op in {"add", "restore"} for c in derivation.changelog)
-            candidate.merged = sum(c.op == "merge" for c in derivation.changelog)
-            candidate.retired = sum(c.op == "retire" for c in derivation.changelog)
+            ops = Counter(change.op for change in derivation.changelog)
+            candidate.added, candidate.merged, candidate.retired = (
+                ops["add"] + ops["restore"],
+                ops["merge"],
+                ops["retire"],
+            )
             candidates.append((derivation, candidate))
             if candidate.passed and (best is None or _better(candidate.score, best[0])):
                 best = (candidate.score, derivation, candidate)
@@ -331,12 +333,12 @@ def _version(
         derive=current.derive,
         pinned=current.pinned,
         source_hash=current.source_hash,
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=_utc_now(),
         counts=derivation.counts,
         pool=derivation.pool,
         changelog=tuple(asdict(change) for change in derivation.changelog),
         report={
-            **{key: value for key, value in report.as_dict().items() if key != "candidates"},
+            **{key: value for key, value in asdict(report).items() if key != "candidates"},
             "candidate": asdict(candidate),
             "based_on": current.version,
             "unanchored_values": list(derivation.unanchored_values),

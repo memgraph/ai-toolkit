@@ -16,19 +16,16 @@ from memgraph_context_graph.adapters._spec import (
     RuntimeSpec,
     SpecAdapter,
     SpecPlugin,
+    agent_end,
+    agent_start,
     json_hook_installer,
+    session_end,
     session_start,
+    tool_failure,
     tool_start,
     turn_end,
 )
-from memgraph_context_graph.events import (
-    AgentEndEvent,
-    AgentStartEvent,
-    ErrorOccurredEvent,
-    MessageEvent,
-    SessionEndEvent,
-    ToolEndEvent,
-)
+from memgraph_context_graph.events import ErrorOccurredEvent, MessageEvent, ToolEndEvent
 
 if TYPE_CHECKING:
     from memgraph_context_graph.events import Event
@@ -68,14 +65,7 @@ def _tool_end(context: EventContext) -> ToolEndEvent:
 
 
 def _tool_failure(context: EventContext) -> ToolEndEvent:
-    return ToolEndEvent(
-        **context.base(),
-        tool_name=context.text("tool_name"),
-        tool_use_id=context.optional_text("tool_use_id"),
-        is_error=True,
-        error_message=str(context.payload.get("error") or "Grok tool failed"),
-        agent_name=context.optional_text("agent_id"),
-    )
+    return tool_failure(context, str(context.payload.get("error") or "Grok tool failed"))
 
 
 def _permission_denied(context: EventContext) -> ErrorOccurredEvent:
@@ -93,8 +83,7 @@ def _turn_end(context: EventContext) -> list[Event]:
     reason = context.payload.get("reason")
     if reason == "shutdown":
         return []
-    reply = context.payload.get("lastAssistantMessage", context.payload.get("last_assistant_message"))
-    return turn_end(context, reply=reply, reason=reason)
+    return turn_end(context, reply=context.value("reply"), reason=reason)
 
 
 def _stop_failure(context: EventContext) -> ErrorOccurredEvent:
@@ -104,25 +93,6 @@ def _stop_failure(context: EventContext) -> ErrorOccurredEvent:
         error_type=error,
         error_message=str(context.payload.get("reason") or error),
         recoverable=True,
-    )
-
-
-def _session_end(context: EventContext) -> SessionEndEvent:
-    return SessionEndEvent(**context.base(), status="completed")
-
-
-def _agent_start(context: EventContext) -> AgentStartEvent:
-    agent_type = context.text("agent_type")
-    return AgentStartEvent(**context.base(), agent_name=context.text("agent_id", agent_type), agent_type=agent_type)
-
-
-def _agent_end(context: EventContext) -> AgentEndEvent:
-    agent_type = context.text("agent_type")
-    return AgentEndEvent(
-        **context.base(),
-        agent_name=context.text("agent_id", agent_type),
-        agent_type=agent_type,
-        output=context.payload.get("lastAssistantMessage", context.payload.get("last_assistant_message")),
     )
 
 
@@ -151,11 +121,11 @@ SPEC = RuntimeSpec(
         "PostToolUse": _tool_end,
         "PostToolUseFailure": _tool_failure,
         "PermissionDenied": _permission_denied,
-        "SubagentStart": _agent_start,
-        "SubagentStop": _agent_end,
+        "SubagentStart": agent_start,
+        "SubagentStop": agent_end,
         "Stop": _turn_end,
         "StopFailure": _stop_failure,
-        "SessionEnd": _session_end,
+        "SessionEnd": session_end,
     },
     metadata_keys=(
         "cwd",
@@ -172,7 +142,9 @@ SPEC = RuntimeSpec(
         "stopHookActive",
     ),
     config=HookConfig(path=".grok/hooks/memgraph-context-graph.json", layout="nested", merge=True),
-    fields=FieldMap(tool_result=("tool_response", "toolResult")),
+    fields=FieldMap(
+        tool_result=("tool_response", "toolResult"), reply=("lastAssistantMessage", "last_assistant_message")
+    ),
     probe_payload={"hook_event_name": "SessionEnd", "session_id": "doctor", "reason": "shutdown"},
 )
 

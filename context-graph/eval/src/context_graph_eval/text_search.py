@@ -1,18 +1,7 @@
-"""The text-search baseline: Memgraph's own full-text index over raw turns.
+"""The text-search baseline: Memgraph's own full-text index over raw, unreconciled turns.
 
-Where ``retrieval.py`` asks "how well does the *memory* pipeline (reconciled
-graph, agent-written Cypher) answer this question", this module asks the
-cheaper question a real harness would ask first: "how well does just
-full-text-searching the raw session transcript do, with no distillation at
-all?" Reconciliation is the dominant cost of a run (see ``RunPlan.reconcile``'s
-docstring) -- this baseline skips it entirely, so it is a lower bound on cost
-as much as it is a comparison point on quality.
-
-Nothing here is retrieval strategy in the sense ``retrieval.py`` defers (#300):
-there is no ranking beyond Memgraph's own text-index score, no query
-expansion, no chunking. That is deliberate -- the question this baseline
-answers is "what does the *existing*, zero-effort tool give you", not "what is
-the best possible text-search baseline".
+Deliberately untuned -- no ranking beyond the index's score, no query
+expansion: it measures what the zero-effort tool gives, at no reconciliation cost.
 """
 
 import re
@@ -34,16 +23,9 @@ class _Queryable(Protocol):
     def query(self, cypher: str, params: dict[str, Any] | None = None, /) -> list[dict[str, Any]]: ...
 
 
-#: One index, scoped to the eval instance only -- never the real harness's
-#: Action nodes, which this package must never touch (see inject.py's module
-#: docstring on why the eval instance is dedicated).
 TEXT_INDEX_NAME = "eval_turn_text_index"
 
-#: How many matching turns to hand the answering LLM. Unranked beyond
-#: Memgraph's own text-search score, deliberately: tuning this number is
-#: retrieval-strategy design, which #300's reasoning defers for the graph-agent
-#: baseline too -- this baseline's whole point is the untuned, zero-effort
-#: number.
+#: How many matching turns to hand the answering LLM. Deliberately untuned.
 DEFAULT_LIMIT = 10
 
 
@@ -60,10 +42,8 @@ def ensure_turn_text_index(graph: "ActionsGraph") -> Indexed:
     ``actions-graph`` writes ``text`` on user and assistant messages when it
     records them, so tool calls and other actions are never indexed.
 
-    Ends with a probe through the same :func:`_search` call retrieval makes.
-    A search that cannot run fails every question the same way, and the
-    per-question path records a failure as a miss, so a broken index would
-    otherwise read as a 0% result rather than as a broken run.
+    Ends with a probe through the same :func:`_search` call retrieval makes,
+    so a broken index fails the run rather than reading as 0% coverage.
 
     Raises:
         RuntimeError: the index is missing after creation, or text search
@@ -90,11 +70,9 @@ def _index_exists(db: _Queryable) -> bool:
 
 
 def _search(graph: _Queryable, query: str, limit: int) -> list[dict[str, Any]]:
-    # The index name is a module constant, never input; the query text and
-    # limit are bound parameters. The limit is applied in Cypher rather than
-    # passed to search_all because that procedure's third argument changed
-    # type across Memgraph releases (an int on 3.9, a config map on 3.13), and
-    # the two-argument form is the one that runs on both.
+    # The index name is a module constant, never input; query and limit are
+    # parameters. The limit is applied in Cypher because search_all's third
+    # argument changed type across Memgraph releases.
     return graph.query(
         f"CALL text_search.search_all('{TEXT_INDEX_NAME}', $query) YIELD node, score "
         "WITH node, score ORDER BY score DESC LIMIT $limit "
@@ -104,23 +82,11 @@ def _search(graph: _Queryable, query: str, limit: int) -> list[dict[str, Any]]:
     )
 
 
-#: Tantivy's query parser treats characters like : ( ) " * ~ ^ specially, and a
-#: natural-language question is full of the ones that are not (mostly '?').
-#: Reduced to bare word tokens rather than escaped: this is making the query
-#: parseable, not a search-quality choice -- #300 defers those.
+#: Bare word tokens, so Tantivy's query parser never sees its special characters.
 _QUERY_TOKEN = re.compile(r"\w+")
 
-#: text_search.search_all is OR-across-terms, not AND (verified directly): a
-#: turn only needs to share SOME query word to score, not all of them. These
-#: are near-universal in English regardless of topic, so keeping them in the
-#: query does not add precision -- it adds a term with almost no discriminating
-#: power that can still contribute a nonzero score. Verified directly: on a
-#: two-document corpus, a query sharing only "my" with an unrelated turn
-#: outranked the turn actually containing the query's real keyword (documented
-#: in the README's Known Limitations). Dropping them is not the search-strategy
-#: tuning #300 defers -- it is the same kind of thing as stripping Tantivy's
-#: special characters above: removing terms that were never going to
-#: discriminate rather than adding any ranking sophistication.
+#: search_all ORs its terms, so a near-universal word alone can make an
+#: unrelated turn outrank the one holding the real keyword.
 _STOPWORDS = frozenset(
     [
         "a",
@@ -190,21 +156,10 @@ async def retrieve_by_text_search(
     limit: int = DEFAULT_LIMIT,
     today: str | None = None,
 ) -> Retrieved:
-    """Answer ``question`` from Memgraph's own full-text search over raw turns.
-
-    The final-answer call is the exact same ``answer_prompt`` the graph-agent
-    baseline uses (see ``retrieval.retrieve``) -- deliberately, so a quality
-    difference between the two baselines is attributable to what was
-    *retrieved*, not to two different answering prompts.
-
-    Latency covers the search and the answer call, the same span
-    ``retrieval.retrieve`` times, so the two baselines' latencies compare.
+    """Answer ``question`` from Memgraph's full-text search over raw turns, via the shared ``answer_prompt``.
 
     Raises:
-        Exception: whatever ``text_search`` raises is not caught here. The
-            runner records a raised retrieval as a miss, as it does for the
-            graph-agent baseline; :func:`ensure_turn_text_index`'s probe is
-            what stops a search that can never run from reaching that point.
+        Exception: whatever ``text_search`` raises; the runner records it as a miss.
     """
     started = time.monotonic()
     query = _safe_query(question)

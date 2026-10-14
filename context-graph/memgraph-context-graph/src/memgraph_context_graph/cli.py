@@ -9,6 +9,8 @@ import sys
 from importlib import metadata
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
+from memgraph_context_graph.tools import normalize_connector_name
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -86,14 +88,14 @@ def _config(argv: list[str]) -> int:
         FALSY_VALUES,
         MEMORY_BACKENDS,
         TRUTHY_VALUES,
-        config_file_path,
+        config_file,
         load_config,
         parse_bool_flag,
         write_config,
     )
     from memgraph_context_graph.spaces import EDITION_COMMUNITY, EDITIONS
 
-    config_path = config_file_path()
+    config_path = config_file()
 
     _CONFIG_KEYS = {
         "edition": "edition",
@@ -171,7 +173,6 @@ def _config(argv: list[str]) -> int:
             print(f"Supported keys: {', '.join(_CONFIG_KEYS)}", file=sys.stderr)
             return 2
 
-        # Secrets: read from stdin if value not provided.
         if len(argv) < 3:
             if key in _SECRET_KEYS:
                 import getpass
@@ -228,7 +229,6 @@ def _config(argv: list[str]) -> int:
         if value is None:
             print(f"{key} is not set in {config_path}", file=sys.stderr)
             return 1
-        # Don't print secrets to stdout unless explicitly requested.
         if key in _SECRET_KEYS:
             print("***")
         else:
@@ -294,7 +294,7 @@ def _join(argv: list[str]) -> int:
     """Point the config file at an Enterprise Memgraph as one login, then prove the login works."""
     import getpass
 
-    from memgraph_context_graph.adapters._identity import config_file_path, reload_config, write_config
+    from memgraph_context_graph.adapters._identity import config_file, reload_config, write_config
     from memgraph_context_graph.spaces import EDITION_ENTERPRISE, SpaceError, spaces_for
 
     parser = argparse.ArgumentParser(
@@ -320,9 +320,9 @@ def _join(argv: list[str]) -> int:
             client.close()
         shared = [space.name for space in spaces.readable() if space.shared]
     except (SpaceError, ValueError) as exc:
-        print(f"Wrote {config_file_path()}, but the login doesn't work yet: {exc}", file=sys.stderr)
+        print(f"Wrote {config_file()}, but the login doesn't work yet: {exc}", file=sys.stderr)
         return 1
-    print(f"Wrote {config_file_path()}: edition = enterprise, login {args.login!r}.")
+    print(f"Wrote {config_file()}: edition = enterprise, login {args.login!r}.")
     print(f"Personal space: {row['Current']}. Shared spaces: {', '.join(shared) or 'none yet'}.")
     print("Next: memgraph-context-graph setup <runtime> (e.g. claude-code) if this machine isn't set up yet.")
     return 0
@@ -374,7 +374,7 @@ def doctor_checks(runtimes: Sequence[str], connectors: Sequence[str]) -> list[_C
         checks.append(_check_memgraph())
         for connector in connectors:
             checks.append(_check_connector(connector))
-        if any(connector.strip().replace("_", "-") == "sessions-graph" for connector in connectors):
+        if any(normalize_connector_name(connector) == "sessions-graph" for connector in connectors):
             checks.append(_check_embeddings())
             checks.append(_check_mcp())
         for runtime in runtimes:
@@ -415,9 +415,9 @@ def _edition_resolves() -> bool:
 
 
 def _check_config() -> _CheckResult:
-    from memgraph_context_graph.adapters._identity import config_file_path, load_config
+    from memgraph_context_graph.adapters._identity import config_file, load_config
 
-    path = config_file_path()
+    path = config_file()
     if not path.is_file():
         return {
             "name": "config",
@@ -459,23 +459,23 @@ def _check_memgraph() -> _CheckResult:
 
     env = resolve_memgraph_env()
     url = env["MEMGRAPH_URL"]
+    db = None
     try:
+        from memgraph_context_graph.hooks.runner import memgraph_kwargs
         from memgraph_toolbox.api.memgraph import Memgraph
 
-        db = Memgraph(
-            url=env["MEMGRAPH_URL"],
-            username=env["MEMGRAPH_USER"],
-            password=env["MEMGRAPH_PASSWORD"],
-            database=env["MEMGRAPH_DATABASE"],
-        )
+        db = Memgraph(**memgraph_kwargs(env))
         db.query("RETURN 1")
         return {"name": "memgraph", "ok": True, "detail": f"{url} reachable"}
     except Exception as exc:
         return {"name": "memgraph", "ok": False, "detail": f"{url} — {type(exc).__name__}: {exc}"}
     finally:
-        driver = getattr(getattr(locals().get("db", None), "driver", None), "driver", None)
-        if driver is not None:
-            driver.close()
+        _close(db)
+
+
+def _close(db: Any) -> None:
+    if db is not None:
+        db.close()
 
 
 def _check_cli() -> _CheckResult:
@@ -490,8 +490,9 @@ def _check_package(package_name: str) -> _CheckResult:
 
 
 def _check_connector(connector_name: str) -> _CheckResult:
-    normalized = connector_name.strip().replace("-", "_")
-    if normalized == "skills_graph":
+    normalized = normalize_connector_name(connector_name)
+    if normalized == "skills-graph":
+        graph = None
         try:
             from skills_graph import SkillGraph
 
@@ -501,11 +502,10 @@ def _check_connector(connector_name: str) -> _CheckResult:
         except Exception as exc:
             return {"name": "connector:skills-graph", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
         finally:
-            driver = getattr(getattr(locals().get("graph", None), "_db", None), "driver", None)
-            if driver is not None:
-                driver.close()
+            _close(graph and graph._db)
 
-    if normalized == "actions_graph":
+    if normalized == "actions-graph":
+        graph = None
         try:
             from actions_graph import ActionsGraph
 
@@ -515,23 +515,17 @@ def _check_connector(connector_name: str) -> _CheckResult:
         except Exception as exc:
             return {"name": "connector:actions-graph", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
         finally:
-            driver = getattr(getattr(locals().get("graph", None), "_db", None), "driver", None)
-            if driver is not None:
-                driver.close()
+            _close(graph and graph._db)
 
-    if normalized == "sessions_graph":
+    if normalized == "sessions-graph":
+        graph = None
         try:
             from sessions_graph import SessionsGraph
 
             from memgraph_context_graph.adapters._identity import resolve_memgraph_env, resolve_user_id
+            from memgraph_context_graph.hooks.runner import memgraph_kwargs
 
-            env = resolve_memgraph_env()
-            graph = SessionsGraph(
-                url=env["MEMGRAPH_URL"],
-                username=env["MEMGRAPH_USER"],
-                password=env["MEMGRAPH_PASSWORD"],
-                database=env["MEMGRAPH_DATABASE"],
-            )
+            graph = SessionsGraph(**memgraph_kwargs(resolve_memgraph_env()))
             version = _package_version("sessions-graph")
             user_id = resolve_user_id({})
             if not user_id:
@@ -548,22 +542,16 @@ def _check_connector(connector_name: str) -> _CheckResult:
         except Exception as exc:
             return {"name": "connector:sessions-graph", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
         finally:
-            driver = getattr(getattr(locals().get("graph", None), "_db", None), "driver", None)
-            if driver is not None:
-                driver.close()
+            _close(graph and graph._db)
 
-    if normalized == "resources_graph":
+    if normalized == "resources-graph":
+        graph = None
         try:
             from memgraph_context_graph.adapters._identity import load_config, resolve_memgraph_env
+            from memgraph_context_graph.hooks.runner import memgraph_kwargs
             from resources_graph import ResourcesGraph
 
-            env = resolve_memgraph_env()
-            graph = ResourcesGraph(
-                url=env["MEMGRAPH_URL"],
-                username=env["MEMGRAPH_USER"],
-                password=env["MEMGRAPH_PASSWORD"],
-                database=env["MEMGRAPH_DATABASE"],
-            )
+            graph = ResourcesGraph(**memgraph_kwargs(resolve_memgraph_env()))
             version = _package_version("resources-graph")
             # Touches are recorded without a token; the Sweep falls back to the user's gh login.
             token = "set" if load_config().github_token else "unset (the Sweep uses the gh login)"
@@ -575,9 +563,7 @@ def _check_connector(connector_name: str) -> _CheckResult:
         except Exception as exc:
             return {"name": "connector:resources-graph", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
         finally:
-            driver = getattr(getattr(locals().get("graph", None), "_db", None), "driver", None)
-            if driver is not None:
-                driver.close()
+            _close(graph and graph._db)
 
     else:
         return {"name": f"connector:{connector_name}", "ok": False, "detail": "unsupported connector"}
@@ -597,16 +583,12 @@ def _check_embeddings() -> _CheckResult:
     except ImportError as exc:
         return {"name": "embeddings", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
 
+    from memgraph_context_graph.hooks.runner import memgraph_kwargs
+
     model = resolve_embedding_model() or DEFAULT_EMBEDDING_MODEL
-    env = resolve_memgraph_env()
     db = None
     try:
-        db = Memgraph(
-            url=env["MEMGRAPH_URL"],
-            username=env["MEMGRAPH_USER"],
-            password=env["MEMGRAPH_PASSWORD"],
-            database=env["MEMGRAPH_DATABASE"],
-        )
+        db = Memgraph(**memgraph_kwargs(resolve_memgraph_env()))
         dimension = check_available(db, model)
         return {"name": "embeddings", "ok": True, "detail": f"{model} ({dimension} dimensions) inside Memgraph"}
     except Exception as exc:
@@ -617,9 +599,7 @@ def _check_embeddings() -> _CheckResult:
             "without it, recall's vector lanes are off",
         }
     finally:
-        driver = getattr(getattr(db, "driver", None), "driver", None)
-        if driver is not None:
-            driver.close()
+        _close(db)
 
 
 def _check_mcp() -> _CheckResult:
@@ -702,14 +682,10 @@ def _check_runtime(runtime: str, connectors: list[str]) -> _CheckResult:
 def _delete_probe_session(memgraph_env: dict[str, str], session_id: str) -> None:
     """Remove the probe's Session and the nodes only it owns; best effort, the probe result stands either way."""
     try:
+        from memgraph_context_graph.hooks.runner import memgraph_kwargs
         from memgraph_toolbox.api.memgraph import Memgraph
 
-        db = Memgraph(
-            url=memgraph_env["MEMGRAPH_URL"],
-            username=memgraph_env["MEMGRAPH_USER"],
-            password=memgraph_env["MEMGRAPH_PASSWORD"],
-            database=memgraph_env["MEMGRAPH_DATABASE"],
-        )
+        db = Memgraph(**memgraph_kwargs(memgraph_env))
     except Exception:
         return
     try:
@@ -728,7 +704,7 @@ def _delete_probe_session(memgraph_env: dict[str, str], session_id: str) -> None
     except Exception:
         pass
     finally:
-        db.driver.close()
+        _close(db)
 
 
 def _check_capture_failures() -> _CheckResult:

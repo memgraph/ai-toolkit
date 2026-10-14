@@ -1,6 +1,6 @@
 # Sessions Graph
 
-Sessions Graph is the [Context Graph](../CONTEXT-MAP.md) component for session context and cross-session recall. It is the **authority on `(:Session)` nodes** in the Context Graph family. It stores free-form text assertions — called **Memories** — written explicitly by agents, and makes them searchable in future sessions.
+Sessions Graph is the [Context Graph](../CONTEXT-MAP.md) component for session context and cross-session recall. It owns `(:User)` and `(:User)-[:HAD_SESSION]->(:Session)`; the `(:Session)` node itself is shared by every component. It reconciles sessions into extracted entities, embeds them, and answers [recall](#recall) over a user's history. It also stores free-form text assertions — **Memories** — that agents write explicitly.
 
 Requires **Memgraph ≥ 3.6** (text search is stable from that release).
 
@@ -187,16 +187,13 @@ The query string follows [Tantivy query syntax](https://docs.rs/tantivy/latest/t
 
 ## Session reconciliation
 
-A session's Actions Graph content (Messages, ToolCalls, ToolResults) is
-mostly opaque text today. Session reconciliation runs that content
-through [unstructured2graph](../../unstructured2graph/)'s chunk + entity-extraction
-pipeline -- GLiNER2 over `hygm`'s default model by default, overridable to
-another `ExtractionBackend` (e.g. LightRAG) via
-`reconcile_session(..., extraction_backend=...)` -- turning
-it into queryable graph entities linked
-back to the session that produced them — see
-[`CONTEXT.md`](./CONTEXT.md#language) for the **Session Reconciliation** /
-**Reconcilable Content** / **Reconciliation Status** terminology.
+Session reconciliation runs a session's Actions Graph content (Messages,
+ToolCalls, ToolResults) through [unstructured2graph](../../unstructured2graph/)
+as one document, extracting entities with local GLiNER2 under the user's
+[ontology version](#ontology-versions) (or another `ExtractionBackend` passed
+as `reconcile_session(..., extraction_backend=...)`), and links them back to
+the session that produced them. See [`CONTEXT.md`](./CONTEXT.md#language) for
+the terminology.
 
 Memory files are reconciled on their own, not with a session, because a file
 outlives the session that first wrote it.
@@ -212,9 +209,8 @@ outlives the session that first wrote it.
 - **No double extraction.** `memory` tool calls are left out of session
   content, so their text isn't extracted twice.
 
-Reconciliation writes no session summary. Recall answers from the turns
-themselves and uses the extracted graph as an index into them, so a summary
-would be one more LLM call whose output nothing reads.
+Reconciliation writes no session summary: recall answers from the turns
+themselves and uses the extracted graph as an index into them.
 
 This requires the `sessions-graph[reconciliation]` extra and no LLM API key.
 A key (`llm.anthropic_api_key` or `llm.openai_api_key`) only enables
@@ -240,8 +236,8 @@ can exceed the timeout that hook runtimes enforce on hook commands. Instead:
   ```
 
   The CLI runs with **`enforce_ontology=True`**: extracted entities get real
-  type labels (`:Person`, `:Organization`, …) gated by unstructured2graph's
-  default ontology, and anything outside it is kept but flagged
+  type labels (`:Person`, `:Organization`, …) from the user's ontology
+  version, and anything outside it is kept but flagged
   `ontology_conformant = false`. See [entity typing](../../unstructured2graph/README.md#entity-typing--ontology).
 
 - Or, if you want it triggered automatically without a manual/cron step, opt
@@ -253,17 +249,11 @@ can exceed the timeout that hook runtimes enforce on hook commands. Instead:
   memgraph-context-graph config set reconcile.auto_reconcile true
   ```
 
-  This writes `[reconcile] auto_reconcile = true` to
-  `~/.config/context-graph/config.toml`, which
-  `memgraph_context_graph.hooks.runner._add_sessions_graph_connector` reads on
-  every hook invocation via `resolve_auto_reconcile()` — no shell/session
-  restart quirks, since hook subprocesses don't reliably inherit shell
-  profile environment variables. Direct SDK integrations that construct
-  `SessionsGraphConnector` themselves must instead pass
-  `SessionsGraphConnector(graph, auto_reconcile=True)` explicitly — per ADR
-  0002 (config-file-only-hook-resolution), no ambient environment variable
-  is consulted here. This is fire-and-forget — if the process dies before
-  finishing (machine sleep, crash), the session stays `pending` and
+  This writes `[reconcile] auto_reconcile = true` to the config file, which
+  every hook invocation reads (hook subprocesses don't inherit shell profile
+  variables, so no environment variable is consulted — ADR 0002). Direct SDK
+  integrations pass `SessionsGraphConnector(graph, auto_reconcile=True)`. It
+  is fire-and-forget: if the process dies, the session stays `pending` and
   `sessions-graph reconcile --pending` is the reliable backfill.
 
 Programmatically:
@@ -281,25 +271,19 @@ summary = await graph.reconcile_session(
 print(summary.status, summary.texts_considered, summary.texts_deduped)
 ```
 
-Label promotion is opt-in and mirrors unstructured2graph's flags: the default
-(`enforce_ontology=False, promote_labels=False`) leaves entities under the
-backend's workspace label (`gliner2` by default) with an `entity_type` property only; `enforce_ontology=True`
-restricts promotion to an ontology (pass `ontology_path=` for a custom one);
-`promote_labels=True` promotes every `entity_type` with no vocabulary. See
+Label promotion mirrors unstructured2graph's flags: by default entities keep
+the backend's workspace label (`gliner2`) and an `entity_type` property only;
+`enforce_ontology=True` restricts promotion to an ontology (`ontology_path=`
+for a custom one); `promote_labels=True` promotes every `entity_type`. See
 [unstructured2graph § entity typing](../../unstructured2graph/README.md#entity-typing--ontology).
 
-Extracted entities land in the backend's workspace, the same one any
-documents ingested via unstructured2graph with that backend use, so a person
-or concept mentioned both in a session and in an ingested document merges
-into one node. Pass `entity_workspace=` explicitly to `reconcile_session()` to
-isolate them instead.
+Extracted entities land in the backend's workspace, shared with documents
+ingested through unstructured2graph, so an entity mentioned in both merges
+into one node.
 
-Content is deduplicated by hash before extraction, so re-running a sweep over
-already-processed content never re-extracts it. Each reconcilable unit
+Content is deduplicated by hash before extraction, and each reconcilable unit
 (a message, tool call, tool result, or memory) is truncated to
-`MAX_RECONCILABLE_CHARS` (8000) before extraction, but a chatty session still
-has many units, so the first run can be substantial. Consider this before
-enabling `auto_reconcile` broadly.
+`MAX_RECONCILABLE_CHARS` (8000).
 
 ## Ontology versions
 
@@ -428,12 +412,12 @@ corpora have none, stays byte-identical.
 ## Embeddings for recall
 
 Recall searches a user's history by vector as well as by text, so three
-units get an `embedding` property, computed **inside Memgraph** by MAGE's
-`embeddings` module (no model runs on the host):
+units get vectors, computed **inside Memgraph** by MAGE's `embeddings`
+module (no model runs on the host):
 
 | Unit | Text embedded |
 |---|---|
-| user and assistant messages (`:Action`) | `text`, the plain message text Actions Graph writes |
+| user and assistant messages (`:Action`) | `text`, split into passages of at most 1,200 characters, one vector each in `passage_embeddings` |
 | entities | their `text`, for every entity mentioned in one of the session's chunks |
 | extracted edges | `"<head> <type> <tail>. <r.text>"`: the fact and the sentence it was read from |
 
@@ -456,10 +440,10 @@ When it runs:
 - **Reconciliation:** after extraction, the session's new entities and edges
   are embedded. An embedding failure never fails the reconciliation.
 - **Catch-up:** `sessions-graph embed --pending` embeds every session whose
-  embedding failed, never ran, or used another model.
+  embedding failed, never ran, or used another model or passage split.
 
 The outcome is on the Session: `embedding_status` is `completed` (with
-`embedding_model`) or `failed` (with `embedding_error`).
+`embedding_model` and `embedding_scheme`) or `failed` (with `embedding_error`).
 
 This needs Memgraph with MAGE (`memgraph/memgraph-mage`), with 2 GiB of
 memory or more for the default model. The model downloads inside Memgraph on
@@ -477,7 +461,6 @@ sessions-graph embed --pending --limit 50 --model BAAI/bge-small-en-v1.5
 | Method | Description |
 |---|---|
 | `setup()` | Create constraints, text index, and reconciliation indexes. Run once on first use. |
-| `drop()` | Remove all Memory-related constraints and indexes. |
 | `save_memory(user_id, content, *, session_id, memory_id, path)` | Persist a new Memory at `path` (default `/memories/notes/<memory_id>.md`). Returns the stored `Memory` object. |
 | `memory_store(user_id, *, session_id=None)` | The memory tool's file commands over the user's Memories. See [Memory files](#memory-files). |
 | `get_memories(user_id)` | Return all Memories for a user, newest first. |
@@ -485,7 +468,9 @@ sessions-graph embed --pending --limit 50 --model BAAI/bge-small-en-v1.5
 | `search_memories(user_id, query, *, limit=10)` | Full-text search over Memory content. |
 | `update_memory(memory_id, content)` | Replace the content of an existing Memory. Returns `None` if not found. |
 | `delete_memory(memory_id)` | Remove a Memory and all its relationships. |
-| `async reconcile_session(session_id, *, extraction_backend=None, actions_graph=None, entity_workspace=None, promote_labels=False, enforce_ontology=False, ontology_path=None, embedding_model=DEFAULT_EMBEDDING_MODEL)` | Run session reconciliation for one session, then embed what it wrote (see [Embeddings for recall](#embeddings-for-recall)). `extraction_backend` overrides entity extraction to another `ExtractionBackend` (default: GLiNER2 over `hygm.default_model()`, built once per instance); `lightrag_wrapper` is always required regardless, since the narrative summary is always produced via its LLM. `promote_labels`/`enforce_ontology`/`ontology_path` control entity-type label promotion (see above). Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
+| `async reconcile_session(session_id, *, extraction_backend=None, actions_graph=None, promote_labels=False, enforce_ontology=False, ontology_path=None, embedding_model=DEFAULT_EMBEDDING_MODEL, reextract=False)` | Reconcile one session, then embed what it wrote (see [Embeddings for recall](#embeddings-for-recall)). Extracts with GLiNER2 under the user's adopted ontology version unless `extraction_backend` overrides it. No LLM. Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
+| `async reconcile_sessions_batch(session_ids, *, lightrag_wrapper, ...)` | Reconcile many sessions with LightRAG as one processing pass. |
+| `async reconcile_memory(memory_id, *, extraction_backend=None, enforce_ontology=True, embedding_model=DEFAULT_EMBEDDING_MODEL)` | Re-extract one memory file, replacing what its previous text produced. See [Session reconciliation](#session-reconciliation). |
 | `get_pending_reconciliation_sessions(*, limit=100)` | Return session IDs marked `reconciliation_status = 'pending'`. |
 | `recall(user_id, question, *, config=None, model=DEFAULT_EMBEDDING_MODEL)` | What the user's own sessions hold about `question`, as `Recalled` (turns and facts; `lines()`, `render(today)`, `to_json()`). See [Recall](#recall). |
 | `embed_session(session_id, *, model=DEFAULT_EMBEDDING_MODEL)` | Embed the session's messages, entities and edges that lack a vector from `model`, inside Memgraph. Returns counts as `Embedded`; records the outcome on the Session. Raises `EmbeddingUnavailableError` without MAGE or when the model can't load. |

@@ -155,10 +155,7 @@ class ActionsGraphConnector(GraphConnector):
         self._ensure_session(event)
         self._graph.end_agent(
             event.agent_name,
-            # AgentEndEvent.output is Any at the Event Protocol boundary, but every
-            # real adapter (openai.py, claude.py, claude_code.py) only ever sets it
-            # to a str or leaves it None -- never the list-of-content-blocks shape
-            # _content() also handles for ToolResult.content.
+            # AgentEndEvent.output is Any, but every adapter sets a str or None.
             last_assistant_message=cast("str | None", self._content(event.output)),
             metadata=self._metadata(event),
         )
@@ -194,19 +191,7 @@ class ActionsGraphConnector(GraphConnector):
         )
 
     def _ensure_session(self, event: Event) -> None:
-        if self._graph.get_session(event.session_id) is not None:
-            return
-        ensure_session = getattr(self._graph, "ensure_session", None)
-        if ensure_session is not None:
-            ensure_session(
-                Session(
-                    session_id=event.session_id,
-                    started_at=event.timestamp,
-                    metadata=self._session_metadata(event),
-                )
-            )
-            return
-        self._graph.create_session(
+        self._graph.ensure_session(
             Session(
                 session_id=event.session_id,
                 started_at=event.timestamp,

@@ -33,8 +33,12 @@ Persisting a Memory via Sessions Graph Python API, or by the model through the `
 _Avoid_: Memory extraction, LLM distillation, passive capture, tool-intercepted write
 
 **Memory Recall**:
-Retrieving explicit Memories through the Python API. The separate `recall` MCP tool returns source turns and typed facts from the user's sessions.
+Retrieving explicit Memories through the Python API. The separate `recall` MCP tool is **Recall**.
 _Avoid_: Memory injection, automatic context loading, passive recall
+
+**Recall**:
+What a user's own memory files and past sessions hold about a question: matching memory files, turns and extracted facts, the evidence rather than an answer. Served to harnesses as the `recall` MCP tool.
+_Avoid_: Memory Recall (Memories only), answer, search
 
 **Memory Owner**:
 User identity (`user_id` from `SessionStartEvent`) a Memory belongs to. Every Memory user-owned.
@@ -53,7 +57,7 @@ Shared `(:Session {session_id})` node joining data from Context Graph components
 _Avoid_: treating other components' MERGEs as lifecycle ownership
 
 **Session Reconciliation**:
-Out-of-band batch process using local GLiNER2 entity extraction; no LLM. Dedupes Reconcilable Content, combines into one document per session, uses unstructured2graph to create Chunks and extract entities using the adopted HyGM model (or the default model). Per-session batching lets extraction see facts/references spanning turns ([#297](https://github.com/memgraph/ai-toolkit/issues/297)). Writes no session summary (#519). Never creates Memory nodes — Memories are explicit writes. Doesn't read Memories either: each Memory File has its own **Memory File Reconciliation**.
+Out-of-band batch process using local GLiNER2 entity extraction; no LLM. Dedupes Reconcilable Content, combines into one document per session, uses unstructured2graph to create Chunks and extract entities using the adopted HyGM model (or the default model). Per-session batching lets extraction see facts/references spanning turns ([#297](https://github.com/memgraph/ai-toolkit/issues/297)). Writes no session summary. Never creates Memory nodes — Memories are explicit writes. Doesn't read Memories either: each Memory File has its own **Memory File Reconciliation**.
 _Avoid_: Memory extraction, memory reconciliation, auto-memory
 
 **Memory File Reconciliation**:
@@ -76,7 +80,7 @@ _Avoid_: Status, session status (`status` already tracks session completion)
 
 - **Sessions Graph** belongs to broader **Context Graph** family.
 - **Memory Write** + **Memory Recall** happen via Sessions Graph Python API, not **Event Protocol**.
-- `SessionsGraphConnector` consumes session start/end and turn-end events. `MERGE`s User + Session nodes, exposes `active_user_id`/`active_session_id`.
+- `SessionsGraphConnector` consumes session start, turn end, session end and memory-tool end events. `MERGE`s User + Session nodes, exposes `active_user_id`/`active_session_id`.
 - **Memory Owner** connected to their sessions: `(:User)-[:HAD_SESSION]->(:Session)`. Created atomically with User/Session MERGEs on `SESSION_START`.
 - Every **Memory** owned by a **Memory Owner** via `HAS_MEMORY`: `(:User)-[:HAS_MEMORY]->(:Memory)`.
 - A **Memory File** under `/memories/projects/<key>/` is `(:Memory)-[:ABOUT]->(:Project {key})`; the key is one path segment.
@@ -84,7 +88,7 @@ _Avoid_: Status, session status (`status` already tracks session completion)
 - Scope derived from graph topology, not stored as attribute.
 - Session Reconciliation reads Message/ToolCall/ToolResult Actions + Memories, passes text to unstructured2graph.
 - Each source Action/Memory links to resulting Chunks: `(:Action|:Memory)-[:HAS_CHUNK]->(:Chunk)`. If combined session document splits into several Chunks, every source links to every Chunk — these links express session-level provenance. `MENTIONED_IN.sources` and typed edges' `source_id` retain exact turn provenance used by recall.
-- On `SESSION_END`, `SessionsGraphConnector` only marks reconciliation `pending`. Manual/scheduled CLI sweep, or opt-in background process, runs the extraction later. Its only LLM use is ontology derivation, spawned at milestones when a key is configured. Hook subprocesses never run reconciliation.
+- On `TURN_END` and `SESSION_END`, `SessionsGraphConnector` marks reconciliation `pending` and spawns a detached embed. Manual/scheduled CLI sweep, or opt-in background process after `SESSION_END`, reconciles later. Its only LLM use is ontology derivation, spawned at milestones when a key is configured. Hook subprocesses never run reconciliation.
 
 ## Flagged ambiguities
 

@@ -10,20 +10,17 @@ from memgraph_context_graph.adapters._spec import (
     RuntimeSpec,
     SpecAdapter,
     SpecPlugin,
+    agent_end,
+    agent_start,
     pre_tool_use_context,
+    session_end,
     session_start,
+    tool_failure,
     tool_start,
     turn_end,
 )
 from memgraph_context_graph.adapters.claude_code_memory import CLAUDE_CODE_MEMORY
-from memgraph_context_graph.events import (
-    AgentEndEvent,
-    AgentStartEvent,
-    ErrorOccurredEvent,
-    MessageEvent,
-    SessionEndEvent,
-    ToolEndEvent,
-)
+from memgraph_context_graph.events import ErrorOccurredEvent, MessageEvent, ToolEndEvent
 
 if TYPE_CHECKING:
     from memgraph_context_graph.events import Event
@@ -66,14 +63,7 @@ def _tool_end(context: EventContext) -> ToolEndEvent:
 
 
 def _tool_failure(context: EventContext) -> ToolEndEvent:
-    return ToolEndEvent(
-        **context.base(),
-        tool_name=context.text("tool_name"),
-        tool_use_id=context.optional_text("tool_use_id"),
-        is_error=True,
-        error_message=context.optional_text("error"),
-        agent_name=context.optional_text("agent_id"),
-    )
+    return tool_failure(context, context.optional_text("error"))
 
 
 def _permission(context: EventContext) -> MessageEvent:
@@ -94,32 +84,9 @@ def _permission_denied(context: EventContext) -> ErrorOccurredEvent:
     )
 
 
-def _agent_start(context: EventContext) -> AgentStartEvent:
-    agent_type = context.text("agent_type")
-    return AgentStartEvent(
-        **context.base(),
-        agent_name=context.text("agent_id", agent_type),
-        agent_type=agent_type,
-    )
-
-
-def _agent_end(context: EventContext) -> AgentEndEvent:
-    agent_type = context.text("agent_type")
-    return AgentEndEvent(
-        **context.base(),
-        agent_name=context.text("agent_id", agent_type),
-        agent_type=agent_type,
-        output=context.payload.get("last_assistant_message"),
-    )
-
-
 def _turn_end(context: EventContext) -> list[Event]:
     # Stop ends one turn; SessionEnd, registered separately, ends the session.
-    return turn_end(context, reply=context.payload.get("last_assistant_message"))
-
-
-def _session_end(context: EventContext) -> SessionEndEvent:
-    return SessionEndEvent(**context.base(), status="completed")
+    return turn_end(context, reply=context.value("reply"))
 
 
 def _stop_failure(context: EventContext) -> ErrorOccurredEvent:
@@ -127,7 +94,7 @@ def _stop_failure(context: EventContext) -> ErrorOccurredEvent:
     return ErrorOccurredEvent(
         **context.base(),
         error_type=error,
-        error_message=str(context.payload.get("error_details") or error or "Claude Code stop failure"),
+        error_message=str(context.payload.get("error_details") or error),
         recoverable=True,
     )
 
@@ -161,11 +128,11 @@ SPEC = RuntimeSpec(
         "PostToolUseFailure": _tool_failure,
         "PermissionRequest": _permission,
         "PermissionDenied": _permission_denied,
-        "SubagentStart": _agent_start,
-        "SubagentStop": _agent_end,
+        "SubagentStart": agent_start,
+        "SubagentStop": agent_end,
         "Stop": _turn_end,
         "StopFailure": _stop_failure,
-        "SessionEnd": _session_end,
+        "SessionEnd": session_end,
     },
     metadata_keys=(
         "cwd",

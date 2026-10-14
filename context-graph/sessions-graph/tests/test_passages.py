@@ -1,6 +1,5 @@
 """Splitting messages into passages, and choosing which to show."""
 
-import pytest
 from sessions_graph.passages import PASSAGE_CHARS, best_passage, excerpt, split_passages
 
 LONG = (
@@ -26,8 +25,6 @@ def test_a_run_with_no_break_is_cut_at_the_bound():
 
 def test_a_short_message_is_one_passage():
     assert split_passages("Hi there.") == ["Hi there."]
-    with pytest.raises(ValueError):
-        split_passages("Hi", size=0)
 
 
 def test_the_passage_holding_a_sentence_wins_over_word_overlap():

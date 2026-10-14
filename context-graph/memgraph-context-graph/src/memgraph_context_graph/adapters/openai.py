@@ -79,9 +79,9 @@ class OpenAIAdapter(RuntimeAdapter):
         """Return a ``RunHooksBase`` subclass for ``Runner.run(..., hooks=...)``."""
         try:
             from agents.lifecycle import RunHooksBase
-        except ImportError:
+        except ImportError as exc:
             msg = "openai-agents is required for OpenAIAdapter. Install it with: pip install memgraph-context-graph[openai]"
-            raise ImportError(msg)  # noqa: B904
+            raise ImportError(msg) from exc
 
         adapter = self
 
@@ -123,11 +123,9 @@ class OpenAIAdapter(RuntimeAdapter):
                 tool: Any,
             ) -> None:
                 tool_name = getattr(tool, "name", str(tool))
-                # ToolContext exposes tool_call_id and tool_arguments (JSON string)
+                # ToolContext carries the arguments as a JSON string; connectors get the parsed object.
                 tool_call_id = getattr(context, "tool_call_id", None)
                 tool_arguments = getattr(context, "tool_arguments", None)
-
-                # Parse JSON string to dict for downstream connectors
                 tool_input: Any = tool_arguments
                 if isinstance(tool_arguments, str):
                     with contextlib.suppress(json.JSONDecodeError):
@@ -203,7 +201,6 @@ class OpenAIAdapter(RuntimeAdapter):
                 agent: Any,
                 response: Any,
             ) -> None:
-                # Extract usage from response if available
                 usage = getattr(response, "usage", None)
                 adapter._link.emit(
                     LLMEndEvent(

@@ -17,7 +17,7 @@ Tier 2 cases staged through a real agent session, not direct fixture injection. 
 _Avoid_: Smoke test, integration test, golden test
 
 **Coverage**:
-Whether LLM judge says graph answer satisfies answer key. Hard gate: failed questions excluded from Efficiency ranking.
+Whether the judge says the answer satisfies the answer key — LongMemEval's own judge when it runs, else this package's deepeval rubrics. Hard gate: failed questions excluded from Efficiency ranking.
 
 Ordinary answer: must contain required facts + use non-empty retrieval. **Abstention** answer: must decline; empty retrieval then correct.
 _Avoid_: Accuracy, recall (recall = the thing measured, not this metric), score
@@ -33,10 +33,10 @@ Token count of retrieved payload. Excludes agent's own usage; only ranks questio
 _Avoid_: Cost, latency, performance
 
 **Retrieval**:
-Step under test: answering a question from graph. The agent strategy gets the schema and writes read-only Cypher. The hybrid strategy calls production `SessionsGraph.recall`, combining full-text and vector search with typed facts. Reports identify the strategy and settings measured.
+Step under test: answering a question from graph. Strategies: **hybrid** (sessions-graph's recall — vector + text search over turns plus the typed graph; the frontier), **graph-agent** (agent writes read-only Cypher), **text-search** (full-text over raw turns, no reconciliation). All share one answering prompt. Reports identify the strategy and settings measured.
 
-Only Retrieval is read-only. Can't alter graph or access distillation storage, incl. cached LLM responses that may hold answers.
-_Avoid_: Query, search, lookup (each names a mechanism not yet chosen)
+Retrieval is read-only. Can't alter graph or access distillation storage, incl. cached LLM responses that may hold answers.
+_Avoid_: Query, search, lookup (each names one mechanism, not the step)
 
 **Eval Batch**:
 One run over a corpus against dedicated Memgraph instance. Unit of isolation — not the question, since batch-wide graph gives retrieval distractors to get wrong.

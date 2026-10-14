@@ -67,20 +67,14 @@ _CHUNK_BYTES = 1 << 20
 _DOWNLOAD_ATTEMPTS = 3
 
 
+def cache_root() -> Path:
+    """The directory every pinned benchmark download is cached under (``$XDG_CACHE_HOME`` or ``~/.cache``)."""
+    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "context-graph-eval"
+
+
 def haystack_path(variant: str = "s", revision: str = DEFAULT_REVISION, *, cache_dir: Path | None = None) -> Path:
-    """Where a pinned variant is cached between runs.
-
-    Keyed by variant *and* revision, which is safe to treat as immutable: the
-    revision is a pinned commit sha (that is the whole point of #302), so the
-    bytes behind a given key never change.
-
-    Cached because both call sites used to download into a TemporaryDirectory,
-    so every single run re-fetched ~277MB. That made iterating on retrieval or
-    scoring absurdly expensive and, worse, put a large flaky network transfer in
-    front of every run -- which is exactly how the first end-to-end attempt
-    died.
-    """
-    root = cache_dir or Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "context-graph-eval"
+    """Where a pinned variant is cached between runs; keyed by variant and commit sha, so immutable."""
+    root = cache_dir or cache_root()
     return Path(root) / f"longmemeval-{variant}-{revision[:12]}.json"
 
 
@@ -94,20 +88,11 @@ def fetch(
 ) -> Path:
     """Download a pinned LongMemEval variant to ``dest``, or reuse it if cached.
 
-    Only the *converted* output is committed, never this file -- see #302.
+    Written to a ``.part`` file and renamed only once the whole body arrived
+    and matches ``Content-Length``, so ``dest`` existing means it is complete.
 
-    Written to a ``.part`` file and renamed only once the whole body has
-    arrived, so ``dest`` existing always means ``dest`` is complete. That is
-    what makes the cache check a single ``exists()`` with no sidecar metadata,
-    and it is why a partial transfer can never be silently adopted as the
-    haystack.
-
-    The truncation check matters more than it looks. Observed live: a read of
-    the 's' variant stopped at 32MB of 277MB. That one raised, but the same
-    short-body failure that *doesn't* raise would previously have written a
-    truncated file and handed it to the run as evidence -- questions would score
-    as recall misses because their sessions were never in the file, and nothing
-    anywhere would say so.
+    Raises:
+        OSError: every attempt failed or was truncated.
     """
     dest = Path(dest)
     if dest.exists() and dest.stat().st_size > 0:
@@ -143,34 +128,12 @@ def fetch(
 def build_corpus(records: Iterable[dict], limit: int | None = None) -> list[Golden]:
     """Convert upstream records into Goldens, optionally sampling down to ``limit``.
 
-    Sampling is deterministic, stratified by ``(question_type, abstention)``,
-    and proportional to upstream with a small floor per stratum.
-
-    *Deterministic* so a regenerated corpus produces no spurious diff and two
-    runs stay comparable.
-
-    *Stratified on both dimensions* because they are independent and upstream
-    clusters each: taking the first N would skew the question-type mix, and
-    stratifying on type alone samples zero abstention questions, since those sit
-    in contiguous runs at the end of each type block.
-
-    *Proportional* so the aggregate score reflects the real distribution --
-    equal-weighting strata over-samples rare ones badly (it turned an upstream
-    6% abstention rate into 40% of a 60-question sample, enough for abstention
-    behaviour to dominate the headline).
-
-    *With a floor* so a rare stratum cannot round to zero at small limits and
-    vanish silently.
-
-    *Shuffled with a fixed seed before returning*, because ``run --limit`` (a
-    separate, later slice -- see #302) takes a plain prefix of the *committed*
-    corpus. Without this, that prefix reproduces exactly the floor-uniform
-    distortion this function exists to avoid: round-robin order puts one record
-    per stratum in each pass, so the first N rows of a 100-question corpus are
-    ~2-per-stratum regardless of the real quotas, the same way ``--limit 20``
-    on the raw upstream data used to be. Shuffling with a fixed seed keeps the
-    file byte-identical across regenerations (still no spurious diff) while
-    making any prefix an unbiased sample instead of a systematically biased one.
+    Sampling is deterministic (no spurious diff on regeneration), stratified
+    by ``(question_type, abstention)`` since upstream clusters both,
+    proportional to upstream so rare strata are not over-weighted, and floored
+    so none rounds to zero. The sample is shuffled with a fixed seed because
+    ``run --limit`` takes a prefix of the committed corpus, and round-robin
+    order would make every prefix floor-uniform.
     """
     records = list(records)
     if limit is None or limit >= len(records):
@@ -293,31 +256,14 @@ class Turn:
 
 
 def to_session_fixtures(record: dict, max_sessions: int | None = None) -> list[SessionFixture]:
-    """Convert a record's haystack into injectable session fixtures.
+    """Convert a record's haystack, distractors included, into injectable session fixtures.
 
-    Distractor sessions are kept deliberately. They are what give retrieval
-    precision -- and so the payload-size efficiency metric -- something to
-    measure; a haystack of evidence alone would score well by construction.
+    ``max_sessions`` trims distractors only -- evidence is always kept, even
+    past the cap -- and makes the score an upper bound. Off by default.
 
-    ``max_sessions`` trims the haystack's *distractors*; evidence is always
-    kept, even where that means exceeding the cap. It exists because
-    reconciliation cost scales with *sessions* while coverage needs *questions*,
-    and upstream couples them at roughly 47:1 -- so a full-pipeline run at an
-    affordable session count would otherwise be reduced to two questions, at
-    which point one flip is 50pp and coverage says nothing.
-
-    Trimming makes retrieval easier, so any score measured this way is an upper
-    bound and is not comparable to a full-haystack run. Off by default: the full
-    haystack is the honest difficulty, and flattering it must be asked for.
-
-    Each question's haystack is one person's history, so every fixture belongs
-    to the question's user and its session id is namespaced by the question.
-    Upstream draws distractors from a shared pool and reuses them across
-    questions -- 205 of the 4,804 haystack sessions behind the first 100
-    questions, 1 of 502 at five sessions per question -- but a session in two
-    people's histories is two sessions: one node shared between two users
-    would hand its extracted facts to only one of them, since reconciliation
-    resolves a single user per session.
+    Each fixture belongs to the question's user, with its session id
+    namespaced by the question: upstream reuses distractors across questions,
+    and reconciliation resolves a single user per session.
     """
     question_id = record["question_id"]
     evidence_ids = set(record["answer_session_ids"])
@@ -343,24 +289,9 @@ def to_session_fixtures(record: dict, max_sessions: int | None = None) -> list[S
     if max_sessions is None or len(fixtures) <= max_sessions:
         return fixtures
 
-    # Evidence is mandatory; the cap governs distractors only. Ordering evidence
-    # first makes it *preferred*, not *preserved* -- when the cap is smaller
-    # than the evidence set, a trailing slice cuts into the evidence itself.
-    #
-    # Measured live on question 6a1eabeb, a knowledge-update question whose two
-    # evidence sessions hold the old value (27:12) and the updated one (25:50).
-    # At max_sessions=1 only the first was injected, so the expected answer was
-    # never in the graph: it scored 0 as a recall failure while being
-    # unanswerable by construction -- the harness-created floor this branch
-    # exists to avoid.
-    #
-    # So the cap is exceeded rather than honoured when evidence demands it. A
-    # session count slightly over budget is a cost problem; an unanswerable
-    # question is a corrupt measurement.
-    #
-    # Distractors stay in upstream order rather than sampled: the subsample is
-    # part of what a run measured, so two runs of the same corpus must inject
-    # the same graph.
+    # The cap is exceeded rather than cutting evidence: over budget is a cost
+    # problem, an unanswerable question a corrupt measurement. Distractors stay
+    # in upstream order so two runs inject the same graph.
     evidence = [fixture for fixture in fixtures if fixture.holds_evidence]
     distractors = [fixture for fixture in fixtures if not fixture.holds_evidence]
     room = max(0, max_sessions - len(evidence))

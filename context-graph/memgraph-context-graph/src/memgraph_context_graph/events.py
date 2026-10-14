@@ -1,9 +1,4 @@
-"""Common event protocol for agent runtime actions.
-
-This module defines runtime-agnostic event types that any adapter can emit
-and any graph connector can consume. Events capture the essential
-information about agent lifecycle moments without coupling to a specific runtime.
-"""
+"""The Event Protocol: runtime-agnostic events that adapters emit and graph connectors consume."""
 
 from __future__ import annotations
 

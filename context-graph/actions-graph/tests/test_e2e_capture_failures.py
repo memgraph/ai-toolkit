@@ -81,7 +81,7 @@ def _actions(graph, session_id):
 
 def test_a_failing_connector_does_not_drop_the_others(monkeypatch, graph, config):
     monkeypatch.setitem(
-        runner._CONNECTOR_ADDERS, "skills_graph", lambda link, env, *, memgraph: link.add_connector(_Exploding())
+        runner._CONNECTOR_ADDERS, "skills-graph", lambda link, env, *, memgraph: link.add_connector(_Exploding())
     )
 
     assert _run_hook(monkeypatch, ["--connector", "skills-graph", "--connector", "actions-graph"], _PRE_TOOL_USE) == 0
@@ -94,7 +94,7 @@ def test_a_failing_connector_does_not_drop_the_others(monkeypatch, graph, config
 
 def test_strict_mode_raises_only_after_every_connector_ran(monkeypatch, graph, config):
     monkeypatch.setitem(
-        runner._CONNECTOR_ADDERS, "skills_graph", lambda link, env, *, memgraph: link.add_connector(_Exploding())
+        runner._CONNECTOR_ADDERS, "skills-graph", lambda link, env, *, memgraph: link.add_connector(_Exploding())
     )
 
     with pytest.raises(ConnectorFailuresError):
@@ -109,7 +109,7 @@ def test_a_connector_that_cannot_be_set_up_does_not_drop_the_others(monkeypatch,
     def missing(link, env, *, memgraph):
         raise ImportError("skills-graph is required for the skills-graph connector")
 
-    monkeypatch.setitem(runner._CONNECTOR_ADDERS, "skills_graph", missing)
+    monkeypatch.setitem(runner._CONNECTOR_ADDERS, "skills-graph", missing)
 
     assert _run_hook(monkeypatch, ["--connector", "skills-graph", "--connector", "actions-graph"], _PRE_TOOL_USE) == 0
 
@@ -132,7 +132,7 @@ def test_connectors_share_one_connection(monkeypatch, graph, config):
         handed.append(memgraph)
 
     monkeypatch.setattr(runner, "_hook_memgraph", counting)
-    monkeypatch.setitem(runner._CONNECTOR_ADDERS, "skills_graph", second_connector)
+    monkeypatch.setitem(runner._CONNECTOR_ADDERS, "skills-graph", second_connector)
     assert _run_hook(monkeypatch, ["--connector", "actions-graph", "--connector", "skills-graph"], _PRE_TOOL_USE) == 0
     assert len(built) == 1
     assert len(handed) == 1 and handed[0] is not None

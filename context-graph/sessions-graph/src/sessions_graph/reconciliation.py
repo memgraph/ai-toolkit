@@ -1,13 +1,8 @@
-"""Session-content reconciliation: turn Actions Graph / Memory text into entities.
+"""Session-content reconciliation: the text of a session's Actions and Memories, ready for extraction.
 
-Session content (Messages, ToolCalls, ToolResults, Memories) is mostly opaque
-strings and JSON blobs today. This module extracts plain text worth
-entity-extracting out of that content and hands it to unstructured2graph's
-chunk + entity-extraction pipeline, so knowledge embedded in past sessions becomes
-queryable graph entities instead of unread properties.
-
-Requires the ``sessions-graph[reconciliation]`` extra (actions-graph +
-unstructured2graph).
+Pulls the plain text worth entity-extracting out of Messages, ToolCalls,
+ToolResults and Memories. ``SessionsGraph.reconcile_session`` hands it to
+unstructured2graph. Requires the ``sessions-graph[reconciliation]`` extra.
 """
 
 from __future__ import annotations
@@ -28,21 +23,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# A single reconcilable text unit sent to unstructured2graph's LightRAG pipeline
-# is capped at this length; anything longer is truncated with a logged
-# warning rather than billed in full to an LLM.
+#: One reconcilable text unit is truncated (with a warning) past this length.
 MAX_RECONCILABLE_CHARS = 8000
 
-# A whole session's deduped texts are joined into one document (see
-# reconcile_session) and handed to unstructured2graph as a single chunk, up to
-# this cap. It is a safety valve against a pathological session (hundreds of
-# turns), not a normal operating constraint: LightRAG's own token-based
-# chunker re-splits whatever it receives with no length limit of its own
-# (confirmed against its source -- the default chunker is an unbounded
-# sliding window, `range(0, len(tokens), chunk_token_size -
-# chunk_overlap_token_size)`, that only ever produces more windows for longer
-# input). Sized well above any observed real session (the LongMemEval eval
-# corpus's largest session is ~68,500 chars) so this practically never binds.
+#: A session's joined document stays one chunk up to this length: a safety
+#: valve against a pathological session, sized well above the largest real one
+#: seen (~68,500 chars). LightRAG re-splits whatever it receives by tokens anyway.
 MAX_SESSION_BATCH_CHARS = 200_000
 
 
@@ -67,10 +53,9 @@ def _content_to_text(content: Any) -> str | None:
 def extract_reconcilable_text(action: Action) -> str | None:
     """Pull one plain-text unit worth entity-extracting out of an Action.
 
-    Only Messages, ToolCalls, and ToolResults carry text worth running through
-    LightRAG; other action types (errors, subagent events, structured output,
-    permission requests, rate limits) return None, as do calls to the
-    ``memory`` tool. Returns None for empty/whitespace-only content.
+    Only Messages, ToolCalls and ToolResults carry such text; any other action
+    type, a call to the ``memory`` tool, and empty or whitespace-only content
+    return None.
     """
     from actions_graph.models import Message, ToolCall, ToolResult
 
@@ -81,17 +66,10 @@ def extract_reconcilable_text(action: Action) -> str | None:
         # the call that wrote it would only extract the same text twice.
         return None
     if isinstance(action, Message):
-        # Prefixed with the speaker, because who asserted something is part of
-        # what was asserted. Without it the extractor sees undifferentiated
-        # prose and cannot tell a fact the user stated from a suggestion the
-        # assistant generated -- measured across 39 sessions, that produced
-        # 3,185 entities from assistant turns against 229 from user turns, with
-        # no overlap, and the result was dominated by products the assistant had
-        # recommended rather than anything about the user (#328).
-        #
-        # It also keeps the content-hash dedupe honest: the same sentence from
-        # each side is two different facts, and collapsing them let whichever
-        # was written first stand for both.
+        # Prefixed with the speaker: who asserted something is part of what was
+        # asserted. Without it the extractor can't tell a fact the user stated
+        # from a suggestion the assistant made (#328), and the content-hash
+        # dedupe would collapse the same sentence from each side into one.
         body = _content_to_text(action.content)
         text = f"{action.role.value}: {body}" if body and body.strip() else body
     elif isinstance(action, ToolResult):
@@ -126,15 +104,11 @@ def extract_reconcilable_text(action: Action) -> str | None:
 class ReconciliationSource:
     """One piece of session content queued for entity extraction.
 
-    ``kind`` identifies which node the resulting Chunk(s) get linked back to
-    via HAS_CHUNK: "action" -> (:Action {action_id: node_id}), "memory" ->
-    (:Memory {memory_id: node_id}).
-
-    ``role`` is the speaker of a Message ("user", "assistant", ...) and None
-    for anything that is nobody's utterance (tool calls and results,
-    memories); the GLiNER2 backend's mention resolver keys on it (#358).
-    ``valid_at`` is when the source was produced, as ISO-8601, and becomes
-    ``valid_at`` on every relationship extracted from it (#364).
+    ``kind`` names the node its Chunks link back to via HAS_CHUNK (see
+    :data:`NODE_LABELS`). ``role`` is a Message's speaker, None for anything
+    that is nobody's utterance; the GLiNER2 backend's mention resolver keys on
+    it. ``valid_at`` (ISO-8601) becomes ``valid_at`` on every relationship
+    extracted from it.
     """
 
     kind: str
@@ -144,7 +118,7 @@ class ReconciliationSource:
     valid_at: str | None = None
 
 
-#: Maps an ReconciliationSource.kind to the (node label, id property) it links to.
+#: Maps a ReconciliationSource.kind to the (node label, id property) it links to.
 NODE_LABELS: dict[str, tuple[str, str]] = {
     "action": ("Action", "action_id"),
     "memory": ("Memory", "memory_id"),
@@ -156,10 +130,10 @@ class ReconciliationSummary:
     """Result of one ``SessionsGraph.reconcile_session`` call.
 
     ``nonconformant_entities`` and ``nonconformant_relations`` are the
-    ontology integrity counts over this session's chunks (see
-    ``unstructured2graph.ontology_report``), or None when the ontology was not
-    enforced. An integrity alarm, not a filter: on a GLiNER2 graph both are
-    zero by construction, so anything else is a bug (#355).
+    ontology integrity counts over this session's chunks
+    (``unstructured2graph.ontology_report``), or None when the ontology was not
+    enforced. An alarm, not a filter: GLiNER2 output is conformant by
+    construction, so nonzero is a bug (#355).
     """
 
     session_id: str
@@ -204,11 +178,10 @@ def build_reconciliation_sources(
     actions: Sequence[Action],
     memories: Sequence[Memory],
 ) -> list[ReconciliationSource]:
-    """Build the ordered list of reconcilable text sources for a session.
+    """A session's reconcilable sources, actions first in recorded order.
 
-    Order matters: it is the order sources get joined into the one combined
-    document ``reconcile_session`` sends to ``unstructured2graph.from_texts``,
-    so the extractor sees the conversation in the order it actually happened.
+    The order is the order they are joined into the session's one document,
+    so the extractor reads the conversation as it happened.
     """
     from actions_graph.models import Message
 

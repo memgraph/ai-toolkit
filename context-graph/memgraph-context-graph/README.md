@@ -406,68 +406,17 @@ name is used. See
 [ADR 0006](docs/adr/0006-memory-tool-writes-explicit-memory.md) for why this is
 the one write the model makes over MCP.
 
-### OpenAI Codex Plugin
+### Codex and Claude Code Plugins
 
-Codex hook configuration can be installed as a user-level Codex plugin.
-
-The runtime-plugin flow is:
-
-```text
-Codex Plugin -> Codex Runtime Adapter -> Event Protocol -> Graph Connector -> Memgraph
-```
-
-The plugin installs Codex hook wiring. The Codex runtime adapter normalizes the hook payload. Graph connectors such as `SkillGraphConnector` decide what those events mean in their graph.
-
-Plugin source:
-
-```text
-context-graph/plugins/memgraph-context-graph-codex
-```
-
-Register the public Git-backed marketplace and install the plugin:
-
-```bash
-codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins
-codex plugin add context-graph@context-graph-plugins
-```
-
-Both are non-interactive; `codex plugin add` installs and enables the plugin in one step (`codex plugin list --json` confirms `"enabled": true`).
-
-Check the installed hook environment with:
+Both runtimes have a distributable Runtime Plugin that wires hooks and the MCP server; marketplace
+install steps are in [plugins/memgraph-context-graph-codex](../plugins/memgraph-context-graph-codex/README.md) and
+[plugins/memgraph-context-graph-claude](../plugins/memgraph-context-graph-claude/README.md). Check an install with:
 
 ```bash
 memgraph-context-graph doctor --runtime codex --connector skills-graph --connector actions-graph --connector sessions-graph
 ```
 
 Graph credentials live in `~/.config/context-graph/config.toml` (written by `setup`/`config set`), not in plugin hook files or the process environment — hooks read that file at runtime. See [Configuration](#configuration).
-
-### Claude Code Plugin
-
-Claude Code hook configuration can be installed as a Claude Code plugin.
-
-The runtime-plugin flow is:
-
-```text
-Claude Code Plugin -> Claude Code Runtime Adapter -> Event Protocol -> Graph Connector -> Memgraph
-```
-
-For a public Git-backed marketplace install, add the marketplace inside Claude Code:
-
-```text
-/plugin marketplace add memgraph/ai-toolkit
-```
-
-Then install:
-
-```text
-/plugin install context-graph@context-graph-plugins
-```
-
-Check the installed hook environment with:
-
-```bash
-memgraph-context-graph doctor --runtime claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
-```
 
 ### Source Development
 
@@ -640,9 +589,7 @@ class MyRuntimePlugin:
     def build_hooks_config(self, command: str, *, timeout: int = 30) -> dict:
         return build_hooks_config(command, timeout=timeout)
 
-    # init(project_dir, connectors, **kwargs) is optional -- omit it if your
-    # runtime has no project-local hook-config file to generate (matching
-    # ClaudeCodeHooksAdapter's own plugin, which doesn't define one yet).
+    # init(project_dir, connectors, **kwargs) is optional: omit it when there is no project-local file to write.
 
 
 PLUGIN = MyRuntimePlugin()

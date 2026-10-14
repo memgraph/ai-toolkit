@@ -23,6 +23,8 @@ from hygm.strategies.llm import CONSOLIDATE_SCHEMA, PROPOSE_SCHEMA, PRUNE_SCHEMA
 from unstructured2graph.gliner2_backend import GLiNER2Backend
 from unstructured2graph.gliner2_observer import Measurement
 
+from .conftest import link_user
+
 LONG = "I have been rewriting our ingestion service in Rust and benchmarking it against the Go one. " * 12
 
 
@@ -96,13 +98,10 @@ def _sessions(memgraph, actions_graph, user_id, count, *, start=0, text=LONG):
         for turn in range(2):
             actions_graph.record_message(session_id=sid, role=MessageRole.USER, content=f"{turn}: {text}")
         actions_graph.record_message(session_id=sid, role=MessageRole.ASSISTANT, content="Sounds good.")
+        link_user(memgraph, user_id, sid)
         memgraph.query(
-            """
-            MERGE (u:User {user_id: $user_id}) WITH u MATCH (s:Session {session_id: $sid})
-            MERGE (u)-[:HAD_SESSION]->(s)
-            SET s.reconciliation_status = 'completed', s.reconciled_at = $at
-            """,
-            params={"user_id": user_id, "sid": sid, "at": (when + timedelta(minutes=i)).isoformat()},
+            "MATCH (s:Session {session_id: $sid}) SET s.reconciliation_status = 'completed', s.reconciled_at = $at",
+            params={"sid": sid, "at": (when + timedelta(minutes=i)).isoformat()},
         )
 
 

@@ -1,9 +1,4 @@
-"""Build a committed eval corpus from a pinned upstream benchmark.
-
-Fetches a pinned LongMemEval release, converts it to deepeval Goldens, and
-writes the JSONL that gets committed. The downloaded file is a build artifact
-and is not committed -- only the converted corpus is (see #302).
-"""
+"""Context Graph eval: build the corpus, run and compare batches, calibrate the judge, run BEAM."""
 
 import argparse
 import os
@@ -41,14 +36,13 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument(
         "--revision",
         default=DEFAULT_REVISION,
-        help="pinned upstream revision. Changing this invalidates prior baselines.",
+        help="pinned upstream revision; changing it invalidates prior baselines",
     )
     build.add_argument(
         "--limit",
         type=int,
         default=None,
-        help="sample down to this many questions, spread across question types. "
-        "Tier 1 starts small and scales only when the signal is too noisy to decide on.",
+        help="sample down to this many questions, stratified by question type",
     )
     build.add_argument(
         "--out",
@@ -65,13 +59,12 @@ def main(argv: list[str] | None = None) -> int:
         "--corpus",
         type=Path,
         default=Path("context-graph/eval/corpus/tier1-longmemeval.jsonl"),
-        help="the COMMITTED corpus to run. Read rather than re-derived, so two runs being "
-        "compared provably answer the same questions (#302).",
+        help="the committed corpus to run, so compared runs provably ask the same questions (#302)",
     )
     run.add_argument(
         "--gold-slice",
         action="store_true",
-        help="also run Tier 2's gold-slice questions, scored separately from Tier 1 (#303).",
+        help="also run Tier 2's gold-slice questions, scored separately from Tier 1",
     )
     run.add_argument(
         "--memgraph-url",
@@ -82,28 +75,21 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument(
         "--skip-reconcile",
         action="store_true",
-        help="reuse the already-reconciled graph as-is: no wipe, no re-injection, no distillation. "
-        "Reconciliation dominates run cost, so iterating on retrieval or scoring should not pay "
-        "for it again. Refuses if the graph does not already hold this run's sessions, distilled "
-        "-- reusing the wrong graph would score every question as a miss and report it as a "
-        "result (#322).",
+        help="reuse the already-reconciled graph: no wipe, injection or distillation. Refuses unless "
+        "the graph holds this run's sessions, reconciled by --extraction-backend.",
     )
     run.add_argument(
         "--official-judge-model",
         default=OFFICIAL_JUDGE_MODEL,
-        help=f"OpenAI model for LongMemEval's own judge, which decides coverage whenever judging runs "
-        f"(default {OFFICIAL_JUDGE_MODEL}, the upstream script's). 'none' leaves the deepeval answer "
-        "rubrics deciding it; they're reported either way.",
+        help=f"OpenAI model for LongMemEval's own judge, which decides coverage (default {OFFICIAL_JUDGE_MODEL}, "
+        "upstream's). 'none' leaves the deepeval answer rubrics deciding it.",
     )
     run.add_argument(
         "--judge-model",
         default=None,
-        help="'provider:model_id' for the judge, e.g. 'anthropic:claude-sonnet-4-5-20250929' or "
-        "'openai:gpt-4o'. A bare model id keeps the default provider (anthropic). #304 keeps the "
-        "judge on a different provider from the OpenAI-backed pipeline so their blind spots do not "
-        "correlate -- picking the same provider as --agent-model is a legitimate experiment (#329), "
-        "not a default, and is flagged loudly when it happens. Omit entirely to skip judging and "
-        "report efficiency only.",
+        help="'provider:model_id' for the deepeval judge, e.g. 'anthropic:claude-sonnet-4-5-20250929'. "
+        "A bare model id keeps the default provider (anthropic); sharing --agent-model's provider is "
+        "warned about (#304). Omit to skip judging.",
     )
     run.add_argument(
         "--agent-model",
@@ -115,21 +101,16 @@ def main(argv: list[str] | None = None) -> int:
         "--extraction-backend",
         choices=EXTRACTION_BACKENDS,
         default="gliner2",
-        help="what reconciliation uses to extract entities: 'gliner2' (default, local and LLM-free, "
-        "over the LongMemEval vocabulary) or 'lightrag' (LLM-based, needs an LLM key).",
+        help="entity extraction for reconciliation: 'gliner2' (default; local, LLM-free) or 'lightrag' (needs an LLM key).",
     )
     _learned_args(run)
     run.add_argument(
         "--retrieval-strategy",
         choices=RETRIEVAL_STRATEGIES,
         default="graph-agent",
-        help="'graph-agent' (default, #300: an agent writes its own Cypher against the reconciled "
-        "memory) or 'text-search' (the cheap comparison point this exists to enable: Memgraph's own "
-        "full-text index over raw, UNRECONCILED turns -- no distillation, no LLM extraction cost). "
-        "'text-search' forces reconciliation off regardless of --skip-reconcile: there is no memory "
-        "for it to build that this strategy would read. 'hybrid' finds turns by vector and text "
-        "search and uses the typed graph to find facts and more turns: sessions-graph's recall, the "
-        "product read path (see hybrid.py).",
+        help="'hybrid' (sessions-graph's recall: turns by vector and text search plus the typed graph), "
+        "'graph-agent' (an agent writes Cypher against the reconciled graph), or 'text-search' "
+        "(full-text over raw turns; never reconciles).",
     )
     run.add_argument(
         "--hybrid-lanes",
@@ -141,17 +122,14 @@ def main(argv: list[str] | None = None) -> int:
         "--text-search-limit",
         type=int,
         default=DEFAULT_TEXT_SEARCH_LIMIT,
-        help="how many text-search hits to hand the answering LLM. Ignored for --retrieval-strategy graph-agent.",
+        help="how many text-search hits to hand the answering LLM (text-search only)",
     )
     run.add_argument(
         "--max-sessions-per-question",
         type=int,
         default=None,
-        help="trim each question's DISTRACTOR sessions. Reconciliation cost scales with "
-        "sessions while coverage needs questions, and upstream couples them ~47:1. Evidence "
-        "sessions are always kept, so a question with more evidence than this cap exceeds it "
-        "rather than becoming unanswerable. A score measured this way is an UPPER BOUND -- "
-        "fewer distractors make retrieval easier -- and is NOT comparable to a full-haystack run.",
+        help="trim each question's distractor sessions (evidence is always kept). The score is an "
+        "upper bound, not comparable to a full-haystack run.",
     )
     run.add_argument("--save", type=Path, default=None, help="persist this run so it can be compared later")
     run.add_argument("--label", default="run", help="name for this run in a later comparison")
@@ -171,13 +149,12 @@ def main(argv: list[str] | None = None) -> int:
     gold.add_argument(
         "--keep",
         action="store_true",
-        help="do not wipe first. Use when Tier 1 fixtures are already loaded and the gold-slice "
-        "fact should be planted on top of them, among their distractors.",
+        help="do not wipe first, so the fact is planted among already-loaded Tier 1 distractors",
     )
 
     cal = subcommands.add_parser(
         "calibrate",
-        help="derive a noise floor by running the same questions repeatedly (#304)",
+        help="derive a noise floor from repeated runs of the same questions (#304)",
     )
     cal.add_argument("runs", type=Path, nargs="+", help="two or more saved runs of the SAME questions")
 
@@ -188,9 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         "--noise-floor",
         type=float,
         default=None,
-        help="coverage noise floor in percentage points, from #304's repeat-and-compare "
-        "calibration. Without it no delta is claimed real -- 'cannot tell' is reported "
-        "rather than a guess.",
+        help="coverage noise floor in percentage points, from `calibrate`. Without it no delta is called real.",
     )
 
     beam = subcommands.add_parser(
@@ -201,8 +176,7 @@ def main(argv: list[str] | None = None) -> int:
     beam.add_argument(
         "--chats",
         default="1",
-        help="which chats of that size, e.g. '1', '1,3' or '1-20'. Each chat is one user's history "
-        "and carries 20 questions, two per ability.",
+        help="which chats of that size, e.g. '1', '1,3' or '1-20'; each is one user's history",
     )
     beam.add_argument("--revision", default=BEAM_REVISION, help="pinned upstream BEAM commit")
     beam.add_argument(
@@ -238,8 +212,7 @@ def main(argv: list[str] | None = None) -> int:
         "--limit",
         type=int,
         default=None,
-        help="ask only this many questions, balanced across abilities and spread across the chats. Every "
-        "chat is still loaded, so the graph is the full run's.",
+        help="ask only this many questions, balanced across abilities and chats; every chat is still loaded",
     )
     beam.add_argument("--max-concurrent", type=int, default=4)
     beam.add_argument("--save", type=Path, default=None, help="write every row and the report to this JSON file")
@@ -446,16 +419,13 @@ def _gold_slice(args) -> int:
         return 1
 
     print(f"session {session_id} complete")
-    # Always shown. A zero exit means the CLI did not crash, not that the model
-    # delegated or that hooks recorded anything -- and re-running to find out
-    # costs another billed session.
+    # Always shown: a zero exit does not mean the model delegated or hooks
+    # recorded anything, and re-running to find out costs another billed session.
     print("--- session transcript ---")
     print(transcript.strip()[:2000])
     print("--- end transcript ---")
 
-    # Two checks, because they fail for different reasons and mean different
-    # things. Neither is a recall result -- they decide whether a recall result
-    # would mean anything at all.
+    # Not recall results: each decides whether a recall result would mean anything.
     if not evidence_is_planted(graph):
         print(
             "gold slice: the fact never reached the graph. Hooks may not be installed, or the "
@@ -509,14 +479,10 @@ def _calibrate(args) -> int:
     all_names = {s.name for run in runs for s in run.scored}
     try:
         print(describe(rates))
-        # Printed with the floor, never instead of it: a tight floor over an
-        # unstable passing set is the misleading case, and only this line makes
-        # it visible.
+        # Stability beside the floor, never instead: a tight floor over an
+        # unstable passing set is the misleading case.
         print()
         print(describe_stability(passing_sets))
-        # Names which specific questions are flaky, rather than only the
-        # aggregate count above -- #324: a coverage flip on one of these is
-        # noise the judge would have produced anyway, not a regression.
         print()
         print(describe_per_question_rates(per_question_pass_rate(passing_sets, all_names)))
     except ValueError as exc:
@@ -535,9 +501,6 @@ def _compare(args) -> int:
             noise_floor_pp=args.noise_floor,
         )
     except ValueError as exc:
-        # Not comparable is a refusal, not a warning: a delta computed across
-        # different pins measures the pin change as if it were the change under
-        # test, and says so confidently.
         print(f"refusing to compare: {exc}", file=sys.stderr)
         return 1
 
@@ -557,18 +520,10 @@ def _build_corpus(args) -> int:
 
 
 def select_goldens(corpus: list, *, limit: int | None, gold_slice: bool) -> list:
-    """Which questions this run will actually ask.
+    """The first ``limit`` corpus questions, plus the gold slice when asked.
 
-    Its own function because a run's question set is the one thing every number
-    downstream is relative to, and getting it silently wrong is expensive:
-    ``--limit`` was ignored for a while after ``run`` switched to reading the
-    committed corpus, so a run asked for 2 questions quietly did all 20 -- a
-    "minimal" check that turned out to be 40 sessions of reconciliation, killed
-    twice before anyone knew why.
-
-    The gold slice is appended rather than counted against ``--limit``: it is
-    Tier 2 (#303), scored apart, so letting a Tier 1 limit trim it would drop
-    the only questions that exercise the capture layer.
+    The gold slice is appended rather than counted against ``limit``: it is
+    Tier 2, scored apart, and a Tier 1 limit must not trim it away.
     """
     selected = corpus[:limit] if limit is not None else list(corpus)
     if gold_slice:
@@ -592,16 +547,10 @@ def _run(args) -> int:
 
     check_offline()
     _resolve_llm_credentials()
-    # Must run before reconciliation's lazy unstructured2graph/lightrag import:
-    # LightRAG reads FORCE_LLM_SUMMARY_ON_MERGE once, as a dataclass default
-    # baked in when lightrag.lightrag is first imported.
+    # Before lightrag is first imported: it reads its tuning env vars once, as dataclass defaults.
     _resolve_reconciliation_tuning()
 
-    # Read the COMMITTED corpus rather than re-deriving it. This is the whole
-    # point of #302 putting it in git: two runs being compared must provably be
-    # answering the same questions, and re-converting upstream each time proves
-    # nothing -- a change in sampling, conversion, or upstream would silently
-    # alter the question set between a baseline and its candidate.
+    # The committed corpus, not a re-conversion, so compared runs provably ask the same questions (#302).
     if not args.corpus.exists():
         print(
             f"no corpus at {args.corpus}. Build one first:\n"
@@ -611,13 +560,7 @@ def _run(args) -> int:
         return 1
     goldens = select_goldens(read_corpus(args.corpus), limit=args.limit, gold_slice=args.gold_slice)
 
-    # The haystack is NOT committed alongside the corpus: at 20 questions it is
-    # ~9.5MB of reshaped upstream text, which is what #302 rejected vendoring.
-    # Its immutability comes from the pinned revision instead of from git.
-    # Cached across runs rather than fetched into a temp dir. The haystack is
-    # ~277MB, so re-downloading it per run made iterating on retrieval or
-    # scoring painfully slow and put a large flaky transfer in front of every
-    # run -- which is what killed the first end-to-end attempt.
+    # The haystack is not committed (#302); the pinned revision makes it immutable instead.
     records = load_raw(fetch(args.variant, args.revision, dest=haystack_path(args.variant, args.revision)))
 
     wanted = {g.name for g in goldens}
@@ -641,10 +584,7 @@ def _run(args) -> int:
     official_model = _official_judge_model(args.official_judge_model, judging=judge is not None)
     same_provider = judge is not None and judge_provider == agent_provider
     if same_provider:
-        # #304's independence property (judge decorrelated from the pipeline's
-        # own blind spots) does not hold here. A legitimate experiment (#329,
-        # #324's model-vs-rubric diagnosis needs exactly this), just never the
-        # unannounced default -- so this is a warning, not a refusal.
+        # A legitimate experiment, but never a silent one: #304's judge independence does not hold.
         print(
             f"WARNING: judge ({judge_provider}) and agent ({agent_provider}) share a provider -- "
             "#304's cross-provider independence does not hold for this run.",
@@ -652,14 +592,9 @@ def _run(args) -> int:
         )
 
     if args.gold_slice and not evidence_is_planted(graph):
-        # Refuse rather than report a guaranteed zero. The gold slice's fixture
-        # is planted by a real harness session (#307), and that driver is not
-        # built yet -- so scoring the question here measures a fact the graph
-        # never contained and reports it as a recall failure.
         print(
-            "--gold-slice: the fixture is not in the graph. It is planted by a real "
-            "Claude Code session, and that driver is not built yet (#307), so scoring "
-            "this question now would report a guaranteed zero as a recall failure.",
+            "--gold-slice: the fixture is not in the graph, so scoring it would report a guaranteed "
+            "zero as a recall failure. Plant it first with `context-graph-eval gold-slice`.",
             file=sys.stderr,
         )
         return 1
@@ -699,31 +634,14 @@ def _run(args) -> int:
                     label=args.label,
                     corpus_revision=args.revision,
                     corpus_variant=args.variant,
-                    # Provider-qualified and reflecting the resolved fallback
-                    # model, not the raw CLI arg (#329) -- e.g. omitting
-                    # --judge-model with ANTHROPIC_API_KEY set still judges
-                    # with DEFAULT_JUDGE_MODEL, and recording "none" for that
-                    # would let an unjudged and a judged run compare cleanly.
+                    # What actually ran, after provider fallbacks -- not the raw CLI args.
                     judge_model=_resolved_spec(judge_provider, judge_model_id) if judge is not None else "none",
-                    # Previously untracked entirely: a run's answers depend on
-                    # this model too, and compare() below now pins it for the
-                    # same reason it already pins the judge and tokenizer.
                     agent_model=_resolved_spec(agent_provider, agent_model_id),
                     same_provider=same_provider,
-                    # What was actually used, not what was configured -- a run
-                    # counted in fallback units must not compare cleanly
-                    # against one counted in real tokens.
                     tokenizer=tokenizer_in_use(),
                     questions=len(goldens),
                     changed=args.changed,
-                    # A LightRAG-built and a GLiNER2-built graph are different
-                    # systems under test (different entities, no cross-chunk
-                    # coreference for GLiNER2, a different workspace label) --
-                    # compare() below refuses across them for the same reason
-                    # it refuses across judges or tokenizers. "none" for
-                    # text-search: that strategy never reconciles, so no
-                    # backend built anything -- compare() exempts the pin for
-                    # that value rather than treating it as a mismatch.
+                    # "none" for text-search, which never reconciles; compare() exempts it.
                     extraction_backend=args.extraction_backend if args.retrieval_strategy == "graph-agent" else "none",
                     retrieval_strategy=args.retrieval_strategy,
                     ontology=args.ontology,
@@ -738,24 +656,16 @@ def _run(args) -> int:
     return 0
 
 
-#: Default judge model. Dated rather than a moving alias, per #304: a judge
-#: that changes underneath you silently invalidates every prior baseline,
-#: which is the same reason the corpus revision is pinned.
+#: Dated rather than a moving alias (#304): a judge that changes underneath
+#: you silently invalidates every prior baseline.
 DEFAULT_JUDGE_MODEL = "claude-sonnet-4-5-20250929"
 
-#: Default provider for each role when a bare (unprefixed) model id -- or
-#: nothing at all -- is given. #304's decision was "a different provider than
-#: the pipeline", not "Anthropic" specifically (#329); these are only the
-#: defaults that satisfy it given the pipeline happens to be OpenAI-backed
-#: today, not a hardcoded pairing. --judge-model/--agent-model can override
-#: either independently via a 'provider:model_id' spec.
+#: Each role's provider for a bare model id. #304 asks only that the judge's
+#: provider differ from the pipeline's; these defaults satisfy that today.
 DEFAULT_JUDGE_PROVIDER = "anthropic"
 DEFAULT_AGENT_PROVIDER = "openai"
 
 #: provider -> (API key env var, fallback model id used when none is given).
-#: Adding a provider is the whole change needed to make it reachable from
-#: either --judge-model or --agent-model -- nothing else in _build_model is
-#: provider-specific beyond the deepeval class each one maps to.
 _PROVIDER_KEYS: dict[str, tuple[str, str | None]] = {
     "anthropic": ("ANTHROPIC_API_KEY", DEFAULT_JUDGE_MODEL),
     # GPTModel has its own built-in default when given no model id.
@@ -766,10 +676,8 @@ _PROVIDER_KEYS: dict[str, tuple[str, str | None]] = {
 def _parse_model_spec(spec: str | None, *, default_provider: str) -> tuple[str, str | None]:
     """Split a 'provider:model_id' CLI value into (provider, model_id).
 
-    A bare model id (no colon) keeps ``default_provider`` -- so existing
-    --judge-model/--agent-model values written before #329 keep meaning what
-    they meant. ``spec=None`` (the flag omitted) also keeps the default
-    provider, with no model id, i.e. "use that provider's own default."
+    A bare model id, or None, keeps ``default_provider``; None also leaves the
+    model id None, meaning that provider's own default.
     """
     if spec and ":" in spec:
         provider, _, model_id = spec.partition(":")
@@ -778,14 +686,7 @@ def _parse_model_spec(spec: str | None, *, default_provider: str) -> tuple[str, 
 
 
 def _resolved_spec(provider: str, model_id: str | None) -> str:
-    """The 'provider:model_id' actually used, after applying that provider's
-    fallback default -- for recording on RunMeta, not for building a model.
-
-    Comment at the call site explains why this matters more than it looks:
-    RunMeta.judge_model must reflect what ran, not what was typed on the
-    command line, or two runs that used different fallbacks could compare as
-    identical.
-    """
+    """The 'provider:model_id' actually used, after that provider's fallback, for recording on RunMeta."""
     _, fallback = _PROVIDER_KEYS.get(provider, (None, None))
     return f"{provider}:{model_id or fallback or 'default'}"
 
@@ -800,20 +701,9 @@ def _clear_deepeval_anthropic_secret() -> None:
     be str or bytes, not SecretStr") before a single request is made. Passing
     the key explicitly cannot help while settings still holds one.
 
-    Settings are cached at first access, and merely constructing another
-    deepeval model earlier in the process populates them, so the cached object
-    has to be corrected directly.
-
-    The environment variable is deliberately left alone. Clearing it as well
-    looked like harmless belt-and-braces and was actively wrong: the key would
-    then be gone for every later caller, so a second ``_build_model`` returned
-    None and the judge silently disappeared mid-process -- a run reporting "not
-    judged" instead of failing.
-
-    This is load-bearing rather than cosmetic: #304 chose Anthropic as the
-    judge precisely so it would not share the OpenAI-backed pipeline's blind
-    spots, and `eval-run.yaml` supplies ANTHROPIC_API_KEY as an environment
-    variable -- so without this the CI eval job fails before scoring anything.
+    Settings are cached at first access, so the cached object is corrected
+    directly. The environment variable is deliberately left alone: clearing it
+    would make a later ``_build_model`` return None, silently dropping the judge.
     """
     try:
         from deepeval.config.settings import get_settings
@@ -848,16 +738,7 @@ def minimal_effort_kwargs(provider: str, model_id: str) -> dict:
 
 
 def _build_model(provider: str, model_id: str | None, *, minimal_effort: bool = False):
-    """Instantiate a deepeval model for ``provider``, or None when nothing is
-    configured (no matching API key -- via ADR 0002's config-file resolution
-    or the environment directly -- present for it).
-
-    Keyed by the resolved provider rather than a two-vendor ``anthropic: bool``
-    (#329): the special-casing below is what deepeval itself requires per
-    provider (a settings-clearing workaround for Anthropic, a plain optional
-    model id for OpenAI), not a judge/agent distinction -- either role can
-    resolve to either provider.
-    """
+    """A deepeval model for ``provider``, or None when it is unknown, has no API key, or fails to build."""
     if provider not in _PROVIDER_KEYS:
         print(f"unknown model provider {provider!r}; supported: {', '.join(_PROVIDER_KEYS)}", file=sys.stderr)
         return None
@@ -900,12 +781,9 @@ def _official_judge_model(requested: str, *, judging: bool) -> str | None:
 
 
 def _print_attribution(failures) -> None:
-    """Say which answer rubric the failures failed, and whether retrieval had
-    found their evidence, with one example of why -- the judge's own reason for
-    its worst-scoring question, not just a count. The count says something
-    moved; the reason and the retrieval split are what tell a reader whether it
-    is a retrieval problem or an answering one without rerunning the question
-    by hand.
+    """Print which answer rubric the failures failed, whether retrieval found their evidence, and one judge reason.
+
+    The split tells a retrieval problem from an answering one without rerunning by hand.
     """
     from .scoring import DEFAULT_COVERAGE_THRESHOLD, RETRIEVAL_SIGNAL
 
@@ -945,14 +823,11 @@ def _print_report(report, *, judged: bool) -> None:
         print("no questions scored")
         return
 
-    # Printed per tier, never blended: a single cross-tier number would let an
-    # organizational-recall regression hide behind a personal-memory gain (#303).
+    # Per tier, never blended (#303).
     for tier, summary in sorted(report.by_tier.items()):
         print(f"\nTier {tier}: {summary.questions} questions scored")
         if summary.unscored and judged:
-            # Only alarming when a judge WAS configured: then unscored means it
-            # errored, and folding that into the rate would report an outage as
-            # a real 0%. Without a judge, unscored is simply expected.
+            # With a judge configured, unscored means it errored -- an outage, not a 0%.
             print(f"  UNSCORED      {summary.unscored} question(s) -- the judge errored on them.")
             print("                Not counted as failures. Check judge credentials/credit.")
         if judged:
@@ -973,10 +848,7 @@ def _print_report(report, *, judged: bool) -> None:
             )
         else:
             print("  coverage      not judged (no judge model configured)")
-            # The gated median is empty without a judge, since nothing clears an
-            # unscored gate. The raw payload size is still deterministic and
-            # worth seeing -- labelled ungated so it is never mistaken for the
-            # comparable number, which #309 defines only within the gate.
+            # Labelled ungated: #309 defines the comparable number only within the gate.
             payloads = sorted(s.efficiency_tokens for s in report.scored if s.tier == tier)
             if payloads:
                 print(f"  payload       median {payloads[len(payloads) // 2]} tokens returned (UNGATED)")
@@ -988,12 +860,7 @@ def _print_report(report, *, judged: bool) -> None:
                 f"{summary.retrieval_judged} (reported, not gated)"
             )
 
-        # Judge-free cross-checks (no LLM call needed, so printed regardless
-        # of whether a judge ran) -- standard NLP metrics other memory
-        # benchmarks also report, so a run here is comparable on more than
-        # just our own judged coverage. BLEU and F1 are deterministic;
-        # latency is wall-clock and varies run to run, but it is judge-free
-        # for the same reason the other two are.
+        # Judge-free, so printed whether or not a judge ran.
         if summary.mean_bleu is not None:
             print(f"  bleu          mean {summary.mean_bleu:.2f}")
         if summary.mean_f1 is not None:
@@ -1006,20 +873,12 @@ def _print_report(report, *, judged: bool) -> None:
         if summary.mean_latency_seconds is not None:
             print(f"  latency       mean {summary.mean_latency_seconds:.1f}s per question")
 
-        # Gate-then-rank made visible (#309): only questions that cleared
-        # coverage are ranked, cheapest payload first. Showing the extremes is
-        # what makes an efficiency regression actionable -- a median tells you
-        # something moved, these tell you where to look.
+        # Gate-then-rank (#309): only questions that cleared coverage, cheapest first.
         ranked = gate_and_rank([s for s in report.scored if s.tier == tier])
         if len(ranked) > 1:
             print(f"  cheapest      {ranked[0].name} ({ranked[0].efficiency_tokens:,} tokens)")
             print(f"  costliest     {ranked[-1].name} ({ranked[-1].efficiency_tokens:,} tokens)")
 
-        # Which stage failed, not just how many. ContextualRecall scores
-        # retrieval and the rubric scores the answer, so a run failing mostly on
-        # the former is a retrieval problem and on the latter an answering one --
-        # different work. #304 noted this attribution is free; collapsing to a
-        # single coverage number was discarding it.
         _print_attribution([s for s in report.scored if s.tier == tier and not s.covered])
 
 

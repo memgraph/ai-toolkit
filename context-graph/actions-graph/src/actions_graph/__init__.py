@@ -1,27 +1,6 @@
-"""Actions Graph: Store and track LLM actions, tool calls, and sessions in Memgraph.
+"""Actions Graph: record agent-session tool calls, messages, and subagents in Memgraph.
 
-This package provides a graph-based storage system for tracking all LLM interactions,
-including tool calls, messages, structured outputs, and session management.
-
-Quick Start:
-    from actions_graph import ActionsGraph, Session, ToolCall
-
-    # Initialize the graph
-    graph = ActionsGraph()
-    graph.setup()
-
-    # Create a session
-    session = Session(session_id="my-session-123")
-    graph.create_session(session)
-
-    # Record tool calls
-    graph.record_tool_call(
-        session_id="my-session-123",
-        tool_name="Read",
-        tool_input={"file_path": "/path/to/file"},
-    )
-
-Integration with Memgraph Context Graph:
+Usually fed through the Memgraph Context Graph hub:
     from actions_graph import ActionsGraph
     from actions_graph.connector import ActionsGraphConnector
     from memgraph_context_graph import AgentLink
@@ -56,9 +35,8 @@ from .models import (
 try:
     __version__ = metadata.version(__package__ or __name__)
 except metadata.PackageNotFoundError:
-    # Case where package metadata is not available.
     __version__ = ""
-del metadata  # optional, avoids polluting the results of dir(__package__)
+del metadata
 
 __all__ = [
     "Action",

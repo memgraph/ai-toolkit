@@ -15,6 +15,8 @@ from __future__ import annotations
 from importlib import metadata
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from memgraph_context_graph.tools import normalize_connector_name
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -47,17 +49,9 @@ class RuntimeCLIPlugin(Protocol):
 
     def build_hooks_config(self, command: str, *, timeout: int = 30) -> dict[str, Any]: ...
 
-    # Deliberately not a protocol member beyond this point: `init` is optional
-    # (see class docstring) and accessed via `getattr(plugin, "init", None)`,
-    # never through a RuntimeCLIPlugin-typed reference.
-
 
 class UnknownRuntimeError(KeyError):
     """Raised when no plugin is registered for a requested runtime name."""
-
-
-def _normalize(name: str) -> str:
-    return name.strip().replace("_", "-")
 
 
 def load_runtime_plugins() -> dict[str, RuntimeCLIPlugin]:
@@ -65,19 +59,18 @@ def load_runtime_plugins() -> dict[str, RuntimeCLIPlugin]:
     plugins: dict[str, RuntimeCLIPlugin] = {}
     for entry_point in metadata.entry_points(group=_ENTRY_POINT_GROUP):
         plugin = entry_point.load()
-        plugins[_normalize(plugin.name)] = plugin
+        plugins[normalize_connector_name(plugin.name)] = plugin
     return plugins
 
 
 def get_runtime_plugin(name: str) -> RuntimeCLIPlugin:
     """Look up a registered runtime plugin by name.
 
-    Raises ``UnknownRuntimeError`` (listing what *is* registered) if none
-    matches -- the CLI catches this to print a clear error instead of a
-    traceback.
+    Raises:
+        UnknownRuntimeError: if none matches; the message lists what is registered.
     """
     plugins = load_runtime_plugins()
-    normalized = _normalize(name)
+    normalized = normalize_connector_name(name)
     if normalized not in plugins:
         available = ", ".join(sorted(plugins)) or "(none registered)"
         msg = f"Unknown runtime: {name!r}. Available: {available}"
