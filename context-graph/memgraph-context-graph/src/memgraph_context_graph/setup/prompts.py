@@ -223,13 +223,14 @@ class Prompts:
         self.write("\n" + "".join(f"{self.style.wordmark(row)}\n" for row in WORDMARK))
         self.write("".join(f"{self.style.graph(row, width)}\n" for row in GRAPH) + "\n")
 
-    def intro(self, title: str, subtitle: str = "") -> None:
-        """The orange graph divider, some space, then the title: the questions start apart from what came before."""
+    def intro(self, title: str, subtitle: str | Sequence[str] = "") -> None:
+        """The orange graph divider, some space, then the title and its lines: the questions start apart from what came before."""
         rule = RULE[: min(len(WORDMARK[0]), self.term.columns - 1)]
         rule = rule[: rule.rfind("●") + 1]  # cut short, it still ends on a node
         self.write(f"\n{self.style.accent(rule)}\n\n")
         self.write(f"{self.style.accent('◆')}  {self.style.bold(title)}\n")
-        self.line(self.style.muted(subtitle))
+        for text in [subtitle] if isinstance(subtitle, str) else subtitle:
+            self.line(self.style.muted(self.fit(text)))
 
     def answered(self, label: str, value: str) -> None:
         value = self.fit(value, _ANSWER_COLUMN)
@@ -400,7 +401,7 @@ def ask(prompts: Prompts, choices: Choices, env: Environment, *, preselect: bool
 
     *preselect* starts the agent list with *choices*' agents ticked; off, the user ticks every one.
     """
-    prompts.intro("Context Graph setup", "Memory for your coding agents. Nothing changes until you confirm.")
+    prompts.intro("Context Graph setup", engine.WELCOME)
     enterprise = env.edition == "enterprise"
     prompts.answered("Memgraph", "from your Enterprise login" if enterprise else _memgraph_summary(choices, env))
 
@@ -418,7 +419,7 @@ def ask(prompts: Prompts, choices: Choices, env: Environment, *, preselect: bool
     def name(answers: _Answers) -> str | _Back:
         if enterprise:
             return SKIPPED
-        answer = prompts.text("Your name", answers.user_id, hint="how the graph knows you")
+        answer = prompts.text("Your name", answers.user_id, hint="your memories are filed under it")
         if isinstance(answer, str):
             answers.user_id = answer
         return answer if isinstance(answer, _Back) else DONE
@@ -444,7 +445,7 @@ def ask(prompts: Prompts, choices: Choices, env: Environment, *, preselect: bool
         answer = prompts.confirm(
             "Install the terminal viewer?",
             answers.viewer,
-            note="Browse what your agents capture, in this terminal: memgraph-context-graph ui.",
+            note="Watch your agents' memory grow, right in this terminal: memgraph-context-graph ui.",
             short="Viewer",
         )
         if isinstance(answer, bool):
@@ -459,7 +460,7 @@ def ask(prompts: Prompts, choices: Choices, env: Environment, *, preselect: bool
         answer = prompts.confirm(
             f"Use Context Graph as the memory of {' and '.join(switchable)}?",
             answers.use_graph_memory,
-            note="Their own memory is switched off and copied into the graph; they remember from there.",
+            note="Their memories move into the graph, shared across agents. Switch back any time.",
             short="Agent memory",
         )
         if isinstance(answer, bool):
@@ -524,7 +525,7 @@ def run(prompts: Prompts, choices: Choices, env: Environment) -> int:
     style = prompts.style
     marks = {"ok": style.success("✓"), "skip": style.muted("–"), "warn": style.warning("!"), "fail": style.error("✗")}
     prompts.line()
-    prompts.line(style.muted("Working… (the first Memgraph start downloads about 1 GB)"))
+    prompts.line(style.muted("Setting up… (a first Memgraph start downloads about 1 GB)"))
 
     def log(text: str) -> None:
         prompts.line(style.muted(f"  {text}"))
@@ -537,10 +538,12 @@ def run(prompts: Prompts, choices: Choices, env: Environment) -> int:
     outcomes = engine.run(choices, env, log=log, report=report)
     failures = [outcome for outcome in outcomes if outcome.status == "fail"]
     if not failures:
-        prompts.outro(
-            style.success("Context Graph is set up.")
-            + " Use your agents as usual; `memgraph-context-graph ui` shows what they capture."
-        )
+        steps = engine.next_steps(choices, env)
+        prompts.line()
+        prompts.line(style.bold(steps[0]))
+        for text in steps[1:]:
+            prompts.line(prompts.fit(text))
+        prompts.outro(style.success("Context Graph is set up."))
         return 0
     prompts.line()
     prompts.line(style.error(f"{len(failures)} step(s) failed. To fix:"))
@@ -577,7 +580,7 @@ def _memgraph_summary(choices: Choices, env: Environment) -> str:
         return choices.memgraph_url
     if env.configured_url:
         return f"{env.configured_url} (configured)"
-    return "find one on localhost:7687, or start one in Docker"
+    return "uses Memgraph on localhost:7687, or starts one in Docker for you"
 
 
 def _agent_options(selected: Sequence[str], wired: Sequence[str]) -> list[_Option]:

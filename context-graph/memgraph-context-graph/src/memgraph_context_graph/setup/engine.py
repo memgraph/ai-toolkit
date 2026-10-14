@@ -298,6 +298,52 @@ def _with_trust_note(agent: agents_mod.Agent, summary: str) -> str:
     return f"{summary}; {note}" if note else summary
 
 
+#: What setup says before it asks anything: what the user is about to get, in plain words.
+WELCOME = (
+    "Your coding agents are about to get a memory.",
+    "Each session is kept as one graph in Memgraph, on your machine by default:",
+    "prompts, replies and tool activity. No account or cloud needed.",
+    "A few questions, then setup does the rest. Nothing changes until you confirm.",
+)
+
+#: What a user does once, so an agent starts recording; the same facts as :data:`_TRUST_NOTES`, for the last screen.
+_FIRST_RUN = {
+    "codex": "in Codex, open it and accept its hooks (/hooks)",
+    "grok": "in Grok, run /hooks-trust once per wired project",
+}
+
+
+def next_steps(choices: Choices, env: Environment) -> list[str]:
+    """What happens now and what to try, for the end of a successful setup: short, and only what applies.
+
+    The first line is the heading; each bullet after it fits one terminal line, or continues on an indented one.
+    """
+    from memgraph_context_graph.adapters._identity import MEMORY_BACKEND_GRAPH
+
+    graph_memory = choices.memory_backend == MEMORY_BACKEND_GRAPH or (
+        choices.memory_backend is None and env.configured_memory_backend == MEMORY_BACKEND_GRAPH
+    )
+    lines = [
+        "Your agents now remember. What to expect:",
+        "· Every session is kept in your graph. Finish one, start another, and ask:",
+        '  "what did we do last time?"',
+    ]
+    remembering = [agents_mod.BY_RUNTIME[r].label for r in choices.runtimes if has_native_memory(r)]
+    if graph_memory and remembering:
+        lines += [
+            f"· {' and '.join(remembering)} remember through the graph now.",
+            '  Say "remember that ..." and every agent can recall it.',
+        ]
+    if choices.viewer:
+        lines.append("· Watch it grow: memgraph-context-graph ui")
+    lines += [f"· To start recording {_FIRST_RUN[r]}" for r in choices.runtimes if r in _FIRST_RUN]
+    lines += [
+        "· Change anything any time: memgraph-context-graph setup",
+        "· Undo the wiring: memgraph-context-graph uninstall (your graph stays)",
+    ]
+    return lines
+
+
 def _memory(runtime: str, backend: str) -> Outcome | None:
     from memgraph_context_graph.adapters._identity import MEMORY_BACKEND_GRAPH
     from memgraph_context_graph.hooks.runtime_plugin import get_runtime_plugin

@@ -516,3 +516,49 @@ def test_join_installs_the_spaces_package_inside_the_uv_tool_and_not_elsewhere(m
     main(["join", "bolt://localhost:1", "ante", "--password=x"])
     assert [kwargs["spaces"] for kwargs in installs] == [True]
     spaces._reset_cache()
+
+
+def test_the_welcome_says_what_the_user_is_getting_before_any_question(fake_agents, setup_home, project):
+    from memgraph_context_graph.setup.prompts import ENTER, Prompts, ask
+
+    env = engine.look_around(cwd=project)
+    term = ScriptedTerminal(keys=[ENTER] * 5, columns=100)
+
+    ask(Prompts(term), engine.default_choices(env, cwd=project), env, preselect=False)
+
+    first_question = term.text.index("Your name")
+    for line in ("about to get a memory", "No account or cloud needed", "Nothing changes until you confirm"):
+        assert term.text.index(line) < first_question
+
+
+def test_the_last_screen_says_what_to_expect_and_only_what_applies():
+    choices = engine.Choices(
+        runtimes=["claude-code", "codex", "grok"], project_dirs=[], user_id="carol", memory_backend="context-graph"
+    )
+    env = engine.Environment(edition="community", configured_url=None, configured_user=None, found_agents=())
+
+    text = "\n".join(engine.next_steps(choices, env))
+
+    assert "Claude Code and Codex remember through the graph now." in text
+    assert "memgraph-context-graph ui" in text
+    assert "in Codex, open it and accept its hooks" in text
+    assert "in Grok, run /hooks-trust" in text
+    assert "memgraph-context-graph uninstall" in text
+
+    plain = engine.Choices(runtimes=["opencode"], project_dirs=[], user_id="carol", viewer=False)
+    quiet = "\n".join(engine.next_steps(plain, env))
+
+    assert "remember through the graph" not in quiet
+    assert "memgraph-context-graph ui" not in quiet
+    assert "accept the hooks" not in quiet
+    assert "what did we do last time" in quiet
+
+
+def test_every_line_of_the_welcome_and_the_last_screen_fits_a_narrow_terminal():
+    choices = engine.Choices(
+        runtimes=["claude-code", "codex", "grok"], project_dirs=[], user_id="carol", memory_backend="context-graph"
+    )
+    env = engine.Environment(edition="community", configured_url=None, configured_user=None, found_agents=())
+
+    for line in (*engine.WELCOME, *engine.next_steps(choices, env)):
+        assert len(line) <= 78, line

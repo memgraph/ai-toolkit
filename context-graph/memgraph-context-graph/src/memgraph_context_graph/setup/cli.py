@@ -90,7 +90,7 @@ def setup_main(argv: Sequence[str]) -> int:
     _print_plan(choices, env)
     print()
     outcomes = engine.run(choices, env, log=_log, report=_report)
-    return _finish(outcomes)
+    return _finish(outcomes, choices, env)
 
 
 def uninstall_main(argv: Sequence[str]) -> int:
@@ -141,11 +141,16 @@ def _report(outcome: engine.Outcome) -> None:
         print(f"       {line}")
 
 
-def _finish(outcomes: Sequence[engine.Outcome]) -> int:
+def _finish(outcomes: Sequence[engine.Outcome], choices: engine.Choices, env: engine.Environment) -> int:
     failures = [outcome for outcome in outcomes if outcome.status == "fail"]
     print()
     if not failures:
-        print("Context Graph is set up. Use your agents as usual; `memgraph-context-graph ui` shows what they capture.")
+        print("Context Graph is set up.")
+        print()
+        steps = engine.next_steps(choices, env)
+        print(steps[0])
+        for line in steps[1:]:
+            print(f"  {line}")
         return 0
     print(f"{len(failures)} step(s) failed. To fix:")
     for outcome in failures:
