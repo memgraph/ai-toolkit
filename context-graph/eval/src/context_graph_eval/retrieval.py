@@ -379,6 +379,10 @@ class Retrieved:
     #: carry that timing, so the caller times the attempt itself instead --
     #: the 0.0 default below is never actually used for that path.
     latency_seconds: float = 0.0
+    #: Wall-clock seconds of the read path alone -- embedding the question and
+    #: the Memgraph queries, no answering LLM. Set only by strategies whose
+    #: read path is a separate step (hybrid); None where it isn't separable.
+    recall_seconds: float | None = None
 
 
 async def retrieve(

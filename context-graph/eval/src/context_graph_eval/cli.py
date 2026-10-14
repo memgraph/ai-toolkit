@@ -363,13 +363,34 @@ def _beam(args) -> int:
                 "judge_model": args.judge_model,
                 "agent_model": _resolved_spec(agent_provider, agent_model_id),
                 "extraction_backend": args.extraction_backend,
+                **(_gliner2_meta() if args.extraction_backend == "gliner2" else {}),
                 "hybrid_lanes": args.hybrid_lanes,
                 "ontology": args.ontology,
                 "derive_seeds": args.derive_seeds if args.ontology == "learned" else None,
+                "commit": _commit(),
+                # Recall's Cypher depends on the server: 3.9 rejected text_search's limit option.
+                "memgraph_version": db.query("SHOW VERSION")[0]["version"],
             },
         )
         print(f"\nsaved run to {saved}")
     return 0
+
+
+def _gliner2_meta() -> dict[str, object]:
+    """The GLiNER2 settings a run's graph was extracted with."""
+    from unstructured2graph import gliner2_backend
+
+    return {
+        "model_checkpoint": "fastino/gliner2.5-base-v1",
+        "decoder": gliner2_backend.DECODER,
+        "candidate_cap": gliner2_backend.DEFAULT_CANDIDATE_CAP,
+    }
+
+
+def _commit() -> str | None:
+    from .kg import _commit as commit
+
+    return commit()
 
 
 def _kg(args) -> int:
@@ -1005,6 +1026,12 @@ def _print_report(report, *, judged: bool) -> None:
             )
         if summary.mean_latency_seconds is not None:
             print(f"  latency       mean {summary.mean_latency_seconds:.1f}s per question")
+        if summary.mean_recall_seconds is not None:
+            print(
+                f"  recall only   mean {summary.mean_recall_seconds * 1000:.0f}ms, "
+                f"median {summary.median_recall_seconds * 1000:.0f}ms, "
+                f"p95 {summary.p95_recall_seconds * 1000:.0f}ms (no answering LLM)"
+            )
 
         # Gate-then-rank made visible (#309): only questions that cleared
         # coverage are ranked, cheapest payload first. Showing the extremes is

@@ -420,6 +420,7 @@ def _score(
                 bleu=bleu_score(golden.expected_output, result.answer),
                 f1=token_f1_score(golden.expected_output, result.answer),
                 latency_seconds=result.latency_seconds,
+                recall_seconds=result.recall_seconds,
                 evidence_recall=(
                     None if metadata.get("abstention") else evidence_recall(golden.context, result.retrieval_context)
                 ),
