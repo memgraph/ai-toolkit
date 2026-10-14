@@ -257,9 +257,9 @@ def _ui(argv: list[str]) -> int:
         from context_graph_viewer.cli import main as viewer_main
     except ImportError:
         print(
-            "memgraph-context-graph ui needs the context-graph-viewer package in the same tool environment.\n"
-            "Add it to the `uv tool install memgraph-context-graph ...` command your plugin's bootstrap runs:\n"
-            "  --with context-graph-viewer",
+            "memgraph-context-graph ui needs the context-graph-viewer package, which isn't installed.\n"
+            "Run setup again and say yes to the viewer:\n"
+            "  memgraph-context-graph setup",
             file=sys.stderr,
         )
         return 1
