@@ -205,7 +205,7 @@ session end, so adapters emit two different events:
 | Runtime | Turn end | Session end |
 |---|---|---|
 | Claude Code | `Stop` (records `last_assistant_message`) | `SessionEnd` |
-| Codex | `Stop` (records `last_assistant_message`) | none |
+| Codex | `Stop` (records `last_assistant_message`) | `SessionEnd`, only when Codex ends the session; with its shared background server `/exit` just detaches |
 | Copilot CLI | `agentStop` | `sessionEnd` |
 | Cursor | `stop` | `sessionEnd` |
 | OpenCode | `session.execution.succeeded` / `.failed` | `session.deleted` |

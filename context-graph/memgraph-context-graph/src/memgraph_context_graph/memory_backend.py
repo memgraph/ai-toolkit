@@ -117,6 +117,7 @@ def use_native_memory(plugin: RuntimeCLIPlugin, *, home: Path | None = None) -> 
     lines.append(
         f"Set memory.backend = {MEMORY_BACKEND_NATIVE}; {plugin.name}'s own memory is back from its next session."
     )
+    lines.append("Memories saved while Context Graph was your memory stay in Memgraph; they aren't copied back.")
     return lines
 
 

@@ -86,8 +86,9 @@ def test_rerunning_keeps_what_the_graph_already_has(home, graph):
 def test_handing_memory_back(home):
     use_graph_memory(PLUGIN, home=home)
 
-    use_native_memory(PLUGIN, home=home)
+    lines = use_native_memory(PLUGIN, home=home)
 
+    assert "they aren't copied back" in lines[-1]
     assert _settings(home) == {"theme": "dark"}
     assert not _identity.load_config().graph_memory
     assert _identity.load_config().memory_backend == "native"
