@@ -1,7 +1,8 @@
 """``memgraph-context-graph setup`` and ``uninstall``: flags, and the plain front end.
 
-The Textual front end runs only when stdin and stdout are both terminals. Under ``curl | bash`` without
-``</dev/tty`` stdin is the script, and Textual would draw a screen no key can reach (#534).
+The interactive front end (the questions in ``prompts.py``) runs only when stdin and stdout are both
+terminals. Under ``curl | bash`` without ``</dev/tty`` stdin is the script, and it would wait for keys that
+can never arrive (#534).
 """
 
 from __future__ import annotations
@@ -55,8 +56,19 @@ def setup_main(argv: Sequence[str]) -> int:
     )
     parser.add_argument("--plan", action="store_true", help="print what setup would do, and change nothing")
     parser.add_argument("--no-tui", action="store_true", help="plain output even on a terminal")  # fmt: skip
+    parser.add_argument("--no-banner", action="store_true", help="don't draw the Memgraph wordmark first")
     args = parser.parse_args(list(argv))
     _check_runtimes(parser, args.runtimes)
+
+    interactive = not args.plan and not args.no_tui and _interactive()
+    terminal = None
+    if interactive:
+        from memgraph_context_graph.setup.prompts import Prompts, StdTerminal
+
+        terminal = StdTerminal()
+        if not args.no_banner:
+            # Drawn before looking around, which asks each agent's CLI and can take a second or more.
+            Prompts(terminal).banner()
 
     env = engine.look_around()
     choices = engine.default_choices(
@@ -72,10 +84,11 @@ def setup_main(argv: Sequence[str]) -> int:
     if args.plan:
         _print_plan(choices, env)
         return 0
-    if not args.no_tui and _interactive():
-        from memgraph_context_graph.setup.tui import run_setup_app
+    if interactive:
+        from memgraph_context_graph.setup.prompts import run_setup_prompts
 
-        return run_setup_app(choices, env)
+        # Agents named on the command line start ticked; otherwise the ones already set up are.
+        return run_setup_prompts(choices, env, terminal, banner=False, preselect=bool(args.runtimes))
     _print_plan(choices, env)
     print()
     outcomes = engine.run(choices, env, log=_log, report=_report)

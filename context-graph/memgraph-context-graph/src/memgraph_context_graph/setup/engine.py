@@ -1,6 +1,6 @@
 """What setup will do and does: the choices, the steps they turn into, and the outcome of each.
 
-Both front ends (plain and Textual) build :class:`Choices`, show :func:`plan` and call :func:`run`; neither
+Both front ends (plain, and the questions) build :class:`Choices`, show :func:`plan` and call :func:`run`; neither
 does any work itself. Every step checks before it changes anything, so running setup again reports
 "already" instead of redoing work (#533).
 """
@@ -57,19 +57,32 @@ class Environment:
     configured_url: str | None
     configured_user: str | None
     found_agents: tuple[str, ...]
+    #: Found agents that already capture: their plugin is installed, or the current project is wired.
+    wired_agents: tuple[str, ...] = ()
+    configured_memory_backend: str | None = None
 
 
-def look_around() -> Environment:
-    """Read the config file and PATH; changes nothing."""
+def look_around(cwd: Path | None = None) -> Environment:
+    """Read the config file, PATH and what is already wired (plugins, and *cwd*'s hook files); changes nothing."""
     from memgraph_context_graph.adapters._identity import load_config
 
     config = load_config()
+    cwd = (cwd or Path.cwd()).resolve()
+    found = agents_mod.detected()
     return Environment(
         edition=config.edition or "community",
         configured_url=config.memgraph_url if "memgraph.url" in config.present else None,
         configured_user=config.user_id if "identity.user_id" in config.present and config.user_id else None,
-        found_agents=tuple(agent.runtime for agent in agents_mod.detected()),
+        found_agents=tuple(agent.runtime for agent in found),
+        wired_agents=tuple(agent.runtime for agent in found if _wired(agent, cwd)),
+        configured_memory_backend=config.memory_backend,
     )
+
+
+def _wired(agent: agents_mod.Agent, cwd: Path) -> bool:
+    if agent.wiring == "plugin":
+        return agents_mod.plugin_wired(agent)
+    return cwd != Path.home().resolve() and agents_mod.project_wired(agent, cwd)
 
 
 def default_choices(
@@ -130,7 +143,9 @@ def plan(choices: Choices, env: Environment) -> list[str]:
     lines.append(f"Packages: install {', '.join(packages)}" if packages else "Packages: all installed")
     for runtime in choices.runtimes:
         agent = agents_mod.BY_RUNTIME[runtime]
-        if agent.wiring == "plugin":
+        if agent.wiring == "plugin" and runtime in env.wired_agents:
+            lines.append(f"{agent.label}: plugin already installed; checked again")
+        elif agent.wiring == "plugin":
             lines.append(f"{agent.label}: install the Context Graph plugin (user-wide)")
         elif choices.project_dirs:
             lines.append(f"{agent.label}: wire {', '.join(str(path) for path in choices.project_dirs)}")
@@ -138,10 +153,11 @@ def plan(choices: Choices, env: Environment) -> list[str]:
             lines.append(f"{agent.label}: skipped, no project directory (pass --project-dir)")
     if choices.memory_backend:
         switchable = [
-            agents_mod.BY_RUNTIME[runtime].label for runtime in choices.runtimes if _has_native_memory(runtime)
+            agents_mod.BY_RUNTIME[runtime].label for runtime in choices.runtimes if has_native_memory(runtime)
         ]
+        already = "; already set, checked again" if choices.memory_backend == env.configured_memory_backend else ""
         if switchable:
-            lines.append(f"Memory: memory.backend = {choices.memory_backend} for {' and '.join(switchable)}")
+            lines.append(f"Memory: memory.backend = {choices.memory_backend} for {' and '.join(switchable)}{already}")
         else:
             lines.append("Memory: no selected agent has a built-in memory to switch")
     lines.append("Verify: doctor's checks, and each agent's hook probe")
@@ -183,7 +199,8 @@ def run(
     return outcomes
 
 
-def _has_native_memory(runtime: str) -> bool:
+def has_native_memory(runtime: str) -> bool:
+    """Whether *runtime* has a built-in memory that ``--memory-backend`` can switch."""
     from memgraph_context_graph.hooks.runtime_plugin import get_runtime_plugin
     from memgraph_context_graph.memory_backend import native_memory_of
 
