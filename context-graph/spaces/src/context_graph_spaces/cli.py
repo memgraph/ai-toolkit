@@ -55,6 +55,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print_plan(plan(spec, observed_state(query, spec.members), prune=args.prune))
             return 0
         applied = apply(spec, query, prune=args.prune)
+    except Exception as exc:
+        explained = _explain(exc, args.url, args.user)
+        if explained is None:
+            raise
+        print(explained, file=sys.stderr)
+        return 1
     finally:
         close()
     _print_steps(applied.steps, "Applied" if applied.steps else "Nothing to change; Memgraph matches the spec.")
@@ -90,6 +96,23 @@ def _reconcile(spec: Spec, url: str, *, watch: bool, interval: float) -> int:
         if not watch:
             return 1 if any(report.error or report.failed for report in reports) else 0
         time.sleep(interval)
+
+
+def _explain(exc: Exception, url: str, user: str) -> str | None:
+    """What to tell an admin whose connection failed, or None for an error that isn't about the connection."""
+    import neo4j
+
+    if isinstance(exc, neo4j.exceptions.ServiceUnavailable):
+        return f"Can't reach Memgraph at {url}. Is it running, and is the URL right (--url or MEMGRAPH_URL)?"
+    if isinstance(exc, neo4j.exceptions.AuthError) or (
+        isinstance(exc, neo4j.exceptions.ClientError) and "Unauthenticated" in str(exc.code)
+    ):
+        login = f"login {user!r}" if user else "(no login was given)"
+        return (
+            f"Memgraph at {url} refused the admin {login}. "
+            "Pass an admin login with --user and --password, or set MEMGRAPH_USER and MEMGRAPH_PASSWORD."
+        )
+    return None
 
 
 def admin_query(url: str, user: str, password: str) -> tuple[Query, Any]:
