@@ -51,7 +51,8 @@ def uv_tool_environment() -> bool:
     uv = shutil.which("uv")
     if uv is None:
         return False
-    result = subprocess.run([uv, "tool", "dir"], capture_output=True, text=True, check=False)
+    # --color never: FORCE_COLOR makes uv colour even captured output, and the path would no longer compare equal.
+    result = subprocess.run([uv, "--color", "never", "tool", "dir"], capture_output=True, text=True, check=False)
     if result.returncode != 0:
         return False
     tool_dir = Path(result.stdout.strip()) / "memgraph-context-graph"
@@ -70,12 +71,12 @@ def install(*, viewer: bool, log: Callable[[str], None]) -> None:
     uv = shutil.which("uv")
     if uv is None:
         raise ToolError("uv isn't on PATH")
-    argv = [uv, "tool", "install", BASE]
+    argv = [uv, "--color", "never", "tool", "install", BASE]
     for requirement in CONNECTORS.values():
         argv += ["--with", requirement]
     if viewer or installed(VIEWER[0]):
         argv += ["--with", VIEWER[1]]
-    log(" ".join(["uv", *argv[1:]]))
+    log(" ".join(["uv", *argv[3:]]))
     process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     last = ""
     assert process.stdout is not None
