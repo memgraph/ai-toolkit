@@ -266,12 +266,12 @@ async def test_sync_table_updates_in_place_and_follows_the_selected_row():
         assert cursor_key(table) == "c"
 
 
-def test_ui_without_the_viewer_installed_says_how_to_add_it(monkeypatch, capsys):
+def test_ui_without_the_viewer_installed_says_to_run_setup(monkeypatch, capsys):
     from memgraph_context_graph.cli import main
 
     monkeypatch.setitem(sys.modules, "context_graph_viewer.cli", None)
     assert main(["ui"]) == 1
-    assert "--with context-graph-viewer" in capsys.readouterr().err
+    assert "memgraph-context-graph setup" in capsys.readouterr().err
 
 
 def test_ui_reports_an_edition_it_cannot_resolve(config_file, capsys):

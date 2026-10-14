@@ -300,16 +300,3 @@ def test_init_codex_force_overwrites(tmp_path):
     assert main(["init", "codex", "--project-dir", str(tmp_path), "--force"]) == 0
 
     assert (codex_dir / "config.toml").read_text() == "[features]\nhooks = true\n"
-
-
-def test_ui_without_the_viewer_says_to_run_setup(monkeypatch, capsys):
-    import sys
-
-    from memgraph_context_graph.cli import main
-
-    monkeypatch.setitem(sys.modules, "context_graph_viewer", None)
-    monkeypatch.setitem(sys.modules, "context_graph_viewer.cli", None)
-
-    assert main(["ui"]) == 1
-
-    assert "memgraph-context-graph setup" in capsys.readouterr().err
