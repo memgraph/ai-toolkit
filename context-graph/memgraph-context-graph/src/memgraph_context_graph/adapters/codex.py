@@ -11,6 +11,7 @@ from memgraph_context_graph.adapters._spec import (
     SpecAdapter,
     SpecPlugin,
     pre_tool_use_context,
+    session_end,
     session_start,
     tool_end,
     tool_start,
@@ -40,8 +41,7 @@ def _permission(context: EventContext) -> MessageEvent:
 
 
 def _turn_end(context: EventContext) -> list[Event]:
-    # Codex has no session-end hook, and Stop fires after every turn, so it is
-    # only ever a turn end.
+    # Stop fires after every turn; SessionEnd, registered separately, ends the session.
     return turn_end(context, reply=context.value("reply"))
 
 
@@ -50,7 +50,7 @@ SPEC = RuntimeSpec(
     name="codex",
     source_sdk="codex",
     event_key="hook_event_name",
-    hooks=("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Stop"),
+    hooks=("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Stop", "SessionEnd"),
     rules={
         "SessionStart": session_start,
         "UserPromptSubmit": _user_prompt,
@@ -58,6 +58,7 @@ SPEC = RuntimeSpec(
         "PostToolUse": tool_end,
         "PermissionRequest": _permission,
         "Stop": _turn_end,
+        "SessionEnd": session_end,
     },
     metadata_keys=(
         "cwd",

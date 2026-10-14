@@ -26,11 +26,11 @@ class Expected:
 
 
 # Per runtime capture limits: Copilot's hooks carry no reply text, Antigravity's
-# no prompt, reply, or tool output; Codex, OpenCode `run`, and Antigravity have
-# no session-end hook, so their sessions stay open.
+# no prompt, reply, or tool output; OpenCode `run` and Antigravity have no
+# session-end hook, so their sessions stay open.
 EXPECTED = {
     "claude-code": Expected(ends_session=True),
-    "codex": Expected(),
+    "codex": Expected(ends_session=True),
     "copilot-cli": Expected(reply=False, ends_session=True),
     "opencode": Expected(),
     "antigravity-cli": Expected(prompt=False, reply=False, result_text=False),

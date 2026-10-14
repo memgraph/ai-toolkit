@@ -149,6 +149,25 @@ def test_stop_ends_the_turn_with_the_reply_and_keeps_the_session_open():
     assert PLUGIN.response_for_payload(payload) == {"continue": True}
 
 
+def test_session_end_ends_the_session():
+    link = AgentLink()
+    rec = _RecordingConnector()
+    link.add_connector(rec)
+
+    # The payload Codex sends when a session really ends (no shared daemon holding it open).
+    payload = {
+        "session_id": "s1",
+        "transcript_path": "/home/u/.codex/sessions/rollout-s1.jsonl",
+        "cwd": "/work/billing",
+        "hook_event_name": "SessionEnd",
+        "reason": "other",
+    }
+    CodexHooksAdapter(link).handle_payload(payload)
+
+    (session_end,) = rec.events
+    assert session_end.event_type == EventType.SESSION_END
+
+
 def test_stop_records_the_turns_reply_before_the_turn_end():
     """The reply is the answer recall needs; the turn end that follows spawns its embedding."""
     link = AgentLink()
