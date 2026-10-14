@@ -1171,7 +1171,7 @@ provides-extras = ["pipeline", "test"]
 
 [[package]]
 name = "context-graph-spaces"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "context-graph/spaces" }
 dependencies = [
     { name = "memgraph-context-graph" },
@@ -4096,7 +4096,7 @@ requires-dist = [
 
 [[package]]
 name = "memgraph-context-graph"
-version = "0.7.2"
+version = "0.7.3"
 source = { editable = "context-graph/memgraph-context-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
