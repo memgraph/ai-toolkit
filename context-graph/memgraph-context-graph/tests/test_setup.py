@@ -419,3 +419,34 @@ def test_a_second_run_starts_from_what_is_set_up(fake_agents, setup_home, projec
     choices = ask(Prompts(term), engine.default_choices(env, cwd=project), env, preselect=False)
     assert choices is not None
     assert choices.memory_backend == "native"
+
+
+def test_the_uv_tool_is_recognised_even_when_the_shell_forces_colour(monkeypatch):
+    """FORCE_COLOR makes uv colour what it prints into a pipe, which broke comparing its tool directory."""
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from memgraph_context_graph.setup import tool
+
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.skip("needs uv")
+    tool_dir = subprocess.run([uv, "--color", "never", "tool", "dir"], capture_output=True, text=True, check=True)
+    monkeypatch.setenv("FORCE_COLOR", "3")
+    monkeypatch.setattr(sys, "prefix", str(Path(tool_dir.stdout.strip()) / "memgraph-context-graph"))
+
+    assert tool.uv_tool_environment()
+
+
+def test_codex_is_reported_with_the_trust_it_still_needs_and_claude_code_is_not(fake_agents, setup_home, project):
+    env = engine.look_around(cwd=project)
+    choices = engine.default_choices(env, cwd=project)
+
+    codex = engine._agent(BY_RUNTIME["codex"], choices, lambda _: None)
+    claude = engine._agent(BY_RUNTIME["claude-code"], choices, lambda _: None)
+
+    assert codex.status == "ok"
+    assert "records nothing until you trust its hooks" in codex.summary
+    assert "trust" not in claude.summary

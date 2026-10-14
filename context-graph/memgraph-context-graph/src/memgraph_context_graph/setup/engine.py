@@ -269,7 +269,11 @@ def _agent(agent: agents_mod.Agent, choices: Choices, log: Callable[[str], None]
     fix = f"memgraph-context-graph setup {agent.runtime}"
     if agent.wiring == "plugin":
         try:
-            return Outcome(agent.label, "ok", agents_mod.wire_plugin(agent, log))
+            summary = agents_mod.wire_plugin(agent, log)
+            if agent.runtime == "codex":
+                # Codex skips an untrusted plugin's hooks without a word, and `codex exec` never asks.
+                summary += "; Codex records nothing until you trust its hooks: open codex and accept them (/hooks)"
+            return Outcome(agent.label, "ok", summary)
         except agents_mod.WiringError as exc:
             return Outcome(agent.label, "fail", str(exc), fix=fix)
     if not choices.project_dirs:
