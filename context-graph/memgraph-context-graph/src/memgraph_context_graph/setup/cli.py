@@ -56,7 +56,6 @@ def setup_main(argv: Sequence[str]) -> int:
     )
     parser.add_argument("--plan", action="store_true", help="print what setup would do, and change nothing")
     parser.add_argument("--no-tui", action="store_true", help="plain output even on a terminal")  # fmt: skip
-    parser.add_argument("--no-banner", action="store_true", help="don't draw the Memgraph wordmark first")
     args = parser.parse_args(list(argv))
     _check_runtimes(parser, args.runtimes)
 
@@ -66,9 +65,8 @@ def setup_main(argv: Sequence[str]) -> int:
         from memgraph_context_graph.setup.prompts import Prompts, StdTerminal
 
         terminal = StdTerminal()
-        if not args.no_banner:
-            # Drawn before looking around, which asks each agent's CLI and can take a second or more.
-            Prompts(terminal).banner()
+        # Drawn before looking around, which asks each agent's CLI and can take a second or more.
+        Prompts(terminal).banner()
 
     env = engine.look_around()
     choices = engine.default_choices(
@@ -88,7 +86,7 @@ def setup_main(argv: Sequence[str]) -> int:
         from memgraph_context_graph.setup.prompts import run_setup_prompts
 
         # Agents named on the command line start ticked; otherwise the ones already set up are.
-        return run_setup_prompts(choices, env, terminal, banner=False, preselect=bool(args.runtimes))
+        return run_setup_prompts(choices, env, terminal, preselect=bool(args.runtimes))
     _print_plan(choices, env)
     print()
     outcomes = engine.run(choices, env, log=_log, report=_report)

@@ -95,7 +95,7 @@ GRAPH = (
     "      ●───●           ●─────●           ●─────●           ●─────●",
 )
 # The divider between the banner and the first question: a short stretch of graph, in orange.
-RULE = "●──────●─────────●────●───────●──────────●─────●────────●───────●─────────●"
+RULE = "●──────●─────────●────●───────●──────────●─────●────────●───────●─────●"
 
 
 class _Style:
@@ -225,7 +225,8 @@ class Prompts:
 
     def intro(self, title: str, subtitle: str = "") -> None:
         """The orange graph divider, some space, then the title: the questions start apart from what came before."""
-        rule = RULE[: max(min(len(WORDMARK[0]), self.term.columns - 1), 1)]
+        rule = RULE[: min(len(WORDMARK[0]), self.term.columns - 1)]
+        rule = rule[: rule.rfind("●") + 1]  # cut short, it still ends on a node
         self.write(f"\n{self.style.accent(rule)}\n\n")
         self.write(f"{self.style.accent('◆')}  {self.style.bold(title)}\n")
         self.line(self.style.muted(subtitle))
@@ -394,16 +395,11 @@ class _Answers:
 DONE, SKIPPED, STOP = "done", "skipped", "stop"
 
 
-def ask(
-    prompts: Prompts, choices: Choices, env: Environment, *, banner: bool = True, preselect: bool = True
-) -> Choices | None:
+def ask(prompts: Prompts, choices: Choices, env: Environment, *, preselect: bool = True) -> Choices | None:
     """Ask for what the flags left open, show the plan and confirm; None when the user says no.
 
-    *banner* draws the Memgraph wordmark first; off when whatever ran setup has drawn it already.
     *preselect* starts the agent list with *choices*' agents ticked; off, the user ticks every one.
     """
-    if banner:
-        prompts.banner()
     prompts.intro("Context Graph setup", "Memory for your coding agents. Nothing changes until you confirm.")
     enterprise = env.edition == "enterprise"
     prompts.answered("Memgraph", "from your Enterprise login" if enterprise else _memgraph_summary(choices, env))
@@ -560,14 +556,13 @@ def run_setup_prompts(
     env: Environment,
     terminal: Terminal | None = None,
     *,
-    banner: bool = True,
     preselect: bool = True,
 ) -> int:
     """Ask, then run; 0 when nothing failed or the user stopped, 1 when a step failed."""
     prompts = Prompts(terminal or StdTerminal())
     try:
         with prompts.term.keypresses():
-            answered = ask(prompts, choices, env, banner=banner, preselect=preselect)
+            answered = ask(prompts, choices, env, preselect=preselect)
     except KeyboardInterrupt:
         prompts.write("\n")
         prompts.outro("Stopped. Nothing changed.")
