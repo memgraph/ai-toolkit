@@ -1,13 +1,19 @@
 """Antigravity CLI (``agy``) command-hook runtime adapter.
 
-Antigravity hooks expose less than other runtimes: tool calls and their
-errors, model-invocation counters, and execution stops. They carry no tool
-results, prompts, assistant text, or token usage, so an Antigravity session
-records what ran but not what came back.
+Antigravity hooks expose less than other runtimes: the session's start, tool
+calls and their errors, and execution stops. They carry no tool results,
+prompts, assistant text, or token usage. The turn's words come from the
+transcript the ``Stop`` payload points at instead: when a stop leaves the agent
+idle, the last user request and the reply that closed it are read from there.
+Its ``SessionStart`` output is the one place a hook can put text in front of
+the model for the whole session (``injectSteps``).
 """
 
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from memgraph_context_graph.adapters._spec import (
@@ -22,7 +28,14 @@ from memgraph_context_graph.adapters._spec import (
     string_or_none,
     turn_end,
 )
-from memgraph_context_graph.events import ErrorOccurredEvent, SessionStartEvent, ToolEndEvent, ToolStartEvent
+from memgraph_context_graph.adapters.agent_memory import NO_BUILT_IN_MEMORY
+from memgraph_context_graph.events import (
+    ErrorOccurredEvent,
+    MessageEvent,
+    SessionStartEvent,
+    ToolEndEvent,
+    ToolStartEvent,
+)
 
 if TYPE_CHECKING:
     from memgraph_context_graph.events import Event
@@ -45,12 +58,7 @@ def _step_id(context: EventContext) -> str | None:
     return None if step is None else f"step-{step}"
 
 
-def _session_start(context: EventContext) -> SessionStartEvent | None:
-    # No session-start hook exists. Each turn's first model invocation
-    # (invocationNum resets per turn) stands in for it; connectors ignore a
-    # start for a session they already hold.
-    if context.payload.get("invocationNum") != 0:
-        return None
+def _session_start(context: EventContext) -> SessionStartEvent:
     return SessionStartEvent(
         **context.base(),
         model=string_or_none(context.payload.get("modelName")),
@@ -80,6 +88,54 @@ def _tool_end(context: EventContext) -> ToolEndEvent:
     )
 
 
+_USER_REQUEST_RE = re.compile(r"<USER_REQUEST>\n?(?P<text>.*?)\n?</USER_REQUEST>", re.DOTALL)
+
+
+def _last_turn(context: EventContext) -> tuple[dict[str, Any], dict[str, Any] | None] | None:
+    """The transcript's last user request and the final model reply after it, or None when unreadable."""
+    path = context.payload.get("transcriptPath")
+    if not isinstance(path, str) or not path:
+        return None
+    try:
+        steps = [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
+    except (OSError, ValueError):
+        return None
+    starts = [i for i, step in enumerate(steps) if step.get("type") == "USER_INPUT"]
+    if not starts:
+        return None
+    request = steps[starts[-1]]
+    replies = [
+        step for step in steps[starts[-1] + 1 :] if step.get("type") == "PLANNER_RESPONSE" and step.get("content")
+    ]
+    return request, (replies[-1] if replies else None)
+
+
+def _at(step: dict[str, Any]) -> str | None:
+    """The step's time, with its index as microseconds: second-resolution times would collide within a turn,
+    and the same step must give the same timestamp (and so the same action id) every time it is read."""
+    created = step.get("created_at")
+    if not isinstance(created, str):
+        return None
+    index = int(step.get("step_index") or 0) % 1_000_000
+    return created.replace("Z", "") + f".{index:06d}+00:00"
+
+
+def _turn_messages(context: EventContext) -> tuple[list[Event], str | None]:
+    """The turn's user message as an event, and the reply's text for :func:`turn_end`."""
+    turn = _last_turn(context)
+    if turn is None:
+        return [], None
+    request, reply = turn
+    match = _USER_REQUEST_RE.search(str(request.get("content") or ""))
+    events: list[Event] = []
+    if match and match["text"].strip():
+        base = context.base()
+        if at := _at(request):
+            base["timestamp"] = at
+        events.append(MessageEvent(**base, role="user", content=match["text"].strip()))
+    return events, (str(reply["content"]) if reply else None)
+
+
 def _stop(context: EventContext) -> list[Event]:
     # Stop ends one execution loop. agy has no session-end hook, so a loop that
     # leaves the agent fully idle is the turn end; a failed one is also an error.
@@ -96,18 +152,20 @@ def _stop(context: EventContext) -> list[Event]:
             )
         )
     if context.payload.get("fullyIdle"):
-        events.extend(turn_end(context, reason=reason))
+        messages, reply = _turn_messages(context)
+        events.extend(messages)
+        events.extend(turn_end(context, reply=reply, reason=reason))
     return events
 
 
-_HOOKS = ("PreInvocation", "PreToolUse", "PostToolUse", "Stop")
+_HOOKS = ("SessionStart", "PreToolUse", "PostToolUse", "Stop")
 SPEC = RuntimeSpec(
     name="antigravity-cli",
     source_sdk="antigravity-cli",
     event_key="hook_event_name",
     hooks=_HOOKS,
     rules={
-        "PreInvocation": _session_start,
+        "SessionStart": _session_start,
         "PreToolUse": _tool_start,
         "PostToolUse": _tool_end,
         "Stop": _stop,
@@ -132,13 +190,15 @@ SPEC = RuntimeSpec(
         root_key="memgraph-context-graph",
         merge=True,
         inject_event_name=True,
-        flat_hooks=frozenset({"PreInvocation", "Stop"}),
+        flat_hooks=frozenset({"SessionStart", "Stop"}),
     ),
     fields=FieldMap(session_id=("conversationId",)),
     # PostToolUse requires an object; an empty PreToolUse answer leaves agy's
     # own permission prompt in charge, so capture never approves a tool.
     responses={"PostToolUse": {}},
-    probe_payload={"hook_event_name": "PreInvocation", "conversationId": "doctor", "invocationNum": 0},
+    probe_payload={"hook_event_name": "SessionStart", "conversationId": "doctor"},
+    # Kept in the conversation as a system message for every later turn.
+    session_context=lambda text: {"injectSteps": [{"systemMessage": {"systemMessage": text}}]},
 )
 
 
@@ -149,4 +209,4 @@ class AntigravityCLIHooksAdapter(SpecAdapter):
 
 
 init = json_hook_installer(SPEC)
-PLUGIN = SpecPlugin(SPEC, AntigravityCLIHooksAdapter, init=init)
+PLUGIN = SpecPlugin(SPEC, AntigravityCLIHooksAdapter, init=init, native_memory=NO_BUILT_IN_MEMORY)

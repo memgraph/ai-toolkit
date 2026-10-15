@@ -245,8 +245,8 @@ your interactive shell and silently fail in the hook. Keep that boundary when
 touching `memgraph-context-graph`'s hook/config code.
 
 A user can make Context Graph their harness memory with
-`memgraph-context-graph setup <claude-code|codex> --memory-backend context-graph`
-(map #484, ADR 0006). This switch is per user, never per project. It turns
+`memgraph-context-graph setup <runtime> --memory-backend context-graph`
+(map #484, ADR 0006), for any of the seven agents. This switch is per user, never per project. It turns
 the harness's built-in memory off in its user-level config, imports what that
 memory held, and sets `[memory] backend` in the config file. That setting is
 the one source of truth that switches on the MCP `memory` tool and the

@@ -19,6 +19,7 @@ from memgraph_context_graph.adapters._spec import (
     tool_start,
     turn_end,
 )
+from memgraph_context_graph.adapters.agent_memory import NO_BUILT_IN_MEMORY
 from memgraph_context_graph.events import ErrorOccurredEvent, MessageEvent, ToolEndEvent
 
 if TYPE_CHECKING:
@@ -119,6 +120,9 @@ SPEC = RuntimeSpec(
     metadata_keys=("cwd", "model", "metadata"),
     config=HookConfig(layout="flat"),
     probe_payload={"hook_event_name": "session.deleted", "session_id": "doctor"},
+    # The plugin asks once per session and adds the text to the system prompt of every request.
+    session_context=lambda text: {"system": text},
+    session_context_event="session.context",
 )
 
 
@@ -162,4 +166,4 @@ def init(
     print(f"Wrote {target}")
 
 
-PLUGIN = SpecPlugin(SPEC, OpenCodeHooksAdapter, init=init)
+PLUGIN = SpecPlugin(SPEC, OpenCodeHooksAdapter, init=init, native_memory=NO_BUILT_IN_MEMORY)

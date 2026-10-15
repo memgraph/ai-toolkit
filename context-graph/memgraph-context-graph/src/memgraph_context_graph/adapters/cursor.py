@@ -18,6 +18,7 @@ from memgraph_context_graph.adapters._spec import (
     tool_start,
     turn_end,
 )
+from memgraph_context_graph.adapters.agent_memory import NO_BUILT_IN_MEMORY
 from memgraph_context_graph.events import (
     AgentEndEvent,
     AgentStartEvent,
@@ -176,6 +177,10 @@ SPEC = RuntimeSpec(
     # (camelCase duplicates of every field); its grok runtime records those.
     foreign_payload_keys=frozenset({"hookEventName"}),
     probe_payload={"hook_event_name": "sessionEnd", "session_id": "doctor", "reason": "completed"},
+    # Cursor's docs put this in the conversation's initial system context. The IDE's agent window can drop it
+    # (the hook runs alongside the composer, not before it); the CLI waits for it.
+    session_context=lambda text: {"additional_context": text},
+    session_context_event="sessionStart",
 )
 
 
@@ -186,4 +191,4 @@ class CursorHooksAdapter(SpecAdapter):
 
 
 init = json_hook_installer(SPEC)
-PLUGIN = SpecPlugin(SPEC, CursorHooksAdapter, init=init)
+PLUGIN = SpecPlugin(SPEC, CursorHooksAdapter, init=init, native_memory=NO_BUILT_IN_MEMORY)

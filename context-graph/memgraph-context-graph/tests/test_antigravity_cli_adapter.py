@@ -9,6 +9,7 @@ from memgraph_context_graph import AgentLink
 from memgraph_context_graph.adapters.antigravity_cli import PLUGIN, AntigravityCLIHooksAdapter, init
 from memgraph_context_graph.events import (
     ErrorOccurredEvent,
+    MessageEvent,
     SessionEndEvent,
     SessionStartEvent,
     ToolEndEvent,
@@ -41,11 +42,10 @@ def _adapter():
     return AntigravityCLIHooksAdapter(link), connector
 
 
-def test_first_invocation_starts_the_session_and_later_ones_do_not():
+def test_session_start_hook_starts_the_session():
     adapter, connector = _adapter()
 
-    adapter.handle_payload({"hook_event_name": "PreInvocation", **_COMMON, "invocationNum": 0, "initialNumSteps": 1})
-    adapter.handle_payload({"hook_event_name": "PreInvocation", **_COMMON, "invocationNum": 1, "initialNumSteps": 3})
+    adapter.handle_payload({"hook_event_name": "SessionStart", **_COMMON})
 
     (session_start,) = connector.events
     assert isinstance(session_start, SessionStartEvent)
@@ -97,6 +97,47 @@ def test_idle_stop_ends_the_turn_and_a_failed_one_is_also_an_error():
     assert not any(isinstance(event, SessionEndEvent) for event in connector.events)
 
 
+def test_an_idle_stop_records_the_turns_words_from_the_transcript(tmp_path):
+    def step(index, kind, content, at="2026-10-15T10:52:54Z"):
+        return json.dumps({"step_index": str(index), "type": kind, "created_at": at, "content": content})
+
+    transcript = tmp_path / "transcript_full.jsonl"
+    request = (
+        "<USER_REQUEST>\nFix the build\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nlocal time\n</ADDITIONAL_METADATA>"
+    )
+    transcript.write_text(
+        "\n".join(
+            [
+                step(0, "USER_INPUT", "<USER_REQUEST>\nearlier turn\n</USER_REQUEST>"),
+                step(1, "PLANNER_RESPONSE", "earlier reply"),
+                step(2, "USER_INPUT", request),
+                step(3, "SYSTEM_MESSAGE", "injected"),
+                step(4, "PLANNER_RESPONSE", "Running the tests first."),
+                step(5, "PLANNER_RESPONSE", "Fixed: a missing import."),
+            ]
+        )
+    )
+    adapter, _ = _adapter()
+    stop = {
+        "hook_event_name": "Stop",
+        **_COMMON,
+        "transcriptPath": str(transcript),
+        "terminationReason": "NO_TOOL_CALL",
+    }
+
+    asked, replied, turn_end = adapter.handle_payload({**stop, "fullyIdle": True, "error": ""})
+    again, *_ = adapter.handle_payload({**stop, "fullyIdle": True, "error": ""})
+
+    assert isinstance(asked, MessageEvent) and (asked.role, asked.content) == ("user", "Fix the build")
+    assert asked.timestamp == "2026-10-15T10:52:54.000002+00:00"
+    assert again.timestamp == asked.timestamp  # one step, one action id, however often it is read
+    assert isinstance(replied, MessageEvent) and (replied.role, replied.content) == (
+        "assistant",
+        "Fixed: a missing import.",
+    )
+    assert isinstance(turn_end, TurnEndEvent)
+
+
 def test_responses_never_answer_a_permission_decision():
     assert PLUGIN.response_for_payload({"hook_event_name": "PostToolUse"}) == {}
     # Empty PreToolUse output leaves agy's own permission prompt in charge.
@@ -114,12 +155,10 @@ def test_init_writes_a_named_group_with_flat_lifecycle_hooks(tmp_path):
     config = json.loads((agents_dir / "hooks.json").read_text())
     assert config["my-linter"] == {"PostToolUse": []}
     group = config["memgraph-context-graph"]
-    assert set(group) == {"PreInvocation", "PreToolUse", "PostToolUse", "Stop"}
+    assert set(group) == {"SessionStart", "PreToolUse", "PostToolUse", "Stop"}
     assert group["PreToolUse"] == [
         {"hooks": [{"command": "capture --event-name PreToolUse", "type": "command", "timeout": 12}]}
     ]
     # agy rejects a nested entry on a lifecycle event, and with it the whole file.
     assert group["Stop"] == [{"command": "capture --event-name Stop", "type": "command", "timeout": 12}]
-    assert group["PreInvocation"] == [
-        {"command": "capture --event-name PreInvocation", "type": "command", "timeout": 12}
-    ]
+    assert group["SessionStart"] == [{"command": "capture --event-name SessionStart", "type": "command", "timeout": 12}]

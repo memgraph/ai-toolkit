@@ -14,6 +14,9 @@
 #   live-hooks-e2e.sh run     <workdir> [runtime...]   one headless session per runtime
 #   live-hooks-e2e.sh verify  <workdir> [--check] [runtime...]   print (and with
 #                             --check, assert) each session's graph shape
+#   live-hooks-e2e.sh memory  <workdir> [runtime...]   Context Graph as each agent's
+#                             memory: a write, a read in a new session, and the
+#                             next session's start (memory index, last ask)
 #   live-hooks-e2e.sh down    <workdir>          remove the Memgraph container
 #
 # Interactive use: before the first `run`, grant each runtime's project trust
@@ -33,6 +36,17 @@
 #   LIVE_HOOKS_OPENCODE_MODEL     e.g. anthropic/claude-haiku-4-5; `up` writes an
 #                                 OpenCode provider config that reads the key
 #                                 from <PROVIDER>_API_KEY
+#
+# `memory` registers the MCP server the way setup does, but per project or per
+# run, so no agent's user config changes: Claude Code --mcp-config, Codex -c,
+# Copilot --additional-mcp-config, and project files for OpenCode, Antigravity
+# and Grok. Two exceptions need you: Antigravity reads tool permissions only from
+# user config, so it is skipped until `mcp(context-graph/*)` is allowed there
+# (setup antigravity-cli writes it); and Codex loads project hooks only for a
+# trusted project, so its session-start check runs through an installed
+# context-graph plugin, which this checkout's CLI stands in for on PATH. The
+# agent's model matters: OpenCode's default free model often reaches for its
+# own file tools instead of `memory`; set LIVE_HOOKS_OPENCODE_MODEL.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -165,6 +179,107 @@ run_one() {
   [ "$code" -eq 0 ] && [ "$errors" -eq 0 ] && [ "$payloads" -gt 0 ]
 }
 
+#: Each memory run's prompts. The read run's ask is what the next session must quote back.
+WRITE_PROMPT="Use your memory tool to create the file /memories/notes/%s.md containing exactly: The %s e2e codeword is %s. Then reply DONE."
+READ_PROMPT="What is the e2e read codeword? It is saved in my memory. Reply with just the codeword."
+START_PROMPT="Answer only from what you already know, without calling any tools: which memory file paths are in my memory index, and what was the first ask of my last session in this project? Reply NONE if you don't know."
+
+memory_setup() {
+  printf '[memory]\nbackend = "context-graph"\n' >> "$WORK/config.toml"
+  printf '#!/bin/bash\nexec env CONTEXT_GRAPH_CONFIG="%s" "%s" mcp "$@" 2>>"%s"\n' \
+    "$WORK/config.toml" "$CLI" "$WORK/mcp.stderr.log" > "$WORK/mcp.sh"
+  chmod +x "$WORK/mcp.sh"
+  printf '{"mcpServers":{"context-graph":{"command":"%s","args":[]}}}\n' "$WORK/mcp.sh" > "$WORK/claude-mcp.json"
+  printf '{"mcpServers":{"context-graph":{"type":"local","command":"%s","args":[],"tools":["*"]}}}\n' \
+    "$WORK/mcp.sh" > "$WORK/copilot-mcp.json"
+  printf '{"mcpServers":{"context-graph":{"command":"%s","args":[]}}}\n' "$WORK/mcp.sh" \
+    > "$WORK/proj-antigravity-cli/.agents/mcp_config.json"
+  mkdir -p "$WORK/proj-grok/.grok"
+  printf '[mcp_servers.context-graph]\ncommand = "%s"\nargs = ["--session-context"]\n\n[permission]\nallow = ["MCPTool(context-graph__*)"]\n' \
+    "$WORK/mcp.sh" > "$WORK/proj-grok/.grok/config.toml"
+  "$PYTHON" - "$WORK/proj-opencode" "$WORK/mcp.sh" <<'PY'
+import json, pathlib, sys
+project, server = pathlib.Path(sys.argv[1]), sys.argv[2]
+config = project / "opencode.jsonc"
+document = json.loads(config.read_text()) if config.exists() else {"$schema": "https://opencode.ai/config.json"}
+document["mcp"] = {"servers": {"context-graph": {"type": "local", "command": [server], "codemode": False}}}
+document["permissions"] = [{"action": "context-graph_*", "resource": "*", "effect": "allow"}]
+config.write_text(json.dumps(document, indent=2))
+PY
+  CONTEXT_GRAPH_CONFIG="$WORK/config.toml" "$PYTHON" "$(dirname "$0")/memory_check.py" seed
+  touch "$WORK/.memory"
+}
+
+# One headless memory session: the agent CLI with the context-graph server for this run, output to stdout.
+memory_session() {
+  local runtime=$1 prompt=$2
+  local dir="$WORK/proj-$runtime"
+  local -a cmd
+  case "$runtime" in
+    claude-code) cmd=(claude -p "$prompt" --settings "$WORK/claude-code-settings.json" --setting-sources project
+                      --mcp-config "$WORK/claude-mcp.json" --strict-mcp-config
+                      --allowedTools mcp__context-graph__memory mcp__context-graph__recall --output-format text) ;;
+    codex)
+      # Named like the plugin's server, so it replaces an installed plugin's for this run: -c can't approve a
+      # plugin server's tools, and under `codex exec` an approval prompt is a refusal.
+      cmd=(codex exec -s "${LIVE_HOOKS_CODEX_SANDBOX:-read-only}" -c "mcp_servers.context-graph.command=\"$WORK/mcp.sh\""
+           -c 'mcp_servers.context-graph.default_tools_approval_mode="approve"')
+      [ "${LIVE_HOOKS_TRUST_HOOKS:-}" = 1 ] && cmd+=(--dangerously-bypass-hook-trust)
+      cmd+=("$prompt")
+      ;;
+    copilot-cli) cmd=(env COPILOT_ALLOW_ALL=true copilot -p "$prompt" -s --no-auto-update
+                      --additional-mcp-config "@$WORK/copilot-mcp.json" --allow-tool=context-graph) ;;
+    opencode)
+      cmd=(opencode run --standalone)
+      [ -n "${LIVE_HOOKS_OPENCODE_MODEL:-}" ] && cmd+=(-m "$LIVE_HOOKS_OPENCODE_MODEL")
+      cmd+=("$prompt")
+      ;;
+    antigravity-cli) cmd=(agy -p "$prompt" --output-format text --print-timeout 240s) ;;
+    grok) cmd=(env GROK_FOLDER_TRUST=0 grok -p "$prompt") ;;
+    *) echo "unknown runtime: $runtime" >&2; return 1 ;;
+  esac
+  # The checkout's CLI first on PATH: an installed context-graph plugin (Claude Code, Codex, and Grok, which
+  # loads Claude Code's plugins) then runs this checkout too, against CONTEXT_GRAPH_CONFIG's Memgraph.
+  ( cd "$dir" && PATH="$REPO_ROOT/.venv/bin:$PATH" CONTEXT_GRAPH_CONFIG="$WORK/config.toml" "${cmd[@]}" </dev/null 2>&1 )
+}
+
+memory_one() {
+  local runtime=$1
+  local binary
+  case "$runtime" in
+    claude-code) binary=claude ;;
+    copilot-cli) binary=copilot ;;
+    antigravity-cli) binary=agy ;;
+    *) binary=$runtime ;;
+  esac
+  if ! command -v "$binary" >/dev/null 2>&1; then
+    echo "$runtime: skipped ($binary not installed)"
+    return 0
+  fi
+  if [ "$runtime" = antigravity-cli ] \
+    && ! grep -qF 'mcp(context-graph/*)' "$HOME/.gemini/antigravity-cli/settings.json" 2>/dev/null; then
+    echo "$runtime: skipped (allow mcp(context-graph/*) in ~/.gemini/antigravity-cli/settings.json first)"
+    return 0
+  fi
+  local word failed=()
+  word="$(printf '%s' "$runtime" | tr '[:lower:]-' '[:upper:]_')-$RANDOM"
+  # shellcheck disable=SC2059  # the prompt is the format
+  memory_session "$runtime" "$(printf "$WRITE_PROMPT" "$runtime" "$runtime" "$word")" \
+    > "$WORK/memory-$runtime-write.out" || true
+  CONTEXT_GRAPH_CONFIG="$WORK/config.toml" "$PYTHON" "$(dirname "$0")/memory_check.py" written "$runtime" "$word" \
+    || failed+=(write)
+  memory_session "$runtime" "$READ_PROMPT" > "$WORK/memory-$runtime-read.out" || true
+  grep -q QUARTZ-PELICAN "$WORK/memory-$runtime-read.out" || failed+=(read)
+  memory_session "$runtime" "$START_PROMPT" > "$WORK/memory-$runtime-start.out" || true
+  grep -q /memories/notes/seed.md "$WORK/memory-$runtime-start.out" || failed+=(index)
+  grep -q "e2e read codeword" "$WORK/memory-$runtime-start.out" || failed+=(last-ask)
+  if [ "${#failed[@]}" -gt 0 ]; then
+    echo "$runtime: failed ${failed[*]} (outputs: $WORK/memory-$runtime-*.out)"
+    return 1
+  fi
+  echo "$runtime: write, read, index and last ask ok"
+}
+
 case "$command_name" in
   up) up "$@" ;;
   run)
@@ -179,6 +294,16 @@ case "$command_name" in
   verify)
     MEMGRAPH_URL="bolt://localhost:$(port)" MEMGRAPH_USER="" MEMGRAPH_PASSWORD="" MEMGRAPH_DATABASE=memgraph \
       "$PYTHON" "$(dirname "$0")/verify_graph.py" "$@" ;;
+  memory)
+    [ -f "$WORK/.memory" ] || memory_setup
+    targets=("${RUNTIMES[@]}")
+    [ "$#" -gt 0 ] && targets=("$@")
+    failed=()
+    for runtime in "${targets[@]}"; do memory_one "$runtime" || failed+=("$runtime"); done
+    if [ "${#failed[@]}" -gt 0 ]; then
+      echo "failed: ${failed[*]}" >&2
+      exit 1
+    fi ;;
   down) docker rm -f "$container" >/dev/null && echo "removed $container" ;;
   *) echo "unknown command: $command_name" >&2; exit 2 ;;
 esac

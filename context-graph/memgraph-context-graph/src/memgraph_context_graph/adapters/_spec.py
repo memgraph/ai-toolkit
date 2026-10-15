@@ -103,7 +103,10 @@ class RuntimeSpec:
     hook file, and is ignored. ``context_before_tool`` renders the stdout JSON
     that shows the model a line of context before a tool runs, leaving the call
     itself untouched; None where the runtime can't do that without denying or
-    modifying the call.
+    modifying the call. ``session_context`` renders the stdout JSON that puts
+    the session-start text (memory index, where the user left off) in front of
+    the model when ``session_context_event`` fires; None where no hook output
+    reaches the model at session start.
     """
 
     name: str
@@ -119,6 +122,8 @@ class RuntimeSpec:
     foreign_payload_keys: frozenset[str] = frozenset()
     probe_payload: Mapping[str, Any] = field(default_factory=dict)
     context_before_tool: Callable[[str], Mapping[str, Any]] | None = None
+    session_context: Callable[[str], Mapping[str, Any]] | None = None
+    session_context_event: str = "SessionStart"
 
     def event_name(self, payload: Mapping[str, Any]) -> str:
         """Return *payload*'s canonical event name."""
@@ -202,6 +207,11 @@ class SpecAdapter(RuntimeAdapter):
         return ""
 
 
+def hook_specific_session_context(text: str) -> dict[str, Any]:
+    """``SessionStart`` output that adds *text* to the model's context; Claude Code and Codex both read it."""
+    return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}}
+
+
 def pre_tool_use_context(text: str) -> dict[str, Any]:
     """``PreToolUse`` output that adds *text* to the model's context and leaves the call alone.
 
@@ -246,6 +256,21 @@ class SpecPlugin:
         """The stdout JSON that shows the model *text* before a tool runs; None where unsupported."""
         render = self.spec.context_before_tool
         return None if render is None else dict(render(text))
+
+    def session_context_response(
+        self, payload: Mapping[str, Any], text: Callable[[], str | None]
+    ) -> dict[str, Any] | None:
+        """The stdout JSON that shows the model ``text()`` at session start; None for any other payload.
+
+        *text* is only called for this runtime's own session-start payload, since building it queries Memgraph.
+        """
+        render = self.spec.session_context
+        if render is None or self.spec.event_name(payload) != self.spec.session_context_event:
+            return None
+        if self.spec.foreign_payload_keys & payload.keys():
+            return None
+        content = text()
+        return dict(render(content)) if content else None
 
     def build_hooks_config(self, command: str, *, timeout: int = 30) -> dict[str, Any]:
         """Render the runtime's hook map using *command*."""

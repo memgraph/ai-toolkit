@@ -283,15 +283,23 @@ Hooks never read environment variables for these values, and neither does setup:
 
 The hooks write sessions into Memgraph; recall reads them back. With
 sessions-graph installed, `memgraph-context-graph mcp` serves a `recall(question)`
-tool over stdio MCP, and the Codex and Claude Code plugins bundle that server,
-so installing a plugin is all it takes. The tool returns context, not an answer:
+tool over stdio MCP. The Codex and Claude Code plugins bundle that server, so
+installing a plugin is all it takes; for the other agents, `setup` registers it
+in each one's own user-level MCP config (see
+[every agent](#every-agent-registration-switch-and-session-start)). The tool returns context, not an answer:
 the dated messages and facts from the user's own sessions that match the
 question, behind a header with the rules for reading them. The harness's model
 answers from those rows.
 
-At session start the hook adds one line to the model's context saying the tool
-exists. It never pushes retrieved content; the model calls `recall` when a
-question needs memory.
+At session start the hook adds a line to the model's context saying the tool
+exists, then where the user left off in this project: the last session's date,
+agent, first and last ask and last reply, and the first ask of the two before
+it, quoted from captured turns. Sessions from any agent count, so a session in
+Grok picks up where one in Codex stopped. It is a pointer, not a recall result:
+nothing is ranked against a question, and the model still calls `recall` when
+one needs memory. A session's project is its checkout's key (the same one
+memory folders use), recorded when it starts. Turn it off with
+`memgraph-context-graph config set session_start.resume false`.
 
 A connector may also add a line just before a tool runs
 (`GraphConnector.context_before_tool`) — resources-graph's Nudge that what the
@@ -334,8 +342,9 @@ was benchmarked in; the JSON is what `--json` prints.
 
 ### Memory: Context Graph as the harness's memory
 
-Claude Code and Codex each keep their own memory. Context Graph can replace it
-for a user who opts in:
+Every agent `setup` knows can use Context Graph as its memory. Claude Code and
+Codex each keep their own memory, and Context Graph replaces it for a user who
+opts in:
 
 ```bash
 memgraph-context-graph setup claude-code --memory-backend context-graph
@@ -405,6 +414,34 @@ repository shares one folder. Without a remote, the repository's directory
 name is used. See
 [ADR 0006](docs/adr/0006-memory-tool-writes-explicit-memory.md) for why this is
 the one write the model makes over MCP.
+
+#### Every agent: registration, switch and session start
+
+The other five have no plugin, so `setup <runtime>` registers the
+`context-graph` MCP server in the agent's own user-level config: memory belongs
+to the user, not to one project. It adds the server's tools to the agent's
+persistent allow-list where it keeps one, because a headless run refuses a tool
+that needs approval. `--memory-backend context-graph` then turns the agent's
+own memory off, and `uninstall` undoes both. Every edited file keeps the rest of
+its content and is backed up once to `<name>.context-graph.bak`.
+
+| Agent | Built-in memory, and the switch | Server registered in | Session-start text reaches the model through |
+|---|---|---|---|
+| Claude Code | auto memory; `autoMemoryEnabled: false` | the plugin | `SessionStart` `additionalContext` |
+| Codex | memories; three keys in `config.toml` | the plugin | `SessionStart` `additionalContext` (~2,500-token cap) |
+| Copilot CLI | Copilot Memory (on GitHub, not importable); `"memory": false` in `~/.copilot/settings.json` | `~/.copilot/mcp-config.json` (no allow-list: approve once, or `--allow-tool=context-graph`) | `sessionStart` top-level `additionalContext` |
+| Cursor | none (Memories was removed) | `~/.cursor/mcp.json`; allow `Mcp(context-graph:*)` in `~/.cursor/cli-config.json` | `sessionStart` `additional_context` (the IDE's agent window can drop it; untested here) |
+| OpenCode | none | `mcp.servers` in `~/.config/opencode/opencode.json`, `codemode: false`; an allow rule in `permissions` | the plugin's `context` hook, added to the system prompt of every request |
+| Antigravity CLI | none (Knowledge is off in the CLI) | `~/.gemini/config/mcp_config.json`; allow `mcp(context-graph/*)` in `~/.gemini/antigravity-cli/settings.json` | `SessionStart` `injectSteps` system message |
+| Grok Build | topic notes under `~/.grok/memory-v2/`, imported to `/memories/grok/`; `[memory_v2] enabled = false` | `~/.grok/config.toml`; allow `MCPTool(context-graph__*)` | the MCP server's `instructions` (`mcp --session-context`): Grok's start hooks can't reach the model |
+
+Antigravity's hooks carry no prompt or reply text, so its turns are read from
+the transcript its `Stop` payload points at; that is what gives its sessions a
+place in recall and in the next session's "where you left off".
+
+`live-hooks-e2e.sh memory` checks this against each installed agent: a memory
+written, one read back in a new session, and the next session's index and last
+ask.
 
 ### Codex and Claude Code Plugins
 

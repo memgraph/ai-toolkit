@@ -104,7 +104,7 @@ def test_session_start_hook_output_carries_the_index(graph, tmp_path, monkeypatc
     """The SessionStart hook as a harness runs it, for an opted-in user in a git checkout."""
     pytest.importorskip("memgraph_context_graph")
     from memgraph_context_graph.adapters import _identity
-    from memgraph_context_graph.hooks.runner import session_start_context
+    from memgraph_context_graph.hooks.runner import session_start_text
 
     monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "config.toml"))
     _identity._reset_cache()
@@ -118,7 +118,9 @@ def test_session_start_hook_output_carries_the_index(graph, tmp_path, monkeypatc
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
     graph.memory_store("alice").create("/memories/projects/ai-toolkit/plan.md", "---\ndescription: The plan\n---\n")
 
-    context = session_start_context(["sessions-graph"], {"cwd": str(repo)})["hookSpecificOutput"]["additionalContext"]
+    context = session_start_text(["sessions-graph"], {"cwd": str(repo)})
+
+    assert context is not None
 
     assert "Current project folder: /memories/projects/ai-toolkit/" in context
     assert "- /memories/projects/ai-toolkit/plan.md — The plan" in context

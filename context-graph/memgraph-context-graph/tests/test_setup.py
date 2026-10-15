@@ -142,7 +142,7 @@ def test_plan_changes_nothing_and_names_every_step(fake_agents, setup_home, proj
     out = capsys.readouterr().out
     assert "Memgraph: use one on localhost:7687, else start the context-graph-memgraph container" in out
     assert "Identity: identity.user_id = bob" in out
-    assert f"Cursor: wire {project.resolve()}" in out
+    assert f"Cursor: register the memory tools (user-wide) and wire {project.resolve()}" in out
     assert "Claude Code: install the Context Graph plugin (user-wide)" in out
     assert fake_agents.of("claude")["calls"] == [["plugin", "list", "--json"]]  # looked, changed nothing
     assert not (project / ".cursor").exists()
@@ -152,7 +152,9 @@ def test_plan_changes_nothing_and_names_every_step(fake_agents, setup_home, proj
 def test_a_per_project_agent_without_a_project_is_skipped_not_failed(monkeypatch, setup_home, capsys):
     monkeypatch.chdir(setup_home)
     assert main(["setup", "--plan", "cursor"]) == 0
-    assert "Cursor: skipped, no project directory (pass --project-dir)" in capsys.readouterr().out
+    assert "Cursor: register the memory tools (user-wide); no project to record (pass --project-dir)" in (
+        capsys.readouterr().out
+    )
 
 
 def test_unknown_runtime_is_a_usage_error(capsys):
@@ -317,7 +319,7 @@ def test_a_per_project_agent_asks_which_projects(fake_agents, setup_home, projec
     assert choices.runtimes == ["claude-code", "cursor"]
     assert choices.project_dirs == [project.resolve()]
     assert choices.memory_backend == "context-graph"
-    assert f"Cursor: wire {project.resolve()}" in term.text
+    assert f"Cursor: register the memory tools (user-wide) and wire {project.resolve()}" in term.text
 
 
 def test_saying_no_or_ctrl_c_changes_nothing(fake_agents, setup_home, project, monkeypatch):
@@ -540,7 +542,7 @@ def test_the_last_screen_says_what_to_expect_and_only_what_applies():
 
     text = "\n".join(engine.next_steps(choices, env))
 
-    assert "Claude Code and Codex remember through the graph now." in text
+    assert "Claude Code, Codex and Grok Build remember through the graph now." in text
     assert "memgraph-context-graph ui" in text
     assert "in Codex, open it and accept its hooks" in text
     assert "in Grok, run /hooks-trust" in text
