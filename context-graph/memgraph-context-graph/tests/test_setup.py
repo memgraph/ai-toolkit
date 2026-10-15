@@ -565,6 +565,7 @@ def test_every_line_of_the_welcome_and_the_last_screen_fits_a_narrow_terminal():
         assert len(line) <= 78, line
 
 
+
 def test_a_listing_that_fails_once_does_not_make_a_wired_agent_look_unwired(monkeypatch):
     listing = json.dumps([{"id": agents.PLUGIN_ID}])
     replies = iter(
@@ -578,3 +579,41 @@ def test_a_listing_that_fails_once_does_not_make_a_wired_agent_look_unwired(monk
     monkeypatch.setattr(agents.shutil, "which", lambda name: f"/bin/{name}")
 
     assert agents.plugin_wired(BY_RUNTIME["claude-code"])
+
+def test_codex_wiring_lets_recall_through_a_never_policy_and_unwiring_takes_it_back(fake_agents, setup_home):
+    import tomlkit
+
+    config = setup_home / ".codex" / "config.toml"
+    config.parent.mkdir()
+    config.write_text('approval_policy = "never"\n\n[features]\nhooks = true\n')
+    codex = BY_RUNTIME["codex"]
+
+    agents.wire_plugin(codex, lambda _: None)
+    agents.wire_plugin(codex, lambda _: None)
+
+    parsed = tomlkit.parse(config.read_text()).unwrap()
+    assert parsed["plugins"][agents.PLUGIN_ID]["mcp_servers"]["context-graph"] == {
+        "default_tools_approval_mode": "approve"
+    }
+    assert parsed["approval_policy"] == "never" and parsed["features"] == {"hooks": True}
+
+    agents.unwire_plugin(codex, lambda _: None)
+
+    assert tomlkit.parse(config.read_text()).unwrap() == {"approval_policy": "never", "features": {"hooks": True}}
+
+
+def test_codex_wiring_keeps_an_approval_mode_the_user_chose(fake_agents, setup_home):
+    import tomlkit
+
+    config = setup_home / ".codex" / "config.toml"
+    config.parent.mkdir()
+    config.write_text(
+        f'[plugins."{agents.PLUGIN_ID}".mcp_servers.context-graph]\ndefault_tools_approval_mode = "prompt"\n'
+    )
+
+    agents.wire_plugin(BY_RUNTIME["codex"], lambda _: None)
+    agents.unwire_plugin(BY_RUNTIME["codex"], lambda _: None)
+
+    mode = tomlkit.parse(config.read_text()).unwrap()["plugins"][agents.PLUGIN_ID]["mcp_servers"]["context-graph"]
+    assert mode == {"default_tools_approval_mode": "prompt"}
+

@@ -41,7 +41,7 @@ The plugin also bundles an MCP server, `memgraph-context-graph mcp` (see `.mcp.j
 Two Codex specifics:
 
 - **Hooks need trust.** Codex runs a plugin's hooks only after you trust them in the startup review (or `/hooks`); until then nothing is recorded and the session-start line isn't added. `codex exec` never asks, so for unattended runs pass `--dangerously-bypass-hook-trust` or trust them once interactively.
-- **Recall asks for approval** on each call, like any MCP tool. To allow it without asking, add to `~/.codex/config.toml`:
+- **Recall runs without asking.** Setup allows the plugin's MCP tools in `~/.codex/config.toml`, because under `approval_policy = "never"` an approval prompt is a refusal and `recall` would fail. Uninstalling removes the entry. To be asked each time, set `default_tools_approval_mode = "prompt"` there; setup keeps a mode you chose:
 
   ```toml
   [plugins."context-graph@context-graph-plugins".mcp_servers.context-graph]

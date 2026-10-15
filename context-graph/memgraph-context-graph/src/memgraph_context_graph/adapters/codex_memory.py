@@ -126,6 +126,58 @@ class CodexMemory:
         return report
 
 
+def allow_plugin_tools(home: Path, plugin_id: str) -> list[str]:
+    """Let the plugin's MCP tools run without a prompt, unless the user already set a mode for them.
+
+    Codex asks before every MCP tool call, and under ``approval_policy = "never"`` an ask is a refusal, so
+    ``recall`` would fail for exactly the users who turned prompts off. The tools are read-only over the user's
+    own memory (``memory`` writes only ``/memories`` files), which is what ``approve`` is for.
+
+    Raises:
+        MemoryBackendError: the config file isn't valid TOML.
+    """
+    path = _config_path(home)
+    config = _read(path)
+    server = _plugin_server(config, plugin_id, create=True)
+    if "default_tools_approval_mode" in server:
+        return [f"Unchanged {path}"]
+    server["default_tools_approval_mode"] = "approve"
+    return _write(path, config)
+
+
+def disallow_plugin_tools(home: Path, plugin_id: str) -> list[str]:
+    """Drop what :func:`allow_plugin_tools` wrote, leaving the rest of the plugin's table as the user has it."""
+    path = _config_path(home)
+    if not path.exists():
+        return []
+    config = _read(path)
+    server = _plugin_server(config, plugin_id, create=False)
+    if server is None or server.get("default_tools_approval_mode") != "approve":
+        return []
+    del server["default_tools_approval_mode"]
+    plugin = config["plugins"][plugin_id]
+    if not server:
+        del plugin["mcp_servers"][_SERVER]
+    if not plugin["mcp_servers"]:
+        del plugin["mcp_servers"]
+    if not plugin:
+        del config["plugins"][plugin_id]
+    return _write(path, config)
+
+
+def _plugin_server(config: Any, plugin_id: str, *, create: bool) -> Any:
+    import tomlkit
+
+    node = config
+    for key in ("plugins", plugin_id, "mcp_servers", _SERVER):
+        if key not in node:
+            if not create:
+                return None
+            node[key] = tomlkit.table(is_super_table=key != _SERVER)
+        node = node[key]
+    return node
+
+
 def _codex_home(home: Path) -> Path:
     override = os.environ.get("CODEX_HOME")
     return Path(override) if override else home / ".codex"
