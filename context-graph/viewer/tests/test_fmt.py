@@ -47,7 +47,7 @@ def test_ago_and_duration():
 def test_bar_places_the_span_within_the_window():
     start, end = NOW, NOW + timedelta(seconds=100)
     assert fmt.bar(start + timedelta(seconds=50), end, start, end, width=10) == "     █████"
-    assert fmt.bar(start, None, start, end, width=10) == "▏"
+    assert fmt.bar(start, None, start, end, width=10) == "▌"
     assert fmt.bar(None, None, start, end, width=10) == ""
 
 
@@ -70,3 +70,15 @@ def test_action_label_prefers_the_tools_self_description():
 def test_project_name():
     assert fmt.project_name("/work/billing/") == "billing"
     assert fmt.project_name(None) == "—"
+
+
+def test_session_ids_are_cut_only_as_far_as_it_takes_to_tell_them_apart():
+    codex = ["01a13c3e-aaaa", "01a13c3e-bbbb", "01a13a69-cccc"]
+    assert fmt.id_width(codex) == 10
+    assert fmt.id_width(["6142ffe9-1", "01a13eef-2"]) == 8
+    assert fmt.id_width([]) == 8
+
+
+def test_a_path_is_cut_from_the_left_so_its_own_name_survives():
+    assert fmt.clip_start("/a/very/long/path/to/billing", 14) == "…th/to/billing"
+    assert fmt.clip_start("/short", 14) == "/short"

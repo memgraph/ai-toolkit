@@ -11,7 +11,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Input, Static, Tree
 
-from . import fmt, queries
+from . import fmt, queries, theme
 from .base import Pane, PolledScreen, cursor_key, sync_table
 
 if TYPE_CHECKING:
@@ -68,20 +68,20 @@ def provenance_text(focus: queries.Focus, prov: dict[str, Any]) -> Text:
     Graph text is appended as plain text, never parsed as markup: source spans hold ``[``, ``]`` and ``\\``.
     """
     out = Text()
-    out.append(focus.label, style="bold").append(f"  {prov.get('type') or ''}", style="dim")
+    out.append(focus.label, style="bold").append(f"  {prov.get('type') or ''}", style=theme.MUTED)
     if len(focus.keys) > 1:
-        out.append(f"  ({len(focus.keys)} nodes with this name)", style="dim")
+        out.append(f"  ({len(focus.keys)} nodes with this name)", style=theme.MUTED)
     out.append("\n")
     if prov.get("description"):
         out.append(fmt.clip(prov["description"], 400) + "\n")
     sessions = prov.get("sessions", [])
     out.append(f"\nsessions in scope ({len(sessions)})", style="bold")
-    out.append("  provenance is per session", style="dim")
+    out.append("  provenance is per session", style=theme.MUTED)
     for s in sessions[:8]:
         out.append(f"\n▸ {s['session'][:8]}  {str(s['reconciled_at'] or '')[:10]}  {fmt.project_name(s['wd'])}")
-        out.append(f"  chunks {s['chunks']}", style="dim")
+        out.append(f"  chunks {s['chunks']}", style=theme.MUTED)
     if not sessions:
-        out.append("\nnone in the current scope · a on the dashboard widens it", style="dim")
+        out.append("\nnone in the current scope · a on the dashboard widens it", style=theme.MUTED)
     if prov.get("memories"):
         out.append(f"\n\nmemory files ({len(prov['memories'])})", style="bold")
         for path in prov["memories"][:8]:
@@ -103,13 +103,25 @@ def evidence_text(focus: queries.Focus, row: dict[str, Any]) -> Text:
         facts.append(f"keywords {row['keywords']}")
     if row["created"]:
         facts.append(str(row["created"])[:16])
-    out.append("\n" + " · ".join(facts) + "\n", style="dim")
+    out.append("\n" + " · ".join(facts) + "\n", style=theme.MUTED)
     if row["nonconformant"]:
-        out.append("outside the ontology's domain or range\n", style="red")
+        out.append("outside the ontology's domain or range\n", style=theme.BAD)
     out.append("\nevidence\n", style="bold")
     parts = str(row["evidence"] or "—").replace("\\n", "\n").split("<SEP>")
     out.append(fmt.clip("\n".join(f"• {part.strip()}" for part in parts), 800) if len(parts) > 1 else parts[0][:800])
-    out.append("\n\nenter refocuses here · esc goes back", style="dim")
+    out.append("\n\nenter refocuses here · esc goes back", style=theme.MUTED)
+    return out
+
+
+def empty_entities_text(*, has_entities: bool) -> Text:
+    """What to show where an entity's provenance would be, when there is no entity to select."""
+    if has_entities:
+        return Text("No entity matches the filter.", style=theme.MUTED)
+    out = Text("No entities yet.\n\n", style=theme.STRONG)
+    out.append("Sessions are captured as they happen. Entities come from reconcile, which reads a session's text ")
+    out.append("and extracts them locally, with no LLM key. It needs the ")
+    out.append("sessions-graph[reconciliation]", style=theme.ACCENT)
+    out.append(" extra. The dashboard's Pipeline pane shows how many sessions are waiting for it.")
     return out
 
 
@@ -184,6 +196,8 @@ class EntityListScreen(PolledScreen[list[dict[str, Any]]]):
             for e in shown
         ]
         sync_table(self.query_one("#entities", DataTable), columns, cells)
+        if not shown:
+            self.query_one("#prov", Static).update(empty_entities_text(has_entities=bool(rows)))
         self.draw_status()
 
     def status_note(self) -> str:
@@ -359,16 +373,18 @@ class NeighbourhoodScreen(PolledScreen[Neighbourhood]):
             node = tree.root.add(Text(f"{name} ({len(members)})"), expand=len(groups) <= 6)
             members.sort(key=lambda row: -strength(row))
             for row in members[:PER_GROUP]:
-                label = Text(fmt.clip(row["label"], 40)).append(f"  {row['type'] or ''}", style="dim")
+                label = Text(fmt.clip(row["label"], 40)).append(f"  {row['type'] or ''}", style=theme.MUTED)
                 if row["confidence"] is not None:
-                    label.append(f"  {strength(row):.2f}", style="dim")
+                    label.append(f"  {strength(row):.2f}", style=theme.MUTED)
                 if on_path & set(row["keys"]):
-                    label.append("  ↺ on path", style="yellow")
+                    label.append("  ↺ on path", style=theme.WARN)
                 if row["nonconformant"]:
-                    label.append("  ✕ off-ontology", style="red")
+                    label.append("  ✕ off-ontology", style=theme.BAD)
                 node.add_leaf(label, data=row)
             if len(members) > PER_GROUP:
-                node.add_leaf(Text(f"… {len(members) - PER_GROUP} more (v shows them all as a table)", style="dim"))
+                node.add_leaf(
+                    Text(f"… {len(members) - PER_GROUP} more (v shows them all as a table)", style=theme.MUTED)
+                )
         tree.root.expand()
 
     def _fill_table(self) -> None:
@@ -387,7 +403,7 @@ class NeighbourhoodScreen(PolledScreen[Neighbourhood]):
                     fmt.clip(row["label"], 32) + (" ↺" if on_path & set(row["keys"]) else ""),
                     row["type"] or "—",
                     f"{strength(row):.2f}" if (row["confidence"] is not None or row["weight"] is not None) else "",
-                    Text(fmt.clip(row["evidence"] or "", 60), style="red" if row["nonconformant"] else ""),
+                    Text(fmt.clip(row["evidence"] or "", 60), style=theme.BAD if row["nonconformant"] else ""),
                 ],
             )
             for i, row in enumerate(self._shown)

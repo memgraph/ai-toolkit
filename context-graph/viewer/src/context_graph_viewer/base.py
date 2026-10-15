@@ -11,7 +11,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Static
 from textual.worker import get_current_worker
 
-from . import fmt
+from . import fmt, theme
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -39,14 +39,14 @@ class ViewStatus(Static):
         """Redraw for the view's latest poll outcome."""
         line = Text()
         if error:
-            line.append("⚠ ", style="bold red").append(fmt.clip(error, 160), style="red")
-            line.append(f"  · data from {fmt.ago(last_ok, now)}" if last_ok else "  · no data yet", style="dim")
+            line.append("✕ ", style=theme.BAD_STRONG).append(fmt.clip(error, 160), style=theme.BAD)
+            line.append(f"  · data from {fmt.ago(last_ok, now)}" if last_ok else "  · no data yet", style=theme.MUTED)
         elif last_ok is None:
-            line.append("… loading", style="dim")
+            line.append("… loading", style=theme.MUTED)
         else:
-            line.append("● ", style="green").append(f"live · updated {fmt.ago(last_ok, now)}", style="dim")
+            line.append("● ", style=theme.OK).append(f"live · updated {fmt.ago(last_ok, now)}", style=theme.MUTED)
         if note:
-            line.append(f"  · {note}", style="dim")
+            line.append(f"  · {note}", style=theme.MUTED)
         self.update(line)
 
 
@@ -79,7 +79,7 @@ class PolledScreen(Screen[None], Generic[T]):
 
     def compose(self) -> ComposeResult:
         """Header, the view's own body, its status line, and the key footer."""
-        yield Header()
+        yield Header(icon="")
         yield from self.compose_body()
         yield ViewStatus(id="view-status")
         yield Footer()

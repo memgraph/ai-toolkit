@@ -12,7 +12,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Static, Tree
 
-from . import fmt, queries
+from . import fmt, queries, theme
 from .base import Pane, PolledScreen
 from .failures import session_failures
 
@@ -44,10 +44,10 @@ def action_line(
     took = fmt.duration(start, end) or ("…" if action["type"] == "tool_call" else "")
     line = Text(f"{fmt.action_label(action, LABEL_WIDTH):<{LABEL_WIDTH}} {took:>7}")
     if action["result_error"] is True or action["is_error"] is True:
-        line.append(" ✕", style="red")
+        line.append(" ✕", style=theme.BAD)
     if marks := touch_marker(touches):
-        line.append(f" {marks}", style="magenta")
-    return line.append(" ").append(fmt.bar(start, end, *window, width=BAR_WIDTH), style="cyan")
+        line.append(f" {marks}", style=theme.TOUCH)
+    return line.append(" ").append(fmt.bar(start, end, *window, width=BAR_WIDTH), style=theme.ACCENT)
 
 
 def time_window(anatomy: queries.SessionAnatomy) -> tuple[datetime | None, datetime | None]:
@@ -65,10 +65,10 @@ def agent_line(agent: dict[str, Any], count: int, spawned: bool) -> Text:
     """A subagent's folding row."""
     line = Text("▾ subagent ", style="bold").append(str(agent["type"] or agent["id"]), style="bold")
     if agent["description"]:
-        line.append(f"  {fmt.clip(agent['description'], 40)}", style="dim")
+        line.append(f"  {fmt.clip(agent['description'], 40)}", style=theme.MUTED)
     line.append(f"  ({count} actions)")
     if not spawned:
-        line.append("  spawning call unknown", style="dim")
+        line.append("  spawning call unknown", style=theme.MUTED)
     return line
 
 
@@ -109,7 +109,7 @@ def build_timeline(tree: Tree[Any], anatomy: queries.SessionAnatomy) -> None:
     session = anatomy.session
     root_label = Text(f"session {session['id'][:8]}", style="bold")
     root_label.append(f"  ·  {len(anatomy.actions)} actions  ·  {fmt.project_name(session['wd'])}")
-    root_label.append(f"  ·  {session['status'] or '—'}", style="dim")
+    root_label.append(f"  ·  {session['status'] or '—'}", style=theme.MUTED)
     tree.root.set_label(root_label)
     tree.root.data = None
     add_actions(tree.root, by_agent.get(None, []))
@@ -136,11 +136,11 @@ def action_details(action: dict[str, Any], touches: list[dict[str, Any]] | None)
     out.append(f"took {took or '—'}\n")
     out.append(f"in   {action['agent_id'] or 'main agent'}\n")
     if action["result_error"] is True:
-        out.append("result was an error\n", style="red")
+        out.append("result was an error\n", style=theme.BAD)
     for touch in touches or []:
         source = "served from memory" if touch["from_memory"] is True else "live"
-        out.append(f"touched {touch['kind'] or 'resource'} {touch['address']}", style="magenta")
-        out.append(f" · {touch['status']} · {source}\n", style="dim")
+        out.append(f"touched {touch['kind'] or 'resource'} {touch['address']}", style=theme.TOUCH)
+        out.append(f" · {touch['status']} · {source}\n", style=theme.MUTED)
     if action["type"] == "tool_call":
         out.append("\ninput\n", style="bold")
         out.append(json.dumps(fmt.tool_input(action["props"]), indent=1, ensure_ascii=False)[:1500])
@@ -168,18 +168,18 @@ def produced_text(anatomy: queries.SessionAnatomy, failures: list[Failure]) -> T
     out.append(f"  ·  backend {p.get('backend') or '—'}  ·  ontology {'—' if version is None else f'v{version}'}")
     out.append(f"  ·  embeddings {p.get('estatus') or '—'}\n")
     out.append(f"chunks {p.get('chunks', 0)}  ·  entities {p.get('entity_count', 0)}  ")
-    out.append(fmt.clip(", ".join(str(e) for e in p.get("entities") or [] if e), 160), style="dim")
+    out.append(fmt.clip(", ".join(str(e) for e in p.get("entities") or [] if e), 160), style=theme.MUTED)
     if p.get("memories"):
         out.append("\nmemory files written: " + ", ".join(str(m) for m in p["memories"]))
     for kind, error in (("reconcile", p.get("rerror")), ("re-extract", p.get("reerror")), ("embed", p.get("eerror"))):
         if error and (kind != "reconcile" or p.get("rstatus") == "failed"):
-            out.append(f"\n✕ {kind}: ", style="red").append(fmt.clip(error, 200))
+            out.append(f"\n✕ {kind}: ", style=theme.BAD).append(fmt.clip(error, 200))
     if anatomy.loose_touches:
-        out.append(f"\n{len(anatomy.loose_touches)} touch(es) not matched to an action", style="dim")
+        out.append(f"\n{len(anatomy.loose_touches)} touch(es) not matched to an action", style=theme.MUTED)
     if failures:
         latest = failures[0]
-        out.append(f"\n✕ {len(failures)} capture failure(s) in the last 24h", style="bold red")
-        out.append(f", latest {latest.stage}/{latest.connector or '—'} {latest.error_type}: ", style="red")
+        out.append(f"\n✕ {len(failures)} capture failure(s) in the last 24h", style=theme.BAD_STRONG)
+        out.append(f", latest {latest.stage}/{latest.connector or '—'} {latest.error_type}: ", style=theme.BAD)
         out.append(fmt.clip(latest.error, 120))
     return out
 
@@ -218,7 +218,9 @@ class SessionScreen(PolledScreen[SessionView]):
                     yield Static(id="produced")
             with Pane(id="details-pane", classes="pane") as pane:
                 pane.border_title = "2 Details"
-                yield Static(id="details")
+                yield Static(
+                    Text("Move along the timeline to see what each action did.", style=theme.MUTED), id="details"
+                )
 
     def on_mount(self) -> None:
         """Focus the timeline."""
@@ -240,7 +242,7 @@ class SessionScreen(PolledScreen[SessionView]):
         """Rebuild the timeline only when it changed, keeping the cursor on the same node."""
         anatomy = data.anatomy
         if anatomy is None:
-            self.query_one("#produced", Static).update(Text("This session is not in the graph.", style="yellow"))
+            self.query_one("#produced", Static).update(Text("This session is not in the graph.", style=theme.WARN))
             return
         signature = timeline_signature(anatomy)
         if signature != self._signature:
