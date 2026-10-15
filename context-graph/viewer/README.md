@@ -50,6 +50,13 @@ uv tool install "memgraph-context-graph[mcp]" \
 | `?` | All keys |
 | `esc` / `q` | Back / quit |
 
+## Look
+
+The viewer opens in Memgraph's brand: black surface, white text, grays for borders, and orange for focus, the
+selected row, key hints and the timeline bars. Yellow, red and green appear only for warning, error and success.
+The palette lives in `context_graph_viewer/theme.py`, and a test keeps views from naming a colour of their own.
+`ctrl+p` opens Textual's command palette, where any built-in theme can replace it.
+
 ## Scope
 
 By default you see your own sessions: `identity.user_id` in Community, your Memgraph login in Enterprise. Sessions

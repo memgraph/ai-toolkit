@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from rich.text import Text
 
-from . import fmt
+from . import fmt, theme
 
 if TYPE_CHECKING:
     from memgraph_context_graph.capture_log import Failure, FailureGroup
@@ -37,20 +37,20 @@ class Failures:
     def describe(self, now: datetime) -> list[Text]:
         """Lines for the health pane. Never claims "no failures" when the log can't be read."""
         if self.unavailable:
-            return [Text("capture-failure log: ", style="dim").append(self.unavailable, style="yellow")]
+            return [Text("capture-failure log: ", style=theme.MUTED).append(self.unavailable, style=theme.WARN)]
         if not self.groups:
-            return [Text("no capture failures in the last 24h", style="green")]
+            return [Text("no capture failures in the last 24h", style=theme.OK)]
         last = max(group.last_at for group in self.groups)
         lines = [
-            Text(f"{self.total} capture failure(s) in the last 24h", style="bold red").append(
+            Text(f"{self.total} capture failure(s) in the last 24h", style=theme.BAD_STRONG).append(
                 f", last {fmt.ago(last, now)}"
             )
         ]
         for group in self.groups[:3]:
             where = "/".join(part for part in (group.stage, group.connector) if part)
-            line = Text(f"  {where} {group.error_type} ×{group.count}  ", style="red")
-            lines.append(line.append(fmt.clip(group.last_error, 70), style="dim"))
-        lines.append(Text(f"  log: {self.path}", style="dim"))
+            line = Text(f"  {where} {group.error_type} ×{group.count}  ", style=theme.BAD)
+            lines.append(line.append(fmt.clip(group.last_error, 70), style=theme.MUTED))
+        lines.append(Text(f"  log: {self.path}", style=theme.MUTED))
         return lines
 
 

@@ -6,7 +6,10 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import PurePath
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 _FRACTION = re.compile(r"(\.\d{6})\d+")
 
@@ -62,7 +65,24 @@ def bar(start: datetime | None, end: datetime | None, t0: datetime | None, t1: d
     span = (t1 - t0).total_seconds()
     left = int((start - t0).total_seconds() / span * width)
     right = int(((end or start) - t0).total_seconds() / span * width)
-    return " " * left + ("█" * max(right - left, 0) or "▏")
+    return " " * left + ("█" * max(right - left, 0) or "▌")
+
+
+def id_width(ids: Sequence[str], least: int = 8) -> int:
+    """How many leading characters of each id tell them apart, never fewer than *least*.
+
+    Codex session ids start with a timestamp, so two sessions started in the same minute share eight characters.
+    """
+    width = least
+    while width < max((len(i) for i in ids), default=0) and len({i[:width] for i in ids}) < len(set(ids)):
+        width += 1
+    return width
+
+
+def clip_start(value: Any, width: int) -> str:
+    """*value* as one line, cut from the left to *width* characters with an ellipsis, for paths."""
+    text = " ".join(str(value if value is not None else "").split())
+    return text if len(text) <= width else "…" + text[-(width - 1) :]
 
 
 def project_name(working_directory: str | None) -> str:

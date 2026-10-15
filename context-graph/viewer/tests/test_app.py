@@ -117,7 +117,7 @@ async def test_a_failed_poll_stays_on_its_own_view(capture, config_file):
         dashboard.action_poll()
         await _settle(pilot)
         assert dashboard.error is not None
-        assert "⚠" in _status(dashboard)
+        assert "✕" in _status(dashboard)
         assert dashboard.query_one("#sessions", DataTable).row_count == 1  # the last good data stays
 
         app.reader = good

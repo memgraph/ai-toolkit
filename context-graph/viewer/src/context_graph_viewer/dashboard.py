@@ -14,7 +14,7 @@ from textual.screen import ModalScreen
 from textual.widgets import DataTable, Input, OptionList, Sparkline, Static
 from textual.widgets.option_list import Option
 
-from . import fmt, queries
+from . import fmt, queries, theme
 from .base import Pane, PolledScreen, cursor_key, sync_table
 from .failures import Failures, recent_failures
 
@@ -28,8 +28,14 @@ if TYPE_CHECKING:
 #: An in-progress session with no event for this long is reported as never ended.
 STALE_AFTER = timedelta(minutes=30)
 GROWTH_DAYS = 14
+#: The picker's path column, cut from the left so the working directory's own name stays.
+PICKER_PATH_WIDTH = 56
 
-_RECONCILE_STYLE = {"completed": ("done", "green"), "failed": ("failed", "red"), "pending": ("pending", "yellow")}
+_RECONCILE_STYLE = {
+    "completed": ("done", theme.OK),
+    "failed": ("failed", theme.BAD),
+    "pending": ("pending", theme.WARN),
+}
 
 
 @dataclass
@@ -42,7 +48,7 @@ class DashboardData:
 
 def reconcile_cell(status: str | None) -> Text:
     """A session's reconciliation status, coloured."""
-    label, style = _RECONCILE_STYLE.get(status or "", ("—", "dim"))
+    label, style = _RECONCILE_STYLE.get(status or "", ("—", theme.MUTED))
     return Text(label, style=style)
 
 
@@ -53,22 +59,22 @@ def session_columns(show_owner: bool) -> list[tuple[str, str]]:
     return [*columns, ("owner", "owner")] if show_owner else columns
 
 
-def session_cells(session: dict[str, Any], now: datetime, show_owner: bool) -> list[Any]:
-    """One sessions-table row."""
+def session_cells(session: dict[str, Any], now: datetime, show_owner: bool, id_width: int = 8) -> list[Any]:
+    """One sessions-table row; *id_width* is how many characters of the id tell the sessions apart."""
     touches = session["touches"] or 0
     open_touches = session["touches_open"] or 0
     cells: list[Any] = [
-        session["id"][:8],
+        session["id"][:id_width],
         fmt.project_name(session["wd"]),
         fmt.ago(fmt.to_datetime(session["last_event"] or session["started"]), now),
         session["actions"],
-        Text(str(session["errors"]), style="red") if session["errors"] else "",
+        Text(str(session["errors"]), style=theme.BAD) if session["errors"] else "",
         reconcile_cell(session["rstatus"]),
         session["chunks"] or "",
-        Text(f"{touches} ({open_touches} open)", style="magenta") if open_touches else (touches or ""),
+        Text(f"{touches} ({open_touches} open)", style=theme.TOUCH) if open_touches else (touches or ""),
     ]
     if show_owner:
-        cells.append(Text("unattributed", style="dim") if session["unattributed"] else str(session["owner"]))
+        cells.append(Text("unattributed", style=theme.MUTED) if session["unattributed"] else str(session["owner"]))
     return cells
 
 
@@ -91,7 +97,7 @@ def health_lines(data: DashboardData, now: datetime) -> list[Text]:
     empty = [s for s in sessions if s["actions"] == 0]
     if empty:
         ids = ", ".join(s["id"][:8] for s in empty[:3])
-        lines.append(Text(f"{len(empty)} session(s) with no actions", style="yellow").append(f" ({ids})"))
+        lines.append(Text(f"{len(empty)} session(s) with no actions", style=theme.WARN).append(f" ({ids})"))
     stale = [
         s
         for s in sessions
@@ -100,13 +106,15 @@ def health_lines(data: DashboardData, now: datetime) -> list[Text]:
         and now - seen > STALE_AFTER
     ]
     if stale:
-        lines.append(Text(f"{len(stale)} session(s) never ended", style="yellow").append(" (no event for 30m+)"))
+        lines.append(Text(f"{len(stale)} session(s) never ended", style=theme.WARN).append(" (no event for 30m+)"))
     errors = sum(s["errors"] for s in sessions)
     if errors:
-        lines.append(Text(f"{errors} failed tool result(s)", style="red").append(" (tool errors, not capture errors)"))
+        lines.append(
+            Text(f"{errors} failed tool result(s)", style=theme.BAD).append(" (tool errors, not capture errors)")
+        )
     open_touches = data.graph.touches.get("pending", 0) + data.graph.touches.get("unresolved", 0)
     if open_touches:
-        lines.append(Text(f"{open_touches} resource touch(es) pending or unresolved", style="yellow"))
+        lines.append(Text(f"{open_touches} resource touch(es) pending or unresolved", style=theme.WARN))
     if data.graph.unattributed:
         lines.append(Text(f"{data.graph.unattributed} unattributed session(s) in the graph · a widens the scope"))
     return lines
@@ -118,7 +126,7 @@ def _counts(label: str, values: Iterable[tuple[str | None, int]]) -> Text:
         counts[value or "not marked"] += n
     line = Text(f"{label}: ")
     if not counts:
-        return line.append("none", style="dim")
+        return line.append("none", style=theme.MUTED)
     for i, (value, n) in enumerate(sorted(counts.items())):
         line.append("  " if i else "").append(f"{value} ").append(str(n), style="bold")
     return line
@@ -129,7 +137,7 @@ def pipeline_lines(data: queries.Dashboard) -> list[Text]:
     rows = data.pipeline
     lines = [
         _counts("sessions", ((r["rstatus"], r["n"]) for r in rows)).append(
-            "  (pending returns after every turn)", style="dim"
+            "  (pending returns after every turn)", style=theme.MUTED
         ),
         _counts("embeddings", ((r["estatus"], r["n"]) for r in rows)),
         _counts("memory files", ((m["status"], 1) for m in data.memories)),
@@ -153,10 +161,10 @@ def pipeline_lines(data: queries.Dashboard) -> list[Text]:
             ("embed", f["eerror"], f["estatus"] == "failed"),
         ):
             if failed:
-                lines.append(Text(f"✕ {f['id'][:8]} {kind} ", style="red").append(fmt.clip(error or "", 70)))
+                lines.append(Text(f"✕ {f['id'][:8]} {kind} ", style=theme.BAD).append(fmt.clip(error or "", 70)))
     for m in data.memories:
         if m["status"] == "failed":
-            lines.append(Text(f"✕ memory {m['path']} ", style="red").append(fmt.clip(m["error"] or "", 50)))
+            lines.append(Text(f"✕ memory {m['path']} ", style=theme.BAD).append(fmt.clip(m["error"] or "", 50)))
     return lines
 
 
@@ -171,9 +179,9 @@ def empty_scope_banner(data: queries.Dashboard, scope: queries.Scope) -> Text | 
     if scope.mode != queries.USER or data.sessions:
         return None
     if scope.user_id is None:
-        text = Text("No user is configured (identity.user_id), so no session is yours. ", style="bold yellow")
+        text = Text("No user is configured (identity.user_id), so no session is yours. ", style=theme.WARN_STRONG)
     else:
-        text = Text(f"No sessions belong to {scope.user_id}. ", style="bold yellow")
+        text = Text(f"No sessions belong to {scope.user_id}. ", style=theme.WARN_STRONG)
     if data.unattributed:
         text.append(f"{data.unattributed} session(s) in the graph have no user: press a to include them.")
     else:
@@ -195,7 +203,12 @@ class ProjectPicker(ModalScreen[str | None]):
     def compose(self) -> Iterable[Widget]:
         """A list of projects with "all projects" first."""
         options = [Option("all projects", id=self.ALL)]
-        options += [Option(Text(f"{fmt.project_name(p)}  ").append(p, style="dim"), id=p) for p in self.projects]
+        options += [
+            Option(
+                Text(f"{fmt.project_name(p)}  ").append(fmt.clip_start(p, PICKER_PATH_WIDTH), style=theme.MUTED), id=p
+            )
+            for p in self.projects
+        ]
         with Vertical(id="picker"):
             yield Static("Narrow to a project", classes="title")
             yield OptionList(*options, id="projects")
@@ -247,7 +260,7 @@ class DashboardScreen(PolledScreen[DashboardData]):
                 with Pane(id="growth-pane", classes="pane") as pane:
                     pane.border_title = "4 Growth"
                     yield Static(id="growth-label")
-                    yield Sparkline([0.0], id="growth")
+                    yield Sparkline([0.0] * GROWTH_DAYS, id="growth")
 
     def on_mount(self) -> None:
         """Hide the filter and banner until needed, focus the table."""
@@ -288,7 +301,8 @@ class DashboardScreen(PolledScreen[DashboardData]):
     def _fill_sessions(self, data: queries.Dashboard, now: datetime) -> None:
         show_owner = self.viewer.scope.mode != queries.USER
         needle = self.query_one("#filter", Input).value
-        rows = [(s["id"], session_cells(s, now, show_owner)) for s in data.sessions if matches(s, needle)]
+        id_width = fmt.id_width([s["id"] for s in data.sessions])
+        rows = [(s["id"], session_cells(s, now, show_owner, id_width)) for s in data.sessions if matches(s, needle)]
         sync_table(self.query_one("#sessions", DataTable), session_columns(show_owner), rows)
 
     def status_note(self) -> str:
