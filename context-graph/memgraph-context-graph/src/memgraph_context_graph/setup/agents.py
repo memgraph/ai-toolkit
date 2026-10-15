@@ -90,6 +90,7 @@ def wire_plugin(agent: Agent, log: Callable[[str], None]) -> str:
     """
     binary = _require(agent)
     if plugin_wired(agent):
+        _allow_recall(agent)
         return "plugin already installed"
     if not _marketplace_registered(agent, binary):
         _stream([binary, "plugin", "marketplace", "add", MARKETPLACE_SOURCE, "--sparse", agent.sparse], log)
@@ -97,6 +98,7 @@ def wire_plugin(agent: Agent, log: Callable[[str], None]) -> str:
         _stream([binary, "plugin", "install", PLUGIN_ID, "-y"], log)
     else:
         _stream([binary, "plugin", "add", PLUGIN_ID], log)
+    _allow_recall(agent)
     return "plugin installed"
 
 
@@ -112,10 +114,24 @@ def unwire_plugin(agent: Agent, log: Callable[[str], None]) -> str:
         verb = "uninstall" if agent.runtime == "claude-code" else "remove"
         _stream([binary, "plugin", verb, PLUGIN_ID], log)
         removed.append("plugin")
+    if agent.runtime == "codex":
+        _codex_memory().disallow_plugin_tools(Path.home(), PLUGIN_ID)
     if _marketplace_registered(agent, binary):
         _stream([binary, "plugin", "marketplace", "remove", MARKETPLACE], log)
         removed.append("marketplace")
     return f"removed the {' and '.join(removed)}" if removed else "wasn't installed"
+
+
+def _allow_recall(agent: Agent) -> None:
+    """Codex refuses an MCP tool that needs approval when its policy is ``never``; recall is read-only, so allow it."""
+    if agent.runtime == "codex":
+        _codex_memory().allow_plugin_tools(Path.home(), PLUGIN_ID)
+
+
+def _codex_memory():
+    from memgraph_context_graph.adapters import codex_memory
+
+    return codex_memory
 
 
 def _marketplace_registered(agent: Agent, binary: str) -> bool:
