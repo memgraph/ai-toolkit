@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -18,6 +20,14 @@ pytest.importorskip("actions_graph")
 pytest.importorskip("sessions_graph")
 
 SOURCE = Path(__file__).parent.parent / "src" / "context_graph_viewer"
+
+
+def test_importing_the_package_does_not_import_textual_before_main_can_set_its_colours():
+    """Textual reads TEXTUAL_COLOR_SYSTEM once, at import; a terminal without truecolor needs it set first."""
+    code = "import sys, context_graph_viewer; print('textual' in sys.modules)"
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+
+    assert result.stdout.strip() == "False"
 
 
 def test_the_viewer_is_the_brands_dark_surface_with_orange_as_its_accent():
