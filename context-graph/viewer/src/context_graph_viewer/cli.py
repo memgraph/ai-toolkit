@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from importlib import metadata
 from typing import TYPE_CHECKING
@@ -30,6 +31,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     from memgraph_context_graph.spaces import SpaceError
+    from memgraph_context_graph.terminal import color_support
+
+    if color_support() != "truecolor":
+        # Textual would otherwise believe COLORTERM and send 24-bit escapes to a terminal that can't read them.
+        # It reads this once, when it is imported, so it has to be set before the app is.
+        os.environ.setdefault("TEXTUAL_COLOR_SYSTEM", "256")
 
     from .app import ViewerApp
     from .source import resolve_identity

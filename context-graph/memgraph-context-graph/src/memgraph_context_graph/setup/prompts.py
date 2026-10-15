@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Protocol
 from memgraph_context_graph.adapters._identity import MEMORY_BACKEND_GRAPH, MEMORY_BACKEND_NATIVE
 from memgraph_context_graph.setup import engine
 from memgraph_context_graph.setup.agents import AGENTS, BY_RUNTIME
+from memgraph_context_graph.terminal import color_support
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
@@ -611,12 +612,7 @@ class StdTerminal:
         if os.name == "nt":
             # An empty os.system call is the usual way to switch on ANSI escapes in a Windows console.
             os.system("")
-        if not sys.stdout.isatty() or os.environ.get("NO_COLOR") is not None:
-            self.color = ""
-        elif os.environ.get("COLORTERM") in ("truecolor", "24bit") or os.environ.get("WT_SESSION"):
-            self.color = "truecolor"
-        else:  # macOS Terminal.app, for one, has 256 colours but no truecolor
-            self.color = "256"
+        self.color = color_support()
         self.columns = shutil.get_terminal_size().columns
 
     def write(self, text: str) -> None:
