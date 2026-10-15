@@ -112,9 +112,10 @@ def _config(argv: list[str]) -> int:
         "ontology.derive": "ontology_derive",
         "github.token": "github_token",
         "memory.backend": "memory_backend",
+        "session_start.resume": "session_resume",
     }
     _SECRET_KEYS = {"memgraph.password", "llm.openai_api_key", "llm.anthropic_api_key", "github.token"}
-    _BOOL_KEYS = {"reconcile.auto_reconcile"}
+    _BOOL_KEYS = {"reconcile.auto_reconcile", "session_start.resume"}
 
     if not argv or argv[0] in {"-h", "--help"}:
         print("usage: memgraph-context-graph config set <key> <value>")
@@ -161,6 +162,10 @@ def _config(argv: list[str]) -> int:
             if config.memory_backend
             else "memory.backend = unset (native)"
         )
+        if config.session_resume is None:
+            print("session_start.resume = unset (defaults to true)")
+        else:
+            print(f"session_start.resume = {'true' if config.session_resume else 'false'}")
         return 0
 
     if action == "set":
@@ -240,16 +245,23 @@ def _config(argv: list[str]) -> int:
 
 
 def _mcp(argv: list[str]) -> int:
-    argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         prog="memgraph-context-graph mcp", description="Serve the registered tools over stdio MCP."
-    ).parse_args(argv)
+    )
+    parser.add_argument(
+        "--session-context",
+        action="store_true",
+        help="send the session-start text (memory index, where you left off) as the server's instructions, "
+        "for an agent whose hooks can't show the model anything at session start (Grok Build)",
+    )
+    args = parser.parse_args(argv)
     try:
         from memgraph_context_graph.mcp_server import serve
     except ImportError as exc:
         print(f"memgraph-context-graph mcp needs the mcp extra: uv tool install 'memgraph-context-graph[mcp]' ({exc})",
               file=sys.stderr)  # fmt: skip
         return 1
-    return serve()
+    return serve(session_context=args.session_context)
 
 
 def _ui(argv: list[str]) -> int:

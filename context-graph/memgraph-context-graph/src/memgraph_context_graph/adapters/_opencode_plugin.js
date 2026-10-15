@@ -25,6 +25,24 @@ function capture(payload) {
   })
 }
 
+// The hook's stdout, parsed: what the hook wants added to the session, or null.
+function ask(payload) {
+  return new Promise((resolve) => {
+    const child = spawn(command[0], command.slice(1), { stdio: ["pipe", "pipe", "inherit"] })
+    let out = ""
+    child.stdout.on("data", (chunk) => (out += chunk))
+    child.on("error", () => resolve(null))
+    child.on("close", () => {
+      try {
+        resolve(out.trim() ? JSON.parse(out) : null)
+      } catch {
+        resolve(null)
+      }
+    })
+    child.stdin.end(JSON.stringify(payload))
+  })
+}
+
 export default {
   id: "memgraph.memgraph-context-graph",
   async setup(ctx) {
@@ -41,6 +59,24 @@ export default {
       if (started.has(sessionID)) return
       started.add(sessionID)
       return capture({ hook_event_name: "session.created", session_id: sessionID, cwd, model })
+    }
+
+    // The session-start text (memory index, where the user left off), asked for once per session. The context
+    // hook runs before every model request and rebuilds the system prompt each time, so it is re-added from
+    // this cache on each one; compaction and title generation build their own requests and get it too.
+    const sessionContext = new Map()
+    const addSessionContext = async (event) => {
+      if (!sessionContext.has(event.sessionID)) {
+        sessionContext.set(
+          event.sessionID,
+          ask({ hook_event_name: "session.context", session_id: event.sessionID, cwd: ctx.location?.directory }),
+        )
+      }
+      const response = await sessionContext.get(event.sessionID)
+      if (typeof response?.system === "string" && response.system) event.system.push({ type: "text", text: response.system })
+    }
+    for (const name of ["context", "compaction", "generate"]) {
+      registrations.push(await ctx.session.hook(name, addSessionContext))
     }
 
     registrations.push(await ctx.session.hook("prompt", async (event) => {

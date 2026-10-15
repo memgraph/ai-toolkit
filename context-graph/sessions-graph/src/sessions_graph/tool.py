@@ -39,6 +39,7 @@ from .memory_index import describe, project_key_for, render_index
 from .memory_store import MemoryCommandError, MemoryStore
 from .models import MEMORY_ROOT, MemoryValidationError, normalize_memory_path
 from .recall import RecallConfig, Recalled, fuse
+from .resume import recent_sessions, render_brief
 
 if TYPE_CHECKING:
     from memgraph_context_graph.adapters._identity import HookConfig
@@ -103,6 +104,27 @@ class RecallTool(_GraphPerConfig):
         "This user's past sessions are in Context Graph memory. When earlier conversations, decisions or "
         "preferences could matter, call the `recall` tool with a question instead of asking the user to repeat them."
     )
+
+    def session_context(self, config: HookConfig, payload: dict[str, Any]) -> str | None:
+        """The recall hint, then where the user left off in this project unless ``[session_start] resume`` is off.
+
+        The project comes from the SessionStart payload's ``cwd``. The brief
+        quotes the last sessions' turns rather than answering a question, so
+        recall itself stays pull-only (#394).
+        """
+        user_id = self._user_id(config)
+        cwd = payload.get("cwd")
+        if not user_id or config.session_resume is False or not isinstance(cwd, str) or not cwd:
+            return self.session_hint
+        sessions = recent_sessions(
+            self._graph_for(config)._db,
+            user_id,
+            project=project_key_for(cwd),
+            cwd=cwd,
+            exclude_session_id=_session_id(payload),
+        )
+        brief = render_brief(sessions)
+        return f"{self.session_hint}\n{brief}" if brief else self.session_hint
 
     def call(self, arguments: dict[str, Any], config: HookConfig) -> ToolResult:
         """Recall what the configured user's sessions hold about ``arguments["question"]``.
@@ -227,7 +249,8 @@ class MemoryTool(_GraphPerConfig):
     }
     session_hint = (
         "This user's long-term memory is in Context Graph, not in local memory files: use the `memory` tool "
-        "to view /memories before work that could depend on earlier sessions, and to save what you learn."
+        "of the context-graph MCP server (some agents list it as `context-graph_memory`) to view /memories "
+        "before work that could depend on earlier sessions, and to save what you learn."
     )
 
     def session_context(self, config: HookConfig, payload: dict[str, Any]) -> str | None:
@@ -390,6 +413,14 @@ def _config_path() -> str:
     from memgraph_context_graph.adapters._identity import config_file
 
     return str(config_file())
+
+
+def _session_id(payload: dict[str, Any]) -> str | None:
+    """The starting session's id, under whichever key the runtime sends it."""
+    for key in ("session_id", "sessionId", "conversationId", "conversation_id"):
+        if isinstance(value := payload.get(key), str) and value:
+            return value
+    return None
 
 
 RECALL = RecallTool()

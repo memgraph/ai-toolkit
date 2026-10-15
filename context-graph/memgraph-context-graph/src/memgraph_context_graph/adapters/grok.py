@@ -25,6 +25,7 @@ from memgraph_context_graph.adapters._spec import (
     tool_start,
     turn_end,
 )
+from memgraph_context_graph.adapters.agent_memory import GROK_MEMORY
 from memgraph_context_graph.events import ErrorOccurredEvent, MessageEvent, ToolEndEvent
 
 if TYPE_CHECKING:
@@ -156,4 +157,4 @@ class GrokHooksAdapter(SpecAdapter):
 
 
 init = json_hook_installer(SPEC)
-PLUGIN = SpecPlugin(SPEC, GrokHooksAdapter, init=init)
+PLUGIN = SpecPlugin(SPEC, GrokHooksAdapter, init=init, native_memory=GROK_MEMORY)

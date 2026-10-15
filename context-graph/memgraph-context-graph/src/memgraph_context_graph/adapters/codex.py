@@ -10,6 +10,7 @@ from memgraph_context_graph.adapters._spec import (
     RuntimeSpec,
     SpecAdapter,
     SpecPlugin,
+    hook_specific_session_context,
     pre_tool_use_context,
     session_end,
     session_start,
@@ -80,6 +81,7 @@ SPEC = RuntimeSpec(
     ),
     responses={"Stop": {"continue": True}},
     context_before_tool=pre_tool_use_context,
+    session_context=hook_specific_session_context,
     probe_payload={"hook_event_name": "Stop", "session_id": "doctor"},
 )
 

@@ -1,4 +1,4 @@
-"""Undo setup's wiring: plugins, project hook files, and the memory switch. Never data (#533).
+"""Undo setup's wiring: plugins, project hook files, MCP registrations, and the memory switch. Never data (#533).
 
 The graph, the config file and the uv tool stay. :func:`leftovers` prints how to remove them, because
 removing a graph is not something to do as a side effect.
@@ -65,6 +65,8 @@ def _unwire(agent: agents_mod.Agent, project_dirs: Sequence[Path], log: Callable
         if agent.wiring == "plugin":
             return Outcome(agent.label, "ok", agents_mod.unwire_plugin(agent, log))
         removed = [str(path) for path in project_dirs if agents_mod.unwire_project(agent, path)]
+        if agents_mod.unregister_mcp(agent, log):
+            removed.append("the memory tools")
     except agents_mod.WiringError as exc:
         return Outcome(agent.label, "fail", str(exc), fix=f"memgraph-context-graph uninstall {agent.runtime}")
     if not removed:
@@ -87,6 +89,8 @@ def _memory_back(agent: agents_mod.Agent) -> Outcome | None:
         lines = native.enable(home)
     except MemoryBackendError as exc:
         return Outcome(f"{agent.label} memory", "fail", str(exc))
+    if not lines:  # An agent with no memory of its own: nothing came back on.
+        return None
     return Outcome(f"{agent.label} memory", "ok", "its own memory is back on", lines=tuple(lines))
 
 
@@ -99,10 +103,12 @@ def _config_back(runtimes: Sequence[str]) -> Outcome | None:
     remaining = [
         agent
         for agent in agents_mod.AGENTS
-        if agent.wiring == "plugin"
-        and agent.runtime not in runtimes
-        and agent.binary()
-        and agents_mod.plugin_wired(agent)
+        if agent.runtime not in runtimes
+        and (
+            agents_mod.mcp_registered(agent)
+            if agent.wiring == "project"
+            else agent.binary() is not None and agents_mod.plugin_wired(agent)
+        )
     ]
     if remaining:
         return None

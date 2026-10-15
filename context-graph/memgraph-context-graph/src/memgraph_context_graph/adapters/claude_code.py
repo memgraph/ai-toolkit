@@ -12,6 +12,7 @@ from memgraph_context_graph.adapters._spec import (
     SpecPlugin,
     agent_end,
     agent_start,
+    hook_specific_session_context,
     pre_tool_use_context,
     session_end,
     session_start,
@@ -167,6 +168,7 @@ SPEC = RuntimeSpec(
     ),
     responses={"Stop": {"continue": True}, "SubagentStop": {"continue": True}},
     context_before_tool=pre_tool_use_context,
+    session_context=hook_specific_session_context,
     # Grok Build also runs .claude/settings.json hooks, with its own payloads
     # (camelCase duplicates of every field); its grok runtime records those.
     foreign_payload_keys=frozenset({"hookEventName"}),

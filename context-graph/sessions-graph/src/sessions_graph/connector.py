@@ -128,6 +128,7 @@ class SessionsGraphConnector(GraphConnector):
     def _on_session_start(self, event: SessionStartEvent) -> None:
         user_id: str | None = getattr(event, "user_id", None)
 
+        project = _project_key(event.working_directory or event.metadata.get("cwd"))
         if user_id:
             self._active_user_id = user_id
             self._active_session_id = event.session_id
@@ -135,15 +136,16 @@ class SessionsGraphConnector(GraphConnector):
                 """
                 MERGE (u:User {user_id: $user_id})
                 MERGE (s:Session {session_id: $session_id})
+                SET s.project_key = coalesce($project, s.project_key)
                 MERGE (u)-[:HAD_SESSION]->(s)
                 """,
-                params={"user_id": user_id, "session_id": event.session_id},
+                params={"user_id": user_id, "session_id": event.session_id, "project": project},
             )
         else:
             self._active_session_id = event.session_id
             self._graph._db.query(
-                "MERGE (:Session {session_id: $session_id});",
-                params={"session_id": event.session_id},
+                "MERGE (s:Session {session_id: $session_id}) SET s.project_key = coalesce($project, s.project_key);",
+                params={"session_id": event.session_id, "project": project},
             )
 
     def _on_session_end(self, event: SessionEndEvent) -> None:
@@ -163,6 +165,13 @@ class SessionsGraphConnector(GraphConnector):
             "MATCH (s:Session {session_id: $session_id}) SET s.reconciliation_status = 'pending';",
             params={"session_id": session_id},
         )
+
+
+def _project_key(cwd: object) -> str | None:
+    """The project a session started in, keyed as memory folders are, so the next session can find it."""
+    from .memory_index import project_key_for
+
+    return project_key_for(cwd) if isinstance(cwd, str) and cwd else None
 
 
 def _spawn_detached(args: list[str], *, env: dict[str, str]) -> None:

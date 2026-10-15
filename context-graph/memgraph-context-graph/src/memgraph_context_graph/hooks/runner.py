@@ -319,8 +319,9 @@ def _print_response(
     plugin: RuntimeCLIPlugin, payload: dict[str, Any], connector_names: list[str], *, before_tool: Sequence[str] = ()
 ) -> None:
     response = plugin.response_for_payload(payload) or {}
-    if payload.get("hook_event_name") == "SessionStart":
-        response.update(session_start_context(connector_names, payload))
+    render_session = getattr(plugin, "session_context_response", None)
+    if render_session is not None:
+        response.update(render_session(payload, lambda: session_start_text(connector_names, payload)) or {})
     render = getattr(plugin, "context_before_tool_response", None)
     if before_tool and render is not None:
         response.update(render("\n".join(before_tool)) or {})
@@ -356,19 +357,20 @@ def _context_before_tool(link: AgentLink, events: list[ToolStartEvent]) -> list[
     return lines
 
 
-def session_start_context(connector_names: list[str], payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    """The SessionStart output telling the model which memory tools it has; empty when none.
+def session_start_text(connector_names: list[str], payload: dict[str, Any] | None = None) -> str | None:
+    """The session-start text telling the model which memory tools it has; None when there are none.
 
-    Recall is announced in one line and never pushes retrieved content: the
-    model calls it when a question needs memory (#394). The ``memory`` tool
-    adds its index of the user's memory files instead, standing in for the
-    harness's own memory it replaces (#484). Claude Code and Codex read the
-    same shape.
+    Recall announces itself and adds where the user left off in this project,
+    quoted from the last sessions, but never a ranked recall result: the model
+    calls recall when a question needs memory (#394). The ``memory`` tool adds
+    its index of the user's memory files, standing in for the harness's own
+    memory it replaces (#484). Each runtime wraps the text in the shape its
+    session-start hook output takes (``RuntimeSpec.session_context``).
     """
     from memgraph_context_graph.tools import session_hints
 
     try:
-        hints = session_hints(connector_names, payload=payload)
+        hints = session_hints(connector_names, payload=_with_cwd(payload or {}))
     except Exception as exc:  # A tool that fails to load must not fail the hook; the model just isn't told.
         capture_log.record_failure(
             "respond",
@@ -377,10 +379,20 @@ def session_start_context(connector_names: list[str], payload: dict[str, Any] | 
             hook_event="SessionStart",
             session_id=_payload_session_id(payload or {}),
         )
-        return {}
-    if not hints:
-        return {}
-    return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "\n".join(hints)}}
+        return None
+    return "\n".join(hints) or None
+
+
+def _with_cwd(payload: dict[str, Any]) -> dict[str, Any]:
+    """*payload* with a ``cwd``: Antigravity names its workspace ``workspacePaths`` and Cursor ``workspace_roots``;
+    every runtime starts its hooks in the project, so the hook's own directory is the last resort."""
+    if isinstance(payload.get("cwd"), str) and payload["cwd"]:
+        return payload
+    for key in ("workspacePaths", "workspace_roots"):
+        paths = payload.get(key)
+        if isinstance(paths, list) and paths and isinstance(paths[0], str):
+            return {**payload, "cwd": paths[0]}
+    return {**payload, "cwd": os.getcwd()}
 
 
 def _add_skills_graph_connector(

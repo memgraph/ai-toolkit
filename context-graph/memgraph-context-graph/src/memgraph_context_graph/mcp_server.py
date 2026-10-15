@@ -8,10 +8,16 @@ A result carries the tool's text only, never ``structuredContent``: Claude
 Code and Codex both show the model the structured JSON *instead of* the text
 when a result has both, and the text is the form recall was benchmarked in.
 Programs get the JSON from the CLI (``memgraph-context-graph recall --json``).
+
+With ``session_context``, the server's ``instructions`` carry the text a
+SessionStart hook shows elsewhere: the memory index and where the user left
+off. Only for an agent whose session-start hooks can't reach the model (Grok
+Build); an agent that also reads the hook output would get it twice.
 """
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any
 
 from memgraph_context_graph.tools import Tool, ToolError, is_available, load_tools
@@ -22,7 +28,7 @@ if TYPE_CHECKING:
 SERVER_NAME = "context-graph"
 
 
-def build_server(tools: dict[str, Tool] | None = None) -> Server:
+def build_server(tools: dict[str, Tool] | None = None, *, instructions: str | None = None) -> Server:
     """An MCP server exposing ``tools``, all registered tools by default.
 
     Each listing and call re-checks the config file, so a tool whose
@@ -67,7 +73,7 @@ def build_server(tools: dict[str, Tool] | None = None) -> Server:
         return types.CallToolResult(content=[types.TextContent(type="text", text=result.text)])
 
     if hasattr(Server, "call_tool"):  # mcp 1.x
-        server: Server = Server(SERVER_NAME)
+        server: Server = Server(SERVER_NAME, instructions=instructions)
         server.list_tools()(list_tools)
         server.call_tool()(call_tool)
         return server
@@ -78,15 +84,23 @@ def build_server(tools: dict[str, Tool] | None = None) -> Server:
     async def on_call_tool(ctx: Any, params: Any) -> types.CallToolResult:
         return await call_tool(params.name, params.arguments)
 
-    return Server(SERVER_NAME, on_list_tools=on_list_tools, on_call_tool=on_call_tool)
+    return Server(SERVER_NAME, instructions=instructions, on_list_tools=on_list_tools, on_call_tool=on_call_tool)
 
 
-def serve() -> int:
-    """Serve over stdio until the harness closes the stream."""
+def session_instructions(tools: dict[str, Tool]) -> str | None:
+    """The session-start text for the directory the harness started this server in."""
+    from memgraph_context_graph.hooks.runner import session_start_text
+
+    return session_start_text(sorted({tool.connector for tool in tools.values()}), {"cwd": os.getcwd()})
+
+
+def serve(*, session_context: bool = False) -> int:
+    """Serve over stdio until the harness closes the stream; with *session_context*, send the session text too."""
     import anyio
     from mcp.server.stdio import stdio_server
 
-    server = build_server()
+    tools = load_tools()
+    server = build_server(tools, instructions=session_instructions(tools) if session_context else None)
 
     async def run() -> None:
         async with stdio_server() as (read, write):

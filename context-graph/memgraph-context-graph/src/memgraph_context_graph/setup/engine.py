@@ -148,16 +148,21 @@ def plan(choices: Choices, env: Environment) -> list[str]:
         elif agent.wiring == "plugin":
             lines.append(f"{agent.label}: install the Context Graph plugin (user-wide)")
         elif choices.project_dirs:
-            lines.append(f"{agent.label}: wire {', '.join(str(path) for path in choices.project_dirs)}")
+            lines.append(
+                f"{agent.label}: register the memory tools (user-wide) and wire "
+                f"{', '.join(str(path) for path in choices.project_dirs)}"
+            )
         else:
-            lines.append(f"{agent.label}: skipped, no project directory (pass --project-dir)")
+            lines.append(
+                f"{agent.label}: register the memory tools (user-wide); no project to record (pass --project-dir)"
+            )
     if choices.memory_backend:
         switchable = [
             agents_mod.BY_RUNTIME[runtime].label for runtime in choices.runtimes if has_native_memory(runtime)
         ]
         already = "; already set, checked again" if choices.memory_backend == env.configured_memory_backend else ""
         if switchable:
-            lines.append(f"Memory: memory.backend = {choices.memory_backend} for {' and '.join(switchable)}{already}")
+            lines.append(f"Memory: memory.backend = {choices.memory_backend} for {listed(switchable)}{already}")
         else:
             lines.append("Memory: no selected agent has a built-in memory to switch")
     lines.append("Verify: doctor's checks, and each agent's hook probe")
@@ -205,6 +210,11 @@ def has_native_memory(runtime: str) -> bool:
     from memgraph_context_graph.memory_backend import native_memory_of
 
     return native_memory_of(get_runtime_plugin(runtime)) is not None
+
+
+def listed(labels: Sequence[str]) -> str:
+    """*labels* as a sentence lists them: "A", "A and B", "A, B and C"."""
+    return " and ".join(labels) if len(labels) < 3 else f"{', '.join(labels[:-1])} and {labels[-1]}"
 
 
 def failed(outcomes: Sequence[Outcome]) -> bool:
@@ -272,9 +282,18 @@ def _agent(agent: agents_mod.Agent, choices: Choices, log: Callable[[str], None]
             return Outcome(agent.label, "ok", _with_trust_note(agent, agents_mod.wire_plugin(agent, log)))
         except agents_mod.WiringError as exc:
             return Outcome(agent.label, "fail", str(exc), fix=fix)
-    if not choices.project_dirs:
-        return Outcome(agent.label, "skip", "no project directory; run setup inside a project or pass --project-dir")
     summaries, errors = [], []
+    try:
+        summaries.append(agents_mod.register_mcp(agent, log))
+    except agents_mod.WiringError as exc:
+        errors.append(str(exc))
+    if not choices.project_dirs and not errors:
+        return Outcome(
+            agent.label,
+            "ok",
+            f"{summaries[0]}; no project directory, so nothing is recorded yet: "
+            "run setup inside a project or pass --project-dir",
+        )
     for project_dir in choices.project_dirs:
         try:
             summaries.append(agents_mod.wire_project(agent, project_dir, log))
@@ -331,7 +350,7 @@ def next_steps(choices: Choices, env: Environment) -> list[str]:
     remembering = [agents_mod.BY_RUNTIME[r].label for r in choices.runtimes if has_native_memory(r)]
     if graph_memory and remembering:
         lines += [
-            f"· {' and '.join(remembering)} remember through the graph now.",
+            f"· {listed(remembering)} remember through the graph now.",
             '  Say "remember that ..." and every agent can recall it.',
         ]
     if choices.viewer:

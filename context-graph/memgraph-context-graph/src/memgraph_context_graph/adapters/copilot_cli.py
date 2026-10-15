@@ -19,6 +19,7 @@ from memgraph_context_graph.adapters._spec import (
     tool_start,
     turn_end,
 )
+from memgraph_context_graph.adapters.agent_memory import COPILOT_MEMORY
 from memgraph_context_graph.events import (
     AgentEndEvent,
     AgentStartEvent,
@@ -224,6 +225,10 @@ SPEC = RuntimeSpec(
         },
     ),
     probe_payload={"hook_event_name": "sessionEnd", "sessionId": "doctor", "reason": "complete"},
+    # Only a top-level field reaches the model (prepended to the first prompt); the nested Claude Code shape is
+    # ignored.
+    session_context=lambda text: {"additionalContext": text},
+    session_context_event="sessionStart",
 )
 
 
@@ -234,4 +239,4 @@ class CopilotCLIHooksAdapter(SpecAdapter):
 
 
 init = json_hook_installer(SPEC)
-PLUGIN = SpecPlugin(SPEC, CopilotCLIHooksAdapter, init=init)
+PLUGIN = SpecPlugin(SPEC, CopilotCLIHooksAdapter, init=init, native_memory=COPILOT_MEMORY)
