@@ -565,7 +565,7 @@ def test_every_line_of_the_welcome_and_the_last_screen_fits_a_narrow_terminal():
 
 
 def test_codex_wiring_lets_recall_through_a_never_policy_and_unwiring_takes_it_back(fake_agents, setup_home):
-    import tomllib
+    import tomlkit
 
     config = setup_home / ".codex" / "config.toml"
     config.parent.mkdir()
@@ -575,7 +575,7 @@ def test_codex_wiring_lets_recall_through_a_never_policy_and_unwiring_takes_it_b
     agents.wire_plugin(codex, lambda _: None)
     agents.wire_plugin(codex, lambda _: None)
 
-    parsed = tomllib.loads(config.read_text())
+    parsed = tomlkit.parse(config.read_text()).unwrap()
     assert parsed["plugins"][agents.PLUGIN_ID]["mcp_servers"]["context-graph"] == {
         "default_tools_approval_mode": "approve"
     }
@@ -583,11 +583,11 @@ def test_codex_wiring_lets_recall_through_a_never_policy_and_unwiring_takes_it_b
 
     agents.unwire_plugin(codex, lambda _: None)
 
-    assert tomllib.loads(config.read_text()) == {"approval_policy": "never", "features": {"hooks": True}}
+    assert tomlkit.parse(config.read_text()).unwrap() == {"approval_policy": "never", "features": {"hooks": True}}
 
 
 def test_codex_wiring_keeps_an_approval_mode_the_user_chose(fake_agents, setup_home):
-    import tomllib
+    import tomlkit
 
     config = setup_home / ".codex" / "config.toml"
     config.parent.mkdir()
@@ -598,5 +598,5 @@ def test_codex_wiring_keeps_an_approval_mode_the_user_chose(fake_agents, setup_h
     agents.wire_plugin(BY_RUNTIME["codex"], lambda _: None)
     agents.unwire_plugin(BY_RUNTIME["codex"], lambda _: None)
 
-    mode = tomllib.loads(config.read_text())["plugins"][agents.PLUGIN_ID]["mcp_servers"]["context-graph"]
+    mode = tomlkit.parse(config.read_text()).unwrap()["plugins"][agents.PLUGIN_ID]["mcp_servers"]["context-graph"]
     assert mode == {"default_tools_approval_mode": "prompt"}
