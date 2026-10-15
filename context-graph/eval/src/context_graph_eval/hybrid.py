@@ -19,6 +19,7 @@ import asyncio
 import time
 from typing import TYPE_CHECKING
 
+from neo4j.exceptions import TransientError
 from sessions_graph import RecallConfig, SessionsGraph
 from sessions_graph.embeddings import DEFAULT_EMBEDDING_MODEL
 from sessions_graph.recall import LANES, recall
@@ -33,6 +34,23 @@ if TYPE_CHECKING:
 __all__ = ["LANES", "RecallConfig", "ensure_recall_ready", "retrieve_hybrid"]
 
 
+def _setup_with_retry(graph: SessionsGraph, *, attempts: int = 6, wait: float = 20.0) -> None:
+    """``graph.setup()``, retried while Memgraph reports a transient storage error.
+
+    A periodic snapshot holds the storage's unique access, and a DDL statement
+    arriving then fails with ``TransientError``. On the full LongMemEval-S run
+    that landed on the first statement after a 7.7 hour build and discarded it.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            graph.setup()
+            return
+        except TransientError:
+            if attempt == attempts:
+                raise
+            time.sleep(wait)
+
+
 def ensure_recall_ready(db: Memgraph, *, model: str = DEFAULT_EMBEDDING_MODEL, batch: int = 100) -> int:
     """Create recall's text index and embed every session not yet embedded with ``model``.
 
@@ -44,7 +62,7 @@ def ensure_recall_ready(db: Memgraph, *, model: str = DEFAULT_EMBEDDING_MODEL, b
             embed (no MAGE, or the model can't load).
     """
     graph = SessionsGraph(db)
-    graph.setup()
+    _setup_with_retry(graph)
     embedded = 0
     while pending := graph.reconciler.pending_embeddings(model=model, limit=batch):
         for session_id in pending:

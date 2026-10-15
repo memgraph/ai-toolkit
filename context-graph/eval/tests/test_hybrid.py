@@ -61,3 +61,23 @@ async def test_the_answerer_reads_exactly_the_rows_recall_found(owned_session: A
     assert result.retrieval_context[0] in result.answer
     assert "The question is being asked on 2023-06-01." in result.answer
     assert not result.errors
+
+
+def test_setup_is_retried_while_memgraph_holds_the_storage(monkeypatch):
+    from context_graph_eval import hybrid
+    from neo4j.exceptions import TransientError
+
+    class Graph:
+        calls = 0
+
+        def setup(self):
+            self.calls += 1
+            if self.calls < 3:
+                raise TransientError("Cannot get unique access to the storage")
+
+    monkeypatch.setattr(hybrid.time, "sleep", lambda _: None)
+    graph = Graph()
+
+    hybrid._setup_with_retry(graph)
+
+    assert graph.calls == 3
