@@ -13,7 +13,7 @@
         "path": "context-graph/plugins/memgraph-context-graph-claude"
       },
       "description": "Capture Claude Code runtime activity through Memgraph Context Graph hooks, and recall past sessions.",
-      "version": "0.4.4",
+      "version": "0.4.5",
       "author": {
         "name": "Memgraph"
       },

@@ -1,6 +1,6 @@
 {
   "name": "context-graph",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "Capture Codex runtime activity through Memgraph Context Graph hooks.",
   "author": {
     "name": "Memgraph"
