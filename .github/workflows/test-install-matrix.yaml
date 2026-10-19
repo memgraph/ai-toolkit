@@ -113,6 +113,19 @@ jobs:
           wsl -d Ubuntu-24.04 -- bash -c 'pgrep -a memgraph; tail -n 40 /tmp/memgraph.log'
           exit 1
 
+      - name: What the Bolt driver says about that Memgraph
+        shell: pwsh
+        run: |
+          python -m pip install --quiet neo4j
+          python -c "
+          from neo4j import GraphDatabase
+          d = GraphDatabase.driver('bolt://127.0.0.1:7687', auth=('', ''), connection_timeout=3.0)
+          try:
+              print(d.session().run('SHOW VERSION').data())
+          except Exception as e:
+              print(type(e).__name__, e)
+          "
+
       # A child process of the edition under test (`shell` takes no expressions). Its PATH change
       # does not reach this step, which is the point: later steps see only what was persisted.
       - name: Run install.ps1
