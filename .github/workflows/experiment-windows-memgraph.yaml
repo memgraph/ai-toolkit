@@ -59,14 +59,29 @@ jobs:
             "https://download.memgraph.com/memgraph/v${{ inputs.memgraph_version || '3.8.1' }}/ubuntu-24.04/memgraph_${{ inputs.memgraph_version || '3.8.1' }}-1_amd64.deb"
           sudo apt-get update
           sudo apt-get install -y /tmp/memgraph.deb
-          # The service manager isn't running in WSL here; start the server directly.
-          sudo -u memgraph nohup memgraph --bolt-address=0.0.0.0 --also-log-to-stderr > /tmp/memgraph.log 2>&1 &
-          sleep 15
-          tail -n 30 /tmp/memgraph.log
 
-      - name: Is Bolt reachable from Windows?
+      - name: Start Memgraph from Windows so it outlives the step
+        if: startsWith(matrix.approach, 'wsl')
         shell: pwsh
         run: |
-          $ok = Test-NetConnection -ComputerName 127.0.0.1 -Port 7687 -InformationLevel Quiet
-          Write-Host "bolt on 127.0.0.1:7687 reachable: $ok"
-          if (-not $ok) { exit 1 }
+          Start-Process -FilePath wsl.exe -WindowStyle Hidden -ArgumentList @(
+            '-d', 'Ubuntu-24.04', '-u', 'memgraph', '--',
+            'memgraph', '--bolt-address=0.0.0.0', '--log-file=/tmp/memgraph.log', '--also-log-to-stderr')
+
+      # Not a bare port check: WSL's localhost relay accepts connections even when nothing listens inside.
+      - name: Does Memgraph answer a Bolt query from Windows?
+        shell: pwsh
+        run: |
+          python -m pip install --quiet neo4j
+          $probe = @'
+          from neo4j import GraphDatabase
+          d = GraphDatabase.driver("bolt://127.0.0.1:7687", auth=("", ""), connection_timeout=3.0)
+          print(d.session().run("SHOW VERSION").data())
+          '@
+          foreach ($attempt in 1..20) {
+            $out = python -c $probe 2>&1
+            if ($LASTEXITCODE -eq 0) { Write-Host "answered after $attempt attempt(s): $out"; exit 0 }
+            Start-Sleep -Seconds 3
+          }
+          Write-Host $out
+          exit 1

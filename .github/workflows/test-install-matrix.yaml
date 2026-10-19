@@ -90,7 +90,7 @@ jobs:
           wsl-version: "2"
           use-cache: "false"
 
-      - name: Start Memgraph in WSL
+      - name: Install Memgraph in WSL
         shell: wsl-bash {0}
         run: |
           set -euxo pipefail
@@ -98,33 +98,35 @@ jobs:
             "https://download.memgraph.com/memgraph/v3.8.1/ubuntu-24.04/memgraph_3.8.1-1_amd64.deb"
           sudo apt-get update
           sudo apt-get install -y /tmp/memgraph.deb
-          sudo -u memgraph nohup memgraph --bolt-address=0.0.0.0 --also-log-to-stderr > /tmp/memgraph.log 2>&1 &
-          sleep 15
 
-      - name: Memgraph answers Bolt on Windows' localhost
+      # Launched from Windows rather than backgrounded inside the WSL step: a process started by a
+      # step's shell dies with it. wsl.exe stays running as a child of the runner and keeps the distro up.
+      - name: Start Memgraph in WSL
         shell: pwsh
         run: |
-          foreach ($attempt in 1..20) {
-            if (Test-NetConnection -ComputerName 127.0.0.1 -Port 7687 -InformationLevel Quiet -WarningAction SilentlyContinue) {
-              Write-Host "bolt reachable after $attempt attempt(s)"; exit 0
-            }
-            Start-Sleep -Seconds 3
-          }
-          wsl -d Ubuntu-24.04 -- bash -c 'pgrep -a memgraph; tail -n 40 /tmp/memgraph.log'
-          exit 1
+          Start-Process -FilePath wsl.exe -WindowStyle Hidden -ArgumentList @(
+            '-d', 'Ubuntu-24.04', '-u', 'memgraph', '--',
+            'memgraph', '--bolt-address=0.0.0.0', '--log-file=/tmp/memgraph.log', '--also-log-to-stderr')
 
-      - name: What the Bolt driver says about that Memgraph
+      # A TCP check is not enough: WSL's localhost relay accepts connections on the port even when
+      # nothing listens inside the distro. Ask Memgraph itself.
+      - name: Memgraph answers a Bolt query on Windows' localhost
         shell: pwsh
         run: |
           python -m pip install --quiet neo4j
-          python -c "
+          $probe = @'
           from neo4j import GraphDatabase
-          d = GraphDatabase.driver('bolt://127.0.0.1:7687', auth=('', ''), connection_timeout=3.0)
-          try:
-              print(d.session().run('SHOW VERSION').data())
-          except Exception as e:
-              print(type(e).__name__, e)
-          "
+          d = GraphDatabase.driver("bolt://127.0.0.1:7687", auth=("", ""), connection_timeout=3.0)
+          print(d.session().run("SHOW VERSION").data())
+          '@
+          foreach ($attempt in 1..20) {
+            $out = python -c $probe 2>&1
+            if ($LASTEXITCODE -eq 0) { Write-Host "memgraph answered after $attempt attempt(s): $out"; exit 0 }
+            Start-Sleep -Seconds 3
+          }
+          Write-Host $out
+          wsl -d Ubuntu-24.04 -- bash -c 'pgrep -a memgraph; tail -n 40 /tmp/memgraph.log'
+          exit 1
 
       # A child process of the edition under test (`shell` takes no expressions). Its PATH change
       # does not reach this step, which is the point: later steps see only what was persisted.
