@@ -20,6 +20,7 @@ Commands:
   setup [runtime ...]  Install Context Graph for your agents (interactive on a terminal);
                    --memory-backend context-graph|native switches whose memory they use.
   uninstall [runtime ...]  Remove the agents' wiring; your graph and config stay.
+  update [runtime ...]  Upgrade the package and refresh the agents' wiring and the graph's schema.
   config           Get or set persistent configuration values.
   doctor           Check runtime hook dependencies and Memgraph connectivity.
   join <url> <login>  Use an Enterprise Memgraph as <login> (edition = enterprise); --password or prompt.
@@ -53,6 +54,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         from memgraph_context_graph.setup.cli import uninstall_main
 
         return uninstall_main(args[1:])
+
+    if command == "update":
+        from memgraph_context_graph.setup.cli import update_main
+
+        return update_main(args[1:])
 
     if command == "config":
         return _config(args[1:])

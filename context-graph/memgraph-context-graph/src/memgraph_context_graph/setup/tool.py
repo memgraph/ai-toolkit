@@ -82,8 +82,14 @@ def install_command(*, spaces: bool = False) -> str:
     return " ".join(["uv tool install", *map(shlex.quote, requirements(spaces=spaces))])
 
 
-def install(*, viewer: bool, log: Callable[[str], None], spaces: bool = False) -> None:
+#: The packages whose cached index entries an upgrade bypasses, so a release published minutes ago is found.
+_REFRESHED = ("memgraph-context-graph", *CONNECTORS)
+
+
+def install(*, viewer: bool, log: Callable[[str], None], spaces: bool = False, upgrade: bool = False) -> None:
     """Install the tool with every connector (and the viewer, and the spaces package), keeping what is already there.
+
+    With *upgrade*, the tool and its connectors move to the newest releases the requirements allow.
 
     The full set is always passed: ``uv tool install`` replaces the tool's requirements with what it is
     given, so naming only the missing package would drop the others.
@@ -95,6 +101,10 @@ def install(*, viewer: bool, log: Callable[[str], None], spaces: bool = False) -
     if uv is None:
         raise ToolError("uv isn't on PATH")
     argv = [uv, "--color", "never", "tool", "install", *requirements(viewer=viewer, spaces=spaces)]
+    if upgrade:
+        argv.append("--upgrade")
+        for package in _REFRESHED:
+            argv += ["--refresh-package", package]
     log(" ".join(["uv", *argv[3:]]))
     process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     last = ""
