@@ -177,6 +177,7 @@ memgraph-context-graph setup                     # interactive on a terminal; pl
 memgraph-context-graph setup claude-code codex   # just these agents
 memgraph-context-graph setup cursor --project-dir ~/work/billing
 memgraph-context-graph setup --plan              # print the plan, change nothing
+memgraph-context-graph update [runtime ...]      # upgrade the package, refresh the wiring and the schema
 memgraph-context-graph uninstall [runtime ...]   # remove the wiring; the graph and config stay
 ```
 
@@ -185,6 +186,15 @@ writes `memgraph.url` and `identity.user_id`, installs missing connectors and th
 wires each agent, and runs `doctor`'s checks. Every step checks before it acts, so rerunning only does what's
 missing. The TUI starts only when stdin and stdout are both terminals; the plugins' `scripts/bootstrap.sh`
 runs `setup <runtime> --no-tui`.
+
+**Updating.** Upgrading the package moves the code hooks and the MCP server run, but what setup wrote once stays
+as it was. `update` upgrades the uv tool and its connectors, then, with the new release, refreshes everything
+that is wired: Claude Code's and Codex's plugin (marketplace refreshed, plugin updated), each per-project agent's
+hook file in `--project-dir` (default: the current directory) and its MCP registration, and the graph's indexes
+and constraints. It then runs `doctor`'s checks. Name runtimes to refresh only those; `--no-upgrade` skips the
+package step. Your own hooks, the config and the graph's data are untouched, and running it again changes nothing.
+Running agent sessions keep the hooks they loaded: restart them. Outside the uv tool (a virtualenv, say) the
+package step only warns, and you upgrade it yourself first.
 
 **Identity and connection.** setup writes `~/.config/context-graph/config.toml`; hooks read their configuration from that file at runtime (see [Configuration](#configuration) — env vars are **not** read at hook time). To change your identity later:
 

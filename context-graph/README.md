@@ -70,6 +70,7 @@ The report ends with the exact command to rerun for anything that failed. Every 
 curl -fsSL .../install.sh | bash -s -- codex --memgraph-url bolt://my-host:7687
 memgraph-context-graph setup cursor --project-dir ~/work/billing --project-dir ~/work/crawler
 memgraph-context-graph setup --plan          # what it would do; changes nothing
+memgraph-context-graph update                # upgrade the package, then refresh the wiring and the schema
 memgraph-context-graph uninstall             # remove the wiring; your graph and config stay
 ```
 

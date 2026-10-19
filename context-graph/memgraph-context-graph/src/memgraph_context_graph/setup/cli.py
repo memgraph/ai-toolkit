@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from memgraph_context_graph.setup import engine, uninstall
+from memgraph_context_graph.setup import engine, uninstall, update
 from memgraph_context_graph.setup.agents import AGENTS
 from memgraph_context_graph.setup.memgraph import CONTAINER
 
@@ -112,6 +112,45 @@ def uninstall_main(argv: Sequence[str]) -> int:
     print()
     print("\n".join(uninstall.leftovers()))
     return 1 if engine.failed(outcomes) else 0
+
+
+def update_main(argv: Sequence[str]) -> int:
+    """Run ``update``; 0 when nothing failed, 1 otherwise, 2 on bad arguments."""
+    parser = argparse.ArgumentParser(
+        prog="memgraph-context-graph update",
+        description="Upgrade the package, then refresh what setup wrote once: plugins, hook files, MCP registrations "
+        "and the graph's schema. Your data and config are untouched.",
+    )
+    parser.add_argument("runtimes", nargs="*", metavar="runtime", help="default: every agent found wired")
+    parser.add_argument("--project-dir", action="append", type=Path, default=[], help="project to refresh for per-project agents (repeatable); default: the current directory")  # fmt: skip
+    parser.add_argument("--no-upgrade", action="store_true", help="refresh the wiring only; the package is already current")  # fmt: skip
+    args = parser.parse_args(list(argv))
+    _check_runtimes(parser, args.runtimes)
+
+    project_dirs = [path.expanduser().resolve() for path in args.project_dir] or [Path.cwd().resolve()]
+    if not args.no_upgrade:
+        outcome = update.upgrade_packages(_log)
+        _report(outcome)
+        if outcome.status == "fail":
+            print(f"To fix: {outcome.fix}")
+            return 1
+        if outcome.status == "ok":
+            # This process still runs the old code; the new executable refreshes the wiring.
+            return update.rerun(args.runtimes, project_dirs)
+    runtimes = args.runtimes or update.wired(project_dirs)
+    if not runtimes:
+        print("Nothing is wired: no Context Graph plugin, and no hook files in " + ", ".join(map(str, project_dirs)))
+        print("Run memgraph-context-graph setup to install it.")
+        return 0
+    outcomes = update.run(runtimes, project_dirs, log=_log, report=_report)
+    print()
+    if engine.failed(outcomes):
+        for outcome in outcomes:
+            if outcome.status == "fail" and outcome.fix:
+                print(f"To fix {outcome.step}: {outcome.fix}")
+        return 1
+    print(update.RESTART_NOTE)
+    return 0
 
 
 def _check_runtimes(parser: argparse.ArgumentParser, runtimes: Sequence[str]) -> None:

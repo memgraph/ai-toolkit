@@ -199,7 +199,7 @@ def run(
         for runtime in choices.runtimes:
             if (outcome := _memory(runtime, choices.memory_backend)) is not None:
                 done(outcome)
-    for outcome in _verify(choices):
+    for outcome in verify(choices.runtimes):
         done(outcome)
     return outcomes
 
@@ -387,11 +387,12 @@ def _memory(runtime: str, backend: str) -> Outcome | None:
     return Outcome(label, "ok", f"memory.backend = {backend}", lines=tuple(lines))
 
 
-def _verify(choices: Choices) -> list[Outcome]:
+def verify(runtimes: Sequence[str]) -> list[Outcome]:
+    """``doctor``'s checks for *runtimes* and the configured connectors, one outcome each."""
     from memgraph_context_graph.cli import doctor_checks
     from memgraph_context_graph.connectors import configured_connectors
 
-    checks = doctor_checks(choices.runtimes, configured_connectors())
+    checks = doctor_checks(list(runtimes), configured_connectors())
     outcomes = []
     for check in checks:
         if check.get("info"):

@@ -1,4 +1,4 @@
-"""setup and uninstall without Docker: agents' wiring, the plan, the command line, and the questions.
+"""setup, update and uninstall without Docker: agents' wiring, the plan, the command line, and the questions.
 
 The plugin agents run against the fake `claude`/`codex` from ``fake_agent_cli.py``; project wiring writes
 real files into a temp project. The Memgraph step's real-Docker cases are in ``test_setup_docker.py``.
@@ -199,6 +199,118 @@ def test_uninstall_finds_what_is_wired_and_keeps_data(fake_agents, setup_home, p
     assert fake_agents.of("claude")["plugins"] == []
     assert not (project / ".cursor" / "hooks.json").exists()
     assert fake_agents.of("codex")["calls"] == [["plugin", "list", "--json"]]  # looked, found nothing, left it
+
+
+# --- update -------------------------------------------------------------------
+
+
+@pytest.fixture
+def no_schema(monkeypatch):
+    """Update's schema step and doctor checks need a Memgraph and the connectors; ``test_setup_docker.py`` has them."""
+    monkeypatch.setattr("memgraph_context_graph.hooks.runner.setup_connector_schemas", lambda *a, **k: None)
+    monkeypatch.setattr(engine, "verify", lambda runtimes: [])
+
+
+@pytest.mark.parametrize("runtime, binary, verbs", [
+    ("claude-code", "claude", [["plugin", "marketplace", "update", agents.MARKETPLACE], ["plugin", "update", agents.PLUGIN_ID]]),
+    ("codex", "codex", [["plugin", "marketplace", "upgrade", agents.MARKETPLACE], ["plugin", "add", agents.PLUGIN_ID]]),
+])  # fmt: skip
+def test_update_refreshes_the_marketplace_and_the_installed_plugin(fake_agents, runtime, binary, verbs):
+    agent = BY_RUNTIME[runtime]
+    agents.wire_plugin(agent, lambda _: None)
+    before = len(fake_agents.of(binary)["calls"])
+
+    assert agents.update_plugin(agent, lambda _: None) == "plugin updated"
+
+    calls = fake_agents.of(binary)["calls"][before:]
+    assert [
+        call for call in calls if call[:2] != ["plugin", "list"] and call[:3] != ["plugin", "marketplace", "list"]
+    ] == verbs
+    assert fake_agents.of(binary)["plugins"] == [agents.PLUGIN_ID]
+
+
+def test_update_leaves_a_plugin_that_is_not_installed_alone(fake_agents):
+    assert agents.update_plugin(BY_RUNTIME["claude-code"], lambda _: None) == "plugin not installed; nothing to update"
+    assert fake_agents.of("claude")["calls"] == [["plugin", "list", "--json"]]
+
+
+def test_update_rewires_projects_and_keeps_the_users_own_hooks(fake_agents, setup_home, project, no_schema, capsys):
+    hooks = project / ".cursor" / "hooks.json"
+    hooks.parent.mkdir()
+    users = {"command": "./lint.sh"}
+    hooks.write_text(json.dumps({"version": 1, "hooks": {"preToolUse": [users]}}))
+    agents.wire_project(BY_RUNTIME["cursor"], project, lambda _: None)
+    agents.wire_plugin(BY_RUNTIME["claude-code"], lambda _: None)
+    stale = json.loads(hooks.read_text())
+    stale["hooks"]["preToolUse"][1]["command"] = "/old/venv/bin/memgraph-context-graph hook run cursor"
+    hooks.write_text(json.dumps(stale))
+
+    assert main(["update", "--no-upgrade", "--project-dir", str(project)]) == 0
+
+    out = capsys.readouterr().out
+    assert "OK    Claude Code: plugin updated" in out
+    assert f"OK    Cursor: rewired {project.resolve()}" in out
+    assert "OK    Schema: up to date on" in out
+    assert "Restart running agent sessions" in out
+    pre = json.loads(hooks.read_text())["hooks"]["preToolUse"]
+    assert pre[0] == users and len(pre) == 2
+    assert "/old/venv" not in pre[1]["command"]
+
+
+def test_update_finds_nothing_wired_and_changes_nothing(fake_agents, setup_home, project, no_schema, capsys):
+    assert main(["update", "--no-upgrade", "--project-dir", str(project)]) == 0
+    assert "Nothing is wired" in capsys.readouterr().out
+    assert fake_agents.of("claude")["plugins"] == []
+    assert not (project / ".cursor").exists()
+
+
+def test_update_reports_a_failed_plugin_and_still_refreshes_the_rest(
+    fake_agents, setup_home, project, no_schema, monkeypatch, capsys
+):
+    agents.wire_plugin(BY_RUNTIME["claude-code"], lambda _: None)
+    agents.wire_plugin(BY_RUNTIME["codex"], lambda _: None)
+    monkeypatch.setenv("FAKE_AGENT_FAIL", "install")  # codex re-adds the plugin, which now fails
+
+    assert main(["update", "--no-upgrade", "--project-dir", str(project)]) == 1
+
+    out = capsys.readouterr().out
+    assert "OK    Claude Code: plugin updated" in out
+    assert "FAIL  Codex:" in out and "network unreachable" in out
+    assert "To fix Codex: memgraph-context-graph update codex" in out
+    assert "Restart running agent sessions" not in out
+
+
+def test_update_says_when_the_package_is_not_the_uv_tool(fake_agents, setup_home, project, no_schema, capsys):
+    agents.wire_plugin(BY_RUNTIME["claude-code"], lambda _: None)
+    assert main(["update", "--project-dir", str(project)]) == 0  # a test venv is not the uv tool
+    assert "WARN  Packages: memgraph-context-graph" in capsys.readouterr().out
+
+
+def test_upgrading_asks_uv_to_refresh_every_package(monkeypatch, tmp_path):
+    from memgraph_context_graph.adapters import _identity
+    from memgraph_context_graph.setup import tool
+
+    monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "unset.toml"))
+    _identity._reset_cache()
+
+    seen = {}
+
+    class Fake:
+        stdout = iter(())
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(tool.shutil, "which", lambda _: "/bin/uv")
+    monkeypatch.setattr(tool.subprocess, "Popen", lambda argv, **_: seen.setdefault("argv", argv) and Fake())
+    monkeypatch.setattr(tool, "installed", lambda package: False)
+
+    tool.install(viewer=False, log=lambda _: None, upgrade=True)
+
+    argv = seen["argv"]
+    assert "--upgrade" in argv
+    refreshed = [argv[i + 1] for i, arg in enumerate(argv) if arg == "--refresh-package"]
+    assert refreshed == ["memgraph-context-graph", "skills-graph", "actions-graph", "sessions-graph"]
 
 
 # --- the questions --------------------------------------------------------------
