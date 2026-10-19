@@ -15,13 +15,13 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 #: Kept in step with the plugins' bootstrap scripts and install.sh, which install the same set first.
-BASE = "memgraph-context-graph[mcp]>=0.7.4"
+BASE = "memgraph-context-graph[mcp]>=0.8.0"
 CONNECTORS = {
     "skills-graph": "skills-graph[memgraph-context-graph]>=0.2.1",
     "actions-graph": "actions-graph[memgraph-context-graph]>=0.5.0",
-    "sessions-graph": "sessions-graph[memgraph-context-graph]>=0.8.1",
+    "sessions-graph": "sessions-graph[memgraph-context-graph]>=0.9.0",
 }
-VIEWER = ("context-graph-viewer", "context-graph-viewer>=0.1.0")
+VIEWER = ("context-graph-viewer", "context-graph-viewer>=0.1.1")
 SPACES = ("context-graph-spaces", "context-graph-spaces>=0.1.0")
 
 
