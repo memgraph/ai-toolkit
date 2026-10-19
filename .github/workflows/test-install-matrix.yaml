@@ -83,6 +83,13 @@ jobs:
       # Docker on this runner runs Windows containers, which cannot run Memgraph's Linux image, so
       # Memgraph runs in WSL2 and setup is pointed at it; Bolt is reachable on Windows' localhost.
       # WSL1 installs Memgraph but its port is not reachable from Windows (probe run on this PR).
+      # WSL2 shuts its VM down shortly after the last wsl.exe session ends, which a CI step boundary
+      # triggers; the next `wsl` start then wipes /tmp. This must exist before the distro first starts.
+      - name: Keep the WSL2 VM from idling out
+        shell: pwsh
+        run: |
+          Set-Content -Path "$env:USERPROFILE\.wslconfig" -Value "[wsl2]`nvmIdleTimeout=-1"
+
       - name: WSL distro for Memgraph
         uses: Vampire/setup-wsl@v6
         with:
@@ -99,14 +106,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y /tmp/memgraph.deb
 
-      # Launched from Windows rather than backgrounded inside the WSL step: a process started by a
-      # step's shell dies with it. wsl.exe stays running as a child of the runner and keeps the distro up.
+      # The .deb installs a systemd service, which is what runs Memgraph. A wsl.exe session is also kept
+      # open so the distro stays up even if the idle timeout setting is ignored.
       - name: Start Memgraph in WSL
         shell: pwsh
         run: |
-          Start-Process -FilePath wsl.exe -WindowStyle Hidden -ArgumentList @(
-            '-d', 'Ubuntu-24.04', '-u', 'memgraph', '--',
-            'memgraph', '--bolt-address=0.0.0.0', '--log-file=/tmp/memgraph.log', '--also-log-to-stderr')
+          wsl -d Ubuntu-24.04 -- sudo systemctl enable --now memgraph
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Start-Process -FilePath wsl.exe -WindowStyle Hidden -ArgumentList @('-d', 'Ubuntu-24.04', '--', 'sleep', 'infinity')
 
       # A TCP check is not enough: WSL's localhost relay accepts connections on the port even when
       # nothing listens inside the distro. Ask Memgraph itself.
@@ -125,7 +132,7 @@ jobs:
             Start-Sleep -Seconds 3
           }
           Write-Host $out
-          wsl -d Ubuntu-24.04 -- bash -c 'pgrep -a memgraph; tail -n 40 /tmp/memgraph.log'
+          wsl -d Ubuntu-24.04 -- bash -c 'systemctl status memgraph --no-pager; journalctl -u memgraph --no-pager -n 40'
           exit 1
 
       - name: Memgraph is still up 45 seconds later (steps must not end it)
@@ -136,7 +143,7 @@ jobs:
           python -c $probe
           if ($LASTEXITCODE -ne 0) {
             wsl --list --verbose
-            wsl -d Ubuntu-24.04 -- bash -c 'uptime; pgrep -a memgraph; tail -n 60 /tmp/memgraph.log'
+            wsl -d Ubuntu-24.04 -- bash -c 'uptime; systemctl status memgraph --no-pager; journalctl -u memgraph --no-pager -n 60'
             exit 1
           }
 
