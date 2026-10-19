@@ -32,7 +32,7 @@ identity, and checks the hooks with `doctor`. Running it again skips what is alr
 `uv` manages Python for the tool. If uv-managed Python downloads are blocked in your environment, install Python 3.10+ and rerun it.
 
 To set up every agent on the machine at once, interactively, run `memgraph-context-graph setup` instead.
-`memgraph-context-graph uninstall claude-code` removes the wiring and keeps your graph.
+`memgraph-context-graph update claude-code` upgrades the package and refreshes the plugin; `memgraph-context-graph uninstall claude-code` removes the wiring and keeps your graph.
 
 ## Recall
 

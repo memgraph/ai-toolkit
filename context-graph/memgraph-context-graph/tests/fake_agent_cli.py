@@ -47,8 +47,13 @@ def _answer(agent: str, args: list[str], state: dict) -> int:
             if plugin.split("@")[1] not in state["marketplaces"]:
                 print(f"no marketplace for {plugin}", file=sys.stderr)
                 return 1
-            state["plugins"].append(plugin)
+            if plugin not in state["plugins"]:
+                state["plugins"].append(plugin)
             print(f"Installed {plugin}")
+        case ["plugin", "marketplace", "update" | "upgrade", name] if name in state["marketplaces"]:
+            print(f"Updated marketplace {name}")
+        case ["plugin", "update", plugin] if plugin in state["plugins"]:
+            print(f"Updated {plugin}")
         case ["plugin", "uninstall", plugin] | ["plugin", "remove", plugin]:
             state["plugins"].remove(plugin)
         case _:

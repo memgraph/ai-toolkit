@@ -125,6 +125,28 @@ def unwire_plugin(agent: Agent, log: Callable[[str], None]) -> str:
     return f"removed the {' and '.join(removed)}" if removed else "wasn't installed"
 
 
+def update_plugin(agent: Agent, log: Callable[[str], None]) -> str:
+    """Refresh the marketplace and bring the installed plugin (its hooks and MCP entry) to the latest release.
+
+    Claude Code updates the plugin in place; a running session needs a restart to load it. Codex has no update
+    verb, so the plugin is added again from the refreshed marketplace.
+
+    Raises:
+        WiringError: the agent's CLI is missing, or refused a step.
+    """
+    binary = _require(agent)
+    if not plugin_wired(agent):
+        return "plugin not installed; nothing to update"
+    if agent.runtime == "claude-code":
+        _stream([binary, "plugin", "marketplace", "update", MARKETPLACE], log)
+        _stream([binary, "plugin", "update", PLUGIN_ID], log)
+    else:
+        _stream([binary, "plugin", "marketplace", "upgrade", MARKETPLACE], log)
+        _stream([binary, "plugin", "add", PLUGIN_ID], log)
+    _allow_recall(agent)
+    return "plugin updated"
+
+
 def _allow_recall(agent: Agent) -> None:
     """Codex refuses an MCP tool that needs approval when its policy is ``never``; recall is read-only, so allow it."""
     if agent.runtime == "codex":
