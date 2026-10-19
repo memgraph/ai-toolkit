@@ -134,6 +134,27 @@ jobs:
         shell: pwsh
         run: ${{ matrix.shell }} -NoProfile -ExecutionPolicy Bypass -File ./context-graph/scripts/install.ps1 claude-code codex --user-id ci-test-user --memgraph-url bolt://127.0.0.1:7687
 
+      - name: Why setup's Memgraph probe fails (runs only on failure)
+        if: failure()
+        shell: pwsh
+        run: |
+          $py = Join-Path (& "$env:USERPROFILE\.local\bin\uv.exe" tool dir) 'memgraph-context-graph\Scripts\python.exe'
+          $diag = @'
+          from memgraph_context_graph.adapters._identity import load_config
+          from memgraph_context_graph.setup.memgraph import version_at
+          c = load_config()
+          print("user/password:", repr(c.memgraph_user), repr(c.memgraph_password))
+          print("version_at:", version_at("bolt://127.0.0.1:7687", c.memgraph_user, c.memgraph_password))
+          import neo4j
+          print("neo4j", neo4j.__version__)
+          d = neo4j.GraphDatabase.driver("bolt://127.0.0.1:7687", auth=(c.memgraph_user, c.memgraph_password), connection_timeout=3.0, max_connection_lifetime=3.0)
+          try:
+              print(d.session().run("SHOW VERSION").data())
+          except Exception as e:
+              print(type(e).__name__, e)
+          '@
+          & $py -c $diag
+
       - name: A new terminal finds the tool (persistent user PATH) and doctor is green
         shell: cmd
         run: |
