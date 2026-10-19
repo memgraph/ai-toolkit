@@ -128,6 +128,18 @@ jobs:
           wsl -d Ubuntu-24.04 -- bash -c 'pgrep -a memgraph; tail -n 40 /tmp/memgraph.log'
           exit 1
 
+      - name: Memgraph is still up 45 seconds later (steps must not end it)
+        shell: pwsh
+        run: |
+          Start-Sleep -Seconds 45
+          $probe = 'from neo4j import GraphDatabase; print(GraphDatabase.driver("bolt://127.0.0.1:7687", auth=("", ""), connection_timeout=3.0).session().run("SHOW VERSION").data())'
+          python -c $probe
+          if ($LASTEXITCODE -ne 0) {
+            wsl --list --verbose
+            wsl -d Ubuntu-24.04 -- bash -c 'uptime; pgrep -a memgraph; tail -n 60 /tmp/memgraph.log'
+            exit 1
+          }
+
       # A child process of the edition under test (`shell` takes no expressions). Its PATH change
       # does not reach this step, which is the point: later steps see only what was persisted.
       - name: Run install.ps1
