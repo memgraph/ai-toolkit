@@ -139,15 +139,15 @@ never deletes its session, so those sessions only ever see turn ends.
 Antigravity CLI (`agy`, the successor to Gemini CLI) reads named hook groups
 from `.agents/hooks.json`; `hook init` owns the `memgraph-context-graph` group and
 merges it beside any others. Only the tool events (`PreToolUse`,
-`PostToolUse`) take matcher groups. `PreInvocation` and `Stop` are written as
+`PostToolUse`) take matcher groups. `SessionStart` and `Stop` are written as
 flat handlers, because `agy` rejects the whole file when a lifecycle event is
 nested. Timeouts are in seconds.
 
 ```json
 {
   "memgraph-context-graph": {
-    "PreInvocation": [
-      {"type": "command", "command": "memgraph-context-graph hook run antigravity-cli --event-name PreInvocation", "timeout": 30}
+    "SessionStart": [
+      {"type": "command", "command": "memgraph-context-graph hook run antigravity-cli --event-name SessionStart", "timeout": 30}
     ],
     "PreToolUse": [
       {"hooks": [{"type": "command", "command": "memgraph-context-graph hook run antigravity-cli --event-name PreToolUse", "timeout": 30}]}

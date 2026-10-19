@@ -424,17 +424,15 @@ _RUNTIME_CASES = [
     _runtime_case(
         AntigravityCLIHooksAdapter,
         "antigravity-cli",
-        # As captured from a live agy 1.2.13 session: no event name (injected
-        # via --event-name), no tool-call id (stepIdx pairs the two), and no
-        # tool result, so the recorded result is empty.
+        # As captured from live agy sessions: no event name (injected via
+        # --event-name), no tool-call id (stepIdx pairs the two), and no tool
+        # result, so the recorded result is empty.
         [
             {
-                "hook_event_name": "PreInvocation",
+                "hook_event_name": "SessionStart",
                 "conversationId": "S",
                 "modelName": "gemini-3.8-flash-high",
                 "workspacePaths": [_CWD],
-                "invocationNum": 0,
-                "initialNumSteps": 1,
             },
             {
                 "hook_event_name": "PreToolUse",
