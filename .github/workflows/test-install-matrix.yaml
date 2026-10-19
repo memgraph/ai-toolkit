@@ -101,9 +101,11 @@ jobs:
           sudo -u memgraph nohup memgraph --bolt-address=0.0.0.0 --also-log-to-stderr > /tmp/memgraph.log 2>&1 &
           sleep 15
 
+      # A child process of the edition under test (`shell` takes no expressions). Its PATH change
+      # does not reach this step, which is the point: later steps see only what was persisted.
       - name: Run install.ps1
-        shell: ${{ matrix.shell }}
-        run: ./context-graph/scripts/install.ps1 claude-code codex --user-id ci-test-user --memgraph-url bolt://127.0.0.1:7687
+        shell: pwsh
+        run: ${{ matrix.shell }} -NoProfile -ExecutionPolicy Bypass -File ./context-graph/scripts/install.ps1 claude-code codex --user-id ci-test-user --memgraph-url bolt://127.0.0.1:7687
 
       - name: A new terminal finds the tool (persistent user PATH) and doctor is green
         shell: cmd
@@ -111,9 +113,10 @@ jobs:
           powershell -NoProfile -Command "$p=[Environment]::GetEnvironmentVariable('Path','User'); $env:Path=$p; memgraph-context-graph --version; memgraph-context-graph doctor; exit $LASTEXITCODE"
 
       - name: A second run changes nothing and still succeeds
-        shell: ${{ matrix.shell }}
-        run: ./context-graph/scripts/install.ps1 claude-code codex --user-id ci-test-user --memgraph-url bolt://127.0.0.1:7687
+        shell: pwsh
+        run: ${{ matrix.shell }} -NoProfile -ExecutionPolicy Bypass -File ./context-graph/scripts/install.ps1 claude-code codex --user-id ci-test-user --memgraph-url bolt://127.0.0.1:7687
 
       - name: Uninstall removes the wiring
-        shell: ${{ matrix.shell }}
-        run: memgraph-context-graph uninstall claude-code codex
+        shell: cmd
+        run: |
+          powershell -NoProfile -Command "$env:Path=[Environment]::GetEnvironmentVariable('Path','User'); memgraph-context-graph uninstall claude-code codex; exit $LASTEXITCODE"
