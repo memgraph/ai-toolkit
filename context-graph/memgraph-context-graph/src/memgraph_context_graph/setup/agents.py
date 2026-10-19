@@ -2,7 +2,9 @@
 
 Claude Code and Codex are wired once per user, by installing the Context Graph plugin from this repo's
 marketplace with the agent's own CLI. The other five are wired per project, by the hook file ``hook init``
-writes (#533).
+writes (#533), and get the ``context-graph`` MCP server once per user in their own MCP config
+(:mod:`memgraph_context_graph.adapters.agent_mcp`), since the plugin that brings it to the first two
+doesn't exist for them.
 """
 
 from __future__ import annotations
@@ -197,6 +199,61 @@ def unwire_project(agent: Agent, project_dir: Path) -> bool:
         return remove_hook_config(_spec(agent), project_dir)
     except ValueError as exc:
         raise WiringError(str(exc)) from exc
+
+
+def mcp_registered(agent: Agent) -> bool:
+    """Whether the agent's user-level MCP config lists the ``context-graph`` server."""
+    from memgraph_context_graph.adapters.agent_mcp import AGENT_MCP
+    from memgraph_context_graph.memory_backend import MemoryBackendError
+
+    wiring = AGENT_MCP.get(agent.runtime)
+    try:
+        return wiring is not None and wiring.registered(Path.home())
+    except MemoryBackendError:
+        return False
+
+
+def register_mcp(agent: Agent, log: Callable[[str], None]) -> str:
+    """Add the ``context-graph`` MCP server to the agent's user-level config, and allow its tools.
+
+    Raises:
+        WiringError: the agent's config file can't be read as written.
+    """
+    from memgraph_context_graph.adapters.agent_mcp import AGENT_MCP
+    from memgraph_context_graph.memory_backend import MemoryBackendError
+
+    wiring = AGENT_MCP.get(agent.runtime)
+    if wiring is None:
+        return ""
+    try:
+        already = wiring.registered(Path.home())
+        lines = wiring.register(Path.home())
+    except MemoryBackendError as exc:
+        raise WiringError(str(exc)) from exc
+    for line in lines:
+        log(line)
+    return "memory tools already registered" if already else "memory tools registered"
+
+
+def unregister_mcp(agent: Agent, log: Callable[[str], None]) -> bool:
+    """Remove what :func:`register_mcp` added; returns whether anything was there.
+
+    Raises:
+        WiringError: the agent's config file can't be read as written.
+    """
+    from memgraph_context_graph.adapters.agent_mcp import AGENT_MCP
+    from memgraph_context_graph.memory_backend import MemoryBackendError
+
+    wiring = AGENT_MCP.get(agent.runtime)
+    if wiring is None:
+        return False
+    try:
+        lines = wiring.unregister(Path.home())
+    except MemoryBackendError as exc:
+        raise WiringError(str(exc)) from exc
+    for line in lines:
+        log(line)
+    return bool(lines)
 
 
 def check_project_dir(project_dir: Path) -> None:

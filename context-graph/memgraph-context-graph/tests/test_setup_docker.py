@@ -158,7 +158,7 @@ def test_setup_then_uninstall_end_to_end(names, demo, fake_agents, setup_home, t
     assert config.user_id == "alice"
     assert config.memgraph_url == mg.find_or_start(configured_url=None, container=names["own"]).url
     assert "OK    Claude Code: plugin installed" in out
-    assert f"OK    Cursor: wired {project.resolve()}" in out
+    assert f"OK    Cursor: memory tools registered; wired {project.resolve()}" in out
     assert "OK    Check memgraph:" in out
     assert "OK    Check config:" in out
     assert fake_agents.of("claude")["plugins"] == ["context-graph@context-graph-plugins"]
@@ -167,12 +167,13 @@ def test_setup_then_uninstall_end_to_end(names, demo, fake_agents, setup_home, t
     out = capsys.readouterr().out
     assert "OK    Memgraph: using Memgraph" in out
     assert "OK    Claude Code: plugin already installed" in out
-    assert f"OK    Cursor: rewired {project.resolve()}" in out
+    assert f"OK    Cursor: memory tools already registered; rewired {project.resolve()}" in out
     assert len(json.loads((project / ".cursor" / "hooks.json").read_text())["hooks"]["sessionStart"]) == 1
 
     assert main(["uninstall", "--project-dir", str(project)]) == 0
     out = capsys.readouterr().out
     assert "OK    Claude Code: removed the plugin and marketplace" in out
+    assert f"OK    Cursor: unwired {project.resolve()}, the memory tools" in out
     assert not (project / ".cursor" / "hooks.json").exists()
     assert _docker("inspect", names["own"]).returncode == 0  # the graph stays
     assert load_config().memgraph_url  # and so does the config

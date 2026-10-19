@@ -101,6 +101,9 @@ class HookConfig:
     #: harness memory to the graph (the ``memory`` tool and session-start index
     #: are on); ``"native"`` or None leaves the harness's own memory in charge.
     memory_backend: str | None = None
+    #: ``[session_start] resume``: whether a session starts with a brief of the
+    #: previous sessions in its project. None (never set) means on.
+    session_resume: bool | None = None
     #: The ``section.key`` names the file actually sets (top-level keys as ``key``), so a check can tell
     #: "left at the default" from "written": Enterprise refuses an explicit ``identity.user_id`` or
     #: ``memgraph.database``, which would quietly override what the login decides.
@@ -222,6 +225,7 @@ def write_config(
     ontology_derive: str | None = None,
     github_token: str | None = None,
     memory_backend: str | None = None,
+    session_resume: bool | None = None,
 ) -> Path:
     """Write or update the config file. Returns the path written to.
 
@@ -243,6 +247,7 @@ def write_config(
         "ontology_derive": ontology_derive,
         "github_token": github_token,
         "memory_backend": memory_backend,
+        "session_resume": session_resume,
     }
     config = replace(_read_config_file(), **{key: value for key, value in updates.items() if value is not None})
     return _write_config_file(_render_config(config))
@@ -261,8 +266,8 @@ def write_full_config(
 ) -> Path:
     """Write a complete config file, resetting identity, Memgraph and LLM settings to what is given.
 
-    Every other section (``[reconcile]``, ``[recall]``, ``[ontology]``, ``[github]``, ``[memory]``) and the
-    edition are kept from the existing file, since only ``config set`` or a hand edit ever sets them.
+    Every other section (``[reconcile]``, ``[recall]``, ``[ontology]``, ``[github]``, ``[memory]``,
+    ``[session_start]``) and the edition are kept from the existing file, since only ``config set`` or a hand edit ever sets them.
     ``auto_reconcile`` is kept likewise unless given here. :func:`write_config` is the partial update.
     """
     existing = _read_config_file()
@@ -313,6 +318,7 @@ def _read_config_file() -> HookConfig:
     ontology = sections.get("ontology", {})
     github = sections.get("github", {})
     memory = sections.get("memory", {})
+    session_start = sections.get("session_start", {})
     auto_reconcile_raw = reconcile.get("auto_reconcile")
 
     return HookConfig(
@@ -331,6 +337,7 @@ def _read_config_file() -> HookConfig:
         ontology_derive=ontology.get("derive") or None,
         github_token=github.get("token") or None,
         memory_backend=memory.get("backend") or None,
+        session_resume=parse_bool_flag(session_start["resume"]) if session_start.get("resume") else None,
         present=frozenset(
             f"{section}.{key}" if section else key
             for section, keys in sections.items()
@@ -379,8 +386,8 @@ def _render_config(config: HookConfig) -> str:
     """Render the full config file content.
 
     ``[reconcile]`` is omitted while ``auto_reconcile`` is ``None`` so a re-read keeps "never configured"
-    distinct from an explicit ``false``; ``[recall]``, ``[ontology]``, ``[github]`` and ``[memory]`` are
-    omitted while they hold nothing.
+    distinct from an explicit ``false``, and ``[session_start]`` likewise while ``session_resume`` is;
+    ``[recall]``, ``[ontology]``, ``[github]`` and ``[memory]`` are omitted while they hold nothing.
     """
     user_id = config.user_id or ""
     lines = [
@@ -419,6 +426,8 @@ def _render_config(config: HookConfig) -> str:
         lines += ["", "[github]", f'token = "{config.github_token}"']
     if config.memory_backend:
         lines += ["", "[memory]", f'backend = "{config.memory_backend}"']
+    if config.session_resume is not None:
+        lines += ["", "[session_start]", f"resume = {'true' if config.session_resume else 'false'}"]
     lines.append("")
     return "\n".join(lines)
 

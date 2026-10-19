@@ -90,7 +90,8 @@ graph.save_memory(
     │            [:PRODUCED_MEMORY]              [:HAS_CHUNK]
     │                          │                        ▼
     └─[:HAD_SESSION]─▶ (:Session {session_id,   (:Chunk {hash, text})
-                                  reconciliation_status,     ▲
+                                  project_key,               ▲
+                                  reconciliation_status,     │
                                   reconciled_at})  [:HAS_CHUNK]
                               │                        │
                         [:HAS_ACTION]                  │
@@ -106,6 +107,10 @@ user, and a Memory under `/memories/projects/<key>/` links to that project. See
 
 `(:User)-[:HAD_SESSION]->(:Session)` is written by `SessionsGraphConnector` on
 session start; it is the join key other Context Graph components hang off of.
+The same write sets `project_key`, the start directory's checkout keyed as
+memory folders are, so the next session in that project can open with where the
+user left off (`sessions_graph.resume`, shown by the `recall` tool's session-start
+text).
 
 `(:Action)` is owned by [Actions Graph](../actions-graph/); `(:Chunk)` and the
 extracted entity nodes are owned by

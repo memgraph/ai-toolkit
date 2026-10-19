@@ -454,12 +454,12 @@ def ask(prompts: Prompts, choices: Choices, env: Environment, *, preselect: bool
         return answer if isinstance(answer, _Back) else DONE
 
     def memory(answers: _Answers) -> str | _Back:
-        # Only Claude Code and Codex have a memory of their own to hand over, so only they are asked about.
+        # Every agent setup knows can switch; one with no memory of its own just gains the memory tool.
         switchable = [BY_RUNTIME[runtime].label for runtime in answers.runtimes if engine.has_native_memory(runtime)]
         if not switchable:
             return SKIPPED
         answer = prompts.confirm(
-            f"Use Context Graph as the memory of {' and '.join(switchable)}?",
+            f"Use Context Graph as the memory of {engine.listed(switchable)}?",
             answers.use_graph_memory,
             note="Their memories move into the graph, shared across agents. Switch back any time.",
             short="Agent memory",

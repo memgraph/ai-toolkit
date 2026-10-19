@@ -81,7 +81,8 @@ _Avoid_: Status, session status (`status` already tracks session completion)
 - **Sessions Graph** belongs to broader **Context Graph** family.
 - **Memory Write** + **Memory Recall** happen via Sessions Graph Python API, not **Event Protocol**.
 - `SessionsGraphConnector` consumes session start, turn end, session end and memory-tool end events. `MERGE`s User + Session nodes, exposes `active_user_id`/`active_session_id`.
-- **Memory Owner** connected to their sessions: `(:User)-[:HAD_SESSION]->(:Session)`. Created atomically with User/Session MERGEs on `SESSION_START`.
+- **Memory Owner** connected to their sessions: `(:User)-[:HAD_SESSION]->(:Session)`. Created atomically with User/Session MERGEs on `SESSION_START`, which also sets `Session.project_key` from the start directory.
+- A new session's start text quotes where the user left off in the same project (last sessions' first/last ask, last reply), read from captured turns with no LLM; it is a pointer, not a recall result.
 - Every **Memory** owned by a **Memory Owner** via `HAS_MEMORY`: `(:User)-[:HAS_MEMORY]->(:Memory)`.
 - A **Memory File** under `/memories/projects/<key>/` is `(:Memory)-[:ABOUT]->(:Project {key})`; the key is one path segment.
 - **Memory Provenance** encoded as `(:Session)-[:PRODUCED_MEMORY]->(:Memory)`.

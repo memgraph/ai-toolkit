@@ -48,7 +48,7 @@ def setup_main(argv: Sequence[str]) -> int:
     parser.add_argument("--memgraph-url", help="use this Memgraph instead of finding or starting one")
     parser.add_argument("--user-id", help="your identity in the graph; default: the configured one, else git user.name")
     parser.add_argument(
-        "--memory-backend", choices=sorted(MEMORY_BACKENDS), help="whose memory Claude Code and Codex use"
+        "--memory-backend", choices=sorted(MEMORY_BACKENDS), help="whose memory the selected agents use"
     )
     parser.add_argument("--no-viewer", action="store_true", help="don't install the terminal viewer")
     parser.add_argument(
