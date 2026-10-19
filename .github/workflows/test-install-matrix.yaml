@@ -186,4 +186,4 @@ jobs:
       - name: Uninstall removes the wiring
         shell: cmd
         run: |
-          powershell -NoProfile -Command "$env:Path=[Environment]::GetEnvironmentVariable('Path','User'); memgraph-context-graph uninstall claude-code codex; exit $LASTEXITCODE"
+          powershell -NoProfile -Command "$env:Path=[Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:Path; memgraph-context-graph uninstall claude-code codex; exit $LASTEXITCODE"

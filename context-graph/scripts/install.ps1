@@ -28,12 +28,23 @@ function Test-Command([string]$Name) {
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
-# Run a native command and stop on a non-zero exit: $ErrorActionPreference does not cover those.
+# Run a native command and stop on a non-zero exit. Windows PowerShell 5.1 turns any stderr output of a
+# native command into a terminating error under $ErrorActionPreference = 'Stop' (even with 2>$null), and
+# uv writes routine notices to stderr, so errors are relaxed around the call and the exit code decides.
 function Invoke-Native([string]$Command, [string[]]$Arguments) {
-    & $Command @Arguments
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $Command @Arguments } finally { $ErrorActionPreference = $previous }
     if ($LASTEXITCODE -ne 0) {
         Fail "$Command $($Arguments -join ' ') exited with $LASTEXITCODE"
     }
+}
+
+# Run a native command for its output only; a failure or stderr noise is not an error.
+function Get-NativeOutput([string]$Command, [string[]]$Arguments) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { return (& $Command @Arguments 2>$null) } catch { return $null } finally { $ErrorActionPreference = $previous }
 }
 
 $SetupArgs = @($args)
@@ -67,14 +78,17 @@ Invoke-Native 'uv' ($Packages + '--upgrade')
 
 # uv's tool shims live in `uv tool dir --bin`, which may not be on PATH yet. Add it to this session, and
 # persist it in the user's PATH so a new terminal finds the tool too.
-$ToolBin = (& uv tool dir --bin 2>$null)
+$ToolBin = Get-NativeOutput 'uv' @('tool', 'dir', '--bin')
 if (-not $ToolBin) { $ToolBin = "$env:USERPROFILE\.local\bin" }
 if (($env:Path -split ';') -notcontains $ToolBin) { $env:Path = "$ToolBin;$env:Path" }
-& uv tool update-shell 2>$null | Out-Null
+Get-NativeOutput 'uv' @('tool', 'update-shell') | Out-Null
 
 if (-not (Test-Command 'memgraph-context-graph')) {
     Fail "memgraph-context-graph was installed but isn't on PATH; add $ToolBin to PATH and run this again."
 }
+
+# Setup reports through its exit code; its stderr (warnings) must not abort a Windows PowerShell 5.1 script.
+$ErrorActionPreference = 'Continue'
 
 # Setup's terminal UI needs a console on both ends; without one it runs its plain, non-interactive path.
 if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) {
