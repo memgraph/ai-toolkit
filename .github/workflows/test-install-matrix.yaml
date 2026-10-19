@@ -81,13 +81,13 @@ jobs:
         run: npm install -g @anthropic-ai/claude-code @openai/codex
 
       # Docker on this runner runs Windows containers, which cannot run Memgraph's Linux image, so
-      # Memgraph runs in WSL and setup is pointed at it. experiment-windows-memgraph.yaml is the
-      # probe that decides which WSL mode works on a hosted runner.
+      # Memgraph runs in WSL2 and setup is pointed at it; Bolt is reachable on Windows' localhost.
+      # WSL1 installs Memgraph but its port is not reachable from Windows (probe run on this PR).
       - name: WSL distro for Memgraph
         uses: Vampire/setup-wsl@v6
         with:
           distribution: Ubuntu-24.04
-          wsl-version: "1"
+          wsl-version: "2"
           use-cache: "false"
 
       - name: Start Memgraph in WSL
