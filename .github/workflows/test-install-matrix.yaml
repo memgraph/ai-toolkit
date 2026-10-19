@@ -97,21 +97,21 @@ jobs:
           wsl-version: "2"
           use-cache: "false"
 
-      - name: Install Memgraph in WSL
+      # The image setup itself starts on Linux: it carries MAGE, which the embeddings check needs. Docker
+      # on this runner is Windows-container only, so it runs in WSL2 and publishes Bolt to Windows.
+      - name: Install Docker in WSL
         shell: wsl-bash {0}
         run: |
           set -euxo pipefail
-          curl -fsSL -o /tmp/memgraph.deb \
-            "https://download.memgraph.com/memgraph/v3.8.1/ubuntu-24.04/memgraph_3.8.1-1_amd64.deb"
           sudo apt-get update
-          sudo apt-get install -y /tmp/memgraph.deb
+          sudo apt-get install -y docker.io
+          sudo systemctl enable --now docker
 
-      # The .deb installs a systemd service, which is what runs Memgraph. A wsl.exe session is also kept
-      # open so the distro stays up even if the idle timeout setting is ignored.
+      # A wsl.exe session is kept open so the distro stays up even if the idle timeout setting is ignored.
       - name: Start Memgraph in WSL
         shell: pwsh
         run: |
-          wsl -d Ubuntu-24.04 -- sudo systemctl enable --now memgraph
+          wsl -d Ubuntu-24.04 -- sudo docker run -d --name memgraph -p 7687:7687 --restart unless-stopped memgraph/memgraph-mage:3.13.1
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Start-Process -FilePath wsl.exe -WindowStyle Hidden -ArgumentList @('-d', 'Ubuntu-24.04', '--', 'sleep', 'infinity')
 
@@ -132,7 +132,7 @@ jobs:
             Start-Sleep -Seconds 3
           }
           Write-Host $out
-          wsl -d Ubuntu-24.04 -- bash -c 'systemctl status memgraph --no-pager; journalctl -u memgraph --no-pager -n 40'
+          wsl -d Ubuntu-24.04 -- bash -c 'sudo docker ps -a; sudo docker logs --tail 40 memgraph'
           exit 1
 
       - name: Memgraph is still up 45 seconds later (steps must not end it)
@@ -143,7 +143,7 @@ jobs:
           python -c $probe
           if ($LASTEXITCODE -ne 0) {
             wsl --list --verbose
-            wsl -d Ubuntu-24.04 -- bash -c 'uptime; systemctl status memgraph --no-pager; journalctl -u memgraph --no-pager -n 60'
+            wsl -d Ubuntu-24.04 -- bash -c 'uptime; sudo docker ps -a; sudo docker logs --tail 60 memgraph'
             exit 1
           }
 
