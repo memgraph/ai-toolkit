@@ -286,12 +286,8 @@ def test_update_says_when_the_package_is_not_the_uv_tool(fake_agents, setup_home
     assert "WARN  Packages: memgraph-context-graph" in capsys.readouterr().out
 
 
-def test_upgrading_asks_uv_to_refresh_every_package(monkeypatch, tmp_path):
-    from memgraph_context_graph.adapters import _identity
+def test_upgrading_asks_uv_to_refresh_every_package(monkeypatch, default_connectors):
     from memgraph_context_graph.setup import tool
-
-    monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "unset.toml"))
-    _identity._reset_cache()
 
     seen = {}
 
@@ -578,12 +574,8 @@ def test_codex_is_reported_with_the_trust_it_still_needs_and_claude_code_is_not(
     assert "trust" not in claude.summary
 
 
-def test_reinstalling_the_tool_keeps_the_spaces_package_once_it_is_there(monkeypatch, tmp_path):
-    from memgraph_context_graph.adapters import _identity
+def test_reinstalling_the_tool_keeps_the_spaces_package_once_it_is_there(monkeypatch, default_connectors):
     from memgraph_context_graph.setup import tool
-
-    monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "unset.toml"))
-    _identity._reset_cache()
 
     monkeypatch.setattr(tool, "installed", lambda package: package == "context-graph-spaces")
 
@@ -600,7 +592,7 @@ def test_reinstalling_the_tool_keeps_the_spaces_package_once_it_is_there(monkeyp
     assert tool.SPACES[1] in tool.requirements(spaces=True)
 
 
-def test_the_enterprise_hint_names_the_whole_install_not_just_the_spaces_package(monkeypatch):
+def test_the_enterprise_hint_names_the_whole_install_not_just_the_spaces_package(monkeypatch, default_connectors):
     import pytest
 
     from memgraph_context_graph import spaces

@@ -38,6 +38,13 @@ def _no_real_config(monkeypatch, tmp_path):
 
 
 @pytest.fixture
+def default_connectors(monkeypatch, tmp_path):
+    """A config that sets no ``[capture] connectors``, for tests about what setup does with the defaults."""
+    monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "unset.toml"))
+    _identity._reset_cache()
+
+
+@pytest.fixture
 def setup_home(tmp_path, monkeypatch):
     """A throwaway home and config file for setup and uninstall; Docker still finds its real context."""
     real_docker_config = Path.home() / ".docker"
