@@ -1201,7 +1201,7 @@ provides-extras = ["test"]
 
 [[package]]
 name = "context-graph-viewer"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "context-graph/viewer" }
 dependencies = [
     { name = "memgraph-context-graph" },
@@ -4096,7 +4096,7 @@ requires-dist = [
 
 [[package]]
 name = "memgraph-context-graph"
-version = "0.7.4"
+version = "0.8.0"
 source = { editable = "context-graph/memgraph-context-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -8565,7 +8565,7 @@ wheels = [
 
 [[package]]
 name = "sessions-graph"
-version = "0.8.1"
+version = "0.9.0"
 source = { editable = "context-graph/sessions-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
