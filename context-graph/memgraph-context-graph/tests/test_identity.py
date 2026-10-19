@@ -256,3 +256,35 @@ def test_parse_toml_handles_bare_values(config_dir, tmp_path):
     f.write_text("[memgraph]\nurl = bolt://localhost:7687\n")
     sections = _identity._parse_toml(f)
     assert sections["memgraph"]["url"] == "bolt://localhost:7687"
+
+
+# --- [capture], [extraction], [llm] derive_model ---
+
+
+def test_capture_connectors_unset_is_none(config_dir):
+    _identity.write_config(user_id="u")
+    assert _identity.load_config().connectors is None
+
+
+def test_capture_connectors_round_trip_and_survive_other_writes(config_dir):
+    _identity.write_config(connectors=("actions-graph", "sessions-graph"))
+    _identity.write_config(user_id="u")
+    _identity.write_full_config(user_id="v")
+    assert _identity.load_config().connectors == ("actions-graph", "sessions-graph")
+
+
+def test_capture_connectors_empty_means_none_enabled(config_dir):
+    _identity.write_config(connectors=())
+    assert _identity.load_config().connectors == ()
+
+
+def test_extraction_and_derive_model_survive_rewrites(config_dir):
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.toml").write_text(
+        '[llm]\nderive_model = "claude-opus-5-5"\n\n[extraction]\nmodel = "my/checkpoint"\nentity_threshold = "0.4"\n'
+    )
+    _identity.write_config(user_id="u")
+    _identity.write_full_config(user_id="v")
+
+    assert _identity.resolve_derive_model() == "claude-opus-5-5"
+    assert _identity.resolve_extraction() == {"model": "my/checkpoint", "entity_threshold": "0.4"}

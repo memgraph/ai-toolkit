@@ -183,10 +183,7 @@ def test_init_codex_does_not_bake_memgraph_connection_into_hook_command(tmp_path
 
     hooks = json.loads((tmp_path / ".codex" / "hooks.json").read_text())
     command = hooks["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-    assert (
-        command
-        == "/bin/memgraph-context-graph hook run codex --connector skills-graph --connector actions-graph --connector sessions-graph"
-    )
+    assert command == "/bin/memgraph-context-graph hook run codex"
     assert "MEMGRAPH_URL" not in command
     assert "MEMGRAPH_USER" not in command
     assert "MEMGRAPH_PASSWORD" not in command
@@ -300,3 +297,39 @@ def test_init_codex_force_overwrites(tmp_path):
     assert main(["init", "codex", "--project-dir", str(tmp_path), "--force"]) == 0
 
     assert (codex_dir / "config.toml").read_text() == "[features]\nhooks = true\n"
+
+
+def _enabled_connectors(monkeypatch, argv):
+    """The connector names `hook run` hands create_link, for a turn-end payload."""
+    from memgraph_context_graph.link import AgentLink
+
+    enabled = []
+
+    def recording(names, **kwargs):
+        enabled.append(list(names))
+        return AgentLink()
+
+    monkeypatch.setattr("memgraph_context_graph.hooks.runner.create_link", recording)
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"hook_event_name":"Stop","session_id":"s1"}'))
+    assert main(["run", "codex", *argv]) == 0
+    (names,) = enabled
+    return names
+
+
+def test_hook_run_enables_the_configured_connectors(monkeypatch):
+    from memgraph_context_graph.adapters import _identity
+
+    _identity.write_config(connectors=("actions-graph", "resources-graph"))
+
+    assert _enabled_connectors(monkeypatch, []) == ["actions-graph", "resources-graph"]
+    assert _enabled_connectors(monkeypatch, ["--connector", "skills-graph"]) == ["skills-graph"]
+
+
+def test_hook_run_enables_the_defaults_while_capture_connectors_is_unset(monkeypatch, tmp_path):
+    from memgraph_context_graph.adapters import _identity
+    from memgraph_context_graph.connectors import DEFAULT_CONNECTORS
+
+    monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "unset.toml"))
+    _identity._reset_cache()
+
+    assert _enabled_connectors(monkeypatch, []) == list(DEFAULT_CONNECTORS)

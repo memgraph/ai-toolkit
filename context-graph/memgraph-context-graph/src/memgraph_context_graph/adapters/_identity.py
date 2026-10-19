@@ -85,6 +85,11 @@ class HookConfig:
     memgraph_database: str = _MEMGRAPH_DEFAULTS["database"]
     openai_api_key: str = _LLM_DEFAULTS["openai_api_key"]
     anthropic_api_key: str = _LLM_DEFAULTS["anthropic_api_key"]
+    #: ``[llm] derive_model``: the model ontology derivation calls; None means the provider's default.
+    derive_model: str | None = None
+    #: ``[capture] connectors``: the graph connectors a hook enables when its command names none;
+    #: None (never set) means memgraph_context_graph.connectors.DEFAULT_CONNECTORS.
+    connectors: tuple[str, ...] | None = None
     auto_reconcile: bool | None = None
     #: The model recall embeds with; None means the consumer's own default.
     embedding_model: str | None = None
@@ -95,6 +100,9 @@ class HookConfig:
     ontology_path: str | None = None
     #: ``[ontology] derive``: "extend" (the default) or "off"; see sessions-graph's ontology module.
     ontology_derive: str | None = None
+    #: ``[extraction]`` keys (GLiNER2 checkpoint, thresholds, chunking), as written: sessions-graph
+    #: validates them, this module only keeps them across rewrites.
+    extraction_settings: dict[str, str] = field(default_factory=dict)
     #: ``[github] token``: overrides the ``gh`` login resources-graph's Sweep otherwise fetches with.
     github_token: str | None = None
     #: ``[memory] backend``: ``"context-graph"`` when the user has handed their
@@ -186,7 +194,7 @@ def resolve_auto_reconcile() -> bool:
     """Resolve whether sessions-graph should auto-trigger reconciliation on SESSION_END.
 
     Config file only (ADR 0002); never configured means ``False``, matching
-    ``SessionsGraphConnector``'s default, since reconciliation costs LLM calls.
+    ``SessionsGraphConnector``'s default.
     """
     return bool(load_config().auto_reconcile)
 
@@ -194,6 +202,16 @@ def resolve_auto_reconcile() -> bool:
 def resolve_embedding_model() -> str | None:
     """The configured ``[recall] embedding_model``, or None to leave sessions-graph's default."""
     return load_config().embedding_model
+
+
+def resolve_extraction() -> dict[str, str]:
+    """The configured ``[extraction]`` keys, as written; sessions-graph owns their meaning."""
+    return dict(load_config().extraction_settings)
+
+
+def resolve_derive_model() -> str | None:
+    """The configured ``[llm] derive_model``, or None to leave the provider's default."""
+    return load_config().derive_model
 
 
 def resolve_ontology() -> tuple[str | None, str | None]:
@@ -219,6 +237,8 @@ def write_config(
     memgraph_database: str | None = None,
     openai_api_key: str | None = None,
     anthropic_api_key: str | None = None,
+    derive_model: str | None = None,
+    connectors: tuple[str, ...] | None = None,
     auto_reconcile: bool | None = None,
     embedding_model: str | None = None,
     ontology_path: str | None = None,
@@ -241,6 +261,8 @@ def write_config(
         "memgraph_database": memgraph_database,
         "openai_api_key": openai_api_key,
         "anthropic_api_key": anthropic_api_key,
+        "derive_model": derive_model,
+        "connectors": connectors,
         "auto_reconcile": auto_reconcile,
         "embedding_model": embedding_model,
         "ontology_path": ontology_path,
@@ -266,8 +288,8 @@ def write_full_config(
 ) -> Path:
     """Write a complete config file, resetting identity, Memgraph and LLM settings to what is given.
 
-    Every other section (``[reconcile]``, ``[recall]``, ``[ontology]``, ``[github]``, ``[memory]``,
-    ``[session_start]``) and the edition are kept from the existing file, since only ``config set`` or a hand edit ever sets them.
+    Every other section (``[capture]``, ``[reconcile]``, ``[recall]``, ``[ontology]``, ``[extraction]``,
+    ``[github]``, ``[memory]``, ``[session_start]``), ``[llm] derive_model`` and the edition are kept from the existing file, since only ``config set`` or a hand edit ever sets them.
     ``auto_reconcile`` is kept likewise unless given here. :func:`write_config` is the partial update.
     """
     existing = _read_config_file()
@@ -313,9 +335,11 @@ def _read_config_file() -> HookConfig:
     identity = sections.get("identity", {})
     memgraph = sections.get("memgraph", {})
     llm = sections.get("llm", {})
+    capture = sections.get("capture", {})
     reconcile = sections.get("reconcile", {})
     recall = sections.get("recall", {})
     ontology = sections.get("ontology", {})
+    extraction = sections.get("extraction", {})
     github = sections.get("github", {})
     memory = sections.get("memory", {})
     session_start = sections.get("session_start", {})
@@ -330,11 +354,14 @@ def _read_config_file() -> HookConfig:
         memgraph_database=memgraph.get("database") or _MEMGRAPH_DEFAULTS["database"],
         openai_api_key=llm.get("openai_api_key", _LLM_DEFAULTS["openai_api_key"]),
         anthropic_api_key=llm.get("anthropic_api_key", _LLM_DEFAULTS["anthropic_api_key"]),
+        derive_model=llm.get("derive_model") or None,
+        connectors=_parse_list(capture["connectors"]) if "connectors" in capture else None,
         auto_reconcile=parse_bool_flag(auto_reconcile_raw) if auto_reconcile_raw is not None else None,
         embedding_model=recall.get("embedding_model") or None,
         recall_settings={key: value for key, value in recall.items() if key != "embedding_model"},
         ontology_path=ontology.get("path") or None,
         ontology_derive=ontology.get("derive") or None,
+        extraction_settings=dict(extraction),
         github_token=github.get("token") or None,
         memory_backend=memory.get("backend") or None,
         session_resume=parse_bool_flag(session_start["resume"]) if session_start.get("resume") else None,
@@ -346,6 +373,11 @@ def _read_config_file() -> HookConfig:
         ),
         problems=tuple(problems),
     )
+
+
+def _parse_list(value: str) -> tuple[str, ...]:
+    """A comma-separated value (``"a, b"``) as its non-blank items; the parser has no arrays."""
+    return tuple(item.strip() for item in value.split(",") if item.strip())
 
 
 def _parse_toml(path: Path, problems: list[str] | None = None) -> dict[str, dict[str, str]]:
@@ -387,7 +419,8 @@ def _render_config(config: HookConfig) -> str:
 
     ``[reconcile]`` is omitted while ``auto_reconcile`` is ``None`` so a re-read keeps "never configured"
     distinct from an explicit ``false``, and ``[session_start]`` likewise while ``session_resume`` is;
-    ``[recall]``, ``[ontology]``, ``[github]`` and ``[memory]`` are omitted while they hold nothing.
+    ``[capture]`` likewise while ``connectors`` is; ``[recall]``, ``[ontology]``, ``[extraction]``, ``[github]``
+    and ``[memory]`` are omitted while they hold nothing.
     """
     user_id = config.user_id or ""
     lines = [
@@ -407,7 +440,10 @@ def _render_config(config: HookConfig) -> str:
         "[llm]",
         f'openai_api_key = "{config.openai_api_key}"',
         f'anthropic_api_key = "{config.anthropic_api_key}"',
+        *([f'derive_model = "{config.derive_model}"'] if config.derive_model else []),
     ]
+    if config.connectors is not None:
+        lines += ["", "[capture]", f'connectors = "{", ".join(config.connectors)}"']
     if config.auto_reconcile is not None:
         lines += ["", "[reconcile]", f"auto_reconcile = {'true' if config.auto_reconcile else 'false'}"]
     recall = (
@@ -422,6 +458,8 @@ def _render_config(config: HookConfig) -> str:
     }
     if ontology:
         lines += ["", "[ontology]", *(f'{key} = "{value}"' for key, value in ontology.items())]
+    if config.extraction_settings:
+        lines += ["", "[extraction]", *(f'{key} = "{value}"' for key, value in config.extraction_settings.items())]
     if config.github_token:
         lines += ["", "[github]", f'token = "{config.github_token}"']
     if config.memory_backend:

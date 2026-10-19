@@ -267,7 +267,7 @@ def _packages(choices: Choices, log: Callable[[str], None]) -> Outcome:
     try:
         tool_mod.install(viewer=choices.viewer, log=log)
     except tool_mod.ToolError as exc:
-        connectors_missing = [package for package in missing if package in tool_mod.CONNECTORS]
+        connectors_missing = [package for package in missing if package in tool_mod.REQUIREMENTS]
         if connectors_missing:
             return Outcome("Packages", "fail", str(exc), fix="memgraph-context-graph setup --no-tui")
         # Only the viewer was missing: capture works without it.
@@ -389,8 +389,9 @@ def _memory(runtime: str, backend: str) -> Outcome | None:
 
 def _verify(choices: Choices) -> list[Outcome]:
     from memgraph_context_graph.cli import doctor_checks
+    from memgraph_context_graph.connectors import configured_connectors
 
-    checks = doctor_checks(choices.runtimes, list(agents_mod.CONNECTORS))
+    checks = doctor_checks(choices.runtimes, configured_connectors())
     outcomes = []
     for check in checks:
         if check.get("info"):

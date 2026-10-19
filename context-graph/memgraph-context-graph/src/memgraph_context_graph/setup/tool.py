@@ -14,12 +14,14 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-#: Kept in step with the plugins' bootstrap scripts and install.sh, which install the same set first.
+#: Kept in step with the plugins' bootstrap scripts and install.sh, which install the default connectors first.
 BASE = "memgraph-context-graph[mcp]>=0.8.0"
-CONNECTORS = {
+#: The requirement each connector in memgraph_context_graph.connectors.COMPONENTS installs from.
+REQUIREMENTS = {
     "skills-graph": "skills-graph[memgraph-context-graph]>=0.2.1",
     "actions-graph": "actions-graph[memgraph-context-graph]>=0.5.0",
     "sessions-graph": "sessions-graph[memgraph-context-graph]>=0.9.0",
+    "resources-graph": "resources-graph[memgraph-context-graph]>=0.2.0",
 }
 VIEWER = ("context-graph-viewer", "context-graph-viewer>=0.1.1")
 SPACES = ("context-graph-spaces", "context-graph-spaces>=0.1.0")
@@ -40,7 +42,7 @@ def installed(package: str) -> bool:
 
 def missing(*, viewer: bool) -> list[str]:
     """The packages setup wants that aren't installed here, by distribution name."""
-    wanted = [*CONNECTORS, *([VIEWER[0]] if viewer else [])]
+    wanted = [*connectors(), *([VIEWER[0]] if viewer else [])]
     return [package for package in wanted if not installed(package)]
 
 
@@ -61,15 +63,23 @@ def uv_tool_environment() -> bool:
     return Path(sys.prefix).resolve() == tool_dir.resolve()
 
 
-def requirements(*, viewer: bool = False, spaces: bool = False) -> list[str]:
-    """The ``uv tool install`` arguments for the tool, every connector, and the optional packages.
+def connectors() -> list[str]:
+    """The connectors setup installs: the configured ones (``[capture] connectors``), plus any already installed."""
+    from memgraph_context_graph.connectors import configured_connectors
 
-    An optional package already installed is kept: ``uv tool install`` replaces the tool's requirements with
+    configured = configured_connectors()
+    return [name for name in REQUIREMENTS if name in configured or installed(name)]
+
+
+def requirements(*, viewer: bool = False, spaces: bool = False) -> list[str]:
+    """The ``uv tool install`` arguments for the tool, its connectors (:func:`connectors`), and the optional packages.
+
+    A package already installed is kept: ``uv tool install`` replaces the tool's requirements with
     what it is given, so leaving one out would remove it.
     """
     argv = [BASE]
-    for requirement in CONNECTORS.values():
-        argv += ["--with", requirement]
+    for name in connectors():
+        argv += ["--with", REQUIREMENTS[name]]
     if viewer or installed(VIEWER[0]):
         argv += ["--with", VIEWER[1]]
     if spaces or installed(SPACES[0]):
@@ -83,7 +93,7 @@ def install_command(*, spaces: bool = False) -> str:
 
 
 def install(*, viewer: bool, log: Callable[[str], None], spaces: bool = False) -> None:
-    """Install the tool with every connector (and the viewer, and the spaces package), keeping what is already there.
+    """Install the tool with its connectors (and the viewer, and the spaces package), keeping what is already there.
 
     The full set is always passed: ``uv tool install`` replaces the tool's requirements with what it is
     given, so naming only the missing package would drop the others.

@@ -20,6 +20,23 @@ def _capture_log_in_tmp(monkeypatch, tmp_path):
     return log
 
 
+@pytest.fixture(autouse=True)
+def _no_real_config(monkeypatch, tmp_path):
+    """No test reads the user's real config file, whose Memgraph a hook run would write to.
+
+    A hook run that names no ``--connector`` enables ``[capture] connectors``, else the
+    defaults, so this config enables none: a test that wants one names it, or writes its own config.
+    """
+    config = tmp_path / "isolated-config.toml"
+    config.write_text('[capture]\nconnectors = ""\n')
+    monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(config))
+    _identity._reset_cache()
+    spaces._reset_cache()
+    yield
+    _identity._reset_cache()
+    spaces._reset_cache()
+
+
 @pytest.fixture
 def setup_home(tmp_path, monkeypatch):
     """A throwaway home and config file for setup and uninstall; Docker still finds its real context."""

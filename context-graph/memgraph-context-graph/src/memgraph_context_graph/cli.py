@@ -9,10 +9,16 @@ import sys
 from importlib import metadata
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
+from memgraph_context_graph.connectors import (
+    COMPONENTS,
+    DEFAULT_CONNECTORS,
+    configured_connectors,
+    supported_connectors,
+)
 from memgraph_context_graph.tools import normalize_connector_name
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 _HELP = """usage: memgraph-context-graph <command> [options]
 
@@ -106,6 +112,8 @@ def _config(argv: list[str]) -> int:
         "memgraph.database": "memgraph_database",
         "llm.openai_api_key": "openai_api_key",
         "llm.anthropic_api_key": "anthropic_api_key",
+        "llm.derive_model": "derive_model",
+        "capture.connectors": "connectors",
         "reconcile.auto_reconcile": "auto_reconcile",
         "recall.embedding_model": "embedding_model",
         "ontology.path": "ontology_path",
@@ -143,6 +151,14 @@ def _config(argv: list[str]) -> int:
         print(f"memgraph.database = {config.memgraph_database!r}")
         print(f"llm.openai_api_key = {'***' if config.openai_api_key else repr('')}")
         print(f"llm.anthropic_api_key = {'***' if config.anthropic_api_key else repr('')}")
+        if config.derive_model is None:
+            print("llm.derive_model = unset (defaults to the provider's model)")
+        else:
+            print(f"llm.derive_model = {config.derive_model!r}")
+        if config.connectors is None:
+            print(f"capture.connectors = unset (defaults to {', '.join(DEFAULT_CONNECTORS)})")
+        else:
+            print(f"capture.connectors = {', '.join(config.connectors)!r}")
         if config.auto_reconcile is None:
             print("reconcile.auto_reconcile = unset (defaults to false)")
         else:
@@ -156,6 +172,8 @@ def _config(argv: list[str]) -> int:
             print("ontology.derive = unset (defaults to extend)")
         else:
             print(f"ontology.derive = {config.ontology_derive!r}")
+        for key, value in config.extraction_settings.items():
+            print(f"extraction.{key} = {value!r}")
         print(f"github.token = {'***' if config.github_token else 'unset'}")
         print(
             f"memory.backend = {config.memory_backend!r}"
@@ -189,7 +207,7 @@ def _config(argv: list[str]) -> int:
         else:
             value = argv[2]
 
-        write_value: str | bool = value
+        write_value: str | bool | tuple[str, ...] = value
         if key in _BOOL_KEYS:
             normalized = value.strip().lower()
             if normalized not in TRUTHY_VALUES | FALSY_VALUES:
@@ -205,6 +223,12 @@ def _config(argv: list[str]) -> int:
         if key == "ontology.derive" and value not in {"extend", "off"}:
             print(f"Invalid value for {key}: {value!r} (expected extend/off)", file=sys.stderr)
             return 2
+        if key == "capture.connectors":
+            try:
+                write_value = tuple(supported_connectors(value.split(",")))
+            except ValueError as exc:
+                print(f"Invalid value for {key}: {exc}", file=sys.stderr)
+                return 2
 
         # The key/value pairing is only known at runtime (bool iff key is in
         # _BOOL_KEYS, str otherwise); write_config's own parameters are precisely
@@ -214,6 +238,8 @@ def _config(argv: list[str]) -> int:
             display_value = "***"
         elif key in _BOOL_KEYS:
             display_value = str(write_value).lower()
+        elif isinstance(write_value, tuple):
+            display_value = repr(", ".join(write_value))
         else:
             display_value = repr(write_value)
         print(f"Wrote {key} = {display_value} to {config_path}")
@@ -236,6 +262,8 @@ def _config(argv: list[str]) -> int:
             return 1
         if key in _SECRET_KEYS:
             print("***")
+        elif isinstance(value, tuple):
+            print(", ".join(value))
         else:
             print(value)
         return 0
@@ -370,7 +398,7 @@ def _doctor(argv: list[str]) -> int:
         "--connector",
         action="append",
         default=None,
-        help="Graph connector to enable. Defaults to skills-graph.",
+        help="Graph connector to check, repeatable. Defaults to the config file's [capture] connectors.",
     )
     parser.add_argument(
         "--json",
@@ -379,7 +407,7 @@ def _doctor(argv: list[str]) -> int:
     )
     args = parser.parse_args(argv)
 
-    checks = doctor_checks([args.runtime], args.connector or ["skills-graph"])
+    checks = doctor_checks([args.runtime], args.connector or configured_connectors())
     ok = all(check["ok"] for check in checks)
     payload: _DoctorPayload = {"ok": ok, "checks": checks}
     if args.json:
@@ -519,82 +547,47 @@ def _check_package(package_name: str) -> _CheckResult:
 
 def _check_connector(connector_name: str) -> _CheckResult:
     normalized = normalize_connector_name(connector_name)
-    if normalized == "skills-graph":
-        graph = None
-        try:
-            from skills_graph import SkillGraph
-
-            graph = SkillGraph()
-            version = _package_version("skills-graph")
-            return {"name": "connector:skills-graph", "ok": True, "detail": f"installed={version}; memgraph=reachable"}
-        except Exception as exc:
-            return {"name": "connector:skills-graph", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
-        finally:
-            _close(graph and graph._db)
-
-    if normalized == "actions-graph":
-        graph = None
-        try:
-            from actions_graph import ActionsGraph
-
-            graph = ActionsGraph()
-            version = _package_version("actions-graph")
-            return {"name": "connector:actions-graph", "ok": True, "detail": f"installed={version}; memgraph=reachable"}
-        except Exception as exc:
-            return {"name": "connector:actions-graph", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
-        finally:
-            _close(graph and graph._db)
-
-    if normalized == "sessions-graph":
-        graph = None
-        try:
-            from sessions_graph import SessionsGraph
-
-            from memgraph_context_graph.adapters._identity import resolve_memgraph_env, resolve_user_id
-            from memgraph_context_graph.hooks.runner import memgraph_kwargs
-
-            graph = SessionsGraph(**memgraph_kwargs(resolve_memgraph_env()))
-            version = _package_version("sessions-graph")
-            user_id = resolve_user_id({})
-            if not user_id:
-                return {
-                    "name": "connector:sessions-graph",
-                    "ok": False,
-                    "detail": "user_id not resolved — run: memgraph-context-graph config set identity.user_id <your-name>",
-                }
-            return {
-                "name": "connector:sessions-graph",
-                "ok": True,
-                "detail": f"installed={version}; memgraph=reachable; user_id={user_id!r}",
-            }
-        except Exception as exc:
-            return {"name": "connector:sessions-graph", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
-        finally:
-            _close(graph and graph._db)
-
-    if normalized == "resources-graph":
-        graph = None
-        try:
-            from memgraph_context_graph.adapters._identity import load_config, resolve_memgraph_env
-            from memgraph_context_graph.hooks.runner import memgraph_kwargs
-            from resources_graph import ResourcesGraph
-
-            graph = ResourcesGraph(**memgraph_kwargs(resolve_memgraph_env()))
-            version = _package_version("resources-graph")
-            # Touches are recorded without a token; the Sweep falls back to the user's gh login.
-            token = "set" if load_config().github_token else "unset (the Sweep uses the gh login)"
-            return {
-                "name": "connector:resources-graph",
-                "ok": True,
-                "detail": f"installed={version}; memgraph=reachable; github.token {token}",
-            }
-        except Exception as exc:
-            return {"name": "connector:resources-graph", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
-        finally:
-            _close(graph and graph._db)
-
-    else:
+    if normalized not in COMPONENTS:
         return {"name": f"connector:{connector_name}", "ok": False, "detail": "unsupported connector"}
+
+    from memgraph_context_graph.adapters._identity import resolve_memgraph_env
+    from memgraph_context_graph.hooks.runner import memgraph_kwargs
+
+    name = f"connector:{normalized}"
+    graph = None
+    try:
+        graph = COMPONENTS[normalized].graph()(**memgraph_kwargs(resolve_memgraph_env()))
+        detail = f"installed={_package_version(normalized)}; memgraph=reachable"
+        extra = _CONNECTOR_CHECKS.get(normalized)
+        ok, more = extra() if extra is not None else (True, "")
+        return {"name": name, "ok": ok, "detail": f"{detail}; {more}" if ok and more else more or detail}
+    except Exception as exc:
+        return {"name": name, "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+    finally:
+        _close(graph and graph._db)
+
+
+def _check_sessions_graph() -> tuple[bool, str]:
+    from memgraph_context_graph.adapters._identity import resolve_user_id
+
+    user_id = resolve_user_id({})
+    if not user_id:
+        return False, "user_id not resolved — run: memgraph-context-graph config set identity.user_id <your-name>"
+    return True, f"user_id={user_id!r}"
+
+
+def _check_resources_graph() -> tuple[bool, str]:
+    from memgraph_context_graph.adapters._identity import load_config
+
+    # Touches are recorded without a token; the Sweep falls back to the user's gh login.
+    return True, f"github.token {'set' if load_config().github_token else 'unset (the Sweep uses the gh login)'}"
+
+
+#: What a connector needs beyond a reachable Memgraph: (ok, what its check line adds, or why it fails).
+_CONNECTOR_CHECKS: dict[str, Callable[[], tuple[bool, str]]] = {
+    "sessions-graph": _check_sessions_graph,
+    "resources-graph": _check_resources_graph,
+}
 
 
 def _check_embeddings() -> _CheckResult:

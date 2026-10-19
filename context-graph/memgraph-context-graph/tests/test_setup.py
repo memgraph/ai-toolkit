@@ -14,6 +14,7 @@ import subprocess
 import pytest
 
 from memgraph_context_graph.cli import main
+from memgraph_context_graph.connectors import DEFAULT_CONNECTORS
 from memgraph_context_graph.setup import agents, engine, memgraph
 from memgraph_context_graph.setup.agents import BY_RUNTIME, WiringError
 
@@ -465,15 +466,20 @@ def test_codex_is_reported_with_the_trust_it_still_needs_and_claude_code_is_not(
     assert "trust" not in claude.summary
 
 
-def test_reinstalling_the_tool_keeps_the_spaces_package_once_it_is_there(monkeypatch):
+def test_reinstalling_the_tool_keeps_the_spaces_package_once_it_is_there(monkeypatch, tmp_path):
+    from memgraph_context_graph.adapters import _identity
     from memgraph_context_graph.setup import tool
+
+    monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "unset.toml"))
+    _identity._reset_cache()
 
     monkeypatch.setattr(tool, "installed", lambda package: package == "context-graph-spaces")
 
     argv = tool.requirements()
 
     assert tool.BASE in argv
-    assert all(requirement in argv for requirement in tool.CONNECTORS.values())
+    assert all(tool.REQUIREMENTS[name] in argv for name in DEFAULT_CONNECTORS)
+    assert tool.REQUIREMENTS["resources-graph"] not in argv
     assert tool.SPACES[1] in argv
     assert tool.VIEWER[1] not in argv
 
