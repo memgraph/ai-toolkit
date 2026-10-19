@@ -90,7 +90,21 @@ jobs:
         run: |
           Set-Content -Path "$env:USERPROFILE\.wslconfig" -Value "[wsl2]`nvmIdleTimeout=-1"
 
+      # Installing the distro occasionally stalls on a hosted runner (the step then runs until the job
+      # times out, 30 minutes), so it is capped and tried a second time.
       - name: WSL distro for Memgraph
+        id: wsl
+        continue-on-error: true
+        timeout-minutes: 8
+        uses: Vampire/setup-wsl@v6
+        with:
+          distribution: Ubuntu-24.04
+          wsl-version: "2"
+          use-cache: "false"
+
+      - name: WSL distro for Memgraph (second attempt)
+        if: steps.wsl.outcome == 'failure'
+        timeout-minutes: 8
         uses: Vampire/setup-wsl@v6
         with:
           distribution: Ubuntu-24.04
