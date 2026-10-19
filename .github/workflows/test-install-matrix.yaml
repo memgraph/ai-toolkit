@@ -101,6 +101,18 @@ jobs:
           sudo -u memgraph nohup memgraph --bolt-address=0.0.0.0 --also-log-to-stderr > /tmp/memgraph.log 2>&1 &
           sleep 15
 
+      - name: Memgraph answers Bolt on Windows' localhost
+        shell: pwsh
+        run: |
+          foreach ($attempt in 1..20) {
+            if (Test-NetConnection -ComputerName 127.0.0.1 -Port 7687 -InformationLevel Quiet -WarningAction SilentlyContinue) {
+              Write-Host "bolt reachable after $attempt attempt(s)"; exit 0
+            }
+            Start-Sleep -Seconds 3
+          }
+          wsl -d Ubuntu-24.04 -- bash -c 'pgrep -a memgraph; tail -n 40 /tmp/memgraph.log'
+          exit 1
+
       # A child process of the edition under test (`shell` takes no expressions). Its PATH change
       # does not reach this step, which is the point: later steps see only what was persisted.
       - name: Run install.ps1
