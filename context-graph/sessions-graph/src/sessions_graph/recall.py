@@ -39,8 +39,17 @@ from .passages import best_passage, excerpt, split_passages
 
 LANES = ("memories", "turns", "text", "entities", "facts", "user_facts")
 
-#: bge's retrieval instruction, prepended to the question only, never to what is searched.
+#: bge's English retrieval instruction, prepended to the question only, never to what is searched.
 QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
+#: The models trained with :data:`QUERY_INSTRUCTION`: bge's English checkpoints. Another model gets no
+#: prefix unless ``RecallConfig.query_instruction`` gives its own; bge's text would only add noise to it.
+_BGE_ENGLISH = re.compile(r"bge-(small|base|large)-en", re.IGNORECASE)
+
+
+def query_instruction(model: str) -> str:
+    """The prefix *model* expects on a search query: :data:`QUERY_INSTRUCTION` for bge's English models, else none."""
+    return QUERY_INSTRUCTION if _BGE_ENGLISH.search(model) else ""
+
 
 #: Full-text index over message text; created by ``SessionsGraph.setup``.
 TURN_TEXT_INDEX = "recall_turn_text_index"
@@ -65,6 +74,8 @@ class RecallConfig:
     user_facts_k: int = 30
     #: Characters of each turn shown: a longer turn shows its matched passages instead of its opening.
     turn_chars: int = 1500
+    #: Prepended to the question before embedding it; None means :func:`query_instruction` for the model.
+    query_instruction: str | None = None
 
     @classmethod
     def from_mapping(cls, values: dict[str, Any]) -> RecallConfig:
@@ -84,6 +95,8 @@ class RecallConfig:
                 if unknown:
                     raise ValueError(f"unknown recall lanes {unknown}; choose from {', '.join(LANES)}")
                 overrides[key] = lanes
+            elif key == "query_instruction":
+                overrides[key] = str(value)
             else:
                 number = int(value)
                 if number < 0:
@@ -327,7 +340,8 @@ def recall(
     """
     config = config or RecallConfig()
     try:
-        query = embed_texts(db, [QUERY_INSTRUCTION + question], model)[0]
+        prefix = config.query_instruction if config.query_instruction is not None else query_instruction(model)
+        query = embed_texts(db, [prefix + question], model)[0]
     except EmbeddingUnavailableError as exc:
         return _text_only(db, user_id, question, config, reason=str(exc))
 

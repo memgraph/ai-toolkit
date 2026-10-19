@@ -222,6 +222,13 @@ A key (`llm.anthropic_api_key` or `llm.openai_api_key`) only enables
 [ontology derivation](#ontology-versions); without one, users stay on their
 adopted ontology.
 
+**Extraction settings.** The CLI reads the config file's `[extraction]`
+(`model`, `entity_threshold`, `relation_threshold`, `chunk_size`,
+`chunk_overlap`) into an `ExtractionConfig`; in code, pass
+`SessionsGraph(extraction=ExtractionConfig(...))`. Reconciliation,
+derivation's re-extraction and its observer all use it, so a session is
+re-read the way it was first read. Unset fields keep GLiNER2's defaults.
+
 **Reconciliation never runs inside a hook itself.** Local GLiNER2 extraction
 can exceed the timeout that hook runtimes enforce on hook commands. Instead:
 
@@ -434,6 +441,10 @@ it with:
 ```bash
 memgraph-context-graph config set recall.embedding_model <huggingface-model-name>
 ```
+
+Recall prepends bge's retrieval instruction to the question only for bge's
+English models; another model gets no prefix unless `[recall] query_instruction`
+sets the one it was trained with.
 
 When it runs:
 
