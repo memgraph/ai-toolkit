@@ -7,6 +7,10 @@ name: Experiment - Memgraph on a Windows runner (manual)
 # larger runner with nested virtualization. Delete once test-install-matrix.yaml
 # uses the winner.
 on:
+  # Temporary: a manual trigger only works once the file is on main, so the probe also runs on its PR.
+  pull_request:
+    paths:
+      - ".github/workflows/experiment-windows-memgraph.yaml"
   workflow_dispatch:
     inputs:
       memgraph_version:
@@ -52,7 +56,7 @@ jobs:
         run: |
           set -euxo pipefail
           curl -fsSL -o /tmp/memgraph.deb \
-            "https://download.memgraph.com/memgraph/v${{ inputs.memgraph_version }}/ubuntu-24.04/memgraph_${{ inputs.memgraph_version }}-1_amd64.deb"
+            "https://download.memgraph.com/memgraph/v${{ inputs.memgraph_version || '3.8.1' }}/ubuntu-24.04/memgraph_${{ inputs.memgraph_version || '3.8.1' }}-1_amd64.deb"
           sudo apt-get update
           sudo apt-get install -y /tmp/memgraph.deb
           # The service manager isn't running in WSL here; start the server directly.
