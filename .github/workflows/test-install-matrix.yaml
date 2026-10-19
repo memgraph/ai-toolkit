@@ -1,0 +1,119 @@
+name: Test install scripts (Linux, Windows)
+
+# Runs the checked-in context-graph/scripts/install.sh and install.ps1 the way a
+# new user's one-liner does, then asserts the machine ends up with a working,
+# idempotent, removable install. It runs the files in this checkout, not the
+# published launchers (those are checked nightly from memgraph-platform).
+# No model is called, so no secrets are needed and fork PRs run it too.
+on:
+  pull_request:
+    paths:
+      - "context-graph/scripts/install.sh"
+      - "context-graph/scripts/install.ps1"
+      - "context-graph/memgraph-context-graph/src/memgraph_context_graph/setup/**"
+      - ".github/workflows/test-install-matrix.yaml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: install-matrix-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04, ubuntu-24.04-arm]
+        uv: [absent, present]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv ahead of the script
+        if: matrix.uv == 'present'
+        run: python3 -m pip install --user uv
+
+      - name: Install agent CLIs the installer should wire
+        run: npm install -g @anthropic-ai/claude-code @openai/codex
+
+      # No terminal on the runner, so setup takes its plain path; it starts Memgraph in Docker itself.
+      - name: Run install.sh
+        run: ./context-graph/scripts/install.sh claude-code codex --user-id ci-test-user
+
+      - name: A fresh shell finds the tool and doctor is green
+        run: |
+          bash -lc 'memgraph-context-graph --version && memgraph-context-graph doctor'
+
+      - name: A second run changes nothing and still succeeds
+        run: ./context-graph/scripts/install.sh claude-code codex --user-id ci-test-user
+
+      - name: Uninstall leaves the graph and removes the wiring
+        run: |
+          export PATH="$(uv tool dir --bin):$PATH"
+          memgraph-context-graph uninstall claude-code codex
+          docker ps --format '{{.Names}}' | grep -q memgraph
+
+      - name: Piped through bash on a pty, the interactive branch does not hang
+        run: |
+          export PATH="$(uv tool dir --bin):$PATH"
+          # No input is given, so the TUI must exit rather than wait; 60s catches a hang.
+          script -qec "timeout 60 bash ./context-graph/scripts/install.sh --plan" /dev/null < /dev/null
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+        uv: [absent, present]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv ahead of the script
+        if: matrix.uv == 'present'
+        shell: pwsh
+        run: python -m pip install --user uv
+
+      - name: Install agent CLIs the installer should wire
+        shell: pwsh
+        run: npm install -g @anthropic-ai/claude-code @openai/codex
+
+      # Docker on this runner runs Windows containers, which cannot run Memgraph's Linux image, so
+      # Memgraph runs in WSL and setup is pointed at it. experiment-windows-memgraph.yaml is the
+      # probe that decides which WSL mode works on a hosted runner.
+      - name: WSL distro for Memgraph
+        uses: Vampire/setup-wsl@v6
+        with:
+          distribution: Ubuntu-24.04
+          wsl-version: "1"
+          use-cache: "false"
+
+      - name: Start Memgraph in WSL
+        shell: wsl-bash {0}
+        run: |
+          set -euxo pipefail
+          curl -fsSL -o /tmp/memgraph.deb \
+            "https://download.memgraph.com/memgraph/v3.8.1/ubuntu-24.04/memgraph_3.8.1-1_amd64.deb"
+          sudo apt-get update
+          sudo apt-get install -y /tmp/memgraph.deb
+          sudo -u memgraph nohup memgraph --bolt-address=0.0.0.0 --also-log-to-stderr > /tmp/memgraph.log 2>&1 &
+          sleep 15
+
+      - name: Run install.ps1
+        shell: ${{ matrix.shell }}
+        run: ./context-graph/scripts/install.ps1 claude-code codex --user-id ci-test-user --memgraph-url bolt://127.0.0.1:7687
+
+      - name: A new terminal finds the tool (persistent user PATH) and doctor is green
+        shell: cmd
+        run: |
+          powershell -NoProfile -Command "$p=[Environment]::GetEnvironmentVariable('Path','User'); $env:Path=$p; memgraph-context-graph --version; memgraph-context-graph doctor; exit $LASTEXITCODE"
+
+      - name: A second run changes nothing and still succeeds
+        shell: ${{ matrix.shell }}
+        run: ./context-graph/scripts/install.ps1 claude-code codex --user-id ci-test-user --memgraph-url bolt://127.0.0.1:7687
+
+      - name: Uninstall removes the wiring
+        shell: ${{ matrix.shell }}
+        run: memgraph-context-graph uninstall claude-code codex

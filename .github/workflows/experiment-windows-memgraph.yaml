@@ -1,0 +1,68 @@
+name: Experiment - Memgraph on a Windows runner (manual)
+
+# Throwaway probe: which of these gives a Windows runner a Bolt endpoint on
+# localhost:7687 that install.ps1's `setup` can use? Docker on windows-latest
+# runs Windows containers only and Memgraph ships a Linux image, so the
+# candidates are a Linux Docker engine, WSL running Memgraph's .deb, and a
+# larger runner with nested virtualization. Delete once test-install-matrix.yaml
+# uses the winner.
+on:
+  workflow_dispatch:
+    inputs:
+      memgraph_version:
+        description: Memgraph release for the WSL .deb
+        default: "3.8.1"
+
+jobs:
+  windows-memgraph:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        approach: [docker-linux-engine, wsl1-deb, wsl2-deb]
+    steps:
+      - name: What the runner offers
+        shell: pwsh
+        run: |
+          docker version 2>&1 | Out-Host
+          docker info --format '{{.OSType}}' 2>&1 | Out-Host
+          wsl --status 2>&1 | Out-Host
+          systeminfo | Select-String 'Hyper-V|Virtualization'
+
+      - name: Docker, switched to Linux containers
+        if: matrix.approach == 'docker-linux-engine'
+        shell: pwsh
+        run: |
+          & "$env:ProgramFiles\Docker\Docker\DockerCli.exe" -SwitchLinuxEngine
+          docker info --format '{{.OSType}}'
+          docker run -d --name memgraph -p 7687:7687 memgraph/memgraph:latest
+
+      - name: WSL distro
+        if: startsWith(matrix.approach, 'wsl')
+        uses: Vampire/setup-wsl@v6
+        with:
+          distribution: Ubuntu-24.04
+          wsl-version: ${{ matrix.approach == 'wsl1-deb' && '1' || '2' }}
+          use-cache: "false"
+
+      - name: Memgraph .deb inside WSL
+        if: startsWith(matrix.approach, 'wsl')
+        shell: wsl-bash {0}
+        run: |
+          set -euxo pipefail
+          curl -fsSL -o /tmp/memgraph.deb \
+            "https://download.memgraph.com/memgraph/v${{ inputs.memgraph_version }}/ubuntu-24.04/memgraph_${{ inputs.memgraph_version }}-1_amd64.deb"
+          sudo apt-get update
+          sudo apt-get install -y /tmp/memgraph.deb
+          # The service manager isn't running in WSL here; start the server directly.
+          sudo -u memgraph nohup memgraph --bolt-address=0.0.0.0 --also-log-to-stderr > /tmp/memgraph.log 2>&1 &
+          sleep 15
+          tail -n 30 /tmp/memgraph.log
+
+      - name: Is Bolt reachable from Windows?
+        shell: pwsh
+        run: |
+          $ok = Test-NetConnection -ComputerName 127.0.0.1 -Port 7687 -InformationLevel Quiet
+          Write-Host "bolt on 127.0.0.1:7687 reachable: $ok"
+          if (-not $ok) { exit 1 }
