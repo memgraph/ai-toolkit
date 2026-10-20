@@ -10,6 +10,7 @@ import time
 from typing import TYPE_CHECKING, Any, NoReturn, TypedDict
 
 from memgraph_context_graph import capture_log
+from memgraph_context_graph.capture_policy import CapturePolicy, policy_from_config
 from memgraph_context_graph.connectors import COMPONENTS, configured_connectors, supported_connectors
 from memgraph_context_graph.events import ToolStartEvent
 from memgraph_context_graph.link import AgentLink, ConnectorFailuresError
@@ -50,6 +51,7 @@ def create_link(
     *,
     memgraph_env: dict[str, str] | None = None,
     on_error: ConnectorFailureHandler | None = None,
+    policy: CapturePolicy | None = None,
 ) -> AgentLink:
     """Create an AgentLink with optional connectors named by CLI/config.
 
@@ -67,6 +69,7 @@ def create_link(
         on_error: When given, a connector that can't be set up, or fails an
             event, is reported here and the others still run. Without it the
             first failure raises.
+        policy: The capture policy every event passes before a connector sees it.
 
     Raises:
         ValueError: if a connector name is not supported, or Memgraph can't be reached.
@@ -77,7 +80,7 @@ def create_link(
         if on_error is not None:
             on_error(connector_name(connector), event, exc)
 
-    link = AgentLink(on_error=report if on_error is not None else None)
+    link = AgentLink(on_error=report if on_error is not None else None, policy=policy)
     shared = _hook_memgraph(memgraph_env) if names and memgraph_env is not None else None
     for name in names:
         try:
@@ -233,13 +236,17 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
         if args.event_name is not None:
             payload.setdefault("hook_event_name", args.event_name)
         report.capturing(payload, args.session_id or _payload_session_id(payload))
-        if problems := load_config().problems:
+        policy, policy_problems = policy_from_config(load_config())
+        if problems := [*load_config().problems, *policy_problems]:
             report.record("config", level="warning", error_type="MalformedConfig", error="; ".join(problems))
+        if policy.excludes_project(_with_cwd(payload)["cwd"]):
+            _print_response(plugin, payload, connector_names)
+            return 0
 
         report.stage = "setup"
         supported_connectors(connector_names)
         report.stage = "connect"
-        link = create_link(connector_names, memgraph_env=memgraph_env, on_error=report.connector_failed)
+        link = create_link(connector_names, memgraph_env=memgraph_env, on_error=report.connector_failed, policy=policy)
         tool_starts = _ToolStarts()
         link.add_connector(tool_starts)
         report.stage = "translate"

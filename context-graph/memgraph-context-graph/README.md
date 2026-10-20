@@ -257,6 +257,11 @@ derive_model = "claude-sonnet-5-5"
 
 [capture]
 connectors = "skills-graph, actions-graph, sessions-graph"
+exclude_projects = "~/clients/*, ~/personal"
+exclude_tools = "TodoWrite, mcp__vault__*"
+
+[redact]
+ticket = 'ACME-[0-9]+'
 
 [reconcile]
 auto_reconcile = true
@@ -279,6 +284,8 @@ the model it calls (default `claude-sonnet-5-5` with Anthropic, `gpt-5` with Ope
 command names no `--connector`, from `skills-graph`, `actions-graph`,
 `sessions-graph` and `resources-graph`; unset means the first three, and
 an empty value enables none. Setup installs the ones it names.
+The rest of `[capture]` and `[redact]` are the capture policy, applied to every
+event before any connector stores it (see [Capture privacy](#capture-privacy)).
 `[reconcile]` is omitted entirely from a file setup wrote — absent
 means "never configured," distinct from an explicit `auto_reconcile = false`.
 `[recall]` is optional too: without it, recall runs with the widths the
@@ -298,10 +305,36 @@ memgraph-context-graph config show
 memgraph-context-graph config get memgraph.url
 memgraph-context-graph config set <key> <value>
 # keys: identity.user_id, memgraph.{url,user,password,database},
-#       llm.{openai_api_key,anthropic_api_key,derive_model}, capture.connectors,
+#       llm.{openai_api_key,anthropic_api_key,derive_model},
+#       capture.{connectors,redact,max_chars,exclude_tools,exclude_projects},
 #       reconcile.auto_reconcile, recall.embedding_model, ontology.{path,derive}, memory.backend
-# [recall] widths and [extraction] are edited in the file.
+# [recall] widths, [extraction] and [redact] patterns are edited in the file.
 ```
+
+### Capture privacy
+
+Every hook event passes the capture policy before any connector sees it, so
+what it removes never reaches Memgraph:
+
+- **`<private>…</private>`** is stripped from prompts, replies and tool input
+  and output. An unclosed `<private>` hides the rest of that text, and a prompt
+  that was nothing but private isn't stored at all.
+- **Secrets are redacted** to `[REDACTED:<name>]`: AWS, GitHub, Anthropic,
+  OpenAI, Slack, Stripe and Google keys, JWTs, PEM private keys, passwords in
+  URLs, and the credentials in this config file. Each `[redact]` key adds a
+  pattern (a Python regular expression; quote it with single quotes).
+  `capture.redact = false` turns redaction off; `<private>` still applies.
+- **Long text is clipped** at `capture.max_chars` characters per field
+  (default 100000; `0` for no limit).
+- **`capture.exclude_tools`** drops those tools' calls and results, by exact
+  name or glob (`mcp__vault__*`).
+- **`capture.exclude_projects`** captures nothing from a session whose working
+  directory is one of these paths or globs, or inside one (`~` expands). The
+  agent's own hooks still answer normally, and recall still works there.
+
+Redaction is pattern-based: it catches known credential shapes, not every
+secret. What a session stored before the policy existed stays as it was.
+Library callers driving `AgentLink` directly pass a `CapturePolicy` themselves.
 
 Hooks never read environment variables for these values, and neither does setup: it writes only
 `memgraph.url` and `identity.user_id`, from its flags or what it found. Everything else is set with

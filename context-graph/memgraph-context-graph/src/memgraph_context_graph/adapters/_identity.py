@@ -90,6 +90,11 @@ class HookConfig:
     #: ``[capture] connectors``: the graph connectors a hook enables when its command names none;
     #: None (never set) means memgraph_context_graph.connectors.DEFAULT_CONNECTORS.
     connectors: tuple[str, ...] | None = None
+    #: Every other ``[capture]`` key (``redact``, ``max_chars``, ``exclude_tools``, ``exclude_projects``),
+    #: as written: memgraph_context_graph.capture_policy validates them, this module only keeps them.
+    capture_settings: dict[str, str] = field(default_factory=dict)
+    #: ``[redact]``: custom capture redaction patterns, name to regular expression.
+    redact_patterns: dict[str, str] = field(default_factory=dict)
     auto_reconcile: bool | None = None
     #: The model recall embeds with; None means the consumer's own default.
     embedding_model: str | None = None
@@ -239,6 +244,7 @@ def write_config(
     anthropic_api_key: str | None = None,
     derive_model: str | None = None,
     connectors: tuple[str, ...] | None = None,
+    capture_settings: dict[str, str] | None = None,
     auto_reconcile: bool | None = None,
     embedding_model: str | None = None,
     ontology_path: str | None = None,
@@ -250,6 +256,7 @@ def write_config(
     """Write or update the config file. Returns the path written to.
 
     Only updates supplied values; preserves existing values for unspecified keys.
+    ``capture_settings`` replaces the ``[capture]`` keys other than ``connectors`` as a whole.
     Creates the file with 0600 permissions if it does not exist.
     """
     updates = {
@@ -263,6 +270,7 @@ def write_config(
         "anthropic_api_key": anthropic_api_key,
         "derive_model": derive_model,
         "connectors": connectors,
+        "capture_settings": capture_settings,
         "auto_reconcile": auto_reconcile,
         "embedding_model": embedding_model,
         "ontology_path": ontology_path,
@@ -288,7 +296,7 @@ def write_full_config(
 ) -> Path:
     """Write a complete config file, resetting identity, Memgraph and LLM settings to what is given.
 
-    Every other section (``[capture]``, ``[reconcile]``, ``[recall]``, ``[ontology]``, ``[extraction]``,
+    Every other section (``[capture]``, ``[redact]``, ``[reconcile]``, ``[recall]``, ``[ontology]``, ``[extraction]``,
     ``[github]``, ``[memory]``, ``[session_start]``), ``[llm] derive_model`` and the edition are kept from the existing file, since only ``config set`` or a hand edit ever sets them.
     ``auto_reconcile`` is kept likewise unless given here. :func:`write_config` is the partial update.
     """
@@ -356,6 +364,8 @@ def _read_config_file() -> HookConfig:
         anthropic_api_key=llm.get("anthropic_api_key", _LLM_DEFAULTS["anthropic_api_key"]),
         derive_model=llm.get("derive_model") or None,
         connectors=_parse_list(capture["connectors"]) if "connectors" in capture else None,
+        capture_settings={key: value for key, value in capture.items() if key != "connectors"},
+        redact_patterns=dict(sections.get("redact", {})),
         auto_reconcile=parse_bool_flag(auto_reconcile_raw) if auto_reconcile_raw is not None else None,
         embedding_model=recall.get("embedding_model") or None,
         recall_settings={key: value for key, value in recall.items() if key != "embedding_model"},
@@ -419,8 +429,8 @@ def _render_config(config: HookConfig) -> str:
 
     ``[reconcile]`` is omitted while ``auto_reconcile`` is ``None`` so a re-read keeps "never configured"
     distinct from an explicit ``false``, and ``[session_start]`` likewise while ``session_resume`` is;
-    ``[capture]`` likewise while ``connectors`` is; ``[recall]``, ``[ontology]``, ``[extraction]``, ``[github]``
-    and ``[memory]`` are omitted while they hold nothing.
+    ``[capture]`` likewise while ``connectors`` is and no other capture key is set; ``[redact]``, ``[recall]``,
+    ``[ontology]``, ``[extraction]``, ``[github]`` and ``[memory]`` are omitted while they hold nothing.
     """
     user_id = config.user_id or ""
     lines = [
@@ -442,8 +452,15 @@ def _render_config(config: HookConfig) -> str:
         f'anthropic_api_key = "{config.anthropic_api_key}"',
         *([f'derive_model = "{config.derive_model}"'] if config.derive_model else []),
     ]
-    if config.connectors is not None:
-        lines += ["", "[capture]", f'connectors = "{", ".join(config.connectors)}"']
+    capture = {
+        **({"connectors": ", ".join(config.connectors)} if config.connectors is not None else {}),
+        **config.capture_settings,
+    }
+    if capture:
+        lines += ["", "[capture]", *(f'{key} = "{value}"' for key, value in capture.items())]
+    if config.redact_patterns:
+        # Single quotes: a pattern may hold a double quote, and the parser does no escape processing.
+        lines += ["", "[redact]", *(f"{key} = '{value}'" for key, value in config.redact_patterns.items())]
     if config.auto_reconcile is not None:
         lines += ["", "[reconcile]", f"auto_reconcile = {'true' if config.auto_reconcile else 'false'}"]
     recall = (

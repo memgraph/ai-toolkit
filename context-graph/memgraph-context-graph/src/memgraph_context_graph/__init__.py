@@ -23,6 +23,7 @@ Quick Start::
 
 from importlib import metadata
 
+from .capture_policy import CapturePolicy
 from .events import (
     AgentEndEvent,
     AgentStartEvent,
@@ -52,6 +53,7 @@ __all__ = [
     "AgentEndEvent",
     "AgentLink",
     "AgentStartEvent",
+    "CapturePolicy",
     "ErrorOccurredEvent",
     "Event",
     "EventType",
