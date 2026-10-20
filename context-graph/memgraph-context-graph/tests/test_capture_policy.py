@@ -1,17 +1,28 @@
 """The capture policy's rewriting rules; what reaches a real graph is in actions-graph's test_e2e_capture_policy."""
 
+from typing import TypeVar
+
 import pytest
 
 from memgraph_context_graph import AgentLink
 from memgraph_context_graph.adapters import _identity
 from memgraph_context_graph.capture_policy import DEFAULT_MAX_CHARS, CapturePolicy, policy_from_config
-from memgraph_context_graph.events import MessageEvent, SessionStartEvent, ToolEndEvent, ToolStartEvent
+from memgraph_context_graph.events import Event, MessageEvent, SessionStartEvent, ToolEndEvent, ToolStartEvent
 from memgraph_context_graph.protocols import GraphConnector
 
 # Assembled, so this file holds no string a secret scanner would flag.
 _GITHUB = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
 _ANTHROPIC = "sk-ant-" + "api03-abcdefghijklmnopqrstuv"
 _AWS = "AKIA" + "ABCDEFGHIJKLMNOP"
+
+_E = TypeVar("_E", bound=Event)
+
+
+def _kept(policy: CapturePolicy, event: _E) -> _E:
+    """The policed event, for a test that expects the policy to keep it."""
+    cleaned = policy.apply(event)
+    assert cleaned is not None
+    return cleaned
 
 
 @pytest.mark.parametrize(
@@ -28,7 +39,7 @@ _AWS = "AKIA" + "ABCDEFGHIJKLMNOP"
     ],
 )
 def test_builtin_patterns_redact_known_credential_shapes(secret, name):
-    event = CapturePolicy().apply(ToolStartEvent(session_id="s", tool_name="Bash", tool_input={"command": secret}))
+    event = _kept(CapturePolicy(), ToolStartEvent(session_id="s", tool_name="Bash", tool_input={"command": secret}))
 
     assert event.tool_input == {"command": f"[REDACTED:{name}]"}
 
@@ -37,7 +48,7 @@ def test_private_keys_and_url_passwords_are_redacted():
     pem = "-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY-----"
     text = f"key:\n{pem}\nurl: postgres://admin:hunter22@db:5432/x"
 
-    event = CapturePolicy().apply(ToolEndEvent(session_id="s", tool_name="Read", result=text))
+    event = _kept(CapturePolicy(), ToolEndEvent(session_id="s", tool_name="Read", result=text))
 
     assert event.result == "key:\n[REDACTED:private_key]\nurl: postgres://[REDACTED:url_password]@db:5432/x"
 
@@ -51,7 +62,7 @@ def test_nested_values_are_redacted_and_identifiers_kept():
         metadata={"env": {"GH": _GITHUB}},
     )
 
-    cleaned = CapturePolicy().apply(event)
+    cleaned = _kept(CapturePolicy(), event)
 
     assert cleaned.result == [{"text": "token [REDACTED:github_token]"}]
     assert cleaned.metadata == {"env": {"GH": "[REDACTED:github_token]"}}
@@ -62,8 +73,8 @@ def test_nested_values_are_redacted_and_identifiers_kept():
 def test_private_blocks_are_stripped_and_an_unclosed_one_hides_the_rest():
     policy = CapturePolicy()
 
-    closed = policy.apply(MessageEvent(session_id="s", role="user", content="fix <private>my salary</private> bug"))
-    unclosed = policy.apply(MessageEvent(session_id="s", role="user", content="deploy <PRIVATE>and the rest"))
+    closed = _kept(policy, MessageEvent(session_id="s", role="user", content="fix <private>my salary</private> bug"))
+    unclosed = _kept(policy, MessageEvent(session_id="s", role="user", content="deploy <PRIVATE>and the rest"))
 
     assert closed.content == "fix  bug"
     assert unclosed.content == "deploy "
@@ -77,7 +88,7 @@ def test_a_message_that_was_only_private_is_dropped():
 
 
 def test_long_strings_are_clipped():
-    event = CapturePolicy(max_chars=10).apply(ToolEndEvent(session_id="s", tool_name="Read", result="x" * 25))
+    event = _kept(CapturePolicy(max_chars=10), ToolEndEvent(session_id="s", tool_name="Read", result="x" * 25))
 
     assert event.result == "x" * 10 + "…[truncated 15 chars]"
 
@@ -145,7 +156,7 @@ def test_config_sets_the_policy_and_keeps_it_across_rewrites(config_file):
     )
 
     policy, problems = policy_from_config(config)
-    event = policy.apply(MessageEvent(session_id="s", role="user", content="TICKET-42 uses configured-key-123"))
+    event = _kept(policy, MessageEvent(session_id="s", role="user", content="TICKET-42 uses configured-key-123"))
 
     assert problems == []
     assert event.content == "[REDACTED:ticket] uses [REDACTED:config_secret]"
@@ -165,7 +176,7 @@ def test_config_sets_the_policy_and_keeps_it_across_rewrites(config_file):
 def test_redaction_can_be_switched_off_but_private_blocks_still_go(config_file):
     policy, _ = policy_from_config(config_file('[capture]\nredact = "false"\nmax_chars = "0"\n'))
 
-    event = policy.apply(MessageEvent(session_id="s", role="user", content=f"{_AWS} <private>x</private>" + "y" * 200))
+    event = _kept(policy, MessageEvent(session_id="s", role="user", content=f"{_AWS} <private>x</private>" + "y" * 200))
 
     assert event.content == f"{_AWS} " + "y" * 200
     assert policy.max_chars is None

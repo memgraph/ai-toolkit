@@ -23,15 +23,16 @@ import fnmatch
 import os
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
-from .events import MessageEvent, ToolEndEvent, ToolStartEvent
+from .events import Event, MessageEvent, ToolEndEvent, ToolStartEvent
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from .adapters._identity import HookConfig
-    from .events import Event
+
+_E = TypeVar("_E", bound=Event)
 
 #: Longest string a captured field keeps; tool output past this is rarely worth its storage.
 DEFAULT_MAX_CHARS = 100_000
@@ -80,7 +81,7 @@ class CapturePolicy:
     exclude_tools: tuple[str, ...] = ()
     exclude_projects: tuple[str, ...] = ()
 
-    def apply(self, event: Event) -> Event | None:
+    def apply(self, event: _E) -> _E | None:
         """The event as connectors may store it, or None when it must not be captured at all."""
         if isinstance(event, (ToolStartEvent, ToolEndEvent)) and self.excludes_tool(event.tool_name):
             return None
