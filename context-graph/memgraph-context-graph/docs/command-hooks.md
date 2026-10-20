@@ -5,11 +5,12 @@ Protocol, then routes those events to graph connectors. The installed command
 is the same for every runtime:
 
 ```bash
-memgraph-context-graph hook run <runtime> \
-  --connector skills-graph \
-  --connector actions-graph \
-  --connector sessions-graph
+memgraph-context-graph hook run <runtime>
 ```
+
+It enables the graph connectors the config file's `[capture] connectors`
+names (unset: `skills-graph`, `actions-graph`, `sessions-graph`). Repeated
+`--connector` flags override that for one hook command.
 
 Runtime registrations are discovered through the
 `memgraph_context_graph.runtimes` Python entry-point group.
@@ -36,8 +37,9 @@ memgraph-context-graph hook init antigravity-cli
 memgraph-context-graph hook init grok
 ```
 
-`hook init` enables all three built-in connectors by default. Use repeated
-`--connector` flags to select a subset. Existing Copilot, Cursor, Antigravity, and Grok
+`hook init` writes hook commands without `--connector` flags, so they enable
+`[capture] connectors`. Repeated `--connector` flags pin a set into the
+generated commands instead. Existing Copilot, Cursor, Antigravity, and Grok
 JSON documents are merged without removing unrelated settings or hooks.
 OpenCode's generated plugin is replaced only with `--force`.
 
@@ -246,11 +248,10 @@ memgraph-context-graph setup antigravity-cli --project-dir "$PWD"
 Smoke-test a registration and its configured connectors:
 
 ```bash
-memgraph-context-graph doctor --runtime cursor \
-  --connector skills-graph \
-  --connector actions-graph \
-  --connector sessions-graph
+memgraph-context-graph doctor --runtime cursor
 ```
+
+`doctor` checks the `[capture] connectors` set unless `--connector` flags name others.
 
 Each runtime provides its own native probe payload; `doctor` does not assume
 that every runtime calls its session-end event `Stop`.

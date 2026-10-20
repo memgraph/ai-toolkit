@@ -14,6 +14,8 @@ import os
 import sys
 from typing import TYPE_CHECKING, cast
 
+from sessions_graph.extraction import ExtractionConfig
+
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
@@ -249,9 +251,31 @@ def _no_user() -> int:
 def _setup_graph() -> SessionsGraph:
     from sessions_graph import SessionsGraph
 
-    graph = SessionsGraph()
+    graph = SessionsGraph(extraction=_configured_extraction())
     graph.setup()
     return graph
+
+
+def _configured_extraction() -> ExtractionConfig:
+    """The config file's ``[extraction]``, else the defaults.
+
+    Raises:
+        ValueError: a value the config file sets is invalid; extracting with
+            settings other than the ones the user wrote would be silently wrong.
+    """
+    try:
+        from memgraph_context_graph.adapters._identity import resolve_extraction
+    except ImportError:
+        return ExtractionConfig()
+    return ExtractionConfig.from_mapping(resolve_extraction())
+
+
+def _configured_derive_model() -> str | None:
+    try:
+        from memgraph_context_graph.adapters._identity import resolve_derive_model
+    except ImportError:
+        return None
+    return resolve_derive_model()
 
 
 def _configured_user_id() -> str | None:
@@ -296,7 +320,11 @@ def _derive(argv: list[str]) -> int:
     parser.add_argument("--user", help="Whose model (default: the config file's identity.user_id).")
     parser.add_argument("--force", action="store_true", help="Derive now, without waiting for the next milestone.")
     parser.add_argument("--seeds", type=int, default=SEEDS, help=f"Candidates to derive and gate (default: {SEEDS}).")
-    parser.add_argument("--model", help="The LLM (default: claude-sonnet-5-5 with Anthropic, gpt-5 with OpenAI).")
+    parser.add_argument(
+        "--model",
+        help="The LLM (default: llm.derive_model from the config file, else claude-sonnet-5-5 with Anthropic, "
+        "gpt-5 with OpenAI).",
+    )
     parser.add_argument(
         "--threads",
         type=int,
@@ -318,14 +346,22 @@ def _derive(argv: list[str]) -> int:
 
         torch.set_num_threads(parsed.threads)
     try:
-        llm = DerivationLlm(parsed.model)
+        llm = DerivationLlm(parsed.model or _configured_derive_model())
     except NoLlmConfiguredError as exc:
         print(f"FAILED: {exc}", file=sys.stderr)
         return 2
     graph = _setup_graph()
+    checkpoint = graph.extraction.model
+    observer = GLiNER2Observer(model_name=checkpoint) if checkpoint is not None else GLiNER2Observer()
     report = asyncio.run(
         run(
-            graph, user_id, llm=llm, observer=GLiNER2Observer(), force=parsed.force, seeds=parsed.seeds, usage=llm.usage
+            graph,
+            user_id,
+            llm=llm,
+            observer=observer,
+            force=parsed.force,
+            seeds=parsed.seeds,
+            usage=llm.usage,
         )
     )
     print(_describe_run(report))

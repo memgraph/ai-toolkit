@@ -211,11 +211,14 @@ class TestHookFailuresAreLogged:
     def test_an_unsupported_connector_is_a_setup_failure(self, monkeypatch, _capture_log_in_tmp):
         assert self._run(monkeypatch, ["run", "claude-code", "--connector", "nope-graph"]) == 0
         (line,) = _lines(_capture_log_in_tmp)
-        assert (line["stage"], line["error"]) == ("setup", "Unsupported connector: nope-graph")
+        assert (line["stage"], line["error"]) == (
+            "setup",
+            "Unsupported connector: nope-graph; choose from skills-graph, actions-graph, sessions-graph, resources-graph",
+        )
 
     def test_a_malformed_config_is_logged_as_a_warning(self, monkeypatch, tmp_path, _capture_log_in_tmp):
         config = tmp_path / "config.toml"
-        config.write_text('[memgraph]\nurl "bolt://elsewhere:7687"\n')
+        config.write_text('[memgraph]\nurl "bolt://elsewhere:7687"\n\n[capture]\nconnectors = ""\n')
         monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(config))
 
         assert self._run(monkeypatch, ["run", "claude-code"]) == 0

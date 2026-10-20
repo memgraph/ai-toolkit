@@ -27,7 +27,6 @@ if TYPE_CHECKING:
 MARKETPLACE = "context-graph-plugins"
 PLUGIN_ID = f"context-graph@{MARKETPLACE}"
 MARKETPLACE_SOURCE = "memgraph/ai-toolkit"
-CONNECTORS = ("skills-graph", "actions-graph", "sessions-graph")
 
 
 class WiringError(Exception):
@@ -194,7 +193,8 @@ def wire_project(agent: Agent, project_dir: Path, log: Callable[[str], None]) ->
     try:
         with contextlib.redirect_stdout(output):
             # OpenCode's plugin is a generated file of its own; the JSON hook files are merged instead.
-            init(project_dir, list(CONNECTORS), force=agent.runtime == "opencode")
+            # No connectors named: the hooks enable the config file's [capture] connectors.
+            init(project_dir, [], force=agent.runtime == "opencode")
     except (ValueError, FileExistsError) as exc:
         raise WiringError(str(exc)) from exc
     for line in output.getvalue().splitlines():

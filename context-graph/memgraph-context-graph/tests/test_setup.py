@@ -14,6 +14,7 @@ import subprocess
 import pytest
 
 from memgraph_context_graph.cli import main
+from memgraph_context_graph.connectors import DEFAULT_CONNECTORS
 from memgraph_context_graph.setup import agents, engine, memgraph
 from memgraph_context_graph.setup.agents import BY_RUNTIME, WiringError
 
@@ -285,7 +286,7 @@ def test_update_says_when_the_package_is_not_the_uv_tool(fake_agents, setup_home
     assert "WARN  Packages: memgraph-context-graph" in capsys.readouterr().out
 
 
-def test_upgrading_asks_uv_to_refresh_every_package(monkeypatch):
+def test_upgrading_asks_uv_to_refresh_every_package(monkeypatch, default_connectors):
     from memgraph_context_graph.setup import tool
 
     seen = {}
@@ -298,6 +299,7 @@ def test_upgrading_asks_uv_to_refresh_every_package(monkeypatch):
 
     monkeypatch.setattr(tool.shutil, "which", lambda _: "/bin/uv")
     monkeypatch.setattr(tool.subprocess, "Popen", lambda argv, **_: seen.setdefault("argv", argv) and Fake())
+    monkeypatch.setattr(tool, "installed", lambda package: False)
 
     tool.install(viewer=False, log=lambda _: None, upgrade=True)
 
@@ -572,7 +574,7 @@ def test_codex_is_reported_with_the_trust_it_still_needs_and_claude_code_is_not(
     assert "trust" not in claude.summary
 
 
-def test_reinstalling_the_tool_keeps_the_spaces_package_once_it_is_there(monkeypatch):
+def test_reinstalling_the_tool_keeps_the_spaces_package_once_it_is_there(monkeypatch, default_connectors):
     from memgraph_context_graph.setup import tool
 
     monkeypatch.setattr(tool, "installed", lambda package: package == "context-graph-spaces")
@@ -580,7 +582,8 @@ def test_reinstalling_the_tool_keeps_the_spaces_package_once_it_is_there(monkeyp
     argv = tool.requirements()
 
     assert tool.BASE in argv
-    assert all(requirement in argv for requirement in tool.CONNECTORS.values())
+    assert all(tool.REQUIREMENTS[name] in argv for name in DEFAULT_CONNECTORS)
+    assert tool.REQUIREMENTS["resources-graph"] not in argv
     assert tool.SPACES[1] in argv
     assert tool.VIEWER[1] not in argv
 
@@ -589,7 +592,7 @@ def test_reinstalling_the_tool_keeps_the_spaces_package_once_it_is_there(monkeyp
     assert tool.SPACES[1] in tool.requirements(spaces=True)
 
 
-def test_the_enterprise_hint_names_the_whole_install_not_just_the_spaces_package(monkeypatch):
+def test_the_enterprise_hint_names_the_whole_install_not_just_the_spaces_package(monkeypatch, default_connectors):
     import pytest
 
     from memgraph_context_graph import spaces

@@ -253,6 +253,10 @@ database = "memgraph"
 [llm]
 openai_api_key = ""
 anthropic_api_key = ""
+derive_model = "claude-sonnet-5-5"
+
+[capture]
+connectors = "skills-graph, actions-graph, sessions-graph"
 
 [reconcile]
 auto_reconcile = true
@@ -260,12 +264,21 @@ auto_reconcile = true
 [recall]
 embedding_model = "BAAI/bge-small-en-v1.5"
 turns_k = "8"
+
+[extraction]
+model = "fastino/gliner2.5-base-v1"
+entity_threshold = "0.3"
 ```
 
 `[reconcile]` turns on sessions-graph's auto-trigger reconciliation (see
 [sessions-graph § reconciliation](../sessions-graph/README.md#session-reconciliation)),
 which needs no LLM. `[llm]` is optional: a key only lets reconciliation learn
-the user's own ontology (`sessions-graph derive`).
+the user's own ontology (`sessions-graph derive`), and `derive_model` picks
+the model it calls (default `claude-sonnet-5-5` with Anthropic, `gpt-5` with OpenAI).
+`[capture] connectors` is which graph connectors a hook enables when its
+command names no `--connector`, from `skills-graph`, `actions-graph`,
+`sessions-graph` and `resources-graph`; unset means the first three, and
+an empty value enables none. Setup installs the ones it names.
 `[reconcile]` is omitted entirely from a file setup wrote — absent
 means "never configured," distinct from an explicit `auto_reconcile = false`.
 `[recall]` is optional too: without it, recall runs with the widths the
@@ -273,6 +286,10 @@ benchmark measured; see [Recall](#recall-memory-for-the-harnesss-model).
 `[ontology]` is optional as well: `path` names a schema file the user's
 sessions are extracted under and `derive` is `extend` (the default) or
 `off`; see sessions-graph's [Ontology versions](../sessions-graph/README.md#ontology-versions).
+`[extraction]` tunes how reconciliation, re-extraction and derivation read
+sessions, all optional: `model` (a GLiNER2 checkpoint), `entity_threshold` and
+`relation_threshold` (drop extractions below that confidence, 0 to 1), and
+`chunk_size`/`chunk_overlap` (words per window); unset keys keep GLiNER2's defaults.
 
 Manage it with:
 
@@ -281,8 +298,9 @@ memgraph-context-graph config show
 memgraph-context-graph config get memgraph.url
 memgraph-context-graph config set <key> <value>
 # keys: identity.user_id, memgraph.{url,user,password,database},
-#       llm.{openai_api_key,anthropic_api_key}, reconcile.auto_reconcile,
-#       recall.embedding_model, ontology.{path,derive}, memory.backend
+#       llm.{openai_api_key,anthropic_api_key,derive_model}, capture.connectors,
+#       reconcile.auto_reconcile, recall.embedding_model, ontology.{path,derive}, memory.backend
+# [recall] widths and [extraction] are edited in the file.
 ```
 
 Hooks never read environment variables for these values, and neither does setup: it writes only
@@ -340,6 +358,7 @@ from the tool call, so a model can only read its own user's sessions.
 | `facts_k`, `fact_turns_k` | `15`, `8` | Facts matched, and the messages they were read from |
 | `user_fact_types`, `user_facts_k` | `2`, `30` | Relation types gathered whole, for counting questions |
 | `turn_chars` | `1500` | Characters shown per message |
+| `query_instruction` | per model | Prefix embedded with the question; bge's English models get their retrieval instruction, other models none |
 
 Recall needs Memgraph with MAGE (`memgraph/memgraph-mage`) for its vector lanes;
 without it, it answers from text search and says so. `doctor` checks both

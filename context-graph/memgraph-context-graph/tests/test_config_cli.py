@@ -151,3 +151,25 @@ def test_memory_backend_is_native_by_default(config_dir, capsys):
     assert not _identity.load_config().graph_memory
     assert top_level_main(["config", "show"]) == 0
     assert "memory.backend = unset (native)" in capsys.readouterr().out
+
+
+def test_config_set_capture_connectors_normalizes_and_validates(config_dir, capsys):
+    assert top_level_main(["config", "set", "capture.connectors", "actions_graph, resources-graph"]) == 0
+    assert _identity.load_config().connectors == ("actions-graph", "resources-graph")
+
+    assert top_level_main(["config", "set", "capture.connectors", "actions-graph,nope-graph"]) == 2
+    assert "Unsupported connector: nope-graph" in capsys.readouterr().err
+    assert _identity.load_config().connectors == ("actions-graph", "resources-graph")
+
+
+def test_config_show_names_the_default_connectors_while_unset(config_dir, capsys):
+    assert top_level_main(["config", "show"]) == 0
+    assert (
+        "capture.connectors = unset (defaults to skills-graph, actions-graph, sessions-graph)"
+        in capsys.readouterr().out
+    )
+
+
+def test_config_set_llm_derive_model(config_dir):
+    assert top_level_main(["config", "set", "llm.derive_model", "gpt-5-mini"]) == 0
+    assert _identity.load_config().derive_model == "gpt-5-mini"

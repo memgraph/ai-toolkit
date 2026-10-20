@@ -57,6 +57,23 @@ class _Exploding(GraphConnector):
         raise RuntimeError("connector bug")
 
 
+def _replace_connector(monkeypatch, name, build):
+    """Build *name*'s connector with *build(memgraph)*; every other connector is built as usual."""
+    original = runner._build_connector
+
+    def building(connector_name, memgraph_env=None, *, memgraph=None):
+        if connector_name == name:
+            return build(memgraph)
+        return original(connector_name, memgraph_env, memgraph=memgraph)
+
+    monkeypatch.setattr(runner, "_build_connector", building)
+
+
+class _Silent(GraphConnector):
+    def on_event(self, event):
+        pass
+
+
 def _run_hook(monkeypatch, argv, payload):
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
     return hook_main(["run", "claude-code", *argv])
@@ -80,9 +97,7 @@ def _actions(graph, session_id):
 
 
 def test_a_failing_connector_does_not_drop_the_others(monkeypatch, graph, config):
-    monkeypatch.setitem(
-        runner._CONNECTOR_ADDERS, "skills-graph", lambda link, env, *, memgraph: link.add_connector(_Exploding())
-    )
+    _replace_connector(monkeypatch, "skills-graph", lambda memgraph: _Exploding())
 
     assert _run_hook(monkeypatch, ["--connector", "skills-graph", "--connector", "actions-graph"], _PRE_TOOL_USE) == 0
 
@@ -93,9 +108,7 @@ def test_a_failing_connector_does_not_drop_the_others(monkeypatch, graph, config
 
 
 def test_strict_mode_raises_only_after_every_connector_ran(monkeypatch, graph, config):
-    monkeypatch.setitem(
-        runner._CONNECTOR_ADDERS, "skills-graph", lambda link, env, *, memgraph: link.add_connector(_Exploding())
-    )
+    _replace_connector(monkeypatch, "skills-graph", lambda memgraph: _Exploding())
 
     with pytest.raises(ConnectorFailuresError):
         _run_hook(
@@ -106,10 +119,10 @@ def test_strict_mode_raises_only_after_every_connector_ran(monkeypatch, graph, c
 
 
 def test_a_connector_that_cannot_be_set_up_does_not_drop_the_others(monkeypatch, graph, config):
-    def missing(link, env, *, memgraph):
+    def missing(memgraph):
         raise ImportError("skills-graph is required for the skills-graph connector")
 
-    monkeypatch.setitem(runner._CONNECTOR_ADDERS, "skills-graph", missing)
+    _replace_connector(monkeypatch, "skills-graph", missing)
 
     assert _run_hook(monkeypatch, ["--connector", "skills-graph", "--connector", "actions-graph"], _PRE_TOOL_USE) == 0
 
@@ -126,13 +139,14 @@ def test_connectors_share_one_connection(monkeypatch, graph, config):
         built.append(env)
         return original(env)
 
-    def second_connector(link, env, *, memgraph):
+    def second_connector(memgraph):
         # Stands in for skills-graph, which isn't installed beside actions-graph: what matters is the
         # connection it is handed.
         handed.append(memgraph)
+        return _Silent()
 
     monkeypatch.setattr(runner, "_hook_memgraph", counting)
-    monkeypatch.setitem(runner._CONNECTOR_ADDERS, "skills-graph", second_connector)
+    _replace_connector(monkeypatch, "skills-graph", second_connector)
     assert _run_hook(monkeypatch, ["--connector", "actions-graph", "--connector", "skills-graph"], _PRE_TOOL_USE) == 0
     assert len(built) == 1
     assert len(handed) == 1 and handed[0] is not None

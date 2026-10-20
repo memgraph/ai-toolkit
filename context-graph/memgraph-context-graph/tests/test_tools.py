@@ -58,7 +58,8 @@ class _OptInTool(_EchoTool):
 def _config(monkeypatch, tmp_path):
     monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "config.toml"))
     _identity._reset_cache()
-    _identity.write_config(user_id="ante")
+    # No connectors unless a test names one: the config's default Memgraph is the user's real one.
+    _identity.write_config(user_id="ante", connectors=())
     yield
     _identity._reset_cache()
 

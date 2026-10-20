@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
 import os
 import sys
@@ -11,10 +10,10 @@ import time
 from typing import TYPE_CHECKING, Any, NoReturn, TypedDict
 
 from memgraph_context_graph import capture_log
+from memgraph_context_graph.connectors import COMPONENTS, configured_connectors, supported_connectors
 from memgraph_context_graph.events import ToolStartEvent
 from memgraph_context_graph.link import AgentLink, ConnectorFailuresError
 from memgraph_context_graph.protocols import GraphConnector
-from memgraph_context_graph.tools import normalize_connector_name
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -82,26 +81,12 @@ def create_link(
     shared = _hook_memgraph(memgraph_env) if names and memgraph_env is not None else None
     for name in names:
         try:
-            _CONNECTOR_ADDERS[name](link, memgraph_env, memgraph=shared)
+            link.add_connector(_build_connector(name, memgraph_env, memgraph=shared))
         except Exception as exc:
             if on_error is None:
                 raise
             on_error(name, None, exc)
     return link
-
-
-def supported_connectors(connector_names: Iterable[str]) -> list[str]:
-    """*connector_names* normalized to distribution form (``actions-graph``), blanks dropped.
-
-    Raises:
-        ValueError: if a name is not a supported connector.
-    """
-    names = [normalize_connector_name(name) for name in connector_names if name.strip()]
-    for name in names:
-        if name not in _CONNECTOR_ADDERS:
-            msg = f"Unsupported connector: {name}"
-            raise ValueError(msg)
-    return names
 
 
 def connector_name(connector: GraphConnector) -> str:
@@ -115,14 +100,6 @@ def _hook_memgraph(memgraph_env: dict[str, str]) -> Memgraph:
     return Memgraph(**memgraph_kwargs(memgraph_env), driver_config={"connection_timeout": HOOK_CONNECT_TIMEOUT})
 
 
-_SCHEMA_COMPONENTS = {
-    "skills-graph": ("skills_graph", "SkillGraph"),
-    "actions-graph": ("actions_graph", "ActionsGraph"),
-    "sessions-graph": ("sessions_graph", "SessionsGraph"),
-    "resources-graph": ("resources_graph", "ResourcesGraph"),
-}
-
-
 def setup_connector_schemas(connector_names: Iterable[str], *, memgraph_env: dict[str, str] | None = None) -> None:
     """Create the Memgraph schema (indexes, constraints) for each named connector.
 
@@ -130,24 +107,12 @@ def setup_connector_schemas(connector_names: Iterable[str], *, memgraph_env: dic
         ValueError: if a connector name is not supported.
     """
     kwargs = memgraph_kwargs(memgraph_env)
-    for connector_name in connector_names:
-        normalized = normalize_connector_name(connector_name)
-        if not normalized:
-            continue
-        if normalized not in _SCHEMA_COMPONENTS:
-            raise ValueError(f"Unsupported connector: {connector_name}")
-        module_name, class_name = _SCHEMA_COMPONENTS[normalized]
-        component_class = getattr(importlib.import_module(module_name), class_name)
-        component_class(**kwargs).setup()
+    for name in supported_connectors(connector_names):
+        COMPONENTS[name].graph()(**kwargs).setup()
 
 
 def _env_prefix(runtime_name: str) -> str:
     return "MEMGRAPH_CONTEXT_GRAPH_" + runtime_name.strip().replace("-", "_").upper()
-
-
-def _connectors_from_env(runtime_name: str) -> list[str]:
-    value = os.environ.get(f"{_env_prefix(runtime_name)}_CONNECTORS", "")
-    return [part.strip() for part in value.split(",") if part.strip()]
 
 
 def _debug_log(runtime_name: str, message: str) -> None:
@@ -170,7 +135,8 @@ def _hook_parser(plugin: RuntimeCLIPlugin) -> argparse.ArgumentParser:
         "--connector",
         action="append",
         default=None,
-        help="Graph connector to enable. Currently supported: skills-graph, actions-graph, sessions-graph, resources-graph.",
+        help=f"Graph connector to enable, repeatable; overrides the config file's [capture] connectors. "
+        f"Supported: {', '.join(COMPONENTS)}.",
     )
     parser.add_argument(
         "--session-id",
@@ -250,11 +216,11 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
     try:
         args = _hook_parser(plugin).parse_args(argv)
         strict = strict or args.strict
-        connector_names = args.connector if args.connector is not None else _connectors_from_env(plugin.name)
 
         from memgraph_context_graph.adapters._identity import load_config, resolve_memgraph_env
 
         report.stage = "config"
+        connector_names = args.connector if args.connector is not None else configured_connectors()
         # Inside the guard: an edition the config can't resolve skips the hook like any other failure.
         memgraph_env = resolve_memgraph_env(
             url=args.memgraph_url,
@@ -395,74 +361,21 @@ def _with_cwd(payload: dict[str, Any]) -> dict[str, Any]:
     return {**payload, "cwd": os.getcwd()}
 
 
-def _add_skills_graph_connector(
-    link: AgentLink, memgraph_env: dict[str, str] | None = None, *, memgraph: Memgraph | None = None
-) -> None:
+def _build_connector(
+    name: str, memgraph_env: dict[str, str] | None = None, *, memgraph: Memgraph | None = None
+) -> GraphConnector:
+    component = COMPONENTS[name]
     try:
-        from skills_graph import SkillGraph
-        from skills_graph.connector import SkillGraphConnector
+        graph_class, connector_class = component.graph(), component.connector()
     except ImportError as exc:
-        msg = "skills-graph is required for the skills-graph connector"
-        raise ImportError(msg) from exc
+        raise ImportError(f"{name} is required for the {name} connector") from exc
 
-    kwargs = memgraph_kwargs(memgraph_env)
-    graph = SkillGraph(memgraph) if memgraph is not None else SkillGraph(**kwargs)
-    link.add_connector(SkillGraphConnector(graph))
+    graph = graph_class(memgraph) if memgraph is not None else graph_class(**memgraph_kwargs(memgraph_env))
+    if name == "sessions-graph":
+        from memgraph_context_graph.adapters._identity import resolve_auto_reconcile
 
-
-def _add_sessions_graph_connector(
-    link: AgentLink, memgraph_env: dict[str, str] | None = None, *, memgraph: Memgraph | None = None
-) -> None:
-    try:
-        from sessions_graph import SessionsGraph
-        from sessions_graph.connector import SessionsGraphConnector
-    except ImportError as exc:
-        msg = "sessions-graph is required for the sessions-graph connector"
-        raise ImportError(msg) from exc
-
-    from memgraph_context_graph.adapters._identity import resolve_auto_reconcile
-
-    kwargs = memgraph_kwargs(memgraph_env)
-    graph = SessionsGraph(memgraph) if memgraph is not None else SessionsGraph(**kwargs)
-    link.add_connector(SessionsGraphConnector(graph, auto_reconcile=resolve_auto_reconcile()))
-
-
-def _add_actions_graph_connector(
-    link: AgentLink, memgraph_env: dict[str, str] | None = None, *, memgraph: Memgraph | None = None
-) -> None:
-    try:
-        from actions_graph import ActionsGraph
-        from actions_graph.connector import ActionsGraphConnector
-    except ImportError as exc:
-        msg = "actions-graph is required for the actions-graph connector"
-        raise ImportError(msg) from exc
-
-    kwargs = memgraph_kwargs(memgraph_env)
-    graph = ActionsGraph(memgraph) if memgraph is not None else ActionsGraph(**kwargs)
-    link.add_connector(ActionsGraphConnector(graph))
-
-
-def _add_resources_graph_connector(
-    link: AgentLink, memgraph_env: dict[str, str] | None = None, *, memgraph: Memgraph | None = None
-) -> None:
-    try:
-        from resources_graph import ResourcesGraph
-        from resources_graph.connector import ResourcesGraphConnector
-    except ImportError as exc:
-        msg = "resources-graph is required for the resources-graph connector"
-        raise ImportError(msg) from exc
-
-    kwargs = memgraph_kwargs(memgraph_env)
-    graph = ResourcesGraph(memgraph) if memgraph is not None else ResourcesGraph(**kwargs)
-    link.add_connector(ResourcesGraphConnector(graph))
-
-
-_CONNECTOR_ADDERS: dict[str, Callable[..., None]] = {
-    "skills-graph": _add_skills_graph_connector,
-    "actions-graph": _add_actions_graph_connector,
-    "sessions-graph": _add_sessions_graph_connector,
-    "resources-graph": _add_resources_graph_connector,
-}
+        return connector_class(graph, auto_reconcile=resolve_auto_reconcile())
+    return connector_class(graph)
 
 
 # A closed key set (never `memgraph`) so `Component(**kwargs)` below can't be

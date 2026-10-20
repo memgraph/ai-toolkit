@@ -113,7 +113,8 @@ def _run_generic_init(runtime_name: str, init: Any, argv: list[str]) -> int:
         "--connector",
         action="append",
         default=None,
-        help="Graph connector to enable. Defaults to skills-graph, actions-graph, sessions-graph.",
+        help="Graph connector to pin in the generated hook command, repeatable. "
+        "Without it the hooks enable the config file's [capture] connectors.",
     )
     parser.add_argument(
         "--project-dir",
@@ -140,7 +141,7 @@ def _run_generic_init(runtime_name: str, init: Any, argv: list[str]) -> int:
     parser.add_argument("--force", action="store_true", help="Overwrite existing generated config.")
     args = parser.parse_args(argv)
 
-    connectors = args.connector or ["skills-graph", "actions-graph", "sessions-graph"]
+    connectors = args.connector or []
     project_dir = Path(args.project_dir).expanduser().resolve()
 
     try:
@@ -160,7 +161,9 @@ def _run_generic_init(runtime_name: str, init: Any, argv: list[str]) -> int:
             password=args.memgraph_password,
             database=args.memgraph_database,
         )
-        setup_connector_schemas(connectors, memgraph_env=memgraph_env)
+        from memgraph_context_graph.connectors import configured_connectors
+
+        setup_connector_schemas(connectors or configured_connectors(), memgraph_env=memgraph_env)
         print(f"Initialized schema on {memgraph_env['MEMGRAPH_URL']} ({memgraph_env['MEMGRAPH_DATABASE']})")
     return 0
 

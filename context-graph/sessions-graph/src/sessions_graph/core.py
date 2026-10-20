@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 from memgraph_toolbox.api.memgraph import Memgraph
 
 from .embeddings import DEFAULT_EMBEDDING_MODEL, Embedded, EmbeddingUnavailableError, embed_memory, embed_session
+from .extraction import ExtractionConfig
 from .memory_store import MemoryStore
 from .models import Memory, _utc_now, project_key, validate_content, validate_memory_id, validate_user_id
 from .passages import PASSAGE_SCHEME
@@ -92,15 +93,20 @@ class _PreparedSession:
 class SessionsGraph:
     """A user's Memories and memory files, session reconciliation, embeddings and recall, over one Memgraph connection."""
 
-    def __init__(self, memgraph: Memgraph | None = None, **kwargs: Any) -> None:
+    def __init__(
+        self, memgraph: Memgraph | None = None, *, extraction: ExtractionConfig | None = None, **kwargs: Any
+    ) -> None:
         """Initialise SessionsGraph.
 
         Args:
             memgraph: An existing Memgraph client instance.  When *None* a new
                       one is created from *kwargs* / environment variables.
+            extraction: The GLiNER2 settings every extraction over this graph
+                uses (reconciliation, re-extraction, derivation); defaults when None.
             **kwargs: Forwarded to :class:`Memgraph` when *memgraph* is ``None``.
         """
         self._db = memgraph or Memgraph(**kwargs)
+        self.extraction = extraction or ExtractionConfig()
         # One GLiNER2 backend per distinct model, all sharing the first one's loaded weights.
         self._extraction_backends: dict[str, GLiNER2Backend] = {}
 
@@ -971,7 +977,10 @@ class SessionsGraph:
         return user_id
 
     def _extraction_backend_for(self, model: HygmModel) -> GLiNER2Backend:
-        """A GLiNER2 backend over `model`, kept for reuse: loading the checkpoint is the slow part, so it loads once."""
+        """A GLiNER2 backend over `model` with :attr:`extraction`'s settings, kept for reuse.
+
+        Loading the checkpoint is the slow part, so it loads once.
+        """
         import json
 
         from hygm import model_to_mapping
@@ -982,7 +991,9 @@ class SessionsGraph:
         if key not in self._extraction_backends:
             loaded = next(iter(self._extraction_backends.values()), None)
             engine = loaded.engine if loaded is not None else None
-            self._extraction_backends[key] = GLiNER2Backend(ontology=Ontology.from_model(model), model=engine)
+            self._extraction_backends[key] = GLiNER2Backend(
+                ontology=Ontology.from_model(model), model=engine, **self.extraction.backend_arguments()
+            )
         return self._extraction_backends[key]
 
     def _integrity(
