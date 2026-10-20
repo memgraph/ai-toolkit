@@ -173,3 +173,30 @@ def test_config_show_names_the_default_connectors_while_unset(config_dir, capsys
 def test_config_set_llm_derive_model(config_dir):
     assert top_level_main(["config", "set", "llm.derive_model", "gpt-5-mini"]) == 0
     assert _identity.load_config().derive_model == "gpt-5-mini"
+
+
+def test_config_set_capture_policy_keys_validate_round_trip_and_keep_connectors(config_dir, capsys):
+    assert top_level_main(["config", "set", "capture.connectors", "actions-graph"]) == 0
+    assert top_level_main(["config", "set", "capture.redact", "OFF"]) == 0
+    assert top_level_main(["config", "set", "capture.max_chars", "5000"]) == 0
+    assert top_level_main(["config", "set", "capture.exclude_tools", "TodoWrite,  mcp__x__*"]) == 0
+    assert top_level_main(["config", "set", "capture.max_chars", "lots"]) == 2
+    assert top_level_main(["config", "set", "capture.redact", "maybe"]) == 2
+    capsys.readouterr()
+
+    assert top_level_main(["config", "get", "capture.exclude_tools"]) == 0
+    assert capsys.readouterr().out.strip() == "TodoWrite, mcp__x__*"
+    config = _identity.load_config()
+    assert config.capture_settings == {"redact": "false", "max_chars": "5000", "exclude_tools": "TodoWrite, mcp__x__*"}
+    assert config.connectors == ("actions-graph",)
+
+    assert top_level_main(["config", "set", "capture.exclude_tools", ""]) == 0
+    assert "exclude_tools" not in _identity.load_config().capture_settings
+
+
+def test_config_show_describes_unset_capture_policy_keys(config_dir, capsys):
+    assert top_level_main(["config", "show"]) == 0
+    out = capsys.readouterr().out
+
+    assert "capture.redact = unset (defaults to true)" in out
+    assert "capture.exclude_projects = unset (none excluded)" in out

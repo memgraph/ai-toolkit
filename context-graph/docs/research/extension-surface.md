@@ -14,6 +14,8 @@ on Context Graph, as of `main` @ `d9faea5` (2026-10-19). Paths are relative to
 > (gap 1, apart from the plugins' `hooks.json`, which keep their flags until a CLI release), `[extraction]`
 > shared by reconcile/derive (gap 3, config side), `[llm] derive_model` (gap 8), and a per-model recall
 > query prefix (gap 5, prefix side). Entry points for third-party connectors/backends are deferred.
+> Gap 4 is closed by the capture policy (`memgraph_context_graph/capture_policy.py`), applied in
+> `AgentLink.emit` and configured through `[capture]` and `[redact]`; it is config, not a plugin protocol.
 
 ## Summary
 

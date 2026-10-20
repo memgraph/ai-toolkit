@@ -9,6 +9,7 @@ import sys
 from importlib import metadata
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
+from memgraph_context_graph.capture_policy import DEFAULT_MAX_CHARS
 from memgraph_context_graph.connectors import (
     COMPONENTS,
     DEFAULT_CONNECTORS,
@@ -128,6 +129,13 @@ def _config(argv: list[str]) -> int:
         "memory.backend": "memory_backend",
         "session_start.resume": "session_resume",
     }
+    #: ``[capture]`` keys the capture policy reads, kept in HookConfig.capture_settings, and how each is described.
+    _CAPTURE_KEYS = {
+        "capture.redact": "defaults to true",
+        "capture.max_chars": f"defaults to {DEFAULT_MAX_CHARS}",
+        "capture.exclude_tools": "none excluded",
+        "capture.exclude_projects": "none excluded",
+    }
     _SECRET_KEYS = {"memgraph.password", "llm.openai_api_key", "llm.anthropic_api_key", "github.token"}
     _BOOL_KEYS = {"reconcile.auto_reconcile", "session_start.resume"}
 
@@ -137,7 +145,7 @@ def _config(argv: list[str]) -> int:
         print("       memgraph-context-graph config show")
         print("")
         print("Supported keys:")
-        for key in _CONFIG_KEYS:
+        for key in [*_CONFIG_KEYS, *_CAPTURE_KEYS]:
             print(f"  {key}")
         print(f"\nConfig file: {config_path}")
         return 0
@@ -165,6 +173,9 @@ def _config(argv: list[str]) -> int:
             print(f"capture.connectors = unset (defaults to {', '.join(DEFAULT_CONNECTORS)})")
         else:
             print(f"capture.connectors = {', '.join(config.connectors)!r}")
+        for key, default in _CAPTURE_KEYS.items():
+            value = config.capture_settings.get(key.removeprefix("capture."))
+            print(f"{key} = {value!r}" if value else f"{key} = unset ({default})")
         if config.auto_reconcile is None:
             print("reconcile.auto_reconcile = unset (defaults to false)")
         else:
@@ -197,9 +208,14 @@ def _config(argv: list[str]) -> int:
             print("usage: memgraph-context-graph config set <key> <value>", file=sys.stderr)
             return 2
         key = argv[1]
+        if key in _CAPTURE_KEYS:
+            if len(argv) < 3:
+                print(f"usage: memgraph-context-graph config set {key} <value>", file=sys.stderr)
+                return 2
+            return _set_capture_key(key, argv[2])
         if key not in _CONFIG_KEYS:
             print(f"Unknown config key: {key}", file=sys.stderr)
-            print(f"Supported keys: {', '.join(_CONFIG_KEYS)}", file=sys.stderr)
+            print(f"Supported keys: {', '.join([*_CONFIG_KEYS, *_CAPTURE_KEYS])}", file=sys.stderr)
             return 2
 
         if len(argv) < 3:
@@ -256,6 +272,13 @@ def _config(argv: list[str]) -> int:
             print("usage: memgraph-context-graph config get <key>", file=sys.stderr)
             return 2
         key = argv[1]
+        if key in _CAPTURE_KEYS:
+            capture_value = load_config().capture_settings.get(key.removeprefix("capture."))
+            if not capture_value:
+                print(f"{key} is not set in {config_path}", file=sys.stderr)
+                return 1
+            print(capture_value)
+            return 0
         if key not in _CONFIG_KEYS:
             print(f"Unknown config key: {key}", file=sys.stderr)
             return 2
@@ -276,6 +299,40 @@ def _config(argv: list[str]) -> int:
 
     print(f"Unknown config action: {action}", file=sys.stderr)
     return 2
+
+
+def _set_capture_key(key: str, value: str) -> int:
+    """``config set capture.<name> <value>``: validate and write one capture-policy key."""
+    from memgraph_context_graph.adapters._identity import (
+        FALSY_VALUES,
+        TRUTHY_VALUES,
+        _parse_list,
+        config_file,
+        load_config,
+        write_config,
+    )
+
+    name = key.removeprefix("capture.")
+    if name == "redact":
+        value = value.strip().lower()
+        if value not in TRUTHY_VALUES | FALSY_VALUES:
+            print(f"Invalid value for {key}: {value!r} (expected true/false)", file=sys.stderr)
+            return 2
+        value = "true" if value in TRUTHY_VALUES else "false"
+    elif name == "max_chars":
+        if not value.strip().isdigit():
+            print(f"Invalid value for {key}: {value!r} (expected a non-negative integer, 0 for no limit)",
+                  file=sys.stderr)  # fmt: skip
+            return 2
+        value = str(int(value))
+    else:
+        value = ", ".join(_parse_list(value))
+    settings = {**load_config().capture_settings, name: value}
+    if not value:
+        del settings[name]
+    write_config(capture_settings=settings)
+    print(f"Wrote {key} = {value!r} to {config_file()}")
+    return 0
 
 
 def _mcp(argv: list[str]) -> int:

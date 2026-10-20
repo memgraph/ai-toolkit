@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from .capture_policy import CapturePolicy
     from .events import Event
     from .protocols import GraphConnector
 
@@ -41,7 +42,7 @@ class AgentLink:
         hooks = adapter.get_runtime_hooks()
     """
 
-    def __init__(self, on_error: ConnectorErrorHandler | None = None) -> None:
+    def __init__(self, on_error: ConnectorErrorHandler | None = None, *, policy: CapturePolicy | None = None) -> None:
         """Create a link.
 
         Args:
@@ -50,9 +51,13 @@ class AgentLink:
                 still run), so one broken connector never costs the others their
                 capture. Without it the exception propagates, as a library caller
                 driving the link directly expects.
+            policy: Rewrites (redacts, clips) or drops each event before any
+                connector sees it. The hook runner passes the config file's;
+                without one, events reach connectors as emitted.
         """
         self._connectors: list[GraphConnector] = []
         self._on_error = on_error
+        self._policy = policy
 
     def add_connector(self, connector: GraphConnector) -> None:
         """Register a graph connector."""
@@ -68,7 +73,12 @@ class AgentLink:
         return list(self._connectors)
 
     def emit(self, event: Event) -> None:
-        """Broadcast an event to all connectors that support it."""
+        """Broadcast an event, as the capture policy leaves it, to all connectors that support it."""
+        if self._policy is not None:
+            policed = self._policy.apply(event)
+            if policed is None:
+                return
+            event = policed
         for connector in self._connectors:
             try:
                 if connector.supports(event):
