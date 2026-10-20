@@ -26,14 +26,14 @@ If setup reports a failure, show the user its "To fix" line; it is the exact com
 Run the single CLI doctor first. It checks the same Python environment that the hook command uses:
 
 ```bash
-memgraph-context-graph doctor --runtime codex --connector skills-graph --connector actions-graph --connector sessions-graph
+memgraph-context-graph doctor --runtime codex
 ```
 
 If `doctor` is not available, use the strict hook smoke:
 
 ```bash
 printf '{"hook_event_name":"Stop","session_id":"doctor"}' \
-  | memgraph-context-graph hook run codex --connector skills-graph --connector actions-graph --connector sessions-graph --strict
+  | memgraph-context-graph hook run codex --strict
 ```
 
 Do not check `skills_graph` with system `python3`; `memgraph-context-graph` may be installed in an isolated `uv tool` or `pipx` environment.

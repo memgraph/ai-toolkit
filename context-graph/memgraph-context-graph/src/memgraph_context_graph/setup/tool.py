@@ -15,12 +15,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 #: Kept in step with the plugins' bootstrap scripts and install.sh, which install the default connectors first.
-BASE = "memgraph-context-graph[mcp]>=0.8.0"
+BASE = "memgraph-context-graph[mcp]>=0.9.0"
 #: The requirement each connector in memgraph_context_graph.connectors.COMPONENTS installs from.
 REQUIREMENTS = {
-    "skills-graph": "skills-graph[memgraph-context-graph]>=0.2.1",
-    "actions-graph": "actions-graph[memgraph-context-graph]>=0.5.0",
-    "sessions-graph": "sessions-graph[memgraph-context-graph]>=0.9.0",
+    "skills-graph": "skills-graph[memgraph-context-graph]>=0.2.2",
+    "actions-graph": "actions-graph[memgraph-context-graph]>=0.6.0",
+    "sessions-graph": "sessions-graph[memgraph-context-graph]>=0.10.0",
     "resources-graph": "resources-graph[memgraph-context-graph]>=0.2.0",
 }
 VIEWER = ("context-graph-viewer", "context-graph-viewer>=0.1.1")

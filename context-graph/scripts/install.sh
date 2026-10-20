@@ -25,10 +25,10 @@ fi
 
 # The same set setup checks for (memgraph_context_graph/setup/tool.py) and the plugins' bootstrap installs.
 echo "Installing memgraph-context-graph with skills-graph, actions-graph and sessions-graph"
-uv tool install --quiet "memgraph-context-graph[mcp]>=0.8.0" \
-  --with "skills-graph[memgraph-context-graph]>=0.2.1" \
-  --with "actions-graph[memgraph-context-graph]>=0.5.0" \
-  --with "sessions-graph[memgraph-context-graph]>=0.9.0" \
+uv tool install --quiet "memgraph-context-graph[mcp]>=0.9.0" \
+  --with "skills-graph[memgraph-context-graph]>=0.2.2" \
+  --with "actions-graph[memgraph-context-graph]>=0.6.0" \
+  --with "sessions-graph[memgraph-context-graph]>=0.10.0" \
   --upgrade
 
 # uv's tool shims live in `uv tool dir --bin` (usually ~/.local/bin), which may not be on PATH yet.
