@@ -38,7 +38,7 @@ async def test_reconcile_session_extracts_real_entities_without_an_llm_key(graph
         content="Bob Smith works on the Payments team at Northwind Traders.",
     )
 
-    summary = await graph.reconcile_session(session_id, actions_graph=actions_graph)
+    summary = await graph.reconciler.reconcile(session_id)
 
     assert summary.status == "completed", summary.error
     assert summary.texts_considered == 2

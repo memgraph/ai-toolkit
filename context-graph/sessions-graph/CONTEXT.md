@@ -57,11 +57,11 @@ Shared `(:Session {session_id})` node joining data from Context Graph components
 _Avoid_: treating other components' MERGEs as lifecycle ownership
 
 **Session Reconciliation**:
-Out-of-band batch process using local GLiNER2 entity extraction; no LLM. Dedupes Reconcilable Content, combines into one document per session, uses unstructured2graph to create Chunks and extract entities using the adopted HyGM model (or the default model). Per-session batching lets extraction see facts/references spanning turns ([#297](https://github.com/memgraph/ai-toolkit/issues/297)). Writes no session summary. Never creates Memory nodes — Memories are explicit writes. Doesn't read Memories either: each Memory File has its own **Memory File Reconciliation**.
+Out-of-band batch process using local GLiNER2 entity extraction; no LLM. Dedupes Reconcilable Content, combines into one document per session, uses unstructured2graph to create Chunks and extract entities using the adopted HyGM model (or the default model). Per-session batching lets extraction see facts/references spanning turns ([#297](https://github.com/memgraph/ai-toolkit/issues/297)). Writes no session summary. Never creates Memory nodes — Memories are explicit writes. Doesn't read Memories either: each Memory File has its own **Memory File Reconciliation**. Both live in the `Reconciler` (`reconciler.py`), the one writer of a Session's processing status (`reconciliation_*`, `reextract*`, `embedding_*`); collection only marks a session pending.
 _Avoid_: Memory extraction, memory reconciliation, auto-memory
 
 **Memory File Reconciliation**:
-Per-file counterpart of Session Reconciliation (`reconcile_memory`). A write marks the file `extraction_status = 'pending'`; the `reconcile --pending` sweep removes what the file's previous text produced, then extracts Chunks and entities from its current text. No LLM. Per file, not per session, because a file outlives the session that first wrote it and changes across many. `memory` tool calls are excluded from session content, so the text isn't extracted twice.
+Per-file counterpart of Session Reconciliation (`Reconciler.reconcile_memory`). A write marks the file `extraction_status = 'pending'`; the `reconcile --pending` sweep removes what the file's previous text produced, then extracts Chunks and entities from its current text. No LLM. Per file, not per session, because a file outlives the session that first wrote it and changes across many. `memory` tool calls are excluded from session content, so the text isn't extracted twice.
 _Avoid_: Memory extraction (implies deriving Memories), memory reconciliation (ambiguous with Session Reconciliation)
 
 **Reconcilable Content**:

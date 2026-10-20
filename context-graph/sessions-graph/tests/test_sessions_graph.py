@@ -56,8 +56,7 @@ def _stub_db(rows: list | None = None):
 def _graph(rows=None):
     from sessions_graph.core import SessionsGraph
 
-    g = SessionsGraph.__new__(SessionsGraph)
-    g._db = _stub_db(rows)
+    g = SessionsGraph(_stub_db(rows))
     return g
 
 
@@ -105,8 +104,7 @@ class TestSessionsGraphConnector:
 
         from sessions_graph.core import SessionsGraph
 
-        graph = SessionsGraph.__new__(SessionsGraph)
-        graph._db = db
+        graph = SessionsGraph(db)
 
         connector = SessionsGraphConnector(graph)
         return connector, graph, db, SessionStartEvent, SessionEndEvent

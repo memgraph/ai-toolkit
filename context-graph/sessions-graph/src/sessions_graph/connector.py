@@ -131,40 +131,20 @@ class SessionsGraphConnector(GraphConnector):
         project = _project_key(event.working_directory or event.metadata.get("cwd"))
         if user_id:
             self._active_user_id = user_id
-            self._active_session_id = event.session_id
-            self._graph._db.query(
-                """
-                MERGE (u:User {user_id: $user_id})
-                MERGE (s:Session {session_id: $session_id})
-                SET s.project_key = coalesce($project, s.project_key)
-                MERGE (u)-[:HAD_SESSION]->(s)
-                """,
-                params={"user_id": user_id, "session_id": event.session_id, "project": project},
-            )
-        else:
-            self._active_session_id = event.session_id
-            self._graph._db.query(
-                "MERGE (s:Session {session_id: $session_id}) SET s.project_key = coalesce($project, s.project_key);",
-                params={"session_id": event.session_id, "project": project},
-            )
+        self._active_session_id = event.session_id
+        self._graph.record_session_start(event.session_id, user_id=user_id, project_key=project)
 
     def _on_session_end(self, event: SessionEndEvent) -> None:
         self._active_user_id = None
         self._active_session_id = None
-        self._mark_pending_reconciliation(event.session_id)
+        self._graph.reconciler.mark_pending(event.session_id)
         _spawn_detached(["embed", "--session", event.session_id], env=_child_env(llm=False))
         if self._auto_reconcile:
             _spawn_detached(["reconcile", "--session", event.session_id], env=_child_env(llm=True))
 
     def _on_turn_end(self, event: TurnEndEvent) -> None:
-        self._mark_pending_reconciliation(event.session_id)
+        self._graph.reconciler.mark_pending(event.session_id)
         _spawn_detached(["embed", "--session", event.session_id], env=_child_env(llm=False))
-
-    def _mark_pending_reconciliation(self, session_id: str) -> None:
-        self._graph._db.query(
-            "MATCH (s:Session {session_id: $session_id}) SET s.reconciliation_status = 'pending';",
-            params={"session_id": session_id},
-        )
 
 
 def _project_key(cwd: object) -> str | None:

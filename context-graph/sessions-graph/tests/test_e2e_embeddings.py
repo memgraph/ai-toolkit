@@ -57,7 +57,7 @@ def _vectors(memgraph):
 
 
 def test_embeds_messages_entities_and_edges_but_not_tool_calls(graph, memgraph, session):
-    embedded = graph.embed_session(session)
+    embedded = graph.reconciler.embed(session)
 
     assert (embedded.messages, embedded.entities, embedded.edges) == (2, 1, 1)
     by_kind = {row["kind"]: row for row in _vectors(memgraph)}
@@ -70,7 +70,7 @@ def test_embeds_messages_entities_and_edges_but_not_tool_calls(graph, memgraph, 
         "MATCH (s:Session {session_id: 's1'}) RETURN s.embedding_status AS status, s.embedding_model AS model"
     )[0]
     assert status == {"status": "completed", "model": DEFAULT_EMBEDDING_MODEL}
-    assert graph.get_pending_embedding_sessions() == []
+    assert graph.reconciler.pending_embeddings() == []
 
 
 def test_a_long_message_gets_one_vector_per_passage(graph, memgraph, actions_graph):
@@ -78,7 +78,7 @@ def test_a_long_message_gets_one_vector_per_passage(graph, memgraph, actions_gra
     text = "A sentence about the plan. " * 120
     actions_graph.record_message(session_id="s2", role=MessageRole.ASSISTANT, content=text)
 
-    graph.embed_session("s2")
+    graph.reconciler.embed("s2")
 
     rows = memgraph.query("MATCH (a:Action) RETURN size(a.passage_embeddings) AS n, a.passage_embeddings[1] AS v")
     assert rows[0]["n"] == len(split_passages(text)) > 1
@@ -86,21 +86,21 @@ def test_a_long_message_gets_one_vector_per_passage(graph, memgraph, actions_gra
 
 
 def test_embedding_twice_embeds_nothing_new(graph, session):
-    graph.embed_session(session)
+    graph.reconciler.embed(session)
 
-    again = graph.embed_session(session)
+    again = graph.reconciler.embed(session)
 
     assert (again.messages, again.entities, again.edges) == (0, 0, 0)
 
 
 def test_a_vector_from_another_model_is_replaced_not_kept_beside(graph, memgraph, session):
     """A model change must re-embed: recall comparing vectors from two models gets nonsense, not an error."""
-    graph.embed_session(session)
+    graph.reconciler.embed(session)
     memgraph.query("MATCH (a:Action {action_type: 'user_message'}) SET a.embedding_model = 'an-older-model'")
     memgraph.query("MATCH (s:Session {session_id: 's1'}) SET s.embedding_model = 'an-older-model'")
 
-    assert graph.get_pending_embedding_sessions() == ["s1"]
-    again = graph.embed_session(session)
+    assert graph.reconciler.pending_embeddings() == ["s1"]
+    again = graph.reconciler.embed(session)
 
     assert (again.messages, again.entities, again.edges) == (1, 0, 0)
     models = {row["model"] for row in _vectors(memgraph) if row["dims"]}
@@ -109,21 +109,21 @@ def test_a_vector_from_another_model_is_replaced_not_kept_beside(graph, memgraph
 
 def test_a_model_that_cannot_load_is_recorded_on_the_session(graph, memgraph, session):
     with pytest.raises(EmbeddingUnavailableError):
-        graph.embed_session(session, model="no-such-org/no-such-model")
+        graph.reconciler.embed(session, model="no-such-org/no-such-model")
 
     row = memgraph.query(
         "MATCH (s:Session {session_id: 's1'}) RETURN s.embedding_status AS status, s.embedding_error AS error"
     )[0]
     assert row["status"] == "failed"
     assert "no-such-org/no-such-model" in row["error"]
-    assert graph.get_pending_embedding_sessions() == ["s1"]
+    assert graph.reconciler.pending_embeddings() == ["s1"]
 
 
 def test_cli_embeds_pending_sessions(graph, session, capsys):
     assert main(["embed", "--pending", "--model", DEFAULT_EMBEDDING_MODEL]) == 0
 
     assert "OK s1: 2 messages, 1 entities, 1 edges" in capsys.readouterr().out
-    assert graph.get_pending_embedding_sessions() == []
+    assert graph.reconciler.pending_embeddings() == []
 
 
 def test_cli_reports_a_failure_and_exits_nonzero(session, capsys):

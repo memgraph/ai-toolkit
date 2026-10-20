@@ -129,7 +129,7 @@ async def test_a_passing_candidate_is_adopted_and_the_schedule_moves_on(graph, m
     assert derivation.due(memgraph, "alice") == 2
     llm, observer = _Llm(), _Observer()
 
-    report = await derivation.run(graph, "alice", llm=llm, observer=observer, actions_graph=actions_graph, seeds=2)
+    report = await derivation.run(graph.reconciler, "alice", llm=llm, observer=observer, seeds=2)
 
     assert (report.outcome, report.adopted_version, report.in_sample, report.delta) == ("adopted", 1, True, 2)
     assert [c.passed for c in report.candidates] == [True, True]
@@ -154,7 +154,7 @@ async def test_when_no_candidate_passes_n_stays_and_the_delta_rolls_over(graph, 
     _sessions(memgraph, actions_graph, "alice", 2)
     observer = _Observer(learned=(0.40, 0.50))  # more lands in the catch-alls: worse
 
-    report = await derivation.run(graph, "alice", llm=_Llm(), observer=observer, actions_graph=actions_graph, seeds=1)
+    report = await derivation.run(graph.reconciler, "alice", llm=_Llm(), observer=observer, seeds=1)
 
     assert report.outcome == "rejected"
     assert graph.adopted_ontology("alice").version == 0
@@ -171,9 +171,7 @@ async def test_from_eight_sessions_the_gate_runs_on_held_out_sessions(graph, mem
     _sessions(memgraph, actions_graph, "alice", 8)
     observer = _Observer()
 
-    report = await derivation.run(
-        graph, "alice", llm=_Llm(), observer=observer, actions_graph=actions_graph, force=True, seeds=1
-    )
+    report = await derivation.run(graph.reconciler, "alice", llm=_Llm(), observer=observer, force=True, seeds=1)
 
     assert (report.in_sample, report.held_out, report.sampled) == (False, 2, 8)
     assert set(observer.measured) == {2}
@@ -184,14 +182,14 @@ async def test_a_second_run_finds_the_claim_and_derive_off_never_runs(graph, mem
     _sessions(memgraph, actions_graph, "alice", 2)
     assert derivation._claim(memgraph, "alice")
 
-    claimed = await derivation.run(graph, "alice", llm=_Llm(), observer=_Observer(), actions_graph=actions_graph)
+    claimed = await derivation.run(graph.reconciler, "alice", llm=_Llm(), observer=_Observer())
     assert claimed.outcome == "claimed elsewhere"
 
     derivation._release(memgraph, "alice")
     schema = tmp_path / "fixed.yaml"
     schema.write_text("entity_types:\n  - {label: User, description: me, identity: global}\n")
     graph.supply_ontology_file("alice", schema, derive="off")
-    off = await derivation.run(graph, "alice", llm=_Llm(), observer=_Observer(), actions_graph=actions_graph)
+    off = await derivation.run(graph.reconciler, "alice", llm=_Llm(), observer=_Observer())
     assert off.outcome == "derive off"
     assert derivation.due(memgraph, "alice") is None
 
@@ -211,7 +209,7 @@ def test_a_merge_relabels_entities_and_relationships_in_place(graph, memgraph):
         ),
     )
 
-    derivation._relabel_merges(graph, merged)
+    derivation._relabel_merges(graph.reconciler, merged)
 
     rows = memgraph.query("MATCH (n:gliner2) RETURN n.text AS text, n.entity_type AS type, labels(n) AS labels")
     assert {row["text"]: (row["type"], sorted(row["labels"])) for row in rows} == {
@@ -229,7 +227,7 @@ def test_reconcile_spawns_a_detached_derive_for_users_at_a_milestone(graph, memg
     spawned = []
     monkeypatch.setattr("sessions_graph.connector._spawn_detached", lambda args, env: spawned.append(args))
 
-    _spawn_due_derivations(graph, ["alice-s0", "alice-s1", "bob-s0"])
+    _spawn_due_derivations(graph.reconciler, ["alice-s0", "alice-s1", "bob-s0"])
 
     assert spawned == [["derive", "--user", "alice"]]
 
@@ -242,6 +240,6 @@ def test_reconcile_spawns_no_derive_without_an_llm_key(graph, memgraph, actions_
     spawned = []
     monkeypatch.setattr("sessions_graph.connector._spawn_detached", lambda args, env: spawned.append(args))
 
-    _spawn_due_derivations(graph, ["alice-s0", "alice-s1"])
+    _spawn_due_derivations(graph.reconciler, ["alice-s0", "alice-s1"])
 
     assert spawned == []

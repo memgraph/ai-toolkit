@@ -67,7 +67,7 @@ def community_graph(graph, memgraph, actions_graph, requires_mage):
             actions_graph.ensure_session(Session(session_id=session, started_at=timestamp))
             link_user(memgraph, user, session)
             actions_graph.record_message(session_id=session, role=MessageRole.USER, content=text, timestamp=timestamp)
-            graph.embed_session(session)
+            graph.reconciler.embed(session)
     store = graph.memory_store("u1")
     for path, text in _MEMORY_FILES.items():
         store.create(path, text)

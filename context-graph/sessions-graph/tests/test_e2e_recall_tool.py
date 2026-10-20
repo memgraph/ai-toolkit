@@ -48,7 +48,7 @@ def remembered(graph, memgraph, actions_graph, requires_mage):
             content=f"Our staging cluster is called {cluster}.",
             timestamp="2026-09-01T10:00:00+00:00",
         )
-        graph.embed_session(session)
+        graph.reconciler.embed(session)
 
 
 def test_recall_reads_the_configured_users_memory(remembered, test_config):

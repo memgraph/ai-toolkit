@@ -82,8 +82,8 @@ def reconcile_spaces(
 
 
 async def _reconcile_pending(graph: SessionsGraph, report: SpaceReport, backend: Any, limit: int) -> None:
-    for memory_id in graph.get_pending_memory_reconciliations(limit=limit):
-        result = await graph.reconcile_memory(memory_id, extraction_backend=backend)
+    for memory_id in graph.reconciler.pending_memories(limit=limit):
+        result = await graph.reconciler.reconcile_memory(memory_id, extraction_backend=backend)
         if result.status == "completed":
             report.completed.append(result.path or memory_id)
         else:

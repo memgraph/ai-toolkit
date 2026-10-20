@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from sessions_graph import SessionsGraph
     from sessions_graph.derivation import RunReport
     from sessions_graph.ontology import Derive, OntologyVersion
+    from sessions_graph.reconciler import Reconciler
 
 _HELP = """usage: sessions-graph reconcile (--session SESSION_ID | --pending) [--limit N]
        sessions-graph embed (--session SESSION_ID | --pending) [--limit N] [--model MODEL]
@@ -120,7 +121,7 @@ def _embed(argv: list[str]) -> int:
     with _logged_before_session("embed", parsed.session):
         graph = _setup_graph()
     session_ids = (
-        [parsed.session] if parsed.session else graph.get_pending_embedding_sessions(model=model, limit=parsed.limit)
+        [parsed.session] if parsed.session else graph.reconciler.pending_embeddings(model=model, limit=parsed.limit)
     )
     if not session_ids:
         print("No sessions to embed.")
@@ -128,7 +129,7 @@ def _embed(argv: list[str]) -> int:
 
     for session_id in session_ids:
         try:
-            embedded = graph.embed_session(session_id, model=model)
+            embedded = graph.reconciler.embed(session_id, model=model)
         except EmbeddingUnavailableError as exc:
             # The same cause fails every session; stop rather than repeat it.
             print(f"FAILED {session_id}: {exc}", file=sys.stderr)
@@ -350,12 +351,12 @@ def _derive(argv: list[str]) -> int:
     except NoLlmConfiguredError as exc:
         print(f"FAILED: {exc}", file=sys.stderr)
         return 2
-    graph = _setup_graph()
-    checkpoint = graph.extraction.model
+    reconciler = _setup_graph().reconciler
+    checkpoint = reconciler.extraction.model
     observer = GLiNER2Observer(model_name=checkpoint) if checkpoint is not None else GLiNER2Observer()
     report = asyncio.run(
         run(
-            graph,
+            reconciler,
             user_id,
             llm=llm,
             observer=observer,
@@ -400,7 +401,7 @@ def _describe_run(report: RunReport) -> str:
     return "\n".join(lines)
 
 
-def _spawn_due_derivations(graph: SessionsGraph, session_ids: list[str]) -> None:
+def _spawn_due_derivations(reconciler: Reconciler, session_ids: list[str]) -> None:
     """Start a detached ``derive`` for every user of `session_ids` who reached a milestone (#433).
 
     Derivation is the one step that needs an LLM, so without a key nothing is
@@ -412,8 +413,8 @@ def _spawn_due_derivations(graph: SessionsGraph, session_ids: list[str]) -> None
     if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")):
         return
 
-    for user_id in dict.fromkeys(graph._session_user(sid) for sid in session_ids):
-        milestone = due(graph._db, user_id)
+    for user_id in dict.fromkeys(reconciler.session_user(sid) for sid in session_ids):
+        milestone = due(reconciler.db, user_id)
         if milestone is not None:
             print(f"Deriving the ontology for {user_id} (milestone {milestone}) in the background")
             _spawn_detached(["derive", "--user", user_id], env=dict(os.environ))
@@ -425,26 +426,27 @@ async def _run_reconcile(parsed: argparse.Namespace) -> int:
     with _logged_before_session("reconcile", parsed.session):
         graph = _setup_graph()
     _sync_configured_ontology(graph)
+    reconciler = graph.reconciler
 
     exit_code = 0
     if not parsed.session:
         # Memory files first: a file outlives the session that wrote it.
-        for memory_id in graph.get_pending_memory_reconciliations(limit=parsed.limit):
-            result = await graph.reconcile_memory(memory_id, embedding_model=_configured_embedding_model())
+        for memory_id in reconciler.pending_memories(limit=parsed.limit):
+            result = await reconciler.reconcile_memory(memory_id, embedding_model=_configured_embedding_model())
             if result.status == "completed":
                 print(f"OK memory {result.path}: {result.chunks} chunk(s)")
             else:
                 print(f"FAILED memory {result.path or memory_id}: {result.error}", file=sys.stderr)
                 exit_code = 1
 
-    session_ids = [parsed.session] if parsed.session else graph.get_pending_reconciliation_sessions(limit=parsed.limit)
+    session_ids = [parsed.session] if parsed.session else reconciler.pending_sessions(limit=parsed.limit)
     if not session_ids:
         print("No sessions to reconcile.")
         return exit_code
 
     completed = []
     for session_id in session_ids:
-        summary = await graph.reconcile_session(
+        summary = await reconciler.reconcile(
             session_id, enforce_ontology=True, embedding_model=_configured_embedding_model()
         )
         if summary.status == "completed":
@@ -453,7 +455,7 @@ async def _run_reconcile(parsed: argparse.Namespace) -> int:
         else:
             print(f"FAILED {session_id}: {summary.error}", file=sys.stderr)
             exit_code = 1
-    _spawn_due_derivations(graph, completed)
+    _spawn_due_derivations(reconciler, completed)
     return exit_code
 
 

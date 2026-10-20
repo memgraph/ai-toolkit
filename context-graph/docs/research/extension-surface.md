@@ -22,7 +22,7 @@ on Context Graph, as of `main` @ `d9faea5` (2026-10-19). Paths are relative to
 | Capture (hooks → events) | runtimes (`memgraph_context_graph.runtimes`) | `GraphConnector` via `AgentLink.add_connector` | connector registry, `EventType` enum, redaction/truncation (none exists) |
 | Storage schema | spaces spec `labels`/`edge_types` | — | each component's labels, constraints, Cypher |
 | Ontology | `[ontology] path` YAML, `derive = extend\|off` | `ontology.supply(HygmModel)` (OWL, LLM, hand-built) | User⇒Person rule, core/catch-all labels |
-| Extraction | — | any `ExtractionBackend` into `reconcile_session` | backend + GLiNER2 checkpoint/thresholds/chunking on CLI/hook path |
+| Extraction | — | any `ExtractionBackend` into `Reconciler.reconcile` | backend + GLiNER2 checkpoint/thresholds/chunking on CLI/hook path |
 | Learned types (derivation) | `[llm]` keys | `derivation.run(llm=, observer=)` | provider list, default models, gate constants, `DerivationLimits` |
 | Embeddings | `[recall] embedding_model` | `model=` | provider (MAGE `embeddings.text`), bge query prefix, passage size |
 | Recall | `[recall]` lanes and widths | `recall(config=RecallConfig)` | lane Cypher, RRF, prompts, no reranker hook |

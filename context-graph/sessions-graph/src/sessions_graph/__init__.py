@@ -14,6 +14,15 @@ Quick start::
 from .core import SessionsGraph
 from .models import Memory, MemoryValidationError
 from .recall import RecallConfig, Recalled
+from .reconciler import Reconciler
 from .reconciliation import ReconciliationSummary
 
-__all__ = ["Memory", "MemoryValidationError", "RecallConfig", "Recalled", "ReconciliationSummary", "SessionsGraph"]
+__all__ = [
+    "Memory",
+    "MemoryValidationError",
+    "RecallConfig",
+    "Recalled",
+    "Reconciler",
+    "ReconciliationSummary",
+    "SessionsGraph",
+]

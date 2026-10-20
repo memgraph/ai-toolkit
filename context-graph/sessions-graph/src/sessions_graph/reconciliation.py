@@ -1,7 +1,7 @@
 """Session-content reconciliation: the text of a session's Actions and Memories, ready for extraction.
 
 Pulls the plain text worth entity-extracting out of Messages, ToolCalls,
-ToolResults and Memories. ``SessionsGraph.reconcile_session`` hands it to
+ToolResults and Memories. ``Reconciler.reconcile`` hands it to
 unstructured2graph. Requires the ``sessions-graph[reconciliation]`` extra.
 """
 
@@ -127,7 +127,7 @@ NODE_LABELS: dict[str, tuple[str, str]] = {
 
 @dataclass(frozen=True)
 class ReconciliationSummary:
-    """Result of one ``SessionsGraph.reconcile_session`` call.
+    """Result of one ``Reconciler.reconcile`` call.
 
     ``nonconformant_entities`` and ``nonconformant_relations`` are the
     ontology integrity counts over this session's chunks
@@ -147,7 +147,7 @@ class ReconciliationSummary:
 
 @dataclass(frozen=True)
 class MemoryReconciliation:
-    """Result of one ``SessionsGraph.reconcile_memory`` call."""
+    """Result of one ``Reconciler.reconcile_memory`` call."""
 
     memory_id: str
     path: str | None
