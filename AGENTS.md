@@ -41,7 +41,11 @@ Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable Memgraph graph.
 | `resources-graph` | Remembers public GitHub resources the agent touched: hooks record private `(:Touch)` nodes, the out-of-band `resources-graph sweep` stores shared `(:Resource)`s, and the `resource` tool serves them from memory. |
 
 Everything joins on a shared, idempotently-`MERGE`d `(:Session {session_id})`
-node; only `sessions-graph` owns `(:User)` and `HAD_SESSION`.
+node; only `sessions-graph` owns `(:User)` and `HAD_SESSION`. Create it through
+`memgraph_context_graph.session.ensure` (and its constraint through
+`session.setup`), never with a component's own `MERGE`: hooks race to create a
+new session, and only `ensure` retries the uniqueness conflict. Each component
+therefore depends on `memgraph-context-graph`, not just its connector.
 
 Substantial design work in this family is tracked as GitHub issues labeled
 `wayfinder:map` (title `Map: ...`), broken into `wayfinder:grilling` /

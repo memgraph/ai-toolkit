@@ -27,6 +27,8 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from memgraph_context_graph import session as session_node
+
 from .models import MEMORY_ROOT, MemoryValidationError, normalize_memory_path, project_key, validate_user_id
 
 if TYPE_CHECKING:
@@ -584,10 +586,10 @@ class MemoryStore:
     def _record_provenance(self, memory_id: str) -> None:
         if not self.session_id:
             return
+        session_node.ensure(self._db, self.session_id)
         self._db.query(
             """
-            MERGE (s:Session {session_id: $session_id})
-            WITH s
+            MATCH (s:Session {session_id: $session_id})
             MATCH (m:Memory {memory_id: $memory_id})
             MERGE (s)-[:PRODUCED_MEMORY]->(m)
             """,

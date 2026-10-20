@@ -14,6 +14,8 @@ import contextlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from memgraph_context_graph import session as session_node
+
 from .embeddings import DEFAULT_EMBEDDING_MODEL, Embedded, EmbeddingUnavailableError, embed_memory, embed_session
 from .extraction import ExtractionConfig
 from .models import _utc_now
@@ -424,10 +426,12 @@ class Reconciler:
         if rows:
             return rows[0]["user_id"]
         user_id = f"anon-{session_id}"
+        session_node.ensure(self.db, session_id)
         self.db.query(
             """
             MERGE (u:User {user_id: $user_id})
-            MERGE (s:Session {session_id: $session_id})
+            WITH u
+            MATCH (s:Session {session_id: $session_id})
             MERGE (u)-[:HAD_SESSION]->(s)
             """,
             params={"user_id": user_id, "session_id": session_id},

@@ -43,7 +43,7 @@ _Avoid_: required credential
 ## Relationships
 
 - **Memgraph Context Graph -> graph components**: emits normalized events. Each component-owned connector decides what to persist. `ActionsGraphConnector` records observability data, `SkillGraphConnector` records skill activity, `SessionsGraphConnector` records session/user lifecycle data.
-- **Session Node (shared)**: `(:Session {session_id})` joins component data. Any component may `MERGE` it; none owns it. Adapter sets `session_id`.
+- **Session Node (shared)**: `(:Session {session_id})` joins component data. Any component may create it; none owns it. Its shape, uniqueness constraint and race-safe MERGE live in `memgraph_context_graph.session` (`setup`, `ensure`), which every component calls rather than writing its own. Adapter sets `session_id`.
 - **Actions Graph -> Skills Graph**: both consume tool activity. Actions Graph records it; Skills Graph decides if it proves skill usage.
 - **Actions Graph -> Sessions Graph**: reconciliation reads top-level + subagent actions via `get_session_actions()`. Never modifies Actions Graph data.
 - **Actions Graph -> Skills Graph (`Agent` nodes)**: Actions Graph owns each subagent's `Agent` node. Skills Graph may attach `USED_SKILL` to it by `agent_id` — mirrors `HAS_ACTION`/`USED_SKILL` on a top-level Session.

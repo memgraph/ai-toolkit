@@ -192,8 +192,8 @@ name = "actions-graph"
 version = "0.6.0"
 source = { editable = "context-graph/actions-graph" }
 dependencies = [
+    { name = "memgraph-context-graph" },
     { name = "memgraph-toolbox" },
-    { name = "neo4j" },
 ]
 
 [package.optional-dependencies]
@@ -207,9 +207,9 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "memgraph-context-graph", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-context-graph", marker = "extra == 'memgraph-context-graph'", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
-    { name = "neo4j", specifier = ">=5.28.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
 ]
@@ -7994,6 +7994,7 @@ name = "resources-graph"
 version = "0.2.0"
 source = { editable = "context-graph/resources-graph" }
 dependencies = [
+    { name = "memgraph-context-graph" },
     { name = "memgraph-toolbox" },
 ]
 
@@ -8010,6 +8011,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "actions-graph", marker = "extra == 'test'", editable = "context-graph/actions-graph" },
+    { name = "memgraph-context-graph", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-context-graph", marker = "extra == 'memgraph-context-graph'", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
@@ -8568,6 +8570,7 @@ name = "sessions-graph"
 version = "0.10.0"
 source = { editable = "context-graph/sessions-graph" }
 dependencies = [
+    { name = "memgraph-context-graph" },
     { name = "memgraph-toolbox" },
 ]
 
@@ -8596,6 +8599,7 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.74.0" },
     { name = "anthropic", marker = "extra == 'reconciliation'", specifier = ">=0.74.0" },
     { name = "hygm", marker = "extra == 'reconciliation'", editable = "hygm" },
+    { name = "memgraph-context-graph", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-context-graph", marker = "extra == 'memgraph-context-graph'", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "openai", marker = "extra == 'reconciliation'", specifier = ">=2.0.0" },
@@ -8637,6 +8641,7 @@ name = "skills-graph"
 version = "0.2.2"
 source = { editable = "context-graph/skills-graph" }
 dependencies = [
+    { name = "memgraph-context-graph" },
     { name = "memgraph-toolbox" },
 ]
 
@@ -8652,6 +8657,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "memgraph-context-graph", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-context-graph", marker = "extra == 'memgraph-context-graph'", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "openai-agents", marker = "extra == 'test'", specifier = ">=0.1.0" },

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from memgraph_context_graph import session as session_node
 from memgraph_toolbox.api.memgraph import Memgraph
 
 from .embeddings import DEFAULT_EMBEDDING_MODEL
@@ -79,6 +80,7 @@ class SessionsGraph:
         self._db.query("CREATE INDEX ON :MemoryVersion(memory_id);")
         self._db.query("CREATE INDEX ON :Memory(extraction_status);")
         self._db.query(f"CREATE TEXT INDEX {_FULLTEXT_INDEX} ON :Memory(content);")
+        session_node.setup(self._db)
         self._db.query("CREATE INDEX ON :Session(reconciliation_status);")
         self._db.query("CREATE INDEX ON :Session(embedding_status);")
         self._db.query(f"CREATE TEXT INDEX {TURN_TEXT_INDEX} ON :Action(text);")
@@ -192,10 +194,10 @@ class SessionsGraph:
             )
 
         if session_id:
+            session_node.ensure(self._db, session_id)
             self._db.query(
                 """
-                MERGE (s:Session {session_id: $session_id})
-                WITH s
+                MATCH (s:Session {session_id: $session_id})
                 MATCH (m:Memory {memory_id: $memory_id})
                 CREATE (s)-[:PRODUCED_MEMORY]->(m)
                 """,
@@ -321,20 +323,20 @@ class SessionsGraph:
 
     def record_session_start(self, session_id: str, *, user_id: str | None, project_key: str | None) -> None:
         """MERGE *session_id*, owned by *user_id* when the harness reported one, in *project_key* when known."""
+        session_node.ensure(self._db, session_id)
+        self._db.query(
+            "MATCH (s:Session {session_id: $session_id}) SET s.project_key = coalesce($project, s.project_key);",
+            params={"session_id": session_id, "project": project_key},
+        )
         if user_id:
             self._db.query(
                 """
                 MERGE (u:User {user_id: $user_id})
-                MERGE (s:Session {session_id: $session_id})
-                SET s.project_key = coalesce($project, s.project_key)
+                WITH u
+                MATCH (s:Session {session_id: $session_id})
                 MERGE (u)-[:HAD_SESSION]->(s)
                 """,
-                params={"user_id": user_id, "session_id": session_id, "project": project_key},
-            )
-        else:
-            self._db.query(
-                "MERGE (s:Session {session_id: $session_id}) SET s.project_key = coalesce($project, s.project_key);",
-                params={"session_id": session_id, "project": project_key},
+                params={"user_id": user_id, "session_id": session_id},
             )
 
     def recall(

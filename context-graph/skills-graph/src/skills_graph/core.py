@@ -3,6 +3,7 @@
 import json
 from datetime import datetime, timezone
 
+from memgraph_context_graph import session as session_node
 from memgraph_toolbox.api.memgraph import Memgraph
 
 from .models import Skill
@@ -31,6 +32,7 @@ class SkillGraph:
 
     def setup(self) -> None:
         """Create constraints and indexes required for skill storage."""
+        session_node.setup(self._db)
         self._db.query("CREATE CONSTRAINT ON (s:Skill) ASSERT s.name IS UNIQUE;")
         self._db.query("CREATE INDEX ON :Skill(name);")
 
@@ -203,11 +205,11 @@ class SkillGraph:
             "agent_id": resolved_agent_id,
         }
 
-        container_match = (
-            "MATCH (container:Agent {agent_id: $agent_id})"
-            if resolved_agent_id
-            else "MERGE (container:Session {session_id: $session_id})"
-        )
+        if resolved_agent_id:
+            container_match = "MATCH (container:Agent {agent_id: $agent_id})"
+        else:
+            session_node.ensure(self._db, session_id)
+            container_match = "MATCH (container:Session {session_id: $session_id})"
 
         if create_missing:
             self._db.query(

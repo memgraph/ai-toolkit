@@ -21,6 +21,7 @@ import hashlib
 from datetime import datetime, timezone
 from typing import Any
 
+from memgraph_context_graph import session as session_node
 from memgraph_toolbox.api.memgraph import Memgraph
 
 from .address import Address
@@ -44,7 +45,6 @@ _SCHEMA = (
     "CREATE INDEX ON :Comment(node_id);",
     "CREATE INDEX ON :Touch(touch_id);",
     "CREATE INDEX ON :Touch(status);",
-    "CREATE INDEX ON :Session(session_id);",
 )
 
 
@@ -73,6 +73,7 @@ class ResourcesGraph:
 
     def setup(self) -> None:
         """Create the constraints and indexes this component relies on. Idempotent."""
+        session_node.setup(self._db)
         for statement in _SCHEMA:
             self._db.query(statement)
 
@@ -96,9 +97,10 @@ class ResourcesGraph:
         Returns the Touch id.
         """
         tid = touch_id(session_id, discriminator, provenance, address)
+        session_node.ensure(self._db, session_id)
         self._db.query(
             """
-            MERGE (s:Session {session_id: $session_id})
+            MATCH (s:Session {session_id: $session_id})
             MERGE (t:Touch {touch_id: $touch_id})
             ON CREATE SET t.address = $address, t.address_kind = $kind, t.limit = $limit, t.provenance = $provenance,
                           t.served_from_memory = false, t.status = $pending, t.tool_use_id = $tool_use_id,
@@ -140,9 +142,10 @@ class ResourcesGraph:
         Returns the Touch id.
         """
         tid = touch_id(session_id, discriminator, "MEMORY", address)
+        session_node.ensure(self._db, session_id)
         self._db.query(
             """
-            MERGE (s:Session {session_id: $session_id})
+            MATCH (s:Session {session_id: $session_id})
             MERGE (t:Touch {touch_id: $touch_id})
             ON CREATE SET t.address = $address, t.address_kind = $kind, t.limit = $limit, t.provenance = $provenance,
                           t.served_from_memory = true, t.outcome = $outcome, t.served_from = $served_from,
