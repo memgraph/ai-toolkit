@@ -189,7 +189,7 @@ wheels = [
 
 [[package]]
 name = "actions-graph"
-version = "0.5.0"
+version = "0.6.0"
 source = { editable = "context-graph/actions-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -3405,7 +3405,7 @@ wheels = [
 
 [[package]]
 name = "lightrag-memgraph"
-version = "0.3.1"
+version = "0.3.2"
 source = { editable = "integrations/lightrag-memgraph" }
 dependencies = [
     { name = "anthropic" },
@@ -4079,7 +4079,7 @@ wheels = [
 
 [[package]]
 name = "memgraph-ai"
-version = "0.1.9"
+version = "0.2.0"
 source = { virtual = "." }
 dependencies = [
     { name = "mcp", extra = ["cli"] },
@@ -4096,7 +4096,7 @@ requires-dist = [
 
 [[package]]
 name = "memgraph-context-graph"
-version = "0.8.0"
+version = "0.9.0"
 source = { editable = "context-graph/memgraph-context-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -8565,7 +8565,7 @@ wheels = [
 
 [[package]]
 name = "sessions-graph"
-version = "0.9.0"
+version = "0.10.0"
 source = { editable = "context-graph/sessions-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -8634,7 +8634,7 @@ wheels = [
 
 [[package]]
 name = "skills-graph"
-version = "0.2.1"
+version = "0.2.2"
 source = { editable = "context-graph/skills-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
