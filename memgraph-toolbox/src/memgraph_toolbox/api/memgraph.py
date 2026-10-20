@@ -1,4 +1,5 @@
 import os
+import time
 from collections.abc import Mapping
 from typing import Any, cast
 
@@ -76,6 +77,39 @@ def memgraph_env(
             else env.get("MEMGRAPH_DATABASE", MEMGRAPH_ENV_DEFAULTS["MEMGRAPH_DATABASE"])
         ),
     }
+
+
+def merge_with_retry(db: Any, query: str, params: dict | None = None, *, attempts: int = 3) -> list[dict[str, Any]]:
+    """Run *query*, a MERGE of a uniqueness-constrained node, through *db*, surviving a concurrent create.
+
+    Two transactions that MERGE the same new node both find it missing and
+    both create it; the later commit fails the uniqueness constraint. Run
+    again, its MERGE matches the node the other one committed. Writers that
+    race this way are typically one process per event (agent hooks).
+
+    Args:
+        db: Anything with ``query(query, params)``, normally a :class:`Memgraph`.
+        query: The Cypher to run; it must be safe to run more than once.
+        params: Its parameters.
+        attempts: Runs before giving up, the first included.
+
+    Returns:
+        The rows of the run that committed.
+
+    Raises:
+        neo4j.exceptions.ClientError: a uniqueness violation on the last
+            attempt, or any other client error at once.
+    """
+    from neo4j.exceptions import ClientError
+
+    for attempt in range(attempts):
+        try:
+            return db.query(query, params=params)
+        except ClientError as exc:
+            if "unique constraint" not in str(exc) or attempt == attempts - 1:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+    raise ValueError(f"attempts must be at least 1, got {attempts}")
 
 
 class Memgraph:

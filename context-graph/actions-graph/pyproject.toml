@@ -13,8 +13,8 @@ classifiers = [
 ]
 dependencies = [
     "memgraph-toolbox",
-    # Imported directly to retry concurrent-MERGE constraint conflicts.
-    "neo4j>=5.28.1",
+    # The Session Node's shape and constraint (memgraph_context_graph.session).
+    "memgraph-context-graph",
 ]
 
 [project.optional-dependencies]

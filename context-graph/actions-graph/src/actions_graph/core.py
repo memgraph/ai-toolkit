@@ -25,13 +25,11 @@ from __future__ import annotations
 
 import contextlib
 import json
-import time
 from datetime import datetime, timezone
 from typing import Any, TypedDict
 
-from neo4j.exceptions import ClientError
-
-from memgraph_toolbox.api.memgraph import Memgraph
+from memgraph_context_graph import session as session_node
+from memgraph_toolbox.api.memgraph import Memgraph, merge_with_retry
 
 from .models import (
     Action,
@@ -92,8 +90,12 @@ def _message_text(action: Action) -> str | None:
 
 
 def _session_params(session: Session) -> dict[str, Any]:
+    return {"session_id": session.session_id, **_session_fields(session)}
+
+
+def _session_fields(session: Session) -> dict[str, Any]:
+    """The Session Node properties actions-graph records, keyed as stored."""
     return {
-        "session_id": session.session_id,
         "started_at": session.started_at,
         "ended_at": session.ended_at,
         "status": session.status.value,
@@ -135,8 +137,7 @@ class ActionsGraph:
 
     def setup(self) -> None:
         """Create constraints and indexes required for action storage."""
-        self._db.query("CREATE CONSTRAINT ON (s:Session) ASSERT s.session_id IS UNIQUE;")
-        self._db.query("CREATE INDEX ON :Session(session_id);")
+        session_node.setup(self._db)
         self._db.query("CREATE INDEX ON :Session(started_at);")
         self._db.query("CREATE INDEX ON :Session(status);")
         self._db.query("CREATE CONSTRAINT ON (a:Action) ASSERT a.action_id IS UNIQUE;")
@@ -151,9 +152,7 @@ class ActionsGraph:
         self._db.query("CREATE INDEX ON :Action(is_error);")
 
     def drop(self) -> None:
-        """Remove the uniqueness constraints this class creates."""
-        with contextlib.suppress(Exception):
-            self._db.query("DROP CONSTRAINT ON (s:Session) ASSERT s.session_id IS UNIQUE;")
+        """Remove the uniqueness constraints this class creates; the Session Node's is shared, so it stays."""
         with contextlib.suppress(Exception):
             self._db.query("DROP CONSTRAINT ON (a:Action) ASSERT a.action_id IS UNIQUE;")
         with contextlib.suppress(Exception):
@@ -204,23 +203,7 @@ class ActionsGraph:
         This is used by event connectors where concurrent first events for a
         session can arrive before an explicit session-start event.
         """
-        self._query_session_merge(
-            """
-            MERGE (s:Session {session_id: $session_id})
-            ON CREATE SET
-                s.started_at = $started_at,
-                s.ended_at = $ended_at,
-                s.status = $status,
-                s.model = $model,
-                s.total_cost_usd = $total_cost_usd,
-                s.total_input_tokens = $total_input_tokens,
-                s.total_output_tokens = $total_output_tokens,
-                s.working_directory = $working_directory,
-                s.git_branch = $git_branch,
-                s.metadata = $metadata
-            """,
-            params=_session_params(session),
-        )
+        session_node.ensure(self._db, session.session_id, **_session_fields(session))
         return session
 
     def record_session_start(self, session: Session) -> Session:
@@ -231,22 +214,11 @@ class ActionsGraph:
         details. Existing values win, except ``started_at``, which keeps the
         earliest timestamp seen.
         """
-        self._query_session_merge(
+        session_node.ensure(self._db, session.session_id, **_session_fields(session))
+        self._db.query(
             """
-            MERGE (s:Session {session_id: $session_id})
-            ON CREATE SET
-                s.started_at = $started_at,
-                s.ended_at = $ended_at,
-                s.status = $status,
-                s.model = $model,
-                s.total_cost_usd = $total_cost_usd,
-                s.total_input_tokens = $total_input_tokens,
-                s.total_output_tokens = $total_output_tokens,
-                s.working_directory = $working_directory,
-                s.git_branch = $git_branch,
-                s.metadata = $metadata
-            ON MATCH SET
-                s.started_at = CASE
+            MATCH (s:Session {session_id: $session_id})
+            SET s.started_at = CASE
                     WHEN s.started_at IS NULL OR $started_at < s.started_at THEN $started_at
                     ELSE s.started_at
                 END,
@@ -257,19 +229,6 @@ class ActionsGraph:
             params=_session_params(session),
         )
         return session
-
-    def _query_session_merge(self, query: str, params: dict[str, Any], *, attempts: int = 3) -> None:
-        # Hook runtimes run one subprocess per event, often concurrently, so two
-        # MERGEs of a new session can both try to create it; the loser fails the
-        # unique constraint. Retrying lets its MERGE match the winner's node.
-        for attempt in range(attempts):
-            try:
-                self._db.query(query, params=params)
-                return
-            except ClientError as exc:
-                if "unique constraint" not in str(exc) or attempt == attempts - 1:
-                    raise
-                time.sleep(0.05 * (attempt + 1))
 
     def find_unanswered_tool_call(self, session_id: str, tool_name: str) -> str | None:
         """Return the oldest ToolCall of *tool_name* in a session that has no result yet.
@@ -447,7 +406,9 @@ class ActionsGraph:
         Returns:
             The persisted agent
         """
-        self._db.query(
+        # Hook processes for one subagent's first events race to create it.
+        merge_with_retry(
+            self._db,
             """
             MERGE (a:Agent {agent_id: $agent_id})
             ON CREATE SET
@@ -507,7 +468,8 @@ class ActionsGraph:
         flattening the timeline. A later :meth:`start_agent` fills in what this
         couldn't know and still infers the spawning action.
         """
-        self._db.query(
+        merge_with_retry(
+            self._db,
             """
             MERGE (a:Agent {agent_id: $agent_id})
             ON CREATE SET

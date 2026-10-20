@@ -53,7 +53,7 @@ Full-text search over Memory nodes' `content` property, via Memgraph full-text i
 _Avoid_: conflating explicit Memory search with hybrid session recall
 
 **Session Node**:
-Shared `(:Session {session_id})` node joining data from Context Graph components. Any component may `MERGE` it; sessions-graph owns its lifecycle and the User/HAD_SESSION relationship.
+Shared `(:Session {session_id})` node joining data from Context Graph components. Any component may create it, through `memgraph_context_graph.session.ensure`; sessions-graph owns its lifecycle and the User/HAD_SESSION relationship.
 _Avoid_: treating other components' MERGEs as lifecycle ownership
 
 **Session Reconciliation**:

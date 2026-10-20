@@ -109,25 +109,33 @@ class TestSessionsGraphConnector:
         connector = SessionsGraphConnector(graph)
         return connector, graph, db, SessionStartEvent, SessionEndEvent
 
-    def test_session_start_merges_user_and_session_nodes(self):
-        connector, _graph, db, SessionStartEvent, _ = self._make()
+    def test_session_start_merges_user_and_session_nodes(self, graph, memgraph):
+        pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
+        from sessions_graph.connector import SessionsGraphConnector
 
-        event = SessionStartEvent(session_id="s-1", user_id="alice")
-        connector.on_event(event)
+        from memgraph_context_graph.events import SessionStartEvent
+
+        connector = SessionsGraphConnector(graph)
+        connector.on_event(SessionStartEvent(session_id="s-1", user_id="alice"))
 
         assert connector.active_user_id == "alice"
         assert connector.active_session_id == "s-1"
-        assert db.query.call_count == 1  # single combined MERGE wiring User-[:HAD_SESSION]->Session
+        rows = memgraph.query("MATCH (u:User)-[:HAD_SESSION]->(s:Session) RETURN u.user_id AS user, s.session_id AS id")
+        assert rows == [{"user": "alice", "id": "s-1"}]
 
-    def test_session_start_without_user_id_only_merges_session(self):
-        connector, _graph, db, SessionStartEvent, _ = self._make()
+    def test_session_start_without_user_id_only_merges_session(self, graph, memgraph):
+        pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
+        from sessions_graph.connector import SessionsGraphConnector
 
-        event = SessionStartEvent(session_id="s-1")
-        connector.on_event(event)
+        from memgraph_context_graph.events import SessionStartEvent
+
+        connector = SessionsGraphConnector(graph)
+        connector.on_event(SessionStartEvent(session_id="s-1"))
 
         assert connector.active_user_id is None
         assert connector.active_session_id == "s-1"
-        assert db.query.call_count == 1  # Session MERGE only
+        assert memgraph.query("MATCH (s:Session) RETURN s.session_id AS id") == [{"id": "s-1"}]
+        assert memgraph.query("MATCH (u:User) RETURN count(u) AS c") == [{"c": 0}]
 
     def test_session_end_clears_active_context(self):
         connector, _graph, _db, SessionStartEvent, SessionEndEvent = self._make()
