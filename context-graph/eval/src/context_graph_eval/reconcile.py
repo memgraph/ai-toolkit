@@ -260,7 +260,7 @@ async def reconcile_batch(
             async def _one(session_id: str) -> None:
                 nonlocal done
                 async with semaphore:
-                    summary = await graph.reconcile_session(
+                    summary = await graph.reconciler.reconcile(
                         session_id,
                         # None under a learned ontology: the user's adopted version.
                         extraction_backend=gliner2_backend,
@@ -283,7 +283,7 @@ async def reconcile_batch(
         else:
             for start in range(0, len(session_ids), sessions_per_call):
                 chunk = session_ids[start : start + sessions_per_call]
-                outcomes = await graph.reconcile_sessions_batch(
+                outcomes = await graph.reconciler.reconcile_batch(
                     chunk,
                     lightrag_wrapper=lightrag_wrapper,
                     enforce_ontology=True,

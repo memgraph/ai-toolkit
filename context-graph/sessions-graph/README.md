@@ -196,14 +196,14 @@ Session reconciliation runs a session's Actions Graph content (Messages,
 ToolCalls, ToolResults) through [unstructured2graph](../../unstructured2graph/)
 as one document, extracting entities with local GLiNER2 under the user's
 [ontology version](#ontology-versions) (or another `ExtractionBackend` passed
-as `reconcile_session(..., extraction_backend=...)`), and links them back to
+as `graph.reconciler.reconcile(..., extraction_backend=...)`), and links them back to
 the session that produced them. See [`CONTEXT.md`](./CONTEXT.md#language) for
 the terminology.
 
 Memory files are reconciled on their own, not with a session, because a file
 outlives the session that first wrote it.
 - **Trigger.** Every write marks the file `extraction_status = 'pending'`.
-- **What runs.** `reconcile_memory(memory_id)` first removes what the file's
+- **What runs.** `graph.reconciler.reconcile_memory(memory_id)` first removes what the file's
   previous text produced. That covers relations carrying its id as
   `source_id`, its share of `MENTIONED_IN.sources`, and any chunks and
   entities nothing else backs. It then extracts from the current text, with
@@ -276,7 +276,7 @@ from sessions_graph import SessionsGraph
 graph = SessionsGraph()
 graph.setup()
 
-summary = await graph.reconcile_session(
+summary = await graph.reconciler.reconcile(
     "s-abc123",
     enforce_ontology=True,  # match the CLI: promote entity_type to real labels
 )
@@ -484,10 +484,23 @@ sessions-graph embed --pending --limit 50 --model BAAI/bge-small-en-v1.5
 | `search_memories(user_id, query, *, limit=10)` | Full-text search over Memory content. |
 | `update_memory(memory_id, content)` | Replace the content of an existing Memory. Returns `None` if not found. |
 | `delete_memory(memory_id)` | Remove a Memory and all its relationships. |
-| `async reconcile_session(session_id, *, extraction_backend=None, actions_graph=None, promote_labels=False, enforce_ontology=False, ontology_path=None, embedding_model=DEFAULT_EMBEDDING_MODEL, reextract=False)` | Reconcile one session, then embed what it wrote (see [Embeddings for recall](#embeddings-for-recall)). Extracts with GLiNER2 under the user's adopted ontology version unless `extraction_backend` overrides it. No LLM. Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
-| `async reconcile_sessions_batch(session_ids, *, lightrag_wrapper, ...)` | Reconcile many sessions with LightRAG as one processing pass. |
-| `async reconcile_memory(memory_id, *, extraction_backend=None, enforce_ontology=True, embedding_model=DEFAULT_EMBEDDING_MODEL)` | Re-extract one memory file, replacing what its previous text produced. See [Session reconciliation](#session-reconciliation). |
-| `get_pending_reconciliation_sessions(*, limit=100)` | Return session IDs marked `reconciliation_status = 'pending'`. |
 | `recall(user_id, question, *, config=None, model=DEFAULT_EMBEDDING_MODEL)` | What the user's own sessions hold about `question`, as `Recalled` (turns and facts; `lines()`, `render(today)`, `to_json()`). See [Recall](#recall). |
-| `embed_session(session_id, *, model=DEFAULT_EMBEDDING_MODEL)` | Embed the session's messages, entities and edges that lack a vector from `model`, inside Memgraph. Returns counts as `Embedded`; records the outcome on the Session. Raises `EmbeddingUnavailableError` without MAGE or when the model can't load. |
-| `get_pending_embedding_sessions(*, model=DEFAULT_EMBEDDING_MODEL, limit=100)` | Session IDs whose embedding failed, never ran, or used another model. |
+| `record_session_start(session_id, *, user_id, project_key)` | MERGE the Session, owned by `user_id` and in `project_key` when known. The connector calls it on session start. |
+| `reconciler` | The graph's `Reconciler`, below: extraction and embedding over the same connection. |
+
+`graph.reconciler` (`sessions_graph.reconciler.Reconciler`) turns sessions and
+memory files into entities and vectors, and is the one writer of their
+processing status (`reconciliation_*`, `reextract*`, `embedding_*`,
+`extraction_status`):
+
+| Method | Description |
+|---|---|
+| `async reconcile(session_id, *, extraction_backend=None, promote_labels=False, enforce_ontology=False, ontology_path=None, embedding_model=DEFAULT_EMBEDDING_MODEL, reextract=False)` | Reconcile one session, then embed what it wrote (see [Embeddings for recall](#embeddings-for-recall)). Extracts with GLiNER2 under the user's adopted ontology version unless `extraction_backend` overrides it. No LLM. Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
+| `async reconcile_batch(session_ids, *, lightrag_wrapper, ...)` | Reconcile many sessions with LightRAG as one processing pass. |
+| `async reconcile_memory(memory_id, *, extraction_backend=None, enforce_ontology=True, embedding_model=DEFAULT_EMBEDDING_MODEL)` | Re-extract one memory file, replacing what its previous text produced. See [Session reconciliation](#session-reconciliation). |
+| `mark_pending(session_id)` | Queue the session for the next `reconcile --pending` sweep. |
+| `pending_sessions(*, limit=100)` | Session IDs marked `reconciliation_status = 'pending'`. |
+| `pending_memories(*, limit=100)` | Memory IDs whose file changed since it was last reconciled. |
+| `embed(session_id, *, model=DEFAULT_EMBEDDING_MODEL)` | Embed the session's messages, entities and edges that lack a vector from `model`, inside Memgraph. Returns counts as `Embedded`; records the outcome on the Session. Raises `EmbeddingUnavailableError` without MAGE or when the model can't load. |
+| `pending_embeddings(*, model=DEFAULT_EMBEDDING_MODEL, limit=100)` | Session IDs whose embedding failed, never ran, or used another model. |
+| `session_document(session_id, user_id)` / `session_user(session_id)` / `backend_for(model)` | What derivation reads a session as, the session's user, and the cached GLiNER2 backend for an ontology model. |

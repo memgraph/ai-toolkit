@@ -46,9 +46,9 @@ def ensure_recall_ready(db: Memgraph, *, model: str = DEFAULT_EMBEDDING_MODEL, b
     graph = SessionsGraph(db)
     graph.setup()
     embedded = 0
-    while pending := graph.get_pending_embedding_sessions(model=model, limit=batch):
+    while pending := graph.reconciler.pending_embeddings(model=model, limit=batch):
         for session_id in pending:
-            graph.embed_session(session_id, model=model)
+            graph.reconciler.embed(session_id, model=model)
         embedded += len(pending)
     return embedded
 

@@ -5,7 +5,7 @@ via MEMGRAPH_URL/MEMGRAPH_USER/MEMGRAPH_PASSWORD/MEMGRAPH_DATABASE. Skips
 cleanly if unreachable (see conftest.py's `memgraph`/`graph` fixtures).
 
 No LLM calls in this file -- see test_e2e_reconciliation.py for the tier that
-exercises real entity extraction via reconcile_session().
+exercises real entity extraction via Reconciler.reconcile().
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ def test_connector_session_end_marks_reconciliation_pending(graph, memgraph):
     rows = memgraph.query("MATCH (s:Session {session_id: 's-1'}) RETURN s.reconciliation_status AS status")
     assert rows[0]["status"] == "pending"
 
-    pending = graph.get_pending_reconciliation_sessions()
+    pending = graph.reconciler.pending_sessions()
     assert "s-1" in pending
 
 
@@ -102,4 +102,4 @@ def test_connector_turn_end_embeds_and_marks_pending_without_reconciling(graph, 
     assert rows[0]["status"] == "pending"
     # Embedding needs no LLM and keeps recall current; reconciliation waits for the session end.
     assert spawned == ["embed"]
-    assert "s-turn" in graph.get_pending_reconciliation_sessions()
+    assert "s-turn" in graph.reconciler.pending_sessions()

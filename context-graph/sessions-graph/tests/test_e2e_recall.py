@@ -48,7 +48,7 @@ def _fact(memgraph, *, user, turn, relation, entity, sentence, valid_at="2023-05
 def _ready(graph, memgraph):
     graph.setup()
     for row in memgraph.query("MATCH (s:Session) RETURN s.session_id AS id"):
-        graph.embed_session(row["id"])
+        graph.reconciler.embed(row["id"])
 
 
 @pytest.fixture
@@ -187,11 +187,11 @@ def test_a_fact_deep_in_a_long_reply_is_found_by_vector_and_shown(graph, memgrap
 
 
 def test_a_session_embedded_under_another_passage_split_is_pending_again(graph, memgraph, moma):
-    assert graph.get_pending_embedding_sessions() == []
+    assert graph.reconciler.pending_embeddings() == []
 
     memgraph.query("MATCH (s:Session {session_id: 's1'}) SET s.embedding_scheme = 'whole-messages'")
 
-    assert graph.get_pending_embedding_sessions() == ["s1"]
+    assert graph.reconciler.pending_embeddings() == ["s1"]
 
 
 def test_config_overrides_widths_and_lanes_and_rejects_nonsense():

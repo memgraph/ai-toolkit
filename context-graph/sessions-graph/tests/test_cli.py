@@ -43,7 +43,7 @@ def test_reconcile_requires_session_or_pending():
 
 def test_reconcile_single_session_success(capsys):
     fake_graph = MagicMock()
-    fake_graph.reconcile_session = AsyncMock(
+    fake_graph.reconciler.reconcile = AsyncMock(
         return_value=ReconciliationSummary(session_id="s-1", status="completed", texts_considered=2, texts_deduped=1)
     )
 
@@ -51,16 +51,16 @@ def test_reconcile_single_session_success(capsys):
         exit_code = main(["reconcile", "--session", "s-1"])
 
     assert exit_code == 0
-    fake_graph.reconcile_session.assert_awaited_once()
-    assert fake_graph.reconcile_session.call_args.args[0] == "s-1"
-    assert fake_graph.reconcile_session.call_args.kwargs["enforce_ontology"] is True
+    fake_graph.reconciler.reconcile.assert_awaited_once()
+    assert fake_graph.reconciler.reconcile.call_args.args[0] == "s-1"
+    assert fake_graph.reconciler.reconcile.call_args.kwargs["enforce_ontology"] is True
     assert "OK s-1" in capsys.readouterr().out
 
 
 def test_reconcile_pending_sweeps_all_sessions_and_reports_failure(capsys):
     fake_graph = MagicMock()
-    fake_graph.get_pending_reconciliation_sessions.return_value = ["s-1", "s-2"]
-    fake_graph.reconcile_session = AsyncMock(
+    fake_graph.reconciler.pending_sessions.return_value = ["s-1", "s-2"]
+    fake_graph.reconciler.reconcile = AsyncMock(
         side_effect=[
             ReconciliationSummary(session_id="s-1", status="completed", texts_considered=1, texts_deduped=1),
             ReconciliationSummary(session_id="s-2", status="failed", texts_considered=1, texts_deduped=1, error="boom"),
@@ -71,8 +71,8 @@ def test_reconcile_pending_sweeps_all_sessions_and_reports_failure(capsys):
         exit_code = main(["reconcile", "--pending", "--limit", "5"])
 
     assert exit_code == 1  # one session failed
-    fake_graph.get_pending_reconciliation_sessions.assert_called_once_with(limit=5)
-    assert fake_graph.reconcile_session.await_count == 2
+    fake_graph.reconciler.pending_sessions.assert_called_once_with(limit=5)
+    assert fake_graph.reconciler.reconcile.await_count == 2
     out = capsys.readouterr()
     assert "OK s-1" in out.out
     assert "boom" in out.err
@@ -80,7 +80,7 @@ def test_reconcile_pending_sweeps_all_sessions_and_reports_failure(capsys):
 
 def test_reconcile_pending_with_no_sessions_returns_0(capsys):
     fake_graph = MagicMock()
-    fake_graph.get_pending_reconciliation_sessions.return_value = []
+    fake_graph.reconciler.pending_sessions.return_value = []
 
     with patch("sessions_graph.SessionsGraph", return_value=fake_graph):
         exit_code = main(["reconcile", "--pending"])
@@ -95,7 +95,7 @@ def test_reconcile_needs_no_llm_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     fake_graph = MagicMock()
-    fake_graph.reconcile_session = AsyncMock(
+    fake_graph.reconciler.reconcile = AsyncMock(
         return_value=ReconciliationSummary(session_id="s-1", status="completed", texts_considered=1, texts_deduped=1)
     )
 

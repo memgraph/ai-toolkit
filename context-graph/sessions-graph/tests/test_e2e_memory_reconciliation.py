@@ -46,14 +46,14 @@ def _tools_used(memgraph):
 async def test_a_write_marks_the_file_pending_and_reconciling_extracts_it(graph, memgraph, backend):
     store = graph.memory_store("alice")
     store.create("/memories/user/tools.md", "Ante uses uv for everything.")
-    [memory_id] = graph.get_pending_memory_reconciliations()
+    [memory_id] = graph.reconciler.pending_memories()
 
-    result = await graph.reconcile_memory(memory_id, extraction_backend=backend)
+    result = await graph.reconciler.reconcile_memory(memory_id, extraction_backend=backend)
 
     assert result.status == "completed", result.error
     assert result.path == "/memories/user/tools.md"
     assert _tools_used(memgraph) == [("uv", memory_id)]
-    assert graph.get_pending_memory_reconciliations() == []
+    assert graph.reconciler.pending_memories() == []
     assert (
         memgraph.query(
             "MATCH (:Memory {memory_id: $id})-[:HAS_CHUNK]->(c:Chunk) RETURN count(c) AS n", {"id": memory_id}
@@ -65,11 +65,11 @@ async def test_a_write_marks_the_file_pending_and_reconciling_extracts_it(graph,
 async def test_reconciling_an_edit_replaces_what_the_old_text_gave(graph, memgraph, backend):
     store = graph.memory_store("alice")
     store.create("/memories/user/tools.md", "Ante uses uv for everything.")
-    [memory_id] = graph.get_pending_memory_reconciliations()
-    await graph.reconcile_memory(memory_id, extraction_backend=backend)
+    [memory_id] = graph.reconciler.pending_memories()
+    await graph.reconciler.reconcile_memory(memory_id, extraction_backend=backend)
 
     store.str_replace("/memories/user/tools.md", "uv", "pip")
-    await graph.reconcile_memory(memory_id, extraction_backend=backend)
+    await graph.reconciler.reconcile_memory(memory_id, extraction_backend=backend)
 
     assert _tools_used(memgraph) == [("pip", memory_id)]
     assert memgraph.query("MATCH (t:Tool {text: 'uv'}) RETURN count(t) AS n")[0]["n"] == 0
@@ -78,8 +78,8 @@ async def test_reconciling_an_edit_replaces_what_the_old_text_gave(graph, memgra
 async def test_deleting_a_file_removes_what_it_gave(graph, memgraph, backend):
     store = graph.memory_store("alice")
     store.create("/memories/user/tools.md", "Ante uses uv for everything.")
-    [memory_id] = graph.get_pending_memory_reconciliations()
-    await graph.reconcile_memory(memory_id, extraction_backend=backend)
+    [memory_id] = graph.reconciler.pending_memories()
+    await graph.reconciler.reconcile_memory(memory_id, extraction_backend=backend)
 
     store.delete("/memories/user/tools.md")
 
@@ -95,9 +95,9 @@ async def test_a_failure_is_recorded_on_the_file(graph, memgraph):
             raise RuntimeError("extractor down")
 
     graph.memory_store("alice").create("/memories/a.md", "text")
-    [memory_id] = graph.get_pending_memory_reconciliations()
+    [memory_id] = graph.reconciler.pending_memories()
 
-    result = await graph.reconcile_memory(memory_id, extraction_backend=Broken())
+    result = await graph.reconciler.reconcile_memory(memory_id, extraction_backend=Broken())
 
     assert result.status == "failed"
     row = memgraph.query("MATCH (m:Memory) RETURN m.extraction_status AS s, m.extraction_error AS e")[0]

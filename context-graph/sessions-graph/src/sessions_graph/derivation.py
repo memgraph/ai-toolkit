@@ -41,12 +41,11 @@ from .ontology import OntologyVersion, adopt, adopted, next_version, reject
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from actions_graph import ActionsGraph
     from hygm import Derivation, HygmModel, Llm
     from unstructured2graph import Document
     from unstructured2graph.gliner2_observer import Measurement
 
-    from .core import SessionsGraph
+    from .reconciler import Reconciler
 
 #: Run when this many qualifying sessions exist, then every EVERY after the last.
 MILESTONES = (2, 4, 8, 16, 32, 64, 128)
@@ -156,12 +155,11 @@ class RunReport:
 
 
 async def run(
-    graph: SessionsGraph,
+    reconciler: Reconciler,
     user_id: str,
     *,
     llm: Llm,
     observer: GateObserver,
-    actions_graph: ActionsGraph | None = None,
     force: bool = False,
     seeds: int = SEEDS,
     usage: Any = None,
@@ -169,7 +167,7 @@ async def run(
     """Derive, gate and maybe adopt the user's next ontology version.
 
     Args:
-        graph: Where the user's sessions and versions live.
+        reconciler: Reads the user's sessions and re-extracts them; its connection holds the versions.
         llm: ``hygm.Llm`` for the propose, consolidate and prune calls.
         observer: Observes candidates and measures them for the gate.
         force: Run even if no milestone was reached (a backfill, or by hand).
@@ -180,7 +178,7 @@ async def run(
         What happened; never raises for a candidate that fails, only records it.
     """
     started = time.monotonic()
-    db = graph._db
+    db = reconciler.db
     current = adopted(db, user_id)
     if current.derive == "off":
         return RunReport(user_id, None, "derive off")
@@ -201,10 +199,9 @@ async def run(
             # Nothing new since the last run: the milestone is still spent, or due() would fire forever.
             _set_state(db, user_id, milestone=milestone, watermark=state["watermark"])
             return report
-        actions_graph = graph._default_actions_graph(actions_graph, "derive")
         rng = random.Random(f"{user_id}:{milestone}")
         sample = sorted(rng.sample(delta, DELTA_BUDGET)) if len(delta) > DELTA_BUDGET else delta
-        documents = {sid: graph._prepare_session(sid, actions_graph).document(user_id) for sid in sample}
+        documents = {sid: reconciler.session_document(sid, user_id) for sid in sample}
         held_out = _hold_out(sample, rng)
         training = [sid for sid in sample if sid not in held_out] if held_out else sample
         gate_on = held_out or sample
@@ -273,13 +270,11 @@ async def run(
         for other, candidate in candidates:
             if other is not derivation:
                 reject(db, _version(current, other, next_version(db, user_id), report, candidate))
-        _relabel_merges(graph, derivation)
+        _relabel_merges(reconciler, derivation)
         clock = time.monotonic()
         if chosen.added:
             for sid in delta:
-                summary = await graph.reconcile_session(
-                    sid, actions_graph=actions_graph, enforce_ontology=True, reextract=True
-                )
+                summary = await reconciler.reconcile(sid, enforce_ontology=True, reextract=True)
                 report.reextracted += summary.status == "completed"
         report.reextract_seconds = round(time.monotonic() - clock, 1)
         _set_state(db, user_id, milestone=milestone, watermark=watermark)
@@ -355,13 +350,13 @@ def _saturation(derivation: Derivation) -> dict[str, int]:
     return {"fitting_existing": fitting, "needing_new": sum(types.get(label, {}).get("mentions", 0) for label in added)}
 
 
-def _relabel_merges(graph: SessionsGraph, derivation: Derivation) -> None:
+def _relabel_merges(reconciler: Reconciler, derivation: Derivation) -> None:
     """Move entities and relationships of a merged-away type onto its survivor, in place (#434).
 
     Possible since a global entity's key no longer holds its type (#442):
     after relabelling, new mentions of the name land on the same node.
     """
-    workspace = graph._extraction_backend_for(derivation.model).workspace_label
+    workspace = reconciler.backend_for(derivation.model).workspace_label
     for change in derivation.changelog:
         if change.op != "merge" or change.into is None:
             continue
@@ -369,13 +364,13 @@ def _relabel_merges(graph: SessionsGraph, derivation: Derivation) -> None:
         target = require_valid_identifier(change.into, "surviving label")
         if change.kind == "node":
             # Labels can't be parameters; both are validated identifiers above.
-            graph._db.query(
+            reconciler.db.query(
                 f"MATCH (n:{workspace} {{entity_type: $source}}) SET n.entity_type = $target "
                 f"REMOVE n:{source} SET n:{target}",
                 params={"source": source, "target": target},
             )
         else:
-            graph._db.query(
+            reconciler.db.query(
                 f"MATCH (h)-[r:{source}]->(t) CREATE (h)-[moved:{target}]->(t) SET moved = properties(r) DELETE r"
             )
 

@@ -1,8 +1,8 @@
 """Tests for Sessions Graph reconciliation (extract_reconcilable_text,
-build_reconciliation_sources, SessionsGraph.reconcile_session).
+build_reconciliation_sources, Reconciler.reconcile).
 
 extract_reconcilable_text/build_reconciliation_sources are pure-logic unit
-tests, no I/O. reconcile_session's own tests use a real Memgraph and a real
+tests, no I/O. Reconciler.reconcile's own tests use a real Memgraph and a real
 ActionsGraph (via conftest.py's `graph`/`memgraph`/`actions_graph` fixtures,
 which skip cleanly if unreachable) -- only the extraction boundary
 (unstructured2graph.from_documents) is mocked, so schema drift between
@@ -138,7 +138,7 @@ class TestBuildReconciliationSources:
 
 
 # ---------------------------------------------------------------------------
-# SessionsGraph.reconcile_session (real Memgraph + real ActionsGraph, mocked extraction)
+# Reconciler.reconcile (real Memgraph + real ActionsGraph, mocked extraction)
 # ---------------------------------------------------------------------------
 #
 # ActionsGraph is real here -- a hand-rolled fake let this file drift from
@@ -148,7 +148,7 @@ class TestBuildReconciliationSources:
 
 
 def _fake_lightrag_wrapper():
-    """reconcile_sessions_batch drives LightRAG's own pipeline, patched out in every test here."""
+    """Reconciler.reconcile_batch drives LightRAG's own pipeline, patched out in every test here."""
     return MagicMock()
 
 
@@ -171,7 +171,7 @@ def _all_processed(grouped_chunks: list[list[Chunk]]) -> dict[str, dict[str, str
     mapped to its doc_status record. AsyncMock()'s own default return value
     is itself an AsyncMock (a well-known gotcha), so every patch of this
     function must supply an explicit, real dict -- otherwise
-    reconcile_sessions_batch's status.get(...) calls silently operate on a
+    Reconciler.reconcile_batch's status.get(...) calls silently operate on a
     coroutine instead of failing loudly."""
     return {chunk.hash: {"status": "processed"} for group in grouped_chunks for chunk in group}
 
@@ -187,7 +187,7 @@ async def test_reconcile_session_success_marks_completed_and_links_chunks(graph,
 
     fake_chunk = Chunk(text="Alice works on the graph engine.", hash=content_hash("Alice works on the graph engine."))
     with patch("unstructured2graph.from_documents", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_documents:
-        summary = await graph.reconcile_session("s-1", actions_graph=actions_graph)
+        summary = await graph.reconciler.reconcile("s-1")
 
     assert summary.status == "completed"
     assert summary.texts_considered == 1
@@ -210,7 +210,7 @@ async def test_reconcile_session_defaults_to_gliner2_over_hygms_default_model(gr
     )
     fake_chunk = Chunk(text="Alice works on the graph engine.", hash=content_hash("Alice works on the graph engine."))
     with patch("unstructured2graph.from_documents", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_documents:
-        await graph.reconcile_session("s-1", actions_graph=actions_graph, enforce_ontology=True)
+        await graph.reconciler.reconcile("s-1", enforce_ontology=True)
 
     call_kwargs = mock_from_documents.call_args.kwargs
     assert isinstance(call_kwargs["extraction_backend"], GLiNER2Backend)
@@ -239,7 +239,7 @@ async def test_reconcile_session_extracts_under_the_users_adopted_version_and_re
 
     fake_chunk = Chunk(text="I maintain pytest.", hash=content_hash("I maintain pytest."))
     with patch("unstructured2graph.from_documents", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_documents:
-        await graph.reconcile_session("s-1", actions_graph=actions_graph, enforce_ontology=True)
+        await graph.reconciler.reconcile("s-1", enforce_ontology=True)
 
     assert mock_from_documents.call_args.kwargs["ontology"] == Ontology.from_model(version.model)
     rows = memgraph.query("MATCH (s:Session {session_id: 's-1'}) RETURN s.ontology_version AS version")
@@ -255,7 +255,7 @@ async def test_a_failed_reextraction_leaves_the_session_reconciled(graph, memgra
     actions_graph.record_message(session_id="s-1", role=MessageRole.USER, content="I maintain pytest.")
     memgraph.query("MATCH (s:Session {session_id: 's-1'}) SET s.reconciliation_status = 'completed'")
     with patch("unstructured2graph.from_documents", new=AsyncMock(side_effect=RuntimeError("bad version"))):
-        summary = await graph.reconcile_session("s-1", actions_graph=actions_graph, reextract=True)
+        summary = await graph.reconciler.reconcile("s-1", reextract=True)
 
     assert summary.status == "failed"
     rows = memgraph.query(
@@ -278,10 +278,9 @@ async def test_reconcile_session_extraction_backend_override_replaces_the_gliner
 
     fake_chunk = Chunk(text="Alice works on the graph engine.", hash=content_hash("Alice works on the graph engine."))
     with patch("unstructured2graph.from_documents", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_documents:
-        summary = await graph.reconcile_session(
+        summary = await graph.reconciler.reconcile(
             "s-1",
             extraction_backend=fake_backend,
-            actions_graph=actions_graph,
         )
 
     assert summary.status == "completed"
@@ -299,9 +298,8 @@ async def test_reconcile_session_passes_promotion_and_ontology_kwargs_through_to
 
     fake_chunk = Chunk(text="Alice works on the graph engine.", hash=content_hash("Alice works on the graph engine."))
     with patch("unstructured2graph.from_documents", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_documents:
-        await graph.reconcile_session(
+        await graph.reconciler.reconcile(
             "s-1",
-            actions_graph=actions_graph,
             promote_labels=True,
             enforce_ontology=True,
             ontology_path="/some/ontology.yaml",
@@ -328,7 +326,7 @@ async def test_reconcile_session_dedupes_identical_text_before_calling_lightrag(
 
     fake_chunk = Chunk(text="user: Same question", hash=content_hash("user: Same question"))
     with patch("unstructured2graph.from_documents", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_documents:
-        summary = await graph.reconcile_session("s-1", actions_graph=actions_graph)
+        summary = await graph.reconciler.reconcile("s-1")
 
     assert summary.texts_considered == 2
     assert summary.texts_deduped == 1
@@ -354,7 +352,7 @@ async def test_reconcile_session_joins_distinct_turns_into_one_document(graph, a
 
     fake_chunk = Chunk(text="combined", hash=content_hash("combined"))
     with patch("unstructured2graph.from_documents", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_documents:
-        await graph.reconcile_session("s-1", actions_graph=actions_graph)
+        await graph.reconciler.reconcile("s-1")
 
     called_texts = [document.text for document in mock_from_documents.call_args.args[0]]
     assert len(called_texts) == 1
@@ -386,7 +384,7 @@ async def test_reconcile_session_links_every_source_to_the_shared_session_chunk(
 
     fake_chunk = Chunk(text="combined", hash=content_hash("combined"))
     with patch("unstructured2graph.from_documents", new=AsyncMock(return_value=[[fake_chunk]])):
-        await graph.reconcile_session("s-1", actions_graph=actions_graph)
+        await graph.reconciler.reconcile("s-1")
 
     rows = memgraph.query(
         """
@@ -406,7 +404,7 @@ async def test_reconcile_session_no_reconcilable_content_skips_lightrag_but_stil
     actions_graph.create_session(Session(session_id="s-1"))
 
     with patch("unstructured2graph.from_documents", new=AsyncMock()) as mock_from_documents:
-        summary = await graph.reconcile_session("s-1", actions_graph=actions_graph)
+        summary = await graph.reconciler.reconcile("s-1")
 
     assert summary.status == "completed"
     assert summary.texts_considered == 0
@@ -421,7 +419,7 @@ async def test_reconcile_session_failure_marks_failed_and_returns_error(graph, a
     actions_graph.record_message(session_id="s-1", role=MessageRole.ASSISTANT, content="Some content")
 
     with patch("unstructured2graph.from_documents", new=AsyncMock(side_effect=RuntimeError("LLM down"))):
-        summary = await graph.reconcile_session("s-1", actions_graph=actions_graph)
+        summary = await graph.reconciler.reconcile("s-1")
 
     assert summary.status == "failed"
     assert "LLM down" in summary.error
@@ -447,9 +445,7 @@ async def test_reconcile_sessions_batch_enqueues_and_processes_once_for_the_whol
             "unstructured2graph.process_enqueued_and_finalize", new=AsyncMock(return_value=_all_processed(fake_chunks))
         ) as mock_process,
     ):
-        summaries = await graph.reconcile_sessions_batch(
-            ["s-1", "s-2", "s-3"], lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph
-        )
+        summaries = await graph.reconciler.reconcile_batch(["s-1", "s-2", "s-3"], lightrag_wrapper=lightrag_wrapper)
 
     mock_enqueue.assert_awaited_once()
     assert len(mock_enqueue.call_args.args[0]) == 3
@@ -475,9 +471,7 @@ async def test_reconcile_sessions_batch_returns_results_in_input_order(graph, ac
             "unstructured2graph.process_enqueued_and_finalize", new=AsyncMock(return_value=_all_processed(fake_chunks))
         ),
     ):
-        summaries = await graph.reconcile_sessions_batch(
-            ["s-a", "s-b", "s-c"], lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph
-        )
+        summaries = await graph.reconciler.reconcile_batch(["s-a", "s-b", "s-c"], lightrag_wrapper=lightrag_wrapper)
 
     assert [s.session_id for s in summaries] == ["s-a", "s-b", "s-c"]
 
@@ -504,9 +498,7 @@ async def test_reconcile_sessions_batch_links_chunks_per_session_from_shared_bat
             new=AsyncMock(return_value=_all_processed([[chunk_1], [chunk_2]])),
         ),
     ):
-        await graph.reconcile_sessions_batch(
-            ["s-1", "s-2"], lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph
-        )
+        await graph.reconciler.reconcile_batch(["s-1", "s-2"], lightrag_wrapper=lightrag_wrapper)
 
     rows = memgraph.query(
         "MATCH (:Session {session_id: $sid})-[:HAS_ACTION]->(:Action)-[:HAS_CHUNK]->(c:Chunk) RETURN c.hash AS hash",
@@ -541,8 +533,8 @@ async def test_reconcile_sessions_batch_sessions_with_no_content_never_touch_lig
             new=AsyncMock(return_value=_all_processed([[Chunk(text="x", hash="h1")]])),
         ),
     ):
-        summaries = await graph.reconcile_sessions_batch(
-            ["s-empty", "s-has-content"], lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph
+        summaries = await graph.reconciler.reconcile_batch(
+            ["s-empty", "s-has-content"], lightrag_wrapper=lightrag_wrapper
         )
 
     assert mock_enqueue.call_args.args[0] == ["user: real content"]
@@ -554,7 +546,7 @@ async def test_reconcile_sessions_batch_sessions_with_no_content_never_touch_lig
 
 @pytest.mark.asyncio
 async def test_reconcile_sessions_batch_shared_pass_failure_marks_every_session_failed(graph, actions_graph):
-    """Documented, coarser-than-reconcile_session behaviour: a failure in the
+    """Documented, coarser-than-Reconciler.reconcile behaviour: a failure in the
     shared processing pass fails every session in that call, since there is
     no per-document result to attribute it to (yet)."""
     from actions_graph import Session
@@ -565,9 +557,7 @@ async def test_reconcile_sessions_batch_shared_pass_failure_marks_every_session_
     lightrag_wrapper = _fake_lightrag_wrapper()
 
     with patch("unstructured2graph.enqueue_texts", new=AsyncMock(side_effect=RuntimeError("LLM down"))):
-        summaries = await graph.reconcile_sessions_batch(
-            ["s-1", "s-2"], lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph
-        )
+        summaries = await graph.reconciler.reconcile_batch(["s-1", "s-2"], lightrag_wrapper=lightrag_wrapper)
 
     assert all(s.status == "failed" for s in summaries)
     assert all("LLM down" in s.error for s in summaries)
@@ -585,7 +575,7 @@ async def test_reconcile_sessions_batch_one_finalize_failure_does_not_fail_the_r
 
     lightrag_wrapper = _fake_lightrag_wrapper()
     fake_chunks = [[Chunk(text="c", hash="h1")], [Chunk(text="c2", hash="h2")]]
-    link = graph._link_chunks_to_sources
+    link = graph.reconciler._link_chunks_to_sources
 
     def link_fails_for_s1(sources, chunks):
         if chunks is fake_chunks[0]:
@@ -593,15 +583,13 @@ async def test_reconcile_sessions_batch_one_finalize_failure_does_not_fail_the_r
         link(sources, chunks)
 
     with (
-        patch.object(graph, "_link_chunks_to_sources", side_effect=link_fails_for_s1),
+        patch.object(graph.reconciler, "_link_chunks_to_sources", side_effect=link_fails_for_s1),
         patch("unstructured2graph.enqueue_texts", new=AsyncMock(return_value=fake_chunks)),
         patch(
             "unstructured2graph.process_enqueued_and_finalize", new=AsyncMock(return_value=_all_processed(fake_chunks))
         ),
     ):
-        summaries = await graph.reconcile_sessions_batch(
-            ["s-1", "s-2"], lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph
-        )
+        summaries = await graph.reconciler.reconcile_batch(["s-1", "s-2"], lightrag_wrapper=lightrag_wrapper)
 
     by_id = {s.session_id: s for s in summaries}
     assert by_id["s-1"].status == "failed"
@@ -633,9 +621,7 @@ async def test_reconcile_sessions_batch_reports_a_real_per_document_failure(grap
         patch("unstructured2graph.enqueue_texts", new=AsyncMock(return_value=fake_chunks)),
         patch("unstructured2graph.process_enqueued_and_finalize", new=AsyncMock(return_value=doc_statuses)),
     ):
-        summaries = await graph.reconcile_sessions_batch(
-            ["s-1", "s-2"], lightrag_wrapper=lightrag_wrapper, actions_graph=actions_graph
-        )
+        summaries = await graph.reconciler.reconcile_batch(["s-1", "s-2"], lightrag_wrapper=lightrag_wrapper)
 
     by_id = {s.session_id: s for s in summaries}
     assert by_id["s-1"].status == "completed"
@@ -704,7 +690,7 @@ async def test_reconcile_session_keeps_a_turn_whole(graph, actions_graph):
 
     fake_chunk = Chunk(text="whole", hash=content_hash("whole"))
     with patch("unstructured2graph.from_documents", new=AsyncMock(return_value=[[fake_chunk]])) as mock_from_documents:
-        await graph.reconcile_session("s-1", actions_graph=actions_graph)
+        await graph.reconciler.reconcile("s-1")
 
     documents = mock_from_documents.call_args.args[0]
     assert len(documents) == 1  # handed over verbatim as one Document, never re-chunked
@@ -792,10 +778,9 @@ async def test_reconcile_session_with_gliner2_binds_the_user_and_stamps_the_turn
         model=_SurfaceEngine({"I": "User", "Paris": "Location"}, [("visited", "I", "Paris")]),
     )
 
-    summary = await graph.reconcile_session(
+    summary = await graph.reconciler.reconcile(
         "s-1",
         extraction_backend=backend,
-        actions_graph=actions_graph,
         enforce_ontology=True,
         ontology_path=ontology_path,
     )
