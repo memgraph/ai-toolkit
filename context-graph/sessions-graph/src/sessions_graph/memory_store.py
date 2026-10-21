@@ -608,39 +608,9 @@ def forget_extraction(memgraph: Memgraph, memory_id: str) -> None:
     provenance), so exactly its share goes. A chunk or entity still backed
     by anything else stays.
     """
-    memgraph.query(
-        """
-        MATCH (:Memory {memory_id: $memory_id})-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(e)
-        MATCH (e)-[r]-()
-        WHERE r.source_id = $memory_id
-        DELETE r
-        """,
-        params={"memory_id": memory_id},
-    )
-    memgraph.query(
-        """
-        MATCH (:Memory {memory_id: $memory_id})-[:HAS_CHUNK]->(c:Chunk)<-[mention:MENTIONED_IN]-(e)
-        SET mention.sources = [s IN coalesce(mention.sources, []) WHERE s <> $memory_id]
-        WITH c, mention, e
-        WHERE size(mention.sources) = 0
-          AND NOT EXISTS { MATCH (c)<-[:HAS_CHUNK]-(other) WHERE other.memory_id IS NULL OR other.memory_id <> $memory_id }
-        DELETE mention
-        WITH DISTINCT e
-        WHERE NOT EXISTS { MATCH (e)-[:MENTIONED_IN]->() }
-        DETACH DELETE e
-        """,
-        params={"memory_id": memory_id},
-    )
-    memgraph.query(
-        """
-        MATCH (m:Memory {memory_id: $memory_id})-[link:HAS_CHUNK]->(c:Chunk)
-        DELETE link
-        WITH DISTINCT c
-        WHERE NOT EXISTS { MATCH (c)<-[:HAS_CHUNK]-() } AND NOT EXISTS { MATCH (c)<-[:MENTIONED_IN]-() }
-        DETACH DELETE c
-        """,
-        params={"memory_id": memory_id},
-    )
+    from .forgetting import chunks_of, forget_sources
+
+    forget_sources(memgraph, [memory_id], chunks_of(memgraph, [memory_id]))
 
 
 # Appended to a write that has bound u (the owner), m (the file) and previous

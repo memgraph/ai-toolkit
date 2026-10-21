@@ -290,3 +290,17 @@ def test_writer_cost_is_small(_capture_log_in_tmp):
     for _ in range(200):
         capture_log.record_failure("emit", error="z")
     assert (time.perf_counter() - start) / 200 < 0.01
+
+
+def test_forgetting_a_session_removes_its_lines_from_the_log_and_its_rotation(_capture_log_in_tmp):
+    capture_log.record_failure("emit", error="old", session_id="gone")
+    os.replace(_capture_log_in_tmp, _capture_log_in_tmp.with_name(_capture_log_in_tmp.name + ".1"))
+    capture_log.record_failure("emit", error="a", session_id="gone")
+    capture_log.record_failure("emit", error="b", session_id="kept")
+    _capture_log_in_tmp.write_bytes(_capture_log_in_tmp.read_bytes() + b"not json\n")
+
+    assert capture_log.forget_session("gone") == 2
+
+    assert [failure.session_id for failure in capture_log.read_recent()] == ["kept"]
+    assert b"not json" in _capture_log_in_tmp.read_bytes(), "lines it can't read are left alone"
+    assert capture_log.forget_session("gone") == 0

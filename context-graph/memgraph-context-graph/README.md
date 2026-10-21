@@ -336,6 +336,33 @@ Redaction is pattern-based: it catches known credential shapes, not every
 secret. What a session stored before the policy existed stays as it was.
 Library callers driving `AgentLink` directly pass a `CapturePolicy` themselves.
 
+### Forgetting sessions
+
+```bash
+memgraph-context-graph forget session <session-id> [<session-id> ...]
+memgraph-context-graph forget project ~/work/client-repo   # every session whose working directory is in it
+memgraph-context-graph forget project . --dry-run          # list what matches, delete nothing
+```
+
+`forget` lists the matching sessions and asks before deleting (`--yes` skips the
+question; without a terminal it is required). For each session it deletes, for
+good and with no archive:
+
+- what was captured: its Actions, the Agents only it used, its skill uses and
+  resource Touches;
+- what was derived from it: its Chunks, entity mentions and extracted
+  relationships, any entity left with no other evidence, and the `anon-` User
+  made up for it;
+- its lines in the local capture-failure log.
+
+What anything else still backs stays: entities other sessions mention, Skills,
+public Resources, and your memory files, including ones the session wrote (their
+versions just stop naming it). A forgotten session leaves only a
+`(:ForgottenSession {session_id})` marker, which stops a hook still running, a
+reconciliation in progress, or a later resume of the same session from capturing
+it again. It runs against your own graph; in Enterprise, shared spaces are not
+touched.
+
 Hooks never read environment variables for these values, and neither does setup: it writes only
 `memgraph.url` and `identity.user_id`, from its flags or what it found. Everything else is set with
 `config set`, and setup leaves it alone when it rewrites the file.
@@ -742,6 +769,9 @@ my-graph = "my_graph.connector:CONNECTOR"
 Once installed, `hook run <runtime> --connector my-graph`, `[capture] connectors = ["my-graph"]` and
 `doctor` work like the built-in connectors. `setup` only installs the connectors listed in
 `memgraph_context_graph.connectors.INSTALLABLE`; install your own package beside the tool yourself.
+Give the component's graph class a `forget_session(session_id) -> dict[str, int]`
+that deletes what it hangs off that Session and returns counts, and add it to
+`FORGET_ORDER` in `memgraph_context_graph/forget.py`, so `forget` reaches it.
 
 ## License
 

@@ -89,6 +89,50 @@ class SessionsGraph:
         self._db.query("CREATE CONSTRAINT ON (c:Chunk) ASSERT c.hash IS UNIQUE;")
 
     # ------------------------------------------------------------------
+    # Forgetting
+    # ------------------------------------------------------------------
+
+    def forget_session(self, session_id: str) -> dict[str, int]:
+        """Delete what reconciliation derived from *session_id*, and the session's own User if it had a made-up one.
+
+        Run while the session's Actions still exist, before actions-graph's
+        forget: the Actions are how its Chunks are found. Memory files the
+        session wrote stay, being the user's; the versions it wrote no longer
+        name it. The Session Node itself is left for
+        ``memgraph_context_graph.session.delete``.
+
+        Returns:
+            Counts of what went: ``relations``, ``mentions``, ``entities``, ``chunks``,
+            ``memory_versions`` (unlinked from the session) and ``users``.
+        """
+        from .forgetting import chunks_of, forget_sources
+
+        try:
+            action_ids = self.reconciler._actions().owned_action_ids(session_id)
+        except ImportError:
+            action_ids = []  # Without actions-graph there are no Actions, so nothing was extracted from any.
+        removed = forget_sources(self._db, action_ids, chunks_of(self._db, action_ids))
+        versions = self._db.query(
+            "MATCH (v:MemoryVersion {session_id: $session_id}) SET v.session_id = null RETURN count(*) AS n",
+            params={"session_id": session_id},
+        )
+        # Reconciliation makes up ``anon-<session_id>`` for a session that reported no user, so it is this one's alone.
+        users = self._db.query(
+            """
+            MATCH (u:User {user_id: $user_id})
+            WHERE NOT EXISTS { MATCH (u)-[:HAD_SESSION]->(s:Session) WHERE s.session_id <> $session_id }
+            DETACH DELETE u
+            RETURN count(*) AS n
+            """,
+            params={"user_id": f"anon-{session_id}", "session_id": session_id},
+        )
+        return {
+            **removed,
+            "memory_versions": versions[0]["n"] if versions else 0,
+            "users": users[0]["n"] if users else 0,
+        }
+
+    # ------------------------------------------------------------------
     # Ontology versions
     # ------------------------------------------------------------------
 
@@ -330,6 +374,7 @@ class SessionsGraph:
             params={"session_id": session_id, "project": project_key},
         )
         if user_id:
+            # A session's first hooks run at once, each MERGEing the same new User.
             merge_with_retry(
                 self._db,
                 """

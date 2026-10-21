@@ -77,6 +77,22 @@ class ResourcesGraph:
         for statement in _SCHEMA:
             self._db.query(statement)
 
+    def forget_session(self, session_id: str) -> dict[str, int]:
+        """Delete *session_id*'s Touches; the Resources they reached are public and shared, so they stay.
+
+        Returns:
+            How many ``touches`` went.
+        """
+        rows = self._db.query(
+            """
+            MATCH (t:Touch)-[:IN_SESSION]->(:Session {session_id: $session_id})
+            DETACH DELETE t
+            RETURN count(*) AS n
+            """,
+            params={"session_id": session_id},
+        )
+        return {"touches": rows[0]["n"] if rows else 0}
+
     # -- hook side: address-only Touches, no network -------------------------
 
     def record_touch(
