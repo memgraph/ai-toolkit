@@ -54,10 +54,10 @@ class ConnectorSpec:
 #: The requirement each connector ``setup`` can install is installed from.
 #: Kept in step with the plugins' bootstrap scripts and install.sh, which install the default connectors first.
 INSTALLABLE: dict[str, str] = {
-    "skills-graph": "skills-graph[memgraph-context-graph]>=0.2.2",
-    "actions-graph": "actions-graph[memgraph-context-graph]>=0.6.0",
-    "sessions-graph": "sessions-graph[memgraph-context-graph]>=0.10.0",
-    "resources-graph": "resources-graph[memgraph-context-graph]>=0.2.0",
+    "skills-graph": "skills-graph[memgraph-context-graph]>=0.3.0",
+    "actions-graph": "actions-graph[memgraph-context-graph]>=0.7.0",
+    "sessions-graph": "sessions-graph[memgraph-context-graph]>=0.11.0",
+    "resources-graph": "resources-graph[memgraph-context-graph]>=0.3.0",
 }
 
 #: What a hook enables when neither ``--connector`` nor ``[capture] connectors`` names any,

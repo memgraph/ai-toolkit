@@ -1,6 +1,6 @@
 [project]
 name = "skills-graph"
-version = "0.2.2"
+version = "0.3.0"
 description = "Persist, retrieve and evolve AI skills in Memgraph"
 readme = "README.md"
 license = { text = "MIT" }
@@ -19,7 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 memgraph-context-graph = [
-    "memgraph-context-graph>=0.5.0",
+    "memgraph-context-graph>=0.10.0",
 ]
 test = [
     "pytest>=9.0.3",
