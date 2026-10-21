@@ -240,10 +240,12 @@ jobs:
           '@
           & $py -c $diag
 
+      # A new terminal's PATH is the machine PATH then the user one; only the user one has ~\.local\bin,
+      # and the machine one has the npm-installed claude that doctor's plugin check runs.
       - name: A new terminal finds the tool (persistent user PATH) and doctor is green
         shell: cmd
         run: |
-          powershell -NoProfile -Command "$p=[Environment]::GetEnvironmentVariable('Path','User'); $env:Path=$p; memgraph-context-graph --version; memgraph-context-graph doctor; exit $LASTEXITCODE"
+          powershell -NoProfile -Command "$env:Path=[Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); memgraph-context-graph --version; memgraph-context-graph doctor; exit $LASTEXITCODE"
 
       - name: A second run changes nothing and still succeeds
         shell: pwsh
