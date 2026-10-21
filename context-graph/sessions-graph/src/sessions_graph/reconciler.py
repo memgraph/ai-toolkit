@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from memgraph_context_graph import session as session_node
+from memgraph_toolbox.api.memgraph import merge_with_retry
 
 from .embeddings import DEFAULT_EMBEDDING_MODEL, Embedded, EmbeddingUnavailableError, embed_memory, embed_session
 from .extraction import ExtractionConfig
@@ -444,7 +445,9 @@ class Reconciler:
         user_id = f"anon-{session_id}"
         session_node.ensure(self.db, session_id)
         # The Session first: a forgotten one is gone, and must not leave a User behind.
-        self.db.query(
+        # Concurrent passes over one session MERGE the same new User.
+        merge_with_retry(
+            self.db,
             """
             MATCH (s:Session {session_id: $session_id})
             MERGE (u:User {user_id: $user_id})
