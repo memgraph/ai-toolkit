@@ -411,7 +411,7 @@ def ask(prompts: Prompts, choices: Choices, env: Environment, *, preselect: bool
     configured_graph = choices.memory_backend is None and env.configured_memory_backend == _MEMORY_GRAPH
     answers = _Answers(
         user_id=choices.user_id,
-        runtimes=list(choices.runtimes) if preselect else [r for r in env.found_agents if r in env.wired_agents],
+        runtimes=list(choices.runtimes) if preselect else _starting_agents(env),
         project_dirs=list(choices.project_dirs),
         viewer=choices.viewer,
         use_graph_memory=choices.memory_backend == _MEMORY_GRAPH or configured_graph,
@@ -582,6 +582,16 @@ def _memgraph_summary(choices: Choices, env: Environment) -> str:
     if env.configured_url:
         return f"{env.configured_url} (configured)"
     return "uses Memgraph on localhost:7687, or starts one in Docker for you"
+
+
+def _starting_agents(env: Environment) -> list[str]:
+    """The agents ticked when none were named: those already set up, else, on a first run, the plugin agents found.
+
+    A first run that ticked nothing let Enter-through confirm a plan that wires no agent, so nothing was recorded.
+    Per-project agents stay unticked: they wire the current directory, which may not be a project.
+    """
+    wired = [runtime for runtime in env.found_agents if runtime in env.wired_agents]
+    return wired or [runtime for runtime in env.found_agents if BY_RUNTIME[runtime].wiring == "plugin"]
 
 
 def _agent_options(selected: Sequence[str], wired: Sequence[str]) -> list[_Option]:

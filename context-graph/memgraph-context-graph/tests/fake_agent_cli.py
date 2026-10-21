@@ -3,7 +3,8 @@
 Installed on PATH under both names by the ``fake_agents`` fixture, which passes the name it was called by
 as the first argument. It keeps its marketplaces and plugins in
 the JSON file named by ``FAKE_AGENT_STATE`` and answers in each CLI's own ``--json`` shapes. Setting
-``FAKE_AGENT_FAIL`` to ``install`` makes installing fail, as a network error would.
+``FAKE_AGENT_FAIL`` to ``install`` makes installing fail, as a network error would; setting
+``FAKE_AGENT_DISABLED`` lists `claude`'s plugins as disabled.
 """
 
 import json
@@ -29,7 +30,8 @@ def _answer(agent: str, args: list[str], state: dict) -> int:
     match args:
         case ["plugin", "list", "--json"]:
             if agent == "claude":
-                print(json.dumps([{"id": plugin} for plugin in state["plugins"]]))
+                enabled = not os.environ.get("FAKE_AGENT_DISABLED")
+                print(json.dumps([{"id": plugin, "enabled": enabled} for plugin in state["plugins"]]))
             else:
                 print(json.dumps({"installed": [{"pluginId": plugin} for plugin in state["plugins"]], "available": []}))
         case ["plugin", "marketplace", "list", "--json"]:

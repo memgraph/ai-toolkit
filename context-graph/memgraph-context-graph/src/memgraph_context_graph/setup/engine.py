@@ -142,6 +142,8 @@ def plan(choices: Choices, env: Environment) -> list[str]:
         lines.append(f"Identity: identity.user_id = {choices.user_id}")
     packages = tool_mod.missing(viewer=choices.viewer)
     lines.append(f"Packages: install {', '.join(packages)}" if packages else "Packages: all installed")
+    if not choices.runtimes:
+        lines.append(f"Agents: {_no_agent(env)}")
     for runtime in choices.runtimes:
         agent = agents_mod.BY_RUNTIME[runtime]
         if agent.wiring == "plugin" and runtime in env.wired_agents:
@@ -194,6 +196,8 @@ def run(
             return outcomes
         done(_config(choices, url))
     done(_packages(choices, log))
+    if not choices.runtimes:
+        done(Outcome("Agents", "fail", _no_agent(env), fix="memgraph-context-graph setup claude-code"))
     for runtime in choices.runtimes:
         done(_agent(agents_mod.BY_RUNTIME[runtime], choices, log))
     if choices.memory_backend:
@@ -274,6 +278,13 @@ def _packages(choices: Choices, log: Callable[[str], None]) -> Outcome:
         # Only the viewer was missing: capture works without it.
         return Outcome("Packages", "warn", f"the viewer didn't install ({exc}); capture works without it")
     return Outcome("Packages", "ok", f"installed {', '.join(missing)}")
+
+
+def _no_agent(env: Environment) -> str:
+    # Setup's own checks follow the agents it wires, so with none every check passes; say so instead.
+    if not env.found_agents:
+        return "no coding agent found on PATH, so nothing is recorded; install one, or name it"
+    return "none selected, so nothing is recorded"
 
 
 def _agent(agent: agents_mod.Agent, choices: Choices, log: Callable[[str], None]) -> Outcome:
