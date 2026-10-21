@@ -31,6 +31,7 @@ def session_id(db):
     sid = f"test-session-{uuid.uuid4()}"
     yield sid
     db.query("MATCH (s:Session {session_id: $sid}) DETACH DELETE s", {"sid": sid})
+    db.query("MATCH (f:ForgottenSession {session_id: $sid}) DELETE f", {"sid": sid})
 
 
 def _sessions(db, session_id: str) -> list[dict]:
@@ -59,3 +60,26 @@ def test_concurrent_ensures_of_a_new_session_create_one_node(db, session_id):
         list(pool.map(lambda _: session.ensure(db, session_id), range(64)))
 
     assert _sessions(db, session_id) == [{"model": None}]
+
+
+def test_a_forgotten_session_is_never_created_again(db, session_id):
+    session.ensure(db, session_id, model="opus")
+    session.mark_forgotten(db, session_id)
+    session.mark_forgotten(db, session_id)
+
+    assert session.delete(db, session_id)
+    session.ensure(db, session_id, model="opus")
+
+    assert _sessions(db, session_id) == []
+    assert session.is_forgotten(db, session_id)
+    assert not session.delete(db, session_id)
+
+
+def test_other_sessions_are_not_forgotten(db, session_id):
+    session.mark_forgotten(db, f"{session_id}-other")
+    try:
+        session.ensure(db, session_id)
+        assert not session.is_forgotten(db, session_id)
+        assert _sessions(db, session_id) == [{"model": None}]
+    finally:
+        db.query("MATCH (f:ForgottenSession {session_id: $sid}) DELETE f", {"sid": f"{session_id}-other"})

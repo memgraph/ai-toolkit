@@ -159,6 +159,24 @@ class SkillGraph:
         )
         return bool(rows and rows[0].get("deleted", 0) > 0)
 
+    def forget_session(self, session_id: str) -> dict[str, int]:
+        """Delete *session_id*'s own ``USED_SKILL`` edges; every Skill stays, being shared by name.
+
+        An edge on one of the session's Agents goes with that Agent (actions-graph's forget).
+
+        Returns:
+            How many ``skill_uses`` went.
+        """
+        rows = self._db.query(
+            """
+            MATCH (:Session {session_id: $session_id})-[r:USED_SKILL]->(:Skill)
+            DELETE r
+            RETURN count(*) AS n
+            """,
+            params={"session_id": session_id},
+        )
+        return {"skill_uses": rows[0]["n"] if rows else 0}
+
     def record_skill_usage(
         self,
         *,

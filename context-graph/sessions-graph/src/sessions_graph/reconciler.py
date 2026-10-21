@@ -253,6 +253,8 @@ class Reconciler:
         """
         from_documents = _require("from_documents", "reconcile")
         prepared = self._prepare(session_id)
+        if session_node.is_forgotten(self.db, session_id):
+            return prepared.summary("forgotten")
 
         try:
             used_backend: str | None = None
@@ -290,6 +292,20 @@ class Reconciler:
                 used_backend = type(backend).__name__
                 session_chunks = grouped_chunks[0] if grouped_chunks else []
                 self._link_chunks_to_sources(prepared.sources, session_chunks)
+                if session_node.is_forgotten(self.db, session_id):
+                    # Forgotten while extraction ran: its Actions are gone, so what was just
+                    # written is reachable only by the ids read before, and goes the same way.
+                    from .forgetting import forget_sources
+
+                    forget_sources(
+                        self.db, [source.node_id for source in prepared.sources], [c.hash for c in session_chunks]
+                    )
+                    # Extraction binds the user's own mentions to their (:User), creating a made-up one if needed.
+                    self.db.query(
+                        "MATCH (u:User {user_id: $user_id}) WHERE NOT EXISTS { MATCH (u)--() } DELETE u",
+                        params={"user_id": f"anon-{session_id}"},
+                    )
+                    return prepared.summary("forgotten")
                 if enforce_ontology and session_chunks:
                     integrity = self._integrity(backend.workspace_label, ontology_path, ontology, session_chunks)
 
@@ -427,11 +443,11 @@ class Reconciler:
             return rows[0]["user_id"]
         user_id = f"anon-{session_id}"
         session_node.ensure(self.db, session_id)
+        # The Session first: a forgotten one is gone, and must not leave a User behind.
         self.db.query(
             """
-            MERGE (u:User {user_id: $user_id})
-            WITH u
             MATCH (s:Session {session_id: $session_id})
+            MERGE (u:User {user_id: $user_id})
             MERGE (u)-[:HAD_SESSION]->(s)
             """,
             params={"user_id": user_id, "session_id": session_id},

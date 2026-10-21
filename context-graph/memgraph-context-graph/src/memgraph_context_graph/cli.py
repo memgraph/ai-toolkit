@@ -34,6 +34,7 @@ Commands:
   hook <command>  Configure or run command hooks.
   mcp              Serve the registered tools (recall, ...) over stdio MCP.
   recall <question>  Search your own past sessions; --json for the data.
+  forget session <id> ... | project <dir>  Permanently delete sessions and what was derived from them.
   ui               Open the read-only terminal viewer (needs context-graph-viewer).
 """
 
@@ -82,6 +83,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if command == "ui":
         return _ui(args[1:])
 
+    if command == "forget":
+        return _forget(args[1:])
+
     if command == "join":
         return _join(args[1:])
 
@@ -93,6 +97,63 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Unknown command: {command}", file=sys.stderr)
     print(_HELP)
     return 2
+
+
+def _forget(argv: list[str]) -> int:
+    """``forget session <id>... | project <dir>``: show what matches, confirm, then delete it for good."""
+    parser = argparse.ArgumentParser(
+        prog="memgraph-context-graph forget",
+        description="Permanently delete sessions from your graph: what was captured, and what was derived from it. "
+        "Shared entities, skills, resources and your memory files stay. A forgotten session is never captured again.",
+    )
+    parser.add_argument(
+        "scope", choices=["session", "project"], help="Forget sessions by id, or every one in a directory."
+    )
+    parser.add_argument("targets", nargs="+", help="Session ids, or one project directory.")
+    parser.add_argument("--dry-run", action="store_true", help="Show the matching sessions and delete nothing.")
+    parser.add_argument("-y", "--yes", action="store_true", help="Don't ask for confirmation.")
+    args = parser.parse_args(argv)
+    if args.scope == "project" and len(args.targets) != 1:
+        parser.error("forget project takes one directory")
+
+    from memgraph_context_graph.adapters._identity import resolve_memgraph_env
+    from memgraph_context_graph.forget import describe, forget_session, sessions_in
+    from memgraph_context_graph.hooks.runner import memgraph_kwargs
+    from memgraph_toolbox.api.memgraph import Memgraph
+
+    memgraph = Memgraph(**memgraph_kwargs(resolve_memgraph_env()))
+    try:
+        session_ids = sessions_in(memgraph, args.targets[0]) if args.scope == "project" else list(args.targets)
+        found = describe(memgraph, session_ids)
+        for summary in found:
+            print(f"  {summary.session_id}  {summary.started_at or '-'}  {summary.working_directory or '-'}  "
+                  f"{summary.actions} actions")  # fmt: skip
+        missing = sorted(set(session_ids) - {summary.session_id for summary in found})
+        for session_id in missing:
+            print(f"  {session_id}  (no session in the graph; it will still never be captured again)")
+        if not session_ids:
+            print("No sessions match.")
+            return 0
+        if args.dry_run:
+            print(f"Dry run: {len(session_ids)} session(s) would be forgotten.")
+            return 0
+        if not args.yes:
+            if not sys.stdin.isatty():
+                print("Refusing to forget without --yes when not on a terminal.", file=sys.stderr)
+                return 2
+            answer = input(f"Permanently forget {len(session_ids)} session(s)? This cannot be undone. [y/N] ")
+            if answer.strip().lower() not in {"y", "yes"}:
+                print("Nothing forgotten.")
+                return 1
+        for session_id in session_ids:
+            result = forget_session(memgraph, session_id)
+            removed = ", ".join(f"{count} {kind}" for kind, count in sorted(result.removed.items()) if count)
+            print(f"Forgot {session_id}: {removed or 'nothing left to remove'}")
+            if result.unavailable:
+                print(f"  Not installed, so not checked: {', '.join(result.unavailable)}")
+        return 0
+    finally:
+        memgraph.close()
 
 
 def _config(argv: list[str]) -> int:
