@@ -22,7 +22,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from memgraph_context_graph import session as session_node
-from memgraph_toolbox.api.memgraph import Memgraph
+from memgraph_toolbox.api.memgraph import Memgraph, merge_with_retry
 
 from .embeddings import DEFAULT_EMBEDDING_MODEL
 from .memory_store import MemoryStore
@@ -162,7 +162,8 @@ class SessionsGraph:
             **({"memory_id": memory_id} if memory_id else {}),
         )
 
-        self._db.query(
+        merge_with_retry(
+            self._db,
             """
             MERGE (u:User {user_id: $user_id})
             CREATE (m:Memory {
@@ -329,7 +330,8 @@ class SessionsGraph:
             params={"session_id": session_id, "project": project_key},
         )
         if user_id:
-            self._db.query(
+            merge_with_retry(
+                self._db,
                 """
                 MERGE (u:User {user_id: $user_id})
                 WITH u

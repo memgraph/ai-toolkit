@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from memgraph_context_graph import session as session_node
+from memgraph_toolbox.api.memgraph import merge_with_retry
 
 from .embeddings import DEFAULT_EMBEDDING_MODEL, Embedded, EmbeddingUnavailableError, embed_memory, embed_session
 from .extraction import ExtractionConfig
@@ -427,7 +428,8 @@ class Reconciler:
             return rows[0]["user_id"]
         user_id = f"anon-{session_id}"
         session_node.ensure(self.db, session_id)
-        self.db.query(
+        merge_with_retry(
+            self.db,
             """
             MERGE (u:User {user_id: $user_id})
             WITH u
