@@ -433,6 +433,24 @@ def test_update_reports_a_failed_plugin_and_still_refreshes_the_rest(
     assert "Restart running agent sessions" not in out
 
 
+def test_update_says_to_delete_duplicates_when_a_constraint_cannot_be_created(
+    fake_agents, setup_home, project, monkeypatch, capsys
+):
+    def refuse(*args, **kwargs):
+        raise RuntimeError(
+            "Unable to create unique constraint :Action(action_id), because an existing node violates it."
+        )
+
+    monkeypatch.setattr("memgraph_context_graph.hooks.runner.setup_connector_schemas", refuse)
+    agents.wire_plugin(BY_RUNTIME["claude-code"], lambda _: None)
+
+    assert main(["update", "--no-upgrade", "--project-dir", str(project)]) == 1
+
+    out = capsys.readouterr().out
+    assert "To fix Schema: nodes already in the graph share the value" in out
+    assert "--no-upgrade" not in out
+
+
 def test_update_says_when_the_package_is_not_the_uv_tool(fake_agents, setup_home, project, no_schema, capsys):
     agents.wire_plugin(BY_RUNTIME["claude-code"], lambda _: None)
     assert main(["update", "--project-dir", str(project)]) == 0  # a test venv is not the uv tool
