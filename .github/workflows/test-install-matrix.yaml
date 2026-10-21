@@ -103,7 +103,10 @@ jobs:
           memgraph-context-graph uninstall --all
           # set -e ignores a failing `! cmd`, so each check fails the step itself.
           left() { echo "::error::uninstall --all left $1"; exit 1; }
-          if command -v memgraph-context-graph; then left "the tool"; fi
+          # This shell ran the tool, so bash still remembers its path; forget it before looking.
+          hash -r
+          if command -v memgraph-context-graph; then left "the tool's executable"; fi
+          if uv tool list | grep -q '^memgraph-context-graph '; then left "the tool"; fi
           if docker container inspect context-graph-memgraph >/dev/null 2>&1; then left "the container"; fi
           if docker volume inspect context-graph-memgraph-data >/dev/null 2>&1; then left "the volume"; fi
           if [ -e ~/.config/context-graph/config.toml ]; then left "the config"; fi
