@@ -1,6 +1,6 @@
 [project]
 name = "actions-graph"
-version = "0.6.0"
+version = "0.7.0"
 description = "Store and track LLM actions, tool calls, and sessions in Memgraph"
 readme = "README.md"
 license = { text = "MIT" }
@@ -12,14 +12,14 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "memgraph-toolbox",
+    "memgraph-toolbox>=0.2.2",
     # The Session Node's shape and constraint (memgraph_context_graph.session).
     "memgraph-context-graph",
 ]
 
 [project.optional-dependencies]
 memgraph-context-graph = [
-    "memgraph-context-graph>=0.5.0",
+    "memgraph-context-graph>=0.10.0",
 ]
 test = [
     "pytest>=9.0.3",

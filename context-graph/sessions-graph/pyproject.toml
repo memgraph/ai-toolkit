@@ -1,6 +1,6 @@
 [project]
 name = "sessions-graph"
-version = "0.10.0"
+version = "0.11.0"
 description = "Cross-session memory store for agents, backed by Memgraph"
 readme = "README.md"
 license = { text = "MIT" }
@@ -12,7 +12,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "memgraph-toolbox",
+    "memgraph-toolbox>=0.2.2",
     # The Session Node's shape and constraint (memgraph_context_graph.session).
     "memgraph-context-graph",
 ]
@@ -23,7 +23,7 @@ anthropic = [
     "anthropic>=0.74.0",
 ]
 memgraph-context-graph = [
-    "memgraph-context-graph>=0.9.0",
+    "memgraph-context-graph>=0.10.0",
 ]
 reconciliation = [
     "actions-graph>=0.4.0",

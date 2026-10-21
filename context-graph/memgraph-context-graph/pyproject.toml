@@ -1,6 +1,6 @@
 [project]
 name = "memgraph-context-graph"
-version = "0.9.0"
+version = "0.10.0"
 description = "Connect agent SDKs to context-graph components (actions-graph, skills-graph, etc.)"
 readme = "README.md"
 license = { text = "MIT" }
@@ -12,7 +12,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "memgraph-toolbox>=0.1.11",
+    "memgraph-toolbox>=0.2.2",
     # Edits ~/.codex/config.toml when switching Codex's memory, keeping the user's comments and layout.
     "tomlkit>=0.13,<1",
 ]
