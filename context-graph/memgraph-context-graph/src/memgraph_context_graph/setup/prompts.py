@@ -10,8 +10,11 @@ Esc steps back to the previous question, with its answer kept. Only the name, th
 from __future__ import annotations
 
 import os
+import random
 import shutil
 import sys
+import threading
+from collections import deque
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,7 +27,7 @@ from memgraph_context_graph.setup.uninstall import Removals
 from memgraph_context_graph.terminal import color_support
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Callable, Iterator, Mapping, Sequence
     from contextlib import AbstractContextManager
 
     from memgraph_context_graph.setup.engine import Choices, Environment, Outcome
@@ -86,16 +89,33 @@ WORDMARK = (
     "██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║╚██████╔╝██║  ██║██║  ██║██║     ██║  ██║",
     "╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝",
 )
-# Under the wordmark, as wide as it: a graph of nodes joined by edges.
+# Under the wordmark, as wide as it: a graph of nodes joined by straight edges, laid out at random once and kept.
+# It hangs from the wordmark: see BANNER_GRAPH.
+# Every edge runs node to node in one direction, which is what lets the banner's signals walk it.
 GRAPH = (
-    "●───────────────●                 ●─────────────────●─────────────────●",
-    " ╲             ╱ ╲               ╱ ╲               ╱ ╲               ╱",
-    "  ●           ●───●             ●───●             ●───●             ●",
-    "   ╲         ╱     ╲           ╱     ╲           ╱     ╲           ╱",
-    "    ●───────●       ●─────────●       ●─────────●       ●─────────●",
-    "     ╲     ╱       ╱         ╱         ╲         ╲     ╱         ╱",
-    "      ●───●           ●─────●           ●─────●           ●─────●",
+    "                 ●─────────●──────●────●                 ●───●",
+    "      ●───●─────────●     ╱ ╲    ╱         ●─────●        ╲ ╱ ╲",
+    "     ╱ ╲ ╱         ╱ ╲   ╱   ╲  ●─────●   ╱     ╱   ●──────●   ╲",
+    "    ╱   ●─────────●   ╲ ╱     ╲        ╲ ╱  ●  ╱   ╱│   ●   ╲   ●────●",
+    "   ╱   ╱     ●─────────●       ●────────●   │ ╱   ╱ │    ╲   ╲ ╱ ╲",
+    "  ●   ╱     ╱               ● ╱│   ●   ╱    │●───●──●─────●   ●   ╲",
+    " ╱ ╲ ╱     ╱                │╱ ●    ╲ ╱     │ ╲ ╱        ╱ ╲ ╱ ╲   ●",
+    "●───●─────●──────●──────────●────────●──────●──●────────●───●   ╲ ╱",
+    "                                                                 ●",
 )
+# The graph hangs this many rows under the wordmark, on stems dropped from these columns of it.
+_GAP = 2
+_STEM_COLUMNS = (10, 27, 49, 64)
+# The banner's animation: how many signals walk the graph, how many cells each one's trail lights, how many
+# edges a signal walks before the next one leaves a stem, at most how many frames a signal waits to leave first
+# (short, as the wait may be only a second), and how fast.
+_SIGNALS = 3
+_WALK = (8, 20)
+_STAGGER = 12
+_TRAIL = 6
+_FRAME_SECONDS = 0.05
+_LINES_UP = "\033[{}F"
+_HIDE_CURSOR, _SHOW_CURSOR = "\033[?25l", "\033[?25h"
 # The divider between the banner and the first question: a short stretch of graph, in orange.
 RULE = "●──────●─────────●────●───────●──────────●─────●────────●───────●─────●"
 
@@ -142,14 +162,23 @@ class _Style:
             return line
         return "".join(self.accent(char) if char == "█" else self.muted(char) if char != " " else char for char in line)
 
-    def graph(self, line: str, width: int) -> str:
-        """A line of :data:`GRAPH`: nodes in the brand gradient, edges in gray."""
+    def graph(self, line: str, width: int, lit: Mapping[int, int] | None = None) -> str:
+        """A line of :data:`GRAPH`: nodes in the brand gradient, edges in gray.
+
+        *lit* maps a column to how many steps ago a signal passed it: 0 is the signal's head, in yellow, and
+        the rest of its trail is orange.
+        """
         if not self.color:
             return line
+        lit = lit or {}
         cells = []
         for column, char in enumerate(line):
             if char == " ":
                 cells.append(char)
+            elif column in lit:
+                cells.append(
+                    self._fg(_GRADIENT[0], _GRADIENT_XTERM[0], char) if lit[column] == 0 else self.accent(char)
+                )
             elif char != "●":
                 cells.append(self.muted(char))
             else:
@@ -171,6 +200,95 @@ def _gradient_at(position: float) -> tuple[int, int, int]:
         round(a[1] + (b[1] - a[1]) * fraction),
         round(a[2] + (b[2] - a[2]) * fraction),
     )
+
+
+Cell = tuple[int, int]
+# Each edge glyph, by the step (row, column) it is drawn along.
+_EDGE_GLYPHS = {
+    (0, 1): "─",
+    (0, -1): "─",
+    (1, 1): "╲",
+    (-1, -1): "╲",
+    (1, -1): "╱",
+    (-1, 1): "╱",
+    (1, 0): "│",
+    (-1, 0): "│",
+}
+
+
+def graph_edges(rows: Sequence[str]) -> dict[Cell, list[list[Cell]]]:
+    """Each node of *rows* (a drawing like :data:`GRAPH`) with the paths leading out of it.
+
+    A path is the cells from the node's neighbour up to and including the node at the other end, so walking
+    the graph is following one path, then picking the next out of where it ended.
+    """
+
+    def at(row: int, column: int) -> str:
+        return rows[row][column] if 0 <= row < len(rows) and 0 <= column < len(rows[row]) else " "
+
+    nodes = [(row, column) for row, line in enumerate(rows) for column, char in enumerate(line) if char == "●"]
+    paths: dict[Cell, list[list[Cell]]] = {node: [] for node in nodes}
+    for row, column in nodes:
+        for (step_row, step_column), glyph in _EDGE_GLYPHS.items():
+            path = []
+            cell = (row + step_row, column + step_column)
+            while at(*cell) == glyph:
+                path.append(cell)
+                cell = (cell[0] + step_row, cell[1] + step_column)
+            if path and at(*cell) == "●":
+                paths[(row, column)].append([*path, cell])
+    return paths
+
+
+def hang(graph: Sequence[str], columns: Sequence[int], gap: int) -> tuple[str, ...]:
+    """*graph* moved *gap* rows down, with a stem dropped in each of *columns* to the first node under it.
+
+    Raises:
+        ValueError: a stem would cross an edge, or finds no node to land on.
+    """
+    rows = [""] * gap + list(graph)
+    for column in columns:
+        row = 0
+        while row < len(rows) and (rows[row][column : column + 1] or " ") == " ":
+            rows[row] = rows[row][:column].ljust(column) + "│" + rows[row][column + 1 :]
+            row += 1
+        if row == len(rows) or rows[row][column] != "●":
+            raise ValueError(f"the stem in column {column} doesn't land on a node")
+    return tuple(rows)
+
+
+def stems(rows: Sequence[str], columns: Sequence[int]) -> list[list[Cell]]:
+    """Each stem of *rows* (from :func:`hang`) as a path: its cells from the top down, ending on the node."""
+    paths = []
+    for column in columns:
+        path = [(0, column)]
+        while rows[path[-1][0]][column] == "│":
+            path.append((path[-1][0] + 1, column))
+        paths.append(path)
+    return paths
+
+
+def _signal(
+    paths: Mapping[Cell, Sequence[Sequence[Cell]]], starts: Sequence[Sequence[Cell]], rng: random.Random
+) -> Iterator[Cell | None]:
+    """The cell a signal is on, one per frame, forever; None while it hasn't left yet.
+
+    Each signal comes down a stem from the wordmark and walks the graph at random, turning back only at a
+    leaf. After a few edges the next one leaves a stem. The stems are one-way: no path leads back up them.
+    """
+    yield from [None] * rng.randrange(_STAGGER)
+    while True:
+        stem = rng.choice(starts)
+        yield from stem
+        node, previous = stem[-1], None
+        for _ in range(rng.randint(*_WALK)):
+            path = rng.choice([path for path in paths[node] if path[-1] != previous] or paths[node])
+            yield from path
+            previous, node = node, path[-1]
+
+
+# What the banner draws under the wordmark: the graph, hung from it on stems.
+BANNER_GRAPH = hang(GRAPH, _STEM_COLUMNS, _GAP)
 
 
 @dataclass
@@ -223,7 +341,54 @@ class Prompts:
             self.write(f"\n{self.style.bold(self.style.accent('memgraph'))}\n\n")
             return
         self.write("\n" + "".join(f"{self.style.wordmark(row)}\n" for row in WORDMARK))
-        self.write("".join(f"{self.style.graph(row, width)}\n" for row in GRAPH) + "\n")
+        self.write(self._graph_frame({}))
+
+    @contextmanager
+    def animated_banner(self) -> Iterator[None]:
+        """The banner, with signals running through its graph until the block ends.
+
+        For waits that print nothing, so setup doesn't look stuck: the animation redraws the graph in place, so
+        nothing else may write to the terminal inside the block. It comes to rest on the static graph however
+        the block ends, Ctrl+C included. Without colour or room for the wordmark the banner is drawn and stays.
+        """
+        self.banner()
+        if not self.term.color or self.term.columns < len(WORDMARK[0]) + 2:
+            yield
+            return
+        stop = threading.Event()
+        animation = threading.Thread(target=self._animate, args=(stop,), daemon=True)
+        self.term.write(_HIDE_CURSOR)
+        animation.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            animation.join()
+            self.term.write(_LINES_UP.format(len(BANNER_GRAPH) + 1) + self._graph_frame({}) + _SHOW_CURSOR)
+
+    def _animate(self, stop: threading.Event) -> None:
+        rng = random.Random()
+        paths = graph_edges(BANNER_GRAPH)
+        starts = stems(BANNER_GRAPH, _STEM_COLUMNS)
+        signals = [_signal(paths, starts, rng) for _ in range(_SIGNALS)]
+        trails: list[deque[Cell | None]] = [deque(maxlen=_TRAIL) for _ in signals]
+        while not stop.wait(_FRAME_SECONDS):
+            lit: dict[Cell, int] = {}
+            for signal, trail in zip(signals, trails, strict=True):
+                trail.appendleft(next(signal))
+                for age, cell in enumerate(trail):
+                    if cell is not None:
+                        lit[cell] = min(age, lit.get(cell, age))
+            self.term.write(_LINES_UP.format(len(BANNER_GRAPH) + 1) + self._graph_frame(lit))
+
+    def _graph_frame(self, lit: Mapping[Cell, int]) -> str:
+        """:data:`BANNER_GRAPH` and the blank line after it; *lit* maps a cell to how long ago a signal passed it."""
+        width = len(WORDMARK[0])
+        rows = []
+        for row, line in enumerate(BANNER_GRAPH):
+            columns = {column: age for (lit_row, column), age in lit.items() if lit_row == row}
+            rows.append(f"{self.style.graph(line, width, columns)}\n")
+        return "".join(rows) + "\n"
 
     def intro(self, title: str, subtitle: str | Sequence[str] = "") -> None:
         """The orange graph divider, some space, then the title and its lines: the questions start apart from what came before."""
