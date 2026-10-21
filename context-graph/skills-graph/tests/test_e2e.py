@@ -246,3 +246,18 @@ def test_record_skill_usage_can_create_missing_skill(sg):
         params={"sid": "usage-session", "name": "memgraph-console"},
     )
     assert rows[0]["c"] == 1
+
+
+def test_forget_session_deletes_its_skill_uses_and_keeps_the_skill(sg):
+    sg.add_skill(Skill(name="memgraph-console", description="d", content="c"))
+    for session_id in ("s-1", "s-2"):
+        sg.record_skill_usage(
+            session_id=session_id, skill_name="memgraph-console", action="read", timestamp="2026-10-20T00:00:00Z"
+        )
+
+    assert sg.forget_session("s-1") == {"skill_uses": 1}
+
+    rows = sg._db.query(
+        "MATCH (s:Session)-[:USED_SKILL]->(:Skill {name: 'memgraph-console'}) RETURN s.session_id AS id"
+    )
+    assert rows == [{"id": "s-2"}]

@@ -163,6 +163,72 @@ class ActionsGraph:
         self._db.query("MATCH (n) WHERE n:Session OR n:Agent OR n:Action DETACH DELETE n;")
         self._last_action_id.clear()
 
+    # An Agent belongs to one session unless an SDK adapter names it by a name every run
+    # shares (``agent.name``), and its Actions carry no session id; so only an Agent no
+    # other Session reaches is this session's, along with everything under it.
+    _OWNED_AGENTS = """
+        MATCH (s:Session {session_id: $session_id})-[:HAS_AGENT]->(agent:Agent)
+        WHERE NOT EXISTS {
+            MATCH (other:Session)-[:HAS_AGENT]->(agent) WHERE other.session_id <> $session_id
+        }
+    """
+
+    def owned_action_ids(self, session_id: str) -> list[str]:
+        """The ``action_id`` of every Action that is *session_id*'s alone: its own, and its unshared Agents'."""
+        rows = self._db.query(
+            f"""
+            MATCH (:Session {{session_id: $session_id}})-[:HAS_ACTION]->(a:Action)
+            RETURN a.action_id AS id
+            UNION
+            {self._OWNED_AGENTS}
+            MATCH (agent)-[:HAS_ACTION]->(a:Action)
+            RETURN a.action_id AS id
+            """,
+            params={"session_id": session_id},
+        )
+        return [row["id"] for row in rows]
+
+    def forget_session(self, session_id: str) -> dict[str, int]:
+        """Delete *session_id*'s Actions and the Agents only it reaches, with their Actions.
+
+        An Agent another session also reaches stays, with every Action under it.
+        The Session Node itself is left for ``memgraph_context_graph.session.delete``.
+
+        Returns:
+            How many ``actions`` and ``agents`` went, and how many ``shared_agents`` stayed.
+        """
+        actions = self._db.query(
+            """
+            MATCH (:Session {session_id: $session_id})-[:HAS_ACTION]->(a:Action)
+            DETACH DELETE a
+            RETURN count(*) AS n
+            """,
+            params={"session_id": session_id},
+        )
+        owned = self._db.query(
+            f"""
+            {self._OWNED_AGENTS}
+            OPTIONAL MATCH (agent)-[:HAS_ACTION]->(nested:Action)
+            WITH agent, collect(nested) AS nested
+            FOREACH (a IN nested | DETACH DELETE a)
+            WITH agent, size(nested) AS actions
+            DETACH DELETE agent
+            RETURN count(agent) AS agents, sum(actions) AS actions
+            """,
+            params={"session_id": session_id},
+        )
+        shared = self._db.query(
+            "MATCH (:Session {session_id: $session_id})-[:HAS_AGENT]->(agent:Agent) RETURN count(agent) AS n",
+            params={"session_id": session_id},
+        )
+        self._last_action_id.pop(("session", session_id), None)
+        agents, nested = (owned[0]["agents"], owned[0]["actions"] or 0) if owned else (0, 0)
+        return {
+            "actions": actions[0]["n"] + nested,
+            "agents": agents,
+            "shared_agents": shared[0]["n"] if shared else 0,
+        }
+
     # ------------------------------------------------------------------
     # Session operations
     # ------------------------------------------------------------------
@@ -406,10 +472,12 @@ class ActionsGraph:
         Returns:
             The persisted agent
         """
-        # Hook processes for one subagent's first events race to create it.
+        # Hook processes for one subagent's first events race to create it; none for a forgotten session.
         merge_with_retry(
             self._db,
             """
+            OPTIONAL MATCH (forgotten:ForgottenSession {session_id: $session_id})
+            WITH forgotten WHERE forgotten IS NULL
             MERGE (a:Agent {agent_id: $agent_id})
             ON CREATE SET
                 a.agent_type = $agent_type,
@@ -427,6 +495,7 @@ class ActionsGraph:
                 a.metadata = CASE WHEN coalesce(a.metadata, '{}') = '{}' THEN $metadata ELSE a.metadata END
             """,
             params={
+                "session_id": agent.session_id,
                 "agent_id": agent.agent_id,
                 "agent_type": agent.agent_type,
                 "started_at": agent.started_at,
@@ -471,6 +540,8 @@ class ActionsGraph:
         merge_with_retry(
             self._db,
             """
+            OPTIONAL MATCH (forgotten:ForgottenSession {session_id: $session_id})
+            WITH forgotten WHERE forgotten IS NULL
             MERGE (a:Agent {agent_id: $agent_id})
             ON CREATE SET
                 a.agent_type = $agent_type,
@@ -693,8 +764,12 @@ class ActionsGraph:
         _mcp_server: str | None = getattr(action, "mcp_server", None)
         text = _message_text(action)
 
+        # A forgotten session's late events (a hook still running when it was forgotten)
+        # must leave no Action behind, holding text nothing would ever delete.
         self._db.query(
             f"""
+            OPTIONAL MATCH (forgotten:ForgottenSession {{session_id: $session_id}})
+            WITH forgotten WHERE forgotten IS NULL
             CREATE (a{labels_str} {{
                 action_id: $action_id,
                 action_type: $action_type,
@@ -713,6 +788,7 @@ class ActionsGraph:
             }})
             """,
             params={
+                "session_id": action.session_id,
                 "action_id": action.action_id,
                 "action_type": action.action_type.value,
                 "timestamp": action.timestamp,

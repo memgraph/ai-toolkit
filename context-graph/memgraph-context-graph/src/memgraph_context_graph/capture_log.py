@@ -281,6 +281,41 @@ def _encode(entry: dict[str, Any]) -> bytes:
     return line.encode("ascii")
 
 
+def forget_session(session_id: str, *, log_path: Path | None = None) -> int:
+    """Rewrite the log (and its rotated ``.1``) without *session_id*'s lines; how many went.
+
+    Each file is replaced atomically, so a reader never sees half of one; a
+    failure a hook appends between the read and the replace is lost, which
+    a diagnostics log can afford.
+    """
+    target = log_path or path()
+    removed = 0
+    for file in (target, target.with_name(target.name + ".1")):
+        if not file.is_file():
+            continue
+        lines = file.read_bytes().splitlines(keepends=True)
+        kept = [line for line in lines if not _is_from(line, session_id)]
+        if len(kept) == len(lines):
+            continue
+        removed += len(lines) - len(kept)
+        scratch = file.with_name(file.name + ".forget")
+        fd = os.open(scratch, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600)
+        try:
+            os.write(fd, b"".join(kept))
+        finally:
+            os.close(fd)
+        os.replace(scratch, file)
+    return removed
+
+
+def _is_from(line: bytes, session_id: str) -> bool:
+    try:
+        entry = json.loads(line)
+    except ValueError:
+        return False
+    return isinstance(entry, dict) and entry.get("session_id") == session_id
+
+
 def _append(target: Path, line: bytes) -> None:
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_BINARY", 0)
