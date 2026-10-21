@@ -145,7 +145,8 @@ def update_main(argv: Sequence[str]) -> int:
     )
     parser.add_argument("runtimes", nargs="*", metavar="runtime", help="default: every agent found wired")
     parser.add_argument("--project-dir", action="append", type=Path, default=[], help="project to refresh for per-project agents (repeatable); default: the current directory")  # fmt: skip
-    parser.add_argument("--no-upgrade", action="store_true", help="refresh the wiring only; the package is already current")  # fmt: skip
+    # How update re-runs itself with the newly installed executable; not a user's step.
+    parser.add_argument("--no-upgrade", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(list(argv))
     _check_runtimes(parser, args.runtimes)
 

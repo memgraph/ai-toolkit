@@ -115,10 +115,20 @@ def _schema() -> Outcome:
     from memgraph_context_graph.connectors import configured_connectors
     from memgraph_context_graph.hooks.runner import setup_connector_schemas
 
-    fix = "memgraph-context-graph update --no-upgrade"
     try:
         memgraph_env = resolve_memgraph_env()
         setup_connector_schemas(configured_connectors(), memgraph_env=memgraph_env)
     except Exception as exc:  # the driver raises its own error types for an unreachable or refusing server
-        return Outcome("Schema", "fail", f"{type(exc).__name__}: {exc}", fix=fix)
+        return Outcome("Schema", "fail", f"{type(exc).__name__}: {exc}", fix=_schema_fix(exc))
     return Outcome("Schema", "ok", f"up to date on {memgraph_env['MEMGRAPH_URL']}")
+
+
+def _schema_fix(exc: Exception) -> str:
+    """What to do about a failed schema step; running it again only helps when the server was the problem."""
+    if "unique constraint" in str(exc):
+        # Running again meets the same nodes, so the hint has to say what to remove first.
+        return (
+            "nodes already in the graph share the value the constraint above makes unique; "
+            "delete the extra copies, then run memgraph-context-graph update"
+        )
+    return "make Memgraph reachable, then run memgraph-context-graph update"

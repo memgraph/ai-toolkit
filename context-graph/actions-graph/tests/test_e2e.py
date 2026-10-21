@@ -929,3 +929,24 @@ def test_tool_calls_and_results_carry_the_harness_tool_use_id(graph: ActionsGrap
         "RETURN labels(a) AS labels ORDER BY a.timestamp"
     )
     assert [row["labels"][-1] for row in rows] == ["ToolCall", "ToolResult"]
+
+
+def test_a_tool_event_delivered_twice_is_stored_once(graph: ActionsGraph):
+    """Recording is keyed on the event, so a redelivered event adds nothing."""
+    from memgraph_context_graph.events import SessionStartEvent, ToolEndEvent, ToolStartEvent
+
+    link = _connector(graph)
+    link.emit(SessionStartEvent(session_id="twice"))
+    for event in (
+        ToolStartEvent(session_id="twice", tool_name="Bash", tool_input={}, tool_use_id="exec-1"),
+        ToolEndEvent(session_id="twice", tool_name="Bash", tool_use_id="exec-1", result="ok"),
+    ):
+        link.emit(event)
+        link.emit(event)
+
+    assert [action.action_type for action in graph.get_session_actions("twice")] == [
+        ActionType.TOOL_CALL,
+        ActionType.TOOL_RESULT,
+    ]
+    rows = graph._db.query("MATCH (:ToolCall)-[f:FOLLOWED_BY]->(:ToolResult) RETURN count(f) AS n")
+    assert rows[0]["n"] == 1

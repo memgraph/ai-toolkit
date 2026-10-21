@@ -200,8 +200,8 @@ so it prints the `uv tool uninstall` command to run next.
 as it was. `update` upgrades the uv tool and its connectors, then, with the new release, refreshes everything
 that is wired: Claude Code's and Codex's plugin (marketplace refreshed, plugin updated), each per-project agent's
 hook file in `--project-dir` (default: the current directory) and its MCP registration, and the graph's indexes
-and constraints. It then runs `doctor`'s checks. Name runtimes to refresh only those; `--no-upgrade` skips the
-package step. Your own hooks, the config and the graph's data are untouched, and running it again changes nothing.
+and constraints. It then runs `doctor`'s checks. Name runtimes to refresh only those. Your own hooks, the config
+and the graph's data are untouched, and running it again changes nothing.
 Running agent sessions keep the hooks they loaded: restart them. Outside the uv tool (a virtualenv, say) the
 package step only warns, and you upgrade it yourself first.
 

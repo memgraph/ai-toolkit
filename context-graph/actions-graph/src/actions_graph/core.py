@@ -728,7 +728,8 @@ class ActionsGraph:
 
         Creates the action node, links it to its container, and creates a
         temporal FOLLOWED_BY relationship with the previous action in that
-        same container.
+        same container. An action whose action_id is already stored (the same
+        event delivered twice) is not recorded again.
 
         Args:
             action: Action to record
@@ -765,11 +766,16 @@ class ActionsGraph:
         text = _message_text(action)
 
         # A forgotten session's late events (a hook still running when it was forgotten)
-        # must leave no Action behind, holding text nothing would ever delete.
-        self._db.query(
+        # must leave no Action behind, holding text nothing would ever delete. An action_id
+        # names the event it came from, so one already stored means the event was delivered
+        # twice; a concurrent second delivery fails the uniqueness constraint and, retried,
+        # finds the first.
+        created = merge_with_retry(
+            self._db,
             f"""
             OPTIONAL MATCH (forgotten:ForgottenSession {{session_id: $session_id}})
-            WITH forgotten WHERE forgotten IS NULL
+            OPTIONAL MATCH (existing:Action {{action_id: $action_id}})
+            WITH forgotten, existing WHERE forgotten IS NULL AND existing IS NULL
             CREATE (a{labels_str} {{
                 action_id: $action_id,
                 action_type: $action_type,
@@ -786,6 +792,7 @@ class ActionsGraph:
                 text: $text,
                 properties: $properties
             }})
+            RETURN a.action_id AS action_id
             """,
             params={
                 "session_id": action.session_id,
@@ -805,6 +812,8 @@ class ActionsGraph:
                 "properties": json.dumps(props),
             },
         )
+        if not created:
+            return action
 
         if container_agent_id:
             self._db.query(
