@@ -206,13 +206,23 @@ def _member_role(space: SharedSpace) -> Role:
 Query = Callable[[str, str | None, dict[str, Any] | None], list[dict[str, Any]]]
 
 
+def live_databases(query: Query) -> set[str]:
+    """Every database's name, leaving out one still being dropped.
+
+    ``DROP DATABASE ... FORCE`` returns at once; the database then drains in the background,
+    listed as ``name (uuid)`` with ``State: DROPPING``. It is already gone as far as the
+    provisioner is concerned, and dropping it again fails. Older servers show no ``State``.
+    """
+    return {row["Name"] for row in query("SHOW DATABASES", None, None) if row.get("State") != "DROPPING"}
+
+
 def observed_state(query: Query, members: Iterable[str] = ()) -> State:
     """What Memgraph holds of the provisioner's objects.
 
     *members* are logins to inspect even if they hold no role yet.
     """
     state = State()
-    state.databases = {row["Name"] for row in query("SHOW DATABASES", None, None) if _owned(row["Name"])}
+    state.databases = {name for name in live_databases(query) if _owned(name)}
     all_users = {row["user"] for row in query("SHOW USERS", None, None)}
     state.roles = {
         row["role"]: None for row in query("SHOW ROLES", None, None) if not row.get("builtin") and _owned(row["role"])

@@ -15,6 +15,7 @@ import neo4j
 import pytest
 
 from context_graph_spaces.cli import admin_query
+from context_graph_spaces.provision import live_databases
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -85,9 +86,9 @@ def _drop_owned(query: Query) -> None:
             for database in filter(None, (name.strip() for name in str(row.get("databases") or "").split(","))):
                 query(f"REMOVE TENANT PROFILE FROM DATABASE {database}", None, None)
             query(f"DROP TENANT PROFILE {row['profile']}", None, None)
-    for row in query("SHOW DATABASES", None, None):
-        if row["Name"].startswith(owned):
-            query(f"DROP DATABASE {row['Name']} FORCE", None, None)
+    for database in live_databases(query):
+        if database.startswith(owned):
+            query(f"DROP DATABASE {database} FORCE", None, None)
 
 
 #: Every login the tests provision, so a failed run's leftovers are cleaned up too.
