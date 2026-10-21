@@ -8,8 +8,9 @@ Memgraph Context Graph only routes normalized runtime events.
 from __future__ import annotations
 
 import hashlib
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
+from memgraph_context_graph.connectors import ConnectorSpec
 from memgraph_context_graph.events import (
     AgentEndEvent,
     AgentStartEvent,
@@ -24,6 +25,7 @@ from memgraph_context_graph.events import (
 )
 from memgraph_context_graph.protocols import GraphConnector
 
+from .core import ActionsGraph
 from .models import (
     ActionStatus,
     Agent,
@@ -34,10 +36,6 @@ from .models import (
     ToolCall,
     ToolResult,
 )
-
-if TYPE_CHECKING:
-    from .core import ActionsGraph
-
 
 _SUPPORTED_EVENTS = {
     EventType.SESSION_START,
@@ -289,3 +287,10 @@ class ActionsGraphConnector(GraphConnector):
     def _stable_id(*parts: str) -> str:
         payload = "\0".join(parts)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+
+
+CONNECTOR = ConnectorSpec(
+    name="actions-graph",
+    graph=ActionsGraph,
+    build=lambda graph, config: ActionsGraphConnector(graph),
+)

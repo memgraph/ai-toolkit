@@ -11,15 +11,16 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from memgraph_context_graph.capture_policy import DEFAULT_MAX_CHARS
 from memgraph_context_graph.connectors import (
-    COMPONENTS,
     DEFAULT_CONNECTORS,
     configured_connectors,
+    connector_spec,
+    known_connectors,
     supported_connectors,
 )
 from memgraph_context_graph.tools import normalize_connector_name
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
 _HELP = """usage: memgraph-context-graph <command> [options]
 
@@ -671,47 +672,24 @@ def _check_package(package_name: str) -> _CheckResult:
 
 def _check_connector(connector_name: str) -> _CheckResult:
     normalized = normalize_connector_name(connector_name)
-    if normalized not in COMPONENTS:
+    name = f"connector:{normalized}"
+    if normalized not in known_connectors():
         return {"name": f"connector:{connector_name}", "ok": False, "detail": "unsupported connector"}
 
-    from memgraph_context_graph.adapters._identity import resolve_memgraph_env
+    from memgraph_context_graph.adapters._identity import load_config, resolve_memgraph_env
     from memgraph_context_graph.hooks.runner import memgraph_kwargs
 
-    name = f"connector:{normalized}"
     graph = None
     try:
-        graph = COMPONENTS[normalized].graph()(**memgraph_kwargs(resolve_memgraph_env()))
+        spec = connector_spec(normalized)
+        graph = spec.graph(**memgraph_kwargs(resolve_memgraph_env()))
         detail = f"installed={_package_version(normalized)}; memgraph=reachable"
-        extra = _CONNECTOR_CHECKS.get(normalized)
-        ok, more = extra() if extra is not None else (True, "")
+        ok, more = spec.check(load_config()) if spec.check is not None else (True, "")
         return {"name": name, "ok": ok, "detail": f"{detail}; {more}" if ok and more else more or detail}
     except Exception as exc:
         return {"name": name, "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
     finally:
         _close(graph and graph._db)
-
-
-def _check_sessions_graph() -> tuple[bool, str]:
-    from memgraph_context_graph.adapters._identity import resolve_user_id
-
-    user_id = resolve_user_id({})
-    if not user_id:
-        return False, "user_id not resolved — run: memgraph-context-graph config set identity.user_id <your-name>"
-    return True, f"user_id={user_id!r}"
-
-
-def _check_resources_graph() -> tuple[bool, str]:
-    from memgraph_context_graph.adapters._identity import load_config
-
-    # Touches are recorded without a token; the Sweep falls back to the user's gh login.
-    return True, f"github.token {'set' if load_config().github_token else 'unset (the Sweep uses the gh login)'}"
-
-
-#: What a connector needs beyond a reachable Memgraph: (ok, what its check line adds, or why it fails).
-_CONNECTOR_CHECKS: dict[str, Callable[[], tuple[bool, str]]] = {
-    "sessions-graph": _check_sessions_graph,
-    "resources-graph": _check_resources_graph,
-}
 
 
 def _check_embeddings() -> _CheckResult:

@@ -11,18 +11,13 @@ from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from memgraph_context_graph.connectors import INSTALLABLE
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 #: Kept in step with the plugins' bootstrap scripts and install.sh, which install the default connectors first.
 BASE = "memgraph-context-graph[mcp]>=0.9.0"
-#: The requirement each connector in memgraph_context_graph.connectors.COMPONENTS installs from.
-REQUIREMENTS = {
-    "skills-graph": "skills-graph[memgraph-context-graph]>=0.2.2",
-    "actions-graph": "actions-graph[memgraph-context-graph]>=0.6.0",
-    "sessions-graph": "sessions-graph[memgraph-context-graph]>=0.10.0",
-    "resources-graph": "resources-graph[memgraph-context-graph]>=0.2.0",
-}
 VIEWER = ("context-graph-viewer", "context-graph-viewer>=0.1.1")
 SPACES = ("context-graph-spaces", "context-graph-spaces>=0.1.0")
 
@@ -68,7 +63,7 @@ def connectors() -> list[str]:
     from memgraph_context_graph.connectors import configured_connectors
 
     configured = configured_connectors()
-    return [name for name in REQUIREMENTS if name in configured or installed(name)]
+    return [name for name in INSTALLABLE if name in configured or installed(name)]
 
 
 def requirements(*, viewer: bool = False, spaces: bool = False) -> list[str]:
@@ -79,7 +74,7 @@ def requirements(*, viewer: bool = False, spaces: bool = False) -> list[str]:
     """
     argv = [BASE]
     for name in connectors():
-        argv += ["--with", REQUIREMENTS[name]]
+        argv += ["--with", INSTALLABLE[name]]
     if viewer or installed(VIEWER[0]):
         argv += ["--with", VIEWER[1]]
     if spaces or installed(SPACES[0]):

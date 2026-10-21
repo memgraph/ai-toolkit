@@ -104,25 +104,24 @@ def test_write_config_preserves_llm_keys(config_dir):
     assert config.user_id == "someone"
 
 
-# --- resolve_auto_reconcile ---
+# --- [reconcile] auto_reconcile ---
 
 
-def test_auto_reconcile_is_false_when_never_configured(config_dir):
-    """False when never configured -- ADR 0002 leaves no ambient env var to
-    fall back to, so "never configured" collapses to the off default."""
-    assert _identity.resolve_auto_reconcile() is False
+def test_auto_reconcile_is_off_when_never_configured(config_dir):
+    """Off when never configured -- ADR 0002 leaves no ambient env var to fall back to."""
+    assert not _identity.load_config().auto_reconcile
 
 
 def test_auto_reconcile_from_config_file(config_dir):
     _identity.write_full_config(auto_reconcile=True)
     _identity._reset_cache()
-    assert _identity.resolve_auto_reconcile() is True
+    assert _identity.load_config().auto_reconcile is True
 
 
 def test_auto_reconcile_explicit_false_is_not_collapsed_to_none(config_dir):
     _identity.write_full_config(auto_reconcile=False)
     _identity._reset_cache()
-    assert _identity.resolve_auto_reconcile() is False
+    assert _identity.load_config().auto_reconcile is False
 
 
 def test_write_config_preserves_auto_reconcile(config_dir):

@@ -195,15 +195,6 @@ def resolve_llm_env() -> dict[str, str]:
     }
 
 
-def resolve_auto_reconcile() -> bool:
-    """Resolve whether sessions-graph should auto-trigger reconciliation on SESSION_END.
-
-    Config file only (ADR 0002); never configured means ``False``, matching
-    ``SessionsGraphConnector``'s default.
-    """
-    return bool(load_config().auto_reconcile)
-
-
 def resolve_embedding_model() -> str | None:
     """The configured ``[recall] embedding_model``, or None to leave sessions-graph's default."""
     return load_config().embedding_model

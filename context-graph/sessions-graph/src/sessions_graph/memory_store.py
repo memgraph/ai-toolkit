@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from memgraph_context_graph import session as session_node
+from memgraph_toolbox.api.memgraph import merge_with_retry
 
 from .models import MEMORY_ROOT, MemoryValidationError, normalize_memory_path, project_key, validate_user_id
 
@@ -503,7 +504,9 @@ class MemoryStore:
             )
         now = _now()
         if expected is None:
-            rows = self._db.query(
+            # Two writers creating one path, or one user's first file, race on a uniqueness constraint.
+            rows = merge_with_retry(
+                self._db,
                 """
                 MERGE (u:User {user_id: $user_id})
                 MERGE (m:Memory {user_id: $user_id, path: $path})

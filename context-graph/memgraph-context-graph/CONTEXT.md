@@ -74,6 +74,10 @@ _Avoid_: Runtime Plugin (already means distribution package), Runtime Adapter (a
 Object implementing `Tool` (`tools.py`): a name, a description the model reads, an input schema, the connector whose graph it reads, an optional session-start hint, and `call(arguments, config)`. A graph component publishes it via the `memgraph_context_graph.tools` entry-point group; `memgraph-context-graph mcp` serves every registered tool, and the CLI runs one by name. Identity + connection come from the **Space Resolver** over **Hook Configuration**, never from tool arguments.
 _Avoid_: MCP tool (the protocol it is served over, not the thing), Graph Connector (writes events; a tool reads)
 
+**Connector Registration**:
+`ConnectorSpec` (`connectors.py`): a graph component's name, its graph class, how to build its **Graph Connector** from **Hook Configuration**, and an optional `doctor` check. Published via the `memgraph_context_graph.connectors` entry-point group; the hook runner, schema setup and `doctor` find connectors only through it. The hub keeps just what it needs before a component is installed: each installable connector's requirement (`INSTALLABLE`) and the default set.
+_Avoid_: Component (the package), Graph Connector (the object a registration builds)
+
 ## Relationships
 
 - **Memgraph Context Graph** belongs to broader **Context Graph** family.

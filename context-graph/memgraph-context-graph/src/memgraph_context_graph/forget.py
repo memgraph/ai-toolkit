@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from memgraph_context_graph import capture_log, session
-from memgraph_context_graph.connectors import COMPONENTS
+from memgraph_context_graph.connectors import connector_spec
 
 if TYPE_CHECKING:
     from memgraph_toolbox.api.memgraph import Memgraph
@@ -106,7 +106,7 @@ def _graphs(memgraph: Memgraph) -> tuple[list[Any], list[str]]:
     graphs, unavailable = [], []
     for name in FORGET_ORDER:
         try:
-            graphs.append(COMPONENTS[name].graph()(memgraph))
+            graphs.append(connector_spec(name).graph(memgraph))
         except ImportError:
             unavailable.append(name)
     return graphs, unavailable

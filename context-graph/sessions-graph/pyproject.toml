@@ -45,6 +45,9 @@ sessions-graph = "sessions_graph.cli:main"
 recall = "sessions_graph.tool:RECALL"
 memory = "sessions_graph.tool:MEMORY"
 
+[project.entry-points."memgraph_context_graph.connectors"]
+sessions-graph = "sessions_graph.connector:CONNECTOR"
+
 [tool.uv.sources]
 memgraph-context-graph = { workspace = true }
 memgraph-toolbox = { workspace = true }

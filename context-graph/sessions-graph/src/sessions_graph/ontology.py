@@ -38,6 +38,7 @@ from hygm import (
     validate_model,
     with_core,
 )
+from memgraph_toolbox.api.memgraph import merge_with_retry
 
 from .models import _utc_now
 
@@ -219,7 +220,8 @@ _VERSION_PROPERTIES = (
 
 def reject(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
     """Store `version` as a candidate the gate rejected: kept with its numbers, never adopted."""
-    db.query(
+    merge_with_retry(
+        db,
         """
         MERGE (u:User {user_id: $user_id})
         CREATE (v:OntologyVersion {status: 'rejected', """
@@ -253,7 +255,8 @@ def adopt(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
     """Store `version` and make it the user's adopted one."""
     # One query is one transaction: readers see the old ADOPTED edge or the
     # new one, never a user with none or two.
-    db.query(
+    merge_with_retry(
+        db,
         """
         MERGE (u:User {user_id: $user_id})
         WITH u

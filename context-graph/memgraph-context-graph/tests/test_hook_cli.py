@@ -2,8 +2,6 @@
 
 import io
 import json
-import sys
-from types import ModuleType
 
 from memgraph_context_graph.cli import main as top_level_main
 from memgraph_context_graph.hooks.cli import main
@@ -191,6 +189,17 @@ def test_init_codex_does_not_bake_memgraph_connection_into_hook_command(tmp_path
     assert "secret" not in capsys.readouterr().out
 
 
+def _register(monkeypatch, name, graph_class):
+    """Stand *graph_class* in for the installed component that registers connector *name*."""
+    from memgraph_context_graph import connectors
+
+    def never_built(graph, config):
+        raise AssertionError("init only sets up the schema")
+
+    spec = connectors.ConnectorSpec(name=name, graph=graph_class, build=never_built)
+    monkeypatch.setattr(connectors, "load_connectors", lambda: {name: spec})
+
+
 def test_init_codex_uses_memgraph_flags_only_for_setup_schema(tmp_path, monkeypatch):
     monkeypatch.setattr("memgraph_context_graph.adapters._spec.shutil.which", lambda _: "/bin/memgraph-context-graph")
     captured = {}
@@ -202,9 +211,7 @@ def test_init_codex_uses_memgraph_flags_only_for_setup_schema(tmp_path, monkeypa
         def setup(self):
             captured["setup"] = True
 
-    fake_skills_graph = ModuleType("skills_graph")
-    fake_skills_graph.SkillGraph = _SkillGraph  # ty: ignore[unresolved-attribute] -- fake module double, no static attrs
-    monkeypatch.setitem(sys.modules, "skills_graph", fake_skills_graph)
+    _register(monkeypatch, "skills-graph", _SkillGraph)
 
     assert (
         main(
@@ -252,9 +259,7 @@ def test_init_codex_sets_up_actions_graph_schema(tmp_path, monkeypatch):
         def setup(self):
             captured["setup"] = True
 
-    fake_actions_graph = ModuleType("actions_graph")
-    fake_actions_graph.ActionsGraph = _ActionsGraph  # ty: ignore[unresolved-attribute] -- fake module double, no static attrs
-    monkeypatch.setitem(sys.modules, "actions_graph", fake_actions_graph)
+    _register(monkeypatch, "actions-graph", _ActionsGraph)
 
     assert (
         main(

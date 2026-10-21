@@ -206,7 +206,8 @@ class SessionsGraph:
             **({"memory_id": memory_id} if memory_id else {}),
         )
 
-        self._db.query(
+        merge_with_retry(
+            self._db,
             """
             MERGE (u:User {user_id: $user_id})
             CREATE (m:Memory {

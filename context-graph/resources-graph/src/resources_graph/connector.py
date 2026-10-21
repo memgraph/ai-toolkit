@@ -16,14 +16,16 @@ import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from memgraph_context_graph.connectors import ConnectorSpec
 from memgraph_context_graph.events import Event, EventType, MessageEvent, ToolEndEvent, ToolStartEvent
 from memgraph_context_graph.protocols import GraphConnector
 
 from .address import Address, addresses_from_text, addresses_from_tool
+from .core import ResourcesGraph
 from .models import FETCHED, PROMPTED
 
 if TYPE_CHECKING:
-    from .core import ResourcesGraph
+    from memgraph_context_graph.adapters._identity import HookConfig
 
 _SUPPORTED_EVENTS = {EventType.TOOL_START, EventType.TOOL_END, EventType.MESSAGE}
 #: The first line of every ``resource`` tool answer; see :mod:`resources_graph.tool`.
@@ -151,3 +153,16 @@ def _text(value: Any) -> str:
     if isinstance(value, (list, tuple)):
         return "\n".join(_text(item) for item in value)
     return "" if value is None else str(value)
+
+
+def _doctor_check(config: HookConfig) -> tuple[bool, str]:
+    # Touches are recorded without a token; the Sweep falls back to the user's gh login.
+    return True, f"github.token {'set' if config.github_token else 'unset (the Sweep uses the gh login)'}"
+
+
+CONNECTOR = ConnectorSpec(
+    name="resources-graph",
+    graph=ResourcesGraph,
+    build=lambda graph, config: ResourcesGraphConnector(graph),
+    check=_doctor_check,
+)

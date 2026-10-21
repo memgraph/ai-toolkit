@@ -32,3 +32,15 @@ def test_actions_and_sessions_graph_racing_on_a_new_session_create_one_node(grap
         "RETURN count(s) AS sessions, collect(DISTINCT s.model) AS models, collect(DISTINCT s.project_key) AS projects"
     )
     assert rows == [{"sessions": 1, "models": ["opus"], "projects": ["github.com_memgraph_ai-toolkit"]}]
+
+
+def test_a_new_users_first_sessions_starting_at_once_share_one_user(graph, memgraph):
+    """Each session start MERGEs the same new User, which races on its uniqueness constraint too."""
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        for future in [
+            pool.submit(graph.record_session_start, f"s-{i}", user_id="alice", project_key=None) for i in range(32)
+        ]:
+            future.result()
+
+    rows = memgraph.query("MATCH (u:User)-[:HAD_SESSION]->(s:Session) RETURN u.user_id AS user, count(s) AS sessions")
+    assert rows == [{"user": "alice", "sessions": 32}]

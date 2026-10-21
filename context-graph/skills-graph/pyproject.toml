@@ -27,6 +27,9 @@ test = [
     "openai-agents>=0.1.0",
 ]
 
+[project.entry-points."memgraph_context_graph.connectors"]
+skills-graph = "skills_graph.connector:CONNECTOR"
+
 [tool.uv.sources]
 memgraph-toolbox = { workspace = true }
 memgraph-context-graph = { workspace = true }
