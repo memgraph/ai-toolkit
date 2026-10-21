@@ -101,7 +101,9 @@ def install(*, viewer: bool, log: Callable[[str], None], spaces: bool = False, u
     uv = shutil.which("uv")
     if uv is None:
         raise ToolError("uv isn't on PATH")
-    argv = [uv, "--color", "never", "tool", "install", *requirements(viewer=viewer, spaces=spaces)]
+    # The tool's own Python version: left to choose, uv takes the first Python it finds, which may be too old.
+    python = f"{sys.version_info.major}.{sys.version_info.minor}"
+    argv = [uv, "--color", "never", "tool", "install", "--python", python, *requirements(viewer=viewer, spaces=spaces)]
     if upgrade:
         argv.append("--upgrade")
         # Bypass the cached index entries, so a release published minutes ago is found.

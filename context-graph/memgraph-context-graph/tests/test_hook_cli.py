@@ -52,6 +52,7 @@ def test_top_level_cli_doctor_reports_checks(monkeypatch, capsys):
         "memgraph_context_graph.cli._check_connector",
         lambda connector: {"name": f"connector:{connector}", "ok": True, "detail": "installed; memgraph=reachable"},
     )
+    monkeypatch.setattr("memgraph_context_graph.cli._check_plugin", lambda runtime: None)
     monkeypatch.setattr(
         "memgraph_context_graph.cli._check_runtime",
         lambda runtime, connectors: {"name": f"runtime:{runtime}", "ok": True, "detail": "strict hook smoke passed"},
@@ -82,6 +83,7 @@ def test_top_level_cli_doctor_fails_when_check_fails(monkeypatch, capsys):
         "memgraph_context_graph.cli._check_connector",
         lambda connector: {"name": f"connector:{connector}", "ok": False, "detail": "missing"},
     )
+    monkeypatch.setattr("memgraph_context_graph.cli._check_plugin", lambda runtime: None)
     monkeypatch.setattr(
         "memgraph_context_graph.cli._check_runtime",
         lambda runtime, connectors: {"name": f"runtime:{runtime}", "ok": True, "detail": "strict hook smoke passed"},
@@ -113,6 +115,7 @@ def test_top_level_cli_doctor_checks_embeddings_only_with_sessions_graph(monkeyp
         "memgraph_context_graph.cli._check_connector",
         lambda connector: {"name": f"connector:{connector}", "ok": True, "detail": "installed"},
     )
+    monkeypatch.setattr("memgraph_context_graph.cli._check_plugin", lambda runtime: None)
     monkeypatch.setattr(
         "memgraph_context_graph.cli._check_runtime",
         lambda runtime, connectors: {"name": f"runtime:{runtime}", "ok": True, "detail": "ok"},

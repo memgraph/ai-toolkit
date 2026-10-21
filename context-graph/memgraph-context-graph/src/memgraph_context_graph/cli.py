@@ -562,6 +562,9 @@ def doctor_checks(runtimes: Sequence[str], connectors: Sequence[str]) -> list[_C
             checks.append(_check_runtime(runtime, list(connectors)))
             if (memory_check := _check_memory_backend(runtime)) is not None:
                 checks.append(memory_check)
+    for runtime in runtimes:
+        if (plugin_check := _check_plugin(runtime)) is not None:
+            checks.append(plugin_check)
     checks.append(_check_capture_failures())
     return checks
 
@@ -771,6 +774,33 @@ def _check_memory_backend(runtime: str) -> _CheckResult | None:
     return {"name": "memory", "ok": True, "detail": f"Context Graph; {runtime}'s built-in memory is off"}
 
 
+def _check_plugin(runtime: str) -> _CheckResult | None:
+    """Whether the agent will run the hooks at all: its Context Graph plugin installed and on.
+
+    The runtime probe runs the connectors in doctor's own process, so it passes whether or not the agent ever
+    calls them. None for per-project agents, whose wiring lives in each project's hook file.
+    """
+    from memgraph_context_graph.setup import agents
+
+    agent = agents.BY_RUNTIME.get(runtime)
+    if agent is None or agent.wiring != "plugin":
+        return None
+    name = f"plugin:{runtime}"
+    fix = f"run: memgraph-context-graph setup {runtime}"
+    if agent.binary() is None:
+        return {"name": name, "ok": False, "detail": f"{' or '.join(agent.binaries)} isn't on PATH"}
+    if not agents.plugin_wired(agent):
+        return {"name": name, "ok": False, "detail": f"not installed, so {agent.label} records nothing — {fix}"}
+    if not agents.plugin_enabled(agent):
+        return {
+            "name": name,
+            "ok": False,
+            "detail": f"installed but disabled, so {agent.label} records nothing — "
+            f"run: {agent.binaries[0]} plugin enable {agents.PLUGIN_ID}",
+        }
+    return {"name": name, "ok": True, "detail": f"{agents.PLUGIN_ID} installed and enabled"}
+
+
 def _check_runtime(runtime: str, connectors: list[str]) -> _CheckResult:
     """Replay the runtime's probe payload through real connectors, against the configured Memgraph.
 
@@ -794,7 +824,7 @@ def _check_runtime(runtime: str, connectors: list[str]) -> _CheckResult:
         link = create_link(connectors, memgraph_env=memgraph_env)
         adapter = plugin.adapter_class(link, session_id=probe_session_id)
         adapter.handle_payload(dict(plugin.probe_payload))
-        return {"name": f"runtime:{runtime}", "ok": True, "detail": "strict hook smoke passed"}
+        return {"name": f"runtime:{runtime}", "ok": True, "detail": "connectors accept its probe event"}
     except Exception as exc:
         return {"name": f"runtime:{runtime}", "ok": False, "detail": f"{type(exc).__name__}: {exc}"}
     finally:

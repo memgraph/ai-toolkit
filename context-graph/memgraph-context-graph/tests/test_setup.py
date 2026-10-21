@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import re
 import subprocess
 
@@ -113,6 +114,49 @@ def test_a_failing_plugin_install_says_what_the_agent_said(fake_agents, monkeypa
         agents.wire_plugin(BY_RUNTIME["claude-code"], lambda _: None)
 
 
+def test_agent_clis_never_read_setups_stdin(fake_agents, monkeypatch):
+    """Claude Code on macOS crashes on the cbreak-mode terminal setup's questions leave, so a wired plugin read as
+    not installed; every agent command gets a null stdin instead of inheriting setup's."""
+    monkeypatch.setenv("FAKE_AGENT_NEEDS_NULL_STDIN", "1")
+    read_end, write_end = os.pipe()
+    saved = os.dup(0)
+    os.dup2(read_end, 0)
+    try:
+        assert agents.wire_plugin(BY_RUNTIME["claude-code"], lambda _: None) == "plugin installed"
+        assert agents.plugin_wired(BY_RUNTIME["claude-code"])
+    finally:
+        os.dup2(saved, 0)
+        for fd in (saved, read_end, write_end):
+            os.close(fd)
+
+
+def test_doctor_fails_until_the_plugin_is_installed_and_enabled(fake_agents, monkeypatch):
+    """doctor's runtime probe runs the connectors in its own process, so only this says the agent calls the hooks."""
+    from memgraph_context_graph.cli import _check_plugin
+
+    check = _check_plugin("claude-code")
+    assert check is not None
+    assert (check["ok"], check["detail"]) == (
+        False,
+        "not installed, so Claude Code records nothing — run: memgraph-context-graph setup claude-code",
+    )
+
+    agents.wire_plugin(BY_RUNTIME["claude-code"], lambda _: None)
+    assert _check_plugin("claude-code") == {
+        "name": "plugin:claude-code",
+        "ok": True,
+        "detail": f"{agents.PLUGIN_ID} installed and enabled",
+    }
+
+    monkeypatch.setenv("FAKE_AGENT_DISABLED", "1")
+    check = _check_plugin("claude-code")
+    assert check is not None
+    assert not check["ok"]
+    assert f"claude plugin enable {agents.PLUGIN_ID}" in check["detail"]
+
+    assert _check_plugin("cursor") is None
+
+
 def test_only_agents_on_path_are_detected(fake_agents):
     assert [agent.runtime for agent in agents.detected()] == ["claude-code", "codex"]
 
@@ -127,6 +171,28 @@ def test_defaults_come_from_path_the_project_and_git(fake_agents, setup_home, pr
     assert choices.project_dirs == [project.resolve()]
     assert choices.user_id
     assert engine.default_choices(env, cwd=setup_home).project_dirs == []
+
+
+def test_no_agent_on_path_is_named_in_the_plan_and_fails_the_run(monkeypatch, setup_home, tmp_path, capsys):
+    """Setup's checks follow the agents it wires: with none, every check passed and nothing was ever recorded."""
+    empty = tmp_path / "empty-bin"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    env = engine.look_around(cwd=setup_home)
+    choices = engine.default_choices(env, cwd=setup_home, user_id="carol")
+    assert choices.runtimes == []
+    assert "Agents: no coding agent found on PATH, so nothing is recorded; install one, or name it" in engine.plan(
+        choices, env
+    )
+
+    monkeypatch.setattr(engine, "_memgraph", lambda *args: (engine.Outcome("Memgraph", "ok", "found"), "bolt://x:1"))
+    monkeypatch.setattr(engine, "_config", lambda *args: engine.Outcome("Config", "ok", "written"))
+    monkeypatch.setattr(engine, "_packages", lambda *args: engine.Outcome("Packages", "ok", "all installed"))
+    monkeypatch.setattr(engine, "verify", lambda runtimes: [])
+    outcomes = engine.run(choices, env, log=lambda _: None, report=lambda _: None)
+    assert engine.failed(outcomes)
+    (agents_outcome,) = [outcome for outcome in outcomes if outcome.step == "Agents"]
+    assert agents_outcome.fix == "memgraph-context-graph setup claude-code"
 
 
 def test_the_configured_user_wins_over_git(setup_home):
@@ -343,12 +409,15 @@ def typed(text):
     return list(text)
 
 
-def test_nothing_is_ticked_and_typing_replaces_the_default_name(fake_agents, setup_home, project):
-    from memgraph_context_graph.setup.prompts import ENTER, SPACE, Prompts, ask
+def test_a_first_run_ticks_the_plugin_agents_found_and_typing_replaces_the_default_name(
+    fake_agents, setup_home, project
+):
+    from memgraph_context_graph.setup.prompts import DOWN, ENTER, SPACE, Prompts, ask
 
     env = engine.look_around()
-    # Name: type "dave". Agents: tick Claude Code. Viewer: no. Memory switch: default (no). Install: yes.
-    term = ScriptedTerminal(keys=[*typed("dave"), ENTER, SPACE, ENTER, "n", ENTER, ENTER])
+    # Name: type "dave". Agents: Claude Code and Codex start ticked; untick Codex. Viewer: no.
+    # Memory switch: default (no). Install: yes.
+    term = ScriptedTerminal(keys=[*typed("dave"), ENTER, DOWN, SPACE, ENTER, "n", ENTER, ENTER])
     choices = ask(Prompts(term), engine.default_choices(env, cwd=project, user_id="carol"), env, preselect=False)
 
     assert choices is not None
@@ -370,12 +439,12 @@ def test_enter_on_an_empty_field_keeps_the_default(fake_agents, setup_home, proj
     from memgraph_context_graph.setup.prompts import BACKSPACE, ENTER, Prompts, ask
 
     env = engine.look_around()
-    # Name: type "x", erase it, Enter. Agents: none. Viewer, install: Enter.
-    term = ScriptedTerminal(keys=["x", BACKSPACE, ENTER, ENTER, ENTER, ENTER])
+    # Name: type "x", erase it, Enter. Agents, viewer, memory switch, install: Enter.
+    term = ScriptedTerminal(keys=["x", BACKSPACE, ENTER, ENTER, ENTER, ENTER, ENTER])
     choices = ask(Prompts(term), engine.default_choices(env, cwd=project, user_id="carol"), env, preselect=False)
 
     assert choices is not None
-    assert (choices.user_id, choices.runtimes) == ("carol", [])
+    assert (choices.user_id, choices.runtimes) == ("carol", ["claude-code", "codex"])
 
 
 def test_esc_steps_back_and_keeps_the_answers(fake_agents, setup_home, project):
@@ -385,14 +454,11 @@ def test_esc_steps_back_and_keeps_the_answers(fake_agents, setup_home, project):
     keys = [
         ESC,  # on the first question: stays there
         ENTER,  # name: carol
-        SPACE,  # agents: tick Claude Code and Codex ...
-        DOWN,
+        DOWN,  # agents: both start ticked; untick Codex ...
         SPACE,
         ESC,  # ... back to the name before confirming: the ticks stay
         ENTER,
-        DOWN,  # agents: both still ticked, so untick Codex
-        SPACE,
-        ENTER,
+        ENTER,  # agents: Codex still unticked
         ESC,  # viewer: back to the agents, Claude Code still ticked
         ENTER,
         "n",  # viewer: no

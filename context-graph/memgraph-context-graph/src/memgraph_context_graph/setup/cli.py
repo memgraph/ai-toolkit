@@ -85,7 +85,8 @@ def setup_main(argv: Sequence[str]) -> int:
     if interactive:
         from memgraph_context_graph.setup.prompts import run_setup_prompts
 
-        # Agents named on the command line start ticked; otherwise the ones already set up are.
+        # Agents named on the command line start ticked; otherwise the ones already set up, or on a first run
+        # the plugin agents found.
         return run_setup_prompts(choices, env, terminal, preselect=bool(args.runtimes))
     _print_plan(choices, env)
     print()

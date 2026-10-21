@@ -231,8 +231,12 @@ OK connector:actions-graph: installed=...; memgraph=reachable
 OK connector:sessions-graph: installed=...; memgraph=reachable
 OK embeddings: BAAI/bge-small-en-v1.5 (384 dimensions) inside Memgraph
 OK mcp: serves recall
-OK runtime:claude-code: strict hook smoke passed
+OK runtime:claude-code: connectors accept its probe event
+OK plugin:claude-code: context-graph@context-graph-plugins installed and enabled
 ```
+
+The `runtime:` probe runs the connectors inside `doctor` itself; `plugin:` is what says Claude Code (or Codex)
+will actually call the hooks.
 
 > **Reconciliation is a separate step.** The connectors capture session activity, but turning a session's text into extracted entities (a `:Person`/`:Organization` graph) is done out-of-band — see [sessions-graph § reconciliation](../sessions-graph/README.md#session-reconciliation). By default a finished session is marked `reconciliation_status = 'pending'` and `sessions-graph reconcile --pending` extracts it.
 

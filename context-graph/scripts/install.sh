@@ -24,8 +24,10 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 # The same set setup checks for (memgraph_context_graph/setup/tool.py) and the plugins' bootstrap installs.
+# --python: without it uv takes the first Python it finds, and on a Mac that is often Apple's 3.9, which
+# the packages refuse; naming a version makes uv download it when it isn't there.
 echo "Installing memgraph-context-graph with skills-graph, actions-graph and sessions-graph"
-uv tool install --quiet "memgraph-context-graph[mcp]>=0.9.0" \
+uv tool install --quiet --python 3.12 "memgraph-context-graph[mcp]>=0.9.0" \
   --with "skills-graph[memgraph-context-graph]>=0.2.2" \
   --with "actions-graph[memgraph-context-graph]>=0.6.0" \
   --with "sessions-graph[memgraph-context-graph]>=0.10.0" \
@@ -35,6 +37,8 @@ uv tool install --quiet "memgraph-context-graph[mcp]>=0.9.0" \
 export PATH="$(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin"):$PATH"
 command -v memgraph-context-graph >/dev/null 2>&1 ||
   fail "memgraph-context-graph was installed but isn't on PATH; add $(uv tool dir --bin) to PATH and run this again."
+# And in the user's shell profile, so a new terminal (and an agent started from it) finds the tool too.
+uv tool update-shell >/dev/null 2>&1 || true
 
 # Piped into bash, stdin is the rest of this script, so a TUI would draw but never receive a key.
 # Reattach the terminal when there is one; without one, setup runs its plain, non-interactive path.

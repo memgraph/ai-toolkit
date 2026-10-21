@@ -74,14 +74,24 @@ def detected() -> list[Agent]:
 
 def plugin_wired(agent: Agent) -> bool:
     """Whether the agent's CLI lists the Context Graph plugin as installed."""
+    return _plugin_entry(agent) is not None
+
+
+def plugin_enabled(agent: Agent) -> bool:
+    """Whether the plugin is installed and not switched off; a listing that doesn't say counts as on."""
+    entry = _plugin_entry(agent)
+    return entry is not None and entry.get("enabled", True) is not False
+
+
+def _plugin_entry(agent: Agent) -> dict | None:
     binary = agent.binary()
     if binary is None:
-        return False
+        return None
     listing = _json([binary, "plugin", "list", "--json"])
     if agent.runtime == "claude-code":
-        return any(entry.get("id") == PLUGIN_ID for entry in listing or [])
+        return next((entry for entry in listing or [] if entry.get("id") == PLUGIN_ID), None)
     installed = (listing or {}).get("installed", []) if isinstance(listing, dict) else []
-    return any(entry.get("pluginId") == PLUGIN_ID for entry in installed)
+    return next((entry for entry in installed if entry.get("pluginId") == PLUGIN_ID), None)
 
 
 def wire_plugin(agent: Agent, log: Callable[[str], None]) -> str:
@@ -324,7 +334,9 @@ def _json(argv: list[str]):
     for attempt in range(2):
         if attempt:
             time.sleep(0.5)
-        result = subprocess.run(argv, capture_output=True, text=True, check=False)
+        # Not the terminal: Claude Code on macOS crashes (kqueue EINVAL) on a stdin that setup's questions
+        # left in cbreak mode, and every listing read as "not installed".
+        result = subprocess.run(argv, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL)
         if result.returncode == 0 and (found := _json_in(result.stdout)) is not None:
             return found
     return None

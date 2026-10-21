@@ -4,13 +4,20 @@ name: Test install scripts (Linux, Windows)
 # new user's one-liner does, then asserts the machine ends up with a working,
 # idempotent, removable install. It runs the files in this checkout, not the
 # published launchers (those are checked nightly from memgraph-platform).
-# No model is called, so no secrets are needed and fork PRs run it too.
+# On Linux the packages and the Claude Code plugin come from this checkout too
+# (install-e2e/overrides.sh, local-marketplace.sh), so a PR is tested rather
+# than the last release; Windows still installs the released packages.
+# Only one Linux leg calls a model, for one real Claude Code session; without
+# the secret (fork PRs) that step says so and passes, and the rest still runs.
 on:
   pull_request:
     paths:
       - "context-graph/scripts/install.sh"
       - "context-graph/scripts/install.ps1"
-      - "context-graph/memgraph-context-graph/src/memgraph_context_graph/setup/**"
+      - "context-graph/scripts/install-e2e/**"
+      - "context-graph/memgraph-context-graph/src/**"
+      - "context-graph/plugins/**"
+      - ".claude-plugin/**"
       - ".github/workflows/test-install-matrix.yaml"
   workflow_dispatch: {}
 
@@ -21,7 +28,7 @@ concurrency:
 jobs:
   linux:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -37,22 +44,51 @@ jobs:
       - name: Install agent CLIs the installer should wire
         run: npm install -g @anthropic-ai/claude-code @openai/codex
 
-      # No terminal on the runner, so setup takes its plain path; it starts Memgraph in Docker itself.
-      - name: Run install.sh
-        run: ./context-graph/scripts/install.sh claude-code codex --user-id ci-test-user
-
-      - name: A fresh shell finds the tool and doctor is green
+      - name: Install this checkout's packages and Claude Code plugin, not the released ones
         run: |
-          bash -lc 'memgraph-context-graph --version && memgraph-context-graph doctor'
+          echo "UV_OVERRIDE=$(./context-graph/scripts/install-e2e/overrides.sh "$RUNNER_TEMP")" >> "$GITHUB_ENV"
+          ./context-graph/scripts/install-e2e/local-marketplace.sh "$RUNNER_TEMP"
+
+      # No terminal on the runner, so setup takes its plain path; it starts Memgraph in Docker itself.
+      # No agent named, as the one-liner runs: setup wires every agent it finds.
+      - name: Run install.sh
+        run: ./context-graph/scripts/install.sh --user-id ci-test-user
+
+      # doctor's plugin:<runtime> check is what says each agent will call the hooks at all.
+      - name: A fresh shell finds the tool and doctor is green for both agents
+        run: |
+          bash -lc 'memgraph-context-graph --version && memgraph-context-graph doctor && memgraph-context-graph doctor --runtime codex'
+
+      # The only step that proves the hooks fire: the installed plugin, run by a real claude, writing to Memgraph.
+      - name: A real Claude Code session lands in the graph
+        if: matrix.os == 'ubuntu-24.04' && matrix.uv == 'absent'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          export PATH="$(uv tool dir --bin):$PATH"
+          "$(uv tool dir)/memgraph-context-graph/bin/python" context-graph/scripts/install-e2e/session_lands.py --user ci-test-user
 
       - name: A second run changes nothing and still succeeds
-        run: ./context-graph/scripts/install.sh claude-code codex --user-id ci-test-user
+        run: ./context-graph/scripts/install.sh --user-id ci-test-user
 
       - name: Uninstall leaves the graph and removes the wiring
         run: |
           export PATH="$(uv tool dir --bin):$PATH"
           memgraph-context-graph uninstall claude-code codex
           docker ps --format '{{.Names}}' | grep -q memgraph
+
+      # Uninstall left nothing wired, so this is a first run again: Enter at every question must still wire
+      # the agents found. Setup once started with none ticked, so Enter-through wired nothing and reported success.
+      - name: An interactive first run, Enter at every question, wires the agents it finds
+        run: |
+          export PATH="$(uv tool dir --bin):$PATH"
+          ./context-graph/scripts/install-e2e/local-marketplace.sh "$RUNNER_TEMP"
+          python3 context-graph/scripts/install-e2e/enter_through_setup.py \
+            --expect "Claude Code: install the Context Graph plugin (user-wide)" \
+            --expect "Codex: install the Context Graph plugin (user-wide)" \
+            --expect "Context Graph is set up." \
+            -- bash ./context-graph/scripts/install.sh
+          memgraph-context-graph doctor
 
       - name: Piped through bash on a pty, the interactive branch does not hang
         run: |
