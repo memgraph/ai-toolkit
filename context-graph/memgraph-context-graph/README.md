@@ -721,6 +721,28 @@ class MyGraphConnector(GraphConnector):
         ...
 ```
 
+Then register it, so hooks, schema setup and `doctor` can find it:
+
+```python
+from memgraph_context_graph.connectors import ConnectorSpec
+
+CONNECTOR = ConnectorSpec(
+    name="my-graph",
+    graph=MyGraph,  # called with a Memgraph client, or its connection keyword arguments
+    build=lambda graph, config: MyGraphConnector(graph),  # config: the config file's HookConfig
+    check=None,  # optional: (config) -> (ok, detail) for doctor, beyond a reachable Memgraph
+)
+```
+
+```toml
+[project.entry-points."memgraph_context_graph.connectors"]
+my-graph = "my_graph.connector:CONNECTOR"
+```
+
+Once installed, `hook run <runtime> --connector my-graph`, `[capture] connectors = ["my-graph"]` and
+`doctor` work like the built-in connectors. `setup` only installs the connectors listed in
+`memgraph_context_graph.connectors.INSTALLABLE`; install your own package beside the tool yourself.
+
 ## License
 
 MIT

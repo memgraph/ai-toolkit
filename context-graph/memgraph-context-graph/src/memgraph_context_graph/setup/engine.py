@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from memgraph_context_graph.connectors import INSTALLABLE
 from memgraph_context_graph.setup import agents as agents_mod
 from memgraph_context_graph.setup import memgraph as memgraph_mod
 from memgraph_context_graph.setup import tool as tool_mod
@@ -267,7 +268,7 @@ def _packages(choices: Choices, log: Callable[[str], None]) -> Outcome:
     try:
         tool_mod.install(viewer=choices.viewer, log=log)
     except tool_mod.ToolError as exc:
-        connectors_missing = [package for package in missing if package in tool_mod.REQUIREMENTS]
+        connectors_missing = [package for package in missing if package in INSTALLABLE]
         if connectors_missing:
             return Outcome("Packages", "fail", str(exc), fix="memgraph-context-graph setup --no-tui")
         # Only the viewer was missing: capture works without it.

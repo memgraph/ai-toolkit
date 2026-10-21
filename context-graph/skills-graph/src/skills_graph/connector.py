@@ -20,14 +20,13 @@ from __future__ import annotations
 import json
 import shlex
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+from memgraph_context_graph.connectors import ConnectorSpec
 from memgraph_context_graph.events import Event, EventType, MessageEvent, ToolEndEvent, ToolStartEvent
 from memgraph_context_graph.protocols import GraphConnector
 
-if TYPE_CHECKING:
-    from .core import SkillGraph
-
+from .core import SkillGraph
 
 _SUPPORTED_EVENTS = {
     EventType.TOOL_START,
@@ -411,3 +410,10 @@ def _is_skill_content(content: str, *, skill_file: Path | None = None) -> bool:
         return False
     name = frontmatter.get("name")
     return bool(isinstance(name, str) and name) or skill_file is not None
+
+
+CONNECTOR = ConnectorSpec(
+    name="skills-graph",
+    graph=SkillGraph,
+    build=lambda graph, config: SkillGraphConnector(graph),
+)

@@ -15,6 +15,7 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING
 
+from memgraph_context_graph.connectors import ConnectorSpec
 from memgraph_context_graph.events import (
     Event,
     EventType,
@@ -25,8 +26,10 @@ from memgraph_context_graph.events import (
 )
 from memgraph_context_graph.protocols import GraphConnector
 
+from .core import SessionsGraph
+
 if TYPE_CHECKING:
-    from .core import SessionsGraph
+    from memgraph_context_graph.adapters._identity import HookConfig
 
 
 _SUPPORTED_EVENTS = {EventType.SESSION_START, EventType.SESSION_END, EventType.TURN_END, EventType.TOOL_END}
@@ -193,3 +196,22 @@ def _child_env(*, llm: bool) -> dict[str, str]:
     if llm:
         env.update(resolve_llm_env())
     return env
+
+
+def _doctor_check(config: HookConfig) -> tuple[bool, str]:
+    """Memory is filed under a user, so a hook needs one to resolve."""
+    from memgraph_context_graph.adapters._identity import resolve_user_id
+
+    user_id = resolve_user_id({})
+    if not user_id:
+        return False, "user_id not resolved — run: memgraph-context-graph config set identity.user_id <your-name>"
+    return True, f"user_id={user_id!r}"
+
+
+CONNECTOR = ConnectorSpec(
+    name="sessions-graph",
+    graph=SessionsGraph,
+    # Config file only (ADR 0002); never configured means off.
+    build=lambda graph, config: SessionsGraphConnector(graph, auto_reconcile=bool(config.auto_reconcile)),
+    check=_doctor_check,
+)

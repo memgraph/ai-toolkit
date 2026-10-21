@@ -34,6 +34,9 @@ resources-graph = "resources_graph.cli:main"
 [project.entry-points."memgraph_context_graph.tools"]
 resource = "resources_graph.tool:RESOURCE"
 
+[project.entry-points."memgraph_context_graph.connectors"]
+resources-graph = "resources_graph.connector:CONNECTOR"
+
 [tool.uv.sources]
 memgraph-context-graph = { workspace = true }
 memgraph-toolbox = { workspace = true }

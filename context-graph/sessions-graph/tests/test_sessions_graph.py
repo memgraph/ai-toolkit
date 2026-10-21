@@ -249,3 +249,35 @@ class TestReconciliationEnv:
         assert env["MEMGRAPH_URL"] == "bolt://remote:7687"
         assert "OPENAI_API_KEY" not in env
         assert "ANTHROPIC_API_KEY" not in env
+
+
+class TestConnectorRegistration:
+    """The CONNECTOR spec the hub finds through the memgraph_context_graph.connectors entry point."""
+
+    def _spec(self):
+        pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
+        from sessions_graph.connector import CONNECTOR
+
+        return CONNECTOR
+
+    def test_is_registered_under_its_distribution_name(self):
+        from memgraph_context_graph.connectors import load_connectors
+
+        assert load_connectors()["sessions-graph"] is self._spec()
+
+    @pytest.mark.parametrize("configured", [None, False, True])
+    def test_builds_the_connector_with_the_configured_auto_reconcile(self, configured):
+        from memgraph_context_graph.adapters._identity import HookConfig
+
+        connector = self._spec().build(_graph(), HookConfig(auto_reconcile=configured))
+
+        assert connector._auto_reconcile is bool(configured)
+
+    def test_doctor_fails_without_a_user_and_says_how_to_set_one(self, monkeypatch):
+        from memgraph_context_graph.adapters import _identity
+
+        monkeypatch.setattr(_identity, "resolve_user_id", lambda payload: None)
+        ok, detail = self._spec().check(_identity.HookConfig())
+
+        assert not ok
+        assert "config set identity.user_id" in detail

@@ -11,7 +11,12 @@ from typing import TYPE_CHECKING, Any, NoReturn, TypedDict
 
 from memgraph_context_graph import capture_log
 from memgraph_context_graph.capture_policy import CapturePolicy, policy_from_config
-from memgraph_context_graph.connectors import COMPONENTS, configured_connectors, supported_connectors
+from memgraph_context_graph.connectors import (
+    INSTALLABLE,
+    configured_connectors,
+    connector_spec,
+    supported_connectors,
+)
 from memgraph_context_graph.events import ToolStartEvent
 from memgraph_context_graph.link import AgentLink, ConnectorFailuresError
 from memgraph_context_graph.protocols import GraphConnector
@@ -111,7 +116,7 @@ def setup_connector_schemas(connector_names: Iterable[str], *, memgraph_env: dic
     """
     kwargs = memgraph_kwargs(memgraph_env)
     for name in supported_connectors(connector_names):
-        COMPONENTS[name].graph()(**kwargs).setup()
+        connector_spec(name).graph(**kwargs).setup()
 
 
 def _env_prefix(runtime_name: str) -> str:
@@ -139,7 +144,7 @@ def _hook_parser(plugin: RuntimeCLIPlugin) -> argparse.ArgumentParser:
         action="append",
         default=None,
         help=f"Graph connector to enable, repeatable; overrides the config file's [capture] connectors. "
-        f"Supported: {', '.join(COMPONENTS)}.",
+        f"Supported: {', '.join(INSTALLABLE)}, or any other installed component's.",
     )
     parser.add_argument(
         "--session-id",
@@ -371,21 +376,14 @@ def _with_cwd(payload: dict[str, Any]) -> dict[str, Any]:
 def _build_connector(
     name: str, memgraph_env: dict[str, str] | None = None, *, memgraph: Memgraph | None = None
 ) -> GraphConnector:
-    component = COMPONENTS[name]
-    try:
-        graph_class, connector_class = component.graph(), component.connector()
-    except ImportError as exc:
-        raise ImportError(f"{name} is required for the {name} connector") from exc
+    from memgraph_context_graph.adapters._identity import load_config
 
-    graph = graph_class(memgraph) if memgraph is not None else graph_class(**memgraph_kwargs(memgraph_env))
-    if name == "sessions-graph":
-        from memgraph_context_graph.adapters._identity import resolve_auto_reconcile
-
-        return connector_class(graph, auto_reconcile=resolve_auto_reconcile())
-    return connector_class(graph)
+    spec = connector_spec(name)
+    graph = spec.graph(memgraph) if memgraph is not None else spec.graph(**memgraph_kwargs(memgraph_env))
+    return spec.build(graph, load_config())
 
 
-# A closed key set (never `memgraph`) so `Component(**kwargs)` below can't be
+# A closed key set (never `memgraph`) so `spec.graph(**kwargs)` above can't be
 # read as colliding with that parameter's `Memgraph | None` type, unlike a
 # plain `dict[str, str]`.
 class _MemgraphKwargs(TypedDict, total=False):

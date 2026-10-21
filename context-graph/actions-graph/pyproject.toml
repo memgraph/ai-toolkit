@@ -26,6 +26,9 @@ test = [
     "pytest-asyncio>=0.24.0",
 ]
 
+[project.entry-points."memgraph_context_graph.connectors"]
+actions-graph = "actions_graph.connector:CONNECTOR"
+
 [tool.uv.sources]
 memgraph-context-graph = { workspace = true }
 memgraph-toolbox = { workspace = true }
