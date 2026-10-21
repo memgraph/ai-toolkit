@@ -769,6 +769,7 @@ my-graph = "my_graph.connector:CONNECTOR"
 Once installed, `hook run <runtime> --connector my-graph`, `[capture] connectors = ["my-graph"]` and
 `doctor` work like the built-in connectors. `setup` only installs the connectors listed in
 `memgraph_context_graph.connectors.INSTALLABLE`; install your own package beside the tool yourself.
+
 Give the component's graph class a `forget_session(session_id) -> dict[str, int]`
 that deletes what it hangs off that Session and returns counts, and add it to
 `FORGET_ORDER` in `memgraph_context_graph/forget.py`, so `forget` reaches it.
