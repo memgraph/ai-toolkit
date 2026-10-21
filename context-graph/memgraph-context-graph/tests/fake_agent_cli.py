@@ -4,7 +4,8 @@ Installed on PATH under both names by the ``fake_agents`` fixture, which passes 
 as the first argument. It keeps its marketplaces and plugins in
 the JSON file named by ``FAKE_AGENT_STATE`` and answers in each CLI's own ``--json`` shapes. Setting
 ``FAKE_AGENT_FAIL`` to ``install`` makes installing fail, as a network error would; setting
-``FAKE_AGENT_DISABLED`` lists `claude`'s plugins as disabled.
+``FAKE_AGENT_DISABLED`` lists `claude`'s plugins as disabled; setting ``FAKE_AGENT_NEEDS_NULL_STDIN`` makes
+every command fail unless stdin is the null device, as Claude Code on macOS crashes on a cbreak-mode terminal.
 """
 
 import json
@@ -21,7 +22,11 @@ def main() -> int:
     everyone = json.loads(state_path.read_text()) if state_path.exists() else {}
     state = everyone.setdefault(agent, {"marketplaces": [], "plugins": [], "calls": []})
     state["calls"].append(args)
-    code = _answer(agent, args, state)
+    if os.environ.get("FAKE_AGENT_NEEDS_NULL_STDIN") and os.fstat(0).st_rdev != os.stat(os.devnull).st_rdev:
+        print("error: EINVAL: invalid argument, kqueue", file=sys.stderr)
+        code = 1
+    else:
+        code = _answer(agent, args, state)
     state_path.write_text(json.dumps(everyone))
     return code
 
@@ -38,6 +43,9 @@ def _answer(agent: str, args: list[str], state: dict) -> int:
             entries = [{"name": name} for name in state["marketplaces"]]
             print(json.dumps(entries if agent == "claude" else {"marketplaces": entries}))
         case ["plugin", "marketplace", "add", "memgraph/ai-toolkit", "--sparse", _]:
+            if MARKETPLACE in state["marketplaces"]:
+                print(f"Cannot add marketplace {MARKETPLACE}: already added", file=sys.stderr)
+                return 1
             state["marketplaces"].append(MARKETPLACE)
             print(f"Added marketplace {MARKETPLACE}")
         case ["plugin", "marketplace", "remove", name]:

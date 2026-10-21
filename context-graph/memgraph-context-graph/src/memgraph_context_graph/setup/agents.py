@@ -334,7 +334,9 @@ def _json(argv: list[str]):
     for attempt in range(2):
         if attempt:
             time.sleep(0.5)
-        result = subprocess.run(argv, capture_output=True, text=True, check=False)
+        # Not the terminal: Claude Code on macOS crashes (kqueue EINVAL) on a stdin that setup's questions
+        # left in cbreak mode, and every listing read as "not installed".
+        result = subprocess.run(argv, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL)
         if result.returncode == 0 and (found := _json_in(result.stdout)) is not None:
             return found
     return None

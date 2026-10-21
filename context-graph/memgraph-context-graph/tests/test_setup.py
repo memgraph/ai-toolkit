@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import re
 import subprocess
 
@@ -111,6 +112,22 @@ def test_a_failing_plugin_install_says_what_the_agent_said(fake_agents, monkeypa
     monkeypatch.setenv("FAKE_AGENT_FAIL", "install")
     with pytest.raises(WiringError, match="network unreachable"):
         agents.wire_plugin(BY_RUNTIME["claude-code"], lambda _: None)
+
+
+def test_agent_clis_never_read_setups_stdin(fake_agents, monkeypatch):
+    """Claude Code on macOS crashes on the cbreak-mode terminal setup's questions leave, so a wired plugin read as
+    not installed; every agent command gets a null stdin instead of inheriting setup's."""
+    monkeypatch.setenv("FAKE_AGENT_NEEDS_NULL_STDIN", "1")
+    read_end, write_end = os.pipe()
+    saved = os.dup(0)
+    os.dup2(read_end, 0)
+    try:
+        assert agents.wire_plugin(BY_RUNTIME["claude-code"], lambda _: None) == "plugin installed"
+        assert agents.plugin_wired(BY_RUNTIME["claude-code"])
+    finally:
+        os.dup2(saved, 0)
+        for fd in (saved, read_end, write_end):
+            os.close(fd)
 
 
 def test_doctor_fails_until_the_plugin_is_installed_and_enabled(fake_agents, monkeypatch):
