@@ -178,7 +178,8 @@ memgraph-context-graph setup claude-code codex   # just these agents
 memgraph-context-graph setup cursor --project-dir ~/work/billing
 memgraph-context-graph setup --plan              # print the plan, change nothing
 memgraph-context-graph update [runtime ...]      # upgrade the package, refresh the wiring and the schema
-memgraph-context-graph uninstall [runtime ...]   # remove the wiring; the graph and config stay
+memgraph-context-graph uninstall [runtime ...]   # remove the wiring; asks about the graph, config and tool
+memgraph-context-graph uninstall --all          # the wiring, the graph, the config and the tool
 ```
 
 It finds or starts Memgraph (a `memgraph-mage` container with a volume, on a free port when 7687 is taken),
@@ -186,6 +187,14 @@ writes `memgraph.url` and `identity.user_id`, installs missing connectors and th
 wires each agent, and runs `doctor`'s checks. Every step checks before it acts, so rerunning only does what's
 missing. The TUI starts only when stdin and stdout are both terminals; the plugins' `scripts/bootstrap.sh`
 runs `setup <runtime> --no-tui`.
+
+**Uninstalling.** `uninstall` always removes the wiring (plugins, hook files, MCP entries) and gives each
+agent its own memory back. On a terminal it then asks, one question each and every answer defaulting to
+keep, whether to delete the graph (setup's Memgraph container and its volume: every session, for good), the
+config and capture-failure log, and the uv tool. Without a terminal only the flags remove more: `--graph`,
+`--config`, `--tool`, or `--all` for the three. A Memgraph you run yourself is never touched; only the
+container setup started, by name (`--memgraph-container`). On Windows the running tool can't remove itself,
+so it prints the `uv tool uninstall` command to run next.
 
 **Updating.** Upgrading the package moves the code hooks and the MCP server run, but what setup wrote once stays
 as it was. `update` upgrades the uv tool and its connectors, then, with the new release, refreshes everything

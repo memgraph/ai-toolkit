@@ -14,7 +14,7 @@
 # CONTEXT_GRAPH_SETUP_ARGS (split on spaces), e.g.
 #   $env:CONTEXT_GRAPH_SETUP_ARGS = 'codex --user-id me'; iwr <url> -useb | iex
 #
-# Undo with `memgraph-context-graph uninstall`.
+# Undo with `memgraph-context-graph uninstall` (`--all` removes the graph, config and tool too).
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0

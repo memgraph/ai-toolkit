@@ -10,7 +10,7 @@
 #   ... | bash -s -- codex --memgraph-url bolt://my-host:7687    # any `setup` flags
 #   ./context-graph/scripts/install.sh --help                   # setup's own help
 #
-# Undo with `memgraph-context-graph uninstall`.
+# Undo with `memgraph-context-graph uninstall` (`--all` removes the graph, config and tool too).
 
 set -euo pipefail
 

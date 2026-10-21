@@ -18,8 +18,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from memgraph_context_graph.adapters._identity import MEMORY_BACKEND_GRAPH, MEMORY_BACKEND_NATIVE
-from memgraph_context_graph.setup import engine
+from memgraph_context_graph.setup import engine, uninstall
 from memgraph_context_graph.setup.agents import AGENTS, BY_RUNTIME
+from memgraph_context_graph.setup.uninstall import Removals
 from memgraph_context_graph.terminal import color_support
 
 if TYPE_CHECKING:
@@ -521,12 +522,10 @@ def _choices(answers: _Answers, flags: Choices, env: Environment) -> Choices:
     )
 
 
-def run(prompts: Prompts, choices: Choices, env: Environment) -> int:
-    """Carry out *choices*, one line per step as it finishes; 0 when nothing failed, 1 otherwise."""
+def _reporters(prompts: Prompts) -> tuple[Callable[[str], None], Callable[[Outcome], None]]:
+    """A step's output lines and its outcome line, as setup and uninstall both draw them."""
     style = prompts.style
     marks = {"ok": style.success("✓"), "skip": style.muted("–"), "warn": style.warning("!"), "fail": style.error("✗")}
-    prompts.line()
-    prompts.line(style.muted("Setting up… (a first Memgraph start downloads about 1 GB)"))
 
     def log(text: str) -> None:
         prompts.line(style.muted(f"  {text}"))
@@ -536,6 +535,15 @@ def run(prompts: Prompts, choices: Choices, env: Environment) -> int:
         for extra in outcome.lines:
             log(extra)
 
+    return log, report
+
+
+def run(prompts: Prompts, choices: Choices, env: Environment) -> int:
+    """Carry out *choices*, one line per step as it finishes; 0 when nothing failed, 1 otherwise."""
+    style = prompts.style
+    prompts.line()
+    prompts.line(style.muted("Setting up… (a first Memgraph start downloads about 1 GB)"))
+    log, report = _reporters(prompts)
     outcomes = engine.run(choices, env, log=log, report=report)
     failures = [outcome for outcome in outcomes if outcome.status == "fail"]
     if not failures:
@@ -574,6 +582,93 @@ def run_setup_prompts(
     if answered is None:
         return 0
     return run(prompts, answered, env)
+
+
+def run_uninstall_prompts(
+    runtimes: Sequence[str],
+    project_dirs: Sequence[Path],
+    available: Removals,
+    container: str,
+    terminal: Terminal | None = None,
+) -> int:
+    """Ask what goes besides the wiring, then remove it; 0 when nothing failed or the user stopped, 1 otherwise."""
+    prompts = Prompts(terminal or StdTerminal())
+    try:
+        with prompts.term.keypresses():
+            removals = ask_removals(prompts, runtimes, available, container)
+    except KeyboardInterrupt:
+        prompts.write("\n")
+        prompts.outro("Stopped. Nothing changed.")
+        return 0
+    if removals is None:
+        return 0
+    prompts.line()
+    log, report = _reporters(prompts)
+    outcomes = uninstall.run(runtimes, project_dirs, log, report, removals=removals, container=container)
+    failures = [outcome for outcome in outcomes if outcome.status == "fail"]
+    if failures:
+        prompts.line()
+        prompts.line(prompts.style.error(f"{len(failures)} step(s) failed. To fix:"))
+        for outcome in failures:
+            prompts.line(f"  {outcome.step}: {outcome.fix or 'memgraph-context-graph uninstall'}")
+    kept = uninstall.leftovers(removals, container)
+    if kept:
+        prompts.line()
+        for text in kept:
+            prompts.line(prompts.fit(text))
+    prompts.outro("Context Graph is gone." if not kept and not failures else "Done.")
+    return 1 if failures else 0
+
+
+def ask_removals(prompts: Prompts, runtimes: Sequence[str], available: Removals, container: str) -> Removals | None:
+    """Ask about each removal that has something to remove, every answer defaulting to keep; None when stopped.
+
+    The wiring always goes: that is what uninstalling means. Esc steps back a question.
+    """
+    labels = [BY_RUNTIME[runtime].label for runtime in runtimes]
+    prompts.intro("Remove Context Graph", "Your agents stop recording. Everything else stays unless you say so.")
+    prompts.answered("Agents", f"unwire {engine.listed(labels)}" if labels else "nothing is wired")
+    answers = {"graph": False, "config": False, "tool": False}
+    questions = [
+        (
+            "graph",
+            "Delete the graph too?",
+            f"The {container} container and its data: every session and memory in it, for good.",
+            "Graph",
+        ),
+        ("config", "Delete the config and logs too?", "Your identity, Memgraph URL and settings.", "Config"),
+        ("tool", "Uninstall the tool too?", "memgraph-context-graph, with its connectors and the viewer.", "Tool"),
+    ]
+    asked = [question for question in questions if getattr(available, question[0])]
+    if not labels and not asked:
+        prompts.outro("Nothing to remove.")
+        return None
+    marks: list[int] = []
+    index = 0
+    while index <= len(asked):
+        if index == len(marks):
+            marks.append(prompts.written)
+        if index < len(asked):
+            key, label, note, short = asked[index]
+            answer = prompts.confirm(label, answers[key], note=note, short=short)
+        else:
+            gone = [short.lower() for key, _, _, short in asked if answers[key]]
+            prompts.line()
+            prompts.line(prompts.style.muted(f"Delete: {engine.listed(gone)}" if gone else "Delete: nothing else"))
+            answer = prompts.confirm("Remove now?", True, back_hint="esc to change an answer")
+        if isinstance(answer, _Back):
+            index = max(index - 1, 0)
+            prompts.erase_since(marks[index])
+            del marks[index + 1 :]
+            continue
+        if index == len(asked):
+            if not answer:
+                prompts.outro("Nothing changed.")
+                return None
+            break
+        answers[asked[index][0]] = answer
+        index += 1
+    return Removals(**answers)
 
 
 def _memgraph_summary(choices: Choices, env: Environment) -> str:

@@ -32,7 +32,7 @@ identity, and checks the hooks with `doctor`. Running it again skips what is alr
 `uv` manages Python for the tool. If uv-managed Python downloads are blocked in your environment, install Python 3.10+ and rerun it.
 
 To set up every agent on the machine at once, interactively, run `memgraph-context-graph setup` instead.
-`memgraph-context-graph update codex` upgrades the package and refreshes the plugin; `memgraph-context-graph uninstall codex` removes the wiring and keeps your graph.
+`memgraph-context-graph update codex` upgrades the package and refreshes the plugin; `memgraph-context-graph uninstall codex` removes the wiring and keeps your graph; `memgraph-context-graph uninstall --all` removes everything, graph included.
 
 ## Recall
 
