@@ -252,6 +252,93 @@ def test_an_unreachable_remote_memgraph_is_an_error_not_a_container(monkeypatch,
 # --- uninstall ----------------------------------------------------------------
 
 
+def test_uninstall_deletes_the_config_and_log_only_when_asked(fake_agents, setup_home, project, capsys):
+    from memgraph_context_graph import capture_log
+    from memgraph_context_graph.adapters._identity import config_file, write_config
+
+    write_config(user_id="alice", memgraph_url="bolt://localhost:7700")
+    capture_log.record_failure("connect", error_type="ValueError", error="unreachable", connector=None)
+    log = capture_log.path()
+    assert config_file().exists() and log.exists()
+
+    assert main(["uninstall", "--config", "--tool", "--project-dir", str(project)]) == 0
+
+    out = capsys.readouterr().out
+    assert f"OK    Config: deleted {config_file()}, {log}" in out
+    assert "SKIP  Tool: not running as the uv tool" in out
+    assert not config_file().exists() and not log.exists()
+    assert "the graph:   docker rm -f context-graph-memgraph" in out
+    assert "the config:" not in out and "the tool:" not in out
+
+
+def test_without_docker_there_is_no_graph_of_ours_to_delete(fake_agents, setup_home, monkeypatch, capsys):
+    import shutil
+
+    which = shutil.which
+    monkeypatch.setattr(shutil, "which", lambda name, *args, **kwargs: None if name == "docker" else which(name))
+    assert main(["uninstall", "--graph"]) == 0
+    assert "SKIP  Graph: Docker isn't installed, so setup never started a Memgraph here" in capsys.readouterr().out
+
+
+def test_uninstall_asks_about_each_removal_and_keeps_by_default(fake_agents, setup_home):
+    from memgraph_context_graph.setup.prompts import ENTER, Prompts, ask_removals
+    from memgraph_context_graph.setup.uninstall import Removals
+
+    everything = Removals(graph=True, config=True, tool=True)
+    # Graph: Enter keeps it. Config: yes. Tool: Enter keeps it. Remove now: Enter.
+    term = ScriptedTerminal(keys=[ENTER, "y", ENTER, ENTER])
+    assert ask_removals(Prompts(term), ["claude-code"], everything, "cg") == Removals(config=True)
+    assert "Delete the graph too?  y/N" in term.text
+    assert "The cg container and its data: every session and memory in it, for good." in term.text
+    assert "◇  Agents           unwire Claude Code" in term.text
+    assert "Delete: config" in term.text
+
+
+def test_esc_takes_back_a_yes_and_no_at_the_end_changes_nothing(fake_agents, setup_home):
+    from memgraph_context_graph.setup.prompts import ENTER, ESC, Prompts, ask_removals
+    from memgraph_context_graph.setup.uninstall import Removals
+
+    everything = Removals(graph=True, config=True, tool=True)
+    # Graph: yes, then Esc on the config question to take it back. Then Enter through, and no at the end.
+    term = ScriptedTerminal(keys=["y", ESC, "n", ENTER, ENTER, ENTER])
+    assert ask_removals(Prompts(term), ["claude-code"], everything, "cg") == Removals()
+    term = ScriptedTerminal(keys=[ENTER, ENTER, ENTER, "n"])
+    assert ask_removals(Prompts(term), ["claude-code"], everything, "cg") is None
+    assert "└  Nothing changed." in term.text
+
+
+def test_only_what_is_there_is_asked_about(fake_agents, setup_home):
+    from memgraph_context_graph.setup.prompts import ENTER, Prompts, ask_removals
+    from memgraph_context_graph.setup.uninstall import Removals
+
+    term = ScriptedTerminal(keys=[ENTER, ENTER])
+    assert ask_removals(Prompts(term), [], Removals(config=True), "cg") == Removals()
+    assert "Delete the graph" not in term.text and "Uninstall the tool" not in term.text
+    assert "◇  Agents           nothing is wired" in term.text
+
+    term = ScriptedTerminal(keys=[])
+    assert ask_removals(Prompts(term), [], Removals(), "cg") is None
+    assert "└  Nothing to remove." in term.text
+
+
+def test_the_interactive_uninstall_unwires_removes_and_lists_what_it_kept(fake_agents, setup_home, capsys):
+    from memgraph_context_graph.adapters._identity import config_file, write_config
+    from memgraph_context_graph.setup.prompts import ENTER, run_uninstall_prompts
+    from memgraph_context_graph.setup.uninstall import Removals
+
+    agents.wire_plugin(BY_RUNTIME["claude-code"], lambda _: None)
+    write_config(user_id="alice", memgraph_url="bolt://localhost:7700")
+    # Config: yes. Remove now: Enter.
+    term = ScriptedTerminal(keys=["y", ENTER])
+    assert run_uninstall_prompts(["claude-code"], [], Removals(config=True), "cg", term) == 0
+
+    assert fake_agents.of("claude")["plugins"] == []
+    assert not config_file().exists()
+    assert "✓  Claude Code      removed the plugin and marketplace" in term.text
+    assert "the graph:   docker rm -f cg && docker volume rm cg-data" in term.text
+    assert "└  Done." in term.text
+
+
 def test_uninstall_finds_what_is_wired_and_keeps_data(fake_agents, setup_home, project, capsys):
     agents.wire_plugin(BY_RUNTIME["claude-code"], lambda _: None)
     agents.wire_project(BY_RUNTIME["cursor"], project, lambda _: None)

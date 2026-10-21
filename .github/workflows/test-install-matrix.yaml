@@ -96,6 +96,22 @@ jobs:
           # No input is given, so the TUI must exit rather than wait; 60s catches a hang.
           script -qec "timeout 60 bash ./context-graph/scripts/install.sh --plan" /dev/null < /dev/null
 
+      # Last: the tool removes itself, so nothing after this step can run it.
+      - name: Uninstall --all leaves nothing behind
+        run: |
+          export PATH="$(uv tool dir --bin):$PATH"
+          memgraph-context-graph uninstall --all
+          # set -e ignores a failing `! cmd`, so each check fails the step itself.
+          left() { echo "::error::uninstall --all left $1"; exit 1; }
+          # This shell ran the tool, so bash still remembers its path; forget it before looking.
+          hash -r
+          if command -v memgraph-context-graph; then left "the tool's executable"; fi
+          if uv tool list | grep -q '^memgraph-context-graph '; then left "the tool"; fi
+          if docker container inspect context-graph-memgraph >/dev/null 2>&1; then left "the container"; fi
+          if docker volume inspect context-graph-memgraph-data >/dev/null 2>&1; then left "the volume"; fi
+          if [ -e ~/.config/context-graph/config.toml ]; then left "the config"; fi
+          if claude plugin list --json | grep -q context-graph@context-graph-plugins; then left "the plugin"; fi
+
   windows:
     runs-on: windows-latest
     timeout-minutes: 30

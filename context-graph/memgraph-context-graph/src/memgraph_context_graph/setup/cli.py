@@ -98,20 +98,41 @@ def uninstall_main(argv: Sequence[str]) -> int:
     """Run ``uninstall``; 0 when nothing failed, 1 otherwise, 2 on bad arguments."""
     parser = argparse.ArgumentParser(
         prog="memgraph-context-graph uninstall",
-        description="Remove Context Graph's wiring from your agents. Your graph, config and the tool stay.",
+        description="Remove Context Graph from your agents, and on your say-so the graph, the config and the tool.",
+        epilog="On a terminal it asks about each, every answer defaulting to keep; otherwise only the flags remove "
+        "more than the wiring.",
     )
     parser.add_argument("runtimes", nargs="*", metavar="runtime", help="default: every agent found wired")
     parser.add_argument("--project-dir", action="append", type=Path, default=[], help="project to unwire for per-project agents (repeatable); default: the current directory")  # fmt: skip
+    parser.add_argument("--graph", action="store_true", help="also delete the graph: setup's Memgraph container and its data, every session in it")  # fmt: skip
+    parser.add_argument("--config", action="store_true", help="also delete the config file and the capture-failure log")  # fmt: skip
+    parser.add_argument("--tool", action="store_true", help="also uninstall the memgraph-context-graph uv tool")
+    parser.add_argument("--all", action="store_true", help="all three: remove everything setup put on this machine")
+    parser.add_argument("--memgraph-container", default=CONTAINER, help=f"the container setup started (default: {CONTAINER})")  # fmt: skip
+    parser.add_argument("--no-tui", action="store_true", help="don't ask; remove only the wiring and what the flags name")  # fmt: skip
     args = parser.parse_args(list(argv))
     _check_runtimes(parser, args.runtimes)
 
     project_dirs = [path.expanduser().resolve() for path in args.project_dir] or [Path.cwd().resolve()]
     runtimes = args.runtimes or uninstall.wired(project_dirs)
+    flagged = args.graph or args.config or args.tool or args.all
+    if not flagged and not args.no_tui and _interactive():
+        from memgraph_context_graph.setup.prompts import run_uninstall_prompts
+
+        available = uninstall.removable(args.memgraph_container)
+        return run_uninstall_prompts(runtimes, project_dirs, available, args.memgraph_container)
+
+    removals = uninstall.Removals(
+        graph=args.graph or args.all, config=args.config or args.all, tool=args.tool or args.all
+    )
     if not runtimes:
         print("Nothing is wired: no Context Graph plugin, and no hook files in " + ", ".join(map(str, project_dirs)))
-    outcomes = uninstall.run(runtimes, project_dirs, log=_log, report=_report)
-    print()
-    print("\n".join(uninstall.leftovers()))
+    outcomes = uninstall.run(
+        runtimes, project_dirs, log=_log, report=_report, removals=removals, container=args.memgraph_container
+    )
+    if kept := uninstall.leftovers(removals, args.memgraph_container):
+        print()
+        print("\n".join(kept))
     return 1 if engine.failed(outcomes) else 0
 
 

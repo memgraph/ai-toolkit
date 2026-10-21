@@ -177,3 +177,15 @@ def test_setup_then_uninstall_end_to_end(names, demo, fake_agents, setup_home, t
     assert not (project / ".cursor" / "hooks.json").exists()
     assert _docker("inspect", names["own"]).returncode == 0  # the graph stays
     assert load_config().memgraph_url  # and so does the config
+    assert "uninstall --all" in out
+
+    # Everything, when asked for: the container and its volume (by name), and the config.
+    assert main(["uninstall", "--all", "--memgraph-container", names["own"]]) == 0
+    out = capsys.readouterr().out
+    assert f"OK    Graph: deleted the container {names['own']} and the volume {names['own']}-data" in out
+    assert "OK    Config: deleted" in out
+    assert "SKIP  Tool: not running as the uv tool" in out  # a development venv is the developer's
+    assert _docker("container", "inspect", names["own"]).returncode != 0
+    assert _docker("volume", "inspect", f"{names['own']}-data").returncode != 0
+    assert not (tmp_path / "config.toml").exists()
+    assert "Kept;" not in out  # nothing left to list

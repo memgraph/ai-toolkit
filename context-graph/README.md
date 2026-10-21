@@ -71,7 +71,8 @@ curl -fsSL .../install.sh | bash -s -- codex --memgraph-url bolt://my-host:7687
 memgraph-context-graph setup cursor --project-dir ~/work/billing --project-dir ~/work/crawler
 memgraph-context-graph setup --plan          # what it would do; changes nothing
 memgraph-context-graph update                # upgrade the package, then refresh the wiring and the schema
-memgraph-context-graph uninstall             # remove the wiring; your graph and config stay
+memgraph-context-graph uninstall             # remove the wiring; asks whether the graph, config and tool go too
+memgraph-context-graph uninstall --all       # remove everything setup put on this machine, without asking
 ```
 
 Once it finishes, use the runtime normally — every session writes to the graph automatically: `(:User)-[:HAD_SESSION]->(:Session)`, tool actions, skill usage, and any Memories the agent records.
