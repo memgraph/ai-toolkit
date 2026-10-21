@@ -7,10 +7,12 @@ real files into a temp project. The Memgraph step's real-Docker cases are in ``t
 from __future__ import annotations
 
 import contextlib
+import itertools
 import json
 import os
 import re
 import subprocess
+import time
 
 import pytest
 
@@ -655,6 +657,75 @@ def test_the_wordmark_is_drawn_large_only_when_it_fits(fake_agents, setup_home, 
     Prompts(narrow).banner()
     assert WORDMARK[0] not in narrow.text
     assert "memgraph" in narrow.text
+
+
+def test_every_edge_of_the_banner_graph_joins_two_nodes_so_the_signals_can_walk_all_of_it():
+    from memgraph_context_graph.setup.prompts import GRAPH, graph_edges
+
+    paths = graph_edges(GRAPH)
+    walked = [cell for node_paths in paths.values() for path in node_paths for cell in path[:-1]]
+    glyphs = [(row, column) for row, line in enumerate(GRAPH) for column, char in enumerate(line) if char not in " ●"]
+    # Each edge is found once from either end.
+    assert sorted(walked) == sorted(glyphs * 2)
+
+    reached, frontier = set(), [next(iter(paths))]
+    while frontier:
+        node = frontier.pop()
+        if node not in reached:
+            reached.add(node)
+            frontier.extend(path[-1] for path in paths[node])
+    assert reached == set(paths)
+
+
+def test_the_graph_hangs_from_the_wordmark_and_every_signal_flows_down_a_stem_first():
+    import random
+
+    from memgraph_context_graph.setup.prompts import (
+        _STEM_COLUMNS,
+        BANNER_GRAPH,
+        WORDMARK,
+        _signal,
+        graph_edges,
+        hang,
+        stems,
+    )
+
+    starts = stems(BANNER_GRAPH, _STEM_COLUMNS)
+    for column, stem in zip(_STEM_COLUMNS, starts, strict=True):
+        assert WORDMARK[-1][column] != " ", "a stem hangs from a letter"
+        assert BANNER_GRAPH[stem[-1][0]][column] == "●"
+
+    with pytest.raises(ValueError, match="column 1"):
+        hang(["   ", "●──●"], [1], gap=1)
+
+    paths = graph_edges(BANNER_GRAPH)
+    for seed in range(20):
+        cells = [cell for cell in itertools.islice(_signal(paths, starts, random.Random(seed)), 200) if cell]
+        assert any(cells[: len(stem)] == stem for stem in starts)
+
+
+def test_the_animated_banner_comes_to_rest_on_the_static_graph():
+    from memgraph_context_graph.setup.prompts import Prompts
+
+    class ColorTerminal(ScriptedTerminal):
+        color = "truecolor"
+
+    still = ColorTerminal()
+    Prompts(still).banner()
+
+    animated = ColorTerminal()
+    with Prompts(animated).animated_banner():
+        deadline = time.monotonic() + 5
+        while len(animated.out) < 5 and time.monotonic() < deadline:
+            time.sleep(0.01)
+    assert len(animated.out) >= 5, "no frames were drawn"
+    assert animated.out[0:2] == still.out
+    assert animated.out[-1].endswith(still.out[-1] + "\033[?25h")
+
+    plain = ScriptedTerminal()
+    with Prompts(plain).animated_banner():
+        pass
+    assert "\033" not in plain.text
 
 
 def test_the_questions_start_apart_from_what_came_before(fake_agents, setup_home, project):

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -61,14 +62,16 @@ def setup_main(argv: Sequence[str]) -> int:
 
     interactive = not args.plan and not args.no_tui and _interactive()
     terminal = None
+    banner: AbstractContextManager[object] = nullcontext()
     if interactive:
         from memgraph_context_graph.setup.prompts import Prompts, StdTerminal
 
         terminal = StdTerminal()
-        # Drawn before looking around, which asks each agent's CLI and can take a second or more.
-        Prompts(terminal).banner()
+        # Animated while looking around, which asks each agent's CLI and can take several seconds.
+        banner = Prompts(terminal).animated_banner()
 
-    env = engine.look_around()
+    with banner:
+        env = engine.look_around()
     choices = engine.default_choices(
         env,
         runtimes=args.runtimes,
