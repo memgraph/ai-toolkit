@@ -52,10 +52,12 @@ you change them, and changes nothing until you press Install. Without a terminal
 
 What it does, in order (each step checks first, so rerunning only does what's missing):
 
-1. **Memgraph**: the one your config names, else one already on `localhost:7687`, else it starts
-   `memgraph-mage` in a `context-graph-memgraph` container with a data volume. If 7687 is taken it picks
-   another free port and writes it to the config. It never adopts the AI Memory demo's container, which is
-   disposable, and it never touches a remote Memgraph that doesn't answer.
+1. **Memgraph**: the one your config names, unless that is the default `localhost:7687`; else its own
+   `context-graph-memgraph` container, on whatever port that container publishes; else it starts
+   `memgraph-mage` in that container with a data volume, listening on 127.0.0.1 only. If 7687 is taken it
+   picks another free port and writes it to the config. A local Memgraph is recognised by container name and
+   port, so another Memgraph that happens to answer on 7687 (a dev, test or demo instance) is never adopted;
+   pass `--memgraph-url` to use one on purpose. It never touches a remote Memgraph that doesn't answer.
 2. **Config**: `memgraph.url` and `identity.user_id` (default: git `user.name`, else `$USER`).
 3. **Packages**: the connectors and the terminal viewer, if any are missing.
 4. **Agents**: Claude Code and Codex get the Context Graph plugin, user-wide. Copilot CLI, Cursor, OpenCode,

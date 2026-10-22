@@ -1,8 +1,8 @@
 """setup's Memgraph step against real Docker, and one whole run of setup and uninstall.
 
 Every container and volume is named per test session and removed afterwards; nothing that already runs on
-the machine is stopped or reused. A second, labelled Memgraph plays the AI Memory demo, which holds a port
-setup would otherwise choose.
+the machine is stopped or reused. A second Memgraph, under a name that isn't setup's, plays someone else's
+instance (a dev graph, a test instance, the AI Memory demo) holding the port setup would otherwise choose.
 """
 
 from __future__ import annotations
@@ -54,7 +54,12 @@ def _query(url: str, cypher: LiteralString) -> list[dict]:
 def names():
     """Container names for this run, and the cleanup of whatever setup made under them."""
     prefix = f"cg-setup-test-{uuid.uuid4().hex[:8]}"
-    made = {"own": f"{prefix}-own", "demo": f"{prefix}-demo", "other": f"{prefix}-other", "lost": f"{prefix}-lost"}
+    made = {
+        "own": f"{prefix}-own",
+        "stranger": f"{prefix}-stranger",
+        "other": f"{prefix}-other",
+        "lost": f"{prefix}-lost",
+    }
     yield made
     for name in made.values():
         _docker("rm", "-f", name)
@@ -62,27 +67,24 @@ def names():
 
 
 @pytest.fixture(scope="module")
-def demo(names):
-    """A Memgraph labelled disposable, as the AI Memory demo runs it, on a port of its own."""
+def stranger(names):
+    """A Memgraph that isn't setup's, on a port of its own that stands in for the default one."""
     port = _free_port()
-    started = _docker(
-        "run", "-d", "--name", names["demo"], "--label", f"{mg.DISPOSABLE_LABEL}=true",
-        "-p", f"127.0.0.1:{port}:7687", mg.IMAGE,
-    )  # fmt: skip
+    started = _docker("run", "-d", "--name", names["stranger"], "-p", f"127.0.0.1:{port}:7687", mg.IMAGE)
     assert started.returncode == 0, started.stderr
     url = mg.local_url(port)
-    mg._wait_ready(url, "", "", mg.READY_SECONDS, names["demo"], "docker")
+    mg._wait_ready(url, "", "", mg.READY_SECONDS, names["stranger"], "docker")
     return port
 
 
-def test_a_disposable_demo_on_the_default_port_is_never_adopted(names, demo):
+def test_another_memgraph_on_the_default_port_is_never_adopted(names, stranger):
     lines: list[str] = []
-    found = mg.find_or_start(configured_url=None, default_port=demo, container=names["own"], log=lines.append)
+    found = mg.find_or_start(configured_url=None, default_port=stranger, container=names["own"], log=lines.append)
 
     assert found.how == "started"
     assert found.container == names["own"]
-    assert found.url != mg.local_url(demo)
-    assert found.notes == (f"port {demo} was taken, so it uses {found.url.rsplit(':', 1)[1]}",)
+    assert found.url != mg.local_url(stranger)
+    assert found.notes == (f"port {stranger} was taken, so it uses {found.url.rsplit(':', 1)[1]}",)
     assert _query(found.url, "SHOW VERSION")[0]["version"] == found.version
     inspect = json.loads(_docker("inspect", names["own"]).stdout)[0]
     assert inspect["Mounts"][0]["Name"] == f"{names['own']}-data"
@@ -90,12 +92,23 @@ def test_a_disposable_demo_on_the_default_port_is_never_adopted(names, demo):
     # A fixed host port, not one Docker reassigns on every start: the config must survive a reboot.
     assert inspect["HostConfig"]["PortBindings"]["7687/tcp"][0]["HostPort"] == found.url.rsplit(":", 1)[1]
 
-    again = mg.find_or_start(configured_url=found.url, default_port=demo, container=names["own"])
+    again = mg.find_or_start(configured_url=found.url, default_port=stranger, container=names["own"])
     assert (again.how, again.url) == ("configured", found.url)
 
 
-def test_asked_for_by_name_even_the_demo_is_used(names, demo):
-    found = mg.find_or_start(configured_url=None, explicit_url=mg.local_url(demo), container=names["other"])
+def test_a_configured_default_url_leads_to_our_container_not_whoever_answers_there(names, stranger):
+    """A config left at the default URL (an old install, or by hand) while someone else's Memgraph holds it."""
+    ours = mg.find_or_start(configured_url=None, default_port=stranger, container=names["own"], log=lambda _: None)
+
+    found = mg.find_or_start(
+        configured_url=mg.local_url(stranger), default_port=stranger, container=names["own"], log=lambda _: None
+    )
+
+    assert (found.how, found.url, found.container) == ("found", ours.url, names["own"])
+
+
+def test_asked_for_by_name_another_memgraph_is_used(names, stranger):
+    found = mg.find_or_start(configured_url=None, explicit_url=mg.local_url(stranger), container=names["other"])
     assert (found.how, found.container) == ("found", None)
     assert _docker("inspect", names["other"]).returncode != 0
 
@@ -112,12 +125,12 @@ def test_an_asked_for_port_that_is_taken_fails_and_leaves_nothing_behind(names):
     assert _docker("inspect", names["other"]).returncode != 0
 
 
-def test_our_stopped_container_comes_back_on_its_port_with_its_data(names, demo):
-    url = mg.find_or_start(configured_url=None, default_port=demo, container=names["own"]).url
+def test_our_stopped_container_comes_back_on_its_port_with_its_data(names, stranger):
+    url = mg.find_or_start(configured_url=None, default_port=stranger, container=names["own"]).url
     _query(url, "MERGE (:SetupProbe {id: 1})")
     assert _docker("stop", names["own"]).returncode == 0
 
-    found = mg.find_or_start(configured_url=None, default_port=demo, container=names["own"], log=lambda _: None)
+    found = mg.find_or_start(configured_url=None, default_port=stranger, container=names["own"], log=lambda _: None)
 
     assert (found.how, found.url) == ("restarted", url)
     assert _query(url, "MATCH (n:SetupProbe) RETURN count(n) AS n") == [{"n": 1}]
@@ -139,7 +152,7 @@ def test_a_container_that_lost_its_network_is_reattached_and_published(names):
     assert _query(found.url, "RETURN 1 AS ok") == [{"ok": 1}]
 
 
-def test_setup_then_uninstall_end_to_end(names, demo, fake_agents, setup_home, tmp_path, capsys):
+def test_setup_then_uninstall_end_to_end(names, stranger, fake_agents, setup_home, tmp_path, capsys):
     """The plain front end, the way the shim runs it without a terminal: every step, then a re-run, then undo."""
     from memgraph_context_graph.adapters._identity import load_config
 
