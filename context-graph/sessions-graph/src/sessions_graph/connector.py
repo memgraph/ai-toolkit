@@ -9,7 +9,6 @@ through the :class:`SessionsGraph` API, not the event stream.
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import sys
@@ -27,6 +26,8 @@ from memgraph_context_graph.events import (
 from memgraph_context_graph.protocols import GraphConnector
 
 from .core import SessionsGraph
+from .extraction import ExtractionConfig
+from .recall import RecallConfig
 
 if TYPE_CHECKING:
     from memgraph_context_graph.adapters._identity import HookConfig
@@ -141,13 +142,13 @@ class SessionsGraphConnector(GraphConnector):
         self._active_user_id = None
         self._active_session_id = None
         self._graph.reconciler.mark_pending(event.session_id)
-        _spawn_detached(["embed", "--session", event.session_id], env=_child_env(llm=False))
+        _spawn_detached(["embed", "--session", event.session_id], env=_child_env())
         if self._auto_reconcile:
-            _spawn_detached(["reconcile", "--session", event.session_id], env=_child_env(llm=True))
+            _spawn_detached(["reconcile", "--session", event.session_id], env=_child_env())
 
     def _on_turn_end(self, event: TurnEndEvent) -> None:
         self._graph.reconciler.mark_pending(event.session_id)
-        _spawn_detached(["embed", "--session", event.session_id], env=_child_env(llm=False))
+        _spawn_detached(["embed", "--session", event.session_id], env=_child_env())
 
 
 def _project_key(cwd: object) -> str | None:
@@ -178,24 +179,16 @@ def _spawn_detached(args: list[str], *, env: dict[str, str]) -> None:
         record_failure("spawn", e, connector="sessions-graph", session_id=session_id)
 
 
-def _child_env(*, llm: bool) -> dict[str, str]:
-    """Build the environment for a detached ``sessions-graph`` subprocess.
+def _child_env() -> dict[str, str]:
+    """The environment for a detached ``sessions-graph`` subprocess: no config values, only which file holds them.
 
-    Connection values and provider keys come only from the selected config file.
-    Empty configured values must clear ambient credentials too. Unrelated
-    environment entries, including ``CONTEXT_GRAPH_CONFIG``, remain inherited.
-    ``llm=False`` omits provider keys because embedding runs inside Memgraph.
+    The child reads its connection and provider keys from that file itself
+    (``cli._fill_env_from_context_graph_config``), so a key the file leaves
+    empty is never filled from this process's environment.
     """
-    from memgraph_context_graph.adapters._identity import resolve_llm_env, resolve_memgraph_env
+    from memgraph_context_graph.adapters._identity import spawn_env
 
-    env = dict(os.environ)
-    # LightRAG bridges these aliases from the canonical connection values.
-    for key in ("MEMGRAPH_URI", "MEMGRAPH_USERNAME", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
-        env.pop(key, None)
-    env.update(resolve_memgraph_env())
-    if llm:
-        env.update(resolve_llm_env())
-    return env
+    return spawn_env()
 
 
 def _doctor_check(config: HookConfig) -> tuple[bool, str]:
@@ -214,4 +207,5 @@ CONNECTOR = ConnectorSpec(
     # Config file only (ADR 0002); never configured means off.
     build=lambda graph, config: SessionsGraphConnector(graph, auto_reconcile=bool(config.auto_reconcile)),
     check=_doctor_check,
+    settings={"recall": RecallConfig.from_mapping, "extraction": ExtractionConfig.from_mapping},
 )

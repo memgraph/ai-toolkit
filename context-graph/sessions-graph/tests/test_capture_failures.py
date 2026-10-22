@@ -35,7 +35,7 @@ def test_a_child_that_cannot_start_is_logged(monkeypatch):
 
 @pytest.mark.parametrize("command", ["embed", "reconcile"])
 def test_a_child_that_cannot_reach_memgraph_is_logged(monkeypatch, command):
-    _identity.write_full_config(user_id="u", memgraph_url="bolt://127.0.0.1:1")
+    _identity.write_config(user_id="u", memgraph_url="bolt://127.0.0.1:1")
     _identity._reset_cache()
     # Explicit, so the env the CLI fills from config is restored after the test.
     monkeypatch.setenv("MEMGRAPH_URL", "bolt://127.0.0.1:1")

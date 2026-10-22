@@ -7,20 +7,19 @@ import json
 import shutil
 import sys
 from importlib import metadata
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict
 
-from memgraph_context_graph.capture_policy import DEFAULT_MAX_CHARS
 from memgraph_context_graph.connectors import (
-    DEFAULT_CONNECTORS,
     configured_connectors,
     connector_spec,
     known_connectors,
-    supported_connectors,
 )
 from memgraph_context_graph.tools import normalize_connector_name
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from memgraph_context_graph.config_schema import ConfigKey
 
 _HELP = """usage: memgraph-context-graph <command> [options]
 
@@ -160,55 +159,25 @@ def _forget(argv: list[str]) -> int:
 def _config(argv: list[str]) -> int:
     """Get or set persistent config values in ~/.config/context-graph/config.toml."""
     from memgraph_context_graph.adapters._identity import (
-        FALSY_VALUES,
-        MEMORY_BACKENDS,
-        TRUTHY_VALUES,
         config_file,
         load_config,
-        parse_bool_flag,
-        write_config,
+        set_config_value,
+        stored_value,
     )
-    from memgraph_context_graph.spaces import EDITION_COMMUNITY, EDITIONS
+    from memgraph_context_graph.config_schema import CONFIG_KEYS, config_key
 
     config_path = config_file()
-
-    _CONFIG_KEYS = {
-        "edition": "edition",
-        "identity.user_id": "user_id",
-        "memgraph.url": "memgraph_url",
-        "memgraph.user": "memgraph_user",
-        "memgraph.password": "memgraph_password",
-        "memgraph.database": "memgraph_database",
-        "llm.openai_api_key": "openai_api_key",
-        "llm.anthropic_api_key": "anthropic_api_key",
-        "llm.derive_model": "derive_model",
-        "capture.connectors": "connectors",
-        "reconcile.auto_reconcile": "auto_reconcile",
-        "recall.embedding_model": "embedding_model",
-        "ontology.path": "ontology_path",
-        "ontology.derive": "ontology_derive",
-        "github.token": "github_token",
-        "memory.backend": "memory_backend",
-        "session_start.resume": "session_resume",
-    }
-    #: ``[capture]`` keys the capture policy reads, kept in HookConfig.capture_settings, and how each is described.
-    _CAPTURE_KEYS = {
-        "capture.redact": "defaults to true",
-        "capture.max_chars": f"defaults to {DEFAULT_MAX_CHARS}",
-        "capture.exclude_tools": "none excluded",
-        "capture.exclude_projects": "none excluded",
-    }
-    _SECRET_KEYS = {"memgraph.password", "llm.openai_api_key", "llm.anthropic_api_key", "github.token"}
-    _BOOL_KEYS = {"reconcile.auto_reconcile", "session_start.resume"}
+    usage = (
+        "usage: memgraph-context-graph config set <key> <value>\n"
+        "       memgraph-context-graph config get <key>\n"
+        "       memgraph-context-graph config show"
+    )
 
     if not argv or argv[0] in {"-h", "--help"}:
-        print("usage: memgraph-context-graph config set <key> <value>")
-        print("       memgraph-context-graph config get <key>")
-        print("       memgraph-context-graph config show")
-        print("")
-        print("Supported keys:")
-        for key in [*_CONFIG_KEYS, *_CAPTURE_KEYS]:
-            print(f"  {key}")
+        print(usage)
+        print("\nSupported keys:")
+        for key in CONFIG_KEYS:
+            print(f"  {key.name:32} {key.doc}")
         print(f"\nConfig file: {config_path}")
         return 0
 
@@ -219,182 +188,64 @@ def _config(argv: list[str]) -> int:
         print(f"# {config_path}")
         for problem in config.problems:
             print(f"# WARNING: malformed config, {problem}; values it meant to set are defaults below")
-        print(f"edition = {config.edition or EDITION_COMMUNITY!r}")
-        print(f"identity.user_id = {config.user_id!r}")
-        print(f"memgraph.url = {config.memgraph_url!r}")
-        print(f"memgraph.user = {config.memgraph_user!r}")
-        print(f"memgraph.password = {'***' if config.memgraph_password else repr('')}")
-        print(f"memgraph.database = {config.memgraph_database!r}")
-        print(f"llm.openai_api_key = {'***' if config.openai_api_key else repr('')}")
-        print(f"llm.anthropic_api_key = {'***' if config.anthropic_api_key else repr('')}")
-        if config.derive_model is None:
-            print("llm.derive_model = unset (defaults to the provider's model)")
-        else:
-            print(f"llm.derive_model = {config.derive_model!r}")
-        if config.connectors is None:
-            print(f"capture.connectors = unset (defaults to {', '.join(DEFAULT_CONNECTORS)})")
-        else:
-            print(f"capture.connectors = {', '.join(config.connectors)!r}")
-        for key, default in _CAPTURE_KEYS.items():
-            value = config.capture_settings.get(key.removeprefix("capture."))
-            print(f"{key} = {value!r}" if value else f"{key} = unset ({default})")
-        if config.auto_reconcile is None:
-            print("reconcile.auto_reconcile = unset (defaults to false)")
-        else:
-            print(f"reconcile.auto_reconcile = {'true' if config.auto_reconcile else 'false'}")
-        if config.embedding_model is None:
-            print("recall.embedding_model = unset (defaults to sessions-graph's model)")
-        else:
-            print(f"recall.embedding_model = {config.embedding_model!r}")
-        print(f"ontology.path = {config.ontology_path!r}" if config.ontology_path else "ontology.path = unset")
-        if config.ontology_derive is None:
-            print("ontology.derive = unset (defaults to extend)")
-        else:
-            print(f"ontology.derive = {config.ontology_derive!r}")
-        for key, value in config.extraction_settings.items():
-            print(f"extraction.{key} = {value!r}")
-        print(f"github.token = {'***' if config.github_token else 'unset'}")
-        print(
-            f"memory.backend = {config.memory_backend!r}"
-            if config.memory_backend
-            else "memory.backend = unset (native)"
-        )
-        if config.session_resume is None:
-            print("session_start.resume = unset (defaults to true)")
-        else:
-            print(f"session_start.resume = {'true' if config.session_resume else 'false'}")
-        return 0
-
-    if action == "set":
-        if len(argv) < 2:
-            print("usage: memgraph-context-graph config set <key> <value>", file=sys.stderr)
-            return 2
-        key = argv[1]
-        if key in _CAPTURE_KEYS:
-            if len(argv) < 3:
-                print(f"usage: memgraph-context-graph config set {key} <value>", file=sys.stderr)
-                return 2
-            return _set_capture_key(key, argv[2])
-        if key not in _CONFIG_KEYS:
-            print(f"Unknown config key: {key}", file=sys.stderr)
-            print(f"Supported keys: {', '.join([*_CONFIG_KEYS, *_CAPTURE_KEYS])}", file=sys.stderr)
-            return 2
-
-        if len(argv) < 3:
-            if key in _SECRET_KEYS:
-                import getpass
-
-                value = getpass.getpass(f"Enter {key}: ")
+        for key in CONFIG_KEYS:
+            if not key.applies_to(config.edition):
+                continue
+            value = stored_value(config, key)
+            if value is None:
+                print(f"{key.name} = unset ({key.unset})" if key.unset else f"{key.name} = unset")
             else:
-                print(f"usage: memgraph-context-graph config set {key} <value>", file=sys.stderr)
-                return 2
-        else:
-            value = argv[2]
-
-        write_value: str | bool | tuple[str, ...] = value
-        if key in _BOOL_KEYS:
-            normalized = value.strip().lower()
-            if normalized not in TRUTHY_VALUES | FALSY_VALUES:
-                print(f"Invalid value for {key}: {value!r} (expected true/false)", file=sys.stderr)
-                return 2
-            write_value = parse_bool_flag(normalized)
-        if key == "edition" and value not in EDITIONS:
-            print(f"Invalid value for {key}: {value!r} (expected {'/'.join(sorted(EDITIONS))})", file=sys.stderr)
-            return 2
-        if key == "memory.backend" and value not in MEMORY_BACKENDS:
-            print(f"Invalid value for {key}: {value!r} (expected {'/'.join(sorted(MEMORY_BACKENDS))})", file=sys.stderr)
-            return 2
-        if key == "ontology.derive" and value not in {"extend", "off"}:
-            print(f"Invalid value for {key}: {value!r} (expected extend/off)", file=sys.stderr)
-            return 2
-        if key == "capture.connectors":
-            try:
-                write_value = tuple(supported_connectors(value.split(",")))
-            except ValueError as exc:
-                print(f"Invalid value for {key}: {exc}", file=sys.stderr)
-                return 2
-
-        # The key/value pairing is only known at runtime (bool iff key is in
-        # _BOOL_KEYS, str otherwise); write_config's own parameters are precisely
-        # typed per key, so the checker can't verify this dynamic dispatch itself.
-        write_config(**cast("dict[str, Any]", {_CONFIG_KEYS[key]: write_value}))
-        if key in _SECRET_KEYS:
-            display_value = "***"
-        elif key in _BOOL_KEYS:
-            display_value = str(write_value).lower()
-        elif isinstance(write_value, tuple):
-            display_value = repr(", ".join(write_value))
-        else:
-            display_value = repr(write_value)
-        print(f"Wrote {key} = {display_value} to {config_path}")
+                print(f"{key.name} = {_display(key, value)}")
+        for name in config.redact_patterns:
+            print(f"redact.{name} = {config.redact_patterns[name]!r}")
         return 0
+
+    if action not in {"set", "get"}:
+        print(f"Unknown config action: {action}", file=sys.stderr)
+        return 2
+    if len(argv) < 2:
+        print(f"usage: memgraph-context-graph config {action} <key>{' <value>' if action == 'set' else ''}",
+              file=sys.stderr)  # fmt: skip
+        return 2
+    key = config_key(argv[1])
+    if key is None:
+        print(f"Unknown config key: {argv[1]}", file=sys.stderr)
+        print(f"Supported keys: {', '.join(k.name for k in CONFIG_KEYS)}", file=sys.stderr)
+        return 2
 
     if action == "get":
-        if len(argv) < 2:
-            print("usage: memgraph-context-graph config get <key>", file=sys.stderr)
-            return 2
-        key = argv[1]
-        if key in _CAPTURE_KEYS:
-            capture_value = load_config().capture_settings.get(key.removeprefix("capture."))
-            if not capture_value:
-                print(f"{key} is not set in {config_path}", file=sys.stderr)
-                return 1
-            print(capture_value)
-            return 0
-        if key not in _CONFIG_KEYS:
-            print(f"Unknown config key: {key}", file=sys.stderr)
-            return 2
-
-        config = load_config()
-        attr = _CONFIG_KEYS[key]
-        value = getattr(config, attr)
+        value = stored_value(load_config(), key)
         if value is None:
-            print(f"{key} is not set in {config_path}", file=sys.stderr)
+            print(f"{key.name} is not set in {config_path}", file=sys.stderr)
             return 1
-        if key in _SECRET_KEYS:
-            print("***")
-        elif isinstance(value, tuple):
-            print(", ".join(value))
-        else:
-            print(value)
+        print("***" if key.secret else value)
         return 0
 
-    print(f"Unknown config action: {action}", file=sys.stderr)
-    return 2
+    if len(argv) >= 3:
+        raw = argv[2]
+    elif key.secret:
+        import getpass
 
-
-def _set_capture_key(key: str, value: str) -> int:
-    """``config set capture.<name> <value>``: validate and write one capture-policy key."""
-    from memgraph_context_graph.adapters._identity import (
-        FALSY_VALUES,
-        TRUTHY_VALUES,
-        _parse_list,
-        config_file,
-        load_config,
-        write_config,
-    )
-
-    name = key.removeprefix("capture.")
-    if name == "redact":
-        value = value.strip().lower()
-        if value not in TRUTHY_VALUES | FALSY_VALUES:
-            print(f"Invalid value for {key}: {value!r} (expected true/false)", file=sys.stderr)
-            return 2
-        value = "true" if value in TRUTHY_VALUES else "false"
-    elif name == "max_chars":
-        if not value.strip().isdigit():
-            print(f"Invalid value for {key}: {value!r} (expected a non-negative integer, 0 for no limit)",
-                  file=sys.stderr)  # fmt: skip
-            return 2
-        value = str(int(value))
+        raw = getpass.getpass(f"Enter {key.name}: ")
     else:
-        value = ", ".join(_parse_list(value))
-    settings = {**load_config().capture_settings, name: value}
-    if not value:
-        del settings[name]
-    write_config(capture_settings=settings)
-    print(f"Wrote {key} = {value!r} to {config_file()}")
+        print(f"usage: memgraph-context-graph config set {key.name} <value>", file=sys.stderr)
+        return 2
+    try:
+        value = set_config_value(key.name, raw)
+    except ValueError as exc:
+        print(f"Invalid value for {key.name}: {raw!r} ({exc})", file=sys.stderr)
+        return 2
+    print(f"Wrote {key.name} = {_display(key, value)} to {config_path}")
     return 0
+
+
+def _display(key: ConfigKey, value: str) -> str:
+    """A stored value as ``config show/set`` print it: secrets masked, booleans bare, the rest quoted."""
+    if key.secret:
+        return "***" if value else repr("")
+    if key.kind == "bool":
+        return value
+    return repr(value)
 
 
 def _mcp(argv: list[str]) -> int:

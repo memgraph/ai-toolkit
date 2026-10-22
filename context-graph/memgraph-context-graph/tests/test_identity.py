@@ -56,7 +56,7 @@ def test_memgraph_defaults_when_no_config(config_dir):
 
 
 def test_memgraph_from_config_file(config_dir):
-    _identity.write_full_config(
+    _identity.write_config(
         memgraph_url="bolt://remote:7687",
         memgraph_user="admin",
         memgraph_password="secret",
@@ -71,7 +71,7 @@ def test_memgraph_from_config_file(config_dir):
 
 
 def test_cli_flag_overrides_config(config_dir):
-    _identity.write_full_config(memgraph_url="bolt://config:7687")
+    _identity.write_config(memgraph_url="bolt://config:7687")
     _identity._reset_cache()
     env = _identity.resolve_memgraph_env(url="bolt://flag:9999")
     assert env["MEMGRAPH_URL"] == "bolt://flag:9999"
@@ -87,7 +87,7 @@ def test_llm_defaults_when_no_config(config_dir):
 
 
 def test_llm_from_config_file(config_dir):
-    _identity.write_full_config(openai_api_key="sk-openai-secret", anthropic_api_key="sk-anthropic-secret")
+    _identity.write_config(openai_api_key="sk-openai-secret", anthropic_api_key="sk-anthropic-secret")
     _identity._reset_cache()
     env = _identity.resolve_llm_env()
     assert env["OPENAI_API_KEY"] == "sk-openai-secret"
@@ -95,7 +95,7 @@ def test_llm_from_config_file(config_dir):
 
 
 def test_write_config_preserves_llm_keys(config_dir):
-    _identity.write_full_config(openai_api_key="sk-openai-secret")
+    _identity.write_config(openai_api_key="sk-openai-secret")
     _identity._reset_cache()
     _identity.write_config(user_id="someone")
     _identity._reset_cache()
@@ -113,19 +113,19 @@ def test_auto_reconcile_is_off_when_never_configured(config_dir):
 
 
 def test_auto_reconcile_from_config_file(config_dir):
-    _identity.write_full_config(auto_reconcile=True)
+    _identity.write_config(auto_reconcile=True)
     _identity._reset_cache()
     assert _identity.load_config().auto_reconcile is True
 
 
 def test_auto_reconcile_explicit_false_is_not_collapsed_to_none(config_dir):
-    _identity.write_full_config(auto_reconcile=False)
+    _identity.write_config(auto_reconcile=False)
     _identity._reset_cache()
     assert _identity.load_config().auto_reconcile is False
 
 
 def test_write_config_preserves_auto_reconcile(config_dir):
-    _identity.write_full_config(auto_reconcile=True)
+    _identity.write_config(auto_reconcile=True)
     _identity._reset_cache()
     _identity.write_config(user_id="someone")
     _identity._reset_cache()
@@ -135,7 +135,7 @@ def test_write_config_preserves_auto_reconcile(config_dir):
 
 
 def test_write_config_can_toggle_auto_reconcile_off(config_dir):
-    _identity.write_full_config(auto_reconcile=True)
+    _identity.write_config(auto_reconcile=True)
     _identity._reset_cache()
     _identity.write_config(auto_reconcile=False)
     _identity._reset_cache()
@@ -145,9 +145,9 @@ def test_write_config_can_toggle_auto_reconcile_off(config_dir):
 def test_write_full_config_preserves_auto_reconcile_when_not_given(config_dir):
     """Simulates re-running `bootstrap`: it must not silently revert
     reconcile.auto_reconcile to off just because it doesn't pass it (finding 2)."""
-    _identity.write_full_config(auto_reconcile=True)
+    _identity.write_config(auto_reconcile=True)
     _identity._reset_cache()
-    _identity.write_full_config(user_id="rebootstrapped")
+    _identity.write_config(user_id="rebootstrapped")
     _identity._reset_cache()
     config = _identity.load_config()
     assert config.auto_reconcile is True
@@ -155,9 +155,9 @@ def test_write_full_config_preserves_auto_reconcile_when_not_given(config_dir):
 
 
 def test_write_full_config_can_explicitly_set_auto_reconcile(config_dir):
-    _identity.write_full_config(auto_reconcile=True)
+    _identity.write_config(auto_reconcile=True)
     _identity._reset_cache()
-    _identity.write_full_config(auto_reconcile=False)
+    _identity.write_config(auto_reconcile=False)
     _identity._reset_cache()
     assert _identity.load_config().auto_reconcile is False
 
@@ -208,7 +208,7 @@ def test_write_config_creates_file_with_0600(config_dir):
 
 
 def test_write_config_preserves_existing_values(config_dir):
-    _identity.write_full_config(user_id="original", memgraph_url="bolt://first:7687")
+    _identity.write_config(user_id="original", memgraph_url="bolt://first:7687")
     _identity._reset_cache()
     _identity.write_config(user_id="updated")
     _identity._reset_cache()
@@ -218,7 +218,7 @@ def test_write_config_preserves_existing_values(config_dir):
 
 
 def test_write_full_config_writes_all_defaults(config_dir):
-    _identity.write_full_config()
+    _identity.write_config()
     _identity._reset_cache()
     config = _identity.load_config()
     assert config.user_id is None  # empty string -> None
@@ -268,7 +268,7 @@ def test_capture_connectors_unset_is_none(config_dir):
 def test_capture_connectors_round_trip_and_survive_other_writes(config_dir):
     _identity.write_config(connectors=("actions-graph", "sessions-graph"))
     _identity.write_config(user_id="u")
-    _identity.write_full_config(user_id="v")
+    _identity.write_config(user_id="v")
     assert _identity.load_config().connectors == ("actions-graph", "sessions-graph")
 
 
@@ -283,7 +283,7 @@ def test_extraction_and_derive_model_survive_rewrites(config_dir):
         '[llm]\nderive_model = "claude-opus-5-5"\n\n[extraction]\nmodel = "my/checkpoint"\nentity_threshold = "0.4"\n'
     )
     _identity.write_config(user_id="u")
-    _identity.write_full_config(user_id="v")
+    _identity.write_config(user_id="v")
 
     assert _identity.resolve_derive_model() == "claude-opus-5-5"
     assert _identity.resolve_extraction() == {"model": "my/checkpoint", "entity_threshold": "0.4"}

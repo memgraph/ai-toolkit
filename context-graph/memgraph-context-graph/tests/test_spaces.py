@@ -122,15 +122,13 @@ def test_a_config_without_edition_writes_none(config_dir):
 
 def test_bootstrap_keeps_the_edition(config_dir):
     _identity.write_config(edition="enterprise")
-    _identity.write_full_config(user_id="ante")
+    _identity.write_config(user_id="ante")
 
     assert _identity.load_config().edition == "enterprise"
 
 
 def test_hooks_resolve_through_the_community_resolver_unchanged(config_dir):
-    _identity.write_full_config(
-        user_id="ante", memgraph_url="bolt://db:7687", memgraph_user="mg", memgraph_password="pw"
-    )
+    _identity.write_config(user_id="ante", memgraph_url="bolt://db:7687", memgraph_user="mg", memgraph_password="pw")
 
     assert _identity.resolve_user_id({}) == "ante"
     assert _identity.resolve_memgraph_env() == {

@@ -172,18 +172,16 @@ def _configured_embedding_model() -> str:
 
 
 def _fill_env_from_context_graph_config() -> None:
-    """Fill unset Memgraph and LLM variables from the config file, for runs no hook spawned.
+    """Fill unset Memgraph and LLM variables from the config file; skipped without memgraph-context-graph.
 
-    A hook-spawned run already has them (``connector._child_env``); ambient
-    values win. Skipped when memgraph-context-graph isn't installed.
+    A hook-spawned run starts without them and names its config file (``connector._child_env``),
+    so the file decides there; on a hand-run, a variable already set wins.
     """
     try:
-        from memgraph_context_graph.adapters._identity import resolve_llm_env, resolve_memgraph_env
+        from memgraph_context_graph.adapters._identity import fill_env_from_config
     except ImportError:
         return
-    for key, value in {**resolve_memgraph_env(), **resolve_llm_env()}.items():
-        if value:
-            os.environ.setdefault(key, value)
+    fill_env_from_config()
 
 
 def _ontology(argv: list[str]) -> int:

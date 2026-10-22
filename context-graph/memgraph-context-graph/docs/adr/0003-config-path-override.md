@@ -23,4 +23,5 @@ Distinction: **which file** vs **what's in it**. Values still come only from the
 - Callers needing an isolated session write their own config file, pass its path. `context_graph_eval.live.hooks_pointed_at` does this.
 - Unset (normal case): behavior unchanged.
 - `config set`/`bootstrap` write to the overridden path when set — makes a temporary config usable.
+- A process a hook spawns gets the variable set to the file the hook read, and reads its values from there (ADR 0007).
 - `doctor` inspects whichever file the variable names — a session under an override diagnosable with same tool.

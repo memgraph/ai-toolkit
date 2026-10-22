@@ -76,7 +76,7 @@ class TestWrite:
 
     def test_configured_secrets_are_redacted(self, monkeypatch, tmp_path, _capture_log_in_tmp):
         monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "config.toml"))
-        _identity.write_full_config(
+        _identity.write_config(
             user_id="u", memgraph_user="alice", memgraph_password="hunter2", openai_api_key="sk-abc123"
         )
         capture_log.record_failure("connect", error="auth failed for alice with hunter2 using sk-abc123")
@@ -184,7 +184,7 @@ class TestHookFailuresAreLogged:
 
     def test_an_unreachable_memgraph_is_logged_with_its_cause(self, monkeypatch, tmp_path, _capture_log_in_tmp):
         monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "config.toml"))
-        _identity.write_full_config(user_id="u", memgraph_url="bolt://127.0.0.1:1")
+        _identity.write_config(user_id="u", memgraph_url="bolt://127.0.0.1:1")
         payload = {"hook_event_name": "PostToolUse", "session_id": "s9", "tool_name": "Bash", "cwd": "/repo"}
 
         assert self._run(monkeypatch, ["run", "claude-code", "--connector", "actions-graph"], payload) == 0
@@ -202,7 +202,7 @@ class TestHookFailuresAreLogged:
 
     def test_strict_mode_logs_before_raising(self, monkeypatch, tmp_path, _capture_log_in_tmp):
         monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "config.toml"))
-        _identity.write_full_config(user_id="u", memgraph_url="bolt://127.0.0.1:1")
+        _identity.write_config(user_id="u", memgraph_url="bolt://127.0.0.1:1")
 
         with pytest.raises(ValueError):
             self._run(monkeypatch, ["run", "claude-code", "--connector", "actions-graph", "--strict"])
@@ -275,7 +275,7 @@ def test_a_blackholed_memgraph_fails_inside_the_hook_timeout(monkeypatch, tmp_pa
     from memgraph_context_graph.hooks.runner import HOOK_CONNECT_TIMEOUT
 
     monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "config.toml"))
-    _identity.write_full_config(user_id="u", memgraph_url="bolt://10.255.255.1:7687")
+    _identity.write_config(user_id="u", memgraph_url="bolt://10.255.255.1:7687")
     monkeypatch.setattr("sys.stdin", io.StringIO('{"hook_event_name":"Stop","session_id":"s1"}'))
 
     start = time.monotonic()

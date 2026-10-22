@@ -17,14 +17,14 @@ and :data:`DEFAULT_CONNECTORS`.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib import metadata
 from typing import TYPE_CHECKING, Any
 
 from memgraph_context_graph.tools import normalize_connector_name
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Mapping
 
     from memgraph_context_graph.adapters._identity import HookConfig
     from memgraph_context_graph.protocols import GraphConnector
@@ -43,12 +43,16 @@ class ConnectorSpec:
         build: Makes the connector over a graph, from the config file's values.
         check: What ``doctor`` checks beyond a reachable Memgraph: ``(ok, detail)``,
             where detail is added to the check line, or says why it fails.
+        settings: The config sections whose keys the component reads, each with the parser it
+            reads them with; ``config set`` runs it on the would-be section and refuses a value
+            it raises ValueError on, so a bad value is caught when it is typed, not when a hook runs.
     """
 
     name: str
     graph: Callable[..., Any]
     build: Callable[[Any, HookConfig], GraphConnector]
     check: Callable[[HookConfig], tuple[bool, str]] | None = None
+    settings: Mapping[str, Callable[[dict[str, str]], object]] = field(default_factory=dict)
 
 
 #: The requirement each connector ``setup`` can install is installed from.
@@ -105,6 +109,18 @@ def supported_connectors(connector_names: Iterable[str]) -> list[str]:
             if name not in known:
                 raise ValueError(f"Unsupported connector: {name}; choose from {', '.join(known)}")
     return names
+
+
+def check_settings(section: str, settings: dict[str, str]) -> None:
+    """Parse *settings* as every installed component that reads ``[section]`` would.
+
+    Raises:
+        ValueError: a component rejects them; the message is its own.
+    """
+    for spec in load_connectors().values():
+        parse = spec.settings.get(section)
+        if parse is not None:
+            parse(settings)
 
 
 def configured_connectors() -> list[str]:

@@ -6,6 +6,7 @@ without a live database.
 
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -163,7 +164,7 @@ class TestSessionsGraphConnector:
     def test_auto_reconcile_true_spawns_detached_process(self, context_graph_config):
         from sessions_graph.connector import SessionsGraphConnector
 
-        context_graph_config.write_full_config(
+        context_graph_config.write_config(
             memgraph_url="bolt://remote:7687",
             memgraph_user="admin",
             memgraph_password="secret",
@@ -185,11 +186,9 @@ class TestSessionsGraphConnector:
         assert reconcile.args[0][-3:] == ["reconcile", "--session", "s-1"]
         assert reconcile.kwargs["start_new_session"] is True
         env = reconcile.kwargs["env"]
-        assert env["MEMGRAPH_URL"] == "bolt://remote:7687"
-        assert env["MEMGRAPH_USER"] == "admin"
-        assert env["MEMGRAPH_PASSWORD"] == "secret"
-        assert env["MEMGRAPH_DATABASE"] == "mydb"
-        assert env["OPENAI_API_KEY"] == "sk-test"
+        # The child reads the file it is handed; no credential travels in its environment.
+        assert env[context_graph_config.CONFIG_PATH_ENV] == str(context_graph_config.config_file())
+        assert "secret" not in env.values() and "sk-test" not in env.values()
 
     def test_supports_session_events_only(self):
         connector, _, _, SessionStartEvent, SessionEndEvent = self._make()
@@ -201,20 +200,36 @@ class TestSessionsGraphConnector:
 
 
 class TestReconciliationEnv:
-    """connector._child_env(): what a detached ``sessions-graph`` child inherits."""
+    """connector._child_env(), then the child's own fill: what a detached ``sessions-graph`` run connects with."""
 
-    def test_merges_config_onto_ambient_env(self, context_graph_config, monkeypatch):
+    def _child_fill(self, env, monkeypatch):
+        """Run the child's side of the hand-off: start from *env*, fill from the file it names."""
+        from sessions_graph.cli import _fill_env_from_context_graph_config
+
+        for key in list(os.environ):
+            monkeypatch.delenv(key)
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        _fill_env_from_context_graph_config()
+        return dict(os.environ)
+
+    def test_hands_down_the_config_file_not_its_values(self, context_graph_config, monkeypatch):
         from sessions_graph.connector import _child_env
 
         monkeypatch.setenv("PATH", "/usr/bin")
-        context_graph_config.write_full_config(memgraph_url="bolt://remote:7687", openai_api_key="sk-test")
+        monkeypatch.setenv("MEMGRAPH_URL", "bolt://ambient:7687")
+        context_graph_config.write_config(memgraph_url="bolt://remote:7687", openai_api_key="sk-test")
         context_graph_config._reset_cache()
 
-        env = _child_env(llm=True)
+        env = _child_env()
 
         assert env["PATH"] == "/usr/bin"  # ambient env preserved
-        assert env["MEMGRAPH_URL"] == "bolt://remote:7687"
-        assert env["OPENAI_API_KEY"] == "sk-test"
+        assert env[context_graph_config.CONFIG_PATH_ENV] == str(context_graph_config.config_file())
+        assert "MEMGRAPH_URL" not in env and "OPENAI_API_KEY" not in env
+        context_graph_config._reset_cache()
+        child = self._child_fill(env, monkeypatch)
+        assert child["MEMGRAPH_URL"] == "bolt://remote:7687"
+        assert child["OPENAI_API_KEY"] == "sk-test"
 
     def test_empty_config_clears_ambient_credentials(self, context_graph_config, monkeypatch):
         from sessions_graph.connector import _child_env
@@ -226,29 +241,28 @@ class TestReconciliationEnv:
         monkeypatch.setenv("MEMGRAPH_URI", "bolt://ambient:7687")
         monkeypatch.setenv("MEMGRAPH_USERNAME", "ambient-user")
 
-        env = _child_env(llm=True)
+        child = self._child_fill(_child_env(), monkeypatch)
 
-        assert env["OPENAI_API_KEY"] == ""
-        assert env["ANTHROPIC_API_KEY"] == ""
-        assert env["MEMGRAPH_USER"] == ""
-        assert env["MEMGRAPH_PASSWORD"] == ""
-        assert "MEMGRAPH_URI" not in env
-        assert "MEMGRAPH_USERNAME" not in env
+        assert child["OPENAI_API_KEY"] == ""
+        assert child["ANTHROPIC_API_KEY"] == ""
+        assert child["MEMGRAPH_USER"] == ""
+        assert child["MEMGRAPH_PASSWORD"] == ""
+        assert "MEMGRAPH_URI" not in child
+        assert "MEMGRAPH_USERNAME" not in child
 
-    def test_embedding_env_gets_memgraph_but_not_configured_llm_keys(self, context_graph_config, monkeypatch):
-        """Embedding runs inside Memgraph; the child needs the connection, not the keys."""
-        from sessions_graph.connector import _child_env
+    def test_a_hand_run_keeps_what_its_environment_sets(self, context_graph_config, monkeypatch):
+        """``MEMGRAPH_URL=... sessions-graph reconcile`` (dev-memgraph.sh reconcile) targets that instance."""
+        from sessions_graph.cli import _fill_env_from_context_graph_config
 
-        monkeypatch.setenv("OPENAI_API_KEY", "ambient-key")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient-key")
-        context_graph_config.write_full_config(memgraph_url="bolt://remote:7687", openai_api_key="sk-test")
+        context_graph_config.write_config(memgraph_url="bolt://remote:7687", openai_api_key="sk-test")
         context_graph_config._reset_cache()
+        monkeypatch.setenv("MEMGRAPH_URL", "bolt://localhost:7690")
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-        env = _child_env(llm=False)
+        _fill_env_from_context_graph_config()
 
-        assert env["MEMGRAPH_URL"] == "bolt://remote:7687"
-        assert "OPENAI_API_KEY" not in env
-        assert "ANTHROPIC_API_KEY" not in env
+        assert os.environ["MEMGRAPH_URL"] == "bolt://localhost:7690"
+        assert os.environ["OPENAI_API_KEY"] == "sk-test"
 
 
 class TestConnectorRegistration:

@@ -37,15 +37,11 @@ def _resolve_llm_credentials() -> None:
     config for us. Existing env always wins, so an explicit key stays in charge.
     memgraph-context-graph is an optional extra -- skip quietly without it.
     """
-    import os
-
     try:
-        from memgraph_context_graph.adapters._identity import resolve_llm_env
+        from memgraph_context_graph.adapters._identity import fill_env_from_config
     except ImportError:
         return
-    for key, value in resolve_llm_env().items():
-        if value:
-            os.environ.setdefault(key, value)
+    fill_env_from_config(memgraph=False)
 
 
 #: LightRAG's default (8) re-pays an LLM merge-summary on every later chunk

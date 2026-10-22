@@ -38,7 +38,7 @@ def config(monkeypatch, tmp_path):
     """A config naming the test Memgraph, and a capture log of the test's own."""
     monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "config.toml"))
     _identity._reset_cache()
-    _identity.write_full_config(user_id="tester", memgraph_url=os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687"))
+    _identity.write_config(user_id="tester", memgraph_url=os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687"))
     _identity._reset_cache()
     yield
     _identity._reset_cache()

@@ -251,7 +251,14 @@ will actually call the hooks.
 
 ### Configuration
 
-Bootstrap and the `config` command write `~/.config/context-graph/config.toml` (mode `0600`). **Hook subprocesses resolve their configuration from CLI flags and this file only — never from environment variables** (they don't inherit your shell), per [ADR 0002](docs/adr/0002-config-file-only-hook-resolution.md).
+`setup` and the `config` command write `~/.config/context-graph/config.toml` (mode `0600`).
+The file lists every key, each under a one-line comment saying what it does; a key you haven't set
+is written commented out, under a line saying what unset means, so uncommenting it is all it takes
+to change it. `setup` and `config set` rewrite the file: your values are kept, comments you add are not.
+A `[recall]` or `[extraction]` value is checked by sessions-graph when you set it, so a value it would
+reject never reaches the file.
+One table, `memgraph_context_graph/config_schema.py`, defines every key: the file, `config show`,
+`config get` and `config set` all follow it. **Hook subprocesses resolve their configuration from CLI flags and this file only — never from environment variables** (they don't inherit your shell), per [ADR 0002](docs/adr/0002-config-file-only-hook-resolution.md).
 
 ```toml
 [identity]
@@ -299,8 +306,8 @@ command names no `--connector`, from `skills-graph`, `actions-graph`,
 an empty value enables none. Setup installs the ones it names.
 The rest of `[capture]` and `[redact]` are the capture policy, applied to every
 event before any connector stores it (see [Capture privacy](#capture-privacy)).
-`[reconcile]` is omitted entirely from a file setup wrote — absent
-means "never configured," distinct from an explicit `auto_reconcile = false`.
+A commented-out key means "never configured," distinct from an explicit
+`auto_reconcile = false`.
 `[recall]` is optional too: without it, recall runs with the widths the
 benchmark measured; see [Recall](#recall-memory-for-the-harnesss-model).
 `[ontology]` is optional as well: `path` names a schema file the user's
@@ -317,11 +324,10 @@ Manage it with:
 memgraph-context-graph config show
 memgraph-context-graph config get memgraph.url
 memgraph-context-graph config set <key> <value>
-# keys: identity.user_id, memgraph.{url,user,password,database},
-#       llm.{openai_api_key,anthropic_api_key,derive_model},
-#       capture.{connectors,redact,max_chars,exclude_tools,exclude_projects},
-#       reconcile.auto_reconcile, recall.embedding_model, ontology.{path,derive}, memory.backend
-# [recall] widths, [extraction] and [redact] patterns are edited in the file.
+memgraph-context-graph config set recall.turns_k 12
+memgraph-context-graph config set recall.turns_k ""   # back to the default
+memgraph-context-graph config --help                  # every key, with what it does
+# [redact] patterns are named by you, so they are edited in the file.
 ```
 
 ### Capture privacy
