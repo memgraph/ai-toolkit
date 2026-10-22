@@ -21,6 +21,7 @@ from memgraph_context_graph.tools import normalize_connector_name
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
 _HELP = """usage: memgraph-context-graph <command> [options]
 
@@ -771,7 +772,42 @@ def _check_memory_backend(runtime: str) -> _CheckResult | None:
             "detail": f"memory.backend is context-graph but {runtime}'s built-in memory is still on, so the model "
             f"has two memories — run: memgraph-context-graph setup {runtime} --memory-backend context-graph",
         }
+    try:
+        override = _project_override(native)
+    except MemoryBackendError as exc:
+        return {"name": "memory", "ok": False, "detail": str(exc)}
+    if override is not None:
+        return {
+            "name": "memory",
+            "ok": False,
+            "detail": f"memory.backend is context-graph but {override} turns {runtime}'s built-in memory back on "
+            "in this project, so the model has two memories there — remove autoMemoryEnabled from it",
+        }
     return {"name": "memory", "ok": True, "detail": f"Context Graph; {runtime}'s built-in memory is off"}
+
+
+def _project_override(native: Any) -> Path | None:
+    """The project settings file that turns *native* back on where doctor runs, for a harness that has them."""
+    from pathlib import Path
+
+    overridden_in = getattr(native, "overridden_in", None)
+    if overridden_in is None:
+        return None
+    return next((path for project in _projects_of(Path.cwd()) if (path := overridden_in(project))), None)
+
+
+def _projects_of(cwd: Path) -> list[Path]:
+    """Where an agent started in *cwd* may read project settings from: *cwd* and its repository's root."""
+    import subprocess
+    from pathlib import Path
+
+    try:
+        root = subprocess.run(
+            ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False
+        ).stdout.strip()
+    except OSError:
+        root = ""
+    return list(dict.fromkeys([cwd, *([Path(root)] if root else [])]))
 
 
 def _check_plugin(runtime: str) -> _CheckResult | None:

@@ -5,7 +5,10 @@ memory, so "Context Graph as the memory backend" means: turn the harness's
 memory off in its own user-level config, record ``[memory] backend =
 "context-graph"`` in ours (which turns on the ``memory`` tool and the
 session-start index), and bring the harness's existing memories across once,
-so opting in never starts from empty.
+so opting in never starts from empty. Handing memory back carries the graph's
+memories into the harness's own store, where it has one, so switching back
+doesn't start from the day the user switched away. The graph is the one
+source of truth while it is the backend; nothing writes to both.
 
 A runtime plugin takes part by exposing ``native_memory``, an object with the
 :class:`NativeMemory` shape. Runtimes without one can't switch.
@@ -26,6 +29,10 @@ from memgraph_context_graph.adapters._identity import (
 from memgraph_context_graph.spaces import spaces_for
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from sessions_graph.memory_store import MemoryStore
+
     from memgraph_context_graph.hooks.runtime_plugin import RuntimeCLIPlugin
 
 
@@ -35,6 +42,30 @@ class ImportReport:
 
     imported: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ExportReport:
+    """What an export wrote into the harness's store, and which graph paths it had no place for."""
+
+    exported: list[str] = field(default_factory=list)
+    skipped: list[str] = field(default_factory=list)
+
+
+class StoredMemory(Protocol):
+    """One file of the graph's memory, as an export reads it."""
+
+    @property
+    def path(self) -> str: ...
+
+    @property
+    def content(self) -> str: ...
+
+
+class MemorySource(Protocol):
+    """The part of sessions-graph's ``MemoryStore`` an export reads through."""
+
+    def files(self) -> Sequence[StoredMemory]: ...
 
 
 class MemoryFiles(Protocol):
@@ -62,6 +93,10 @@ class NativeMemory(Protocol):
 
     def import_into(self, files: MemoryFiles, home: Path) -> ImportReport:
         """Copy the harness's existing memories into *files*, never overwriting a path."""
+        ...
+
+    def export_from(self, source: MemorySource, home: Path) -> ExportReport:
+        """Write *source*'s memories into the harness's own store, where it has a place for them."""
         ...
 
 
@@ -106,19 +141,45 @@ def use_graph_memory(plugin: RuntimeCLIPlugin, *, home: Path | None = None) -> l
 
 
 def use_native_memory(plugin: RuntimeCLIPlugin, *, home: Path | None = None) -> list[str]:
-    """Hand memory back to *plugin*'s own: harness memory on, ours off. Graph memories stay in Memgraph.
+    """Hand memory back to *plugin*'s own: graph memories copied into it, harness memory on, ours off.
+
+    The copy runs first and only while the graph is the backend, so a failure (Memgraph down) leaves the
+    user on the graph's memory, and re-running after the switch never overwrites the harness's newer files.
 
     Raises:
-        MemoryBackendError: the runtime can't switch.
+        MemoryBackendError: the runtime can't switch, or the graph's memories can't be read.
     """
     native = _require_native(plugin)
-    lines = native.enable(home or Path.home())
+    home = home or Path.home()
+    lines = export_graph_memory(native, plugin.name, home=home)
+    lines += native.enable(home)
     write_config(memory_backend=MEMORY_BACKEND_NATIVE)
     lines.append(
         f"Set memory.backend = {MEMORY_BACKEND_NATIVE}; {plugin.name}'s own memory is back from its next session."
     )
-    lines.append("Memories saved while Context Graph was your memory stay in Memgraph; they aren't copied back.")
     return lines
+
+
+def export_graph_memory(native: NativeMemory, name: str, *, home: Path) -> list[str]:
+    """Copy the graph's memories into *native*'s store while the graph is the backend; returns what happened.
+
+    Raises:
+        MemoryBackendError: sessions-graph isn't installed, or Memgraph can't be reached.
+    """
+    config = load_config()
+    user_id = spaces_for(config).user_id()
+    if not config.graph_memory or not user_id:
+        return []
+    report = native.export_from(_memory_files(config, user_id), home)
+    lines = [f"Copied back {path}" for path in report.exported]
+    if report.skipped:
+        lines.append(f"Kept in Memgraph only, with no place in {name}'s memory: {', '.join(report.skipped)}")
+    return lines
+
+
+def keep_in_graph(source: MemorySource) -> ExportReport:
+    """The export of a harness with no store to write into: every memory stays in the graph."""
+    return ExportReport(skipped=[memory.path for memory in source.files()])
 
 
 def _require_native(plugin: RuntimeCLIPlugin) -> NativeMemory:
@@ -128,7 +189,7 @@ def _require_native(plugin: RuntimeCLIPlugin) -> NativeMemory:
     return native
 
 
-def _memory_files(config: Any, user_id: str) -> MemoryFiles:
+def _memory_files(config: Any, user_id: str) -> MemoryStore:
     try:
         from sessions_graph import SessionsGraph
     except ImportError as exc:
