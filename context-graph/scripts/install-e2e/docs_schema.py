@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+import time
 from pathlib import Path
 
+import psutil
 import yaml
 from neo4j import GraphDatabase
 
@@ -32,6 +34,21 @@ if "--verify" not in sys.argv:
         )
     )
     memory.end_session()
+    deadline = time.monotonic() + 180
+    while time.monotonic() < deadline:
+        workers = [
+            process
+            for process in psutil.process_iter(["cmdline"])
+            if "sessions_graph.cli" in (process.info["cmdline"] or [])
+            and "embed" in (process.info["cmdline"] or [])
+            and SESSION in (process.info["cmdline"] or [])
+        ]
+        if not workers:
+            break
+        print("Waiting for the fixture's background embedding job", flush=True)
+        time.sleep(2)
+    else:
+        raise TimeoutError("The fixture's background embedding worker did not finish")
 else:
     with GraphDatabase.driver("bolt://localhost:7687", auth=("", "")) as driver, driver.session() as session:
         rows = session.run(

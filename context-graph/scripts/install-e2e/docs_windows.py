@@ -15,6 +15,7 @@ from winpty import PtyProcess
 
 ROOT = Path(os.environ["RUNNER_TEMP"]) / "docs-1847-evidence"
 ROOT.mkdir(exist_ok=True)
+sys.stdout.reconfigure(encoding="utf-8")
 SHELL = sys.argv[1]
 URL = "https://install.memgraph.com/ai-memory/windows"
 
@@ -92,7 +93,7 @@ subprocess.run(
         SHELL,
         "-NoProfile",
         "-Command",
-        "memgraph-context-graph config get identity.user_id; memgraph-context-graph doctor --runtime codex; exit $LASTEXITCODE",
+        "$env:Path=[Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); memgraph-context-graph config get identity.user_id; memgraph-context-graph doctor --runtime codex; exit $LASTEXITCODE",
     ],
     check=True,
 )

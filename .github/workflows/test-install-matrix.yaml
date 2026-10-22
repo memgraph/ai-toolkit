@@ -82,7 +82,7 @@ jobs:
       - name: Start Memgraph in WSL
         shell: pwsh
         run: |
-          wsl -d Ubuntu-24.04 -- sudo docker run -d --name memgraph -p 7687:7687 --restart unless-stopped memgraph/memgraph-mage:3.13.1
+          wsl -d Ubuntu-24.04 -- sudo docker run -d --name memgraph -p 17687:7687 --restart unless-stopped memgraph/memgraph-mage:3.13.1
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Start-Process -FilePath wsl.exe -WindowStyle Hidden -ArgumentList @('-d', 'Ubuntu-24.04', '--', 'sleep', 'infinity')
 
@@ -94,7 +94,7 @@ jobs:
           python -m pip install --quiet neo4j
           $probe = @'
           from neo4j import GraphDatabase
-          d = GraphDatabase.driver("bolt://127.0.0.1:7687", auth=("", ""), connection_timeout=3.0)
+          d = GraphDatabase.driver("bolt://127.0.0.1:17687", auth=("", ""), connection_timeout=3.0)
           print(d.session().run("SHOW VERSION").data())
           '@
           foreach ($attempt in 1..20) {
@@ -110,7 +110,7 @@ jobs:
         shell: pwsh
         run: |
           Start-Sleep -Seconds 45
-          $probe = 'from neo4j import GraphDatabase; print(GraphDatabase.driver("bolt://127.0.0.1:7687", auth=("", ""), connection_timeout=3.0).session().run("SHOW VERSION").data())'
+          $probe = 'from neo4j import GraphDatabase; print(GraphDatabase.driver("bolt://127.0.0.1:17687", auth=("", ""), connection_timeout=3.0).session().run("SHOW VERSION").data())'
           python -c $probe
           if ($LASTEXITCODE -ne 0) {
             wsl --list --verbose
@@ -122,7 +122,7 @@ jobs:
       # does not reach this step, which is the point: later steps see only what was persisted.
       - name: Run install.ps1
         shell: pwsh
-        run: ${{ matrix.shell }} -NoProfile -ExecutionPolicy Bypass -File ./context-graph/scripts/install.ps1 claude-code codex --user-id ci-test-user --memgraph-url bolt://127.0.0.1:7687
+        run: ${{ matrix.shell }} -NoProfile -ExecutionPolicy Bypass -File ./context-graph/scripts/install.ps1 claude-code codex --user-id ci-test-user --memgraph-url bolt://127.0.0.1:17687
 
       - name: Why setup's Memgraph probe fails (runs only on failure)
         if: failure()
@@ -134,10 +134,10 @@ jobs:
           from memgraph_context_graph.setup.memgraph import version_at
           c = load_config()
           print("user/password:", repr(c.memgraph_user), repr(c.memgraph_password))
-          print("version_at:", version_at("bolt://127.0.0.1:7687", c.memgraph_user, c.memgraph_password))
+          print("version_at:", version_at("bolt://127.0.0.1:17687", c.memgraph_user, c.memgraph_password))
           import neo4j
           print("neo4j", neo4j.__version__)
-          d = neo4j.GraphDatabase.driver("bolt://127.0.0.1:7687", auth=(c.memgraph_user, c.memgraph_password), connection_timeout=3.0, max_connection_lifetime=3.0)
+          d = neo4j.GraphDatabase.driver("bolt://127.0.0.1:17687", auth=(c.memgraph_user, c.memgraph_password), connection_timeout=3.0, max_connection_lifetime=3.0)
           try:
               print(d.session().run("SHOW VERSION").data())
           except Exception as e:
@@ -154,7 +154,7 @@ jobs:
 
       - name: A second run changes nothing and still succeeds
         shell: pwsh
-        run: ${{ matrix.shell }} -NoProfile -ExecutionPolicy Bypass -File ./context-graph/scripts/install.ps1 claude-code codex --user-id ci-test-user --memgraph-url bolt://127.0.0.1:7687
+        run: ${{ matrix.shell }} -NoProfile -ExecutionPolicy Bypass -File ./context-graph/scripts/install.ps1 claude-code codex --user-id ci-test-user --memgraph-url bolt://127.0.0.1:17687
 
       - name: Install a real Windows pseudoconsole driver
         shell: pwsh
