@@ -79,7 +79,7 @@ claude.end_session()
 - turns Claude Code's own auto memory off;
 - keeps any hooks, servers and tools you pass in.
 
-Keep `"user"` out of `setting_sources`. It would also load the Context Graph Claude Code plugin, and every event would be captured twice.
+`options()` also turns the Context Graph Claude Code plugin off for the session, because the SDK loads your user settings by default and the plugin's hooks would capture every event a second time.
 
 **OpenAI Agents SDK** (`memgraph-context-graph[openai]`). Capture reads the run lifecycle (`RunHooks`):
 

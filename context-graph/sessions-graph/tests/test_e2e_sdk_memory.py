@@ -102,6 +102,22 @@ async def test_claude_agent_session_is_captured_and_its_memory_write_has_provena
     assert ["embed", "--session", "c-1"] in spawned
 
 
+def test_claude_options_turn_the_claude_code_plugin_off_and_keep_the_apps_settings(memory, tmp_path):
+    """The SDK loads user settings by default, and the user-level plugin's hooks would capture every event twice."""
+    claude = ClaudeAgentMemory(memory)
+
+    default = json.loads(cast("str", claude.options().settings))
+    from_string = json.loads(cast("str", claude.options(settings='{"model": "haiku"}').settings))
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text('{"enabledPlugins": {"other@market": true}}')
+    from_file = json.loads(cast("str", claude.options(settings=str(settings_file)).settings))
+
+    assert default == {"enabledPlugins": {"context-graph@context-graph-plugins": False}}
+    assert from_string["model"] == "haiku"
+    assert from_string["enabledPlugins"] == {"context-graph@context-graph-plugins": False}
+    assert from_file["enabledPlugins"] == {"other@market": True, "context-graph@context-graph-plugins": False}
+
+
 def _message(text):
     return ResponseOutputMessage(
         id="m-1",

@@ -20,6 +20,10 @@ if TYPE_CHECKING:
 BASE = "memgraph-context-graph[mcp]>=0.11.0"
 VIEWER = ("context-graph-viewer", "context-graph-viewer>=0.1.1")
 SPACES = ("context-graph-spaces", "context-graph-spaces>=0.1.2")
+#: sessions-graph's local extraction, which setup doesn't install itself; ``unstructured2graph`` tells it is there.
+RECONCILIATION = ("unstructured2graph", "sessions-graph[memgraph-context-graph,reconciliation]>=0.11.1")
+#: Connectors whose own command people run: ``sessions-graph reconcile``, ``resources-graph sweep``.
+EXECUTABLES = ("sessions-graph", "resources-graph")
 
 
 class ToolError(Exception):
@@ -69,16 +73,24 @@ def connectors() -> list[str]:
 def requirements(*, viewer: bool = False, spaces: bool = False) -> list[str]:
     """The ``uv tool install`` arguments for the tool, its connectors (:func:`connectors`), and the optional packages.
 
-    A package already installed is kept: ``uv tool install`` replaces the tool's requirements with
-    what it is given, so leaving one out would remove it.
+    A package already installed is kept, and so is sessions-graph's reconciliation extra: ``uv tool
+    install`` replaces the tool's requirements with what it is given, so leaving one out would remove
+    it. The connectors' own commands (:data:`EXECUTABLES`) are put on PATH, since uv would drop them too.
     """
     argv = [BASE]
-    for name in connectors():
-        argv += ["--with", INSTALLABLE[name]]
+    names = connectors()
+    for name in names:
+        requirement = INSTALLABLE[name]
+        if name == "sessions-graph" and installed(RECONCILIATION[0]):
+            requirement = RECONCILIATION[1]
+        argv += ["--with", requirement]
     if viewer or installed(VIEWER[0]):
         argv += ["--with", VIEWER[1]]
     if spaces or installed(SPACES[0]):
         argv += ["--with", SPACES[1]]
+    for name in EXECUTABLES:
+        if name in names:
+            argv += ["--with-executables-from", name]
     return argv
 
 
