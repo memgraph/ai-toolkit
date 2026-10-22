@@ -6,7 +6,6 @@ Requires:
 - OpenAI tests additionally require OPENAI_API_KEY
 """
 
-import asyncio
 import os
 
 import pytest
@@ -14,7 +13,7 @@ import pytest
 pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
 
 from memgraph_context_graph import AgentLink
-from memgraph_context_graph.adapters.claude import ClaudeAdapter
+from memgraph_context_graph.adapters.claude_code import ClaudeCodeHooksAdapter
 from memgraph_context_graph.events import ToolEndEvent
 from skills_graph import Skill, SkillGraph
 from skills_graph.connector import SkillGraphConnector
@@ -32,11 +31,11 @@ def sg():
 
 @pytest.fixture()
 def wired(sg):
-    """Full wired stack: adapter → link → connector → graph."""
+    """Full wired stack: Claude Code / Agent SDK hook payloads → link → connector → graph."""
     link = AgentLink()
     connector = SkillGraphConnector(sg)
     link.add_connector(connector)
-    adapter = ClaudeAdapter(link, "test-session", auto_session=False)
+    adapter = ClaudeCodeHooksAdapter(link, session_id="test-session")
     return {"sg": sg, "link": link, "connector": connector, "adapter": adapter}
 
 
@@ -54,17 +53,13 @@ def test_tool_start_creates_used_skill_relationship(wired):
     sg.add_skill(Skill(name="pdf-processing", description="PDF tools", content="..."))
 
     # Simulate a get_skill tool call through the Claude adapter
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(
-        adapter._pre_tool_use(
-            {
-                "tool_name": "get_skill",
-                "tool_input": {"name": "pdf-processing"},
-                "tool_use_id": "tu-1",
-            },
-            "tu-1",
-            {},
-        )
+    adapter.handle_payload(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "get_skill",
+            "tool_input": {"name": "pdf-processing"},
+            "tool_use_id": "tu-1",
+        }
     )
 
     # Verify the relationship was created
@@ -92,19 +87,14 @@ def test_tool_call_inside_subagent_attaches_used_skill_to_agent_not_session(wire
         "CREATE (:Agent {agent_id: $agent_id, agent_type: 'Explore', started_at: '2026-01-01T00:00:00+00:00'})",
         params={"agent_id": "agent-1"},
     )
-
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(
-        adapter._pre_tool_use(
-            {
-                "tool_name": "get_skill",
-                "tool_input": {"name": "pdf-processing"},
-                "tool_use_id": "tu-agent-1",
-                "agent_id": "agent-1",
-            },
-            "tu-agent-1",
-            {},
-        )
+    adapter.handle_payload(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "get_skill",
+            "tool_input": {"name": "pdf-processing"},
+            "tool_use_id": "tu-agent-1",
+            "agent_id": "agent-1",
+        }
     )
 
     agent_rows = sg._db.query(
@@ -121,27 +111,21 @@ def test_tool_call_inside_subagent_attaches_used_skill_to_agent_not_session(wire
 
 
 def test_tool_call_with_agent_name_but_no_agent_node_falls_back_to_session(wired):
-    """Some adapters (e.g. OpenAI Agents SDK) set agent_name for the top-level
-    running agent too, not just genuine nested subagents -- and no Agent node
-    may exist for it at all if actions-graph's connector isn't wired. This must
-    fall back to the Session, not silently drop the whole USED_SKILL record."""
+    """An agent with no Agent node -- actions-graph's connector, which creates
+    them, isn't wired -- must fall back to the Session, not silently drop the
+    whole USED_SKILL record."""
     sg = wired["sg"]
     adapter = wired["adapter"]
 
     sg.add_skill(Skill(name="pdf-processing", description="PDF tools", content="..."))
-
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(
-        adapter._pre_tool_use(
-            {
-                "tool_name": "get_skill",
-                "tool_input": {"name": "pdf-processing"},
-                "tool_use_id": "tu-no-agent-node",
-                "agent_id": "top-level-agent-with-no-node",
-            },
-            "tu-no-agent-node",
-            {},
-        )
+    adapter.handle_payload(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "get_skill",
+            "tool_input": {"name": "pdf-processing"},
+            "tool_use_id": "tu-no-agent-node",
+            "agent_id": "top-level-agent-with-no-node",
+        }
     )
 
     session_rows = sg._db.query(
@@ -157,19 +141,14 @@ def test_multiple_accesses_increment_count(wired):
     adapter = wired["adapter"]
 
     sg.add_skill(Skill(name="cypher-basics", description="Cypher intro", content="..."))
-
-    loop = asyncio.get_event_loop()
     for _ in range(3):
-        loop.run_until_complete(
-            adapter._pre_tool_use(
-                {
-                    "tool_name": "get_skill",
-                    "tool_input": {"name": "cypher-basics"},
-                    "tool_use_id": "tu-x",
-                },
-                "tu-x",
-                {},
-            )
+        adapter.handle_payload(
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "get_skill",
+                "tool_input": {"name": "cypher-basics"},
+                "tool_use_id": "tu-x",
+            }
         )
 
     rows = sg._db.query(
@@ -218,18 +197,13 @@ def test_non_skill_tool_ignored(wired):
     """Tools unrelated to skills must not create any relationships."""
     sg = wired["sg"]
     adapter = wired["adapter"]
-
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(
-        adapter._pre_tool_use(
-            {
-                "tool_name": "Read",
-                "tool_input": {"path": "/etc/hosts"},
-                "tool_use_id": "tu-2",
-            },
-            "tu-2",
-            {},
-        )
+    adapter.handle_payload(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Read",
+            "tool_input": {"path": "/etc/hosts"},
+            "tool_use_id": "tu-2",
+        }
     )
 
     rows = sg._db.query("MATCH ()-[r:USED_SKILL]->() RETURN count(r) AS cnt")
@@ -240,18 +214,13 @@ def test_add_skill_tool_supported_but_missing_skill_is_not_recorded(wired):
     """add_skill is recognized, but pre-tool tracking cannot match a Skill that does not exist yet."""
     sg = wired["sg"]
     adapter = wired["adapter"]
-
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(
-        adapter._pre_tool_use(
-            {
-                "tool_name": "add_skill",
-                "tool_input": {"name": "new-skill"},
-                "tool_use_id": "tu-add",
-            },
-            "tu-add",
-            {},
-        )
+    adapter.handle_payload(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "add_skill",
+            "tool_input": {"name": "new-skill"},
+            "tool_use_id": "tu-add",
+        }
     )
 
     rows = sg._db.query("MATCH ()-[r:USED_SKILL]->() RETURN count(r) AS cnt")
@@ -264,18 +233,13 @@ def test_delete_skill_tool_records_existing_skill(wired):
     adapter = wired["adapter"]
 
     sg.add_skill(Skill(name="old-skill", description="Old helper", content="..."))
-
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(
-        adapter._pre_tool_use(
-            {
-                "tool_name": "delete_skill",
-                "tool_input": {"name": "old-skill"},
-                "tool_use_id": "tu-delete",
-            },
-            "tu-delete",
-            {},
-        )
+    adapter.handle_payload(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "delete_skill",
+            "tool_input": {"name": "old-skill"},
+            "tool_use_id": "tu-delete",
+        }
     )
 
     rows = sg._db.query(
@@ -297,50 +261,39 @@ def test_full_session_lifecycle(wired):
     sg.add_skill(Skill(name="docker-skill", description="Docker helpers", content="..."))
     sg.add_skill(Skill(name="git-skill", description="Git helpers", content="..."))
 
-    loop = asyncio.get_event_loop()
-
     # User prompt (ignored by connector)
-    loop.run_until_complete(adapter._user_prompt_submit({"prompt": "Show me the docker skill"}, None, {}))
+    adapter.handle_payload({"hook_event_name": "UserPromptSubmit", "prompt": "Show me the docker skill"})
 
     # get_skill(docker-skill)
-    loop.run_until_complete(
-        adapter._pre_tool_use(
-            {
-                "tool_name": "get_skill",
-                "tool_input": {"name": "docker-skill"},
-                "tool_use_id": "tu-10",
-            },
-            "tu-10",
-            {},
-        )
+    adapter.handle_payload(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "get_skill",
+            "tool_input": {"name": "docker-skill"},
+            "tool_use_id": "tu-10",
+        }
     )
-    loop.run_until_complete(
-        adapter._post_tool_use(
-            {
-                "tool_name": "get_skill",
-                "tool_use_id": "tu-10",
-                "tool_response": "Docker helpers content",
-            },
-            "tu-10",
-            {},
-        )
+    adapter.handle_payload(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "get_skill",
+            "tool_use_id": "tu-10",
+            "tool_response": "Docker helpers content",
+        }
     )
 
     # update_skill(git-skill)
-    loop.run_until_complete(
-        adapter._pre_tool_use(
-            {
-                "tool_name": "update_skill",
-                "tool_input": {"name": "git-skill"},
-                "tool_use_id": "tu-11",
-            },
-            "tu-11",
-            {},
-        )
+    adapter.handle_payload(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "update_skill",
+            "tool_input": {"name": "git-skill"},
+            "tool_use_id": "tu-11",
+        }
     )
 
     # Stop
-    loop.run_until_complete(adapter._stop({}, None, {}))
+    adapter.handle_payload({"hook_event_name": "Stop"})
 
     # Verify both skills were recorded
     rows = sg._db.query(
@@ -372,7 +325,8 @@ async def test_openai_agent_get_skill(sg):
     """Real OpenAI agent calls get_skill tool → USED_SKILL edge in Memgraph."""
     from agents import Agent, Runner, function_tool
     from memgraph_context_graph import AgentLink
-    from memgraph_context_graph.adapters.openai import OpenAIAdapter
+    from memgraph_context_graph.sdk import ContextGraphMemory
+    from memgraph_context_graph.sdk.openai import OpenAIAgentsMemory
     from skills_graph.connector import SkillGraphConnector
 
     # Seed a skill
@@ -395,7 +349,7 @@ async def test_openai_agent_get_skill(sg):
     link = AgentLink()
     connector = SkillGraphConnector(sg)
     link.add_connector(connector)
-    adapter = OpenAIAdapter(link, session_id="openai-e2e-get", auto_session=False)
+    wired = OpenAIAgentsMemory(ContextGraphMemory(link=link, memory_tool=False), session_id="openai-e2e-get")
 
     agent = Agent(
         name="Skill Assistant",
@@ -411,9 +365,9 @@ async def test_openai_agent_get_skill(sg):
     result = await Runner.run(
         agent,
         "Get the skill called 'cypher-basics'",
-        hooks=adapter.get_runtime_hooks(),
+        hooks=wired.hooks(),
     )
-    adapter.end_session()
+    wired.end_session()
 
     assert result.final_output is not None
 

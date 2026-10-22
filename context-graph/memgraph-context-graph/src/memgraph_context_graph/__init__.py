@@ -5,20 +5,17 @@ development SDK or runtime hook source to any context-graph component
 (actions-graph, skills-graph, etc.).
 
 Architecture:
-    Runtime Adapter (Claude, OpenAI, Codex, ...) → Event Protocol → Graph Connector(s)
+    Runtime Adapter (Claude Code, Codex, SDK hooks, ...) → Event Protocol → Graph Connector(s)
 
     Adapters live here.  Connectors live in each graph library.
 
-Quick Start::
+An app built on the Claude Agent SDK or the OpenAI Agents SDK gets capture,
+session context and the memory tools from :mod:`memgraph_context_graph.sdk`::
 
-    from memgraph_context_graph import AgentLink
-    from memgraph_context_graph.adapters.claude import ClaudeAdapter
-    from skills_graph.connector import SkillGraphConnector
+    from memgraph_context_graph.sdk import ContextGraphMemory
+    from memgraph_context_graph.sdk.claude import ClaudeAgentMemory
 
-    link = AgentLink()
-    link.add_connector(SkillGraphConnector(skill_graph))
-    adapter = ClaudeAdapter(link, session_id="s-1")
-    hooks = adapter.get_runtime_hooks()
+    options = ClaudeAgentMemory(ContextGraphMemory(user_id="alice")).options(model="claude-sonnet-5-5")
 """
 
 from importlib import metadata

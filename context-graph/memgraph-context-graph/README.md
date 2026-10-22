@@ -26,17 +26,11 @@ The `mcp` extra is what `memgraph-context-graph mcp` serves [recall](#recall-mem
 
 Or run `memgraph-context-graph setup`, which installs whatever connectors are missing (see [Setup](#setup)).
 
-For SDK usage inside an application:
+For an app built on an agent SDK ([Memory for SDK apps](#memory-for-sdk-apps)), install the SDK's extra and the connectors whose graphs hold the memory:
 
 ```bash
-pip install memgraph-context-graph
-```
-
-With runtime adapters:
-
-```bash
-pip install memgraph-context-graph[claude]
-pip install memgraph-context-graph[openai]
+pip install "memgraph-context-graph[claude]" "sessions-graph[memgraph-context-graph]" "actions-graph[memgraph-context-graph]"
+pip install "memgraph-context-graph[openai]" "sessions-graph[memgraph-context-graph]" "actions-graph[memgraph-context-graph]"
 ```
 
 Graph connectors live in the graph packages that persist the data. For the skills graph connector:
@@ -45,90 +39,71 @@ Graph connectors live in the graph packages that persist the data. For the skill
 pip install skills-graph[memgraph-context-graph]
 ```
 
+## Memory for SDK apps
+
+An app built on the Claude Agent SDK or the OpenAI Agents SDK can make Context Graph its memory in-process. `memgraph_context_graph.sdk` gives it what hooks and the MCP server give a coding agent:
+
+- **Capture:** the SDK's own hooks record the session through the configured connectors. It is embedded and reconciled like a coding-agent session.
+- **Context:** the memory index and where the user left off in this project.
+- **Tools:** `recall` and `memory`.
+
+The memory is the same one the user's coding agents use. The Memgraph connection, capture policy and connectors come from the config file, as they do for hooks. The app sets only `user_id` (whose memory it is) and `cwd` (which project).
+
+```python
+from memgraph_context_graph.sdk import ContextGraphMemory
+
+memory = ContextGraphMemory(user_id="alice")
+```
+
+**Claude Agent SDK** (`memgraph-context-graph[claude]`). The SDK's hook callbacks get Claude Code's own hook payloads, so the `claude-code` rules translate them, under `source_sdk = "claude-agent-sdk"`. Python callbacks get no `SessionStart` or `SessionEnd`, which changes two things:
+
+- The memory context goes in with the session's first prompt.
+- The app ends the session itself.
+
+```python
+from claude_agent_sdk import ClaudeSDKClient
+from memgraph_context_graph.sdk.claude import ClaudeAgentMemory
+
+claude = ClaudeAgentMemory(memory)
+async with ClaudeSDKClient(claude.options(model="claude-sonnet-5-5")) as client:
+    await client.query("Which package manager does this project use?")
+    async for message in client.receive_response():
+        ...
+claude.end_session()
+```
+
+`options()` does four things:
+
+- adds the hooks;
+- adds an in-process `context-graph` MCP server and permits its tools;
+- turns Claude Code's own auto memory off;
+- keeps any hooks, servers and tools you pass in.
+
+Keep `"user"` out of `setting_sources`. It would also load the Context Graph Claude Code plugin, and every event would be captured twice.
+
+**OpenAI Agents SDK** (`memgraph-context-graph[openai]`). Capture reads the run lifecycle (`RunHooks`):
+
+- The user's message comes from the run's input.
+- Each model response's text is recorded as an assistant message.
+- Tools and handoffs come from their own hooks.
+
+The memory context goes into dynamic instructions, and the tools are function tools.
+
+```python
+from agents import Agent, Runner
+from memgraph_context_graph.sdk.openai import OpenAIAgentsMemory
+
+wired = OpenAIAgentsMemory(memory, session_id="chat-42")  # one id per conversation
+agent = Agent(name="Assistant", instructions=wired.instructions("Be concise."), tools=wired.tools())
+result = await Runner.run(agent, "Which package manager does this project use?", hooks=wired.hooks())
+wired.end_session()
+```
+
+`examples/sdk_claude_agent.py` and `examples/sdk_openai_agents.py` each run two sessions: the first is told something and the second has to know it.
+
 ## Quick Start
 
-### Claude Agent SDK
-
-```python
-from memgraph_context_graph import AgentLink
-from memgraph_context_graph.adapters.claude import ClaudeAdapter
-from claude_agent_sdk import ClaudeAgentOptions, query
-from skills_graph import SkillGraph
-from skills_graph.connector import SkillGraphConnector
-
-# 1. Set up graph storage
-skills = SkillGraph()
-skills.setup()
-
-# 2. Wire up the link
-link = AgentLink()
-link.add_connector(SkillGraphConnector(skills))
-
-# 3. Create adapter
-adapter = ClaudeAdapter(
-    link,
-    session_id="my-session",
-    session_kwargs={"model": "claude-sonnet-4-20250514"},
-)
-
-# 4. Use with Claude Agent SDK
-async for message in query(
-    prompt="Review the available skills",
-    options=ClaudeAgentOptions(hooks=adapter.get_runtime_hooks()),
-):
-    print(message)
-```
-
-### OpenAI Agents SDK
-
-```python
-from memgraph_context_graph import AgentLink
-from memgraph_context_graph.adapters.openai import OpenAIAdapter
-from agents import Agent, Runner, function_tool
-from skills_graph import SkillGraph
-from skills_graph.connector import SkillGraphConnector
-
-# 1. Set up graph storage
-skills = SkillGraph()
-skills.setup()
-
-
-# 2. Define a tool whose name matches the SkillGraphConnector defaults
-@function_tool
-def get_skill(name: str) -> str:
-    skill = skills.get_skill(name)
-    if skill is None:
-        return f"Skill '{name}' not found."
-    return f"{skill.name}: {skill.description}\n{skill.content}"
-
-
-# 3. Wire up the link
-link = AgentLink()
-link.add_connector(SkillGraphConnector(skills))
-
-# 4. Create adapter
-adapter = OpenAIAdapter(
-    link,
-    session_id="my-session",
-    session_kwargs={"model": "gpt-4o-mini"},
-)
-
-# 5. Run with hooks
-agent = Agent(
-    name="Skill Assistant",
-    instructions="Use get_skill when the user asks for a named skill.",
-    tools=[get_skill],
-    model="gpt-4o-mini",
-)
-result = await Runner.run(
-    agent,
-    "Get the skill called 'cypher-basics'",
-    hooks=adapter.get_runtime_hooks(),
-)
-
-# 6. Signal end (OpenAI SDK doesn't have a stop hook)
-adapter.end_session()
-```
+For a coding agent, run `memgraph-context-graph setup` ([Setup](#setup)). For an app built on the Claude Agent SDK or the OpenAI Agents SDK, see [Memory for SDK apps](#memory-for-sdk-apps).
 
 ### Command Hook Runtimes
 
@@ -578,7 +553,8 @@ See [Command Hook Reference](docs/command-hooks.md) for manual setup, non-defaul
 
 ```python
 from memgraph_context_graph import AgentLink
-from memgraph_context_graph.adapters.claude import ClaudeAdapter
+from memgraph_context_graph.sdk import ContextGraphMemory
+from memgraph_context_graph.sdk.claude import ClaudeAgentMemory
 from skills_graph import SkillGraph
 from skills_graph.connector import SkillGraphConnector
 
@@ -588,8 +564,8 @@ link = AgentLink()
 link.add_connector(SkillGraphConnector(skills))
 link.add_connector(MyGraphConnector(...))
 
-adapter = ClaudeAdapter(link, session_id="s-1")
-hooks = adapter.get_runtime_hooks()
+# Capture goes through your link instead of the config file's connectors.
+options = ClaudeAgentMemory(ContextGraphMemory(link=link)).options()
 ```
 
 Connectors are owned by the graph packages because each graph package knows its own schema and persistence rules.
@@ -619,8 +595,8 @@ All runtime adapters emit runtime-agnostic `Event` dataclasses:
 
 | Adapter | Runtime Source | Hook Mechanism |
 |---------|----------------|----------------|
-| `ClaudeAdapter` | Claude Agent SDK | Dict of `HookMatcher` callbacks |
-| `OpenAIAdapter` | OpenAI Agents SDK | `RunHooksBase` subclass |
+| `ClaudeAgentMemory` (`memgraph_context_graph.sdk.claude`) | Claude Agent SDK | `HookMatcher` callbacks, translated by the `claude-code` rules |
+| `OpenAIAgentsMemory` (`memgraph_context_graph.sdk.openai`) | OpenAI Agents SDK | A `RunHooks` subclass |
 | Command-hook adapters | Claude Code, Codex, Copilot CLI, Cursor, OpenCode, Antigravity CLI, Grok Build | Command hooks reading JSON from stdin (see [Command Hook Runtimes](#command-hook-runtimes) and [docs/command-hooks.md](docs/command-hooks.md)) |
 
 ### Graph Connectors

@@ -25,6 +25,10 @@ anthropic = [
 memgraph-context-graph = [
     "memgraph-context-graph>=0.10.0",
 ]
+# The SDK apps' memory (memgraph_context_graph.sdk) is tested here, against this package's graph.
+sdk = [
+    "memgraph-context-graph[claude,openai]",
+]
 reconciliation = [
     "actions-graph>=0.4.0",
     # The derivation LLM: whichever key is configured (derive_llm.py).

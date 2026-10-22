@@ -688,7 +688,7 @@ jobs:
           MEMGRAPH_PASSWORD: ""
           MEMGRAPH_DATABASE: memgraph
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: uv run --package sessions-graph --extra test --extra reconciliation --extra memgraph-context-graph pytest tests/ -v
+        run: uv run --package sessions-graph --extra test --extra reconciliation --extra memgraph-context-graph --extra sdk pytest tests/ -v
 
   test-context-graph-eval:
     needs: changes
