@@ -10,7 +10,12 @@ name: Test docs 1847 remaining platform commands
 # Only one Linux leg calls a model, for one real Claude Code session; without
 # the secret (fork PRs) that step says so and passes, and the rest still runs.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      run_linux:
+        description: Run the Linux Lab and schema audit
+        type: boolean
+        default: true
 
 concurrency:
   group: install-matrix-${{ github.event.pull_request.number || github.ref }}
@@ -27,6 +32,14 @@ jobs:
         uv: [present]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install a real Windows pseudoconsole driver
+        shell: pwsh
+        run: python -m pip install pywinpty
+
+      - name: Verify the execution-policy command in a native console
+        shell: pwsh
+        run: python context-graph/scripts/install-e2e/docs_windows.py ${{ matrix.shell }} --policy-only
 
       - name: Install uv ahead of the script
         if: matrix.uv == 'present'
@@ -156,10 +169,6 @@ jobs:
         shell: pwsh
         run: ${{ matrix.shell }} -NoProfile -ExecutionPolicy Bypass -File ./context-graph/scripts/install.ps1 claude-code codex --user-id ci-test-user --memgraph-url bolt://127.0.0.1:17687
 
-      - name: Install a real Windows pseudoconsole driver
-        shell: pwsh
-        run: python -m pip install pywinpty
-
       - name: Execute published docs commands in a real Windows console
         shell: pwsh
         run: python context-graph/scripts/install-e2e/docs_windows.py ${{ matrix.shell }}
@@ -177,6 +186,7 @@ jobs:
           powershell -NoProfile -Command "$env:Path=[Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:Path; memgraph-context-graph uninstall claude-code codex; exit $LASTEXITCODE"
 
   linux-docs:
+    if: ${{ inputs.run_linux }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

@@ -17,6 +17,16 @@ ROOT = Path(os.environ["RUNNER_TEMP"]) / "docs-1847-evidence"
 ROOT.mkdir(exist_ok=True)
 sys.stdout.reconfigure(encoding="utf-8")
 SHELL = sys.argv[1]
+if SHELL.casefold() == "powershell":
+    # Python inherits PowerShell 7's module paths from the Actions shell; Windows PowerShell needs its own.
+    os.environ["PSMODULEPATH"] = ";".join(
+        str(path)
+        for path in [
+            Path(os.environ["WINDIR"]) / "System32/WindowsPowerShell/v1.0/Modules",
+            Path(os.environ["PROGRAMFILES"]) / "WindowsPowerShell/Modules",
+            Path(os.environ["USERPROFILE"]) / "Documents/WindowsPowerShell/Modules",
+        ]
+    )
 URL = "https://install.memgraph.com/ai-memory/windows"
 
 
@@ -85,6 +95,8 @@ run_console(
     expected="DOCS_POLICY=Bypass",
     startup_policy=False,
 )
+if "--policy-only" in sys.argv:
+    sys.exit(0)
 run_console("first-one-liner", f"iwr {URL} -useb | iex")
 run_console("setup-args-one-liner", f"$env:CONTEXT_GRAPH_SETUP_ARGS = 'codex --user-id alice'; iwr {URL} -useb | iex")
 subprocess.run(
