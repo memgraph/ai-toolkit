@@ -8,11 +8,11 @@ Usage::
     from skills_graph import SkillGraph
     from skills_graph.connector import SkillGraphConnector
     from memgraph_context_graph import AgentLink
-    from memgraph_context_graph.adapters.claude import ClaudeAdapter
+    from memgraph_context_graph.sdk import ContextGraphMemory
 
     link = AgentLink()
     link.add_connector(SkillGraphConnector(SkillGraph()))
-    adapter = ClaudeAdapter(link, session_id="s-1")
+    memory = ContextGraphMemory(link=link)  # then ClaudeAgentMemory(memory) or OpenAIAgentsMemory(memory)
 """
 
 from __future__ import annotations

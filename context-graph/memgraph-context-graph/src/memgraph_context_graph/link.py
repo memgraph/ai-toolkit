@@ -38,8 +38,7 @@ class AgentLink:
         link.add_connector(SkillGraphConnector(skill_graph))
         link.add_connector(MyGraphConnector(graph))
 
-        adapter = ClaudeAdapter(link, session_id="s-1")
-        hooks = adapter.get_runtime_hooks()
+        memory = ContextGraphMemory(link=link)  # memgraph_context_graph.sdk
     """
 
     def __init__(self, on_error: ConnectorErrorHandler | None = None, *, policy: CapturePolicy | None = None) -> None:

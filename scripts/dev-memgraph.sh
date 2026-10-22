@@ -458,7 +458,7 @@ cmd_test() {
           pytest context-graph/skills-graph/tests/ -v) || failed+=("$pkg")
         ;;
       sessions-graph)
-        (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package sessions-graph --extra test --extra reconciliation --extra memgraph-context-graph \
+        (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package sessions-graph --extra test --extra reconciliation --extra memgraph-context-graph --extra sdk \
           pytest context-graph/sessions-graph/tests/ -v) || failed+=("$pkg")
         ;;
       resources-graph)

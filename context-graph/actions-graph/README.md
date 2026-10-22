@@ -69,7 +69,8 @@ print(f"Actions: {summary['action_count']}, Tools: {summary['tool_call_count']}"
 from actions_graph import ActionsGraph
 from actions_graph.connector import ActionsGraphConnector
 from memgraph_context_graph import AgentLink
-from memgraph_context_graph.adapters.claude import ClaudeAdapter
+from memgraph_context_graph.sdk import ContextGraphMemory
+from memgraph_context_graph.sdk.claude import ClaudeAgentMemory
 
 graph = ActionsGraph()
 graph.setup()
@@ -77,8 +78,8 @@ graph.setup()
 link = AgentLink()
 link.add_connector(ActionsGraphConnector(graph))
 
-adapter = ClaudeAdapter(link, session_id="my-session-123")
-hooks = adapter.get_runtime_hooks()
+# A Claude Agent SDK app; OpenAIAgentsMemory(memory) wires an OpenAI Agents SDK app the same way.
+options = ClaudeAgentMemory(ContextGraphMemory(link=link)).options()
 ```
 
 Actions Graph should consume runtime activity through Memgraph Context Graph when possible. Runtime adapters normalize SDK callbacks and command hooks into the shared Event Protocol; `ActionsGraphConnector` decides which events become session and action nodes.

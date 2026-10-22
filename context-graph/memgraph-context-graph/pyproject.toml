@@ -30,14 +30,16 @@ antigravity-cli = "memgraph_context_graph.adapters.antigravity_cli:PLUGIN"
 grok = "memgraph_context_graph.adapters.grok:PLUGIN"
 
 [project.optional-dependencies]
+# memgraph_context_graph.sdk.claude: PostToolUseFailure, SubagentStart and PermissionRequest callbacks.
 claude = [
-    "claude-agent-sdk>=0.1.0",
+    "claude-agent-sdk>=0.1.30",
 ]
 mcp = [
     "mcp>=1.23.0,<3",
 ]
+# memgraph_context_graph.sdk.openai: the run's input on its hook context (turn_input).
 openai = [
-    "openai-agents>=0.1.0",
+    "openai-agents>=0.8.0",
 ]
 test = [
     "mcp>=1.23.0,<3",

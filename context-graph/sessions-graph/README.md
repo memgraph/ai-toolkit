@@ -50,13 +50,15 @@ graph.delete_memory(mem.memory_id)
 
 ## Integration with Memgraph Context Graph
 
-Wire the `SessionsGraphConnector` into an `AgentLink` to get automatic session provenance — the connector tracks the active `session_id` and `user_id` from `SessionStartEvent` so you can reference them when saving memories.
+An app built on the Claude Agent SDK or the OpenAI Agents SDK gets this package's memory — capture, the session-start memory index, and the `recall`/`memory` tools — from `memgraph_context_graph.sdk`; see [Memory for SDK apps](../memgraph-context-graph/README.md#memory-for-sdk-apps).
+
+To wire the connector yourself, add `SessionsGraphConnector` to an `AgentLink`. It tracks the active `session_id` and `user_id` from `SessionStartEvent`, so you can reference them when saving memories.
 
 ```python
 from sessions_graph import SessionsGraph
 from sessions_graph.connector import SessionsGraphConnector
 from memgraph_context_graph import AgentLink
-from memgraph_context_graph.adapters.claude import ClaudeAdapter
+from memgraph_context_graph.events import SessionStartEvent
 
 graph = SessionsGraph()
 graph.setup()
@@ -65,11 +67,7 @@ connector = SessionsGraphConnector(graph)
 link = AgentLink()
 link.add_connector(connector)
 
-adapter = ClaudeAdapter(
-    link,
-    session_id="s-abc123",
-    session_kwargs={"user_id": "alice"},
-)
+link.emit(SessionStartEvent(session_id="s-abc123", user_id="alice"))
 
 # During the session, save memories via the Python API:
 graph.save_memory(

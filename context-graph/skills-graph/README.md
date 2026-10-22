@@ -65,13 +65,14 @@ Wire `SkillGraphConnector` into an `AgentLink` and skill usage is recorded autom
 from skills_graph import SkillGraph
 from skills_graph.connector import SkillGraphConnector
 from memgraph_context_graph import AgentLink
-from memgraph_context_graph.adapters.claude import ClaudeAdapter
+from memgraph_context_graph.sdk import ContextGraphMemory
+from memgraph_context_graph.sdk.claude import ClaudeAgentMemory
 
 link = AgentLink()
 link.add_connector(SkillGraphConnector(SkillGraph()))
 
-adapter = ClaudeAdapter(link, session_id="s-1")
-hooks = adapter.get_runtime_hooks()
+# A Claude Agent SDK app; OpenAIAgentsMemory(memory) wires an OpenAI Agents SDK app the same way.
+options = ClaudeAgentMemory(ContextGraphMemory(link=link)).options()
 ```
 
 Requires the `memgraph-context-graph` extra: `pip install "skills-graph[memgraph-context-graph]"`.
