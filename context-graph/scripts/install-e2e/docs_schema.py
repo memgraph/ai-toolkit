@@ -39,7 +39,10 @@ if "--verify" not in sys.argv:
         workers = [
             process
             for process in psutil.process_iter(["cmdline"])
-            if "sessions_graph.cli" in (process.info["cmdline"] or [])
+            if any(
+                Path(arg).name == "sessions-graph" or arg == "sessions_graph.cli"
+                for arg in (process.info["cmdline"] or [])
+            )
             and "embed" in (process.info["cmdline"] or [])
             and SESSION in (process.info["cmdline"] or [])
         ]

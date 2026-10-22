@@ -20,11 +20,14 @@ SHELL = sys.argv[1]
 URL = "https://install.memgraph.com/ai-memory/windows"
 
 
-def run_console(name: str, command: str) -> None:
+def run_console(
+    name: str, command: str, *, expected: str = "Context Graph is set up.", startup_policy: bool = True
+) -> None:
     """Answer setup's default questions while preserving the actual console output."""
-    process = PtyProcess.spawn(
-        [SHELL, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], dimensions=(40, 160)
-    )
+    argv = [SHELL, "-NoProfile"]
+    if startup_policy:
+        argv += ["-ExecutionPolicy", "Bypass"]
+    process = PtyProcess.spawn([*argv, "-Command", command], dimensions=(40, 160))
     chunks: queue.Queue[str] = queue.Queue()
 
     def read_output() -> None:
@@ -56,6 +59,9 @@ def run_console(name: str, command: str) -> None:
             except queue.Empty:
                 continue
             plain = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
+            if "[Y] Yes" in plain and "policy-confirm" not in answered:
+                process.write("y\r")
+                answered.add("policy-confirm")
             for question in questions:
                 if question not in answered and re.search(r"◆[^\r\n]*" + re.escape(question), plain):
                     process.write("\r")
@@ -65,7 +71,7 @@ def run_console(name: str, command: str) -> None:
             output += chunks.get_nowait()
         (ROOT / f"{SHELL}-{name}.log").write_text(output, encoding="utf-8")
         print(output)
-        assert "Context Graph is set up." in output, f"{name}: no successful setup report"
+        assert expected in output, f"{name}: expected {expected!r} in command output"
         assert process.exitstatus == 0, f"{name}: exited {process.exitstatus}"
     finally:
         (ROOT / f"{SHELL}-{name}.log").write_text(output, encoding="utf-8")
@@ -73,19 +79,12 @@ def run_console(name: str, command: str) -> None:
             process.terminate(force=True)
 
 
-policy = subprocess.run(
-    [
-        SHELL,
-        "-NoProfile",
-        "-Command",
-        "Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; Get-ExecutionPolicy -Scope Process",
-    ],
-    text=True,
-    capture_output=True,
-    check=True,
+run_console(
+    "execution-policy",
+    "Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; Write-Output ('DOCS_POLICY=' + (Get-ExecutionPolicy -Scope Process))",
+    expected="DOCS_POLICY=Bypass",
+    startup_policy=False,
 )
-(ROOT / f"{SHELL}-execution-policy.log").write_text(policy.stdout + policy.stderr, encoding="utf-8")
-assert "Bypass" in policy.stdout
 run_console("first-one-liner", f"iwr {URL} -useb | iex")
 run_console("setup-args-one-liner", f"$env:CONTEXT_GRAPH_SETUP_ARGS = 'codex --user-id alice'; iwr {URL} -useb | iex")
 subprocess.run(

@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shell: [powershell, pwsh]
+        shell: [powershell]
         uv: [present]
     steps:
       - uses: actions/checkout@v4
