@@ -210,12 +210,12 @@ def _finish(outcomes: Sequence[engine.Outcome], choices: engine.Choices, env: en
     failures = [outcome for outcome in outcomes if outcome.status == "fail"]
     print()
     if not failures:
+        from memgraph_context_graph.adapters._identity import config_file, load_config
+
         print("Context Graph is set up.")
         print()
-        steps = engine.next_steps(choices, env)
-        print(steps[0])
-        for line in steps[1:]:
-            print(f"  {line}")
+        steps = engine.next_steps(choices, env, load_config().memgraph_url, config_file())
+        print("\n".join(steps.lines()))
         return 0
     print(f"{len(failures)} step(s) failed. To fix:")
     for outcome in failures:
