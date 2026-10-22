@@ -1,9 +1,12 @@
 """Find or start the Memgraph that hooks write to.
 
-The order of cases is decided in #535: a configured URL that answers wins; a remote one that doesn't is an
-error, never a reason to touch local containers; our own container is restarted where it is; anything else
-answering on the default port is used unless it says it is disposable; otherwise a container is started, on
-another free port when the default one is taken.
+The order of cases is decided in #535: a Memgraph asked for by URL that answers wins; a remote one that doesn't
+is an error, never a reason to touch local containers; otherwise setup uses its own container, restarted where
+it is, or starts it, on another free port when the default one is taken.
+
+A local Memgraph is ours by container name and published port, never because it answers on the default port:
+whatever else listens on localhost:7687 may be a dev, test or demo instance whose data isn't ours to write
+into, or which is thrown away under the hooks (#536).
 """
 
 from __future__ import annotations
@@ -24,9 +27,6 @@ if TYPE_CHECKING:
 IMAGE = "memgraph/memgraph-mage:3.13.1"
 CONTAINER = "context-graph-memgraph"
 DEFAULT_PORT = 7687
-#: A container carrying this label holds demo data meant to be thrown away (the AI Memory demo sets it),
-#: so hooks must never be pointed at it: `clean` would silently drop their target (#536).
-DISPOSABLE_LABEL = "com.memgraph.ai-memory.disposable"
 READY_SECONDS = 180.0
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 _PORT_TAKEN = ("port is already allocated", "address already in use")
@@ -104,45 +104,38 @@ def find_or_start(
     ready_seconds: float = READY_SECONDS,
     log: Callable[[str], None] = print,
 ) -> Memgraph:
-    """Settle on a Memgraph, starting one in Docker when nothing usable answers.
+    """Settle on a Memgraph, starting one in Docker when the one asked for isn't there.
 
     *explicit_url* is what the user asked for on the command line; it is never swapped for another port.
-    *configured_url* is what the config file holds, which may be the default nobody chose.
+    *configured_url* is what the config file holds. A remote one, or a local one on a port other than
+    *default_port*, was chosen by someone and is used when it answers; a local one on *default_port* may be the
+    default nobody chose, so it counts only through *container*.
 
     Raises:
         ProvisionError: the asked-for Memgraph doesn't answer and can't be started here, Docker is
             missing or stopped, the asked-for port is taken, or a started container never answered.
     """
-    wanted = explicit_url or configured_url
-    if wanted:
-        version = version_at(wanted, user, password)
-        # Asked for by name, even a disposable Memgraph is the user's call; only a default is second-guessed.
-        if version and (explicit_url or not _disposable_on(wanted)):
-            return Memgraph(wanted, version, "found" if explicit_url else "configured")
-        if not is_local(wanted):
+    chosen = explicit_url or (configured_url if configured_url and was_chosen(configured_url, default_port) else None)
+    if chosen:
+        version = version_at(chosen, user, password)
+        if version:
+            return Memgraph(chosen, version, "found" if explicit_url else "configured")
+        if not is_local(chosen):
             raise ProvisionError(
-                f"Memgraph at {wanted} doesn't answer",
+                f"Memgraph at {chosen} doesn't answer",
                 "Start it, or pass --memgraph-url with one that does. No local container was changed.",
             )
 
-    docker = _usable_docker()
-    if docker is not None and (existing := _inspect(docker, container)) is not None:
+    docker = _docker_or_fail()
+    if (existing := _inspect(docker, container)) is not None:
         return _restart(docker, existing, container, user, password, ready_seconds, log)
-    if not wanted:
-        # Docker isn't needed for a Memgraph someone already runs, natively or in their own container.
-        url = local_url(default_port)
-        version = version_at(url, user, password)
-        if version and not _disposable_on(url):
-            return Memgraph(url, version, "found")
-
-    docker = docker or _docker_or_fail()
-    port = _port_of(wanted) if wanted else default_port
+    port = _port_of(explicit_url) if explicit_url else default_port
     return _start(docker, container, image, port, bool(explicit_url), user, password, ready_seconds, log)
 
 
-def _usable_docker() -> str | None:
-    docker = shutil.which("docker")
-    return docker if docker is not None and _run([docker, "info"]).returncode == 0 else None
+def was_chosen(configured_url: str, default_port: int = DEFAULT_PORT) -> bool:
+    """Whether a configured URL names a Memgraph someone picked, rather than the default nobody had to pick."""
+    return not is_local(configured_url) or _port_of(configured_url) != default_port
 
 
 def _docker_or_fail() -> str:
@@ -281,15 +274,6 @@ def _published_port(docker: str, name: str) -> int | None:
         if host_port.isdigit():
             return int(host_port)
     return None
-
-
-def _disposable_on(url: str) -> bool:
-    """Whether a running container that publishes *url*'s port is labelled disposable."""
-    if not is_local(url) or shutil.which("docker") is None:
-        return False
-    port = _port_of(url)
-    result = _run(["docker", "ps", "--filter", f"publish={port}", "--filter", f"label={DISPOSABLE_LABEL}", "-q"])
-    return result.returncode == 0 and bool(result.stdout.strip())
 
 
 def _port_of(url: str) -> int:

@@ -28,6 +28,7 @@ from memgraph_context_graph.adapters._identity import (
     load_config,
 )
 from memgraph_context_graph.setup import engine, uninstall
+from memgraph_context_graph.setup import memgraph as memgraph_mod
 from memgraph_context_graph.setup.agents import AGENTS, BY_RUNTIME
 from memgraph_context_graph.setup.uninstall import Removals
 from memgraph_context_graph.terminal import color_support
@@ -967,9 +968,9 @@ def _wrapped(text: str, width: int) -> list[str]:
 def _memgraph_summary(choices: Choices, env: Environment) -> str:
     if choices.memgraph_url:
         return choices.memgraph_url
-    if env.configured_url:
+    if env.configured_url and memgraph_mod.was_chosen(env.configured_url):
         return f"{env.configured_url} (configured)"
-    return "uses Memgraph on localhost:7687, or starts one in Docker for you"
+    return f"the {choices.container} container in Docker, started for you if needed"
 
 
 def _starting_agents(env: Environment) -> list[str]:

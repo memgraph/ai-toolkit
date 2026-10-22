@@ -133,12 +133,12 @@ def plan(choices: Choices, env: Environment) -> list[str]:
     else:
         if choices.memgraph_url:
             lines.append(f"Memgraph: use {choices.memgraph_url}")
-        elif env.configured_url:
+        elif env.configured_url and memgraph_mod.was_chosen(env.configured_url):
             lines.append(
                 f"Memgraph: use {env.configured_url} (configured), else start the {choices.container} container"
             )
         else:
-            lines.append(f"Memgraph: use one on localhost:7687, else start the {choices.container} container")
+            lines.append(f"Memgraph: use the {choices.container} container, started if it isn't running")
         lines.append(f"Identity: identity.user_id = {choices.user_id}")
     packages = tool_mod.missing(viewer=choices.viewer)
     lines.append(f"Packages: install {', '.join(packages)}" if packages else "Packages: all installed")

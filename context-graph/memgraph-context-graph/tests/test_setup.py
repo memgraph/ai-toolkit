@@ -207,10 +207,23 @@ def test_the_configured_user_wins_over_git(setup_home):
     assert engine.default_choices(env).user_id == "alice"
 
 
+def test_a_configured_default_url_is_not_a_choice_but_another_port_is(setup_home, capsys):
+    from memgraph_context_graph.adapters._identity import write_config
+
+    write_config(memgraph_url="bolt://localhost:7687")
+    assert main(["setup", "--plan"]) == 0
+    assert "Memgraph: use the context-graph-memgraph container, started if it isn't running" in capsys.readouterr().out
+
+    write_config(memgraph_url="bolt://localhost:7700")
+    assert main(["setup", "--plan"]) == 0
+    out = capsys.readouterr().out
+    assert "Memgraph: use bolt://localhost:7700 (configured), else start the context-graph-memgraph container" in out
+
+
 def test_plan_changes_nothing_and_names_every_step(fake_agents, setup_home, project, capsys):
     assert main(["setup", "--plan", "cursor", "claude-code", "--project-dir", str(project), "--user-id", "bob"]) == 0
     out = capsys.readouterr().out
-    assert "Memgraph: use one on localhost:7687, else start the context-graph-memgraph container" in out
+    assert "Memgraph: use the context-graph-memgraph container, started if it isn't running" in out
     assert "Identity: identity.user_id = bob" in out
     assert f"Cursor: register the memory tools (user-wide) and wire {project.resolve()}" in out
     assert "Claude Code: install the Context Graph plugin (user-wide)" in out
