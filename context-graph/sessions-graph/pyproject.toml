@@ -1,6 +1,6 @@
 [project]
 name = "sessions-graph"
-version = "0.11.0"
+version = "0.11.1"
 description = "Cross-session memory store for agents, backed by Memgraph"
 readme = "README.md"
 license = { text = "MIT" }
@@ -23,7 +23,7 @@ anthropic = [
     "anthropic>=0.74.0",
 ]
 memgraph-context-graph = [
-    "memgraph-context-graph>=0.10.0",
+    "memgraph-context-graph>=0.11.0",
 ]
 # The SDK apps' memory (memgraph_context_graph.sdk) is tested here, against this package's graph.
 sdk = [

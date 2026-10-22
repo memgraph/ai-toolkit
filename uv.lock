@@ -4079,7 +4079,7 @@ wheels = [
 
 [[package]]
 name = "memgraph-ai"
-version = "0.2.2"
+version = "0.2.3"
 source = { virtual = "." }
 dependencies = [
     { name = "mcp", extra = ["cli"] },
@@ -4096,7 +4096,7 @@ requires-dist = [
 
 [[package]]
 name = "memgraph-context-graph"
-version = "0.10.1"
+version = "0.11.0"
 source = { editable = "context-graph/memgraph-context-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -8567,7 +8567,7 @@ wheels = [
 
 [[package]]
 name = "sessions-graph"
-version = "0.11.0"
+version = "0.11.1"
 source = { editable = "context-graph/sessions-graph" }
 dependencies = [
     { name = "memgraph-context-graph" },
