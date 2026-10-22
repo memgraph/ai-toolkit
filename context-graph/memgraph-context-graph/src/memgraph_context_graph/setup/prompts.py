@@ -13,6 +13,7 @@ import os
 import random
 import shutil
 import sys
+import textwrap
 import threading
 from collections import deque
 from contextlib import contextmanager
@@ -20,7 +21,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from memgraph_context_graph.adapters._identity import MEMORY_BACKEND_GRAPH, MEMORY_BACKEND_NATIVE
+from memgraph_context_graph.adapters._identity import (
+    MEMORY_BACKEND_GRAPH,
+    MEMORY_BACKEND_NATIVE,
+    config_file,
+    load_config,
+)
 from memgraph_context_graph.setup import engine, uninstall
 from memgraph_context_graph.setup.agents import AGENTS, BY_RUNTIME
 from memgraph_context_graph.setup.uninstall import Removals
@@ -30,7 +36,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
     from contextlib import AbstractContextManager
 
-    from memgraph_context_graph.setup.engine import Choices, Environment, Outcome
+    from memgraph_context_graph.setup.engine import Choices, Environment, NextSteps, Outcome
 
 _MEMORY_GRAPH = MEMORY_BACKEND_GRAPH
 _LABEL_WIDTH = 16
@@ -118,6 +124,11 @@ _LINES_UP = "\033[{}F"
 _HIDE_CURSOR, _SHOW_CURSOR = "\033[?25l", "\033[?25h"
 # The divider between the banner and the first question: a short stretch of graph, in orange.
 RULE = "●──────●─────────●────●───────●──────────●─────●────────●───────●─────●"
+_CARD_WIDTH = 76
+# Narrower than this, a card's labels and text no longer fit side by side, so it is drawn without its frame.
+_CARD_MIN_WIDTH = 52
+# " │" on the right of a card's row.
+_CARD_RIGHT = 2
 
 
 class _Style:
@@ -406,6 +417,91 @@ class Prompts:
     def outro(self, text: str) -> None:
         self.line()
         self.write(f"{self.style.muted('└')}  {text}\n")
+
+    def card(self, title: str, sections: Sequence[tuple[str, Sequence[CardItem]]]) -> None:
+        """A box drawn as a graph: nodes on its corners and edges, and each item a node hanging off its side.
+
+        *title* sits in the top edge, and each section's heading in the edge above it; the first section has
+        none. Labels line up among an item's siblings, text wraps (also at any line break it holds), and an
+        item's children branch off it one level in. Too narrow for that, the same text is drawn without the frame.
+        """
+        width = min(self.term.columns - 1, _CARD_WIDTH)
+        if width < _CARD_MIN_WIDTH:
+            self._unframed_card(title, sections)
+            return
+        nodes = [column for column, char in enumerate(RULE) if char == "●"]
+        blank = self._card_row(self.style.muted("│   "), 4, "", 0, width)
+        rows = [self._card_edge(title, width, nodes)]
+        for index, (heading, items) in enumerate(sections):
+            if index:
+                rows.append(self._card_edge(heading, width, []))
+            rows += [blank, *self._card_items(items, width), blank]
+        rows.append(self._card_edge("", width, [width - 1 - column for column in nodes]))
+        self.write("".join(f"{row}\n" for row in rows))
+
+    def _card_items(self, items: Sequence[CardItem], width: int, trunk: str = "") -> list[str]:
+        """The rows of *items* and their children, each child level drawn after the *trunk* of the one above.
+
+        At the top level the card's side is the trunk, so every item branches off it with ``├``; a nested list
+        closes with ``└``.
+        """
+        style = self.style
+        labels = max(len(item.label) for item in items)
+        gap = 2 if labels and any(item.text for item in items) else 0
+        rows = []
+        for index, item in enumerate(items):
+            closes = bool(trunk) and index == len(items) - 1
+            branch, through = ("└─", "    ") if closes else ("├─", "│   ")
+            indent = len(trunk) + 4
+            chunks = _wrapped(item.text, width - indent - _CARD_RIGHT - labels - gap) if item.text else [""]
+            for number, chunk in enumerate(chunks):
+                lead = (item.label if number == 0 else "").ljust(labels + gap)
+                joint = f"{style.muted(branch)}{style.accent('●')} " if number == 0 else style.muted(through)
+                rows.append(
+                    self._card_row(
+                        style.muted(trunk) + joint, indent, style.bold(lead) + chunk, len(lead + chunk), width
+                    )
+                )
+            if item.children:
+                rows += self._card_items(item.children, width, trunk + through)
+        return rows
+
+    def _card_edge(self, title: str, width: int, nodes: Sequence[int]) -> str:
+        """A horizontal edge of a card, *width* long: a node at each end and at *nodes*, and *title* set in it.
+
+        The title sits between two nodes of its own near the left end, and *nodes* too close to it are left out,
+        so nodes stay at least three columns apart.
+        """
+        head = f"●─● {title} ●" if title else "●"
+        edge = [*head, *"─" * (width - len(head))]
+        for column in nodes:
+            if len(head) + 2 < column < width - 3 and "●" not in edge[column - 2 : column]:
+                edge[column] = "●"
+        edge[-1] = "●"
+        line = "".join(edge)
+        if not title:
+            return self.style.graph(line, width)
+        start, end = 4, 4 + len(title)
+        rest = self.style.graph(" " * end + line[end:], width)[end:]
+        return self.style.graph(line[:start], width) + self.style.bold(title) + rest
+
+    def _card_row(self, left: str, indent: int, text: str, length: int, width: int) -> str:
+        """One row inside a card: *left* is *indent* columns wide and *text* *length*, neither counting colour."""
+        return f"{left}{text}{' ' * (width - indent - _CARD_RIGHT - length)} {self.style.muted('│')}"
+
+    def _unframed_card(self, title: str, sections: Sequence[tuple[str, Sequence[CardItem]]]) -> None:
+        self.write(f"{self.style.bold(title)}\n")
+        for heading, items in sections:
+            self.write(f"\n{self.style.bold(heading)}\n" if heading else "\n")
+            self._unframed_items(items, "")
+
+    def _unframed_items(self, items: Sequence[CardItem], indent: str) -> None:
+        room = max(self.term.columns - len(indent) - 5, 10)
+        for item in items:
+            text = f"{item.label}: {item.text}" if item.label and item.text else item.label or item.text
+            lines = _wrapped(text, room)
+            self.write("".join(f"{indent}{'  ' if number else '· '}{line}\n" for number, line in enumerate(lines)))
+            self._unframed_items(item.children, indent + "  ")
 
     def _hint(self, parts: Sequence[str], value: str) -> str:
         """The key hint after *value* on a question's line, short enough not to wrap.
@@ -712,12 +808,10 @@ def run(prompts: Prompts, choices: Choices, env: Environment) -> int:
     outcomes = engine.run(choices, env, log=log, report=report)
     failures = [outcome for outcome in outcomes if outcome.status == "fail"]
     if not failures:
-        steps = engine.next_steps(choices, env)
-        prompts.line()
-        prompts.line(style.bold(steps[0]))
-        for text in steps[1:]:
-            prompts.line(prompts.fit(text))
+        steps = engine.next_steps(choices, env, load_config().memgraph_url, config_file())
         prompts.outro(style.success("Context Graph is set up."))
+        prompts.write("\n")
+        prompts.card(steps.heading, _card_sections(steps))
         return 0
     prompts.line()
     prompts.line(style.error(f"{len(failures)} step(s) failed. To fix:"))
@@ -834,6 +928,40 @@ def ask_removals(prompts: Prompts, runtimes: Sequence[str], available: Removals,
         answers[asked[index][0]] = answer
         index += 1
     return Removals(**answers)
+
+
+@dataclass(frozen=True)
+class CardItem:
+    """One node in :meth:`Prompts.card`: a bold label, its text, and the items that branch off it."""
+
+    label: str
+    text: str = ""
+    children: Sequence[CardItem] = ()
+
+
+def _card_sections(steps: NextSteps) -> list[tuple[str, Sequence[CardItem]]]:
+    """*steps* as :meth:`Prompts.card` draws them: what is set up, what to try, then the command and its subcommands."""
+    commands = [CardItem(name, what) for name, what in steps.commands]
+    return [
+        ("", [CardItem(name, value) for name, value in steps.setup]),
+        ("Try it", [CardItem("", tip) for tip in steps.tips]),
+        (engine.COMMANDS_TITLE, [CardItem(engine.COMMAND, children=commands)]),
+    ]
+
+
+def _wrapped(text: str, width: int) -> list[str]:
+    """*text* wrapped to *width*, breaking also where it holds a line break.
+
+    A word longer than a line, like a path, is shortened in the middle, so both of its ends still show.
+    """
+    chunks = []
+    for part in text.splitlines():
+        for chunk in textwrap.wrap(part, width, break_long_words=False, break_on_hyphens=False) or [""]:
+            if len(chunk) > width:
+                head = (width - 1) // 2
+                chunk = f"{chunk[:head]}…{chunk[len(chunk) - (width - 1 - head) :]}"
+            chunks.append(chunk)
+    return chunks
 
 
 def _memgraph_summary(choices: Choices, env: Environment) -> str:

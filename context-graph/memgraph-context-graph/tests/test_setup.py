@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import time
+from pathlib import Path
 
 import pytest
 
@@ -886,37 +887,103 @@ def test_the_welcome_says_what_the_user_is_getting_before_any_question(fake_agen
         assert term.text.index(line) < first_question
 
 
-def test_the_last_screen_says_what_to_expect_and_only_what_applies():
+def _last_screen(choices, env=None):
+    env = env or engine.Environment(edition="community", configured_url=None, configured_user=None, found_agents=())
+    return engine.next_steps(choices, env, "bolt://localhost:7687", Path.home() / ".config" / "cg" / "config.toml")
+
+
+def test_the_last_screen_says_what_is_set_up_what_to_expect_and_only_what_applies(tmp_path):
+    choices = engine.Choices(
+        runtimes=["claude-code", "codex", "grok"],
+        project_dirs=[tmp_path / "billing"],
+        user_id="carol",
+        memory_backend="context-graph",
+    )
+
+    steps = _last_screen(choices)
+
+    assert dict(steps.setup) == {
+        "Memgraph": "bolt://localhost:7687",
+        "You": "carol",
+        "Agents": "Claude Code, Codex, Grok Build in billing",
+        "Memory": "the graph, shared by every agent",
+        "Config": str(Path("~") / ".config" / "cg" / "config.toml"),
+    }
+    tips = "\n".join(steps.tips)
+    assert "what did we do last time?" in tips
+    assert 'Say "remember that ..."' in tips
+    assert "in Codex, open it and accept its hooks" in tips
+    assert "in Grok, run /hooks-trust" in tips
+    assert [name for name, _ in steps.commands] == ["ui", "recall <question>", "doctor", "setup", "uninstall"]
+
+    quiet = _last_screen(engine.Choices(runtimes=["opencode"], project_dirs=[], user_id="carol", viewer=False))
+
+    assert dict(quiet.setup)["Memory"] == "each agent's own"
+    assert dict(quiet.setup)["Agents"] == "OpenCode"
+    assert [tip.splitlines()[0] for tip in quiet.tips] == ["Finish a session, start another, and ask"]
+    assert "ui" not in dict(quiet.commands)
+
+
+def test_every_line_of_the_welcome_and_the_plain_last_screen_fits_a_narrow_terminal():
     choices = engine.Choices(
         runtimes=["claude-code", "codex", "grok"], project_dirs=[], user_id="carol", memory_backend="context-graph"
     )
-    env = engine.Environment(edition="community", configured_url=None, configured_user=None, found_agents=())
 
-    text = "\n".join(engine.next_steps(choices, env))
-
-    assert "Claude Code, Codex and Grok Build remember through the graph now." in text
-    assert "memgraph-context-graph ui" in text
-    assert "in Codex, open it and accept its hooks" in text
-    assert "in Grok, run /hooks-trust" in text
-    assert "memgraph-context-graph uninstall" in text
-
-    plain = engine.Choices(runtimes=["opencode"], project_dirs=[], user_id="carol", viewer=False)
-    quiet = "\n".join(engine.next_steps(plain, env))
-
-    assert "remember through the graph" not in quiet
-    assert "memgraph-context-graph ui" not in quiet
-    assert "accept the hooks" not in quiet
-    assert "what did we do last time" in quiet
-
-
-def test_every_line_of_the_welcome_and_the_last_screen_fits_a_narrow_terminal():
-    choices = engine.Choices(
-        runtimes=["claude-code", "codex", "grok"], project_dirs=[], user_id="carol", memory_backend="context-graph"
-    )
-    env = engine.Environment(edition="community", configured_url=None, configured_user=None, found_agents=())
-
-    for line in (*engine.WELCOME, *engine.next_steps(choices, env)):
+    for line in (*engine.WELCOME, *_last_screen(choices).lines()):
         assert len(line) <= 78, line
+
+
+@pytest.mark.parametrize("columns", [53, 60, 80, 200])
+def test_the_last_screen_is_a_graph_shaped_box_that_fits_the_terminal(columns):
+    from memgraph_context_graph.setup.prompts import Prompts, _card_sections
+
+    class ColorTerminal(ScriptedTerminal):
+        color = "truecolor"
+
+    steps = _last_screen(
+        engine.Choices(
+            runtimes=["claude-code", "codex"], project_dirs=[], user_id="carol", memory_backend="context-graph"
+        )
+    )
+    term = ColorTerminal(columns=columns)
+
+    Prompts(term).card(steps.heading, _card_sections(steps))
+
+    rows = re.sub(r"\033\[[0-9;]*m", "", term.text).splitlines()
+    assert {len(row) for row in rows} == {min(columns - 1, 76)}
+    edges = [row for row in rows if row.startswith("●")]
+    assert [rows[0], rows[-1]] == [edges[0], edges[-1]] and len(edges) == 4
+    assert all(row.endswith("●") and "●●" not in row and "●─●─●" not in row for row in edges)
+    assert all(row[:2] in {"│ ", "├─"} and row.endswith(" │") for row in rows if row not in edges)
+    assert "●─● Your agents now remember ●" in rows[0]
+    assert any(row.startswith("├─● Memgraph  bolt://localhost:7687") for row in rows)
+    commands = rows.index(next(row for row in rows if row.startswith("├─● memgraph-context-graph ")))
+    assert "Use and configure it" in rows[commands - 2]
+    subcommands = [row for row in rows[commands + 1 : -1] if "─● " in row]
+    assert all(row.startswith("│   ") for row in subcommands)
+    assert [re.sub(r"  .*", "", row[4:]) for row in subcommands] == [
+        "├─● ui",
+        "├─● recall <question>",
+        "├─● doctor",
+        "├─● setup",
+        "└─● uninstall",
+    ]
+    assert any(row.startswith('│   "what did we do last time?"') for row in rows)
+
+
+def test_a_last_screen_too_narrow_for_its_frame_keeps_every_line_of_it():
+    from memgraph_context_graph.setup.prompts import Prompts, _card_sections
+
+    steps = _last_screen(engine.Choices(runtimes=["claude-code"], project_dirs=[], user_id="carol"))
+    term = ScriptedTerminal(columns=40)
+
+    Prompts(term).card(steps.heading, _card_sections(steps))
+
+    assert "●" not in term.text and "│" not in term.text
+    assert all(len(row) <= 39 for row in term.text.splitlines())
+    for text in ("Your agents now remember", "Memgraph: bolt://localhost:7687", "uninstall: undo the wiring"):
+        assert text in term.text
+    assert "config.toml" in term.text
 
 
 def test_a_listing_that_fails_once_does_not_make_a_wired_agent_look_unwired(monkeypatch):

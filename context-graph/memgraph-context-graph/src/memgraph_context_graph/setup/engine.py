@@ -344,35 +344,87 @@ _FIRST_RUN = {
 }
 
 
-def next_steps(choices: Choices, env: Environment) -> list[str]:
-    """What happens now and what to try, for the end of a successful setup: short, and only what applies.
+COMMAND = "memgraph-context-graph"
+COMMANDS_TITLE = "Use and configure it"
 
-    The first line is the heading; each bullet after it fits one terminal line, or continues on an indented one.
+
+@dataclass(frozen=True)
+class NextSteps:
+    """The end of a successful setup: what is now set up, what to try, and the commands to come back to.
+
+    Only what applies to these choices is in it. A tip may hold a line break where it continues on a line of its own.
+    """
+
+    heading: str
+    #: (what, value) pairs: Memgraph, you, the agents, whose memory, the config file.
+    setup: tuple[tuple[str, str], ...]
+    tips: tuple[str, ...]
+    #: (subcommand, what it does), each run as ``memgraph-context-graph <subcommand>``.
+    commands: tuple[tuple[str, str], ...]
+
+    def lines(self) -> list[str]:
+        """The plain-text form: the heading, then each part under its own title, indented."""
+        label = max(len(name) for name, _ in self.setup) if self.setup else 0
+        command = max(len(name) for name, _ in self.commands)
+        lines = [self.heading, "", "Set up:"]
+        lines += [f"  {name.ljust(label)}  {value}" for name, value in self.setup]
+        lines.append("Try it:")
+        for tip in self.tips:
+            first, *rest = tip.splitlines()
+            lines += [f"  · {first}", *(f"    {more}" for more in rest)]
+        lines += [f"{COMMANDS_TITLE}:", f"  {COMMAND}"]
+        lines += [f"    {name.ljust(command)}  {what}" for name, what in self.commands]
+        return lines
+
+
+def next_steps(choices: Choices, env: Environment, memgraph_url: str, config: Path) -> NextSteps:
+    """What is set up, what to expect and what to try, for the end of a successful setup.
+
+    *memgraph_url* and *config* are where setup left the user: the Memgraph the hooks write to, and the file
+    that says so.
     """
     from memgraph_context_graph.adapters._identity import MEMORY_BACKEND_GRAPH
 
     graph_memory = choices.memory_backend == MEMORY_BACKEND_GRAPH or (
         choices.memory_backend is None and env.configured_memory_backend == MEMORY_BACKEND_GRAPH
     )
-    lines = [
-        "Your agents now remember. What to expect:",
-        "· Every session is kept in your graph. Finish one, start another, and ask:",
-        '  "what did we do last time?"',
-    ]
     remembering = [agents_mod.BY_RUNTIME[r].label for r in choices.runtimes if has_native_memory(r)]
+    user = env.configured_user if env.edition == "enterprise" and env.configured_user else choices.user_id
+    setup = [("Memgraph", memgraph_url), ("You", user), ("Agents", _agents_set_up(choices))]
+    if remembering:
+        setup.append(("Memory", "the graph, shared by every agent" if graph_memory else "each agent's own"))
+    setup.append(("Config", _home_relative(config)))
+
+    tips = ['Finish a session, start another, and ask\n"what did we do last time?"']
     if graph_memory and remembering:
-        lines += [
-            f"· {listed(remembering)} remember through the graph now.",
-            '  Say "remember that ..." and every agent can recall it.',
-        ]
-    if choices.viewer:
-        lines.append("· Watch it grow: memgraph-context-graph ui")
-    lines += [f"· To start recording {_FIRST_RUN[r]}" for r in choices.runtimes if r in _FIRST_RUN]
-    lines += [
-        "· Change anything any time: memgraph-context-graph setup",
-        "· Undo the wiring: memgraph-context-graph uninstall (your graph stays)",
+        tips.append('Say "remember that ..." and every agent can recall it')
+    tips += [f"To start recording {_FIRST_RUN[r]}" for r in choices.runtimes if r in _FIRST_RUN]
+
+    commands = [("ui", "watch your graph grow")] if choices.viewer else []
+    commands += [
+        ("recall <question>", "search your past sessions"),
+        ("doctor", "check that capture works"),
+        ("setup", "change anything, any time"),
+        ("uninstall", "undo the wiring; your graph stays"),
     ]
-    return lines
+    return NextSteps("Your agents now remember", tuple(setup), tuple(tips), tuple(commands))
+
+
+def _agents_set_up(choices: Choices) -> str:
+    """The wired agents, a per-project one with the projects it records: "Claude Code, Cursor in billing"."""
+    projects = ", ".join(path.name for path in choices.project_dirs)
+    names = []
+    for runtime in choices.runtimes:
+        agent = agents_mod.BY_RUNTIME[runtime]
+        names.append(f"{agent.label} in {projects}" if agent.wiring == "project" and projects else agent.label)
+    return ", ".join(names) or "none"
+
+
+def _home_relative(path: Path) -> str:
+    try:
+        return str(Path("~") / path.relative_to(Path.home()))
+    except ValueError:
+        return str(path)
 
 
 def _memory(runtime: str, backend: str) -> Outcome | None:
