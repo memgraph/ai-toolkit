@@ -21,12 +21,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from memgraph_context_graph.adapters.agent_mcp import _read_json, _read_toml, _write_json, _write_toml
-from memgraph_context_graph.memory_backend import ImportReport
+from memgraph_context_graph.memory_backend import ExportReport, ImportReport, keep_in_graph
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from memgraph_context_graph.memory_backend import MemoryFiles
+    from memgraph_context_graph.memory_backend import MemoryFiles, MemorySource
 
 _BACKUP_SUFFIX = ".context-graph.bak"
 _HEADING_RE = re.compile(r"^#\s+(?P<title>.+)$", re.MULTILINE)
@@ -59,6 +59,10 @@ class CopilotMemory:
     def import_into(self, files: MemoryFiles, home: Path) -> ImportReport:
         """Nothing to import: Copilot Memory lives on GitHub, readable only in its settings page."""
         return ImportReport()
+
+    def export_from(self, source: MemorySource, home: Path) -> ExportReport:
+        """Nothing written back: Copilot Memory lives on GitHub, writable only by Copilot's own tool."""
+        return keep_in_graph(source)
 
 
 @dataclass(frozen=True)
@@ -137,6 +141,10 @@ class GrokMemory:
                 report.imported.append(target)
         return report
 
+    def export_from(self, source: MemorySource, home: Path) -> ExportReport:
+        """Nothing written back: Grok names each workspace's folder by a hash only Grok can derive."""
+        return keep_in_graph(source)
+
 
 @dataclass(frozen=True)
 class NoBuiltInMemory:
@@ -157,6 +165,10 @@ class NoBuiltInMemory:
     def import_into(self, files: MemoryFiles, home: Path) -> ImportReport:
         """Nothing to import."""
         return ImportReport()
+
+    def export_from(self, source: MemorySource, home: Path) -> ExportReport:
+        """Nothing to write back into, and nothing to report: the agent never had a memory to hand back."""
+        return ExportReport()
 
 
 def _copilot_settings(home: Path) -> Path:

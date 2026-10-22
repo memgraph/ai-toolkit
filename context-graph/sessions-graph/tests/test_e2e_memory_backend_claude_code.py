@@ -83,15 +83,72 @@ def test_rerunning_keeps_what_the_graph_already_has(home, graph):
     assert len(store.files()) == 3
 
 
+def _memory_dir(home, project):
+    return next((home / ".claude" / "projects").glob(f"*{project}")) / "memory"
+
+
 def test_handing_memory_back(home):
     use_graph_memory(PLUGIN, home=home)
 
-    lines = use_native_memory(PLUGIN, home=home)
+    use_native_memory(PLUGIN, home=home)
 
-    assert "they aren't copied back" in lines[-1]
     assert _settings(home) == {"theme": "dark"}
     assert not _identity.load_config().graph_memory
     assert _identity.load_config().memory_backend == "native"
+
+
+def test_handing_memory_back_copies_what_the_graph_learned_since(home, graph):
+    use_graph_memory(PLUGIN, home=home)
+    store = graph.memory_store("alice")
+    store.create("/memories/user/role.md", "---\nname: role\ndescription: Works on Memgraph\ntype: user\n---\nHi.\n")
+    store.str_replace("/memories/projects/github.com_memgraph_ai-toolkit/map.md", "Map #484.", "Map #484 closed.")
+    store.create(
+        "/memories/projects/github.com_memgraph_ai-toolkit/plan.md", "---\ndescription: The plan\n---\nShip.\n"
+    )
+    store.create("/memories/projects/never-opened/x.md", "A project Claude Code has no folder for.\n")
+    store.create("/memories/codex/memory.md", "Another agent's file.\n")
+
+    lines = use_native_memory(PLUGIN, home=home)
+
+    toolkit, old_repo = _memory_dir(home, "ai-toolkit"), _memory_dir(home, "old-repo")
+    assert (toolkit / "project_map.md").read_text().endswith("Map #484 closed.\n")
+    assert (toolkit / "project_plan.md").read_text().endswith("Ship.\n")
+    # User-wide memories reach every project with auto memory, as they applied everywhere in the graph.
+    for folder in (toolkit, old_repo):
+        assert (folder / "user_role.md").read_text().endswith("Hi.\n")
+        assert (folder / "feedback_trailers.md").read_text().endswith("Never add them.\n")
+    assert (old_repo / "reference_dash.md").exists()
+    index = (toolkit / "MEMORY.md").read_text().splitlines()
+    assert "- [role](user_role.md) — Works on Memgraph" in index
+    assert "- [project_plan](project_plan.md) — The plan" in index
+    assert len(index) == 4
+    assert "Copied back /memories/projects/github.com_memgraph_ai-toolkit/plan.md" in lines
+    assert any(
+        line.startswith("Kept in Memgraph only") and "/memories/codex/memory.md" in line and "never-opened" in line
+        for line in lines
+    )
+
+
+def test_handing_memory_back_again_never_overwrites_newer_native_files(home, graph):
+    use_graph_memory(PLUGIN, home=home)
+    use_native_memory(PLUGIN, home=home)
+    edited = _memory_dir(home, "ai-toolkit") / "project_map.md"
+    edited.write_text("Edited by Claude Code since.\n")
+
+    use_native_memory(PLUGIN, home=home)
+
+    assert edited.read_text() == "Edited by Claude Code since.\n"
+
+
+def test_handing_memory_back_without_memgraph_stays_on_the_graph(home):
+    use_graph_memory(PLUGIN, home=home)
+    _identity.write_config(memgraph_url="bolt://localhost:1")
+
+    with pytest.raises(MemoryBackendError, match="Can't reach Memgraph"):
+        use_native_memory(PLUGIN, home=home)
+
+    assert _settings(home)["autoMemoryEnabled"] is False
+    assert _identity.load_config().graph_memory
 
 
 def test_no_user_means_no_switch_and_nothing_changed(home):
@@ -121,7 +178,7 @@ def claude_with_plugin(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}/usr/bin{os.pathsep}/bin")
 
 
-def test_setup_cli_and_doctor_agree(home, claude_with_plugin, capsys):
+def test_setup_cli_and_doctor_agree(home, claude_with_plugin, capsys, monkeypatch):
     top_level_main(["setup", "claude-code", "--memory-backend", "context-graph", "--no-tui", "--no-viewer"])
     out = capsys.readouterr().out
     assert "OK    Claude Code memory: memory.backend = context-graph" in out
@@ -132,6 +189,18 @@ def test_setup_cli_and_doctor_agree(home, claude_with_plugin, capsys):
 
     check = _check_memory_backend("claude-code")
     assert check is not None and check["ok"]
+
+    # A project's settings outrank the user's, so one can turn auto memory back on there.
+    project = home.parent / "project"
+    (project / ".claude").mkdir(parents=True)
+    monkeypatch.chdir(project)
+    (project / ".claude" / "settings.json").write_text(json.dumps({"autoMemoryEnabled": True}))
+    check = _check_memory_backend("claude-code")
+    assert check is not None and not check["ok"] and str(project / ".claude" / "settings.json") in check["detail"]
+    (project / ".claude" / "settings.local.json").write_text(json.dumps({"autoMemoryEnabled": False}))
+    check = _check_memory_backend("claude-code")
+    assert check is not None and check["ok"]
+
     (home / ".claude" / "settings.json").write_text("{}")
     check = _check_memory_backend("claude-code")
     assert check is not None and not check["ok"] and "two memories" in check["detail"]
@@ -147,4 +216,5 @@ def test_uninstall_gives_claude_code_its_own_memory_back(home, claude_with_plugi
     out = capsys.readouterr().out
     assert "OK    Claude Code memory: its own memory is back on" in out
     assert _settings(home) == {"theme": "dark"}
+    assert (_memory_dir(home, "old-repo") / "feedback_trailers.md").exists()
     assert _identity.load_config().memory_backend == "native"

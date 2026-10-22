@@ -22,10 +22,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from memgraph_context_graph.memory_backend import ImportReport, MemoryBackendError
+from memgraph_context_graph.memory_backend import ExportReport, ImportReport, MemoryBackendError, keep_in_graph
 
 if TYPE_CHECKING:
-    from memgraph_context_graph.memory_backend import MemoryFiles
+    from memgraph_context_graph.memory_backend import MemoryFiles, MemorySource
 
 _BACKUP_SUFFIX = ".context-graph.bak"
 _SERVER = "context-graph"
@@ -124,6 +124,10 @@ class CodexMemory:
                     continue
                 report.skipped.append(target)
         return report
+
+    def export_from(self, source: MemorySource, home: Path) -> ExportReport:
+        """Nothing written back: Codex's files are its background pipeline's output, not notes it reads as given."""
+        return keep_in_graph(source)
 
 
 def allow_plugin_tools(home: Path, plugin_id: str) -> list[str]:

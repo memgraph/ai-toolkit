@@ -6,7 +6,9 @@ character other than a letter or digit replaced by ``-``. ``MEMORY.md`` there
 is the index Claude Code loads at session start; the other files are
 memories, each with frontmatter naming its ``type``. The ``autoMemoryEnabled``
 setting turns it off; a plugin can't set it, so this edits the user's own
-``~/.claude/settings.json``.
+``~/.claude/settings.json``. A project's ``.claude/settings.json`` or
+``.claude/settings.local.json`` outranks it there, so :meth:`ClaudeCodeMemory.overridden_in`
+finds a project that turns it back on.
 """
 
 from __future__ import annotations
@@ -18,10 +20,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from memgraph_context_graph.memory_backend import ImportReport, MemoryBackendError
+from memgraph_context_graph.memory_backend import ExportReport, ImportReport, MemoryBackendError
 
 if TYPE_CHECKING:
-    from memgraph_context_graph.memory_backend import MemoryFiles
+    from memgraph_context_graph.memory_backend import MemoryFiles, MemorySource, StoredMemory
 
 _SETTING = "autoMemoryEnabled"
 _INDEX_FILE = "MEMORY.md"
@@ -29,6 +31,8 @@ _BACKUP_SUFFIX = ".context-graph.bak"
 _TYPE_RE = re.compile(r"^\s*type:\s*[\"']?(?P<type>[A-Za-z]+)", re.MULTILINE)
 _PREFIX_RE = re.compile(r"^(user|feedback|project|reference)_")
 _SLUG_RE = re.compile(r"[^A-Za-z0-9]")
+_NAME_RE = re.compile(r"^\s*name:\s*(?P<value>.+?)\s*$", re.MULTILINE)
+_DESCRIPTION_RE = re.compile(r"^\s*description:\s*(?P<value>.+?)\s*$", re.MULTILINE)
 #: Types about the user, which apply in every project; the rest are about one project.
 _USER_WIDE_TYPES = frozenset({"user", "feedback"})
 
@@ -57,6 +61,21 @@ class ClaudeCodeMemory:
             MemoryBackendError: the settings file isn't a JSON object.
         """
         return _set(_settings_path(home), None)
+
+    def overridden_in(self, project: Path) -> Path | None:
+        """The settings file in *project* that turns auto memory back on there, or None.
+
+        ``settings.local.json`` outranks ``settings.json``, so a ``false`` there wins over a ``true`` beside it.
+
+        Raises:
+            MemoryBackendError: one of the files isn't a JSON object.
+        """
+        for name in ("settings.local.json", "settings.json"):
+            path = project / ".claude" / name
+            value = _read_settings(path).get(_SETTING)
+            if value is not None:
+                return path if value is True else None
+        return None
 
     def import_into(self, files: MemoryFiles, home: Path) -> ImportReport:
         """Copy every project's auto-memory files into the graph's ``/memories`` tree.
@@ -91,9 +110,87 @@ class ClaudeCodeMemory:
                 report.imported.append(target)
         return report
 
+    def export_from(self, source: MemorySource, home: Path) -> ExportReport:
+        """Write the graph's memories back into auto memory, the reverse of :meth:`import_into`.
+
+        A project's files go to every Claude Code project folder whose checkout has that key, and
+        ``user``/``feedback`` ones, which apply everywhere, to every folder that ends up with auto memory.
+        The graph's copy wins over an older one here, and each folder's ``MEMORY.md`` is rebuilt. Files
+        Claude Code has no folder for (a project it never opened, nested paths, other agents' files) stay
+        in the graph only.
+        """
+        folders = _memory_folders(home)
+        report = ExportReport()
+        user_wide: list[tuple[str, StoredMemory]] = []
+        for memory in source.files():
+            parts = memory.path.removeprefix("/memories/").split("/")
+            if len(parts) == 2 and parts[0] in _USER_WIDE_TYPES:
+                user_wide.append((_native_name(parts[1], memory.content, parts[0]), memory))
+            elif len(parts) == 3 and parts[0] == "projects" and parts[1] in folders:
+                for folder in folders[parts[1]]:
+                    _write_memory(folder, _native_name(parts[2], memory.content, "project"), memory.content)
+                report.exported.append(memory.path)
+            else:
+                report.skipped.append(memory.path)
+        targets = sorted({folder for found in folders.values() for folder in found if folder.is_dir()})
+        for name, memory in user_wide:
+            for folder in targets:
+                _write_memory(folder, name, memory.content)
+            (report.exported if targets else report.skipped).append(memory.path)
+        for folder in targets:
+            _write_index(folder)
+        return report
+
+
+def _memory_folders(home: Path) -> dict[str, list[Path]]:
+    """Each project key's auto-memory folders: every project Claude Code has opened, keyed as the import keys it."""
+    from sessions_graph.memory_index import project_key_for
+
+    projects = home / ".claude" / "projects"
+    folders: dict[str, list[Path]] = {}
+    for project in sorted(projects.iterdir() if projects.is_dir() else []):
+        if not project.is_dir():
+            continue
+        checkout = _checkout_for(project.name)
+        key = (project_key_for(checkout) if checkout else None) or _fallback_key(project.name)
+        folders.setdefault(key, []).append(project / "memory")
+    return folders
+
+
+def _native_name(name: str, text: str, default_type: str) -> str:
+    """The auto-memory filename for a graph file: the ``<type>_`` prefix the import stripped, put back."""
+    match = _TYPE_RE.search(_frontmatter(text))
+    memory_type = match["type"].lower() if match else default_type
+    return name if _PREFIX_RE.match(name) else f"{memory_type}_{name}"
+
+
+def _write_memory(folder: Path, name: str, text: str) -> None:
+    path = folder / name
+    if path.is_file() and path.read_text(encoding="utf-8") == text:
+        return
+    folder.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _write_index(folder: Path) -> None:
+    """Rebuild ``MEMORY.md`` as Claude Code writes it: one ``- [Title](file.md) — hook`` line per memory."""
+    lines = []
+    for path in sorted(folder.glob("*.md")):
+        if path.name == _INDEX_FILE:
+            continue
+        frontmatter = _frontmatter(path.read_text(encoding="utf-8"))
+        title = match["value"].strip("\"'") if (match := _NAME_RE.search(frontmatter)) else path.stem
+        hook = match["value"].strip("\"'") if (match := _DESCRIPTION_RE.search(frontmatter)) else ""
+        lines.append(f"- [{title}]({path.name})" + (f" — {hook}" if hook else ""))
+    (folder / _INDEX_FILE).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _frontmatter(text: str) -> str:
+    return text.split("\n---", 1)[0] if text.startswith("---") else ""
+
 
 def _target_path(filename: str, text: str, project: str) -> str:
-    match = _TYPE_RE.search(text.split("\n---", 1)[0]) if text.startswith("---") else None
+    match = _TYPE_RE.search(_frontmatter(text))
     memory_type = match["type"].lower() if match else "project"
     name = _PREFIX_RE.sub("", filename)
     if memory_type in _USER_WIDE_TYPES:

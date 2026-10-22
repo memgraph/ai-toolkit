@@ -252,7 +252,9 @@ A user can make Context Graph their harness memory with
 `memgraph-context-graph setup <runtime> --memory-backend context-graph`
 (map #484, ADR 0006), for any of the seven agents. This switch is per user, never per project. It turns
 the harness's built-in memory off in its user-level config, imports what that
-memory held, and sets `[memory] backend` in the config file. That setting is
+memory held, and sets `[memory] backend` in the config file. Nothing writes to
+both memories; handing back (`--memory-backend native` or `uninstall`) copies
+the graph's memories into the harness's store where it has one (Claude Code). That setting is
 the one source of truth that switches on the MCP `memory` tool and the
 session-start memory index. The `memory` tool writes only `(:Memory)` files;
 everything derived stays background-only.

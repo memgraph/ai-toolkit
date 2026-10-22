@@ -486,9 +486,31 @@ index and a long index is cut from its tail. See
 [the Codex research note](docs/research/2026-10-codex-memory.md).
 
 If the import can't run, for example because Memgraph is down, nothing is
-switched. Handing memory back removes the setting and leaves the graph's
-memories where they are. `doctor` fails when the backend is `context-graph`
-but Claude Code's own memory is still on.
+switched.
+
+Nothing writes to both memories: while the backend is `context-graph`, the
+graph is the only one. Handing memory back (`--memory-backend native`, or
+`uninstall`) first copies the graph's memories into Claude Code's auto memory,
+the reverse of the import, so it picks up where the graph left off:
+- a project's files go to every Claude Code project folder with that project
+  key, `user`/`feedback` ones to every folder with auto memory, each with its
+  `<type>_` prefix back;
+- the graph's copy wins over the older one there, and each folder's
+  `MEMORY.md` is rebuilt;
+- files Claude Code has no folder for (a project it never opened, another
+  agent's files) stay in the graph only, and the output lists them.
+
+Then it removes the setting. The copy runs only while the backend is
+`context-graph`, so handing back twice never overwrites newer files. If
+Memgraph is down, `setup` switches nothing; `uninstall` turns the memory back
+on anyway, with what it held before, and warns. Codex, Copilot CLI and Grok
+Build get nothing copied back: their memory is generated or hosted by the
+agent itself.
+
+`doctor` fails when the backend is `context-graph` but Claude Code's own memory
+is still on, including when the project's `.claude/settings.json` or
+`.claude/settings.local.json` turns `autoMemoryEnabled` back on, since those
+outrank the user-level setting.
 
 With that set, `memgraph-context-graph mcp` also serves a `memory` tool with the
 Claude API memory tool's commands (`view`, `create`, `str_replace`, `insert`,

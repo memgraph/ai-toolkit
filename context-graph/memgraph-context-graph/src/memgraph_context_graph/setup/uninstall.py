@@ -204,9 +204,13 @@ def _unwire(agent: agents_mod.Agent, project_dirs: Sequence[Path], log: Callable
 
 
 def _memory_back(agent: agents_mod.Agent) -> Outcome | None:
-    """Turn the agent's own memory back on, if setup turned it off; without the plugin it would have none."""
+    """Turn the agent's own memory back on, if setup turned it off; without the plugin it would have none.
+
+    The graph's memories are copied into it first, where it has a place for them. When Memgraph can't be read
+    the memory still comes back on, with what it held before the switch, and the outcome says so.
+    """
     from memgraph_context_graph.hooks.runtime_plugin import get_runtime_plugin
-    from memgraph_context_graph.memory_backend import MemoryBackendError, native_memory_of
+    from memgraph_context_graph.memory_backend import MemoryBackendError, export_graph_memory, native_memory_of
 
     native = native_memory_of(get_runtime_plugin(agent.runtime))
     if native is None:
@@ -215,11 +219,22 @@ def _memory_back(agent: agents_mod.Agent) -> Outcome | None:
     try:
         if native.enabled(home):
             return None
-        lines = native.enable(home)
+    except MemoryBackendError as exc:
+        return Outcome(f"{agent.label} memory", "fail", str(exc))
+    try:
+        copied = export_graph_memory(native, agent.label, home=home)
+        not_copied = None
+    except MemoryBackendError as exc:
+        copied, not_copied = [], str(exc)
+    try:
+        lines = copied + native.enable(home)
     except MemoryBackendError as exc:
         return Outcome(f"{agent.label} memory", "fail", str(exc))
     if not lines:  # An agent with no memory of its own: nothing came back on.
         return None
+    if not_copied:
+        summary = f"its own memory is back on, without the graph's memories: {not_copied}"
+        return Outcome(f"{agent.label} memory", "warn", summary, lines=tuple(lines))
     return Outcome(f"{agent.label} memory", "ok", "its own memory is back on", lines=tuple(lines))
 
 
