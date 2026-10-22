@@ -21,7 +21,6 @@ DEFAULT_MODELS = {"anthropic": "claude-sonnet-5-5", "openai": "gpt-5"}
 
 # A pruned or consolidated vocabulary is a few thousand tokens; this leaves room.
 _MAX_OUTPUT_TOKENS = 16_000
-_STRUCTURED_OUTPUTS_BETA = "structured-outputs-2025-11-13"
 
 
 class NoLlmConfiguredError(RuntimeError):
@@ -80,13 +79,13 @@ class DerivationLlm:
             import anthropic
 
             self._client = anthropic.Anthropic()
-        response = self._client.beta.messages.create(
+        # Structured outputs are GA: anthropic>=0.77 takes output_config, and 1.0 dropped the beta's output_format.
+        response = self._client.messages.create(
             model=self.usage.model,
             max_tokens=_MAX_OUTPUT_TOKENS,
             system=system,
             messages=[{"role": "user", "content": prompt}],
-            betas=[_STRUCTURED_OUTPUTS_BETA],
-            output_format={"type": "json_schema", "schema": closed(schema)},
+            output_config={"format": {"type": "json_schema", "schema": closed(schema)}},
         )
         self.usage.input_tokens += response.usage.input_tokens
         self.usage.output_tokens += response.usage.output_tokens

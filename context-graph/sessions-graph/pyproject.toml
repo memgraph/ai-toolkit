@@ -32,7 +32,7 @@ sdk = [
 reconciliation = [
     "actions-graph>=0.4.0",
     # The derivation LLM: whichever key is configured (derive_llm.py).
-    "anthropic>=0.74.0",
+    "anthropic>=0.77.0",
     "hygm>=0.2.0",
     "openai>=2.0.0",
     "unstructured2graph>=0.7.0",

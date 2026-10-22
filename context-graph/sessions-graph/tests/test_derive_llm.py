@@ -17,7 +17,7 @@ def _no_keys(monkeypatch):
 class _Anthropic:
     def __init__(self, content):
         self.sent: dict = {}
-        self.beta = SimpleNamespace(messages=SimpleNamespace(create=self._create))
+        self.messages = SimpleNamespace(create=self._create)
         self._content = content
 
     def _create(self, **kwargs):
@@ -35,7 +35,7 @@ def test_anthropic_is_preferred_and_answers_through_structured_output(monkeypatc
     llm._client = client
 
     assert llm("system", "prompt", SCHEMA) == {"x": 3}
-    assert client.sent["output_format"] == {"type": "json_schema", "schema": closed(SCHEMA)}
+    assert client.sent["output_config"] == {"format": {"type": "json_schema", "schema": closed(SCHEMA)}}
     assert (llm.usage.provider, llm.usage.model, llm.usage.calls) == ("anthropic", "claude-sonnet-5-5", 1)
     assert (llm.usage.input_tokens, llm.usage.output_tokens) == (100, 7)
 

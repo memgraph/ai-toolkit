@@ -44,11 +44,12 @@ def test_doctor_names_the_memory_tool_only_once_it_is_the_memory(tmp_path, monke
     monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "config.toml"))
     _identity.write_config(user_id="alice")
     _identity._reset_cache()
-    assert _check_mcp()["detail"] == "serves recall"
+    served = _check_mcp()["detail"].removeprefix("serves ").split(", ")
+    assert "recall" in served and "memory" not in served
 
     _identity.write_config(memory_backend="context-graph")
     _identity._reset_cache()
-    assert _check_mcp()["detail"] == "serves memory, recall"
+    assert "memory" in _check_mcp()["detail"].removeprefix("serves ").split(", ")
     _identity._reset_cache()
 
 

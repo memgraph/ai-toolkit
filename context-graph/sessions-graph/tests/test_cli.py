@@ -101,3 +101,17 @@ def test_reconcile_needs_no_llm_key(monkeypatch):
 
     with patch("sessions_graph.SessionsGraph", return_value=fake_graph):
         assert main(["reconcile", "--session", "s-1"]) == 0
+
+
+def test_derive_fails_when_every_candidate_errored_but_not_when_the_gate_rejects_them():
+    from types import SimpleNamespace
+
+    from sessions_graph.cli import _derive_exit_code
+
+    def report(*errors):
+        return SimpleNamespace(candidates=[SimpleNamespace(error=error) for error in errors])
+
+    assert _derive_exit_code(report("TypeError: output_format", "TypeError: output_format")) == 1
+    assert _derive_exit_code(report("TypeError: output_format", None)) == 0
+    assert _derive_exit_code(report(None, None)) == 0
+    assert _derive_exit_code(report()) == 0
