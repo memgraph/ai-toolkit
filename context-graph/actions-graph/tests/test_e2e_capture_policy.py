@@ -31,7 +31,7 @@ def config(monkeypatch, tmp_path):
     path = tmp_path / "config.toml"
     monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(path))
     _identity._reset_cache()
-    _identity.write_full_config(user_id="tester", memgraph_url=os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687"))
+    _identity.write_config(user_id="tester", memgraph_url=os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687"))
     path.write_text(
         path.read_text()
         + '\n[capture]\nconnectors = "actions-graph"\nexclude_tools = "TodoWrite"\n'

@@ -3,16 +3,17 @@
 Agent runtimes (Claude Code, Codex) spawn hook commands as non-interactive
 subprocesses that do not inherit shell profile environment variables.  This
 module provides a config-file-only resolution path so hook subprocesses (and
-subprocesses they in turn spawn, e.g. sessions-graph's detached
-reconciliation process) can reliably access identity, Memgraph connection,
-LLM API key, and reconciliation opt-in settings.
+subprocesses they in turn spawn, e.g. sessions-graph's detached embed and
+reconcile runs) can reliably read every setting the file holds; its keys are
+:data:`memgraph_context_graph.config_schema.CONFIG_KEYS`.
 
 Resolution order (per ADR 0002):
   CLI flag > config file > hardcoded default
 
 Environment variables are **not** consulted for configuration *values* at hook
-runtime.  They are only used as a write-time input during ``bootstrap`` or
-``config set``.
+runtime, and nothing writes them into the file: ``setup`` and ``config set``
+take values from the user. A process a hook spawns is handed the file's path and
+reads it itself (:func:`spawn_env`, :func:`fill_env_from_config`; ADR 0007).
 
 Config file location: ``~/.config/context-graph/config.toml``, unless
 ``CONTEXT_GRAPH_CONFIG`` names another file.  That override selects *which file*
@@ -28,6 +29,18 @@ import stat
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
+
+from memgraph_context_graph.config_schema import (
+    CONFIG_KEYS,
+    SECTIONS,
+    SETTINGS_SECTIONS,
+    TRUTHY_VALUES,
+    ConfigKey,
+    config_key,
+)
+from memgraph_context_graph.config_schema import MEMORY_BACKEND_GRAPH as MEMORY_BACKEND_GRAPH
+from memgraph_context_graph.config_schema import MEMORY_BACKEND_NATIVE as MEMORY_BACKEND_NATIVE
+from memgraph_context_graph.config_schema import MEMORY_BACKENDS as MEMORY_BACKENDS
 
 #: Selects which config *file* hooks read, never a value in it (ADR 0003): a parent
 #: process hands the path to the session it spawns, so nothing is ambient.
@@ -59,15 +72,6 @@ _LLM_DEFAULTS = {
     "openai_api_key": "",
     "anthropic_api_key": "",
 }
-
-#: ``[memory] backend`` values: the graph, or the harness's built-in memory.
-MEMORY_BACKEND_GRAPH = "context-graph"
-MEMORY_BACKEND_NATIVE = "native"
-MEMORY_BACKENDS = frozenset({MEMORY_BACKEND_GRAPH, MEMORY_BACKEND_NATIVE})
-
-#: The boolean spellings parse_bool_flag accepts, shared with ``config set`` validation.
-TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
-FALSY_VALUES = frozenset({"0", "false", "no", "off"})
 
 _cached_config: HookConfig | None = None
 
@@ -195,6 +199,48 @@ def resolve_llm_env() -> dict[str, str]:
     }
 
 
+#: The variables :func:`fill_env_from_config` sets: memgraph-toolbox's connection contract and the provider
+#: keys LightRAG and the derive client read, plus LightRAG's aliases for the connection.
+CONFIG_ENV_KEYS = (
+    "MEMGRAPH_URL",
+    "MEMGRAPH_USER",
+    "MEMGRAPH_PASSWORD",
+    "MEMGRAPH_DATABASE",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+)
+_CONFIG_ENV_ALIASES = ("MEMGRAPH_URI", "MEMGRAPH_USERNAME")
+
+
+def fill_env_from_config(*, memgraph: bool = True) -> None:
+    """Fill unset connection and LLM key variables in ``os.environ`` from the config file.
+
+    The one place config values become environment variables, for a process whose libraries
+    read them there. A variable already set wins, so ``MEMGRAPH_URL=... sessions-graph reconcile``
+    still points a hand-run at another instance; a process a hook spawns starts with none of them
+    (:func:`spawn_env`), so there the file alone decides. ``memgraph=False`` fills only the LLM
+    keys, for a caller that picks its own Memgraph.
+
+    Empty values are set too: an Enterprise login's unnamed database is ``MEMGRAPH_DATABASE=""``,
+    which memgraph-toolbox reads as "the login's main database", where unset would mean ``memgraph``.
+    """
+    values = {**(resolve_memgraph_env() if memgraph else {}), **resolve_llm_env()}
+    for key, value in values.items():
+        os.environ.setdefault(key, value)
+
+
+def spawn_env() -> dict[str, str]:
+    """The environment for a process a hook spawns: this one's, minus every config-backed variable.
+
+    The child resolves those itself with :func:`fill_env_from_config`, from the file this names in
+    :data:`CONFIG_PATH_ENV`: the parent hands down which file, never what is in it (ADR 0003), and
+    an ambient credential can't stand in for a key the file leaves empty (ADR 0002).
+    """
+    env = {key: value for key, value in os.environ.items() if key not in {*CONFIG_ENV_KEYS, *_CONFIG_ENV_ALIASES}}
+    env[CONFIG_PATH_ENV] = str(config_file())
+    return env
+
+
 def resolve_embedding_model() -> str | None:
     """The configured ``[recall] embedding_model``, or None to leave sessions-graph's default."""
     return load_config().embedding_model
@@ -274,36 +320,35 @@ def write_config(
     return _write_config_file(_render_config(config))
 
 
-def write_full_config(
-    *,
-    user_id: str = "",
-    memgraph_url: str = _MEMGRAPH_DEFAULTS["url"],
-    memgraph_user: str = _MEMGRAPH_DEFAULTS["user"],
-    memgraph_password: str = _MEMGRAPH_DEFAULTS["password"],
-    memgraph_database: str = _MEMGRAPH_DEFAULTS["database"],
-    openai_api_key: str = _LLM_DEFAULTS["openai_api_key"],
-    anthropic_api_key: str = _LLM_DEFAULTS["anthropic_api_key"],
-    auto_reconcile: bool | None = None,
-) -> Path:
-    """Write a complete config file, resetting identity, Memgraph and LLM settings to what is given.
+def set_config_value(name: str, raw: str) -> str:
+    """Validate and write one key, as ``config set`` does; an empty value unsets an optional key.
 
-    Every other section (``[capture]``, ``[redact]``, ``[reconcile]``, ``[recall]``, ``[ontology]``, ``[extraction]``,
-    ``[github]``, ``[memory]``, ``[session_start]``), ``[llm] derive_model`` and the edition are kept from the existing file, since only ``config set`` or a hand edit ever sets them.
-    ``auto_reconcile`` is kept likewise unless given here. :func:`write_config` is the partial update.
+    Returns:
+        The value as written, normalized (``"OFF"`` becomes ``"false"``, a list is re-joined).
+
+    Raises:
+        KeyError: *name* is not a key of :data:`CONFIG_KEYS`.
+        ValueError: *raw* is not a valid value for it, by its type or by the installed component
+            that reads its section; the message says what was expected.
     """
-    existing = _read_config_file()
-    config = replace(
-        existing,
-        user_id=user_id,
-        memgraph_url=memgraph_url,
-        memgraph_user=memgraph_user,
-        memgraph_password=memgraph_password,
-        memgraph_database=memgraph_database,
-        openai_api_key=openai_api_key,
-        anthropic_api_key=anthropic_api_key,
-        auto_reconcile=auto_reconcile if auto_reconcile is not None else existing.auto_reconcile,
-    )
-    return _write_config_file(_render_config(config))
+    from memgraph_context_graph.connectors import check_settings
+
+    key = config_key(name)
+    if key is None:
+        raise KeyError(name)
+    value = key.normalize(raw)
+    config = _read_config_file()
+    if key.field is not None:
+        config = replace(config, **{key.field: key.parse(value)})
+    else:
+        attr = SETTINGS_SECTIONS[key.section]
+        settings = {**getattr(config, attr), key.key: value}
+        if not value:
+            del settings[key.key]
+        check_settings(key.section, settings)
+        config = replace(config, **{attr: settings})
+    _write_config_file(_render_config(config))
+    return value
 
 
 def _write_config_file(content: str) -> Path:
@@ -317,7 +362,7 @@ def _write_config_file(content: str) -> Path:
 
 
 def _read_config_file() -> HookConfig:
-    """Parse the config file.
+    """Parse the config file, every key as :data:`CONFIG_KEYS` describes it.
 
     A missing file gives defaults. An unreadable or partly unparsable one also
     gives defaults for whatever it failed to set, never an exception (a hook
@@ -331,41 +376,19 @@ def _read_config_file() -> HookConfig:
     except Exception as exc:
         return HookConfig(problems=(f"unreadable: {type(exc).__name__}: {exc}",))
 
-    identity = sections.get("identity", {})
-    memgraph = sections.get("memgraph", {})
-    llm = sections.get("llm", {})
-    capture = sections.get("capture", {})
-    reconcile = sections.get("reconcile", {})
-    recall = sections.get("recall", {})
-    ontology = sections.get("ontology", {})
-    extraction = sections.get("extraction", {})
-    github = sections.get("github", {})
-    memory = sections.get("memory", {})
-    session_start = sections.get("session_start", {})
-    auto_reconcile_raw = reconcile.get("auto_reconcile")
+    fields: dict[str, Any] = {}
+    for key in CONFIG_KEYS:
+        raw = sections.get(key.section, {}).get(key.key)
+        # An unset or empty key keeps HookConfig's default, except a list, where empty means "none".
+        if key.field is not None and raw is not None and (raw or key.kind == "list"):
+            fields[key.field] = key.parse(raw)
+    field_keys = {(key.section, key.key) for key in CONFIG_KEYS if key.field is not None}
+    for section, attr in SETTINGS_SECTIONS.items():
+        fields[attr] = {k: v for k, v in sections.get(section, {}).items() if (section, k) not in field_keys}
 
     return HookConfig(
-        edition=sections.get("", {}).get("edition") or None,
-        user_id=identity.get("user_id") or None,
-        memgraph_url=memgraph.get("url") or _MEMGRAPH_DEFAULTS["url"],
-        memgraph_user=memgraph.get("user", _MEMGRAPH_DEFAULTS["user"]),
-        memgraph_password=memgraph.get("password", _MEMGRAPH_DEFAULTS["password"]),
-        memgraph_database=memgraph.get("database") or _MEMGRAPH_DEFAULTS["database"],
-        openai_api_key=llm.get("openai_api_key", _LLM_DEFAULTS["openai_api_key"]),
-        anthropic_api_key=llm.get("anthropic_api_key", _LLM_DEFAULTS["anthropic_api_key"]),
-        derive_model=llm.get("derive_model") or None,
-        connectors=_parse_list(capture["connectors"]) if "connectors" in capture else None,
-        capture_settings={key: value for key, value in capture.items() if key != "connectors"},
+        **fields,
         redact_patterns=dict(sections.get("redact", {})),
-        auto_reconcile=parse_bool_flag(auto_reconcile_raw) if auto_reconcile_raw is not None else None,
-        embedding_model=recall.get("embedding_model") or None,
-        recall_settings={key: value for key, value in recall.items() if key != "embedding_model"},
-        ontology_path=ontology.get("path") or None,
-        ontology_derive=ontology.get("derive") or None,
-        extraction_settings=dict(extraction),
-        github_token=github.get("token") or None,
-        memory_backend=memory.get("backend") or None,
-        session_resume=parse_bool_flag(session_start["resume"]) if session_start.get("resume") else None,
         present=frozenset(
             f"{section}.{key}" if section else key
             for section, keys in sections.items()
@@ -374,11 +397,6 @@ def _read_config_file() -> HookConfig:
         ),
         problems=tuple(problems),
     )
-
-
-def _parse_list(value: str) -> tuple[str, ...]:
-    """A comma-separated value (``"a, b"``) as its non-blank items; the parser has no arrays."""
-    return tuple(item.strip() for item in value.split(",") if item.strip())
 
 
 def _parse_toml(path: Path, problems: list[str] | None = None) -> dict[str, dict[str, str]]:
@@ -415,65 +433,57 @@ def _parse_toml(path: Path, problems: list[str] | None = None) -> dict[str, dict
     return sections
 
 
-def _render_config(config: HookConfig) -> str:
-    """Render the full config file content.
+def stored_value(config: HookConfig, key: ConfigKey) -> str | None:
+    """*key*'s value in *config* as the file stores it, or None while it is unset."""
+    if key.field is None:
+        return getattr(config, SETTINGS_SECTIONS[key.section]).get(key.key)
+    value = getattr(config, key.field)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, tuple):
+        return ", ".join(value)
+    return str(value)
 
-    ``[reconcile]`` is omitted while ``auto_reconcile`` is ``None`` so a re-read keeps "never configured"
-    distinct from an explicit ``false``, and ``[session_start]`` likewise while ``session_resume`` is;
-    ``[capture]`` likewise while ``connectors`` is and no other capture key is set; ``[redact]``, ``[recall]``,
-    ``[ontology]``, ``[extraction]``, ``[github]`` and ``[memory]`` are omitted while they hold nothing.
+
+def _render_config(config: HookConfig) -> str:
+    """Render the full config file content: every key the edition uses, with a line saying what it does.
+
+    An unset key is written commented out, with its default where it has one, so the file lists
+    everything a user can set while a re-read still tells "never configured" from an explicit value
+    (``auto_reconcile = false`` is not the same as leaving it unset). A key the table doesn't know,
+    in a section whose keys a component validates, is kept as written.
     """
-    user_id = config.user_id or ""
     lines = [
-        "# Context Graph hook configuration",
-        "# Generated by: memgraph-context-graph config set / bootstrap",
+        "# Context Graph configuration",
         f"# Location: {config_file()}",
-        "",
-        *([f'edition = "{config.edition}"', ""] if config.edition else []),
-        # Enterprise takes the user and their database from the Memgraph login, so it writes neither.
-        *(["[identity]", f'user_id = "{user_id}"', ""] if config.edition != "enterprise" else []),
-        "[memgraph]",
-        f'url = "{config.memgraph_url}"',
-        f'user = "{config.memgraph_user}"',
-        f'password = "{config.memgraph_password}"',
-        *([f'database = "{config.memgraph_database}"'] if config.edition != "enterprise" else []),
-        "",
-        "[llm]",
-        f'openai_api_key = "{config.openai_api_key}"',
-        f'anthropic_api_key = "{config.anthropic_api_key}"',
-        *([f'derive_model = "{config.derive_model}"'] if config.derive_model else []),
+        "# A commented-out key is unset; the line above it says what unset means. Uncomment a key to set it.",
+        "# setup and `memgraph-context-graph config set` rewrite this file: values are kept, added comments are not.",
     ]
-    capture = {
-        **({"connectors": ", ".join(config.connectors)} if config.connectors is not None else {}),
-        **config.capture_settings,
-    }
-    if capture:
-        lines += ["", "[capture]", *(f'{key} = "{value}"' for key, value in capture.items())]
-    if config.redact_patterns:
-        # Single quotes: a pattern may hold a double quote, and the parser does no escape processing.
-        lines += ["", "[redact]", *(f"{key} = '{value}'" for key, value in config.redact_patterns.items())]
-    if config.auto_reconcile is not None:
-        lines += ["", "[reconcile]", f"auto_reconcile = {'true' if config.auto_reconcile else 'false'}"]
-    recall = (
-        {"embedding_model": config.embedding_model, **config.recall_settings}
-        if config.embedding_model
-        else config.recall_settings
-    )
-    if recall:
-        lines += ["", "[recall]", *(f'{key} = "{value}"' for key, value in recall.items())]
-    ontology = {
-        key: value for key, value in (("path", config.ontology_path), ("derive", config.ontology_derive)) if value
-    }
-    if ontology:
-        lines += ["", "[ontology]", *(f'{key} = "{value}"' for key, value in ontology.items())]
-    if config.extraction_settings:
-        lines += ["", "[extraction]", *(f'{key} = "{value}"' for key, value in config.extraction_settings.items())]
-    if config.github_token:
-        lines += ["", "[github]", f'token = "{config.github_token}"']
-    if config.memory_backend:
-        lines += ["", "[memory]", f'backend = "{config.memory_backend}"']
-    if config.session_resume is not None:
-        lines += ["", "[session_start]", f"resume = {'true' if config.session_resume else 'false'}"]
+    for section in ("", *SECTIONS):
+        keys = [key for key in CONFIG_KEYS if key.section == section and key.applies_to(config.edition)]
+        if not keys and section != "redact":
+            continue
+        lines.append("")
+        if section:
+            lines.append(f"[{section}]")
+        for key in keys:
+            value = stored_value(config, key)
+            lines.append(f"# {key.doc} Unset: {key.unset}." if key.unset else f"# {key.doc}")
+            if value is not None or key.required:
+                lines.append(f"{key.key} = {key.format(value or '')}")
+            else:
+                lines.append(f"# {key.key} = {key.format(key.example)}")
+        if section in SETTINGS_SECTIONS:
+            known = {key.key for key in CONFIG_KEYS if key.section == section}
+            settings = getattr(config, SETTINGS_SECTIONS[section])
+            lines += [f'{name} = "{value}"' for name, value in settings.items() if name not in known]
+        if section == "redact":
+            lines.append("# Extra capture redaction patterns, name = 'regular expression'.")
+            lines += [f"{name} = '{pattern}'" for name, pattern in config.redact_patterns.items()]
+            if not config.redact_patterns:
+                lines.append("# ticket = 'ACME-[0-9]+'")
     lines.append("")
     return "\n".join(lines)
 

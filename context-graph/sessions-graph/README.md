@@ -261,7 +261,9 @@ can exceed the timeout that hook runtimes enforce on hook commands. Instead:
 
   This writes `[reconcile] auto_reconcile = true` to the config file, which
   every hook invocation reads (hook subprocesses don't inherit shell profile
-  variables, so no environment variable is consulted — ADR 0002). Direct SDK
+  variables, so no environment variable is consulted — ADR 0002). The
+  spawned process is handed the config file's path, not its values, and
+  reads its connection and keys from that file itself (ADRs 0003, 0007). Direct SDK
   integrations pass `SessionsGraphConnector(graph, auto_reconcile=True)`. It
   is fire-and-forget: if the process dies, the session stays `pending` and
   `sessions-graph reconcile --pending` is the reliable backfill.

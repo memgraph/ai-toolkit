@@ -146,7 +146,7 @@ def policy_from_config(config: HookConfig) -> tuple[CapturePolicy, list[str]]:
     A bad value never fails a hook: it falls back to the default and is
     reported, as :attr:`HookConfig.problems` is.
     """
-    from .adapters._identity import FALSY_VALUES, _parse_list
+    from .config_schema import FALSY_VALUES, parse_list
 
     settings = config.capture_settings
     problems: list[str] = []
@@ -163,8 +163,8 @@ def policy_from_config(config: HookConfig) -> tuple[CapturePolicy, list[str]]:
             patterns=tuple(patterns),
             secrets=_config_secrets(config),
             max_chars=_max_chars(settings.get("max_chars"), problems),
-            exclude_tools=_parse_list(settings.get("exclude_tools", "")),
-            exclude_projects=_parse_list(settings.get("exclude_projects", "")),
+            exclude_tools=parse_list(settings.get("exclude_tools", "")),
+            exclude_projects=parse_list(settings.get("exclude_projects", "")),
         ),
         problems,
     )

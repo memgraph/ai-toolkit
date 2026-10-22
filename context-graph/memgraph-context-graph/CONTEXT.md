@@ -49,7 +49,7 @@ Agent finished one turn (one prompt's work) inside a still-open **Agent Session*
 _Avoid_: Stop (a runtime's hook name, not a protocol term), session end
 
 **Hook Configuration**:
-Persistent TOML file supplying identity + connection settings to hook subprocesses. Default path `~/.config/context-graph/config.toml`; `CONTEXT_GRAPH_CONFIG` may select another file. At hook runtime, config values come only from selected file. Env var selects file; never supplies a value from it.
+Persistent TOML file supplying identity + connection settings to hook subprocesses. Default path `~/.config/context-graph/config.toml`; `CONTEXT_GRAPH_CONFIG` may select another file. At hook runtime, config values come only from selected file. Env var selects file; never supplies a value from it. Its keys are one table (`config_schema.CONFIG_KEYS`): parsing, the written file, and `config get/set/show` all follow it.
 _Avoid_: env config, runtime config, shell config
 
 **Edition**:

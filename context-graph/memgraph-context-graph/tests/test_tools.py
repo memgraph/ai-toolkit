@@ -171,7 +171,7 @@ def test_recall_settings_survive_config_set(tmp_path):
     _identity._reset_cache()
 
     _identity.write_config(embedding_model="BAAI/bge-small-en-v1.5")
-    _identity.write_full_config(user_id="ante")
+    _identity.write_config(user_id="ante")
     _identity._reset_cache()
 
     config = _identity.load_config()

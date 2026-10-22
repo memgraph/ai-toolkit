@@ -4,4 +4,6 @@ Agent runtimes (Claude Code, Codex) spawn hook commands as non-interactive subpr
 
 Avoids drift between what `doctor` sees (interactive shell, env vars present) and what hooks see (subprocess, env vars absent). One canonical way to configure hooks: the config file.
 
-**Amended by** ADR 0003 (env var may select *which* config file is read, never what's in it) and ADR 0005 (config file also covers LLM API keys, resolved values passed as explicit `env=` to a further subprocess a hook spawns). Both preserve this ADR's core guarantee: config *values* still come only from the file.
+**Amended by** ADR 0003 (env var may select *which* config file is read, never what's in it), ADR 0005 (config file also covers LLM API keys) and ADR 0007 (a subprocess a hook spawns is handed the config file's path and reads it itself). All preserve this ADR's core guarantee: config *values* still come only from the file.
+
+**Since superseded detail:** env vars are no longer a write-time input either. `bootstrap` is gone, and `setup` and `config set` take values from the user, so nothing copies the environment into the file.

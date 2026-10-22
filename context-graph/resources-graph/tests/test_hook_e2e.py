@@ -20,7 +20,7 @@ def hook_config(monkeypatch, tmp_path):
     """A config file pointing at the test Memgraph, selected the way a parent process would (ADR 0003)."""
     monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(tmp_path / "config.toml"))
     _identity._reset_cache()
-    _identity.write_full_config(
+    _identity.write_config(
         user_id="ante",
         memgraph_url=os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687"),
         memgraph_user=os.environ.get("MEMGRAPH_USER", ""),

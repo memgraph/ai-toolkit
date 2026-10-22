@@ -134,7 +134,7 @@ def cli_config():
 
     from memgraph_context_graph.adapters import _identity
 
-    _identity.write_full_config(user_id="tester", memgraph_url=os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687"))
+    _identity.write_config(user_id="tester", memgraph_url=os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687"))
     _identity._reset_cache()
 
 

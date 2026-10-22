@@ -1,5 +1,7 @@
 # Config file also covers LLM API keys; explicit env for spawned subprocesses
 
+**Superseded in part by** ADR 0007: point 2 is replaced (the parent now hands the child only the config file's path) and point 3 is the only mechanism. Point 1 stands, except that values are no longer captured from the environment: there is no `bootstrap`, and `setup` and `config set` take them from the user. Since this was written, `sessions-graph reconcile` stopped calling an LLM (extraction is local GLiNER2); only `sessions-graph derive` needs a provider key.
+
 ADR 0002 made `~/.config/context-graph/config.toml` sole runtime source for hook subprocess config: identity + Memgraph connection settings. Resolution happens as constructor kwargs passed directly to `SkillGraph`/`SessionsGraph`/`ActionsGraph` inside hook process — never written back to that process's `os.environ`.
 
 `SessionsGraphConnector` (sessions-graph) spawns a **further** detached subprocess on `SESSION_END` when `auto_reconcile` enabled: `sessions-graph reconcile --session <id>`, local GLiNER2 entity extraction plus an LLM session summary via LightRAG. Plain `subprocess.Popen(...)`, no explicit `env=` -> child only inherited whatever ambient `os.environ` parent hook process had — which, per ADR 0002, excludes resolved Memgraph config, and never had a path to an LLM API key at all (LightRAG's default `llm_model_func` reads `OPENAI_API_KEY` straight from `os.environ`, raises if unset).
