@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -28,7 +29,7 @@ from .inject import inject_batch
 from .reconcile import ExtractionBackendName, reconcile_batch
 from .retrieval import ReadOnlyGraph, Retrieved
 from .runner import _require_reconciled, check_offline, retrieve_concurrently
-from .scoring import efficiency_tokens, evidence_recall
+from .scoring import _percentile, efficiency_tokens, evidence_recall
 
 if TYPE_CHECKING:
     from deepeval.dataset import Golden
@@ -59,6 +60,8 @@ class BeamRow:
     evidence_recall: float | None = None
     efficiency_tokens: int = 0
     latency_seconds: float = 0.0
+    #: ``sessions_graph.recall`` alone, without the answering model; None when retrieval raised.
+    recall_seconds: float | None = None
     errors: list[str] = field(default_factory=list)
     retrieval_context: list[str] = field(default_factory=list)
 
@@ -70,6 +73,8 @@ class BeamRun:
     rows: list[BeamRow]
     reconciled: int = 0
     reconcile_failures: int = 0
+    #: Wall-clock of injection and reconciliation; None when the graph was reused.
+    build_seconds: float | None = None
 
 
 def select_questions(goldens: list[Golden], limit: int | None) -> list[Golden]:
@@ -136,9 +141,11 @@ async def run_beam(
     goldens = select_questions([golden for chat in chats for golden in to_goldens(chat)], limit)
 
     reconciled = failures = 0
+    build_seconds = None
     if reuse_graph:
         _require_reconciled(fixtures, graph=graph, extraction_backend=extraction_backend)
     else:
+        build_started = time.monotonic()
         inject_batch(fixtures, graph=graph)
         outcome = await reconcile_batch(
             graph.db,
@@ -154,11 +161,12 @@ async def run_beam(
                 graph.db, memgraph_url=memgraph_url, seeds=derive_seeds, workers=derive_workers
             )
             print(f"derivation: {derived.counts()}", flush=True)
+        build_seconds = time.monotonic() - build_started
 
     ensure_recall_ready(graph.db)
     retrieved = await _retrieve_all(goldens, ReadOnlyGraph(graph.db), llm, hybrid or RecallConfig(), max_concurrent)
     rows = await _judge_all(goldens, retrieved, judge)
-    return BeamRun(rows=rows, reconciled=reconciled, reconcile_failures=failures)
+    return BeamRun(rows=rows, reconciled=reconciled, reconcile_failures=failures, build_seconds=build_seconds)
 
 
 async def _retrieve_all(
@@ -197,6 +205,7 @@ async def _judge_all(goldens: list[Golden], retrieved: list[Retrieved], judge: B
             evidence_recall=evidence_recall(golden.context, result.retrieval_context),
             efficiency_tokens=efficiency_tokens(result),
             latency_seconds=result.latency_seconds,
+            recall_seconds=result.recall_seconds,
             errors=list(result.errors),
             retrieval_context=list(result.retrieval_context),
         )
@@ -244,6 +253,23 @@ def summarize(rows: list[BeamRow]) -> tuple[list[AbilityScore], float | None]:
     return scores, (mean(means) if means else None)
 
 
+def latency(rows: list[BeamRow]) -> dict[str, float | None]:
+    """End-to-end and recall-only latency: mean, median and p95, in seconds.
+
+    Recall-only is over the rows that report it, so a question whose
+    retrieval raised doesn't count as an instant recall.
+    """
+    summary: dict[str, float | None] = {}
+    for name, values in (
+        ("e2e", [row.latency_seconds for row in rows]),
+        ("recall", [row.recall_seconds for row in rows if row.recall_seconds is not None]),
+    ):
+        summary[f"mean_{name}_seconds"] = mean(values) if values else None
+        summary[f"median_{name}_seconds"] = _percentile(values, 50) if values else None
+        summary[f"p95_{name}_seconds"] = _percentile(values, 95) if values else None
+    return summary
+
+
 def render(run: BeamRun) -> str:
     """The run's report as text."""
     scores, overall = summarize(run.rows)
@@ -253,8 +279,17 @@ def render(run: BeamRun) -> str:
         evidence = f"{score.mean_evidence_recall:.2f}" if score.mean_evidence_recall is not None else "-"
         lines.append(f"{score.ability:<26} {score.questions:>3} {score.judged:>6} {mean_score:>6} {evidence:>8}")
     lines.append(f"{'BEAM score (mean of abilities)':<38} {overall:.3f}" if overall is not None else "BEAM score: -")
+    times = latency(run.rows)
+    for name, label in (("e2e", "end to end"), ("recall", "recall only")):
+        mean_s, median_s, p95_s = (times[f"{stat}_{name}_seconds"] for stat in ("mean", "median", "p95"))
+        if mean_s is not None and median_s is not None and p95_s is not None:
+            lines.append(
+                f"{label:<12} mean {mean_s * 1000:.0f}ms, median {median_s * 1000:.0f}ms, p95 {p95_s * 1000:.0f}ms"
+            )
     errors = sum(1 for row in run.rows if row.errors)
     lines.append(f"reconciled {run.reconciled} sessions, {run.reconcile_failures} failed; {errors} retrieval errors")
+    if run.build_seconds is not None:
+        lines.append(f"build        {run.build_seconds / 60:.1f} min (injection and reconciliation)")
     return "\n".join(lines)
 
 
@@ -269,6 +304,8 @@ def save(run: BeamRun, path: Path, *, meta: dict[str, Any]) -> Path:
         "abilities": [asdict(score) for score in scores],
         "reconciled": run.reconciled,
         "reconcile_failures": run.reconcile_failures,
+        "build_seconds": run.build_seconds,
+        "latency": latency(run.rows),
         "rows": [asdict(row) for row in run.rows],
     }
     path.write_text(json.dumps(payload, indent=1, ensure_ascii=False), encoding="utf-8")

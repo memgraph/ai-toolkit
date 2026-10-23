@@ -307,6 +307,10 @@ class Retrieved:
     errors: list[str] = field(default_factory=list)
     #: Wall-clock seconds for retrieval plus the final answer call.
     latency_seconds: float = 0.0
+    #: Wall-clock seconds of the read path alone -- embedding the question and
+    #: the Memgraph queries, no answering LLM. Set only by strategies whose
+    #: read path is a separate step (hybrid); None where it isn't separable.
+    recall_seconds: float | None = None
 
 
 async def retrieve(
