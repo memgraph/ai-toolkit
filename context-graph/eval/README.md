@@ -14,15 +14,25 @@ or the recall), measured end to end on two public benchmarks. Each row is a
 committed baseline with its settings; the sections below it have the per-type
 breakdown and the caveats.
 
-| Benchmark | Questions | Score | Evidence recall | Retrieval tokens (mean) | Recall only (mean, p95) | End to end (mean, p95) | Build |
+| Benchmark | Questions | **Answer score** | Evidence recall | Retrieval tokens (mean) | Recall only (mean, p95) | End to end (mean, p95) | Build |
 |---|---|---|---|---|---|---|---|
-| [LongMemEval-S](#version-point-longmemeval-s-hybrid-recall-over-a-gliner2-graph-2026-10-23), full haystacks | 500 | **87.0%** accuracy (435/500, LongMemEval's judge) | 0.92 | 6,465 | 2.85 s, 3.03 s | 10.8 s, 22.2 s | 203 h |
-| [BEAM 100K](#version-point-beam-100k-hybrid-recall-over-a-gliner2-graph-2026-10-14) | 400 | **0.636** (mean of ten abilities, BEAM's judge) | 0.60 | 9,451 | 8.8 s, 10.4 s | 31.8 s, 66.6 s | 478 min |
+| [LongMemEval-S](#version-point-longmemeval-s-hybrid-recall-over-a-gliner2-graph-2026-10-23), full haystacks | 500 | **87.0%** | 0.92 | 6,465 | 2.85 s, 3.03 s | 10.8 s, 22.2 s | 203 h |
+| [BEAM 100K](#version-point-beam-100k-hybrid-recall-over-a-gliner2-graph-2026-10-14) | 400 | **63.6%** | 0.60 | 9,451 | 8.8 s, 10.4 s | 31.8 s, 66.6 s | 478 min |
+
+**Answer score** is the headline both share: the share of the answer key the
+system's answer gets right, as decided by the benchmark's own judge. On
+LongMemEval-S each question is right or wrong (435 of 500, LongMemEval's
+gpt-4o judge). On BEAM each question earns partial credit per rubric item
+(1, 0.5 or 0) and the score is the mean over its ten abilities, 0.636 (BEAM's
+gpt-4.1-mini judge). The two are the same idea on different judges and
+granularity, so compare them as "how much of the answer is right", not as a
+ranking between benchmarks. **Evidence recall** (the share of the cited
+evidence turns that retrieval returned), **retrieval tokens**, recall-only and
+end-to-end latency are measured the same way on both.
 
 LongMemEval-S also reports Contextual Recall (retrieval found what the answer
 needs) on 332 of 458 questions (72%), abstention 22/30, F1 0.117, BLEU 0.067 and
-0 unscored questions. The two scores are on different scales and are not
-averaged. Both ran on an AMD Ryzen 5 2600 (6 cores, 16 GB, no GPU) against
+0 unscored questions. Both ran on an AMD Ryzen 5 2600 (6 cores, 16 GB, no GPU) against
 Memgraph 3.13.2.
 
 ## Two tiers, scored separately

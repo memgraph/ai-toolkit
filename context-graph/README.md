@@ -39,10 +39,12 @@ Everything is joined by a shared `(:Session {session_id})` node, so one graph an
 
 Measured end to end on public long-memory benchmarks, through the shipped read path (hybrid recall over a graph built locally by GLiNER2, no LLM in the build or the recall):
 
-| Benchmark | Score | Recall latency (mean) |
-|---|---|---|
-| LongMemEval-S, all 500 questions | **87.0%** (LongMemEval's judge) | 2.85 s |
-| BEAM 100K, all 400 questions | **0.636** (BEAM's judge) | 8.8 s |
+| Benchmark | Answer score | Evidence recall | Retrieval tokens | Recall latency (mean) |
+|---|---|---|---|---|
+| LongMemEval-S, all 500 questions | **87.0%** | 0.92 | 6,465 | 2.85 s |
+| BEAM 100K, all 400 questions | **63.6%** | 0.60 | 9,451 | 8.8 s |
+
+Answer score is the share of the answer key the answer gets right, by each benchmark's own judge (LongMemEval's, BEAM's), so read the two rows as one metric on two judges.
 
 The settings, per-type breakdowns and caveats are in the [eval README](./eval/README.md#official-numbers).
 
