@@ -173,7 +173,7 @@ class ContextGraphMemory:
         return True
 
     def end_session(self, session_id: str | None = None, *, status: str = "completed") -> None:
-        """End *session_id*, or every session this memory started; its messages are then embedded for recall."""
+        """End *session_id*, or every session this memory started: embed what is left and mark it for reconciliation."""
         ending = [session_id] if session_id is not None else list(self._started)
         for sid in ending:
             source_sdk = self._started.pop(sid, "")

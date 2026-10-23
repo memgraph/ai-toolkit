@@ -364,7 +364,12 @@ def _derive(argv: list[str]) -> int:
         )
     )
     print(_describe_run(report))
-    return 0
+    return _derive_exit_code(report)
+
+
+def _derive_exit_code(report: RunReport) -> int:
+    """1 when every candidate errored, as when the LLM call itself fails; a candidate the gate rejects is not an error."""
+    return 1 if report.candidates and all(c.error for c in report.candidates) else 0
 
 
 def _describe_run(report: RunReport) -> str:

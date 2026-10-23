@@ -31,6 +31,20 @@ def test_config_set_reconcile_auto_reconcile_true(config_dir, capsys):
     assert _identity.load_config().auto_reconcile is True
 
 
+def test_doctor_passes_auto_reconcile_without_an_llm_key(config_dir):
+    """Reconciliation extracts locally; following the docs' `config set reconcile.auto_reconcile true` must not fail."""
+    from memgraph_context_graph.cli import _check_config
+
+    _identity.write_config(user_id="alice", auto_reconcile=True)
+    _identity._reset_cache()
+
+    check = _check_config()
+
+    assert check["ok"] is True
+    assert "auto_reconcile=ON" in check["detail"]
+    assert "needed only to learn the schema" in check["detail"]
+
+
 def test_config_set_reconcile_auto_reconcile_false(config_dir, capsys):
     _identity.write_config(auto_reconcile=True)
     _identity._reset_cache()

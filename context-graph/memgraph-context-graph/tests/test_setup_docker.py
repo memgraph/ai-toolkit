@@ -113,6 +113,19 @@ def test_asked_for_by_name_another_memgraph_is_used(names, stranger):
     assert _docker("inspect", names["other"]).returncode != 0
 
 
+def test_an_asked_for_url_that_doesnt_answer_is_never_swapped_for_our_container(names, stranger):
+    """An explicit URL whose Memgraph is down, or refuses the login, must not land the config on another port."""
+    ours = mg.find_or_start(configured_url=None, default_port=stranger, container=names["own"], log=lambda _: None)
+    asked = mg.local_url(_free_port())
+
+    with pytest.raises(mg.ProvisionError, match="doesn't answer") as excinfo:
+        mg.find_or_start(configured_url=None, explicit_url=asked, container=names["own"], log=lambda _: None)
+    assert "No local container was changed" in " ".join(excinfo.value.hints)
+
+    again = mg.find_or_start(configured_url=None, explicit_url=ours.url, container=names["own"], log=lambda _: None)
+    assert again.url == ours.url
+
+
 def test_an_asked_for_port_that_is_taken_fails_and_leaves_nothing_behind(names):
     with socket.socket() as holder:
         holder.bind(("127.0.0.1", 0))

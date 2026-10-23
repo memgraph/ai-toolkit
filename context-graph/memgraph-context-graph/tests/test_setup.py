@@ -848,6 +848,29 @@ def test_reinstalling_the_tool_keeps_the_spaces_package_once_it_is_there(monkeyp
     assert tool.SPACES[1] in tool.requirements(spaces=True)
 
 
+def test_reinstalling_the_tool_keeps_local_extraction_and_the_connectors_commands(monkeypatch, tmp_path):
+    """Turning a connector on reinstalls the tool; that must not drop what the Knowledge graph docs had installed."""
+    from memgraph_context_graph.adapters import _identity
+    from memgraph_context_graph.setup import tool
+
+    config = tmp_path / "config.toml"
+    config.write_text('[capture]\nconnectors = "skills-graph, actions-graph, sessions-graph, resources-graph"\n')
+    monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(config))
+    _identity._reset_cache()
+    monkeypatch.setattr(tool, "installed", lambda package: package == tool.RECONCILIATION[0])
+
+    argv = tool.requirements()
+
+    assert tool.RECONCILIATION[1] in argv
+    assert INSTALLABLE["sessions-graph"] not in argv
+    assert INSTALLABLE["resources-graph"] in argv
+    assert argv[-4:] == ["--with-executables-from", "sessions-graph", "--with-executables-from", "resources-graph"]
+
+    monkeypatch.setattr(tool, "installed", lambda package: False)
+    assert INSTALLABLE["sessions-graph"] in tool.requirements()
+    _identity._reset_cache()
+
+
 def test_the_enterprise_hint_names_the_whole_install_not_just_the_spaces_package(monkeypatch, default_connectors):
     import pytest
 

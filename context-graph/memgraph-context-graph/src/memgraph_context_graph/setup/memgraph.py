@@ -128,6 +128,13 @@ def find_or_start(
 
     docker = _docker_or_fail()
     if (existing := _inspect(docker, container)) is not None:
+        bound = _bound_port(existing)
+        if explicit_url and bound is not None and bound != _port_of(explicit_url):
+            raise ProvisionError(
+                f"Memgraph at {explicit_url} doesn't answer, or refuses the configured login",
+                f"Setup's own container {container} is on port {bound}, so it isn't the one asked for. Start that "
+                "Memgraph, or set memgraph.user and memgraph.password first. No local container was changed.",
+            )
         return _restart(docker, existing, container, user, password, ready_seconds, log)
     port = _port_of(explicit_url) if explicit_url else default_port
     return _start(docker, container, image, port, bool(explicit_url), user, password, ready_seconds, log)
@@ -187,6 +194,14 @@ def _restart(
     version = _wait_ready(url, user, password, ready_seconds, name, docker)
     how = "found" if info["State"]["Running"] else "restarted"
     return Memgraph(url, version, how, container=name)
+
+
+def _bound_port(info: dict) -> int | None:
+    """The host port a container asks for Bolt on, from its config, so a stopped one can be told apart."""
+    for binding in (info["HostConfig"].get("PortBindings") or {}).get("7687/tcp") or []:
+        if str(binding.get("HostPort", "")).isdigit():
+            return int(binding["HostPort"])
+    return None
 
 
 def _lost_its_network(info: dict) -> bool:

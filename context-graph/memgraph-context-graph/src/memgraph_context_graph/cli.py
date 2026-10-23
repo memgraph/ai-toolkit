@@ -477,17 +477,11 @@ def _check_config() -> _CheckResult:
     else:
         parts.append("user_id=NOT SET")
     parts.append(f"memgraph.url={spaces.personal().target.url!r}")
+    # Reconciliation extracts locally with GLiNER2; the key only lets it learn the schema.
     llm_key_set = bool(config.openai_api_key or config.anthropic_api_key)
-    parts.append(
-        "llm_key=SET" if llm_key_set else "llm_key=NOT SET (needed only for sessions-graph auto-reconciliation)"
-    )
-    auto_reconcile_on = bool(config.auto_reconcile)
-    parts.append(f"auto_reconcile={'ON' if auto_reconcile_on else 'OFF'}")
-    broken_auto_reconcile = auto_reconcile_on and not llm_key_set
-    if broken_auto_reconcile:
-        parts.append("WARNING: auto_reconcile is ON but no LLM key is set — reconciliation will fail")
-    ok = bool(user_id) and not broken_auto_reconcile
-    return {"name": "config", "ok": ok, "detail": f"{path} — {'; '.join(parts)}"}
+    parts.append("llm_key=SET" if llm_key_set else "llm_key=NOT SET (needed only to learn the schema)")
+    parts.append(f"auto_reconcile={'ON' if config.auto_reconcile else 'OFF'}")
+    return {"name": "config", "ok": bool(user_id), "detail": f"{path} — {'; '.join(parts)}"}
 
 
 def _check_memgraph() -> _CheckResult:
@@ -581,8 +575,9 @@ def _check_embeddings() -> _CheckResult:
 
 
 def _check_mcp() -> _CheckResult:
-    """Whether ``memgraph-context-graph mcp`` can start and serves recall."""
-    from memgraph_context_graph.tools import load_tools
+    """Whether ``memgraph-context-graph mcp`` can start and serves recall, naming the tools the config turns on."""
+    from memgraph_context_graph.adapters._identity import load_config
+    from memgraph_context_graph.tools import is_available, load_tools
 
     try:
         import mcp  # noqa: F401 -- only whether the extra is installed
@@ -593,10 +588,12 @@ def _check_mcp() -> _CheckResult:
             "detail": "the mcp extra is missing, so the recall tool can't be served — "
             "run: uv tool install 'memgraph-context-graph[mcp]' --with 'sessions-graph[memgraph-context-graph]'",
         }
-    names = sorted(load_tools())
-    if "recall" not in names:
-        return {"name": "mcp", "ok": False, "detail": f"no recall tool registered (tools: {names or 'none'})"}
-    return {"name": "mcp", "ok": True, "detail": f"serves {', '.join(names)}"}
+    tools = load_tools()
+    if "recall" not in tools:
+        return {"name": "mcp", "ok": False, "detail": f"no recall tool registered (tools: {sorted(tools) or 'none'})"}
+    config = load_config()
+    served = sorted(name for name, tool in tools.items() if is_available(tool, config))
+    return {"name": "mcp", "ok": True, "detail": f"serves {', '.join(served)}"}
 
 
 def _check_memory_backend(runtime: str) -> _CheckResult | None:

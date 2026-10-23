@@ -26,14 +26,18 @@ Needs the ``memgraph-context-graph[claude]`` extra::
             print(message)
     memory.end_session()
 
-Leave ``setting_sources`` without ``"user"``: that would also load the
-Context Graph Claude Code plugin's hooks, and every event would be captured twice.
+With ``setting_sources`` unset, Claude Code loads the user's settings, and
+with them the Context Graph Claude Code plugin, whose hooks would capture
+every event a second time; :meth:`ClaudeAgentMemory.options` turns that
+plugin off for the session.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import replace
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, SdkMcpTool, create_sdk_mcp_server
@@ -41,6 +45,7 @@ from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, SdkMcpTool, create
 from memgraph_context_graph import capture_log
 from memgraph_context_graph.adapters._spec import SpecAdapter
 from memgraph_context_graph.adapters.claude_code import SPEC as CLAUDE_CODE_SPEC
+from memgraph_context_graph.setup.agents import PLUGIN_ID
 
 if TYPE_CHECKING:
     from claude_agent_sdk.types import HookEvent, McpSdkServerConfig
@@ -89,6 +94,9 @@ class ClaudeAgentMemory:
         Hooks, MCP servers and allowed tools given in *kwargs* are kept; the
         memory's are added after them. Claude Code's own auto memory is turned
         off unless *kwargs*' ``env`` says otherwise: Context Graph is the memory.
+        The Context Graph Claude Code plugin is turned off in *kwargs*'
+        ``settings`` (a JSON string or a settings file), so its hooks don't
+        capture the session a second time.
         """
         hooks: dict[Any, list[HookMatcher]] = dict(kwargs.pop("hooks", None) or {})
         for event, matchers in self.hooks().items():
@@ -96,7 +104,10 @@ class ClaudeAgentMemory:
         mcp_servers = {**(kwargs.pop("mcp_servers", None) or {}), SERVER_NAME: self.mcp_server()}
         allowed_tools = [*(kwargs.pop("allowed_tools", None) or []), *self.allowed_tools()]
         env = {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1", **(kwargs.pop("env", None) or {})}
-        return ClaudeAgentOptions(hooks=hooks, mcp_servers=mcp_servers, allowed_tools=allowed_tools, env=env, **kwargs)
+        settings = _without_the_plugin(kwargs.pop("settings", None))
+        return ClaudeAgentOptions(
+            hooks=hooks, mcp_servers=mcp_servers, allowed_tools=allowed_tools, env=env, settings=settings, **kwargs
+        )
 
     def hooks(self) -> dict[HookEvent, list[HookMatcher]]:
         """Hook callbacks that capture the session and give its first prompt the memory context."""
@@ -159,3 +170,26 @@ class ClaudeAgentMemory:
             return {"content": [{"type": "text", "text": text}], "is_error": is_error}
 
         return handler
+
+
+def _without_the_plugin(settings: str | None) -> str:
+    """*settings* as a JSON string, with the Context Graph Claude Code plugin turned off.
+
+    The SDK passes them as ``--settings``, which outranks the user's settings,
+    so this wins over the plugin being enabled there; the rest is kept.
+
+    Args:
+        settings: ``ClaudeAgentOptions.settings``: a JSON object, a settings file's path, or None.
+
+    Raises:
+        ValueError: *settings* isn't a JSON object, or names a file that doesn't hold one.
+    """
+    if settings is None:
+        merged: Any = {}
+    else:
+        text = settings if settings.lstrip().startswith("{") else Path(settings).read_text(encoding="utf-8")
+        merged = json.loads(text)
+    if not isinstance(merged, dict):
+        raise ValueError(f"settings must be a JSON object, got {settings!r}")
+    merged["enabledPlugins"] = {**(merged.get("enabledPlugins") or {}), PLUGIN_ID: False}
+    return json.dumps(merged)
