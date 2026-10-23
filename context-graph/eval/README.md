@@ -291,9 +291,9 @@ read accuracy, not those two.
   6,378 tokens; 0 questions unscored (the judge answered every one).
 - **Setup:** Memgraph 3.13.2 (`memgraph/memgraph-mage@sha256:e28eea42…`, snapshots
   and WAL off), `fastino/gliner2.5-base-v1` with the greedy decoder, every
-  recall lane, an AMD Ryzen 5 2600 (6 cores, 16 GB, no GPU). Batches 0-1 ran at
-  commit `b133a90`, the rest at `a8cb00c`, which only adds a retry of recall's
-  setup on a transient Memgraph error.
+  recall lane, an AMD Ryzen 5 2600 (6 cores, 16 GB, no GPU). Batches 0-1 ran on the
+  code of #552 (before its rebase onto main); the rest add a retry of recall's
+  setup on a transient Memgraph error, the only other change.
 - **Recall timing:** measured before #548 moved recall into a worker thread, so
   recall ran on the event loop one question at a time and each recall time is
   uncontended. With #548, concurrent questions overlap their recalls: a run

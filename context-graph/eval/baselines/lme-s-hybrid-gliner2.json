@@ -17,7 +17,7 @@
   "retrieval_strategy": "hybrid",
   "hybrid_lanes": "memories,turns,text,entities,facts,user_facts",
   "max_sessions_per_question": null,
-  "commit": "batches 0-1: b133a90; batches 2-24: a8cb00c (adds a retry of recall setup on transient Memgraph errors)",
+  "commit": "batches 0-1: the code of #552 before its rebase onto main; batches 2-24: the same plus a retry of recall setup on transient Memgraph errors",
   "memgraph_version": "3.13.2",
   "memgraph_image": "memgraph/memgraph-mage@sha256:e28eea424e4fe2af3d20435d266de14daa33466c2d492de65bda67b36a6ae3c5",
   "hardware": "AMD Ryzen 5 2600 (6 cores, 12 threads), 16 GB RAM, no GPU",
