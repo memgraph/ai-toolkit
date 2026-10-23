@@ -1,39 +1,96 @@
 # Context Graph
 
-**Turn your coding-agent sessions (Claude Code, Codex, GitHub Copilot CLI, Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable knowledge graph in [Memgraph](https://memgraph.com/).**
+Memory and observability for your AI agents, stored in [Memgraph](https://memgraph.com/).
 
-Context Graph is a family of components that capture what your coding agents actually do — the tools they call, the skills they use, the memories they record — and persist it into a single Memgraph graph you can query across every session. Install it as a plugin, and every session your agent runs quietly builds up a graph of your work.
+Context Graph connects what happens across sessions: conversations, tool calls, skill usage, and the memories agents choose to keep. Your agents can recall earlier work, and you can inspect the evidence behind it.
 
-```text
-Agent CLI hooks     ──────────▶  memgraph-context-graph  ──▶  Memgraph
-(Claude Code, Codex, …)            (routes events)          (:User)-[:HAD_SESSION]->(:Session)
-                                                              ├─[:HAS_ACTION]->(:Action)   ← actions-graph
-                                                              ├─[:USED_SKILL]->(:Skill)    ← skills-graph
-                                                              └─[:PRODUCED_MEMORY]->(:Memory) ← sessions-graph
+Works with **Claude Code, Codex, Copilot CLI, Cursor, OpenCode, Antigravity CLI, and Grok Build**, plus apps built with the Claude Agent SDK or OpenAI Agents SDK.
+
+## Getting started
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/memgraph/ai-toolkit/main/context-graph/scripts/install.sh | bash
 ```
 
-## Why
+Setup installs the CLI and connectors, lets you select agents, sets your identity, and checks the result. It uses the Memgraph configured for Context Graph or starts its own persistent Docker container. To connect to a database you manage, pass `--memgraph-url`.
 
-Every agent session today is ephemeral — it scrolls off and the context is gone. Context Graph makes that context durable and connected:
+Claude Code and Codex get user-wide plugins. The other agents get hooks in the project you select and an MCP server in their user configuration. Restart your agent after installation; Codex also asks you to trust the hooks.
 
-- **Observability** — see which tools and skills a session used, and how actions followed one another.
-- **Cross-session recall** — agents write **Memories** (durable free-form assertions) they can search in future sessions.
-- **A knowledge graph of your work** — optionally reconcile session content into extracted entities (people, projects, files, concepts) linked back to the sessions that mentioned them.
+Already have the CLI? You can select just the agents and projects you want:
 
-Everything is joined by a shared `(:Session {session_id})` node, so one graph answers questions that span tools, skills, memories, and entities.
+```bash
+memgraph-context-graph setup claude-code codex
+memgraph-context-graph setup cursor --project-dir ~/work/billing
+memgraph-context-graph doctor --runtime codex
+```
+
+Capture and recall need no LLM API key. Use Memgraph with MAGE for vector recall; setup uses the `memgraph/memgraph-mage` image. Memgraph 3.6 or newer is required.
+
+## Give your agent lasting memory
+
+Session history is captured automatically. To also make Context Graph the agent's curated memory store, opt in:
+
+```bash
+memgraph-context-graph setup codex --memory-backend context-graph
+```
+
+The agent gets a `memory` tool for durable notes and a `recall` tool for past conversations and facts. At session start, it sees a memory index and where you left off in the project. Memory follows the user across agents and checkouts of the same repository.
+
+This setting is user-wide. You can return to the agent's built-in memory with `--memory-backend native`; import and hand-back support differs by agent. See [recall and memory](memgraph-context-graph/docs/memory.md).
+
+For an application you are building, use the [SDK integration](memgraph-context-graph/docs/sdk-memory.md) to add capture, context, and memory tools in-process.
+
+## See what was captured
+
+```bash
+memgraph-context-graph ui
+```
+
+The [terminal viewer](viewer/) shows capture health, session timelines, pending processing, and extracted entities. Setup installs it by default. You can also query the graph in Memgraph Lab or any Bolt client:
+
+```cypher
+MATCH (:User {user_id: "your-name"})-[:HAD_SESSION]->(s:Session)-[:HAS_ACTION]->(a:ToolCall)
+RETURN s.session_id, a.tool_name, count(*) AS calls
+ORDER BY calls DESC;
+```
+
+## Turn conversations into a knowledge graph
+
+Capture records activity immediately. Reconciliation extracts entities and relationships from that activity in a separate process, using local GLiNER2:
+
+```bash
+sessions-graph reconcile --pending
+```
+
+Install `sessions-graph[reconciliation]` in the environment running that command if it is missing. No LLM key is needed for extraction; an optional key enables learning the user's ontology from their sessions.
+
+For agents that emit a session-end event, `reconcile.auto_reconcile` can trigger this automatically. Turn ends still queue work for agents that do not emit session end, so use a scheduled `--pending` sweep to process those. See [reconciliation](sessions-graph/docs/reconciliation.md) for configuration, ontology versions, and embedding catch-up.
 
 ## The components
 
-| Component | What it captures | Owns |
-|---|---|---|
-| **[memgraph-context-graph](./memgraph-context-graph/)** | The event hub. Normalizes runtime hooks/SDK activity into a shared event stream and routes it to the connectors below. | Adapters + connectors wiring |
-| **[actions-graph](./actions-graph/)** | Tool calls, tool results, messages, subagent/error events — the raw activity of a session. | `(:Action)` |
-| **[skills-graph](./skills-graph/)** | Which reusable [Agent Skills](https://docs.claude.com/en/docs/claude-code/skills) a session used, and stored skill definitions. | `(:Skill)` |
-| **[resources-graph](./resources-graph/)** | GitHub resources touched by agents, their shared cache, and the `resource` MCP read tool. Enabled explicitly; see its installation guide. | `(:Resource)`, `(:Touch)`, `(:Listing)` |
-| **[sessions-graph](./sessions-graph/)** | User/session provenance, durable **Memories**, and session **reconciliation** into entities. | `(:User)`, `(:Session)`, `(:Memory)` |
-| **[context-graph-viewer](./viewer/)** | Nothing: a read-only terminal viewer (`memgraph-context-graph ui`) for capture health, pipeline state, sessions and the entity graph. | — |
+Most users install the family together. Each component is also a Python package you can use directly.
 
-> `(:Session)` is a shared coordination point — every component `MERGE`s it idempotently, but only sessions-graph owns `(:User)` and the `HAD_SESSION` edge. Entity extraction is powered by [unstructured2graph](../unstructured2graph/), which lives outside this family.
+| Component | What it does |
+|---|---|
+| [memgraph-context-graph](memgraph-context-graph/) | CLI, runtime adapters, event routing, and the MCP server |
+| [actions-graph](actions-graph/) | Records tool calls, results, messages, errors, and subagents |
+| [skills-graph](skills-graph/) | Stores skill definitions and tracks which sessions use them |
+| [sessions-graph](sessions-graph/) | Owns users, session provenance, memory files, reconciliation, and recall |
+| [resources-graph](resources-graph/) | Remembers public GitHub resources an agent explored; opt-in |
+| [context-graph-viewer](viewer/) | Read-only terminal viewer for capture health and the graph |
+| [context-graph-spaces](spaces/) | Enterprise personal and shared spaces, with database-enforced access control |
+| [context-graph-eval](eval/) | Recall benchmarks and graph-construction evaluation |
+
+All capture components join on `(:Session {session_id})`. Sessions Graph owns the user relationship; other components attach their data to that session.
+
+```text
+User → Session → Actions and subagents
+              → Skills used
+              → Memories written
+              → Chunks → Extracted entities and relationships
+```
+
+[unstructured2graph](../unstructured2graph/) supplies extraction, and [hygm](../hygm/) defines the ontology. Both are shared toolkit packages outside this family.
 
 ## How well does recall work?
 
@@ -48,177 +105,35 @@ Answer score is the share of the answer key the answer gets right, by each bench
 
 The settings, per-type breakdowns and caveats are in the [eval README](./eval/README.md#official-numbers).
 
-## Getting started
+## Configuration and privacy
 
-One command sets up every agent on the machine:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/memgraph/ai-toolkit/main/context-graph/scripts/install.sh | bash
-# or, from a checkout:
-./context-graph/scripts/install.sh
-```
-
-The script installs `uv` if it's missing and the `memgraph-context-graph` CLI with its three connectors, then
-hands over to `memgraph-context-graph setup`. On a terminal setup is interactive: it shows the agents it found
-on `PATH` (ticked), the project it will wire, your identity and the Memgraph it will use, updates the plan as
-you change them, and changes nothing until you press Install. Without a terminal it prints the plan and runs it.
-
-What it does, in order (each step checks first, so rerunning only does what's missing):
-
-1. **Memgraph**: the one your config names, else one already on `localhost:7687`, else it starts
-   `memgraph-mage` in a `context-graph-memgraph` container with a data volume. If 7687 is taken it picks
-   another free port and writes it to the config. It never adopts the AI Memory demo's container, which is
-   disposable, and it never touches a remote Memgraph that doesn't answer.
-2. **Config**: `memgraph.url` and `identity.user_id` (default: git `user.name`, else `$USER`).
-3. **Packages**: the connectors and the terminal viewer, if any are missing.
-4. **Agents**: Claude Code and Codex get the Context Graph plugin, user-wide. Copilot CLI, Cursor, OpenCode,
-   Antigravity CLI and Grok Build get project-local hooks in the current directory (never `$HOME`); your own
-   hooks in those files are kept.
-5. **Verify**: `doctor`'s checks, including each agent's hook probe.
-
-The report ends with the exact command to rerun for anything that failed. Every choice is also a flag
-(`memgraph-context-graph setup --help`), and the script passes its arguments on:
-
-```bash
-curl -fsSL .../install.sh | bash -s -- codex --memgraph-url bolt://my-host:7687
-memgraph-context-graph setup cursor --project-dir ~/work/billing --project-dir ~/work/crawler
-memgraph-context-graph setup --plan          # what it would do; changes nothing
-memgraph-context-graph uninstall             # remove the wiring; your graph and config stay
-```
-
-Once it finishes, use the runtime normally — every session writes to the graph automatically: `(:User)-[:HAD_SESSION]->(:Session)`, tool actions, skill usage, and any Memories the agent records.
-
-<details>
-<summary>The same steps by hand</summary>
-
-### 1. Start Memgraph
-
-```bash
-docker run --rm -p 7687:7687 memgraph/memgraph-mage:latest --schema-info-enabled=true
-```
-
-Requires **Memgraph ≥ 3.6** (sessions-graph uses text search, stable from that release). The MAGE image is recommended if you'll also use reconciliation.
-
-### 2. Install the plugin
-
-This is what wires the hooks into the runtime so sessions are actually captured. Inside Claude Code:
-
-```text
-/plugin marketplace add memgraph/ai-toolkit
-/plugin install context-graph@context-graph-plugins
-```
-
-Or non-interactively, from any shell — Claude Code:
-
-```bash
-claude plugin marketplace add memgraph/ai-toolkit --sparse .claude-plugin
-claude plugin install context-graph@context-graph-plugins -y
-```
-
-Codex:
-
-```bash
-codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins
-codex plugin add context-graph@context-graph-plugins
-```
-
-### 3. Install the CLI and configure
-
-```bash
-uv tool install 'memgraph-context-graph[mcp]' \
-  --with 'skills-graph[memgraph-context-graph]' \
-  --with 'actions-graph[memgraph-context-graph]' \
-  --with 'sessions-graph[memgraph-context-graph]'
-```
-
-Set your identity — **required** for sessions-graph to attach sessions to a user:
-
-```bash
-memgraph-context-graph config set identity.user_id "your-name"
-```
-
-The default Memgraph connection is `bolt://localhost:7687`. To point at a remote or HA instance, set it in the config file (hooks read this file, **not** environment variables, at runtime — see [ADR 0002](./memgraph-context-graph/docs/adr/0002-config-file-only-hook-resolution.md)):
-
-```bash
-memgraph-context-graph config set memgraph.url "neo4j://<coordinator-host>:7687"
-memgraph-context-graph config set memgraph.user "<user>"
-memgraph-context-graph config set memgraph.password        # prompts; stored 0600
-memgraph-context-graph config set memgraph.database "memgraph"
-```
-
-### 4. Verify
+Hooks read `~/.config/context-graph/config.toml`. Use `config set` to change identity, connection settings, capture policy, or recall settings:
 
 ```bash
 memgraph-context-graph config show
-memgraph-context-graph doctor --runtime claude-code \
-  --connector skills-graph --connector actions-graph --connector sessions-graph
-# Codex: --runtime codex
+memgraph-context-graph config set identity.user_id "your-name"
+memgraph-context-graph config set capture.exclude_projects "~/clients/*"
 ```
 
-You want every line `OK` — config (user_id set), Memgraph reachable, each connector, and the strict hook smoke test.
+Capture removes `<private>…</private>` text and redacts recognized credential patterns before storage. Pattern matching cannot catch every secret. You can exclude tools or projects, and forget a captured session or project later. See [configuration and privacy](memgraph-context-graph/docs/configuration.md).
 
-### 5. Use the runtime normally
-
-From here, every session writes to the graph automatically: `(:User)-[:HAD_SESSION]->(:Session)`, tool actions, skill usage, and any Memories the agent records.
-
-</details>
-
-See [memgraph-context-graph](./memgraph-context-graph/) for both runtimes' adapter details and for the in-process SDK path (no plugin).
-
-## Turning sessions into an entity graph (reconciliation)
-
-By default, a finished session is marked `reconciliation_status = 'pending'` — its content is captured but not yet extracted into entities (local extraction and the LLM summary run outside the hook timeout). Run it out-of-band to build the entity graph:
+## Update or uninstall
 
 ```bash
-pip install "sessions-graph[reconciliation]"    # actions-graph + unstructured2graph + LightRAG
-export OPENAI_API_KEY=...                        # or ANTHROPIC_API_KEY
-
-# extract entities from every pending session
-sessions-graph reconcile --pending
+memgraph-context-graph update
+memgraph-context-graph uninstall
 ```
 
-This pulls each session's actions and memories, runs them through [unstructured2graph](../unstructured2graph/)'s chunk + entity-extraction pipeline, and writes extracted entities (with typed labels like `:Person`, `:Organization`) linked back via `(:Action|:Memory)-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(:Entity)`. The `sessions-graph reconcile` CLI extracts locally with GLiNER2 over the user's adopted HyGM model, or `hygm.default_model()` when none is adopted. LightRAG supplies the separate LLM session summary. Programmatic callers can swap in another `ExtractionBackend` — see [sessions-graph § reconciliation](./sessions-graph/README.md#session-reconciliation).
-
-## Seeing the graph
-
-```bash
-memgraph-context-graph ui
-```
-
-A read-only terminal viewer: whether capture is failing (the hooks' local failure log plus the graph), where reconciliation stands, each session's timeline and what it produced, and the entities and relations it learned. It needs the `context-graph-viewer` package in the tool environment; see [its README](./viewer/README.md).
-
-## Querying the graph
-
-Because every component writes to the same `(:Session {session_id})`, one query language spans all of them:
-
-| Question | Cypher path |
-|---|---|
-| All actions a user triggered | `(:User)-[:HAD_SESSION]->(:Session)-[:HAS_ACTION]->(:Action)` |
-| Which skills a user has used | `(:User)-[:HAD_SESSION]->(:Session)-[:USED_SKILL]->(:Skill)` |
-| Memories produced during a session | `(:Session)-[:PRODUCED_MEMORY]->(:Memory)` |
-| All memories owned by a user | `(:User)-[:HAS_MEMORY]->(:Memory)` |
-| Sessions where a specific tool was called | `(:Session)-[:HAS_ACTION]->(:Action {tool_name: "..."})` |
-| Entities surfaced across a user's sessions | `(:User)-[:HAD_SESSION]->(:Session)-[:HAS_ACTION]->(:Action)-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(:Entity)` |
-
-Run these in [Memgraph Lab](https://memgraph.com/docs/data-visualization) or any Bolt client.
-
-## Using components directly (without a plugin)
-
-Each component is a standalone Python library with its own README and can be used on its own or wired into `memgraph-context-graph` for the SDK path (Claude Agent SDK, OpenAI Agents SDK):
-
-- [memgraph-context-graph](./memgraph-context-graph/) — the adapter/connector layer and SDK quick starts
-- [actions-graph](./actions-graph/) — record and query session actions
-- [skills-graph](./skills-graph/) — persist and track skills
-- [sessions-graph](./sessions-graph/) — memories and reconciliation
+Update refreshes packages, wiring, and schema. Restart running agents afterwards. Uninstall removes agent wiring and restores built-in memory settings; on a terminal it asks separately about deleting the graph, config, and tool, defaulting to keeping them. `uninstall --all` deletes those too, including setup's graph data. See [runtime setup](memgraph-context-graph/docs/runtime-setup.md).
 
 ## Local development
 
-`scripts/dev-memgraph.sh` (repo root) manages an exploration Memgraph on port 7688 and a separate disposable test Memgraph on port 7689, and can point your live plugin at it for dogfooding:
+Run from the repository root. The development script keeps exploration data separate from disposable test data:
 
 ```bash
-./scripts/dev-memgraph.sh up        # start an isolated local Memgraph
-./scripts/dev-memgraph.sh test      # Context Graph + HyGM + unstructured2graph on the test instance
-./scripts/dev-memgraph.sh test-down # reclaim the disposable test instance
-./scripts/dev-memgraph.sh reconcile # run reconciliation on pending sessions
-./scripts/dev-memgraph.sh down      # tear it down
+./scripts/dev-memgraph.sh test
+./scripts/dev-memgraph.sh test sessions-graph
+./scripts/dev-memgraph.sh test-down
 ```
+
+Use `./scripts/dev-memgraph.sh --help` for exploration, dogfooding, and Enterprise test commands.

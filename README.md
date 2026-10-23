@@ -1,280 +1,114 @@
 # Memgraph AI Toolkit
 
-[![PyPI - memgraph-toolbox](https://img.shields.io/pypi/v/memgraph-toolbox?label=memgraph-toolbox)](https://pypi.org/project/memgraph-toolbox/)
-[![PyPI - langchain-memgraph](https://img.shields.io/pypi/v/langchain-memgraph?label=langchain-memgraph)](https://pypi.org/project/langchain-memgraph/)
-[![PyPI - mcp-memgraph](https://img.shields.io/pypi/v/mcp-memgraph?label=mcp-memgraph)](https://pypi.org/project/mcp-memgraph/)
-[![PyPI - unstructured2graph](https://img.shields.io/pypi/v/unstructured2graph?label=unstructured2graph)](https://pypi.org/project/unstructured2graph/)
-[![Discord](https://img.shields.io/badge/Discord-Join%20Community-7289da)](https://discord.gg/memgraph)
+Python packages for building AI applications with [Memgraph](https://memgraph.com/): agent memory, knowledge graphs, GraphRAG, and framework integrations.
 
-Build powerful AI applications with graph-powered RAG using [Memgraph](https://memgraph.com/). This toolkit provides everything you need to integrate knowledge graphs into your GenAI workflows.
+Use the packages independently, or combine them to bring documents, databases, and agent activity into a graph.
 
-## 🚀 Quick Setup
+[Documentation](https://memgraph.com/docs/ai-ecosystem) · [Examples](#choose-your-starting-point) · [Discord](https://discord.gg/memgraph) · [Issues](https://github.com/memgraph/ai-toolkit/issues)
 
-### Start Memgraph
+## Choose your starting point
 
-```bash
-docker run -p 7687:7687 \
-  --name memgraph \
-  memgraph/memgraph-mage:latest \
-  --schema-info-enabled=true
-```
+| I want to… | Start here |
+|---|---|
+| Give coding agents memory across sessions and tools | [Context Graph](context-graph/) |
+| Extract entities and relationships from documents | [unstructured2graph](unstructured2graph/) |
+| Query Memgraph in natural language or build a LangChain agent | [langchain-memgraph](integrations/langchain-memgraph/) |
+| Connect an MCP client to Memgraph | [mcp-memgraph](integrations/mcp-memgraph/) |
+| Use Memgraph as LightRAG storage | [lightrag-memgraph](integrations/lightrag-memgraph/) |
+| Migrate a MySQL or PostgreSQL database into a graph | [sql2graph](agents/sql2graph/) |
+| Work directly with Memgraph from Python | [memgraph-toolbox](memgraph-toolbox/) |
+| Define and validate a graph's entity and relation types | [hygm](hygm/) |
 
-### Install Packages
+## Agent memory with Context Graph
 
-```bash
-# Core toolbox
-pip install memgraph-toolbox
+Keep what your agents learn in a database you control. Context Graph captures sessions, tool calls, and skill usage, stores explicit memory, and retrieves relevant past conversations for the next session.
 
-# LangChain integration
-pip install langchain-memgraph
-
-# MCP server
-pip install mcp-memgraph
-
-# Unstructured to Graph
-pip install unstructured2graph
-```
-
----
-
-## 📚 Usage Examples
-
-### Context Graph - Capture Your Agent Sessions
-
-Turn your coding agents' sessions (Claude Code, Codex, Copilot CLI, Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable knowledge graph. Every session records the tools it called, the skills it used, and the memories it wrote — all joined on a shared `(:Session)` node in Memgraph.
-
-One command finds or starts Memgraph, wires every agent it finds, sets your identity and checks the result (interactive on a terminal):
+It supports **Claude Code, Codex, Copilot CLI, Cursor, OpenCode, Antigravity CLI, and Grok Build**, plus applications built with the Claude Agent SDK or OpenAI Agents SDK.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/memgraph/ai-toolkit/main/context-graph/scripts/install.sh | bash
 ```
 
-Query across every session — e.g. which skills a user has used:
+Setup installs the CLI and connectors, starts its own Memgraph container or connects to one you specify, and wires the agents you select. Docker is needed if setup starts Memgraph for you.
 
-```cypher
-MATCH (:User {user_id: "your-name"})-[:HAD_SESSION]->(:Session)-[:USED_SKILL]->(s:Skill)
-RETURN s.name, count(*) AS uses ORDER BY uses DESC;
+[Get started with Context Graph](context-graph/#getting-started) · [Components](context-graph/#the-components) · [Recall benchmarks](context-graph/eval/#official-numbers)
+
+## Knowledge graphs from documents
+
+`unstructured2graph` parses documents and extracts entities and relationships. Its default backend, **GLiNER2**, runs locally without an LLM API key; LightRAG is available as an LLM-based alternative.
+
+Start Memgraph:
+
+```bash
+docker run -p 7687:7687 --name memgraph \
+  memgraph/memgraph-mage:latest --schema-info-enabled=true
 ```
 
-👉 [Context Graph guide](/context-graph/) — components, Codex setup, SDK usage, and reconciling sessions into an entity graph.
+Install the package:
 
----
+```bash
+pip install unstructured2graph
+```
 
-### unstructured2graph - Build Knowledge Graphs from Documents
-
-Transform PDFs, URLs, and documents into queryable knowledge graphs:
+Extract a graph from text:
 
 ```python
 import asyncio
 from memgraph_toolbox.api.memgraph import Memgraph
-from lightrag_memgraph import MemgraphLightRAGWrapper
-from unstructured2graph import LightRAGBackend, from_unstructured
+from unstructured2graph import from_texts
+from unstructured2graph.gliner2_backend import GLiNER2Backend
 
 
 async def main():
-    memgraph = Memgraph()
-
-    lightrag = MemgraphLightRAGWrapper()
-    await lightrag.initialize(working_dir="./lightrag_storage")
-
-    # Ingest documents from URLs or local files
-    await from_unstructured(
-        sources=["https://example.com/doc.pdf", "./local_file.md"],
-        memgraph=memgraph,
-        extraction_backend=LightRAGBackend(lightrag),
-        link_chunks=True,
-        enforce_ontology=True,  # promote entity_type to real labels (:Person, :Organization, ...)
+    await from_texts(
+        texts=["Alice works for Acme in London."],
+        memgraph=Memgraph(),
+        extraction_backend=GLiNER2Backend(),
+        enforce_ontology=True,
     )
-    await lightrag.afinalize()
 
 
 asyncio.run(main())
 ```
 
-`extraction_backend` is pluggable — `LightRAGBackend` (LLM-based, shown above) or `GLiNER2Backend` (local, LLM-free) — see [unstructured2graph § choosing an extraction backend](/unstructured2graph/#choosing-an-extraction-backend).
+The extraction model downloads on first use. See [unstructured2graph](unstructured2graph/) for files, URLs, document-format extras, and custom ontologies.
 
-👉 [Full Documentation](https://memgraph.com/docs/ai-ecosystem/unstructured2graph) | [Examples](/unstructured2graph/examples/)
+## Framework integrations
 
----
-
-### langchain-memgraph - LangChain Integration
-
-#### Natural Language Queries with MemgraphQAChain
-
-```python
-from langchain_memgraph.graphs.memgraph import MemgraphLangChain
-from langchain_memgraph.chains.graph_qa import MemgraphQAChain
-from langchain_openai import ChatOpenAI
-
-graph = MemgraphLangChain(url="bolt://localhost:7687")
-
-chain = MemgraphQAChain.from_llm(
-    ChatOpenAI(temperature=0),
-    graph=graph,
-    model_name="gpt-4-turbo",
-    allow_dangerous_requests=True,
-)
-
-response = chain.invoke("Who are the main characters in the dataset?")
-print(response["result"])
-```
-
-#### Build Agents with MemgraphToolkit
-
-```python
-from langchain.chat_models import init_chat_model
-from langchain_memgraph import MemgraphToolkit
-from langchain_memgraph.graphs.memgraph import MemgraphLangChain
-from langgraph.prebuilt import create_react_agent
-
-llm = init_chat_model("gpt-4o-mini", model_provider="openai")
-db = MemgraphLangChain(url="bolt://localhost:7687")
-toolkit = MemgraphToolkit(db=db, llm=llm)
-
-agent = create_react_agent(llm, toolkit.get_tools())
-events = agent.stream({"messages": [("user", "Find all Person nodes")]})
-```
-
-👉 [Full Documentation](https://memgraph.com/docs/ai-ecosystem/integrations#langchain)
-
----
-
-### mcp-memgraph - Model Context Protocol Server
-
-Expose Memgraph to LLMs via MCP. Run with Docker:
+Install only the integration you need:
 
 ```bash
-# HTTP mode (recommended)
-docker run --rm -p 8000:8000 memgraph/mcp-memgraph:latest
-
-# Stdio mode for MCP clients
-docker run --rm -i -e MCP_TRANSPORT=stdio memgraph/mcp-memgraph:latest
+pip install langchain-memgraph  # graph store, QA chain, and agent toolkit
+pip install mcp-memgraph       # MCP server for database queries and schema tools
+pip install lightrag-memgraph  # LightRAG storage backends
 ```
 
-**Available Tools:**
+Each package's README covers its connection settings and examples. LLM-based features need credentials for the model provider you choose; local extraction, capture, and recall do not require an LLM key.
 
-| Tool                     | Description                                           |
-| ------------------------ | ----------------------------------------------------- |
-| `run_query`              | Execute Cypher queries                                |
-| `search_schema`          | Search the graph schema by regex pattern              |
-| `get_node_schema`        | Get full schema definition of a node by its labels    |
-| `get_relationship_schema`| Get full schema definition of a relationship          |
-| `get_enum_schema`        | Get schema definition of an enum by its name          |
+## Developing locally
 
-👉 [Full Documentation](https://memgraph.com/docs/ai-ecosystem/integrations#model-context-protocol-mcp)
-
----
-
-### sql2graph Agent - Automated Database Migration
-
-Migrate from MySQL/PostgreSQL to Memgraph with AI assistance:
+This is a Python 3.10+ [uv](https://docs.astral.sh/uv/) workspace. From the repository root:
 
 ```bash
-cd agents/sql2graph
-uv run main.py
+uv venv
+uv sync --all-packages --all-extras
+uv run ruff check .
+uv run ruff format --check .
+uv run ty check .
 ```
 
-👉 [Full Documentation](https://memgraph.com/docs/ai-ecosystem/agents#sql2graph-agent)
-
----
-
-## 🛠️ Packages Overview
-
-| Package                                                 | Description                  | Install                          |
-| ------------------------------------------------------- | ---------------------------- | -------------------------------- |
-| [memgraph-toolbox](/memgraph-toolbox/)                  | Core utilities for Memgraph  | `pip install memgraph-toolbox`   |
-| [langchain-memgraph](/integrations/langchain-memgraph/) | LangChain tools and chains   | `pip install langchain-memgraph` |
-| [mcp-memgraph](/integrations/mcp-memgraph/)             | MCP server for LLMs          | `pip install mcp-memgraph`       |
-| [unstructured2graph](/unstructured2graph/)              | Document to graph conversion | `pip install unstructured2graph` |
-| [lightrag-memgraph](/integrations/lightrag-memgraph/)   | LightRAG storage on Memgraph | `pip install lightrag-memgraph`  |
-| [sql2graph](/agents/sql2graph/)                         | Database migration agent     | See docs                         |
-
-### Context Graph — capture agent sessions
-
-A family of components that persist your coding-agent sessions (Claude Code, Codex, Copilot CLI, Cursor, OpenCode, Antigravity CLI, Grok Build) into one Memgraph graph. See the [Context Graph guide](/context-graph/).
-
-| Package                                                          | Description                                    | Install                             |
-| --------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------- |
-| [memgraph-context-graph](/context-graph/memgraph-context-graph/)      | Event hub: routes runtime hooks to connectors  | `pip install memgraph-context-graph`   |
-| [actions-graph](/context-graph/actions-graph/)                  | Tool calls, results, messages as action nodes  | `pip install actions-graph`         |
-| [skills-graph](/context-graph/skills-graph/)                    | Skill definitions and per-session skill usage  | `pip install skills-graph`          |
-| [sessions-graph](/context-graph/sessions-graph/)                | User/session provenance, memories, reconciliation | `pip install sessions-graph`     |
-
----
-
-## ❓ FAQ
-
-**Which databases are supported?**
-Memgraph is the primary target. The sql2graph agent supports MySQL and PostgreSQL as source databases.
-
-**Do I need an LLM API key?**
-Yes, for features like entity extraction (unstructured2graph) and natural language queries (langchain-memgraph).
-
-**Can I use local LLMs?**
-Yes! LangChain integration supports any LangChain-compatible model, including Ollama.
-
----
-
-## 🤝 Community
-
-- [GitHub Issues](https://github.com/memgraph/ai-toolkit/issues)
-- [Discord](https://discord.gg/memgraph)
-- [Documentation](https://memgraph.com/docs/ai-ecosystem)
-
-⭐ If you find this toolkit helpful, please star the repository!
-
----
-
-## 🧪 Developing Locally
-
-You can build and test each package directly from your repo.
-
-### Core tests
+Context Graph, HyGM, and unstructured2graph use an isolated test Memgraph managed by the development script:
 
 ```bash
-uv pip install -e memgraph-toolbox[test]
-pytest -s memgraph-toolbox/src/memgraph_toolbox/tests
+./scripts/dev-memgraph.sh test
+./scripts/dev-memgraph.sh test sessions-graph  # one package
+./scripts/dev-memgraph.sh test-down           # remove the test container
 ```
 
-### LangChain integration tests
+For other packages, see their READMEs and the [test workflow](.github/workflows/tests.yaml) for dependencies and credentials. The [development script](scripts/dev-memgraph.sh) also manages a separate exploration database for dogfooding.
 
-Create a `.env` file with your `OPENAI_API_KEY`, as the tests depend on LLM calls:
+## Community
 
-```bash
-uv pip install -e integrations/langchain-memgraph[test]
-pytest -s integrations/langchain-memgraph/tests
-```
+Ask questions on [Discord](https://discord.gg/memgraph), report bugs or request features in [GitHub Issues](https://github.com/memgraph/ai-toolkit/issues), and explore the [Memgraph AI documentation](https://memgraph.com/docs/ai-ecosystem).
 
-### MCP integration tests
-
-```bash
-uv pip install -e integrations/mcp-memgraph[test]
-pytest -s integrations/mcp-memgraph/tests
-```
-
-### Context Graph tests
-
-The Context Graph components (and unstructured2graph) test against a live Memgraph. `scripts/dev-memgraph.sh` owns that lifecycle — it starts an isolated instance, runs each component's suite against it, and tears down:
-
-```bash
-./scripts/dev-memgraph.sh up
-./scripts/dev-memgraph.sh test          # all components; or e.g. `test sessions-graph`
-./scripts/dev-memgraph.sh down
-```
-
-### sql2graph agent
-
-To run a complete database migration workflow with the agent:
-
-```bash
-cd agents/sql2graph
-uv run main.py
-```
-
-**Note:** The agent requires both MySQL and Memgraph connections. Set up your environment variables in `.env` based on `.env.example`.
-
-If you are running any test on macOS in zsh, add `""` to the command:
-
-```bash
-uv pip install -e memgraph-toolbox"[test]"
-```
+[MIT license](LICENSE)
