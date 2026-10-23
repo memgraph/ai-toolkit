@@ -281,10 +281,10 @@ def render(run: BeamRun) -> str:
     lines.append(f"{'BEAM score (mean of abilities)':<38} {overall:.3f}" if overall is not None else "BEAM score: -")
     times = latency(run.rows)
     for name, label in (("e2e", "end to end"), ("recall", "recall only")):
-        if times[f"mean_{name}_seconds"] is not None:
+        mean_s, median_s, p95_s = (times[f"{stat}_{name}_seconds"] for stat in ("mean", "median", "p95"))
+        if mean_s is not None and median_s is not None and p95_s is not None:
             lines.append(
-                f"{label:<12} mean {times[f'mean_{name}_seconds'] * 1000:.0f}ms, "
-                f"median {times[f'median_{name}_seconds'] * 1000:.0f}ms, p95 {times[f'p95_{name}_seconds'] * 1000:.0f}ms"
+                f"{label:<12} mean {mean_s * 1000:.0f}ms, median {median_s * 1000:.0f}ms, p95 {p95_s * 1000:.0f}ms"
             )
     errors = sum(1 for row in run.rows if row.errors)
     lines.append(f"reconciled {run.reconciled} sessions, {run.reconcile_failures} failed; {errors} retrieval errors")
