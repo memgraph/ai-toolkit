@@ -35,6 +35,17 @@ Everything is joined by a shared `(:Session {session_id})` node, so one graph an
 
 > `(:Session)` is a shared coordination point — every component `MERGE`s it idempotently, but only sessions-graph owns `(:User)` and the `HAD_SESSION` edge. Entity extraction is powered by [unstructured2graph](../unstructured2graph/), which lives outside this family.
 
+## How well does recall work?
+
+Measured end to end on public long-memory benchmarks, through the shipped read path (hybrid recall over a graph built locally by GLiNER2, no LLM in the build or the recall):
+
+| Benchmark | Score | Recall latency (mean) |
+|---|---|---|
+| LongMemEval-S, all 500 questions | **87.0%** (LongMemEval's judge) | 2.85 s |
+| BEAM 100K, all 400 questions | **0.636** (BEAM's judge) | 8.8 s |
+
+The settings, per-type breakdowns and caveats are in the [eval README](./eval/README.md#official-numbers).
+
 ## Getting started
 
 One command sets up every agent on the machine:
@@ -52,12 +63,10 @@ you change them, and changes nothing until you press Install. Without a terminal
 
 What it does, in order (each step checks first, so rerunning only does what's missing):
 
-1. **Memgraph**: the one your config names, unless that is the default `localhost:7687`; else its own
-   `context-graph-memgraph` container, on whatever port that container publishes; else it starts
-   `memgraph-mage` in that container with a data volume, listening on 127.0.0.1 only. If 7687 is taken it
-   picks another free port and writes it to the config. A local Memgraph is recognised by container name and
-   port, so another Memgraph that happens to answer on 7687 (a dev, test or demo instance) is never adopted;
-   pass `--memgraph-url` to use one on purpose. It never touches a remote Memgraph that doesn't answer.
+1. **Memgraph**: the one your config names, else one already on `localhost:7687`, else it starts
+   `memgraph-mage` in a `context-graph-memgraph` container with a data volume. If 7687 is taken it picks
+   another free port and writes it to the config. It never adopts the AI Memory demo's container, which is
+   disposable, and it never touches a remote Memgraph that doesn't answer.
 2. **Config**: `memgraph.url` and `identity.user_id` (default: git `user.name`, else `$USER`).
 3. **Packages**: the connectors and the terminal viewer, if any are missing.
 4. **Agents**: Claude Code and Codex get the Context Graph plugin, user-wide. Copilot CLI, Cursor, OpenCode,
@@ -72,9 +81,7 @@ The report ends with the exact command to rerun for anything that failed. Every 
 curl -fsSL .../install.sh | bash -s -- codex --memgraph-url bolt://my-host:7687
 memgraph-context-graph setup cursor --project-dir ~/work/billing --project-dir ~/work/crawler
 memgraph-context-graph setup --plan          # what it would do; changes nothing
-memgraph-context-graph update                # upgrade the package, then refresh the wiring and the schema
-memgraph-context-graph uninstall             # remove the wiring; asks whether the graph, config and tool go too
-memgraph-context-graph uninstall --all       # remove everything setup put on this machine, without asking
+memgraph-context-graph uninstall             # remove the wiring; your graph and config stay
 ```
 
 Once it finishes, use the runtime normally — every session writes to the graph automatically: `(:User)-[:HAD_SESSION]->(:Session)`, tool actions, skill usage, and any Memories the agent records.
