@@ -1,29 +1,27 @@
-# Context Graph Runtime Plugins
+# Context Graph plugins
 
-Runtime plugins install host-specific hook wiring for Memgraph Context Graph.
+Plugins connect Claude Code and Codex to [Context Graph](../README.md), installing lifecycle hooks and the MCP server for memory and recall.
 
-```text
-Runtime Plugin -> Runtime Adapter -> Event Protocol -> Graph Connector -> Memgraph
-```
+## Install
 
-This directory contains plugin packages for multiple runtimes:
+The [Context Graph installer](../README.md#getting-started) installs the plugin and its Python dependencies together. For manual marketplace installation, use the guide for your agent:
 
-- `memgraph-context-graph-codex`: OpenAI Codex plugin, published as `context-graph`.
-- `memgraph-context-graph-claude`: Claude Code plugin, published as `context-graph`.
+| Agent | Plugin guide |
+|---|---|
+| Claude Code | [Install and configure](memgraph-context-graph-claude/) |
+| Codex | [Install, trust hooks, and configure](memgraph-context-graph-codex/) |
 
-GitHub Copilot CLI, Cursor, OpenCode, Antigravity CLI, and Grok Build are built-in Runtime
-Registrations but do not have marketplace packages in this directory. Their
-host-facing files are generated with `memgraph-context-graph hook init <runtime>`.
+Copilot CLI, Cursor, OpenCode, Antigravity CLI, and Grok Build use generated project wiring rather than marketplace plugins. Run `memgraph-context-graph setup <runtime>`; see [runtime setup](../memgraph-context-graph/docs/runtime-setup.md).
 
-The platform-specific directory names stay explicit, while the marketplace-facing plugin name is short so skills appear as `context-graph:setup`.
+## For plugin maintainers
 
-## Marketplace Files
+Both plugins are published as `context-graph` in the `context-graph-plugins` marketplace. They call runtime adapters; graph connectors decide what to store.
 
-Codex and Claude Code use different marketplace schemas, so they are intentionally separate.
+The marketplace files use different schemas:
 
-- Codex public marketplace: `.agents/plugins/marketplace.json`
-- Claude Code public marketplace: `.claude-plugin/marketplace.json`
+| Runtime | Marketplace file |
+|---|---|
+| Codex | [`.agents/plugins/marketplace.json`](../../.agents/plugins/marketplace.json) |
+| Claude Code | [`.claude-plugin/marketplace.json`](../../.claude-plugin/marketplace.json) |
 
-Do not add the Claude Code plugin to the Codex marketplace or the Codex plugin to the Claude Code marketplace. Each runtime validates a different plugin manifest directory.
-
-Marketplace entries do not pin a ref. They use the repository default branch.
+Keep each plugin in its own runtime's marketplace. Entries follow the repository's default branch rather than a pinned ref.

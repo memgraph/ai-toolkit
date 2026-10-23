@@ -1,110 +1,83 @@
-# Memgraph Context Graph for Codex
+# Context Graph for Codex
 
-Codex runtime plugin for Memgraph Context Graph.
+Give Codex access to past sessions and durable memory in Memgraph. This plugin installs the hooks that capture activity and the MCP server that serves `recall` and, when enabled, `memory`.
 
-The plugin installs Codex lifecycle hooks that call:
+## Get started
 
-```bash
-memgraph-context-graph hook run codex --connector skills-graph --connector actions-graph --connector sessions-graph
-```
-
-Flow:
-
-```text
-Codex Plugin -> Codex Runtime Adapter -> Event Protocol -> Graph Connector -> Memgraph
-```
-
-The plugin is only deployment wiring. Memgraph Context Graph normalizes runtime events. Graph connectors decide what to persist.
-
-## First Run
-
-The plugin installs hook wiring; the runtime package and the rest come from one script:
+The [Context Graph installer](../../README.md#getting-started) installs the plugin and dependencies together. If the CLI is already installed:
 
 ```bash
-./scripts/bootstrap.sh
+memgraph-context-graph setup codex
+memgraph-context-graph doctor --runtime codex
 ```
 
-It installs the `memgraph-context-graph` CLI with its connectors through `uv`, then runs
-`memgraph-context-graph setup codex --no-tui`: it uses the Memgraph your config names, or one on
-`localhost:7687`, or starts one in Docker (with a volume, on a free port if 7687 is taken), sets your
-identity, and checks the hooks with `doctor`. Running it again skips what is already done.
+Setup connects to your configured Memgraph or starts its own Docker container, installs missing connectors, and sets your identity. Restart Codex afterwards.
 
-`uv` manages Python for the tool. If uv-managed Python downloads are blocked in your environment, install Python 3.10+ and rerun it.
-
-To set up every agent on the machine at once, interactively, run `memgraph-context-graph setup` instead.
-`memgraph-context-graph update codex` upgrades the package and refreshes the plugin; `memgraph-context-graph uninstall codex` removes the wiring and keeps your graph; `memgraph-context-graph uninstall --all` removes everything, graph included.
-
-## Recall
-
-The plugin also bundles an MCP server, `memgraph-context-graph mcp` (see `.mcp.json`), which gives the model a `recall` tool (`recall` on the `context-graph` MCP server) over the user's own past sessions. At session start the hook adds one line telling the model the tool is there; the model calls it when a question needs memory. Recall needs the `mcp` extra, which `bootstrap.sh` installs, and Memgraph with MAGE for its vector search. See [memgraph-context-graph § Recall](../../memgraph-context-graph/README.md#recall-memory-for-the-harnesss-model).
-
-Two Codex specifics:
-
-- **Hooks need trust.** Codex runs a plugin's hooks only after you trust them in the startup review (or `/hooks`); until then nothing is recorded and the session-start line isn't added. `codex exec` never asks, so for unattended runs pass `--dangerously-bypass-hook-trust` or trust them once interactively.
-- **Recall runs without asking.** Setup allows the plugin's MCP tools in `~/.codex/config.toml`, because under `approval_policy = "never"` an approval prompt is a refusal and `recall` would fail. Uninstalling removes the entry. To be asked each time, set `default_tools_approval_mode = "prompt"` there; setup keeps a mode you chose:
-
-  ```toml
-  [plugins."context-graph@context-graph-plugins".mcp_servers.context-graph]
-  default_tools_approval_mode = "approve"
-  ```
-
-Codex hands MCP servers only selected environment variables, so `.mcp.json` forwards `CONTEXT_GRAPH_CONFIG`: a session pointed at another config file recalls from the same graph its hooks write to.
-
-## Configure
-
-Bootstrap writes `~/.config/context-graph/config.toml`; hooks read it at runtime (not environment variables). Set your identity — **required** for sessions-graph to attach sessions to a user:
-
-```bash
-memgraph-context-graph config set identity.user_id "your-name"
-```
-
-For a remote/HA Memgraph, also `memgraph-context-graph config set memgraph.url "neo4j://<host>:7687"` (and `memgraph.user`/`memgraph.password`/`memgraph.database`). The default is `bolt://localhost:7687`. See the [memgraph-context-graph README](../../memgraph-context-graph/README.md#configuration).
-
-## Reconciliation (optional)
-
-Captured sessions are marked `reconciliation_status = 'pending'` on end. To extract entities from that content into the graph:
-
-```bash
-pip install "sessions-graph[reconciliation]"
-export OPENAI_API_KEY=...    # or ANTHROPIC_API_KEY
-sessions-graph reconcile --pending
-```
-
-## Prerequisites
-
-- Memgraph running and reachable over Bolt.
-- `uv` available on `PATH`.
-- `memgraph-context-graph` available on `PATH` after `bootstrap.sh`.
-
-## Local Test
-
-From the plugin directory:
-
-```bash
-./scripts/doctor.sh
-```
-
-## Global Marketplace
-
-This repo exposes a public Git-backed marketplace at:
-
-```text
-.agents/plugins/marketplace.json
-```
-
-Register the marketplace from GitHub and install the plugin:
+## Install through the marketplace
 
 ```bash
 codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins
 codex plugin add context-graph@context-graph-plugins
 ```
 
-Both are non-interactive; `codex plugin add` installs and enables the plugin in one step.
+The plugin supplies wiring; it also needs the Python CLI and connectors. From this plugin's directory, run `./scripts/bootstrap.sh` to install those and run setup, or use the [family installer](../../README.md#getting-started).
 
-The Memgraph Context Graph skill is exposed as:
+## Codex hook trust
 
-```text
-context-graph:setup
+Trust the plugin's hooks in Codex's startup review or `/hooks` before using it. Until trusted, hooks do not capture activity or add session-start context. For unattended runs, trust them once interactively before using `codex exec`.
+
+Setup allows the plugin's MCP tools in `~/.codex/config.toml`, so recall works when approval prompts are disabled. It keeps an approval mode you explicitly chose:
+
+```toml
+[plugins."context-graph@context-graph-plugins".mcp_servers.context-graph]
+default_tools_approval_mode = "approve"
 ```
 
-This is a Codex marketplace only. Claude Code uses the separate marketplace at `.claude-plugin/marketplace.json`.
+The plugin forwards `CONTEXT_GRAPH_CONFIG` to its MCP server so it reads from the same graph as the hooks.
+
+## Enable curated memory
+
+Recall searches your captured history. To also store the agent's long-term memory in Context Graph:
+
+```bash
+memgraph-context-graph setup codex --memory-backend context-graph
+```
+
+This is a user-wide setting. See the [memory guide](../../memgraph-context-graph/docs/memory.md) for import behavior, session-start context, and switching back.
+
+## Configuration
+
+Hooks read `~/.config/context-graph/config.toml`, rather than connection or credential environment variables:
+
+```bash
+memgraph-context-graph config set identity.user_id "your-name"
+memgraph-context-graph config set memgraph.url "bolt://my-host:7687"
+memgraph-context-graph config set memgraph.password  # prompts
+```
+
+See [configuration and privacy](../../memgraph-context-graph/docs/configuration.md) for capture controls and connection settings.
+
+## Reconcile captured sessions
+
+To extract entities and relationships, install `sessions-graph[reconciliation]` in the environment running the command, then run:
+
+```bash
+sessions-graph reconcile --pending
+```
+
+Extraction uses local GLiNER2 and needs no LLM key. See [reconciliation](../../sessions-graph/docs/reconciliation.md) for automatic processing and ontology settings.
+
+## Update or remove
+
+```bash
+memgraph-context-graph update codex
+memgraph-context-graph uninstall codex
+```
+
+Restart the agent after updating. Uninstall removes the wiring and restores built-in memory settings. On a terminal, it also offers to delete the graph, config, and tool; each defaults to keeping it. See [runtime setup](../../memgraph-context-graph/docs/runtime-setup.md) for removal flags.
+
+## Troubleshooting
+
+Run `memgraph-context-graph doctor --runtime codex`. Check that the plugin is enabled, the CLI is on `PATH`, and Memgraph is reachable. For source development, `./scripts/doctor.sh` runs the same checks from this directory.
+
+If this project has an older local hook file as well as the plugin, inspect it for duplicate or obsolete commands. The plugin calls `memgraph-context-graph hook run codex` and reads its connector selection from the shared config file.
