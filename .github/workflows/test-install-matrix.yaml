@@ -9,8 +9,21 @@ name: Test install scripts (Linux, Windows)
 # than the last release; Windows still installs the released packages.
 # Only one Linux leg calls a model, for one real Claude Code session; without
 # the secret (fork PRs) that step says so and passes, and the rest still runs.
+# PRs run a subset that still covers every OS and shell and both uv states; the
+# merge to main and manual runs cover the full cross-product.
 on:
   pull_request:
+    paths:
+      - "context-graph/scripts/install.sh"
+      - "context-graph/scripts/install.ps1"
+      - "context-graph/scripts/install-e2e/**"
+      - "context-graph/memgraph-context-graph/src/**"
+      - "context-graph/plugins/**"
+      - ".claude-plugin/**"
+      - ".github/workflows/test-install-matrix.yaml"
+  push:
+    branches:
+      - main
     paths:
       - "context-graph/scripts/install.sh"
       - "context-graph/scripts/install.ps1"
@@ -31,9 +44,9 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, ubuntu-22.04, ubuntu-24.04-arm]
-        uv: [absent, present]
+      matrix: ${{ fromJSON(github.event_name == 'pull_request'
+        && '{"include":[{"os":"ubuntu-24.04","uv":"absent"},{"os":"ubuntu-22.04","uv":"present"},{"os":"ubuntu-24.04-arm","uv":"absent"}]}'
+        || '{"os":["ubuntu-24.04","ubuntu-22.04","ubuntu-24.04-arm"],"uv":["absent","present"]}') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -117,9 +130,9 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        shell: [powershell, pwsh]
-        uv: [absent, present]
+      matrix: ${{ fromJSON(github.event_name == 'pull_request'
+        && '{"include":[{"shell":"powershell","uv":"absent"},{"shell":"pwsh","uv":"present"}]}'
+        || '{"shell":["powershell","pwsh"],"uv":["absent","present"]}') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -165,12 +178,18 @@ jobs:
 
       # The image setup itself starts on Linux: it carries MAGE, which the embeddings check needs. Docker
       # on this runner is Windows-container only, so it runs in WSL2 and publishes Bolt to Windows.
+      # The distro's default archive.ubuntu.com has served the index at ~80 KB/s from these runners,
+      # stretching this step past 12 minutes. The Azure mirror is the one GitHub's own Ubuntu images use,
+      # and skipping translations drops several MB of index nobody reads.
       - name: Install Docker in WSL
         shell: wsl-bash {0}
+        timeout-minutes: 6
         run: |
           set -euxo pipefail
-          sudo apt-get update
-          sudo apt-get install -y docker.io
+          sudo sed -i 's|http://archive.ubuntu.com|http://azure.archive.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources
+          echo 'Acquire::Languages "none";' | sudo tee /etc/apt/apt.conf.d/99no-translations
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get install -y --no-install-recommends docker.io
           sudo systemctl enable --now docker
 
       # A wsl.exe session is kept open so the distro stays up even if the idle timeout setting is ignored.
@@ -201,7 +220,9 @@ jobs:
           wsl -d Ubuntu-24.04 -- bash -c 'sudo docker ps -a; sudo docker logs --tail 40 memgraph'
           exit 1
 
+      # Guards the WSL idle-timeout workaround above. It costs 45 seconds per leg, so PRs skip it.
       - name: Memgraph is still up 45 seconds later (steps must not end it)
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           Start-Sleep -Seconds 45
