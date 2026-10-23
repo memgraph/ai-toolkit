@@ -6,6 +6,10 @@ on:
       - main
   pull_request:
 
+concurrency:
+  group: lint-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
