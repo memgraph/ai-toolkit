@@ -193,6 +193,10 @@ context-graph-eval beam --size 100K --chats 1-20 --extraction-backend gliner2 \
   (`memgraph/memgraph-mage@sha256:e28eea42…`), `fastino/gliner2.5-base-v1`
   with the greedy decoder, hygm's default model, every recall lane, BEAM
   revision `b2da22ea`. Four questions are answered at a time.
+- **Recall timing:** measured before #548 moved recall into a worker thread, so
+  recall ran on the event loop one question at a time and each recall time is
+  uncontended. With #548, concurrent questions overlap their recalls: the run
+  finishes sooner, but each recall can take longer than reported here.
 - **Build:** 478 min for the 82 sessions (1.59M words) on an AMD Ryzen 5 2600
   (6 cores, 16 GB, no GPU). Most of it is GLiNER2 on the CPU, then
   Memgraph embedding the passages, entities and facts.
