@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from neo4j.exceptions import TransientError
 from sessions_graph import RecallConfig, SessionsGraph
@@ -34,7 +34,11 @@ if TYPE_CHECKING:
 __all__ = ["LANES", "RecallConfig", "ensure_recall_ready", "retrieve_hybrid"]
 
 
-def _setup_with_retry(graph: SessionsGraph, *, attempts: int = 6, wait: float = 20.0) -> None:
+class _Setup(Protocol):
+    def setup(self) -> None: ...
+
+
+def _setup_with_retry(graph: _Setup, *, attempts: int = 6, wait: float = 20.0) -> None:
     """``graph.setup()``, retried while Memgraph reports a transient storage error.
 
     A periodic snapshot holds the storage's unique access, and a DDL statement
