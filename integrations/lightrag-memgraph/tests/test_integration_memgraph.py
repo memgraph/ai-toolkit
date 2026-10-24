@@ -368,6 +368,42 @@ async def test_doc_status_roundtrip(shared_driver, workspace):
         await store.drop()
 
 
+@pytest.mark.parametrize("sort_direction", ["asc", "desc"])
+async def test_doc_status_pagination_breaks_ties_by_id(shared_driver, workspace, sort_direction):
+    store = MemgraphDocStatusStorage(
+        namespace="doc_status",
+        workspace=workspace,
+        global_config=_global_config(),
+        embedding_func=_fake_embedding_func(),
+    )
+    await store.initialize()
+    try:
+        doc_count = 25  # page_size is clamped to >= 10, so this spans three pages
+        doc_ids = [f"doc-{i:02d}" for i in range(doc_count)]
+        # Written out of id order, so storage order can't pass for the tiebreaker.
+        scrambled = [doc_ids[(i * 7) % doc_count] for i in range(doc_count)]
+        # _doc() gives every document the same updated_at: the whole set is one tie.
+        await store.upsert({doc_id: _doc(DocStatus.PROCESSED, doc_id, f"{doc_id}.txt") for doc_id in scrambled})
+
+        async def page_through() -> list[str]:
+            seen: list[str] = []
+            for page_number in (1, 2, 3):
+                page, total = await store.get_docs_paginated(
+                    page=page_number, page_size=10, sort_direction=sort_direction
+                )
+                assert total == doc_count
+                seen.extend(doc_id for doc_id, _ in page)
+            return seen
+
+        first_pass = await page_through()
+        assert len(first_pass) == len(set(first_pass)), "a document appeared on more than one page"
+        assert set(first_pass) == set(doc_ids), "a document was missing from every page"
+        assert first_pass == sorted(doc_ids, reverse=sort_direction == "desc")
+        assert await page_through() == first_pass
+    finally:
+        await store.drop()
+
+
 # --- vector storage ----------------------------------------------------------
 
 
