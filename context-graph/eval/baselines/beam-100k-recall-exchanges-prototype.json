@@ -1,0 +1,3799 @@
+{
+ "meta": {
+  "label": "beam-100k-recall-exchanges-prototype",
+  "status": "prototype",
+  "run_date": "2026-10-24T15:27:59.089416+00:00",
+  "effective_exchange_widths": {
+   "turns_k": 24,
+   "text_k": 24,
+   "fact_turns_k": 16
+  },
+  "benchmark": "beam-100K",
+  "revision": "b2da22eac88bb0874c64665f13457eb99835774a",
+  "questions": 400,
+  "chats": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12,
+   13,
+   14,
+   15,
+   16,
+   17,
+   18,
+   19,
+   20
+  ],
+  "config": {
+   "lanes": [
+    "memories",
+    "turns",
+    "text",
+    "entities",
+    "facts",
+    "user_facts"
+   ],
+   "memories_k": 5,
+   "turns_k": 8,
+   "text_k": 8,
+   "entities_k": 15,
+   "edges_per_entity": 6,
+   "facts_k": 15,
+   "fact_turns_k": 8,
+   "user_fact_types": 2,
+   "user_facts_k": 30,
+   "turn_chars": 1500,
+   "query_instruction": null,
+   "packing": "exchanges",
+   "token_budget": 6000,
+   "supplemental_search": true
+  },
+  "branch": "prototype/recall-exchanges",
+  "base_commit": "e9194ce54936756dfe4210d08811c8dc0851ff7b",
+  "frozen_policy": {
+   "config": {
+    "lanes": [
+     "memories",
+     "turns",
+     "text",
+     "entities",
+     "facts",
+     "user_facts"
+    ],
+    "memories_k": 5,
+    "turns_k": 8,
+    "text_k": 8,
+    "entities_k": 15,
+    "edges_per_entity": 6,
+    "facts_k": 15,
+    "fact_turns_k": 8,
+    "user_fact_types": 2,
+    "user_facts_k": 30,
+    "turn_chars": 1500,
+    "query_instruction": null,
+    "packing": "exchanges",
+    "token_budget": 6000,
+    "supplemental_search": true
+   },
+   "source_sha256": {
+    "context-graph/sessions-graph/src/sessions_graph/recall.py": "4aaf314ece63afa3b530520a28df5362c7f313e72d78e48fd8b301318992a5bf",
+    "context-graph/sessions-graph/src/sessions_graph/recall_exchanges.py": "6542d797aa086cff22e8830fd1a4ea599ce2eaffa85d1f2bb3c5ec50b29ca2e3",
+    "context-graph/sessions-graph/src/sessions_graph/passages.py": "8cd6f8cb1434eef2465be6039300f8ba148ad2dd6f42f3401ca0db90bd32ba6d",
+    "context-graph/sessions-graph/src/sessions_graph/embeddings.py": "360e9909e913dd1decc2d0b73a5fb35c6ba6d36477427a70cad787463de0f26f"
+   },
+   "benchmark_revision": "b2da22eac88bb0874c64665f13457eb99835774a"
+  },
+  "working_tree_changes": true,
+  "evaluation_source_sha256": {
+   "context-graph/eval/src/context_graph_eval/beam_judge.py": "327b80d981f2f549c587a5aaf1c3d4b0039b87a3365647f8bb286e20d3a317e2",
+   "context-graph/eval/src/context_graph_eval/beam.py": "4fef8e52ad4b3090627e2352117797a3b7dfb9023f84d5b5fb1bfe29ac72cc29",
+   "context-graph/eval/src/context_graph_eval/retrieval.py": "8698cf587479cc41fe85d5dd092aa8aa76bb3016fae1d293931384defaa30d7f",
+   "context-graph/eval/src/context_graph_eval/scoring.py": "564de20e3b7423ccf083bf48f58acd1cc5e91699a1949122c6f87fa863654af5",
+   "context-graph/eval/src/context_graph_eval/judge_client.py": "0c599c9066ef9a7f24116eafca7fea845c029f968f4374126e1f0793cefb0ff8",
+   "context-graph/eval/experiments/beam_prototype_baseline.py": "172013400c1e3ad95f18df8facafd09ef51a179c88d16abc70ff4ee7c8a35350",
+   "context-graph/eval/experiments/judge_probe.py": "565cffc414eb3709f3f7d28b979faf90f855e5930bf89f35ff57c9e3c53a64b2"
+  },
+  "new_api_attempts": 3875,
+  "api_timeouts": 3,
+  "judge_model": "gpt-4.1-mini",
+  "agent_model": "gpt-4.1",
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "extraction_backend": "gliner2",
+  "ontology": "default",
+  "reused_graph": true,
+  "latency_protocol": "Sequential warm recall with actual query inference. Answers/judging staged with shared request cache; no comparable end-to-end latency claimed."
+ },
+ "overall": 0.6546343932835983,
+ "previous_official_overall": 0.635991434751788,
+ "abilities": [
+  {
+   "ability": "abstention",
+   "questions": 40,
+   "judged": 40,
+   "mean_score": 0.525,
+   "mean_evidence_recall": null
+  },
+  {
+   "ability": "contradiction_resolution",
+   "questions": 40,
+   "judged": 40,
+   "mean_score": 0.71875,
+   "mean_evidence_recall": 0.9275
+  },
+  {
+   "ability": "event_ordering",
+   "questions": 40,
+   "judged": 40,
+   "mean_score": 0.2869838137883644,
+   "mean_evidence_recall": 0.31383801383801385
+  },
+  {
+   "ability": "information_extraction",
+   "questions": 40,
+   "judged": 40,
+   "mean_score": 0.8145833333333333,
+   "mean_evidence_recall": 0.8416666666666667
+  },
+  {
+   "ability": "instruction_following",
+   "questions": 40,
+   "judged": 40,
+   "mean_score": 0.83125,
+   "mean_evidence_recall": 0.53125
+  },
+  {
+   "ability": "knowledge_update",
+   "questions": 40,
+   "judged": 40,
+   "mean_score": 0.7,
+   "mean_evidence_recall": 0.9125
+  },
+  {
+   "ability": "multi_session_reasoning",
+   "questions": 40,
+   "judged": 40,
+   "mean_score": 0.7592857142857142,
+   "mean_evidence_recall": 0.702929292929293
+  },
+  {
+   "ability": "preference_following",
+   "questions": 40,
+   "judged": 40,
+   "mean_score": 0.9125,
+   "mean_evidence_recall": 0.7564102564102564
+  },
+  {
+   "ability": "summarization",
+   "questions": 40,
+   "judged": 40,
+   "mean_score": 0.4979910714285714,
+   "mean_evidence_recall": 0.3182735088985089
+  },
+  {
+   "ability": "temporal_reasoning",
+   "questions": 40,
+   "judged": 40,
+   "mean_score": 0.5,
+   "mean_evidence_recall": 0.975
+  }
+ ],
+ "latency": {
+  "mean_recall_seconds": 0.8639842666173354,
+  "median_recall_seconds": 0.8595223299926147,
+  "p95_recall_seconds": 0.9929532159585506
+ },
+ "retrieval_tokens_mean": 5865.69,
+ "mean_evidence_recall": 0.7029134667905854,
+ "errored": 0,
+ "rows": [
+  {
+   "name": "beam-100K-1-abstention-0",
+   "user_id": "beam-100K-1",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5890,
+   "recall_seconds": 0.7938693440519273
+  },
+  {
+   "name": "beam-100K-1-abstention-1",
+   "user_id": "beam-100K-1",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5930,
+   "recall_seconds": 0.8039989370154217
+  },
+  {
+   "name": "beam-100K-1-contradiction_resolution-0",
+   "user_id": "beam-100K-1",
+   "ability": "contradiction_resolution",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5896,
+   "recall_seconds": 0.8402290740050375
+  },
+  {
+   "name": "beam-100K-1-contradiction_resolution-1",
+   "user_id": "beam-100K-1",
+   "ability": "contradiction_resolution",
+   "score": 0.75,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5971,
+   "recall_seconds": 0.7763087399071082
+  },
+  {
+   "name": "beam-100K-1-event_ordering-0",
+   "user_id": "beam-100K-1",
+   "ability": "event_ordering",
+   "score": 0.1894704982959406,
+   "evidence_recall": 0.3333333333333333,
+   "efficiency_tokens": 5964,
+   "recall_seconds": 0.8438492270652205
+  },
+  {
+   "name": "beam-100K-1-event_ordering-1",
+   "user_id": "beam-100K-1",
+   "ability": "event_ordering",
+   "score": 0.18617704276957603,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5775,
+   "recall_seconds": 0.8555758369620889
+  },
+  {
+   "name": "beam-100K-1-information_extraction-0",
+   "user_id": "beam-100K-1",
+   "ability": "information_extraction",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5953,
+   "recall_seconds": 0.805917255114764
+  },
+  {
+   "name": "beam-100K-1-information_extraction-1",
+   "user_id": "beam-100K-1",
+   "ability": "information_extraction",
+   "score": 0.6666666666666666,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5803,
+   "recall_seconds": 0.7449543559923768
+  },
+  {
+   "name": "beam-100K-1-instruction_following-0",
+   "user_id": "beam-100K-1",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5788,
+   "recall_seconds": 0.7034659009659663
+  },
+  {
+   "name": "beam-100K-1-instruction_following-1",
+   "user_id": "beam-100K-1",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5908,
+   "recall_seconds": 0.7429047480691224
+  },
+  {
+   "name": "beam-100K-1-knowledge_update-0",
+   "user_id": "beam-100K-1",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5936,
+   "recall_seconds": 0.756952200899832
+  },
+  {
+   "name": "beam-100K-1-knowledge_update-1",
+   "user_id": "beam-100K-1",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5776,
+   "recall_seconds": 0.76530081697274
+  },
+  {
+   "name": "beam-100K-1-multi_session_reasoning-0",
+   "user_id": "beam-100K-1",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5864,
+   "recall_seconds": 0.7992131459759548
+  },
+  {
+   "name": "beam-100K-1-multi_session_reasoning-1",
+   "user_id": "beam-100K-1",
+   "ability": "multi_session_reasoning",
+   "score": 0.75,
+   "evidence_recall": 0.3333333333333333,
+   "efficiency_tokens": 5966,
+   "recall_seconds": 0.8216893880162388
+  },
+  {
+   "name": "beam-100K-1-preference_following-0",
+   "user_id": "beam-100K-1",
+   "ability": "preference_following",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5879,
+   "recall_seconds": 0.8280578280100599
+  },
+  {
+   "name": "beam-100K-1-preference_following-1",
+   "user_id": "beam-100K-1",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5970,
+   "recall_seconds": 0.8080349409719929
+  },
+  {
+   "name": "beam-100K-1-summarization-0",
+   "user_id": "beam-100K-1",
+   "ability": "summarization",
+   "score": 0.6,
+   "evidence_recall": 0.4,
+   "efficiency_tokens": 5915,
+   "recall_seconds": 0.8160790990805253
+  },
+  {
+   "name": "beam-100K-1-summarization-1",
+   "user_id": "beam-100K-1",
+   "ability": "summarization",
+   "score": 0.3,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5984,
+   "recall_seconds": 0.8493010338861495
+  },
+  {
+   "name": "beam-100K-1-temporal_reasoning-0",
+   "user_id": "beam-100K-1",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5706,
+   "recall_seconds": 0.8514800380216911
+  },
+  {
+   "name": "beam-100K-1-temporal_reasoning-1",
+   "user_id": "beam-100K-1",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5771,
+   "recall_seconds": 0.745942545006983
+  },
+  {
+   "name": "beam-100K-10-abstention-0",
+   "user_id": "beam-100K-10",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5968,
+   "recall_seconds": 0.8945869980379939
+  },
+  {
+   "name": "beam-100K-10-abstention-1",
+   "user_id": "beam-100K-10",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5809,
+   "recall_seconds": 0.9192409400129691
+  },
+  {
+   "name": "beam-100K-10-contradiction_resolution-0",
+   "user_id": "beam-100K-10",
+   "ability": "contradiction_resolution",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5812,
+   "recall_seconds": 0.8520740430103615
+  },
+  {
+   "name": "beam-100K-10-contradiction_resolution-1",
+   "user_id": "beam-100K-10",
+   "ability": "contradiction_resolution",
+   "score": 0.75,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5957,
+   "recall_seconds": 0.8976148649817333
+  },
+  {
+   "name": "beam-100K-10-event_ordering-0",
+   "user_id": "beam-100K-10",
+   "ability": "event_ordering",
+   "score": 0.23190486763090978,
+   "evidence_recall": 0.2,
+   "efficiency_tokens": 5779,
+   "recall_seconds": 0.9443727810867131
+  },
+  {
+   "name": "beam-100K-10-event_ordering-1",
+   "user_id": "beam-100K-10",
+   "ability": "event_ordering",
+   "score": 0.29359372515386556,
+   "evidence_recall": 0.6666666666666666,
+   "efficiency_tokens": 5920,
+   "recall_seconds": 0.983929252019152
+  },
+  {
+   "name": "beam-100K-10-information_extraction-0",
+   "user_id": "beam-100K-10",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5789,
+   "recall_seconds": 0.9758575429441407
+  },
+  {
+   "name": "beam-100K-10-information_extraction-1",
+   "user_id": "beam-100K-10",
+   "ability": "information_extraction",
+   "score": 0.6666666666666666,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5897,
+   "recall_seconds": 0.918269302113913
+  },
+  {
+   "name": "beam-100K-10-instruction_following-0",
+   "user_id": "beam-100K-10",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5839,
+   "recall_seconds": 0.9892290210118517
+  },
+  {
+   "name": "beam-100K-10-instruction_following-1",
+   "user_id": "beam-100K-10",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5906,
+   "recall_seconds": 0.9814174060011283
+  },
+  {
+   "name": "beam-100K-10-knowledge_update-0",
+   "user_id": "beam-100K-10",
+   "ability": "knowledge_update",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5962,
+   "recall_seconds": 0.8908969509648159
+  },
+  {
+   "name": "beam-100K-10-knowledge_update-1",
+   "user_id": "beam-100K-10",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 0.6666666666666666,
+   "efficiency_tokens": 5960,
+   "recall_seconds": 0.8515605881111696
+  },
+  {
+   "name": "beam-100K-10-multi_session_reasoning-0",
+   "user_id": "beam-100K-10",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5740,
+   "recall_seconds": 0.9514651480130851
+  },
+  {
+   "name": "beam-100K-10-multi_session_reasoning-1",
+   "user_id": "beam-100K-10",
+   "ability": "multi_session_reasoning",
+   "score": 0.75,
+   "evidence_recall": 0.8181818181818182,
+   "efficiency_tokens": 5936,
+   "recall_seconds": 0.9675713160540909
+  },
+  {
+   "name": "beam-100K-10-preference_following-0",
+   "user_id": "beam-100K-10",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5937,
+   "recall_seconds": 1.0153223710367456
+  },
+  {
+   "name": "beam-100K-10-preference_following-1",
+   "user_id": "beam-100K-10",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 0.6666666666666666,
+   "efficiency_tokens": 5743,
+   "recall_seconds": 0.9427768860477954
+  },
+  {
+   "name": "beam-100K-10-summarization-0",
+   "user_id": "beam-100K-10",
+   "ability": "summarization",
+   "score": 0.5,
+   "evidence_recall": 0.6666666666666666,
+   "efficiency_tokens": 5832,
+   "recall_seconds": 0.9277103850618005
+  },
+  {
+   "name": "beam-100K-10-summarization-1",
+   "user_id": "beam-100K-10",
+   "ability": "summarization",
+   "score": 0.75,
+   "evidence_recall": 0.42857142857142855,
+   "efficiency_tokens": 5895,
+   "recall_seconds": 0.9855225519277155
+  },
+  {
+   "name": "beam-100K-10-temporal_reasoning-0",
+   "user_id": "beam-100K-10",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5763,
+   "recall_seconds": 0.9505450980504975
+  },
+  {
+   "name": "beam-100K-10-temporal_reasoning-1",
+   "user_id": "beam-100K-10",
+   "ability": "temporal_reasoning",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5726,
+   "recall_seconds": 0.987835620995611
+  },
+  {
+   "name": "beam-100K-11-abstention-0",
+   "user_id": "beam-100K-11",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5686,
+   "recall_seconds": 0.887439655023627
+  },
+  {
+   "name": "beam-100K-11-abstention-1",
+   "user_id": "beam-100K-11",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5839,
+   "recall_seconds": 0.8794906089315191
+  },
+  {
+   "name": "beam-100K-11-contradiction_resolution-0",
+   "user_id": "beam-100K-11",
+   "ability": "contradiction_resolution",
+   "score": 0.75,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5959,
+   "recall_seconds": 0.7965487150941044
+  },
+  {
+   "name": "beam-100K-11-contradiction_resolution-1",
+   "user_id": "beam-100K-11",
+   "ability": "contradiction_resolution",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5898,
+   "recall_seconds": 0.8006120120408013
+  },
+  {
+   "name": "beam-100K-11-event_ordering-0",
+   "user_id": "beam-100K-11",
+   "ability": "event_ordering",
+   "score": 0.18551454898342445,
+   "evidence_recall": 0.16666666666666666,
+   "efficiency_tokens": 5944,
+   "recall_seconds": 0.8880204299930483
+  },
+  {
+   "name": "beam-100K-11-event_ordering-1",
+   "user_id": "beam-100K-11",
+   "ability": "event_ordering",
+   "score": 0.22744594245230126,
+   "evidence_recall": 0.6,
+   "efficiency_tokens": 5690,
+   "recall_seconds": 0.8315019330475479
+  },
+  {
+   "name": "beam-100K-11-information_extraction-0",
+   "user_id": "beam-100K-11",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5785,
+   "recall_seconds": 0.8184340230654925
+  },
+  {
+   "name": "beam-100K-11-information_extraction-1",
+   "user_id": "beam-100K-11",
+   "ability": "information_extraction",
+   "score": 0.5833333333333334,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5967,
+   "recall_seconds": 0.8603319060057402
+  },
+  {
+   "name": "beam-100K-11-instruction_following-0",
+   "user_id": "beam-100K-11",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5915,
+   "recall_seconds": 0.8301736469147727
+  },
+  {
+   "name": "beam-100K-11-instruction_following-1",
+   "user_id": "beam-100K-11",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5921,
+   "recall_seconds": 0.8270283959573135
+  },
+  {
+   "name": "beam-100K-11-knowledge_update-0",
+   "user_id": "beam-100K-11",
+   "ability": "knowledge_update",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5744,
+   "recall_seconds": 0.8405091610038653
+  },
+  {
+   "name": "beam-100K-11-knowledge_update-1",
+   "user_id": "beam-100K-11",
+   "ability": "knowledge_update",
+   "score": 0.0,
+   "evidence_recall": 0.3333333333333333,
+   "efficiency_tokens": 5650,
+   "recall_seconds": 0.7762143460568041
+  },
+  {
+   "name": "beam-100K-11-multi_session_reasoning-0",
+   "user_id": "beam-100K-11",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5755,
+   "recall_seconds": 0.8544039839180186
+  },
+  {
+   "name": "beam-100K-11-multi_session_reasoning-1",
+   "user_id": "beam-100K-11",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 0.4,
+   "efficiency_tokens": 5955,
+   "recall_seconds": 0.8614257569424808
+  },
+  {
+   "name": "beam-100K-11-preference_following-0",
+   "user_id": "beam-100K-11",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5818,
+   "recall_seconds": 0.7628590000094846
+  },
+  {
+   "name": "beam-100K-11-preference_following-1",
+   "user_id": "beam-100K-11",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5955,
+   "recall_seconds": 0.8290965890046209
+  },
+  {
+   "name": "beam-100K-11-summarization-0",
+   "user_id": "beam-100K-11",
+   "ability": "summarization",
+   "score": 0.6666666666666666,
+   "evidence_recall": 0.25,
+   "efficiency_tokens": 5930,
+   "recall_seconds": 0.7654314719839022
+  },
+  {
+   "name": "beam-100K-11-summarization-1",
+   "user_id": "beam-100K-11",
+   "ability": "summarization",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5887,
+   "recall_seconds": 0.7898578910389915
+  },
+  {
+   "name": "beam-100K-11-temporal_reasoning-0",
+   "user_id": "beam-100K-11",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5922,
+   "recall_seconds": 0.8461809060536325
+  },
+  {
+   "name": "beam-100K-11-temporal_reasoning-1",
+   "user_id": "beam-100K-11",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5802,
+   "recall_seconds": 0.7817713340045884
+  },
+  {
+   "name": "beam-100K-12-abstention-0",
+   "user_id": "beam-100K-12",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5810,
+   "recall_seconds": 0.9372470700182021
+  },
+  {
+   "name": "beam-100K-12-abstention-1",
+   "user_id": "beam-100K-12",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5692,
+   "recall_seconds": 0.7064406339777634
+  },
+  {
+   "name": "beam-100K-12-contradiction_resolution-0",
+   "user_id": "beam-100K-12",
+   "ability": "contradiction_resolution",
+   "score": 0.25,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5943,
+   "recall_seconds": 0.6899750720476732
+  },
+  {
+   "name": "beam-100K-12-contradiction_resolution-1",
+   "user_id": "beam-100K-12",
+   "ability": "contradiction_resolution",
+   "score": 0.75,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5857,
+   "recall_seconds": 0.7733218270586804
+  },
+  {
+   "name": "beam-100K-12-event_ordering-0",
+   "user_id": "beam-100K-12",
+   "ability": "event_ordering",
+   "score": 0.23020932273212558,
+   "evidence_recall": 0.2857142857142857,
+   "efficiency_tokens": 5878,
+   "recall_seconds": 0.7760537810390815
+  },
+  {
+   "name": "beam-100K-12-event_ordering-1",
+   "user_id": "beam-100K-12",
+   "ability": "event_ordering",
+   "score": 0.18551454898342445,
+   "evidence_recall": 0.16666666666666666,
+   "efficiency_tokens": 5951,
+   "recall_seconds": 0.7758164400001988
+  },
+  {
+   "name": "beam-100K-12-information_extraction-0",
+   "user_id": "beam-100K-12",
+   "ability": "information_extraction",
+   "score": 0.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5861,
+   "recall_seconds": 0.7907522219466045
+  },
+  {
+   "name": "beam-100K-12-information_extraction-1",
+   "user_id": "beam-100K-12",
+   "ability": "information_extraction",
+   "score": 0.75,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5928,
+   "recall_seconds": 0.796238404000178
+  },
+  {
+   "name": "beam-100K-12-instruction_following-0",
+   "user_id": "beam-100K-12",
+   "ability": "instruction_following",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5941,
+   "recall_seconds": 0.8339576929574832
+  },
+  {
+   "name": "beam-100K-12-instruction_following-1",
+   "user_id": "beam-100K-12",
+   "ability": "instruction_following",
+   "score": 0.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5919,
+   "recall_seconds": 0.7978084100177512
+  },
+  {
+   "name": "beam-100K-12-knowledge_update-0",
+   "user_id": "beam-100K-12",
+   "ability": "knowledge_update",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5923,
+   "recall_seconds": 0.8818552360171452
+  },
+  {
+   "name": "beam-100K-12-knowledge_update-1",
+   "user_id": "beam-100K-12",
+   "ability": "knowledge_update",
+   "score": 0.0,
+   "evidence_recall": 0.3333333333333333,
+   "efficiency_tokens": 5920,
+   "recall_seconds": 0.8490210180170834
+  },
+  {
+   "name": "beam-100K-12-multi_session_reasoning-0",
+   "user_id": "beam-100K-12",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5772,
+   "recall_seconds": 0.8225966080790386
+  },
+  {
+   "name": "beam-100K-12-multi_session_reasoning-1",
+   "user_id": "beam-100K-12",
+   "ability": "multi_session_reasoning",
+   "score": 0.5,
+   "evidence_recall": 0.75,
+   "efficiency_tokens": 5842,
+   "recall_seconds": 0.8298587680328637
+  },
+  {
+   "name": "beam-100K-12-preference_following-0",
+   "user_id": "beam-100K-12",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5815,
+   "recall_seconds": 1.001174374949187
+  },
+  {
+   "name": "beam-100K-12-preference_following-1",
+   "user_id": "beam-100K-12",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5724,
+   "recall_seconds": 0.8242204959969968
+  },
+  {
+   "name": "beam-100K-12-summarization-0",
+   "user_id": "beam-100K-12",
+   "ability": "summarization",
+   "score": 0.75,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5938,
+   "recall_seconds": 0.8730206449981779
+  },
+  {
+   "name": "beam-100K-12-summarization-1",
+   "user_id": "beam-100K-12",
+   "ability": "summarization",
+   "score": 0.25,
+   "evidence_recall": 0.25,
+   "efficiency_tokens": 5828,
+   "recall_seconds": 0.7936168699525297
+  },
+  {
+   "name": "beam-100K-12-temporal_reasoning-0",
+   "user_id": "beam-100K-12",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5848,
+   "recall_seconds": 0.8689872659742832
+  },
+  {
+   "name": "beam-100K-12-temporal_reasoning-1",
+   "user_id": "beam-100K-12",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5897,
+   "recall_seconds": 0.8108585471054539
+  },
+  {
+   "name": "beam-100K-13-abstention-0",
+   "user_id": "beam-100K-13",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5884,
+   "recall_seconds": 0.9323327239835635
+  },
+  {
+   "name": "beam-100K-13-abstention-1",
+   "user_id": "beam-100K-13",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5969,
+   "recall_seconds": 0.9031419840175658
+  },
+  {
+   "name": "beam-100K-13-contradiction_resolution-0",
+   "user_id": "beam-100K-13",
+   "ability": "contradiction_resolution",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5837,
+   "recall_seconds": 0.8226838739356026
+  },
+  {
+   "name": "beam-100K-13-contradiction_resolution-1",
+   "user_id": "beam-100K-13",
+   "ability": "contradiction_resolution",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5948,
+   "recall_seconds": 0.8192447030451149
+  },
+  {
+   "name": "beam-100K-13-event_ordering-0",
+   "user_id": "beam-100K-13",
+   "ability": "event_ordering",
+   "score": 0.5569665893984562,
+   "evidence_recall": 0.8,
+   "efficiency_tokens": 5798,
+   "recall_seconds": 0.8362871719291434
+  },
+  {
+   "name": "beam-100K-13-event_ordering-1",
+   "user_id": "beam-100K-13",
+   "ability": "event_ordering",
+   "score": 0.4649849512374073,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5786,
+   "recall_seconds": 0.8267156609799713
+  },
+  {
+   "name": "beam-100K-13-information_extraction-0",
+   "user_id": "beam-100K-13",
+   "ability": "information_extraction",
+   "score": 0.75,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5963,
+   "recall_seconds": 0.8132748609641567
+  },
+  {
+   "name": "beam-100K-13-information_extraction-1",
+   "user_id": "beam-100K-13",
+   "ability": "information_extraction",
+   "score": 0.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5729,
+   "recall_seconds": 0.8269712169421837
+  },
+  {
+   "name": "beam-100K-13-instruction_following-0",
+   "user_id": "beam-100K-13",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5850,
+   "recall_seconds": 0.8058105469681323
+  },
+  {
+   "name": "beam-100K-13-instruction_following-1",
+   "user_id": "beam-100K-13",
+   "ability": "instruction_following",
+   "score": 0.75,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5859,
+   "recall_seconds": 0.8220963069470599
+  },
+  {
+   "name": "beam-100K-13-knowledge_update-0",
+   "user_id": "beam-100K-13",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5933,
+   "recall_seconds": 0.8740457849344239
+  },
+  {
+   "name": "beam-100K-13-knowledge_update-1",
+   "user_id": "beam-100K-13",
+   "ability": "knowledge_update",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5835,
+   "recall_seconds": 0.8951419909717515
+  },
+  {
+   "name": "beam-100K-13-multi_session_reasoning-0",
+   "user_id": "beam-100K-13",
+   "ability": "multi_session_reasoning",
+   "score": 0.6666666666666666,
+   "evidence_recall": 0.3333333333333333,
+   "efficiency_tokens": 5831,
+   "recall_seconds": 0.8854633859591559
+  },
+  {
+   "name": "beam-100K-13-multi_session_reasoning-1",
+   "user_id": "beam-100K-13",
+   "ability": "multi_session_reasoning",
+   "score": 0.0,
+   "evidence_recall": 0.1111111111111111,
+   "efficiency_tokens": 5955,
+   "recall_seconds": 0.9335153329884633
+  },
+  {
+   "name": "beam-100K-13-preference_following-0",
+   "user_id": "beam-100K-13",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5907,
+   "recall_seconds": 0.9414167390204966
+  },
+  {
+   "name": "beam-100K-13-preference_following-1",
+   "user_id": "beam-100K-13",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5931,
+   "recall_seconds": 0.8283593560336158
+  },
+  {
+   "name": "beam-100K-13-summarization-0",
+   "user_id": "beam-100K-13",
+   "ability": "summarization",
+   "score": 0.5833333333333334,
+   "evidence_recall": 0.4,
+   "efficiency_tokens": 5946,
+   "recall_seconds": 0.8265911940252408
+  },
+  {
+   "name": "beam-100K-13-summarization-1",
+   "user_id": "beam-100K-13",
+   "ability": "summarization",
+   "score": 0.2,
+   "evidence_recall": 0.2,
+   "efficiency_tokens": 5770,
+   "recall_seconds": 0.8290199720067903
+  },
+  {
+   "name": "beam-100K-13-temporal_reasoning-0",
+   "user_id": "beam-100K-13",
+   "ability": "temporal_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5949,
+   "recall_seconds": 0.8168109860271215
+  },
+  {
+   "name": "beam-100K-13-temporal_reasoning-1",
+   "user_id": "beam-100K-13",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5749,
+   "recall_seconds": 0.860983574995771
+  },
+  {
+   "name": "beam-100K-14-abstention-0",
+   "user_id": "beam-100K-14",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5945,
+   "recall_seconds": 0.950656448956579
+  },
+  {
+   "name": "beam-100K-14-abstention-1",
+   "user_id": "beam-100K-14",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5846,
+   "recall_seconds": 0.895821854006499
+  },
+  {
+   "name": "beam-100K-14-contradiction_resolution-0",
+   "user_id": "beam-100K-14",
+   "ability": "contradiction_resolution",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5969,
+   "recall_seconds": 0.8803811719408259
+  },
+  {
+   "name": "beam-100K-14-contradiction_resolution-1",
+   "user_id": "beam-100K-14",
+   "ability": "contradiction_resolution",
+   "score": 1.0,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5959,
+   "recall_seconds": 0.9057674669893458
+  },
+  {
+   "name": "beam-100K-14-event_ordering-0",
+   "user_id": "beam-100K-14",
+   "ability": "event_ordering",
+   "score": 0.18617704276957603,
+   "evidence_recall": 0.16666666666666666,
+   "efficiency_tokens": 5865,
+   "recall_seconds": 0.8407576431054622
+  },
+  {
+   "name": "beam-100K-14-event_ordering-1",
+   "user_id": "beam-100K-14",
+   "ability": "event_ordering",
+   "score": 0.24448452079033195,
+   "evidence_recall": 0.3333333333333333,
+   "efficiency_tokens": 5811,
+   "recall_seconds": 0.8266708450391889
+  },
+  {
+   "name": "beam-100K-14-information_extraction-0",
+   "user_id": "beam-100K-14",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5842,
+   "recall_seconds": 0.954213573015295
+  },
+  {
+   "name": "beam-100K-14-information_extraction-1",
+   "user_id": "beam-100K-14",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5856,
+   "recall_seconds": 0.9009819059865549
+  },
+  {
+   "name": "beam-100K-14-instruction_following-0",
+   "user_id": "beam-100K-14",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5953,
+   "recall_seconds": 0.9098523949505761
+  },
+  {
+   "name": "beam-100K-14-instruction_following-1",
+   "user_id": "beam-100K-14",
+   "ability": "instruction_following",
+   "score": 0.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5751,
+   "recall_seconds": 0.8803336609853432
+  },
+  {
+   "name": "beam-100K-14-knowledge_update-0",
+   "user_id": "beam-100K-14",
+   "ability": "knowledge_update",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5735,
+   "recall_seconds": 0.9051538999192417
+  },
+  {
+   "name": "beam-100K-14-knowledge_update-1",
+   "user_id": "beam-100K-14",
+   "ability": "knowledge_update",
+   "score": 0.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5754,
+   "recall_seconds": 0.9486160479718819
+  },
+  {
+   "name": "beam-100K-14-multi_session_reasoning-0",
+   "user_id": "beam-100K-14",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 0.45454545454545453,
+   "efficiency_tokens": 5912,
+   "recall_seconds": 0.9126942289294675
+  },
+  {
+   "name": "beam-100K-14-multi_session_reasoning-1",
+   "user_id": "beam-100K-14",
+   "ability": "multi_session_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5961,
+   "recall_seconds": 0.9451326440321282
+  },
+  {
+   "name": "beam-100K-14-preference_following-0",
+   "user_id": "beam-100K-14",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5950,
+   "recall_seconds": 0.907430408988148
+  },
+  {
+   "name": "beam-100K-14-preference_following-1",
+   "user_id": "beam-100K-14",
+   "ability": "preference_following",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5968,
+   "recall_seconds": 0.8629403660306707
+  },
+  {
+   "name": "beam-100K-14-summarization-0",
+   "user_id": "beam-100K-14",
+   "ability": "summarization",
+   "score": 0.25,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5876,
+   "recall_seconds": 0.9170465149218217
+  },
+  {
+   "name": "beam-100K-14-summarization-1",
+   "user_id": "beam-100K-14",
+   "ability": "summarization",
+   "score": 0.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5747,
+   "recall_seconds": 0.9296233609784395
+  },
+  {
+   "name": "beam-100K-14-temporal_reasoning-0",
+   "user_id": "beam-100K-14",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5722,
+   "recall_seconds": 0.9045411850092933
+  },
+  {
+   "name": "beam-100K-14-temporal_reasoning-1",
+   "user_id": "beam-100K-14",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5826,
+   "recall_seconds": 1.0281571350060403
+  },
+  {
+   "name": "beam-100K-15-abstention-0",
+   "user_id": "beam-100K-15",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5762,
+   "recall_seconds": 0.786563956993632
+  },
+  {
+   "name": "beam-100K-15-abstention-1",
+   "user_id": "beam-100K-15",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5763,
+   "recall_seconds": 0.7577431000536308
+  },
+  {
+   "name": "beam-100K-15-contradiction_resolution-0",
+   "user_id": "beam-100K-15",
+   "ability": "contradiction_resolution",
+   "score": 0.75,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5806,
+   "recall_seconds": 0.6958145559765399
+  },
+  {
+   "name": "beam-100K-15-contradiction_resolution-1",
+   "user_id": "beam-100K-15",
+   "ability": "contradiction_resolution",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5944,
+   "recall_seconds": 0.8217291079927236
+  },
+  {
+   "name": "beam-100K-15-event_ordering-0",
+   "user_id": "beam-100K-15",
+   "ability": "event_ordering",
+   "score": 0.18730561601177131,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5892,
+   "recall_seconds": 0.7337686389219016
+  },
+  {
+   "name": "beam-100K-15-event_ordering-1",
+   "user_id": "beam-100K-15",
+   "ability": "event_ordering",
+   "score": 0.30082588102283553,
+   "evidence_recall": 0.2,
+   "efficiency_tokens": 5750,
+   "recall_seconds": 0.8368846169905737
+  },
+  {
+   "name": "beam-100K-15-information_extraction-0",
+   "user_id": "beam-100K-15",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5813,
+   "recall_seconds": 0.6900869540404528
+  },
+  {
+   "name": "beam-100K-15-information_extraction-1",
+   "user_id": "beam-100K-15",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5808,
+   "recall_seconds": 0.7154279730748385
+  },
+  {
+   "name": "beam-100K-15-instruction_following-0",
+   "user_id": "beam-100K-15",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5811,
+   "recall_seconds": 0.7133041239576414
+  },
+  {
+   "name": "beam-100K-15-instruction_following-1",
+   "user_id": "beam-100K-15",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5947,
+   "recall_seconds": 0.7404061319539323
+  },
+  {
+   "name": "beam-100K-15-knowledge_update-0",
+   "user_id": "beam-100K-15",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5773,
+   "recall_seconds": 0.707230053958483
+  },
+  {
+   "name": "beam-100K-15-knowledge_update-1",
+   "user_id": "beam-100K-15",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5974,
+   "recall_seconds": 0.7569085230352357
+  },
+  {
+   "name": "beam-100K-15-multi_session_reasoning-0",
+   "user_id": "beam-100K-15",
+   "ability": "multi_session_reasoning",
+   "score": 0.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5977,
+   "recall_seconds": 0.7469264010433108
+  },
+  {
+   "name": "beam-100K-15-multi_session_reasoning-1",
+   "user_id": "beam-100K-15",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5946,
+   "recall_seconds": 0.7468993699876592
+  },
+  {
+   "name": "beam-100K-15-preference_following-0",
+   "user_id": "beam-100K-15",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5802,
+   "recall_seconds": 0.7505584469763562
+  },
+  {
+   "name": "beam-100K-15-preference_following-1",
+   "user_id": "beam-100K-15",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5728,
+   "recall_seconds": 0.7459788690321147
+  },
+  {
+   "name": "beam-100K-15-summarization-0",
+   "user_id": "beam-100K-15",
+   "ability": "summarization",
+   "score": 0.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5771,
+   "recall_seconds": 0.7340738700004295
+  },
+  {
+   "name": "beam-100K-15-summarization-1",
+   "user_id": "beam-100K-15",
+   "ability": "summarization",
+   "score": 0.4,
+   "evidence_recall": 0.25,
+   "efficiency_tokens": 5833,
+   "recall_seconds": 0.7608153820037842
+  },
+  {
+   "name": "beam-100K-15-temporal_reasoning-0",
+   "user_id": "beam-100K-15",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5908,
+   "recall_seconds": 0.727214936981909
+  },
+  {
+   "name": "beam-100K-15-temporal_reasoning-1",
+   "user_id": "beam-100K-15",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5946,
+   "recall_seconds": 0.7656804230064154
+  },
+  {
+   "name": "beam-100K-16-abstention-0",
+   "user_id": "beam-100K-16",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5826,
+   "recall_seconds": 0.9138258000602946
+  },
+  {
+   "name": "beam-100K-16-abstention-1",
+   "user_id": "beam-100K-16",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5833,
+   "recall_seconds": 0.946985958958976
+  },
+  {
+   "name": "beam-100K-16-contradiction_resolution-0",
+   "user_id": "beam-100K-16",
+   "ability": "contradiction_resolution",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5951,
+   "recall_seconds": 0.8802724040579051
+  },
+  {
+   "name": "beam-100K-16-contradiction_resolution-1",
+   "user_id": "beam-100K-16",
+   "ability": "contradiction_resolution",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5946,
+   "recall_seconds": 0.9017574510071427
+  },
+  {
+   "name": "beam-100K-16-event_ordering-0",
+   "user_id": "beam-100K-16",
+   "ability": "event_ordering",
+   "score": 0.45603875322166687,
+   "evidence_recall": 0.25,
+   "efficiency_tokens": 5779,
+   "recall_seconds": 0.8586874770699069
+  },
+  {
+   "name": "beam-100K-16-event_ordering-1",
+   "user_id": "beam-100K-16",
+   "ability": "event_ordering",
+   "score": 0.6509081818597876,
+   "evidence_recall": 0.375,
+   "efficiency_tokens": 5928,
+   "recall_seconds": 0.9438813650049269
+  },
+  {
+   "name": "beam-100K-16-information_extraction-0",
+   "user_id": "beam-100K-16",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5771,
+   "recall_seconds": 0.9608986850362271
+  },
+  {
+   "name": "beam-100K-16-information_extraction-1",
+   "user_id": "beam-100K-16",
+   "ability": "information_extraction",
+   "score": 0.3333333333333333,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5971,
+   "recall_seconds": 0.9748075839597732
+  },
+  {
+   "name": "beam-100K-16-instruction_following-0",
+   "user_id": "beam-100K-16",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5819,
+   "recall_seconds": 0.9156724009662867
+  },
+  {
+   "name": "beam-100K-16-instruction_following-1",
+   "user_id": "beam-100K-16",
+   "ability": "instruction_following",
+   "score": 0.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5818,
+   "recall_seconds": 0.9689230540534481
+  },
+  {
+   "name": "beam-100K-16-knowledge_update-0",
+   "user_id": "beam-100K-16",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 0.6666666666666666,
+   "efficiency_tokens": 5832,
+   "recall_seconds": 0.9310253669973463
+  },
+  {
+   "name": "beam-100K-16-knowledge_update-1",
+   "user_id": "beam-100K-16",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5744,
+   "recall_seconds": 0.8959846729412675
+  },
+  {
+   "name": "beam-100K-16-multi_session_reasoning-0",
+   "user_id": "beam-100K-16",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5700,
+   "recall_seconds": 0.9510810850188136
+  },
+  {
+   "name": "beam-100K-16-multi_session_reasoning-1",
+   "user_id": "beam-100K-16",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 0.4,
+   "efficiency_tokens": 5954,
+   "recall_seconds": 0.9614778460236266
+  },
+  {
+   "name": "beam-100K-16-preference_following-0",
+   "user_id": "beam-100K-16",
+   "ability": "preference_following",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5741,
+   "recall_seconds": 0.9559233040781692
+  },
+  {
+   "name": "beam-100K-16-preference_following-1",
+   "user_id": "beam-100K-16",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5975,
+   "recall_seconds": 1.0129172339802608
+  },
+  {
+   "name": "beam-100K-16-summarization-0",
+   "user_id": "beam-100K-16",
+   "ability": "summarization",
+   "score": 0.8571428571428571,
+   "evidence_recall": 0.6666666666666666,
+   "efficiency_tokens": 5956,
+   "recall_seconds": 0.959017166052945
+  },
+  {
+   "name": "beam-100K-16-summarization-1",
+   "user_id": "beam-100K-16",
+   "ability": "summarization",
+   "score": 0.25,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5918,
+   "recall_seconds": 0.9435821550432593
+  },
+  {
+   "name": "beam-100K-16-temporal_reasoning-0",
+   "user_id": "beam-100K-16",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5956,
+   "recall_seconds": 0.9072301579872146
+  },
+  {
+   "name": "beam-100K-16-temporal_reasoning-1",
+   "user_id": "beam-100K-16",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5829,
+   "recall_seconds": 0.8650259309215471
+  },
+  {
+   "name": "beam-100K-17-abstention-0",
+   "user_id": "beam-100K-17",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5858,
+   "recall_seconds": 0.9232270870124921
+  },
+  {
+   "name": "beam-100K-17-abstention-1",
+   "user_id": "beam-100K-17",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5833,
+   "recall_seconds": 0.9796244739554822
+  },
+  {
+   "name": "beam-100K-17-contradiction_resolution-0",
+   "user_id": "beam-100K-17",
+   "ability": "contradiction_resolution",
+   "score": 0.75,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5793,
+   "recall_seconds": 0.9183391019469127
+  },
+  {
+   "name": "beam-100K-17-contradiction_resolution-1",
+   "user_id": "beam-100K-17",
+   "ability": "contradiction_resolution",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5656,
+   "recall_seconds": 0.8296209839172661
+  },
+  {
+   "name": "beam-100K-17-event_ordering-0",
+   "user_id": "beam-100K-17",
+   "ability": "event_ordering",
+   "score": 0.18617704276957603,
+   "evidence_recall": 0.2,
+   "efficiency_tokens": 5958,
+   "recall_seconds": 0.9770699659129605
+  },
+  {
+   "name": "beam-100K-17-event_ordering-1",
+   "user_id": "beam-100K-17",
+   "ability": "event_ordering",
+   "score": 0.15315601219035196,
+   "evidence_recall": 0.16666666666666666,
+   "efficiency_tokens": 5896,
+   "recall_seconds": 0.9849312349688262
+  },
+  {
+   "name": "beam-100K-17-information_extraction-0",
+   "user_id": "beam-100K-17",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5691,
+   "recall_seconds": 0.982863012002781
+  },
+  {
+   "name": "beam-100K-17-information_extraction-1",
+   "user_id": "beam-100K-17",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 0.6666666666666666,
+   "efficiency_tokens": 5892,
+   "recall_seconds": 0.9704036889597774
+  },
+  {
+   "name": "beam-100K-17-instruction_following-0",
+   "user_id": "beam-100K-17",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5863,
+   "recall_seconds": 1.0208371239714324
+  },
+  {
+   "name": "beam-100K-17-instruction_following-1",
+   "user_id": "beam-100K-17",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5776,
+   "recall_seconds": 0.9722170670283958
+  },
+  {
+   "name": "beam-100K-17-knowledge_update-0",
+   "user_id": "beam-100K-17",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5951,
+   "recall_seconds": 0.9428139539668337
+  },
+  {
+   "name": "beam-100K-17-knowledge_update-1",
+   "user_id": "beam-100K-17",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5863,
+   "recall_seconds": 1.0054861219832674
+  },
+  {
+   "name": "beam-100K-17-multi_session_reasoning-0",
+   "user_id": "beam-100K-17",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5756,
+   "recall_seconds": 0.9663551700068638
+  },
+  {
+   "name": "beam-100K-17-multi_session_reasoning-1",
+   "user_id": "beam-100K-17",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5832,
+   "recall_seconds": 0.9900547780562192
+  },
+  {
+   "name": "beam-100K-17-preference_following-0",
+   "user_id": "beam-100K-17",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5946,
+   "recall_seconds": 0.9944807339925319
+  },
+  {
+   "name": "beam-100K-17-preference_following-1",
+   "user_id": "beam-100K-17",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5918,
+   "recall_seconds": 0.9901378059294075
+  },
+  {
+   "name": "beam-100K-17-summarization-0",
+   "user_id": "beam-100K-17",
+   "ability": "summarization",
+   "score": 0.6,
+   "evidence_recall": 0.25,
+   "efficiency_tokens": 5906,
+   "recall_seconds": 0.9528338679810986
+  },
+  {
+   "name": "beam-100K-17-summarization-1",
+   "user_id": "beam-100K-17",
+   "ability": "summarization",
+   "score": 0.8,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5944,
+   "recall_seconds": 1.0386094009736553
+  },
+  {
+   "name": "beam-100K-17-temporal_reasoning-0",
+   "user_id": "beam-100K-17",
+   "ability": "temporal_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5968,
+   "recall_seconds": 1.0365315900417045
+  },
+  {
+   "name": "beam-100K-17-temporal_reasoning-1",
+   "user_id": "beam-100K-17",
+   "ability": "temporal_reasoning",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5881,
+   "recall_seconds": 0.9803783879615366
+  },
+  {
+   "name": "beam-100K-18-abstention-0",
+   "user_id": "beam-100K-18",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5805,
+   "recall_seconds": 0.927666118950583
+  },
+  {
+   "name": "beam-100K-18-abstention-1",
+   "user_id": "beam-100K-18",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5886,
+   "recall_seconds": 0.8895911739673465
+  },
+  {
+   "name": "beam-100K-18-contradiction_resolution-0",
+   "user_id": "beam-100K-18",
+   "ability": "contradiction_resolution",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5951,
+   "recall_seconds": 0.8457632299978286
+  },
+  {
+   "name": "beam-100K-18-contradiction_resolution-1",
+   "user_id": "beam-100K-18",
+   "ability": "contradiction_resolution",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5928,
+   "recall_seconds": 0.8682991149835289
+  },
+  {
+   "name": "beam-100K-18-event_ordering-0",
+   "user_id": "beam-100K-18",
+   "ability": "event_ordering",
+   "score": 0.6338809057948243,
+   "evidence_recall": 0.6666666666666666,
+   "efficiency_tokens": 5945,
+   "recall_seconds": 0.8471911959350109
+  },
+  {
+   "name": "beam-100K-18-event_ordering-1",
+   "user_id": "beam-100K-18",
+   "ability": "event_ordering",
+   "score": 0.18730561601177131,
+   "evidence_recall": null,
+   "efficiency_tokens": 5899,
+   "recall_seconds": 0.90086368995253
+  },
+  {
+   "name": "beam-100K-18-information_extraction-0",
+   "user_id": "beam-100K-18",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5965,
+   "recall_seconds": 0.8532348480075598
+  },
+  {
+   "name": "beam-100K-18-information_extraction-1",
+   "user_id": "beam-100K-18",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 0.6666666666666666,
+   "efficiency_tokens": 5703,
+   "recall_seconds": 0.9331841809907928
+  },
+  {
+   "name": "beam-100K-18-instruction_following-0",
+   "user_id": "beam-100K-18",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5768,
+   "recall_seconds": 0.8679646289674565
+  },
+  {
+   "name": "beam-100K-18-instruction_following-1",
+   "user_id": "beam-100K-18",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5765,
+   "recall_seconds": 0.9505574679933488
+  },
+  {
+   "name": "beam-100K-18-knowledge_update-0",
+   "user_id": "beam-100K-18",
+   "ability": "knowledge_update",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5905,
+   "recall_seconds": 0.9323017839342356
+  },
+  {
+   "name": "beam-100K-18-knowledge_update-1",
+   "user_id": "beam-100K-18",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5858,
+   "recall_seconds": 0.879770900006406
+  },
+  {
+   "name": "beam-100K-18-multi_session_reasoning-0",
+   "user_id": "beam-100K-18",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5725,
+   "recall_seconds": 0.9369495919672772
+  },
+  {
+   "name": "beam-100K-18-multi_session_reasoning-1",
+   "user_id": "beam-100K-18",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5733,
+   "recall_seconds": 0.9395864150719717
+  },
+  {
+   "name": "beam-100K-18-preference_following-0",
+   "user_id": "beam-100K-18",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 0.3333333333333333,
+   "efficiency_tokens": 5746,
+   "recall_seconds": 1.0474441800033674
+  },
+  {
+   "name": "beam-100K-18-preference_following-1",
+   "user_id": "beam-100K-18",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5880,
+   "recall_seconds": 0.9230871209874749
+  },
+  {
+   "name": "beam-100K-18-summarization-0",
+   "user_id": "beam-100K-18",
+   "ability": "summarization",
+   "score": 0.5,
+   "evidence_recall": null,
+   "efficiency_tokens": 5971,
+   "recall_seconds": 0.9034062750870362
+  },
+  {
+   "name": "beam-100K-18-summarization-1",
+   "user_id": "beam-100K-18",
+   "ability": "summarization",
+   "score": 0.3333333333333333,
+   "evidence_recall": null,
+   "efficiency_tokens": 5932,
+   "recall_seconds": 0.8879489409737289
+  },
+  {
+   "name": "beam-100K-18-temporal_reasoning-0",
+   "user_id": "beam-100K-18",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5775,
+   "recall_seconds": 0.9209407789167017
+  },
+  {
+   "name": "beam-100K-18-temporal_reasoning-1",
+   "user_id": "beam-100K-18",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5971,
+   "recall_seconds": 0.9247970919823274
+  },
+  {
+   "name": "beam-100K-19-abstention-0",
+   "user_id": "beam-100K-19",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5684,
+   "recall_seconds": 0.7889827348990366
+  },
+  {
+   "name": "beam-100K-19-abstention-1",
+   "user_id": "beam-100K-19",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5733,
+   "recall_seconds": 0.8342173839919269
+  },
+  {
+   "name": "beam-100K-19-contradiction_resolution-0",
+   "user_id": "beam-100K-19",
+   "ability": "contradiction_resolution",
+   "score": 0.75,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5961,
+   "recall_seconds": 0.8363442979753017
+  },
+  {
+   "name": "beam-100K-19-contradiction_resolution-1",
+   "user_id": "beam-100K-19",
+   "ability": "contradiction_resolution",
+   "score": 0.75,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5819,
+   "recall_seconds": 0.8666031990433112
+  },
+  {
+   "name": "beam-100K-19-event_ordering-0",
+   "user_id": "beam-100K-19",
+   "ability": "event_ordering",
+   "score": 0.3923964422473604,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5960,
+   "recall_seconds": 0.8014771050075069
+  },
+  {
+   "name": "beam-100K-19-event_ordering-1",
+   "user_id": "beam-100K-19",
+   "ability": "event_ordering",
+   "score": 0.24707124006136771,
+   "evidence_recall": 0.14285714285714285,
+   "efficiency_tokens": 5967,
+   "recall_seconds": 0.7933678039116785
+  },
+  {
+   "name": "beam-100K-19-information_extraction-0",
+   "user_id": "beam-100K-19",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5925,
+   "recall_seconds": 0.71601248299703
+  },
+  {
+   "name": "beam-100K-19-information_extraction-1",
+   "user_id": "beam-100K-19",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5898,
+   "recall_seconds": 0.789607411948964
+  },
+  {
+   "name": "beam-100K-19-instruction_following-0",
+   "user_id": "beam-100K-19",
+   "ability": "instruction_following",
+   "score": 0.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5813,
+   "recall_seconds": 0.8212887519039214
+  },
+  {
+   "name": "beam-100K-19-instruction_following-1",
+   "user_id": "beam-100K-19",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5833,
+   "recall_seconds": 0.855538570904173
+  },
+  {
+   "name": "beam-100K-19-knowledge_update-0",
+   "user_id": "beam-100K-19",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5962,
+   "recall_seconds": 0.8504314390011132
+  },
+  {
+   "name": "beam-100K-19-knowledge_update-1",
+   "user_id": "beam-100K-19",
+   "ability": "knowledge_update",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5700,
+   "recall_seconds": 0.8241539760492742
+  },
+  {
+   "name": "beam-100K-19-multi_session_reasoning-0",
+   "user_id": "beam-100K-19",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5951,
+   "recall_seconds": 0.799691928899847
+  },
+  {
+   "name": "beam-100K-19-multi_session_reasoning-1",
+   "user_id": "beam-100K-19",
+   "ability": "multi_session_reasoning",
+   "score": 0.5714285714285714,
+   "evidence_recall": 0.3333333333333333,
+   "efficiency_tokens": 5872,
+   "recall_seconds": 0.9348292869981378
+  },
+  {
+   "name": "beam-100K-19-preference_following-0",
+   "user_id": "beam-100K-19",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5907,
+   "recall_seconds": 0.8398401509039104
+  },
+  {
+   "name": "beam-100K-19-preference_following-1",
+   "user_id": "beam-100K-19",
+   "ability": "preference_following",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5729,
+   "recall_seconds": 0.8352643010439351
+  },
+  {
+   "name": "beam-100K-19-summarization-0",
+   "user_id": "beam-100K-19",
+   "ability": "summarization",
+   "score": 0.8333333333333334,
+   "evidence_recall": 0.2,
+   "efficiency_tokens": 5970,
+   "recall_seconds": 0.8348277069162577
+  },
+  {
+   "name": "beam-100K-19-summarization-1",
+   "user_id": "beam-100K-19",
+   "ability": "summarization",
+   "score": 0.25,
+   "evidence_recall": 0.25,
+   "efficiency_tokens": 5864,
+   "recall_seconds": 0.8053761089686304
+  },
+  {
+   "name": "beam-100K-19-temporal_reasoning-0",
+   "user_id": "beam-100K-19",
+   "ability": "temporal_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5828,
+   "recall_seconds": 0.7818744520191103
+  },
+  {
+   "name": "beam-100K-19-temporal_reasoning-1",
+   "user_id": "beam-100K-19",
+   "ability": "temporal_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5967,
+   "recall_seconds": 0.8045713680330664
+  },
+  {
+   "name": "beam-100K-2-abstention-0",
+   "user_id": "beam-100K-2",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5849,
+   "recall_seconds": 0.7637195510324091
+  },
+  {
+   "name": "beam-100K-2-abstention-1",
+   "user_id": "beam-100K-2",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5940,
+   "recall_seconds": 0.7815002220449969
+  },
+  {
+   "name": "beam-100K-2-contradiction_resolution-0",
+   "user_id": "beam-100K-2",
+   "ability": "contradiction_resolution",
+   "score": 0.5,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5895,
+   "recall_seconds": 0.8205416350392625
+  },
+  {
+   "name": "beam-100K-2-contradiction_resolution-1",
+   "user_id": "beam-100K-2",
+   "ability": "contradiction_resolution",
+   "score": 0.5,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5930,
+   "recall_seconds": 0.8465061300667003
+  },
+  {
+   "name": "beam-100K-2-event_ordering-0",
+   "user_id": "beam-100K-2",
+   "ability": "event_ordering",
+   "score": 0.26937733592117796,
+   "evidence_recall": 0.4,
+   "efficiency_tokens": 5930,
+   "recall_seconds": 0.7799179729772732
+  },
+  {
+   "name": "beam-100K-2-event_ordering-1",
+   "user_id": "beam-100K-2",
+   "ability": "event_ordering",
+   "score": 0.25889448755395883,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5887,
+   "recall_seconds": 0.9264214979484677
+  },
+  {
+   "name": "beam-100K-2-information_extraction-0",
+   "user_id": "beam-100K-2",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5888,
+   "recall_seconds": 0.6869447330245748
+  },
+  {
+   "name": "beam-100K-2-information_extraction-1",
+   "user_id": "beam-100K-2",
+   "ability": "information_extraction",
+   "score": 0.6666666666666666,
+   "evidence_recall": 0.3333333333333333,
+   "efficiency_tokens": 5964,
+   "recall_seconds": 0.8116824369644746
+  },
+  {
+   "name": "beam-100K-2-instruction_following-0",
+   "user_id": "beam-100K-2",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5689,
+   "recall_seconds": 0.8246374829905108
+  },
+  {
+   "name": "beam-100K-2-instruction_following-1",
+   "user_id": "beam-100K-2",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5968,
+   "recall_seconds": 0.7811051410390064
+  },
+  {
+   "name": "beam-100K-2-knowledge_update-0",
+   "user_id": "beam-100K-2",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5896,
+   "recall_seconds": 0.7329117049230263
+  },
+  {
+   "name": "beam-100K-2-knowledge_update-1",
+   "user_id": "beam-100K-2",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5683,
+   "recall_seconds": 0.7250143570126966
+  },
+  {
+   "name": "beam-100K-2-multi_session_reasoning-0",
+   "user_id": "beam-100K-2",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 0.2,
+   "efficiency_tokens": 5938,
+   "recall_seconds": 0.6715537150157616
+  },
+  {
+   "name": "beam-100K-2-multi_session_reasoning-1",
+   "user_id": "beam-100K-2",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5955,
+   "recall_seconds": 0.7645997740328312
+  },
+  {
+   "name": "beam-100K-2-preference_following-0",
+   "user_id": "beam-100K-2",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5934,
+   "recall_seconds": 0.7795667360769585
+  },
+  {
+   "name": "beam-100K-2-preference_following-1",
+   "user_id": "beam-100K-2",
+   "ability": "preference_following",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5771,
+   "recall_seconds": 0.6531209429958835
+  },
+  {
+   "name": "beam-100K-2-summarization-0",
+   "user_id": "beam-100K-2",
+   "ability": "summarization",
+   "score": 0.8333333333333334,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5713,
+   "recall_seconds": 0.8819551500491798
+  },
+  {
+   "name": "beam-100K-2-summarization-1",
+   "user_id": "beam-100K-2",
+   "ability": "summarization",
+   "score": 0.75,
+   "evidence_recall": 0.6,
+   "efficiency_tokens": 5771,
+   "recall_seconds": 0.6663674929877743
+  },
+  {
+   "name": "beam-100K-2-temporal_reasoning-0",
+   "user_id": "beam-100K-2",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5775,
+   "recall_seconds": 0.8193545369431376
+  },
+  {
+   "name": "beam-100K-2-temporal_reasoning-1",
+   "user_id": "beam-100K-2",
+   "ability": "temporal_reasoning",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5848,
+   "recall_seconds": 0.6858848970150575
+  },
+  {
+   "name": "beam-100K-20-abstention-0",
+   "user_id": "beam-100K-20",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5918,
+   "recall_seconds": 0.8694040679838508
+  },
+  {
+   "name": "beam-100K-20-abstention-1",
+   "user_id": "beam-100K-20",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5764,
+   "recall_seconds": 0.833075720933266
+  },
+  {
+   "name": "beam-100K-20-contradiction_resolution-0",
+   "user_id": "beam-100K-20",
+   "ability": "contradiction_resolution",
+   "score": 0.75,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5923,
+   "recall_seconds": 0.8892953250324354
+  },
+  {
+   "name": "beam-100K-20-contradiction_resolution-1",
+   "user_id": "beam-100K-20",
+   "ability": "contradiction_resolution",
+   "score": 0.25,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5957,
+   "recall_seconds": 0.8396794910077006
+  },
+  {
+   "name": "beam-100K-20-event_ordering-0",
+   "user_id": "beam-100K-20",
+   "ability": "event_ordering",
+   "score": 0.26403004813786524,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5775,
+   "recall_seconds": 0.8535841710399836
+  },
+  {
+   "name": "beam-100K-20-event_ordering-1",
+   "user_id": "beam-100K-20",
+   "ability": "event_ordering",
+   "score": 0.29034303265561634,
+   "evidence_recall": 0.2,
+   "efficiency_tokens": 5923,
+   "recall_seconds": 0.9564282948849723
+  },
+  {
+   "name": "beam-100K-20-information_extraction-0",
+   "user_id": "beam-100K-20",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5896,
+   "recall_seconds": 0.9236118380213156
+  },
+  {
+   "name": "beam-100K-20-information_extraction-1",
+   "user_id": "beam-100K-20",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5755,
+   "recall_seconds": 0.9406575979664922
+  },
+  {
+   "name": "beam-100K-20-instruction_following-0",
+   "user_id": "beam-100K-20",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5881,
+   "recall_seconds": 0.8072180750314146
+  },
+  {
+   "name": "beam-100K-20-instruction_following-1",
+   "user_id": "beam-100K-20",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5917,
+   "recall_seconds": 0.7881158810341731
+  },
+  {
+   "name": "beam-100K-20-knowledge_update-0",
+   "user_id": "beam-100K-20",
+   "ability": "knowledge_update",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5884,
+   "recall_seconds": 0.8213407070143148
+  },
+  {
+   "name": "beam-100K-20-knowledge_update-1",
+   "user_id": "beam-100K-20",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5851,
+   "recall_seconds": 0.8067185749532655
+  },
+  {
+   "name": "beam-100K-20-multi_session_reasoning-0",
+   "user_id": "beam-100K-20",
+   "ability": "multi_session_reasoning",
+   "score": 0.5,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5937,
+   "recall_seconds": 0.89731352601666
+  },
+  {
+   "name": "beam-100K-20-multi_session_reasoning-1",
+   "user_id": "beam-100K-20",
+   "ability": "multi_session_reasoning",
+   "score": 0.625,
+   "evidence_recall": 0.8,
+   "efficiency_tokens": 5840,
+   "recall_seconds": 0.9008331650402397
+  },
+  {
+   "name": "beam-100K-20-preference_following-0",
+   "user_id": "beam-100K-20",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5966,
+   "recall_seconds": 0.8408964769914746
+  },
+  {
+   "name": "beam-100K-20-preference_following-1",
+   "user_id": "beam-100K-20",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5894,
+   "recall_seconds": 0.8178779530571774
+  },
+  {
+   "name": "beam-100K-20-summarization-0",
+   "user_id": "beam-100K-20",
+   "ability": "summarization",
+   "score": 0.375,
+   "evidence_recall": null,
+   "efficiency_tokens": 5792,
+   "recall_seconds": 0.9684671460418031
+  },
+  {
+   "name": "beam-100K-20-summarization-1",
+   "user_id": "beam-100K-20",
+   "ability": "summarization",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5962,
+   "recall_seconds": 0.8507955489913002
+  },
+  {
+   "name": "beam-100K-20-temporal_reasoning-0",
+   "user_id": "beam-100K-20",
+   "ability": "temporal_reasoning",
+   "score": 0.0,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5903,
+   "recall_seconds": 0.8667332000331953
+  },
+  {
+   "name": "beam-100K-20-temporal_reasoning-1",
+   "user_id": "beam-100K-20",
+   "ability": "temporal_reasoning",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5954,
+   "recall_seconds": 0.8340550189604983
+  },
+  {
+   "name": "beam-100K-3-abstention-0",
+   "user_id": "beam-100K-3",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5881,
+   "recall_seconds": 0.7956222259672359
+  },
+  {
+   "name": "beam-100K-3-abstention-1",
+   "user_id": "beam-100K-3",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5703,
+   "recall_seconds": 0.7398736639879644
+  },
+  {
+   "name": "beam-100K-3-contradiction_resolution-0",
+   "user_id": "beam-100K-3",
+   "ability": "contradiction_resolution",
+   "score": 0.25,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5788,
+   "recall_seconds": 0.7475873129442334
+  },
+  {
+   "name": "beam-100K-3-contradiction_resolution-1",
+   "user_id": "beam-100K-3",
+   "ability": "contradiction_resolution",
+   "score": 0.5,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5664,
+   "recall_seconds": 0.7232068700250238
+  },
+  {
+   "name": "beam-100K-3-event_ordering-0",
+   "user_id": "beam-100K-3",
+   "ability": "event_ordering",
+   "score": 0.1894704982959406,
+   "evidence_recall": 0.3333333333333333,
+   "efficiency_tokens": 5770,
+   "recall_seconds": 0.7923347250325605
+  },
+  {
+   "name": "beam-100K-3-event_ordering-1",
+   "user_id": "beam-100K-3",
+   "ability": "event_ordering",
+   "score": 0.29034303265561634,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5935,
+   "recall_seconds": 0.8222462950507179
+  },
+  {
+   "name": "beam-100K-3-information_extraction-0",
+   "user_id": "beam-100K-3",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5762,
+   "recall_seconds": 0.7520014960318804
+  },
+  {
+   "name": "beam-100K-3-information_extraction-1",
+   "user_id": "beam-100K-3",
+   "ability": "information_extraction",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5919,
+   "recall_seconds": 0.7131421000231057
+  },
+  {
+   "name": "beam-100K-3-instruction_following-0",
+   "user_id": "beam-100K-3",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5852,
+   "recall_seconds": 0.7459482050035149
+  },
+  {
+   "name": "beam-100K-3-instruction_following-1",
+   "user_id": "beam-100K-3",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5812,
+   "recall_seconds": 0.7635200199438259
+  },
+  {
+   "name": "beam-100K-3-knowledge_update-0",
+   "user_id": "beam-100K-3",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5828,
+   "recall_seconds": 0.6945855530211702
+  },
+  {
+   "name": "beam-100K-3-knowledge_update-1",
+   "user_id": "beam-100K-3",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5765,
+   "recall_seconds": 0.8111540520330891
+  },
+  {
+   "name": "beam-100K-3-multi_session_reasoning-0",
+   "user_id": "beam-100K-3",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5813,
+   "recall_seconds": 0.7794720649253577
+  },
+  {
+   "name": "beam-100K-3-multi_session_reasoning-1",
+   "user_id": "beam-100K-3",
+   "ability": "multi_session_reasoning",
+   "score": 0.625,
+   "evidence_recall": 0.8,
+   "efficiency_tokens": 5699,
+   "recall_seconds": 0.7158314939588308
+  },
+  {
+   "name": "beam-100K-3-preference_following-0",
+   "user_id": "beam-100K-3",
+   "ability": "preference_following",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5966,
+   "recall_seconds": 0.753087031072937
+  },
+  {
+   "name": "beam-100K-3-preference_following-1",
+   "user_id": "beam-100K-3",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5687,
+   "recall_seconds": 0.7650996240554377
+  },
+  {
+   "name": "beam-100K-3-summarization-0",
+   "user_id": "beam-100K-3",
+   "ability": "summarization",
+   "score": 0.5,
+   "evidence_recall": 0.1875,
+   "efficiency_tokens": 5925,
+   "recall_seconds": 0.6818390530534089
+  },
+  {
+   "name": "beam-100K-3-summarization-1",
+   "user_id": "beam-100K-3",
+   "ability": "summarization",
+   "score": 0.3,
+   "evidence_recall": 0.2857142857142857,
+   "efficiency_tokens": 5717,
+   "recall_seconds": 0.8289876949274912
+  },
+  {
+   "name": "beam-100K-3-temporal_reasoning-0",
+   "user_id": "beam-100K-3",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5838,
+   "recall_seconds": 0.6377353349234909
+  },
+  {
+   "name": "beam-100K-3-temporal_reasoning-1",
+   "user_id": "beam-100K-3",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5881,
+   "recall_seconds": 0.7113058079266921
+  },
+  {
+   "name": "beam-100K-4-abstention-0",
+   "user_id": "beam-100K-4",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5851,
+   "recall_seconds": 0.890267106005922
+  },
+  {
+   "name": "beam-100K-4-abstention-1",
+   "user_id": "beam-100K-4",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5964,
+   "recall_seconds": 0.9153185940813273
+  },
+  {
+   "name": "beam-100K-4-contradiction_resolution-0",
+   "user_id": "beam-100K-4",
+   "ability": "contradiction_resolution",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5929,
+   "recall_seconds": 0.9975558089790866
+  },
+  {
+   "name": "beam-100K-4-contradiction_resolution-1",
+   "user_id": "beam-100K-4",
+   "ability": "contradiction_resolution",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5946,
+   "recall_seconds": 0.9941843069391325
+  },
+  {
+   "name": "beam-100K-4-event_ordering-0",
+   "user_id": "beam-100K-4",
+   "ability": "event_ordering",
+   "score": 0.2654404386287188,
+   "evidence_recall": 0.4444444444444444,
+   "efficiency_tokens": 5916,
+   "recall_seconds": 0.9662888610037044
+  },
+  {
+   "name": "beam-100K-4-event_ordering-1",
+   "user_id": "beam-100K-4",
+   "ability": "event_ordering",
+   "score": 0.23052532942860648,
+   "evidence_recall": 0.125,
+   "efficiency_tokens": 5847,
+   "recall_seconds": 0.947154785040766
+  },
+  {
+   "name": "beam-100K-4-information_extraction-0",
+   "user_id": "beam-100K-4",
+   "ability": "information_extraction",
+   "score": 0.8333333333333334,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5887,
+   "recall_seconds": 0.9230627809884027
+  },
+  {
+   "name": "beam-100K-4-information_extraction-1",
+   "user_id": "beam-100K-4",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5820,
+   "recall_seconds": 0.8977935180300847
+  },
+  {
+   "name": "beam-100K-4-instruction_following-0",
+   "user_id": "beam-100K-4",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5864,
+   "recall_seconds": 0.9189343899488449
+  },
+  {
+   "name": "beam-100K-4-instruction_following-1",
+   "user_id": "beam-100K-4",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 0.25,
+   "efficiency_tokens": 5860,
+   "recall_seconds": 0.9251189209753647
+  },
+  {
+   "name": "beam-100K-4-knowledge_update-0",
+   "user_id": "beam-100K-4",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5944,
+   "recall_seconds": 0.9929532159585506
+  },
+  {
+   "name": "beam-100K-4-knowledge_update-1",
+   "user_id": "beam-100K-4",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5906,
+   "recall_seconds": 0.9705978040583432
+  },
+  {
+   "name": "beam-100K-4-multi_session_reasoning-0",
+   "user_id": "beam-100K-4",
+   "ability": "multi_session_reasoning",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5939,
+   "recall_seconds": 1.0463271830230951
+  },
+  {
+   "name": "beam-100K-4-multi_session_reasoning-1",
+   "user_id": "beam-100K-4",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5903,
+   "recall_seconds": 0.9450511740287766
+  },
+  {
+   "name": "beam-100K-4-preference_following-0",
+   "user_id": "beam-100K-4",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5900,
+   "recall_seconds": 0.852789505966939
+  },
+  {
+   "name": "beam-100K-4-preference_following-1",
+   "user_id": "beam-100K-4",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5915,
+   "recall_seconds": 0.9039852919522673
+  },
+  {
+   "name": "beam-100K-4-summarization-0",
+   "user_id": "beam-100K-4",
+   "ability": "summarization",
+   "score": 1.0,
+   "evidence_recall": 0.2,
+   "efficiency_tokens": 5963,
+   "recall_seconds": 0.8392384579638019
+  },
+  {
+   "name": "beam-100K-4-summarization-1",
+   "user_id": "beam-100K-4",
+   "ability": "summarization",
+   "score": 0.4,
+   "evidence_recall": 0.2727272727272727,
+   "efficiency_tokens": 5940,
+   "recall_seconds": 0.9062826909357682
+  },
+  {
+   "name": "beam-100K-4-temporal_reasoning-0",
+   "user_id": "beam-100K-4",
+   "ability": "temporal_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5858,
+   "recall_seconds": 0.8528841859661043
+  },
+  {
+   "name": "beam-100K-4-temporal_reasoning-1",
+   "user_id": "beam-100K-4",
+   "ability": "temporal_reasoning",
+   "score": 0.0,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5979,
+   "recall_seconds": 0.9675288080470636
+  },
+  {
+   "name": "beam-100K-5-abstention-0",
+   "user_id": "beam-100K-5",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5948,
+   "recall_seconds": 1.010550037957728
+  },
+  {
+   "name": "beam-100K-5-abstention-1",
+   "user_id": "beam-100K-5",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5967,
+   "recall_seconds": 0.9153715040301904
+  },
+  {
+   "name": "beam-100K-5-contradiction_resolution-0",
+   "user_id": "beam-100K-5",
+   "ability": "contradiction_resolution",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5963,
+   "recall_seconds": 1.0388929559849203
+  },
+  {
+   "name": "beam-100K-5-contradiction_resolution-1",
+   "user_id": "beam-100K-5",
+   "ability": "contradiction_resolution",
+   "score": 0.25,
+   "evidence_recall": 0.6,
+   "efficiency_tokens": 5972,
+   "recall_seconds": 1.0343013840029016
+  },
+  {
+   "name": "beam-100K-5-event_ordering-0",
+   "user_id": "beam-100K-5",
+   "ability": "event_ordering",
+   "score": 0.18551454898342445,
+   "evidence_recall": 0.08333333333333333,
+   "efficiency_tokens": 5840,
+   "recall_seconds": 0.9521242849295959
+  },
+  {
+   "name": "beam-100K-5-event_ordering-1",
+   "user_id": "beam-100K-5",
+   "ability": "event_ordering",
+   "score": 0.3576739783856394,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5770,
+   "recall_seconds": 0.9861600570147857
+  },
+  {
+   "name": "beam-100K-5-information_extraction-0",
+   "user_id": "beam-100K-5",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5805,
+   "recall_seconds": 0.8272664910182357
+  },
+  {
+   "name": "beam-100K-5-information_extraction-1",
+   "user_id": "beam-100K-5",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5880,
+   "recall_seconds": 0.9230657749576494
+  },
+  {
+   "name": "beam-100K-5-instruction_following-0",
+   "user_id": "beam-100K-5",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5824,
+   "recall_seconds": 0.9364065440604463
+  },
+  {
+   "name": "beam-100K-5-instruction_following-1",
+   "user_id": "beam-100K-5",
+   "ability": "instruction_following",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5643,
+   "recall_seconds": 1.0634435910033062
+  },
+  {
+   "name": "beam-100K-5-knowledge_update-0",
+   "user_id": "beam-100K-5",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5963,
+   "recall_seconds": 0.8326689449604601
+  },
+  {
+   "name": "beam-100K-5-knowledge_update-1",
+   "user_id": "beam-100K-5",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5969,
+   "recall_seconds": 1.041080244933255
+  },
+  {
+   "name": "beam-100K-5-multi_session_reasoning-0",
+   "user_id": "beam-100K-5",
+   "ability": "multi_session_reasoning",
+   "score": 0.0,
+   "evidence_recall": 0.6666666666666666,
+   "efficiency_tokens": 5923,
+   "recall_seconds": 1.0126139729982242
+  },
+  {
+   "name": "beam-100K-5-multi_session_reasoning-1",
+   "user_id": "beam-100K-5",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5845,
+   "recall_seconds": 0.9254827920813113
+  },
+  {
+   "name": "beam-100K-5-preference_following-0",
+   "user_id": "beam-100K-5",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5863,
+   "recall_seconds": 0.9511269569629803
+  },
+  {
+   "name": "beam-100K-5-preference_following-1",
+   "user_id": "beam-100K-5",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5909,
+   "recall_seconds": 0.9000194900436327
+  },
+  {
+   "name": "beam-100K-5-summarization-0",
+   "user_id": "beam-100K-5",
+   "ability": "summarization",
+   "score": 0.8,
+   "evidence_recall": 0.3333333333333333,
+   "efficiency_tokens": 5963,
+   "recall_seconds": 0.8799813051009551
+  },
+  {
+   "name": "beam-100K-5-summarization-1",
+   "user_id": "beam-100K-5",
+   "ability": "summarization",
+   "score": 0.4,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5892,
+   "recall_seconds": 0.8031186209991574
+  },
+  {
+   "name": "beam-100K-5-temporal_reasoning-0",
+   "user_id": "beam-100K-5",
+   "ability": "temporal_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5855,
+   "recall_seconds": 0.8775427269283682
+  },
+  {
+   "name": "beam-100K-5-temporal_reasoning-1",
+   "user_id": "beam-100K-5",
+   "ability": "temporal_reasoning",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5798,
+   "recall_seconds": 0.9821198739809915
+  },
+  {
+   "name": "beam-100K-6-abstention-0",
+   "user_id": "beam-100K-6",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5922,
+   "recall_seconds": 0.8670510969823226
+  },
+  {
+   "name": "beam-100K-6-abstention-1",
+   "user_id": "beam-100K-6",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5935,
+   "recall_seconds": 0.9377652480034158
+  },
+  {
+   "name": "beam-100K-6-contradiction_resolution-0",
+   "user_id": "beam-100K-6",
+   "ability": "contradiction_resolution",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5972,
+   "recall_seconds": 0.8595223299926147
+  },
+  {
+   "name": "beam-100K-6-contradiction_resolution-1",
+   "user_id": "beam-100K-6",
+   "ability": "contradiction_resolution",
+   "score": 0.5,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5973,
+   "recall_seconds": 0.9361224840395153
+  },
+  {
+   "name": "beam-100K-6-event_ordering-0",
+   "user_id": "beam-100K-6",
+   "ability": "event_ordering",
+   "score": 0.18551454898342445,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5839,
+   "recall_seconds": 0.8798008019803092
+  },
+  {
+   "name": "beam-100K-6-event_ordering-1",
+   "user_id": "beam-100K-6",
+   "ability": "event_ordering",
+   "score": 0.18617704276957603,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5764,
+   "recall_seconds": 0.8746477520326152
+  },
+  {
+   "name": "beam-100K-6-information_extraction-0",
+   "user_id": "beam-100K-6",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5692,
+   "recall_seconds": 0.9386649889638647
+  },
+  {
+   "name": "beam-100K-6-information_extraction-1",
+   "user_id": "beam-100K-6",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5858,
+   "recall_seconds": 0.9102937370771542
+  },
+  {
+   "name": "beam-100K-6-instruction_following-0",
+   "user_id": "beam-100K-6",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5939,
+   "recall_seconds": 0.9241115039912984
+  },
+  {
+   "name": "beam-100K-6-instruction_following-1",
+   "user_id": "beam-100K-6",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5900,
+   "recall_seconds": 0.8996217829408124
+  },
+  {
+   "name": "beam-100K-6-knowledge_update-0",
+   "user_id": "beam-100K-6",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5937,
+   "recall_seconds": 0.9204030319815502
+  },
+  {
+   "name": "beam-100K-6-knowledge_update-1",
+   "user_id": "beam-100K-6",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5927,
+   "recall_seconds": 0.8726722650462762
+  },
+  {
+   "name": "beam-100K-6-multi_session_reasoning-0",
+   "user_id": "beam-100K-6",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5816,
+   "recall_seconds": 0.9131168159656227
+  },
+  {
+   "name": "beam-100K-6-multi_session_reasoning-1",
+   "user_id": "beam-100K-6",
+   "ability": "multi_session_reasoning",
+   "score": 0.75,
+   "evidence_recall": 0.3333333333333333,
+   "efficiency_tokens": 5795,
+   "recall_seconds": 0.846933709923178
+  },
+  {
+   "name": "beam-100K-6-preference_following-0",
+   "user_id": "beam-100K-6",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5971,
+   "recall_seconds": 0.8488838480552658
+  },
+  {
+   "name": "beam-100K-6-preference_following-1",
+   "user_id": "beam-100K-6",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5957,
+   "recall_seconds": 0.8319648950127885
+  },
+  {
+   "name": "beam-100K-6-summarization-0",
+   "user_id": "beam-100K-6",
+   "ability": "summarization",
+   "score": 0.8,
+   "evidence_recall": 0.6,
+   "efficiency_tokens": 5920,
+   "recall_seconds": 0.9422972459578887
+  },
+  {
+   "name": "beam-100K-6-summarization-1",
+   "user_id": "beam-100K-6",
+   "ability": "summarization",
+   "score": 0.5625,
+   "evidence_recall": 0.16666666666666666,
+   "efficiency_tokens": 5972,
+   "recall_seconds": 0.9139818199910223
+  },
+  {
+   "name": "beam-100K-6-temporal_reasoning-0",
+   "user_id": "beam-100K-6",
+   "ability": "temporal_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5654,
+   "recall_seconds": 0.9006952740019187
+  },
+  {
+   "name": "beam-100K-6-temporal_reasoning-1",
+   "user_id": "beam-100K-6",
+   "ability": "temporal_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5711,
+   "recall_seconds": 0.889705374953337
+  },
+  {
+   "name": "beam-100K-7-abstention-0",
+   "user_id": "beam-100K-7",
+   "ability": "abstention",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5752,
+   "recall_seconds": 0.9587944580707699
+  },
+  {
+   "name": "beam-100K-7-abstention-1",
+   "user_id": "beam-100K-7",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5917,
+   "recall_seconds": 0.8791288030333817
+  },
+  {
+   "name": "beam-100K-7-contradiction_resolution-0",
+   "user_id": "beam-100K-7",
+   "ability": "contradiction_resolution",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5772,
+   "recall_seconds": 0.8591937740566209
+  },
+  {
+   "name": "beam-100K-7-contradiction_resolution-1",
+   "user_id": "beam-100K-7",
+   "ability": "contradiction_resolution",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5919,
+   "recall_seconds": 0.9402320890221745
+  },
+  {
+   "name": "beam-100K-7-event_ordering-0",
+   "user_id": "beam-100K-7",
+   "ability": "event_ordering",
+   "score": 0.2477256640769468,
+   "evidence_recall": 0.4,
+   "efficiency_tokens": 5914,
+   "recall_seconds": 0.9250865069916472
+  },
+  {
+   "name": "beam-100K-7-event_ordering-1",
+   "user_id": "beam-100K-7",
+   "ability": "event_ordering",
+   "score": 0.20185760300002803,
+   "evidence_recall": 0.4,
+   "efficiency_tokens": 5786,
+   "recall_seconds": 0.8848012399394065
+  },
+  {
+   "name": "beam-100K-7-information_extraction-0",
+   "user_id": "beam-100K-7",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5961,
+   "recall_seconds": 0.8391979199368507
+  },
+  {
+   "name": "beam-100K-7-information_extraction-1",
+   "user_id": "beam-100K-7",
+   "ability": "information_extraction",
+   "score": 0.3333333333333333,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5974,
+   "recall_seconds": 0.9310253110015765
+  },
+  {
+   "name": "beam-100K-7-instruction_following-0",
+   "user_id": "beam-100K-7",
+   "ability": "instruction_following",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5730,
+   "recall_seconds": 0.8984716149279848
+  },
+  {
+   "name": "beam-100K-7-instruction_following-1",
+   "user_id": "beam-100K-7",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5911,
+   "recall_seconds": 0.8138392269611359
+  },
+  {
+   "name": "beam-100K-7-knowledge_update-0",
+   "user_id": "beam-100K-7",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5851,
+   "recall_seconds": 0.8366400049999356
+  },
+  {
+   "name": "beam-100K-7-knowledge_update-1",
+   "user_id": "beam-100K-7",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5842,
+   "recall_seconds": 0.8739778270246461
+  },
+  {
+   "name": "beam-100K-7-multi_session_reasoning-0",
+   "user_id": "beam-100K-7",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 0.8,
+   "efficiency_tokens": 5804,
+   "recall_seconds": 0.8449619810562581
+  },
+  {
+   "name": "beam-100K-7-multi_session_reasoning-1",
+   "user_id": "beam-100K-7",
+   "ability": "multi_session_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5814,
+   "recall_seconds": 0.87626706098672
+  },
+  {
+   "name": "beam-100K-7-preference_following-0",
+   "user_id": "beam-100K-7",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5936,
+   "recall_seconds": 0.9339550719596446
+  },
+  {
+   "name": "beam-100K-7-preference_following-1",
+   "user_id": "beam-100K-7",
+   "ability": "preference_following",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5736,
+   "recall_seconds": 0.9303224140312523
+  },
+  {
+   "name": "beam-100K-7-summarization-0",
+   "user_id": "beam-100K-7",
+   "ability": "summarization",
+   "score": 0.8,
+   "evidence_recall": 0.8,
+   "efficiency_tokens": 5973,
+   "recall_seconds": 0.996581933926791
+  },
+  {
+   "name": "beam-100K-7-summarization-1",
+   "user_id": "beam-100K-7",
+   "ability": "summarization",
+   "score": 0.75,
+   "evidence_recall": 0.5,
+   "efficiency_tokens": 5880,
+   "recall_seconds": 0.9033751200186089
+  },
+  {
+   "name": "beam-100K-7-temporal_reasoning-0",
+   "user_id": "beam-100K-7",
+   "ability": "temporal_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5969,
+   "recall_seconds": 0.973706484073773
+  },
+  {
+   "name": "beam-100K-7-temporal_reasoning-1",
+   "user_id": "beam-100K-7",
+   "ability": "temporal_reasoning",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5769,
+   "recall_seconds": 0.8843471260042861
+  },
+  {
+   "name": "beam-100K-8-abstention-0",
+   "user_id": "beam-100K-8",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5971,
+   "recall_seconds": 0.8098062769277021
+  },
+  {
+   "name": "beam-100K-8-abstention-1",
+   "user_id": "beam-100K-8",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5821,
+   "recall_seconds": 0.8596775030018762
+  },
+  {
+   "name": "beam-100K-8-contradiction_resolution-0",
+   "user_id": "beam-100K-8",
+   "ability": "contradiction_resolution",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5933,
+   "recall_seconds": 0.8737538119312376
+  },
+  {
+   "name": "beam-100K-8-contradiction_resolution-1",
+   "user_id": "beam-100K-8",
+   "ability": "contradiction_resolution",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5960,
+   "recall_seconds": 0.7920562629587948
+  },
+  {
+   "name": "beam-100K-8-event_ordering-0",
+   "user_id": "beam-100K-8",
+   "ability": "event_ordering",
+   "score": 0.18056171750003003,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5890,
+   "recall_seconds": 0.8660516949603334
+  },
+  {
+   "name": "beam-100K-8-event_ordering-1",
+   "user_id": "beam-100K-8",
+   "ability": "event_ordering",
+   "score": 0.28212670988463584,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5788,
+   "recall_seconds": 0.880557309021242
+  },
+  {
+   "name": "beam-100K-8-information_extraction-0",
+   "user_id": "beam-100K-8",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5975,
+   "recall_seconds": 0.8494023740058765
+  },
+  {
+   "name": "beam-100K-8-information_extraction-1",
+   "user_id": "beam-100K-8",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5827,
+   "recall_seconds": 0.8454335669521242
+  },
+  {
+   "name": "beam-100K-8-instruction_following-0",
+   "user_id": "beam-100K-8",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5807,
+   "recall_seconds": 0.8668308870401233
+  },
+  {
+   "name": "beam-100K-8-instruction_following-1",
+   "user_id": "beam-100K-8",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5944,
+   "recall_seconds": 0.8234064599964768
+  },
+  {
+   "name": "beam-100K-8-knowledge_update-0",
+   "user_id": "beam-100K-8",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5796,
+   "recall_seconds": 0.8139206409687176
+  },
+  {
+   "name": "beam-100K-8-knowledge_update-1",
+   "user_id": "beam-100K-8",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5676,
+   "recall_seconds": 0.7568512660218403
+  },
+  {
+   "name": "beam-100K-8-multi_session_reasoning-0",
+   "user_id": "beam-100K-8",
+   "ability": "multi_session_reasoning",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5829,
+   "recall_seconds": 0.8055593209573999
+  },
+  {
+   "name": "beam-100K-8-multi_session_reasoning-1",
+   "user_id": "beam-100K-8",
+   "ability": "multi_session_reasoning",
+   "score": 0.3333333333333333,
+   "evidence_recall": 0.25,
+   "efficiency_tokens": 5818,
+   "recall_seconds": 0.9257173259975389
+  },
+  {
+   "name": "beam-100K-8-preference_following-0",
+   "user_id": "beam-100K-8",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5888,
+   "recall_seconds": 0.8338287889491767
+  },
+  {
+   "name": "beam-100K-8-preference_following-1",
+   "user_id": "beam-100K-8",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5952,
+   "recall_seconds": 0.8403396200155839
+  },
+  {
+   "name": "beam-100K-8-summarization-0",
+   "user_id": "beam-100K-8",
+   "ability": "summarization",
+   "score": 0.375,
+   "evidence_recall": 0.4,
+   "efficiency_tokens": 5895,
+   "recall_seconds": 0.79806570103392
+  },
+  {
+   "name": "beam-100K-8-summarization-1",
+   "user_id": "beam-100K-8",
+   "ability": "summarization",
+   "score": 0.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5770,
+   "recall_seconds": 0.8771218759939075
+  },
+  {
+   "name": "beam-100K-8-temporal_reasoning-0",
+   "user_id": "beam-100K-8",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5934,
+   "recall_seconds": 0.8592816910240799
+  },
+  {
+   "name": "beam-100K-8-temporal_reasoning-1",
+   "user_id": "beam-100K-8",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5880,
+   "recall_seconds": 0.8986072529805824
+  },
+  {
+   "name": "beam-100K-9-abstention-0",
+   "user_id": "beam-100K-9",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5966,
+   "recall_seconds": 0.8523203830700368
+  },
+  {
+   "name": "beam-100K-9-abstention-1",
+   "user_id": "beam-100K-9",
+   "ability": "abstention",
+   "score": 0.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5809,
+   "recall_seconds": 0.8871605260064825
+  },
+  {
+   "name": "beam-100K-9-contradiction_resolution-0",
+   "user_id": "beam-100K-9",
+   "ability": "contradiction_resolution",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5738,
+   "recall_seconds": 0.8261028970591724
+  },
+  {
+   "name": "beam-100K-9-contradiction_resolution-1",
+   "user_id": "beam-100K-9",
+   "ability": "contradiction_resolution",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5914,
+   "recall_seconds": 0.8055481490446255
+  },
+  {
+   "name": "beam-100K-9-event_ordering-0",
+   "user_id": "beam-100K-9",
+   "ability": "event_ordering",
+   "score": 0.3113087293900547,
+   "evidence_recall": 0.3333333333333333,
+   "efficiency_tokens": 5922,
+   "recall_seconds": 0.8465413830708712
+  },
+  {
+   "name": "beam-100K-9-event_ordering-1",
+   "user_id": "beam-100K-9",
+   "ability": "event_ordering",
+   "score": 0.7049585128946637,
+   "evidence_recall": 0.8,
+   "efficiency_tokens": 5970,
+   "recall_seconds": 0.9042798799928278
+  },
+  {
+   "name": "beam-100K-9-information_extraction-0",
+   "user_id": "beam-100K-9",
+   "ability": "information_extraction",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5852,
+   "recall_seconds": 0.7867535490076989
+  },
+  {
+   "name": "beam-100K-9-information_extraction-1",
+   "user_id": "beam-100K-9",
+   "ability": "information_extraction",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5968,
+   "recall_seconds": 0.9103544810786843
+  },
+  {
+   "name": "beam-100K-9-instruction_following-0",
+   "user_id": "beam-100K-9",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5821,
+   "recall_seconds": 0.8104180200025439
+  },
+  {
+   "name": "beam-100K-9-instruction_following-1",
+   "user_id": "beam-100K-9",
+   "ability": "instruction_following",
+   "score": 1.0,
+   "evidence_recall": 0.0,
+   "efficiency_tokens": 5960,
+   "recall_seconds": 0.7998045380227268
+  },
+  {
+   "name": "beam-100K-9-knowledge_update-0",
+   "user_id": "beam-100K-9",
+   "ability": "knowledge_update",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5972,
+   "recall_seconds": 0.7900068659801036
+  },
+  {
+   "name": "beam-100K-9-knowledge_update-1",
+   "user_id": "beam-100K-9",
+   "ability": "knowledge_update",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5974,
+   "recall_seconds": 0.8512681520078331
+  },
+  {
+   "name": "beam-100K-9-multi_session_reasoning-0",
+   "user_id": "beam-100K-9",
+   "ability": "multi_session_reasoning",
+   "score": 0.8,
+   "evidence_recall": 0.3333333333333333,
+   "efficiency_tokens": 5741,
+   "recall_seconds": 0.8584822199773043
+  },
+  {
+   "name": "beam-100K-9-multi_session_reasoning-1",
+   "user_id": "beam-100K-9",
+   "ability": "multi_session_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5800,
+   "recall_seconds": 0.8547660539625213
+  },
+  {
+   "name": "beam-100K-9-preference_following-0",
+   "user_id": "beam-100K-9",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5792,
+   "recall_seconds": 0.8293133319821209
+  },
+  {
+   "name": "beam-100K-9-preference_following-1",
+   "user_id": "beam-100K-9",
+   "ability": "preference_following",
+   "score": 1.0,
+   "evidence_recall": null,
+   "efficiency_tokens": 5850,
+   "recall_seconds": 0.9077001629630104
+  },
+  {
+   "name": "beam-100K-9-summarization-0",
+   "user_id": "beam-100K-9",
+   "ability": "summarization",
+   "score": 0.2,
+   "evidence_recall": 0.2,
+   "efficiency_tokens": 5944,
+   "recall_seconds": 0.8248680880060419
+  },
+  {
+   "name": "beam-100K-9-summarization-1",
+   "user_id": "beam-100K-9",
+   "ability": "summarization",
+   "score": 0.4,
+   "evidence_recall": 0.2,
+   "efficiency_tokens": 5914,
+   "recall_seconds": 0.8579371640225872
+  },
+  {
+   "name": "beam-100K-9-temporal_reasoning-0",
+   "user_id": "beam-100K-9",
+   "ability": "temporal_reasoning",
+   "score": 0.0,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5956,
+   "recall_seconds": 0.8037255830131471
+  },
+  {
+   "name": "beam-100K-9-temporal_reasoning-1",
+   "user_id": "beam-100K-9",
+   "ability": "temporal_reasoning",
+   "score": 0.5,
+   "evidence_recall": 1.0,
+   "efficiency_tokens": 5914,
+   "recall_seconds": 0.9048660839907825
+  }
+ ]
+}

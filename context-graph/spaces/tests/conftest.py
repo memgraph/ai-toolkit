@@ -54,6 +54,20 @@ def _bootstrap_admin(url: str) -> None:
         driver.close()
 
 
+@pytest.fixture(scope="session")
+def warmed_embeddings(enterprise_url: str) -> None:
+    """Load the real model before recall starts its per-space response deadline."""
+    from sessions_graph.embeddings import check_available
+
+    from memgraph_toolbox.api.memgraph import Memgraph
+
+    client = Memgraph(url=enterprise_url, username=ADMIN[0], password=ADMIN[1], database="memgraph")
+    try:
+        check_available(client)
+    finally:
+        client.close()
+
+
 @pytest.fixture
 def admin(enterprise_url: str) -> Iterator[Query]:
     """An admin query function on a server cleared of every provisioner-owned object."""

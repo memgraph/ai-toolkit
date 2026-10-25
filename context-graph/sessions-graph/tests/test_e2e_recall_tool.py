@@ -58,6 +58,7 @@ def test_recall_reads_the_configured_users_memory(remembered, test_config):
     assert "osprey" not in result.text
     assert result.text.startswith("Memory recall for: What is the staging cluster called?")
     assert [turn["text"] for turn in result.structured["turns"]] == ["Our staging cluster is called kestrel."]
+    assert result.structured["exchanges"] and not result.structured["facts"]
 
 
 def test_recall_takes_its_widths_from_the_config(remembered, test_config):

@@ -10,7 +10,7 @@ answers from the rows, following the reading rules at their head (#394).
 Whose memory and which Memgraph come from the config file, never from the
 call, so a model can only read its own user's sessions. ``[recall]`` in the
 same file may override recall's lanes and widths (``turns_k = 12``); the
-defaults are what the benchmark measured.
+default exchange policy is documented in ``eval/recall-exchanges.md``.
 
 ``memory`` reads and writes the user's curated memory files with the Claude
 API memory tool's commands (``sessions_graph.memory_store``). It exists only
@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 _DESCRIPTION = """\
 Search the user's memory: their own past conversations with you and other agents, \
 across sessions and projects, including this one. Returns the matching messages \
-and the facts extracted from them, each dated, oldest first. Call it whenever the \
+grouped into dated exchanges, with saved memory notes first. Call it whenever the \
 user refers to something from before ("what did we decide about...", "the bug from \
 last week"), asks about their own preferences, plans, history or possessions, or \
 when earlier context would change your answer. Ask one specific question in the \

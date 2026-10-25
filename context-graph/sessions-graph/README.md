@@ -70,7 +70,7 @@ from it.
 ```python
 recalled = graph.recall("alice", "Which database did we pick for the cache?")
 print(recalled.render(today="2026-10-05"))  # header with reading rules, then the rows
-recalled.to_json()  # the same turns and facts as data
+recalled.to_json()  # source rows and exchange groups as data
 ```
 
 Recall combines six searches over the user's history:
@@ -84,9 +84,11 @@ Recall combines six searches over the user's history:
 | `facts` | Extracted facts nearest the question by vector |
 | `user_facts` | Facts grouped by relevant relation types, for questions that need a complete set |
 
-Matching memory files appear first, followed by dated turns and facts. The result includes the messages that support the retrieved facts. Without MAGE, recall falls back to text search and reports that in its output.
+Saved memory files come first. By default, recall then groups the related source messages into exchanges that fit a 6,000-token row budget per space, and uses extracted facts to rank them rather than showing them as separate claims. Supplemental search adds complementary problem-resolution exchanges. Set `packing="turns"` to restore separate turn and fact rows, or `supplemental_search=False` to turn off supplemental discovery. Without MAGE, recall falls back to text search and reports that in its output.
 
-Tune search widths with `RecallConfig.from_mapping(...)` or the config file's `[recall]` section. Coding agents call the same read path through the MCP `recall` tool; see [recall settings](../memgraph-context-graph/docs/memory.md#recall-memory-for-the-harnesss-model) and the [benchmark results](../eval/README.md#official-numbers).
+Exchange dependencies are included in the standard install; offline deployments must first populate the tokenizer cache, as described in [exchange recall](../eval/recall-exchanges.md). On the matched 400-question retrieval comparison, exchanges used 38.1% fewer context tokens than historical recall but took 0.859 s versus 0.744 s for optimized turns. A general quality improvement has not been established; the report records question-type regressions and the remaining validation.
+
+Tune search widths and packing with `RecallConfig.from_mapping(...)` or the config file's `[recall]` section; existing config files that omit the new keys adopt the defaults. Coding agents call the same read path through the MCP `recall` tool; see [recall settings](../memgraph-context-graph/docs/memory.md#recall-memory-for-the-harnesss-model) and the [benchmark results](../eval/README.md#official-numbers).
 
 ## Session reconciliation
 

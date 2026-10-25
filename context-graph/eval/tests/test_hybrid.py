@@ -43,7 +43,8 @@ def test_ensure_recall_ready_embeds_what_is_missing_once(owned_session: ActionsG
 
 
 @pytest.mark.asyncio
-async def test_the_answerer_reads_exactly_the_rows_recall_found(owned_session: ActionsGraph):
+@pytest.mark.parametrize("packing", [None, "turns"])
+async def test_the_answerer_reads_exactly_the_rows_recall_found(owned_session: ActionsGraph, packing):
     ensure_recall_ready(owned_session.db)
 
     result = await retrieve_hybrid(
@@ -51,14 +52,15 @@ async def test_the_answerer_reads_exactly_the_rows_recall_found(owned_session: A
         graph=ReadOnlyGraph(owned_session.db),
         llm=_EchoLLM(),
         user_id="u1",
-        config=RecallConfig(lanes=("turns", "text")),
+        config=None if packing is None else RecallConfig(lanes=("turns", "text"), packing=packing),
         today="2023-06-01",
     )
 
-    assert result.retrieval_context == [
-        "TURN [session s1, 2023-05-30T17:27, user]: I went to the Museum of Modern Art. It was wonderful."
-    ]
-    assert result.retrieval_context[0] in result.answer
+    expected = ["TURN [session s1, 2023-05-30T17:27, user]: I went to the Museum of Modern Art. It was wonderful."]
+    if packing is None:
+        expected.insert(0, "EXCHANGE [session s1, 2023-05-30T17:27:00]:")
+    assert result.retrieval_context == expected
+    assert "\n".join(expected) in result.answer
     assert "The question is being asked on 2023-06-01." in result.answer
     assert not result.errors
 

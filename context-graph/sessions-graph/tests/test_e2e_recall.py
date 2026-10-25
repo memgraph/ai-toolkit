@@ -68,7 +68,9 @@ def moma(graph, memgraph, actions_graph):
 
 
 def test_the_facts_lane_reaches_the_turn_a_fact_was_read_from(graph, moma):
-    recalled = graph.recall("u1", "When did I visit the Museum of Modern Art?", config=RecallConfig(lanes=("facts",)))
+    recalled = graph.recall(
+        "u1", "When did I visit the Museum of Modern Art?", config=RecallConfig(packing="turns", lanes=("facts",))
+    )
 
     lines = recalled.lines()
     assert (
@@ -96,7 +98,9 @@ def test_user_facts_gathers_every_fact_of_a_relation_type_across_sessions(graph,
     _ready(graph, memgraph)
 
     recalled = graph.recall(
-        "u1", "How many weddings have I attended?", config=RecallConfig(lanes=("user_facts",), user_fact_types=1)
+        "u1",
+        "How many weddings have I attended?",
+        config=RecallConfig(packing="turns", lanes=("user_facts",), user_fact_types=1),
     )
 
     assert [fact.type for fact in recalled.facts] == ["attended"] * 3
@@ -124,7 +128,9 @@ def test_turns_come_before_facts_and_both_in_time_order(graph, memgraph, actions
              said="I went to the Museum of Modern Art with Anna.")  # fmt: skip
     _ready(graph, memgraph)
 
-    lines = graph.recall("u1", "Museum of Modern Art", config=RecallConfig(lanes=("turns", "facts"))).lines()
+    lines = graph.recall(
+        "u1", "Museum of Modern Art", config=RecallConfig(packing="turns", lanes=("turns", "facts"))
+    ).lines()
 
     kinds = [line.split(" ", 1)[0] for line in lines]
     assert kinds == sorted(kinds, key=lambda kind: kind != "TURN")
@@ -230,7 +236,9 @@ def test_user_facts_reads_facts_whose_head_is_not_the_user(graph, memgraph, acti
     _ready(graph, memgraph)
 
     recalled = graph.recall(
-        "u1", "What do my services depend on?", config=RecallConfig(lanes=("user_facts",), user_fact_types=1)
+        "u1",
+        "What do my services depend on?",
+        config=RecallConfig(packing="turns", lanes=("user_facts",), user_fact_types=1),
     )
 
     assert sorted((fact.head, fact.tail) for fact in recalled.facts) == [("billing", "serde"), ("ingest", "tokio")]
@@ -261,7 +269,9 @@ def test_user_fact_types_rank_by_their_description_from_the_adopted_version(grap
     _ready(graph, memgraph)
 
     recalled = graph.recall(
-        "u1", "Which exact release did I lock it to?", config=RecallConfig(lanes=("user_facts",), user_fact_types=1)
+        "u1",
+        "Which exact release did I lock it to?",
+        config=RecallConfig(packing="turns", lanes=("user_facts",), user_fact_types=1),
     )
 
     assert [fact.type for fact in recalled.facts] == ["pins"]

@@ -87,7 +87,7 @@ The query string follows [Tantivy query syntax](https://docs.rs/tantivy/latest/t
 | `search_memories(user_id, query, *, limit=10)` | Full-text search over Memory content. |
 | `update_memory(memory_id, content)` | Replace the content of an existing Memory. Returns `None` if not found. |
 | `delete_memory(memory_id)` | Remove a Memory and all its relationships. |
-| `recall(user_id, question, *, config=None, model=DEFAULT_EMBEDDING_MODEL)` | What the user's own sessions hold about `question`, as `Recalled` (turns and facts; `lines()`, `render(today)`, `to_json()`). See [Recall](../README.md#recall). |
+| `recall(user_id, question, *, config=None, model=DEFAULT_EMBEDDING_MODEL)` | What the user's own sessions hold about `question`, as `Recalled` (source rows and exchange groups; `lines()`, `render(today)`, `to_json()`). See [Recall](../README.md#recall). |
 | `record_session_start(session_id, *, user_id, project_key)` | MERGE the Session, owned by `user_id` and in `project_key` when known. The connector calls it on session start. |
 | `reconciler` | The graph's `Reconciler`, below: extraction and embedding over the same connection. |
 

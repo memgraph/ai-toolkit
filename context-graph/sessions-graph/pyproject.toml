@@ -15,9 +15,13 @@ dependencies = [
     "memgraph-toolbox>=0.2.2",
     # The Session Node's shape and constraint (memgraph_context_graph.session).
     "memgraph-context-graph",
+    "tiktoken>=0.8.0",
+    "nltk>=3.9.1",
 ]
 
 [project.optional-dependencies]
+# Compatibility alias: exchange packing dependencies are now installed by default.
+compact = []
 # MemgraphMemoryTool: the memory tool for apps built on the Claude API.
 anthropic = [
     "anthropic>=0.74.0",
