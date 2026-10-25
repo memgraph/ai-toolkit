@@ -382,7 +382,7 @@ from it.
 ```python
 recalled = graph.recall("alice", "Which database did we pick for the cache?")
 print(recalled.render(today="2026-10-05"))  # header with reading rules, then the rows
-recalled.to_json()  # the same turns and facts as data
+recalled.to_json()  # source rows and exchange groups as data
 ```
 
 Five lanes, each over the user's own history only:
@@ -395,31 +395,27 @@ Five lanes, each over the user's own history only:
 | `facts` | extracted facts nearest it by vector |
 | `user_facts` | every fact of the relation types nearest it, read from the user's turns across all sessions, whatever its head. Types rank by name and description from the user's ontology version, and retired types stay readable |
 
-Then the turns the facts were read from are added. Turns come first, then
-facts, each group in time order. This is the hybrid retrieval
-`context-graph-eval run --retrieval-strategy hybrid` benchmarks, through
-this same code: 89/100 on LongMemEval's own judge (run `g417-recall-r1`,
-100 questions, map #390).
+Then the turns the facts were read from are added. By default, recall groups
+related source messages into exchanges and uses extracted facts for ranking,
+without displaying them as separate claims. Saved memory notes come first;
+whole exchanges fit within a 6,000-token row budget per space. Supplemental
+search for complementary problem-resolution exchanges is enabled. Fused results
+preserve space-local groups; rendering instructions are outside the budget.
 
-Widths default to the benchmarked setup; `RecallConfig.from_mapping(...)`
-overrides them (e.g. from a config file's `[recall]` section). Similarity is
-computed exactly over the user's own vectors, which costs time linear in
-their history: about 0.6 s for a few hundred messages, 0.7 s at 10k, 6.7 s at
-100k. Without MAGE, recall runs text search alone and says so in its result.
+`RecallConfig.from_mapping(...)` overrides these settings (e.g. from `[recall]`).
+Set `packing="turns"` to restore separate turn/fact rows, or
+`supplemental_search=False` to disable supplemental discovery. Existing config
+files that omit these keys adopt the new defaults. Exchange dependencies are
+included in the standard install; offline deployments must first populate the
+tokenizer cache as described in [exchange recall](../eval/recall-exchanges.md).
 
-For experimental bounded source context, install `sessions-graph[compact]` and
-set `RecallConfig(packing="exchanges", token_budget=6000, supplemental_search=True)`
-or the same keys in `[recall]`; this groups source messages and uses extracted
-facts for ranking. The budget applies per space, and fused results preserve
-space-local groups. See [exchange recall](../eval/recall-exchanges.md) for setup
-(including the tokenizer's one-time download), policy limits and evaluation;
-the matched 400-question retrieval comparison used 38.1% fewer tokens with
-exchanges, but a quality improvement has not been established.
-
-Turn/fact formatting remains the default. Retrieval itself changes in this
-release: vector hits fill distinct source slots, text words are searched
-literally, and fact selection has deterministic ordering. Historical benchmark
-scores do not establish the quality of this revised default.
+Similarity is computed exactly over the user's own vectors, so its cost grows
+with history. Without MAGE, recall uses text search and says so in its result.
+The matched 400-question retrieval comparison used 38.1% fewer context tokens
+with exchanges than historical recall, but exchanges took 0.859 s versus
+0.744 s for optimized turns. A general quality improvement has not been
+established; the evaluation report records question-type regressions and the
+remaining validation. Official historical benchmark scores are unchanged.
 
 
 Harnesses reach it as the `recall` tool: sessions-graph registers it under

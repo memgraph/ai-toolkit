@@ -1,4 +1,4 @@
-"""Opt-in bounded exchange retrieval over existing sources; no graph writes or extraction."""
+"""Bounded exchange retrieval over existing sources; no graph writes or extraction."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from .recall import _STOPWORDS, _TEXT, RecallConfig, Recalled, Turn, _safe_query
 if TYPE_CHECKING:
     from tiktoken import Encoding
 
-# Experimental policy selected during BEAM 100K development; see eval/recall-exchanges.md.
+# Policy selected during BEAM 100K development; see eval/recall-exchanges.md for evidence and limits.
 MIN_DIRECT_SOURCES = 24
 MIN_FACT_SOURCES = 16
 PASSAGE_NEIGHBOR_HOPS = 3
@@ -64,14 +64,14 @@ _NEIGHBORS = (
 
 
 def prepare(config: RecallConfig) -> RecallConfig:
-    """Check optional dependencies and widen enabled source lanes for exchange ranking."""
+    """Initialize dependencies and widen enabled source lanes for exchange ranking."""
     try:
         import tiktoken  # noqa: F401 -- fail early before any graph or model work
 
         if config.supplemental_search:
             import nltk  # noqa: F401 -- the local BM25 stemmer requires no downloaded corpus
     except ImportError as exc:
-        raise ImportError("Exchange recall requires sessions-graph[compact]") from exc
+        raise ImportError("Exchange recall requires tiktoken and nltk; reinstall sessions-graph") from exc
     _encoding()
     if config.token_budget < 0:
         raise ValueError("recall token_budget must be >= 0")

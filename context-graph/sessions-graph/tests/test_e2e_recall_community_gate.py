@@ -1,4 +1,4 @@
-"""The Community gate: recall through the config's single space renders exactly what it rendered before spaces.
+"""The Community gate: default exchanges and explicit turns keep their frozen single-space output.
 
 Map #501 decided that the Enterprise edition must not change Community: with
 one space, fanning recall out across spaces and fusing their ranks has to give
@@ -25,7 +25,7 @@ from memgraph_context_graph.adapters._identity import HookConfig
 
 from .conftest import link_user
 
-EXPECTED = Path(__file__).parent / "fixtures" / "recall_community_gate.json"
+FIXTURES = Path(__file__).parent / "fixtures"
 
 _TURNS = {
     "u1": [
@@ -74,14 +74,15 @@ def community_graph(graph, memgraph, actions_graph, requires_mage):
     memgraph.query("MATCH (m:Memory) SET m.updated_at = '2026-09-06T12:00:00+00:00'")
 
 
-def _community_config() -> HookConfig:
+def _community_config(packing: str) -> HookConfig:
     return HookConfig(
         user_id="u1",
         memgraph_url=os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687"),
         memgraph_user=os.environ.get("MEMGRAPH_USER", ""),
         memgraph_password=os.environ.get("MEMGRAPH_PASSWORD", ""),
         memgraph_database=os.environ.get("MEMGRAPH_DATABASE", "memgraph"),
-        recall_settings=WIDTHS,
+        # Leave packing unset in the exchange case to exercise the product default.
+        recall_settings=WIDTHS if packing == "exchanges" else {**WIDTHS, "packing": packing},
     )
 
 
@@ -89,14 +90,17 @@ def _without_today(text: str) -> str:
     return "\n".join(line for line in text.splitlines() if not line.startswith("Today is "))
 
 
-def test_community_recall_is_unchanged(community_graph):
+@pytest.mark.parametrize("packing", ["turns", "exchanges"])
+def test_community_recall_is_unchanged(community_graph, packing):
     tool = RecallTool()
     rendered = {
-        question: _without_today(tool.call({"question": question}, _community_config()).text) for question in QUESTIONS
+        question: _without_today(tool.call({"question": question}, _community_config(packing)).text)
+        for question in QUESTIONS
     }
+    expected = FIXTURES / ("recall_community_gate.json" if packing == "turns" else "recall_community_exchanges.json")
 
     if os.environ.get("RECALL_GATE_REGENERATE"):
-        EXPECTED.parent.mkdir(exist_ok=True)
-        EXPECTED.write_text(json.dumps(rendered, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    assert rendered == json.loads(EXPECTED.read_text(encoding="utf-8"))
+        expected.parent.mkdir(exist_ok=True)
+        expected.write_text(json.dumps(rendered, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    assert rendered == json.loads(expected.read_text(encoding="utf-8"))
     assert "osprey" not in json.dumps(rendered)

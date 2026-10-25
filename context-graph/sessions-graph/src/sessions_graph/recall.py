@@ -18,9 +18,10 @@ hit, the one a fact was read from, the one sharing most words with the
 question. The result is the evidence, not an
 answer: the caller's model answers from it. This is the hybrid retrieval the
 eval benchmarks (``context-graph-eval run --retrieval-strategy hybrid``),
-which calls this same code. Opt-in exchange packing instead groups related
+which calls this same code. Default exchange packing groups related
 source messages, uses facts only for ranking, and budgets whole groups together
-with memory notes. Supplemental discovery is separately opt-in.
+with memory notes. Supplemental discovery is enabled by default; turn/fact
+packing remains available with ``packing="turns"``.
 
 Vectors come from :mod:`.embeddings`, so similarity is computed in Memgraph
 over the user's own rows (``vector_search.search`` has no filter, and a
@@ -80,12 +81,12 @@ class RecallConfig:
     #: Prepended to the question before embedding it; None means :func:`query_instruction` for the model.
     query_instruction: str | None = None
 
-    #: Opt-in coherent, source-only exchanges; the default preserves turn/fact rows.
-    packing: Literal["turns", "exchanges"] = "turns"
+    #: Coherent, source-only exchanges; "turns" selects separate turn/fact rows.
+    packing: Literal["turns", "exchanges"] = "exchanges"
     #: Row budget in cl100k_base tokens, including exchange headers and separators.
     token_budget: int = 6000
     #: Discover problem-resolution episodes in vector-selected sessions (exchange packing only).
-    supplemental_search: bool = False
+    supplemental_search: bool = True
 
     def __post_init__(self) -> None:
         if self.packing not in ("turns", "exchanges"):
@@ -397,12 +398,13 @@ def recall(
         db: Anything with ``query(cypher, params)``, e.g. a ``Memgraph`` client.
         user_id: Whose memory; nothing from another user is read.
         question: Searched as written.
-        config: Lanes and widths; the default widths when omitted.
+        config: Lanes, widths and packing; budgeted exchanges when omitted.
         model: The embedding model the stored vectors were made with.
 
     Returns:
-        Selected memory notes and chronological turns/facts, or budgeted source
-        exchanges when enabled. Extracted facts rank exchanges but are not rendered.
+        Selected memory notes and budgeted source exchanges by default, or
+        chronological turn/fact rows with packing="turns". Extracted facts rank
+        exchanges but are not rendered.
     """
     config = config or RecallConfig()
     if config.packing == "exchanges":
