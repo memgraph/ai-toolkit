@@ -77,7 +77,7 @@ and the graph's data are untouched, and running it again changes nothing.
 Running agent sessions keep the hooks they loaded: restart them. Outside the uv tool (a virtualenv, say) the
 package step only warns, and you upgrade it yourself first.
 
-**Identity and connection.** setup writes `~/.config/context-graph/config.toml`; hooks read their configuration from that file at runtime (see [Configuration](../README.md#configuration) — env vars are **not** read at hook time). To change your identity later:
+**Identity and connection.** setup writes `~/.config/context-graph/config.toml`; hooks read their configuration from that file at runtime (see [Configuration](configuration.md) — env vars are **not** read at hook time). To change your identity later:
 
 ```bash
 memgraph-context-graph config set identity.user_id "your-name"

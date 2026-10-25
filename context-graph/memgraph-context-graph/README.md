@@ -16,6 +16,8 @@ uv tool install 'memgraph-context-graph[mcp]' \
 memgraph-context-graph setup
 ```
 
+The `mcp` extra provides the MCP server that `memgraph-context-graph mcp` uses to serve `recall` and `memory` to agents.
+
 For a Python application, install the extra for your SDK and the graph components you need; see [Memory for SDK apps](#memory-for-sdk-apps).
 
 ## Setup
@@ -107,6 +109,8 @@ Adapters translate runtime-specific activity. Connectors decide what to persist 
 
 | Read more | Covers |
 |---|---|
+| [Claude Code plugin](../plugins/memgraph-context-graph-claude/) | Marketplace install and plugin specifics |
+| [Codex plugin](../plugins/memgraph-context-graph-codex/) | Marketplace install, hook trust, and tool approval |
 | [Command-hook reference](docs/command-hooks.md) | Payloads, generated files, and runtime differences |
 | [Architecture and extensions](docs/extending.md) | Events, custom connectors, and runtime registrations |
 | [Actions Graph](../actions-graph/) | Tool calls, messages, and subagents |

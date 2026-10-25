@@ -90,12 +90,13 @@ Each package's README covers its connection settings and examples. LLM-based fea
 This is a Python 3.10+ [uv](https://docs.astral.sh/uv/) workspace. From the repository root:
 
 ```bash
-uv venv
 uv sync --all-packages --all-extras
-uv run ruff check .
-uv run ruff format --check .
-uv run ty check .
+uvx ruff@0.16.0 check .
+uvx ruff@0.16.0 format --check .
+uvx ty@0.0.75 check .
 ```
+
+These are the versions CI pins in the [lint workflow](.github/workflows/lint.yaml).
 
 Context Graph, HyGM, and unstructured2graph use an isolated test Memgraph managed by the development script:
 

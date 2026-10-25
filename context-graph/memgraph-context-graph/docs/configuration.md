@@ -12,6 +12,8 @@ A `[recall]` or `[extraction]` value is checked by sessions-graph when you set i
 reject never reaches the file.
 One table, `memgraph_context_graph/config_schema.py`, defines every key: the file, `config show`,
 `config get` and `config set` all follow it. **Hook subprocesses resolve their configuration from CLI flags and this file only — never from environment variables** (they don't inherit your shell), per [ADR 0002](adr/0002-config-file-only-hook-resolution.md).
+Neither does setup: it writes only `memgraph.url` and `identity.user_id`, from its flags or what it
+found. Everything else is set with `config set`, and setup leaves it alone when it rewrites the file.
 
 ```toml
 [identity]
@@ -58,14 +60,14 @@ command names no `--connector`, from `skills-graph`, `actions-graph`,
 `sessions-graph` and `resources-graph`; unset means the first three, and
 an empty value enables none. Setup installs the ones it names.
 The rest of `[capture]` and `[redact]` are the capture policy, applied to every
-event before any connector stores it (see [Capture privacy](../README.md#capture-privacy)).
+event before any connector stores it (see [Capture privacy](#capture-privacy)).
 A commented-out key means "never configured," distinct from an explicit
 `auto_reconcile = false`.
 `[recall]` is optional too: without it, recall runs with the widths the
-benchmark measured; see [Recall](../README.md#recall-memory-for-the-harnesss-model).
+benchmark measured; see [Recall](memory.md#recall-memory-for-the-harnesss-model).
 `[ontology]` is optional as well: `path` names a schema file the user's
 sessions are extracted under and `derive` is `extend` (the default) or
-`off`; see sessions-graph's [Ontology versions](../../sessions-graph/README.md#ontology-versions).
+`off`; see sessions-graph's [Ontology versions](../../sessions-graph/docs/reconciliation.md#ontology-versions).
 `[extraction]` tunes how reconciliation, re-extraction and derivation read
 sessions, all optional: `model` (a GLiNER2 checkpoint), `entity_threshold` and
 `relation_threshold` (drop extractions below that confidence, 0 to 1), and
@@ -134,7 +136,3 @@ versions just stop naming it). A forgotten session leaves only a
 reconciliation in progress, or a later resume of the same session from capturing
 it again. It runs against your own graph; in Enterprise, shared spaces are not
 touched.
-
-Hooks never read environment variables for these values, and neither does setup: it writes only
-`memgraph.url` and `identity.user_id`, from its flags or what it found. Everything else is set with
-`config set`, and setup leaves it alone when it rewrites the file.

@@ -7,7 +7,7 @@
 Session reconciliation runs a session's Actions Graph content (Messages,
 ToolCalls, ToolResults) through [unstructured2graph](../../../unstructured2graph)
 as one document, extracting entities with local GLiNER2 under the user's
-[ontology version](../README.md#ontology-versions) (or another `ExtractionBackend` passed
+[ontology version](#ontology-versions) (or another `ExtractionBackend` passed
 as `graph.reconciler.reconcile(..., extraction_backend=...)`), and links them back to
 the session that produced them. See [`CONTEXT.md`](../CONTEXT.md#language) for
 the terminology.
@@ -31,7 +31,7 @@ themselves and uses the extracted graph as an index into them.
 
 This requires the `sessions-graph[reconciliation]` extra and no LLM API key.
 A key (`llm.anthropic_api_key` or `llm.openai_api_key`) only enables
-[ontology derivation](../README.md#ontology-versions); without one, users stay on their
+[ontology derivation](#ontology-versions); without one, users stay on their
 adopted ontology.
 
 **Extraction settings.** The CLI reads the config file's `[extraction]`

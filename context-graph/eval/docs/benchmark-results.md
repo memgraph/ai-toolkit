@@ -2,6 +2,8 @@
 
 [Back to the evaluation guide](../README.md)
 
+Paths in commands and file references below are relative to `context-graph/eval/`.
+
 ## Version point: LongMemEval-S, hybrid recall over a GLiNER2 graph (2026-10-23)
 
 The full LongMemEval-S benchmark through the shipped read path: all 500

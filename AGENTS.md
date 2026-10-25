@@ -98,10 +98,9 @@ ruff check --fix . && ruff format .
 trailing-whitespace/end-of-file-fixer/check-yaml/check-toml/large-file/merge-conflict checks.
 
 **Tests, non-context-graph packages** — start a plain Memgraph container and
-run pytest in the package directory (see root `README.md` "Developing
-Locally" and `tests.yaml` for per-package extras/env vars, e.g.
-`langchain-memgraph` and `memgraph-toolbox`'s evaluation extras need
-`OPENAI_API_KEY`).
+run pytest in the package directory (see `tests.yaml` and the package's
+README for per-package extras/env vars, e.g. `langchain-memgraph` and
+`memgraph-toolbox`'s evaluation extras need `OPENAI_API_KEY`).
 
 **Tests, Context Graph family + unstructured2graph** — these test against a
 *real* Memgraph, not mocks (see Testing policy below). Don't hand-start a

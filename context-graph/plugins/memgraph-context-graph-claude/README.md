@@ -44,11 +44,11 @@ memgraph-context-graph config set memgraph.url "bolt://my-host:7687"
 memgraph-context-graph config set memgraph.password  # prompts
 ```
 
-See [configuration and privacy](../../memgraph-context-graph/docs/configuration.md) for capture controls and connection settings.
+Setup writes your identity; sessions-graph needs `identity.user_id` to attach sessions to you. See [configuration and privacy](../../memgraph-context-graph/docs/configuration.md) for capture controls and connection settings.
 
 ## Reconcile captured sessions
 
-To extract entities and relationships, install `sessions-graph[reconciliation]` in the environment running the command, then run:
+To extract entities and relationships, add the `reconciliation` extra ([how](../../README.md#turn-conversations-into-a-knowledge-graph)), then run:
 
 ```bash
 sessions-graph reconcile --pending

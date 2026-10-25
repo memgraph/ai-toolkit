@@ -14,10 +14,10 @@ or the recall), measured end to end on two public benchmarks. Each row is a
 committed baseline with its settings; the [benchmark reports](docs/benchmark-results.md) have the per-type
 breakdowns, reproduction commands, and caveats.
 
-| Benchmark | Questions | Answer score | Evidence recall | Recall latency (mean) |
-|---|---|---|---|---|
-| [LongMemEval-S](docs/benchmark-results.md#version-point-longmemeval-s-hybrid-recall-over-a-gliner2-graph-2026-10-23), full haystacks | 500 | **87.0%** | 0.92 | 2.85 s |
-| [BEAM 100K](docs/benchmark-results.md#version-point-beam-100k-hybrid-recall-over-a-gliner2-graph-2026-10-14) | 400 | **63.6%** | 0.60 | 8.8 s |
+| Benchmark | Questions | Answer score | Evidence recall | Retrieval tokens | Recall latency (mean) |
+|---|---|---|---|---|---|
+| [LongMemEval-S](docs/benchmark-results.md#version-point-longmemeval-s-hybrid-recall-over-a-gliner2-graph-2026-10-23), full haystacks | 500 | **87.0%** | 0.92 | 6,465 | 2.85 s |
+| [BEAM 100K](docs/benchmark-results.md#version-point-beam-100k-hybrid-recall-over-a-gliner2-graph-2026-10-14) | 400 | **63.6%** | 0.60 | 9,451 | 8.8 s |
 
 **Answer score** is the headline both share: the share of the answer key the
 system's answer gets right, as decided by the benchmark's own judge. On

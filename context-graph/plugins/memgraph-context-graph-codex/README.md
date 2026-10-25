@@ -24,14 +24,16 @@ The plugin supplies wiring; it also needs the Python CLI and connectors. From th
 
 ## Codex hook trust
 
-Trust the plugin's hooks in Codex's startup review or `/hooks` before using it. Until trusted, hooks do not capture activity or add session-start context. For unattended runs, trust them once interactively before using `codex exec`.
+Trust the plugin's hooks in Codex's startup review or `/hooks` before using it. Until trusted, hooks do not capture activity or add session-start context. `codex exec` never asks, so for unattended runs trust them once interactively or pass `--dangerously-bypass-hook-trust`.
 
-Setup allows the plugin's MCP tools in `~/.codex/config.toml`, so recall works when approval prompts are disabled. It keeps an approval mode you explicitly chose:
+Setup allows the plugin's MCP tools in `~/.codex/config.toml`, so recall works when approval prompts are disabled (under `approval_policy = "never"`, a prompt is a refusal). This is the entry setup writes, and uninstall removes it:
 
 ```toml
 [plugins."context-graph@context-graph-plugins".mcp_servers.context-graph]
 default_tools_approval_mode = "approve"
 ```
+
+To be asked before each call, set it to `"prompt"`; setup keeps a mode you chose.
 
 The plugin forwards `CONTEXT_GRAPH_CONFIG` to its MCP server so it reads from the same graph as the hooks.
 
@@ -55,11 +57,11 @@ memgraph-context-graph config set memgraph.url "bolt://my-host:7687"
 memgraph-context-graph config set memgraph.password  # prompts
 ```
 
-See [configuration and privacy](../../memgraph-context-graph/docs/configuration.md) for capture controls and connection settings.
+Setup writes your identity; sessions-graph needs `identity.user_id` to attach sessions to you. See [configuration and privacy](../../memgraph-context-graph/docs/configuration.md) for capture controls and connection settings.
 
 ## Reconcile captured sessions
 
-To extract entities and relationships, install `sessions-graph[reconciliation]` in the environment running the command, then run:
+To extract entities and relationships, add the `reconciliation` extra ([how](../../README.md#turn-conversations-into-a-knowledge-graph)), then run:
 
 ```bash
 sessions-graph reconcile --pending

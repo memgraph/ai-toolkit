@@ -12,7 +12,12 @@ Works with **Claude Code, Codex, Copilot CLI, Cursor, OpenCode, Antigravity CLI,
 curl -fsSL https://raw.githubusercontent.com/memgraph/ai-toolkit/main/context-graph/scripts/install.sh | bash
 ```
 
-Setup installs the CLI and connectors, lets you select agents, sets your identity, and checks the result. It uses the Memgraph configured for Context Graph or starts its own persistent Docker container. To connect to a database you manage, pass `--memgraph-url`.
+Setup installs the CLI and connectors, lets you select agents, sets your identity, and checks the result. It uses the Memgraph configured for Context Graph or starts its own persistent Docker container. To pick agents or connect to a database you manage, pass setup's arguments through the pipe:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/memgraph/ai-toolkit/main/context-graph/scripts/install.sh \
+  | bash -s -- codex --memgraph-url bolt://my-host:7687
+```
 
 Claude Code and Codex get user-wide plugins. The other agents get hooks in the project you select and an MCP server in their user configuration. Restart your agent after installation; Codex also asks you to trust the hooks.
 
@@ -49,7 +54,7 @@ memgraph-context-graph ui
 The [terminal viewer](viewer/) shows capture health, session timelines, pending processing, and extracted entities. Setup installs it by default. You can also query the graph in Memgraph Lab or any Bolt client:
 
 ```cypher
-MATCH (:User {user_id: "your-name"})-[:HAD_SESSION]->(s:Session)-[:HAS_ACTION]->(a:ToolCall)
+MATCH (:User {user_id: "your-name"})-[:HAD_SESSION]->(s:Session)-[:HAS_ACTION|HAS_AGENT*1..2]->(a:ToolCall)
 RETURN s.session_id, a.tool_name, count(*) AS calls
 ORDER BY calls DESC;
 ```
@@ -62,7 +67,18 @@ Capture records activity immediately. Reconciliation extracts entities and relat
 sessions-graph reconcile --pending
 ```
 
-Install `sessions-graph[reconciliation]` in the environment running that command if it is missing. No LLM key is needed for extraction; an optional key enables learning the user's ontology from their sessions.
+Setup does not install the `reconciliation` extra. For the installer's uv tool, add it by reinstalling the tool; `uv tool install` replaces the tool's packages, so name all of them:
+
+```bash
+uv tool install 'memgraph-context-graph[mcp]' \
+  --with 'skills-graph[memgraph-context-graph]' \
+  --with 'actions-graph[memgraph-context-graph]' \
+  --with 'sessions-graph[memgraph-context-graph,reconciliation]' \
+  --with context-graph-viewer \
+  --with-executables-from sessions-graph
+```
+
+Later `update` runs keep the extra. No LLM key is needed for extraction; an optional key enables learning the user's ontology from their sessions.
 
 For agents that emit a session-end event, `reconcile.auto_reconcile` can trigger this automatically. Turn ends still queue work for agents that do not emit session end, so use a scheduled `--pending` sweep to process those. See [reconciliation](sessions-graph/docs/reconciliation.md) for configuration, ontology versions, and embedding catch-up.
 

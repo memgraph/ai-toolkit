@@ -81,7 +81,7 @@ The query string follows [Tantivy query syntax](https://docs.rs/tantivy/latest/t
 |---|---|
 | `setup()` | Create constraints, text index, and reconciliation indexes. Run once on first use. |
 | `save_memory(user_id, content, *, session_id, memory_id, path)` | Persist a new Memory at `path` (default `/memories/notes/<memory_id>.md`). Returns the stored `Memory` object. |
-| `memory_store(user_id, *, session_id=None)` | The memory tool's file commands over the user's Memories. See [Memory files](../README.md#memory-files). |
+| `memory_store(user_id, *, session_id=None)` | The memory tool's file commands over the user's Memories. See [Memory files](#memory-files). |
 | `get_memories(user_id)` | Return all Memories for a user, newest first. |
 | `get_memories_for_session(session_id)` | Return all Memories produced by a session, newest first. |
 | `search_memories(user_id, query, *, limit=10)` | Full-text search over Memory content. |
@@ -98,9 +98,9 @@ processing status (`reconciliation_*`, `reextract*`, `embedding_*`,
 
 | Method | Description |
 |---|---|
-| `async reconcile(session_id, *, extraction_backend=None, promote_labels=False, enforce_ontology=False, ontology_path=None, embedding_model=DEFAULT_EMBEDDING_MODEL, reextract=False)` | Reconcile one session, then embed what it wrote (see [Embeddings for recall](../README.md#embeddings-for-recall)). Extracts with GLiNER2 under the user's adopted ontology version unless `extraction_backend` overrides it. No LLM. Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
+| `async reconcile(session_id, *, extraction_backend=None, promote_labels=False, enforce_ontology=False, ontology_path=None, embedding_model=DEFAULT_EMBEDDING_MODEL, reextract=False)` | Reconcile one session, then embed what it wrote (see [Embeddings for recall](reconciliation.md#embeddings-for-recall)). Extracts with GLiNER2 under the user's adopted ontology version unless `extraction_backend` overrides it. No LLM. Returns a `ReconciliationSummary`. Requires the `reconciliation` extra. |
 | `async reconcile_batch(session_ids, *, lightrag_wrapper, ...)` | Reconcile many sessions with LightRAG as one processing pass. |
-| `async reconcile_memory(memory_id, *, extraction_backend=None, enforce_ontology=True, embedding_model=DEFAULT_EMBEDDING_MODEL)` | Re-extract one memory file, replacing what its previous text produced. See [Session reconciliation](../README.md#session-reconciliation). |
+| `async reconcile_memory(memory_id, *, extraction_backend=None, enforce_ontology=True, embedding_model=DEFAULT_EMBEDDING_MODEL)` | Re-extract one memory file, replacing what its previous text produced. See [Session reconciliation](reconciliation.md#session-reconciliation). |
 | `mark_pending(session_id)` | Queue the session for the next `reconcile --pending` sweep. |
 | `pending_sessions(*, limit=100)` | Session IDs marked `reconciliation_status = 'pending'`. |
 | `pending_memories(*, limit=100)` | Memory IDs whose file changed since it was last reconciled. |

@@ -208,8 +208,15 @@ CONNECTOR = ConnectorSpec(
 my-graph = "my_graph.connector:CONNECTOR"
 ```
 
-Once installed, `hook run <runtime> --connector my-graph`, `[capture] connectors = ["my-graph"]` and
-`doctor` work like the built-in connectors. `setup` only installs the connectors listed in
+Once installed, `hook run <runtime> --connector my-graph`, `[capture] connectors` and `doctor` work
+like the built-in connectors. The config file has no arrays: `connectors` is a comma-separated string,
+and it replaces the defaults, so list them too to keep them:
+
+```bash
+memgraph-context-graph config set capture.connectors "skills-graph, actions-graph, sessions-graph, my-graph"
+```
+
+`setup` only installs the connectors listed in
 `memgraph_context_graph.connectors.INSTALLABLE`; install your own package beside the tool yourself.
 
 Give the component's graph class a `forget_session(session_id) -> dict[str, int]`
