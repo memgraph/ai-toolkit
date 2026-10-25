@@ -40,8 +40,7 @@ reconciliation = [
     "unstructured2graph>=0.7.0",
 ]
 test = [
-    "tiktoken>=0.8.0",
-    "nltk>=3.9.1",
+    "sessions-graph[compact]",
     "pytest>=9.0.3",
     "pytest-asyncio>=0.24.0",
 ]

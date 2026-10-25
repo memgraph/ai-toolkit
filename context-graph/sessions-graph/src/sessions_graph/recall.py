@@ -18,7 +18,9 @@ hit, the one a fact was read from, the one sharing most words with the
 question. The result is the evidence, not an
 answer: the caller's model answers from it. This is the hybrid retrieval the
 eval benchmarks (``context-graph-eval run --retrieval-strategy hybrid``),
-which calls this same code.
+which calls this same code. Opt-in exchange packing instead groups related
+source messages, uses facts only for ranking, and budgets whole groups together
+with memory notes. Supplemental discovery is separately opt-in.
 
 Vectors come from :mod:`.embeddings`, so similarity is computed in Memgraph
 over the user's own rows (``vector_search.search`` has no filter, and a
@@ -32,7 +34,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass, field, fields, replace
-from typing import Any
+from typing import Any, Literal, cast
 
 from .embeddings import DEFAULT_EMBEDDING_MODEL, EmbeddingUnavailableError, embed_texts
 from .passages import best_passage, excerpt, split_passages
@@ -79,11 +81,15 @@ class RecallConfig:
     query_instruction: str | None = None
 
     #: Opt-in coherent, source-only exchanges; the default preserves turn/fact rows.
-    packing: str = "turns"
+    packing: Literal["turns", "exchanges"] = "turns"
     #: Row budget in cl100k_base tokens, including exchange headers and separators.
     token_budget: int = 6000
     #: Discover problem-resolution episodes in vector-selected sessions (exchange packing only).
     supplemental_search: bool = False
+
+    def __post_init__(self) -> None:
+        if self.packing not in ("turns", "exchanges"):
+            raise ValueError("recall packing must be 'turns' or 'exchanges'")
 
     @classmethod
     def from_mapping(cls, values: dict[str, Any]) -> RecallConfig:
@@ -104,9 +110,7 @@ class RecallConfig:
                     raise ValueError(f"unknown recall lanes {unknown}; choose from {', '.join(LANES)}")
                 overrides[key] = lanes
             elif key == "packing":
-                if value not in ("turns", "exchanges"):
-                    raise ValueError("recall packing must be 'turns' or 'exchanges'")
-                overrides[key] = value
+                overrides[key] = cast("Literal['turns', 'exchanges']", value)
             elif key == "supplemental_search":
                 if isinstance(value, str) and value.strip().lower() in ("true", "false"):
                     value = value.strip().lower() == "true"
@@ -195,7 +199,7 @@ MEMORY_RULE = (
 
 @dataclass(frozen=True)
 class Recalled:
-    """What recall found for one question: turns first, then facts, each in time order."""
+    """Selected memory notes and sources, displayed as turn/fact rows or whole exchanges."""
 
     question: str
     turns: list[Turn] = field(default_factory=list)
@@ -210,8 +214,17 @@ class Recalled:
     #: Selected source IDs grouped into complete exchanges, in display order.
     exchanges: tuple[tuple[str, ...], ...] = ()
 
+    #: Original results retained when fusion includes exchanges. IDs are local to each space.
+    space_results: tuple[Recalled, ...] = field(default=(), repr=False)
+
     def lines(self) -> list[str]:
-        """The rows as text: exactly what the benchmark's answerer was shown."""
+        """Render selected rows; fused exchange groups retain their source-space boundaries."""
+        if self.space_results:
+            rows = [note.line(self.turn_chars) for note in self.memories]
+            # Keep each space's groups intact, including mixed turn/exchange configurations.
+            for result in self.space_results:
+                rows.extend(replace(result, memories=[]).lines())
+            return rows
         if self.exchanges:
             turns = {turn.action_id: turn for turn in self.turns}
             rows = [note.line(self.turn_chars) for note in self.memories]
@@ -247,6 +260,7 @@ class Recalled:
             "memories": [asdict(note) for note in self.memories],
             "vector_lanes_off": self.vector_lanes_off,
             **({"exchanges": [list(group) for group in self.exchanges]} if self.exchanges else {}),
+            **({"spaces": [result.to_json() for result in self.space_results]} if self.space_results else {}),
             **({"missing_spaces": list(self.missing_spaces)} if self.missing_spaces else {}),
         }
 
@@ -387,11 +401,10 @@ def recall(
         model: The embedding model the stored vectors were made with.
 
     Returns:
-        The turns and facts found, turns first, each in time order.
+        Selected memory notes and chronological turns/facts, or budgeted source
+        exchanges when enabled. Extracted facts rank exchanges but are not rendered.
     """
     config = config or RecallConfig()
-    if config.packing not in ("turns", "exchanges"):
-        raise ValueError("recall packing must be 'turns' or 'exchanges'")
     if config.packing == "exchanges":
         from .recall_exchanges import prepare
 
@@ -703,7 +716,9 @@ def fuse(question: str, results: list[Recalled], *, memories_k: int, missing: tu
     holds is dropped, keeping the later space's copy: shared spaces come after
     the personal one, and a promoted file belongs where it was shared. Turns and
     facts, each already chosen by its space's own widths, are kept whole: turns
-    in time order, as recall shows them.
+    in time order, as recall shows them. When any space uses exchanges, rendering
+    preserves each space's original grouping and source IDs through ``space_results``;
+    JSON exposes these scoped results under ``spaces``. Budgets remain per space.
     """
     if len(results) == 1 and not missing:
         return results[0]
@@ -731,4 +746,5 @@ def fuse(question: str, results: list[Recalled], *, memories_k: int, missing: tu
         vector_lanes_off=off,
         turn_chars=results[0].turn_chars if results else RecallConfig.turn_chars,
         missing_spaces=missing,
+        space_results=tuple(results) if any(result.exchanges or result.space_results for result in results) else (),
     )

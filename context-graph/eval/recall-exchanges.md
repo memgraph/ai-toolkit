@@ -25,7 +25,10 @@ result = recall(db, user_id, question, config=config)
 ```
 
 Install `sessions-graph[compact]`. The same options work in the hub's `[recall]`
-configuration. The default remains turn/fact output. The token budget covers
+configuration. The default retains turn/fact formatting, but retrieval behavior changes: distinct-source
+filling replaces a passage-only cutoff, text words are literal, and fact/rank ties
+are deterministic. Keeping the formatting default does not preserve historical
+retrieval output. The token budget covers
 source rows, memory notes and exchange headers, excluding `render()` reading
 instructions. It applies independently to each searched space.
 
@@ -70,8 +73,9 @@ judging are excluded.
 | Mean cited evidence coverage | 0.599 | 0.703 |
 | Complete official verdicts | 400 | 400 |
 
-The point score increases **1.86 percentage points**, with **37.9% fewer
-context tokens**. Per-question grades show 88 gains, 79 losses and 233 ties.
+**37.9% fewer context tokens** is the observed reduction against the historical
+run. The point-score difference is **1.86 percentage points**, but does not
+establish a quality improvement under a matched protocol. Per-question grades show 88 gains, 79 losses and 233 ties.
 This compares the combined query/packing changes against the published
 historical configuration, not packing alone against a freshly judged
 optimized default.
@@ -97,8 +101,8 @@ speedup over that historical timing is claimed.
 
 A smaller matched eight-question retrieval panel measured 0.786 s for the
 optimized default versus 0.863 s with exchanges, with 9,273 versus 5,896 mean
-tokens. Exchange packing adds work; its measured benefit is the quality/token
-tradeoff. Abstention, ordering and multi-session regressions keep it opt-in.
+tokens. Exchange packing adds work; this panel measures a token reduction, not an
+established answer-quality improvement. Abstention, ordering and multi-session regressions keep it opt-in.
 
 Answering used the unchanged shared prompt and `gpt-4.1`, temperature zero.
 Judging used the official `gpt-4.1-mini` BEAM rubric; ordering retained upstream
@@ -144,3 +148,42 @@ ranking features, retaining the primary pool if that cap is exceeded. Prefixes
 are ranking features only; displayed source text is retained in full. Exact
 entity search remains linear in owned vectors. The global text count is
 request-local, not a transactional snapshot across concurrent writes.
+
+## Installation, offline use and policy limits
+
+The first `tiktoken.get_encoding("cl100k_base")` downloads encoding data.
+Exchange recall initializes it before graph queries or embedding inference and
+reports an actionable error if initialization fails. For an offline server,
+set `TIKTOKEN_CACHE_DIR` to a persistent directory and run the following with
+network access, using the same directory in the offline process:
+
+```sh
+python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
+```
+
+Memory notes are packed first. Oversized exchanges are skipped whole. Enabled
+vector/text pools widen to at least 24 sources and fact-source turns to 16;
+zero widths and disabled lanes remain disabled. Up to three directed
+`FOLLOWED_BY` edges join messages within their session or agent. Exchange RRF
+uses damping 20, direct-lane weight 1 and graph-lane weight 1/3. These are
+experimental constants selected during BEAM 100K development, not universal
+retrieval defaults.
+
+Supplemental discovery uses English problem/fix cues in at most four
+vector-selected owned sessions and selects up to 24 sources. The primary and
+supplemental text lanes each receive weight 0.5, and at most one quarter of the
+remaining row budget is initially reserved for newly discovered groups.
+At up to 10,000 global Action documents, indexed discovery reuses the main text
+lane's corpus count. Above that, or when the count is unavailable, local BM25
+examines at most 512 documents, with 8,192-character prefixes and a total
+2,097,152-character feature limit (characters, not bytes). Original sources are
+fetched separately. Exceeding the cap preserves primary candidates; missing
+vector/text lanes skip discovery, and query failures propagate. Concurrent
+inserts can change candidates because the count is not a transactional snapshot.
+
+In multi-space recall each space packs independently. Fused `turns` and `facts`
+remain available; rendering retains each space's group boundaries and excerpts.
+`space_results` holds the original scoped results, serialized under `spaces`,
+so identical source IDs from different databases remain distinct. Memory notes
+still compete for the existing shared `memories_k` limit; there is no global
+fused token ceiling. Mixed packing configurations retain each space's format.

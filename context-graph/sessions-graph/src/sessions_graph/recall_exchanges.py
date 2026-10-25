@@ -7,9 +7,40 @@ import re
 from collections import Counter
 from dataclasses import replace
 from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+# Package-private helpers keep ownership, literal text search and source excerpts identical in both policies.
 from .recall import _STOPWORDS, _TEXT, RecallConfig, Recalled, Turn, _safe_query, _turns, _with_passages
+
+if TYPE_CHECKING:
+    from tiktoken import Encoding
+
+# Experimental policy selected during BEAM 100K development; see eval/recall-exchanges.md.
+MIN_DIRECT_SOURCES = 24
+MIN_FACT_SOURCES = 16
+PASSAGE_NEIGHBOR_HOPS = 3
+EXCHANGE_RRF_K = 20
+GRAPH_LANE_WEIGHT = 1 / 3
+SPLIT_TEXT_WEIGHT = 0.5
+SUPPLEMENTAL_BUDGET_DIVISOR = 4
+SUPPLEMENTAL_SESSIONS = 4
+SUPPLEMENTAL_SOURCES = 24
+TOKEN_ENCODING = "cl100k_base"
+
+
+@lru_cache(maxsize=1)
+def _encoding() -> Encoding:
+    import tiktoken
+
+    try:
+        return tiktoken.get_encoding(TOKEN_ENCODING)
+    except Exception as exc:
+        raise RuntimeError(
+            "Exchange recall could not load cl100k_base. Preload it with "
+            "tiktoken.get_encoding('cl100k_base') while online, then preserve "
+            "TIKTOKEN_CACHE_DIR for offline use."
+        ) from exc
+
 
 _OWN_SOURCE = (
     "MATCH (a:Action) WHERE a.action_id IN $ids WITH DISTINCT a "
@@ -21,7 +52,8 @@ _NEAREST = (
     "WITH a, collect(b)[0] AS b RETURN a.action_id AS source, b.action_id AS neighbor"
 )
 _NEIGHBORS = (
-    _OWN_SOURCE + "MATCH p=(a)-[:FOLLOWED_BY*1..3]-(b:Action) MATCH (container)-[:HAS_ACTION]->(b) "
+    _OWN_SOURCE
+    + f"MATCH p=(a)-[:FOLLOWED_BY*1..{PASSAGE_NEIGHBOR_HOPS}]-(b:Action) MATCH (container)-[:HAS_ACTION]->(b) "
     "WITH a, b, p, nodes(p) AS ns, relationships(p) AS rs "
     "WHERE ((a.action_type = 'user_message' AND b.action_type = 'assistant_message' "
     "AND all(i IN range(0, size(rs)-1) WHERE startNode(rs[i]) = ns[i])) "
@@ -40,13 +72,14 @@ def prepare(config: RecallConfig) -> RecallConfig:
             import nltk  # noqa: F401 -- the local BM25 stemmer requires no downloaded corpus
     except ImportError as exc:
         raise ImportError("Exchange recall requires sessions-graph[compact]") from exc
+    _encoding()
     if config.token_budget < 0:
         raise ValueError("recall token_budget must be >= 0")
     return replace(
         config,
-        turns_k=max(24, config.turns_k) if config.turns_k else 0,
-        text_k=max(24, config.text_k) if config.text_k else 0,
-        fact_turns_k=max(16, config.fact_turns_k) if config.fact_turns_k else 0,
+        turns_k=max(MIN_DIRECT_SOURCES, config.turns_k) if config.turns_k else 0,
+        text_k=max(MIN_DIRECT_SOURCES, config.text_k) if config.text_k else 0,
+        fact_turns_k=max(MIN_FACT_SOURCES, config.fact_turns_k) if config.fact_turns_k else 0,
     )
 
 
@@ -61,7 +94,7 @@ def assemble(
     turns = {turn.action_id: turn for turn in result.turns}
     pairs = db.query(_NEIGHBORS, {"user": user, "ids": list(turns)}) if turns else []
     _materialize(db, turns, [pair["neighbor"] for pair in pairs], result.question, config)
-    weights = {name: (1.0 if name in ("turns", "text") else 1 / 3) for name in lanes}
+    weights = {name: (1.0 if name in ("turns", "text") else GRAPH_LANE_WEIGHT) for name in lanes}
     supplemental: list[str] = []
     if config.supplemental_search and lanes.get("turns") and "text" in lanes:
         ids = _discover(db, user, result.question, turns, lanes["turns"], count)
@@ -72,8 +105,8 @@ def assemble(
             )
             _materialize(db, turns, supplemental, result.question, config)
             pairs.extend(extra_pairs)
-            weights["text"] = 0.5
-            weights["supplemental"] = 0.5
+            weights["text"] = SPLIT_TEXT_WEIGHT
+            weights["supplemental"] = SPLIT_TEXT_WEIGHT
             lanes = {**lanes, "supplemental": ids}
     return _pack(result, turns, pairs, lanes, weights, supplemental, config.token_budget)
 
@@ -93,9 +126,7 @@ def _pack(
     supplemental: list[str],
     budget: int,
 ) -> Recalled:
-    import tiktoken
-
-    encoding = tiktoken.get_encoding("cl100k_base")
+    encoding = _encoding()
 
     def cost(line: str) -> int:
         return len(encoding.encode(line, disallowed_special=())) + 1
@@ -123,7 +154,7 @@ def _pack(
             if source in parent:
                 ranks.setdefault(root(source), rank)
         for group, rank in ranks.items():
-            scores[group] += weights[name] / (20 + rank + 1)
+            scores[group] += weights[name] / (EXCHANGE_RRF_K + rank + 1)
 
     def timestamp(source: str) -> tuple[str, str]:
         return turns[source].timestamp, source
@@ -144,7 +175,7 @@ def _pack(
     ordered = sorted(groups, key=lambda group: (-scores[group], group))
     selected = []
     extra = {root(source) for source in supplemental if source in parent}
-    allowance = (budget - used) // 4
+    allowance = (budget - used) // SUPPLEMENTAL_BUDGET_DIVISOR
     for group in ordered:
         if group in extra and costs[group] <= allowance:
             selected.append(group)
@@ -165,7 +196,7 @@ def _pack(
     )
 
 
-_CUES = (
+PROBLEM_RESOLUTION_CUES = (
     "issue issues problem problems error errors fix fixed resolve resolved debug debugging failure broken troubleshoot"
 )
 _SESSION_ACTIONS = (
@@ -180,7 +211,7 @@ _SESSION_DOCS = (
     "MATCH (:User {user_id: $user})-[:HAD_SESSION]->(s:Session) "
     "WHERE s.session_id IN $sessions "
     "MATCH (s)-[:HAS_ACTION|HAS_AGENT*1..2]->(a:Action) WHERE a.text IS NOT NULL "
-    "WITH DISTINCT a LIMIT $limit RETURN a.action_id AS id, size(a.text) AS chars, "
+    "WITH DISTINCT a LIMIT $limit RETURN a.action_id AS id, "
     "left(a.text, $chars) AS text ORDER BY id"
 )
 MAX_DOCS = 512
@@ -189,15 +220,19 @@ MAX_TOTAL_CHARS = 2 * 1024 * 1024
 MAX_GLOBAL_CUE_DOCS = 10000
 
 
-_TRIGGER = re.compile(r"\b(issues?|problems?|resolv\w*|fix\w*|debug\w*|errors?|troubleshoot\w*)\b", re.I)
+PROBLEM_RESOLUTION_TRIGGER = re.compile(
+    r"\b(issues?|problems?|resolv\w*|fix\w*|debug\w*|errors?|troubleshoot\w*)\b", re.I
+)
 
 
 def _discover(
     db: Any, user: str, question: str, turns: dict[str, Turn], vector_sources: list[str], count: int | None
 ) -> list[str] | None:
-    if not _TRIGGER.search(question):
+    if not PROBLEM_RESOLUTION_TRIGGER.search(question):
         return None
-    sessions = list(dict.fromkeys(turns[source].session_id for source in vector_sources if source in turns))[:4]
+    sessions = list(dict.fromkeys(turns[source].session_id for source in vector_sources if source in turns))[
+        :SUPPLEMENTAL_SESSIONS
+    ]
     if not sessions:
         return None
     if count is None or count > MAX_GLOBAL_CUE_DOCS:
@@ -206,15 +241,24 @@ def _discover(
             return None
         if not rows:
             return None
-        scores = _bm25(_CUES, {row["id"]: row["text"] for row in rows})
+        scores = _bm25(PROBLEM_RESOLUTION_CUES, {row["id"]: row["text"] for row in rows})
         return sorted(
             (source for source in scores if scores[source] > 0), key=lambda source: (-scores[source], source)
-        )[:24]
+        )[:SUPPLEMENTAL_SOURCES]
     own = [row["id"] for row in db.query(_SESSION_ACTIONS, {"user": user, "sessions": sessions})]
     if not own:
         return None
     return [
-        row["id"] for row in db.query(_TEXT, {"text": _safe_query(_CUES), "pool": max(count, 1), "own": own, "k": 24})
+        row["id"]
+        for row in db.query(
+            _TEXT,
+            {
+                "text": _safe_query(PROBLEM_RESOLUTION_CUES),
+                "pool": max(count, 1),
+                "own": own,
+                "k": SUPPLEMENTAL_SOURCES,
+            },
+        )
     ]
 
 
@@ -261,11 +305,16 @@ _SCAFFOLD = frozenset(
 _IGNORED = _STOPWORDS | _SCAFFOLD
 
 
-@lru_cache(maxsize=32768)
-def _stem(word: str) -> str:
+@lru_cache(maxsize=1)
+def _stemmer():
     from nltk.stem import PorterStemmer
 
-    return PorterStemmer().stem(word)
+    return PorterStemmer()
+
+
+@lru_cache(maxsize=32768)
+def _stem(word: str) -> str:
+    return _stemmer().stem(word)
 
 
 def _tokens(text: str) -> list[str]:
