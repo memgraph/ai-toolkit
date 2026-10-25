@@ -1,4 +1,4 @@
-# Opt-in exchange recall evaluation
+# Experimental exchange recall evaluation
 
 The recall implementation batches source lookups, groups shared chunks before
 fact/entity expansion, preserves deterministic cutoffs and fills passage-hit
@@ -29,6 +29,30 @@ configuration. The default remains turn/fact output. The token budget covers
 source rows, memory notes and exchange headers, excluding `render()` reading
 instructions. It applies independently to each searched space.
 
+## Status and generalization
+
+Exchange packing and supplemental discovery are experimental, opt-in policies.
+The 65.46% result applies to the exact configuration above; the baseline remains
+marked `prototype`. Default recall uses `packing="turns"` and
+`supplemental_search=False`. The published historical version points retain
+their original settings and scores. No complete 400-question score has been
+established for the optimized default alone.
+
+Batching and source-ownership improvements apply generally. Exchange widths,
+rank-fusion weights, the token budget, problem/fix cue vocabulary and search
+thresholds were selected through repeated BEAM 100K experiments. The complete
+run includes questions used during development, so it is not an independent
+holdout. Production retrieval uses the question and owned graph contents;
+benchmark question IDs, ability labels and reference answers are not policy
+inputs. That separation does not establish generalization.
+
+Before promoting exchanges to a default or claiming broader memory-quality
+gains, freeze the policy and validate it on independent, complete histories.
+Include answerable controls as well as abstention, ordering and multi-session
+cases, and measure tokens and latency under a matched protocol. The reduced
+LME checks below are diagnostic and do not satisfy this gate. Further tuning
+on the same BEAM failures must remain development evidence.
+
 ## Full BEAM 100K result
 
 The separate
@@ -41,7 +65,7 @@ judging are excluded.
 
 | Metric | Published historical configuration | Exchange prototype |
 |---|---:|---:|
-| Official BEAM score | 63.60% | 65.46% |
+| BEAM score (official judge) | 63.60% | 65.46% |
 | Mean context tokens | 9,450.7 | 5,865.7 |
 | Mean cited evidence coverage | 0.599 | 0.703 |
 | Complete official verdicts | 400 | 400 |

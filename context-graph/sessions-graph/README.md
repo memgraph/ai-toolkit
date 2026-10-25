@@ -407,7 +407,7 @@ computed exactly over the user's own vectors, which costs time linear in
 their history: about 0.6 s for a few hundred messages, 0.7 s at 10k, 6.7 s at
 100k. Without MAGE, recall runs text search alone and says so in its result.
 
-For bounded source context, install `sessions-graph[compact]` and opt in through
+For experimental bounded source context, install `sessions-graph[compact]` and opt in through
 `RecallConfig(packing="exchanges", token_budget=6000, supplemental_search=True)`
 or the same keys in `[recall]`. This keeps the regular `Recalled` interface,
 including `turns`, `memories`, `lines()`, `render()` and `to_json()`. Extracted
@@ -435,10 +435,13 @@ work cap keeps the primary candidate pool. Missing vector/text lanes also skip
 supplemental search. Query errors propagate to the caller. Retrieval uses exact
 owned entity vectors and requires no extraction or graph reconstruction.
 
-Exchange packing remains opt-in: a [400-question BEAM prototype run](../eval/recall-exchanges.md)
+Exchange packing remains experimental and opt-in: a [400-question BEAM prototype run](../eval/recall-exchanges.md)
 scored 65.46% versus the historical 63.60%, with 37.9% fewer context tokens, but
-abstention and multi-session reasoning regressed. The official benchmark numbers
-still describe the original configuration. The global count is per request rather
+abstention and multi-session reasoning regressed. This result belongs to the named
+exchange configuration. Repeated BEAM development includes questions in that full
+run; independent complete-history validation is still needed before default
+promotion or broader quality claims. The published version points retain their
+original configurations. The global count is per request rather
 than a transactional snapshot; concurrent inserts may change the indexed
 supplemental candidate pool. In multi-space recall the budget applies per space;
 it is not a global ceiling over the fused result.
