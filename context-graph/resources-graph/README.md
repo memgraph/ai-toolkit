@@ -1,8 +1,31 @@
-# resources-graph
+# Resources Graph
 
-Remembers the public GitHub issues, pull requests, repositories and issue/PR lists an agent explored, as shared Resources in [Memgraph](https://memgraph.com), and serves them back from memory so the agent doesn't fetch them again.
+Remember public GitHub issues, pull requests, repositories, and lists your agent explored, so later sessions can read them from Memgraph.
 
-> Part of the [Context Graph](../README.md) family — wired into `memgraph-context-graph` as the `resources-graph` connector. Vocabulary: [`CONTEXT.md`](CONTEXT.md). Design: [PRD #464](https://github.com/memgraph/ai-toolkit/issues/464).
+An optional [Context Graph](../README.md) component. Hooks record addresses; a separate sweep fetches public content; the `resource` tool reads the stored copy. Resources are shared, while each user's record of touching them stays private.
+
+## Setup
+
+With a uv tool installation of Context Graph, enable the connector and rerun setup. Setup installs the missing package into the same tool environment and exposes its command:
+
+```bash
+memgraph-context-graph config set capture.connectors "skills-graph, actions-graph, sessions-graph, resources-graph"
+memgraph-context-graph setup
+```
+
+For a Python virtual environment, install it there with `pip install 'resources-graph[memgraph-context-graph]'` and create the schema with `resources-graph setup`.
+
+## GitHub access
+
+The Sweep fetches with your existing `gh` login (`gh auth login`) — the same access your agent reads GitHub with. GitHub's GraphQL API needs a token even for public data. On a machine without `gh`, set one instead: `memgraph-context-graph config set github.token` (it prompts; it also wins over the `gh` login when set). With no credentials at all the Sweep still fetches single issues, PRs and repositories over REST (60 requests an hour); listings wait until there are credentials.
+
+## Sweep captured resources
+
+Restart the agent so its MCP server discovers the `resource` tool, then sweep captured touches:
+
+```bash
+resources-graph sweep
+```
 
 ## How it works
 
@@ -52,24 +75,19 @@ A transferred issue gets a new GitHub id (the id embeds its repository). When a 
 - **REFERENCES / CLOSES** — drawn only between stored Resources, whichever end was stored first; references to anything not in memory are kept on the item as URLs (`referenced_by_urls`, `closes_urls`).
 - **Touch** — `address`, `provenance` (FETCHED / PROMPTED), `served_from_memory`, `outcome` (Cache Reads), `status` (pending / resolved / unresolved) and `reason`, `tool_use_id`, `agent_name`, `at`. The Sweep links it to the actions-graph `ToolCall` (same `tool_use_id`, same Session) and subagent `Agent` it came from, when actions-graph recorded them.
 
-## Setup
-
-```bash
-pip install 'resources-graph[memgraph-context-graph]'
-resources-graph setup   # indexes and constraints
-```
-
-The Sweep fetches with your existing `gh` login (`gh auth login`) — the same access your agent reads GitHub with. GitHub's GraphQL API needs a token even for public data. On a machine without `gh`, set one instead: `memgraph-context-graph config set github.token` (it prompts; it also wins over the `gh` login when set). With no credentials at all the Sweep still fetches single issues, PRs and repositories over REST (60 requests an hour); listings wait until there are credentials.
-
-Enable the connector in your hooks with `--connector resources-graph` (add `--connector actions-graph` too for Touch → ToolCall links), then sweep whenever you like:
-
-```bash
-resources-graph sweep
-```
-
 ## Which harnesses show the Nudge
 
 | Harness | Nudge before a fetch | Otherwise |
 |---|---|---|
 | Claude Code, Codex | yes — `PreToolUse` `additionalContext`, no permission decision | |
 | Copilot CLI, Cursor, OpenCode, Grok Build, Antigravity CLI | no — their pre-tool hooks can only allow, deny or rewrite the call | the session-start hint about the `resource` tool |
+
+## Development
+
+From the repository root:
+
+```bash
+./scripts/dev-memgraph.sh test resources-graph
+```
+
+See [the domain model](CONTEXT.md) for terminology and [the design](https://github.com/memgraph/ai-toolkit/issues/464) for the decisions behind it.

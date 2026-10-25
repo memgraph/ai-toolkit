@@ -1,53 +1,48 @@
 # Memgraph Context Graph
 
-Connect any agent runtime to any context-graph component.
+Connect coding agents and SDK applications to Context Graph. This package provides the CLI, runtime adapters, event routing, and MCP server; graph components store the activity and memory.
 
-Memgraph Context Graph is a lightweight adapter layer that decouples runtime-specific hooks from graph storage. It routes a common event protocol from runtime adapters to graph connectors, so you can mix and match SDKs and graph components.
-
-```
-Runtime Adapter  ->  Event Protocol  ->  Graph Connector(s)
-(Claude,         (ToolStart,         (SkillGraphConnector,
- OpenAI)          ToolEnd, ...)       custom connectors, ...)
-```
-
-Runtime plugins are the distribution layer for host-specific hook wiring. They install hooks, skills, and setup helpers for a runtime, then call Memgraph Context Graph. They are not graph components and should not encode graph-specific meaning.
-
-> **Just want to capture agent sessions?** Start with the [Context Graph guide](../README.md) — it walks through wiring the connectors end to end. This README covers the adapter layer itself and the in-process SDK path.
+For an overview of what you can do with it, start with the [Context Graph guide](../README.md).
 
 ## Installation
 
-For command-hook runtimes, prefer a user-level tool install:
+For coding agents, the [installer](../README.md#getting-started) sets up the CLI, connectors, and agent wiring together. To install them yourself:
 
 ```bash
-uv tool install "memgraph-context-graph[mcp]" --with "skills-graph[memgraph-context-graph]"
+uv tool install 'memgraph-context-graph[mcp]' \
+  --with 'skills-graph[memgraph-context-graph]' \
+  --with 'actions-graph[memgraph-context-graph]' \
+  --with 'sessions-graph[memgraph-context-graph]'
+memgraph-context-graph setup
 ```
 
-The `mcp` extra is what `memgraph-context-graph mcp` serves [recall](#recall-memory-for-the-harnesss-model) with.
+The `mcp` extra provides the MCP server that `memgraph-context-graph mcp` uses to serve `recall` and `memory` to agents.
 
-Or run `memgraph-context-graph setup`, which installs whatever connectors are missing (see [Setup](#setup)).
+For a Python application, install the extra for your SDK and the graph components you need; see [Memory for SDK apps](#memory-for-sdk-apps).
 
-For an app built on an agent SDK ([Memory for SDK apps](#memory-for-sdk-apps)), install the SDK's extra and the connectors whose graphs hold the memory:
+## Setup
 
 ```bash
-pip install "memgraph-context-graph[claude]" "sessions-graph[memgraph-context-graph]" "actions-graph[memgraph-context-graph]"
-pip install "memgraph-context-graph[openai]" "sessions-graph[memgraph-context-graph]" "actions-graph[memgraph-context-graph]"
+memgraph-context-graph setup claude-code codex
+memgraph-context-graph setup cursor --project-dir ~/work/billing
+memgraph-context-graph setup --plan
+memgraph-context-graph doctor --runtime codex
 ```
 
-Graph connectors live in the graph packages that persist the data. For the skills graph connector:
+Setup connects to your configured Memgraph, or starts its own Docker container, writes your identity and connection settings, wires the selected agents, and checks the result. Claude Code and Codex use user-wide plugins; the other runtimes use project-local hooks and user-level MCP registrations.
 
 ```bash
-pip install skills-graph[memgraph-context-graph]
+memgraph-context-graph update codex      # upgrade and refresh wiring
+memgraph-context-graph uninstall codex   # remove wiring; choose what else to remove
 ```
+
+Restart running agents after an update. On a terminal, uninstall asks separately whether to delete setup's graph, the config, and the tool; those choices default to keeping them. Without a terminal it removes only wiring unless you supply removal flags. `uninstall --all` deletes all three, including the graph's data.
+
+See [runtime setup](docs/runtime-setup.md) for the full lifecycle, manual wiring, and health checks.
 
 ## Memory for SDK apps
 
-An app built on the Claude Agent SDK or the OpenAI Agents SDK can make Context Graph its memory in-process. `memgraph_context_graph.sdk` gives it what hooks and the MCP server give a coding agent:
-
-- **Capture:** the SDK's own hooks record the session through the configured connectors. It is embedded and reconciled like a coding-agent session.
-- **Context:** the memory index and where the user left off in this project.
-- **Tools:** `recall` and `memory`.
-
-The memory is the same one the user's coding agents use. The Memgraph connection, capture policy and connectors come from the config file, as they do for hooks. The app sets only `user_id` (whose memory it is) and `cwd` (which project).
+Apps built with the Claude Agent SDK or OpenAI Agents SDK can use the same memory as coding agents, in-process. The SDK integration adds capture, memory context, and `recall`/`memory` tools.
 
 ```python
 from memgraph_context_graph.sdk import ContextGraphMemory
@@ -55,750 +50,73 @@ from memgraph_context_graph.sdk import ContextGraphMemory
 memory = ContextGraphMemory(user_id="alice")
 ```
 
-**Claude Agent SDK** (`memgraph-context-graph[claude]`). The SDK's hook callbacks get Claude Code's own hook payloads, so the `claude-code` rules translate them, under `source_sdk = "claude-agent-sdk"`. Python callbacks get no `SessionStart` or `SessionEnd`, which changes two things:
+[SDK quick starts](docs/sdk-memory.md) cover installation, wiring each SDK, and ending sessions.
 
-- The memory context goes in with the session's first prompt.
-- The app ends the session itself.
+## Recall: memory for the harness's model
 
-```python
-from claude_agent_sdk import ClaudeSDKClient
-from memgraph_context_graph.sdk.claude import ClaudeAgentMemory
-
-claude = ClaudeAgentMemory(memory)
-async with ClaudeSDKClient(claude.options(model="claude-sonnet-5-5")) as client:
-    await client.query("Which package manager does this project use?")
-    async for message in client.receive_response():
-        ...
-claude.end_session()
-```
-
-`options()` does four things:
-
-- adds the hooks;
-- adds an in-process `context-graph` MCP server and permits its tools;
-- turns Claude Code's own auto memory off;
-- keeps any hooks, servers and tools you pass in.
-
-`options()` also turns the Context Graph Claude Code plugin off for the session, because the SDK loads your user settings by default and the plugin's hooks would capture every event a second time.
-
-**OpenAI Agents SDK** (`memgraph-context-graph[openai]`). Capture reads the run lifecycle (`RunHooks`):
-
-- The user's message comes from the run's input.
-- Each model response's text is recorded as an assistant message.
-- Tools and handoffs come from their own hooks.
-
-The memory context goes into dynamic instructions, and the tools are function tools.
-
-```python
-from agents import Agent, Runner
-from memgraph_context_graph.sdk.openai import OpenAIAgentsMemory
-
-wired = OpenAIAgentsMemory(memory, session_id="chat-42")  # one id per conversation
-agent = Agent(name="Assistant", instructions=wired.instructions("Be concise."), tools=wired.tools())
-result = await Runner.run(agent, "Which package manager does this project use?", hooks=wired.hooks())
-wired.end_session()
-```
-
-`examples/sdk_claude_agent.py` and `examples/sdk_openai_agents.py` each run two sessions: the first is told something and the second has to know it.
-
-## Quick Start
-
-For a coding agent, run `memgraph-context-graph setup` ([Setup](#setup)). For an app built on the Claude Agent SDK or the OpenAI Agents SDK, see [Memory for SDK apps](#memory-for-sdk-apps).
-
-### Command Hook Runtimes
-
-Some agent applications run hooks as external commands instead of in-process SDK callbacks. Runtime adapters should keep the product-specific JSON mapping at the edge, emit the shared `Event` protocol, and leave graph persistence in connectors such as `SkillGraphConnector`.
-
-The installed command is runtime-dispatched:
+The `recall` tool retrieves dated conversations and facts from the user's history. The agent's model answers from that evidence. You can also query it from the terminal:
 
 ```bash
-memgraph-context-graph hook <command> [options]
+memgraph-context-graph recall "What did we decide about the deploy window?"
 ```
 
-Implemented:
+See [recall and memory](docs/memory.md) for search settings, output, and runtime behavior.
 
-| Runtime | Adapter | Hook Shape |
-|---------|---------|------------|
-| OpenAI Codex | `CodexHooksAdapter` | Command receives one JSON object on `stdin` |
-| Claude Code | `ClaudeCodeHooksAdapter` | Command receives one JSON object on `stdin` |
-| GitHub Copilot CLI | `CopilotCLIHooksAdapter` | Command receives one JSON object on `stdin` |
-| Cursor | `CursorHooksAdapter` | Command receives one JSON object on `stdin` |
-| OpenCode | `OpenCodeHooksAdapter` | V2 plugin normalizes callbacks into JSON for the command |
-| Antigravity CLI | `AntigravityCLIHooksAdapter` | Command receives one JSON object on `stdin` |
-| Grok Build | `GrokHooksAdapter` | Command receives one JSON object on `stdin` |
+## Memory: Context Graph as the harness's memory
 
-Codex and Claude Code have distributable Runtime Plugins. Copilot CLI, Cursor,
-OpenCode, Antigravity CLI, and Grok Build use project-local wiring, which `setup`
-writes (or, one runtime at a time, `hook init`):
+Opt in to storing the agent's curated memory in Context Graph:
 
 ```bash
-memgraph-context-graph hook init copilot-cli
-memgraph-context-graph hook init cursor
-memgraph-context-graph hook init opencode
-memgraph-context-graph hook init antigravity-cli
-memgraph-context-graph hook init grok
+memgraph-context-graph setup codex --memory-backend context-graph
+memgraph-context-graph setup codex --memory-backend native
 ```
 
-See the [command-hook reference](docs/command-hooks.md) for generated paths,
-payload differences, and current upstream hook documentation.
+The setting is user-wide. Setup imports supported existing memory before switching, then exposes the graph-backed `memory` tool and a session-start memory index. Import and hand-back behavior varies by agent; see the [memory guide](docs/memory.md#memory-context-graph-as-the-harnesss-memory).
 
-### Setup
+## Configuration
 
-`memgraph-context-graph setup` installs Context Graph for every agent on the machine; the
-[family README](../README.md#getting-started) walks through it. In short:
+Hooks read values from `~/.config/context-graph/config.toml`. `CONTEXT_GRAPH_CONFIG` can select another file; connection settings and API keys are read from that file, rather than environment variables.
 
 ```bash
-memgraph-context-graph setup                     # interactive on a terminal; plain otherwise
-memgraph-context-graph setup claude-code codex   # just these agents
-memgraph-context-graph setup cursor --project-dir ~/work/billing
-memgraph-context-graph setup --plan              # print the plan, change nothing
-memgraph-context-graph update [runtime ...]      # upgrade the package, refresh the wiring and the schema
-memgraph-context-graph uninstall [runtime ...]   # remove the wiring; asks about the graph, config and tool
-memgraph-context-graph uninstall --all          # the wiring, the graph, the config and the tool
-```
-
-It finds or starts Memgraph (a `memgraph-mage` container with a volume, on a free port when 7687 is taken),
-writes `memgraph.url` and `identity.user_id`, installs missing connectors and the viewer into the uv tool,
-wires each agent, and runs `doctor`'s checks. Every step checks before it acts, so rerunning only does what's
-missing. The TUI starts only when stdin and stdout are both terminals; the plugins' `scripts/bootstrap.sh`
-runs `setup <runtime> --no-tui`.
-
-**Uninstalling.** `uninstall` always removes the wiring (plugins, hook files, MCP entries) and gives each
-agent its own memory back. On a terminal it then asks, one question each and every answer defaulting to
-keep, whether to delete the graph (setup's Memgraph container and its volume: every session, for good), the
-config and capture-failure log, and the uv tool. Without a terminal only the flags remove more: `--graph`,
-`--config`, `--tool`, or `--all` for the three. A Memgraph you run yourself is never touched; only the
-container setup started, by name (`--memgraph-container`). On Windows the running tool can't remove itself,
-so it prints the `uv tool uninstall` command to run next.
-
-**Updating.** Upgrading the package moves the code hooks and the MCP server run, but what setup wrote once stays
-as it was. `update` upgrades the uv tool and its connectors, then, with the new release, refreshes everything
-that is wired: Claude Code's and Codex's plugin (marketplace refreshed, plugin updated), each per-project agent's
-hook file in `--project-dir` (default: the current directory) and its MCP registration, and the graph's indexes
-and constraints. It then runs `doctor`'s checks. Name runtimes to refresh only those. Your own hooks, the config
-and the graph's data are untouched, and running it again changes nothing.
-Running agent sessions keep the hooks they loaded: restart them. Outside the uv tool (a virtualenv, say) the
-package step only warns, and you upgrade it yourself first.
-
-**Identity and connection.** setup writes `~/.config/context-graph/config.toml`; hooks read their configuration from that file at runtime (see [Configuration](#configuration) — env vars are **not** read at hook time). To change your identity later:
-
-```bash
+memgraph-context-graph config show
 memgraph-context-graph config set identity.user_id "your-name"
+memgraph-context-graph config set memgraph.url "bolt://my-host:7687"
+memgraph-context-graph config set memgraph.password  # prompts
 ```
 
-For a remote or HA instance, pass `setup --memgraph-url`, or set it with credentials afterwards:
+The [configuration guide](docs/configuration.md) covers connectors, extraction, recall, and optional LLM settings.
+
+## Capture privacy
+
+Capture strips `<private>…</private>` text and redacts recognized credential patterns before storage. You can exclude projects or tools and add your own redaction patterns. Pattern matching cannot catch every secret. See [capture privacy](docs/configuration.md#capture-privacy).
+
+## Forgetting sessions
 
 ```bash
-memgraph-context-graph config set memgraph.url "neo4j://<coordinator-host>:7687"
-memgraph-context-graph config set memgraph.user "<user>"
-memgraph-context-graph config set memgraph.password        # prompts; stored 0600
-memgraph-context-graph config set memgraph.database "memgraph"
+memgraph-context-graph forget project . --dry-run
+memgraph-context-graph forget session <session-id>
 ```
 
-**Verify** (setup runs the same checks):
-
-```bash
-memgraph-context-graph config show
-memgraph-context-graph doctor --runtime claude-code \
-  --connector skills-graph --connector actions-graph --connector sessions-graph
-```
-
-Expected successful doctor output (use `--runtime codex` for Codex):
-
-```text
-OK memgraph-context-graph executable: ...
-OK memgraph-context-graph: ...
-OK config: identity.user_id set
-OK memgraph: reachable
-OK connector:skills-graph: installed=...; memgraph=reachable
-OK connector:actions-graph: installed=...; memgraph=reachable
-OK connector:sessions-graph: installed=...; memgraph=reachable
-OK embeddings: BAAI/bge-small-en-v1.5 (384 dimensions) inside Memgraph
-OK mcp: serves recall
-OK runtime:claude-code: connectors accept its probe event
-OK plugin:claude-code: context-graph@context-graph-plugins installed and enabled
-```
-
-The `runtime:` probe runs the connectors inside `doctor` itself; `plugin:` is what says Claude Code (or Codex)
-will actually call the hooks.
-
-> **Reconciliation is a separate step.** The connectors capture session activity, but turning a session's text into extracted entities (a `:Person`/`:Organization` graph) is done out-of-band — see [sessions-graph § reconciliation](../sessions-graph/README.md#session-reconciliation). By default a finished session is marked `reconciliation_status = 'pending'` and `sessions-graph reconcile --pending` extracts it.
-
-### Configuration
-
-`setup` and the `config` command write `~/.config/context-graph/config.toml` (mode `0600`).
-The file lists every key, each under a one-line comment saying what it does; a key you haven't set
-is written commented out, under a line saying what unset means, so uncommenting it is all it takes
-to change it. `setup` and `config set` rewrite the file: your values are kept, comments you add are not.
-A `[recall]` or `[extraction]` value is checked by sessions-graph when you set it, so a value it would
-reject never reaches the file.
-One table, `memgraph_context_graph/config_schema.py`, defines every key: the file, `config show`,
-`config get` and `config set` all follow it. **Hook subprocesses resolve their configuration from CLI flags and this file only — never from environment variables** (they don't inherit your shell), per [ADR 0002](docs/adr/0002-config-file-only-hook-resolution.md).
-
-```toml
-[identity]
-user_id = "your-name"
-
-[memgraph]
-url = "bolt://localhost:7687"
-user = ""
-password = ""
-database = "memgraph"
-
-[llm]
-openai_api_key = ""
-anthropic_api_key = ""
-derive_model = "claude-sonnet-5-5"
-
-[capture]
-connectors = "skills-graph, actions-graph, sessions-graph"
-exclude_projects = "~/clients/*, ~/personal"
-exclude_tools = "TodoWrite, mcp__vault__*"
-
-[redact]
-ticket = 'ACME-[0-9]+'
-
-[reconcile]
-auto_reconcile = true
-
-[recall]
-embedding_model = "BAAI/bge-small-en-v1.5"
-turns_k = "8"
-
-[extraction]
-model = "fastino/gliner2.5-base-v1"
-entity_threshold = "0.3"
-```
-
-`[reconcile]` turns on sessions-graph's auto-trigger reconciliation (see
-[sessions-graph § reconciliation](../sessions-graph/README.md#session-reconciliation)),
-which needs no LLM. `[llm]` is optional: a key only lets reconciliation learn
-the user's own ontology (`sessions-graph derive`), and `derive_model` picks
-the model it calls (default `claude-sonnet-5-5` with Anthropic, `gpt-5` with OpenAI).
-`[capture] connectors` is which graph connectors a hook enables when its
-command names no `--connector`, from `skills-graph`, `actions-graph`,
-`sessions-graph` and `resources-graph`; unset means the first three, and
-an empty value enables none. Setup installs the ones it names.
-The rest of `[capture]` and `[redact]` are the capture policy, applied to every
-event before any connector stores it (see [Capture privacy](#capture-privacy)).
-A commented-out key means "never configured," distinct from an explicit
-`auto_reconcile = false`.
-`[recall]` is optional too: without it, recall runs with the widths the
-benchmark measured; see [Recall](#recall-memory-for-the-harnesss-model).
-`[ontology]` is optional as well: `path` names a schema file the user's
-sessions are extracted under and `derive` is `extend` (the default) or
-`off`; see sessions-graph's [Ontology versions](../sessions-graph/README.md#ontology-versions).
-`[extraction]` tunes how reconciliation, re-extraction and derivation read
-sessions, all optional: `model` (a GLiNER2 checkpoint), `entity_threshold` and
-`relation_threshold` (drop extractions below that confidence, 0 to 1), and
-`chunk_size`/`chunk_overlap` (words per window); unset keys keep GLiNER2's defaults.
-
-Manage it with:
-
-```bash
-memgraph-context-graph config show
-memgraph-context-graph config get memgraph.url
-memgraph-context-graph config set <key> <value>
-memgraph-context-graph config set recall.turns_k 12
-memgraph-context-graph config set recall.turns_k ""   # back to the default
-memgraph-context-graph config --help                  # every key, with what it does
-# [redact] patterns are named by you, so they are edited in the file.
-```
-
-### Capture privacy
-
-Every hook event passes the capture policy before any connector sees it, so
-what it removes never reaches Memgraph:
-
-- **`<private>…</private>`** is stripped from prompts, replies and tool input
-  and output. An unclosed `<private>` hides the rest of that text, and a prompt
-  that was nothing but private isn't stored at all.
-- **Secrets are redacted** to `[REDACTED:<name>]`: AWS, GitHub, Anthropic,
-  OpenAI, Slack, Stripe and Google keys, JWTs, PEM private keys, passwords in
-  URLs, and the credentials in this config file. Each `[redact]` key adds a
-  pattern (a Python regular expression; quote it with single quotes).
-  `capture.redact = false` turns redaction off; `<private>` still applies.
-- **Long text is clipped** at `capture.max_chars` characters per field
-  (default 100000; `0` for no limit).
-- **`capture.exclude_tools`** drops those tools' calls and results, by exact
-  name or glob (`mcp__vault__*`).
-- **`capture.exclude_projects`** captures nothing from a session whose working
-  directory is one of these paths or globs, or inside one (`~` expands). The
-  agent's own hooks still answer normally, and recall still works there.
-
-Redaction is pattern-based: it catches known credential shapes, not every
-secret. What a session stored before the policy existed stays as it was.
-Library callers driving `AgentLink` directly pass a `CapturePolicy` themselves.
-
-### Forgetting sessions
-
-```bash
-memgraph-context-graph forget session <session-id> [<session-id> ...]
-memgraph-context-graph forget project ~/work/client-repo   # every session whose working directory is in it
-memgraph-context-graph forget project . --dry-run          # list what matches, delete nothing
-```
-
-`forget` lists the matching sessions and asks before deleting (`--yes` skips the
-question; without a terminal it is required). For each session it deletes, for
-good and with no archive:
-
-- what was captured: its Actions, the Agents only it used, its skill uses and
-  resource Touches;
-- what was derived from it: its Chunks, entity mentions and extracted
-  relationships, any entity left with no other evidence, and the `anon-` User
-  made up for it;
-- its lines in the local capture-failure log.
-
-What anything else still backs stays: entities other sessions mention, Skills,
-public Resources, and your memory files, including ones the session wrote (their
-versions just stop naming it). A forgotten session leaves only a
-`(:ForgottenSession {session_id})` marker, which stops a hook still running, a
-reconciliation in progress, or a later resume of the same session from capturing
-it again. It runs against your own graph; in Enterprise, shared spaces are not
-touched.
-
-Hooks never read environment variables for these values, and neither does setup: it writes only
-`memgraph.url` and `identity.user_id`, from its flags or what it found. Everything else is set with
-`config set`, and setup leaves it alone when it rewrites the file.
-
-### Recall: memory for the harness's model
-
-The hooks write sessions into Memgraph; recall reads them back. With
-sessions-graph installed, `memgraph-context-graph mcp` serves a `recall(question)`
-tool over stdio MCP. The Codex and Claude Code plugins bundle that server, so
-installing a plugin is all it takes; for the other agents, `setup` registers it
-in each one's own user-level MCP config (see
-[every agent](#every-agent-registration-switch-and-session-start)). The tool returns context, not an answer:
-the dated messages and facts from the user's own sessions that match the
-question, behind a header with the rules for reading them. The harness's model
-answers from those rows.
-
-At session start the hook adds a line to the model's context saying the tool
-exists, then where the user left off in this project: the last session's date,
-agent, first and last ask and last reply, and the first ask of the two before
-it, quoted from captured turns. Sessions from any agent count, so a session in
-Grok picks up where one in Codex stopped. It is a pointer, not a recall result:
-nothing is ranked against a question, and the model still calls `recall` when
-one needs memory. A session's project is its checkout's key (the same one
-memory folders use), recorded when it starts. Turn it off with
-`memgraph-context-graph config set session_start.resume false`.
-
-A connector may also add a line just before a tool runs
-(`GraphConnector.context_before_tool`) — resources-graph's Nudge that what the
-tool is about to fetch is already in memory. It is advice only: the call always
-proceeds unchanged, and a connector that fails adds nothing. Only Claude Code
-and Codex show it (`PreToolUse` `additionalContext` with no permission
-decision); the other harnesses' pre-tool hooks can only allow, deny or rewrite
-a call, so they get the session-start line alone.
-
-The same search from a shell:
-
-```bash
-memgraph-context-graph recall "what did we decide about the deploy window?"
-memgraph-context-graph recall --json "..."    # source rows and exchange groups as JSON
-```
-
-Whose memory is searched comes from `identity.user_id` in the config file, never
-from the tool call, so a model can only read its own user's sessions.
-`[recall]` overrides the search's lanes and widths, all optional:
-
-| Key | Default | What it sets |
-|---|---|---|
-| `embedding_model` | `BAAI/bge-small-en-v1.5` | The model Memgraph embeds with; set with `config set recall.embedding_model` |
-| `lanes` | all six | Comma-separated subset of `memories,turns,text,entities,facts,user_facts` |
-| `memories_k` | `5` | Memory files shown, found by vector and full text (shown first) |
-| `turns_k`, `text_k` | `8`, `8` | Vector/text source widths; exchanges widen enabled pools to at least 24 |
-| `entities_k`, `edges_per_entity` | `15`, `6` | Entities matched, and facts read from each |
-| `facts_k`, `fact_turns_k` | `15`, `8` | Facts matched and source width; exchanges widen enabled fact-source pools to at least 16 |
-| `user_fact_types`, `user_facts_k` | `2`, `30` | Relation types gathered whole, for counting questions |
-| `packing` | `exchanges` | Bounded source-only exchanges; `turns` restores separate turn/fact rows |
-| `token_budget` | `6000` | Maximum row tokens in exchange mode; rendering instructions are outside the budget |
-| `supplemental_search` | `true` | Discovery of complementary problem-resolution exchanges in vector-selected sessions |
-| `turn_chars` | `1500` | Characters shown per message |
-| `query_instruction` | per model | Prefix embedded with the question; bge's English models get their retrieval instruction, other models none |
-
-Existing config files that omit these keys adopt the defaults above. Exchange
-dependencies are installed with `sessions-graph`. Before offline use, populate
-and preserve the tokenizer cache; see [exchange recall](../eval/recall-exchanges.md)
-for setup, measured tradeoffs and evaluation limits. The token budget applies
-per space, rather than across all fused results.
-
-Recall needs Memgraph with MAGE (`memgraph/memgraph-mage`) for its vector lanes;
-without it, it answers from text search and says so. `doctor` checks both
-(`embeddings` and `mcp`).
-
-**What the model sees.** A tool result carries the rendered text only. Claude
-Code and Codex both show the model a result's `structuredContent` JSON
-*instead of* its text when both are present, and the text is the form recall
-was benchmarked in; the JSON is what `--json` prints.
-
-### Memory: Context Graph as the harness's memory
-
-Every agent `setup` knows can use Context Graph as its memory. Claude Code and
-Codex each keep their own memory, and Context Graph replaces it for a user who
-opts in:
-
-```bash
-memgraph-context-graph setup claude-code --memory-backend context-graph
-memgraph-context-graph setup claude-code --memory-backend native   # hand it back
-```
-
-(The interactive `setup` offers the same switch as a checkbox. `uninstall` turns the harness's own memory
-back on, since without the plugin it would have none.)
-
-Opting in does three things, in this order:
-1. Imports the existing auto-memory files from every project once:
-   - `user`/`feedback` memories go to `/memories/<type>/`;
-   - `project`/`reference` memories go to that project's folder;
-   - `MEMORY.md` is skipped, and anything already in the graph is never overwritten.
-2. Sets `autoMemoryEnabled: false` in `~/.claude/settings.json`, the user-level
-   settings file, because a plugin can't set it itself. The file is backed up
-   once to `settings.json.context-graph.bak`.
-3. Records `[memory] backend = "context-graph"`.
-
-For Codex, `setup codex --memory-backend context-graph` does the same against
-its global store, with three differences:
-- **Import.** `memory_summary.md`, the profile Codex injected each session,
-  becomes `/memories/user/codex-memory-summary.md`, and `MEMORY.md` becomes
-  `/memories/codex/memory.md`.
-- **Switch.** It turns off `features.memories`, `memories.use_memories` and
-  `memories.generate_memories` in `~/.codex/config.toml` (or under
-  `$CODEX_HOME`), keeping the user's comments and layout. Handing memory back
-  restores whatever those keys were before. If the user's own
-  `[mcp_servers.context-graph]` narrows tools with `enabled_tools`, `memory` is
-  added there.
-- **Compaction.** The Codex plugin's `SessionStart` hook also fires after
-  compaction (`compact`), so the memory index comes back once the context is
-  summarized.
-
-Codex caps hook context at about 2,500 tokens, so pinned files come before the
-index and a long index is cut from its tail. See
-[the Codex research note](docs/research/2026-10-codex-memory.md).
-
-If the import can't run, for example because Memgraph is down, nothing is
-switched.
-
-Nothing writes to both memories: while the backend is `context-graph`, the
-graph is the only one. Handing memory back (`--memory-backend native`, or
-`uninstall`) first copies the graph's memories into Claude Code's auto memory,
-the reverse of the import, so it picks up where the graph left off:
-- a project's files go to every Claude Code project folder with that project
-  key, `user`/`feedback` ones to every folder with auto memory, each with its
-  `<type>_` prefix back;
-- the graph's copy wins over the older one there, and each folder's
-  `MEMORY.md` is rebuilt;
-- files Claude Code has no folder for (a project it never opened, another
-  agent's files) stay in the graph only, and the output lists them.
-
-Then it removes the setting. The copy runs only while the backend is
-`context-graph`, so handing back twice never overwrites newer files. If
-Memgraph is down, `setup` switches nothing; `uninstall` turns the memory back
-on anyway, with what it held before, and warns. Codex, Copilot CLI and Grok
-Build get nothing copied back: their memory is generated or hosted by the
-agent itself.
-
-`doctor` fails when the backend is `context-graph` but Claude Code's own memory
-is still on, including when the project's `.claude/settings.json` or
-`.claude/settings.local.json` turns `autoMemoryEnabled` back on, since those
-outrank the user-level setting.
-
-With that set, `memgraph-context-graph mcp` also serves a `memory` tool with the
-Claude API memory tool's commands (`view`, `create`, `str_replace`, `insert`,
-`delete`, `rename` on `/memories`). The model keeps its curated long-term memory there:
-- `/memories/` for what applies everywhere;
-- `/memories/projects/<project>/` for one codebase.
-
-Every file is a `(:Memory)` node in the user's graph, shared across harnesses
-and sessions. Whose memory it is comes from `identity.user_id`, never from
-the call. Without the setting the tool isn't listed at all, so the harness's
-own memory stays in charge. Harnesses list tools once per session, so the
-change shows from the next session.
-
-At session start the hook loads the memory, the way the harness's built-in
-memory would have. It adds:
-- an index of the root and the current project's files, one line each with
-  the file's `description:` frontmatter or first line, up to 200 lines;
-- the full text of any file with `pin: true` in its frontmatter;
-- the current project's folder.
-
-The index is generated from the graph, so the model never maintains an index
-file and it can't go stale. The project folder is keyed by the checkout's git
-`origin` remote (e.g. `github.com_memgraph_ai-toolkit`), so every clone of a
-repository shares one folder. Without a remote, the repository's directory
-name is used. See
-[ADR 0006](docs/adr/0006-memory-tool-writes-explicit-memory.md) for why this is
-the one write the model makes over MCP.
-
-#### Every agent: registration, switch and session start
-
-The other five have no plugin, so `setup <runtime>` registers the
-`context-graph` MCP server in the agent's own user-level config: memory belongs
-to the user, not to one project. It adds the server's tools to the agent's
-persistent allow-list where it keeps one, because a headless run refuses a tool
-that needs approval. `--memory-backend context-graph` then turns the agent's
-own memory off, and `uninstall` undoes both. Every edited file keeps the rest of
-its content and is backed up once to `<name>.context-graph.bak`.
-
-| Agent | Built-in memory, and the switch | Server registered in | Session-start text reaches the model through |
-|---|---|---|---|
-| Claude Code | auto memory; `autoMemoryEnabled: false` | the plugin | `SessionStart` `additionalContext` |
-| Codex | memories; three keys in `config.toml` | the plugin | `SessionStart` `additionalContext` (~2,500-token cap) |
-| Copilot CLI | Copilot Memory (on GitHub, not importable); `"memory": false` in `~/.copilot/settings.json` | `~/.copilot/mcp-config.json` (no allow-list: approve once, or `--allow-tool=context-graph`) | `sessionStart` top-level `additionalContext` |
-| Cursor | none (Memories was removed) | `~/.cursor/mcp.json`; allow `Mcp(context-graph:*)` in `~/.cursor/cli-config.json` | `sessionStart` `additional_context` (the IDE's agent window can drop it; untested here) |
-| OpenCode | none | `mcp.servers` in `~/.config/opencode/opencode.json`, `codemode: false`; an allow rule in `permissions` | the plugin's `context` hook, added to the system prompt of every request |
-| Antigravity CLI | none (Knowledge is off in the CLI) | `~/.gemini/config/mcp_config.json`; allow `mcp(context-graph/*)` in `~/.gemini/antigravity-cli/settings.json` | `SessionStart` `injectSteps` system message |
-| Grok Build | topic notes under `~/.grok/memory-v2/`, imported to `/memories/grok/`; `[memory_v2] enabled = false` | `~/.grok/config.toml`; allow `MCPTool(context-graph__*)` | the MCP server's `instructions` (`mcp --session-context`): Grok's start hooks can't reach the model |
-
-Antigravity's hooks carry no prompt or reply text, so its turns are read from
-the transcript its `Stop` payload points at; that is what gives its sessions a
-place in recall and in the next session's "where you left off".
-
-`live-hooks-e2e.sh memory` checks this against each installed agent: a memory
-written, one read back in a new session, and the next session's index and last
-ask.
-
-### Codex and Claude Code Plugins
-
-Both runtimes have a distributable Runtime Plugin that wires hooks and the MCP server; marketplace
-install steps are in [plugins/memgraph-context-graph-codex](../plugins/memgraph-context-graph-codex/README.md) and
-[plugins/memgraph-context-graph-claude](../plugins/memgraph-context-graph-claude/README.md). Check an install with:
-
-```bash
-memgraph-context-graph doctor --runtime codex --connector skills-graph --connector actions-graph --connector sessions-graph
-```
-
-Graph credentials live in `~/.config/context-graph/config.toml` (written by `setup`/`config set`), not in plugin hook files or the process environment — hooks read that file at runtime. See [Configuration](#configuration).
-
-### Source Development
-
-For source development and per-project experiments, you can generate local Codex hook files:
-
-```bash
-memgraph-context-graph hook init codex --project-dir "$PWD" --setup-schema
-```
-
-This writes local, ignored files:
-
-```text
-.codex/config.toml
-.codex/hooks.json
-```
-
-See [Command Hook Reference](docs/command-hooks.md) for manual setup, non-default Memgraph values, smoke tests, and generated hook JSON details.
-
-### Multiple Graph Components
-
-```python
-from memgraph_context_graph import AgentLink
-from memgraph_context_graph.sdk import ContextGraphMemory
-from memgraph_context_graph.sdk.claude import ClaudeAgentMemory
-from skills_graph import SkillGraph
-from skills_graph.connector import SkillGraphConnector
-
-skills = SkillGraph()
-
-link = AgentLink()
-link.add_connector(SkillGraphConnector(skills))
-link.add_connector(MyGraphConnector(...))
-
-# Capture goes through your link instead of the config file's connectors.
-options = ClaudeAgentMemory(ContextGraphMemory(link=link)).options()
-```
-
-Connectors are owned by the graph packages because each graph package knows its own schema and persistence rules.
+Forgetting deletes the session's captured activity and derived data that no other source supports. Explicit memory files remain. See [forgetting sessions](docs/configuration.md#forgetting-sessions) for deletion scope and protection against recapture.
 
 ## Architecture
 
-### Event Protocol
-
-All runtime adapters emit runtime-agnostic `Event` dataclasses:
-
-| Event | When |
-|-------|------|
-| `SessionStartEvent` | Agent session begins |
-| `SessionEndEvent` | Agent session ends |
-| `TurnEndEvent` | Agent finished one turn; the session stays open |
-| `ToolStartEvent` | Before tool/function call |
-| `ToolEndEvent` | After tool/function returns |
-| `AgentStartEvent` | Agent/subagent begins |
-| `AgentEndEvent` | Agent/subagent finishes |
-| `LLMStartEvent` | Before LLM call |
-| `LLMEndEvent` | After LLM response |
-| `HandoffEvent` | Agent hands off to another |
-| `MessageEvent` | User/assistant/system message |
-| `ErrorOccurredEvent` | Error during execution |
-
-### Runtime Adapters
-
-| Adapter | Runtime Source | Hook Mechanism |
-|---------|----------------|----------------|
-| `ClaudeAgentMemory` (`memgraph_context_graph.sdk.claude`) | Claude Agent SDK | `HookMatcher` callbacks, translated by the `claude-code` rules |
-| `OpenAIAgentsMemory` (`memgraph_context_graph.sdk.openai`) | OpenAI Agents SDK | A `RunHooks` subclass |
-| Command-hook adapters | Claude Code, Codex, Copilot CLI, Cursor, OpenCode, Antigravity CLI, Grok Build | Command hooks reading JSON from stdin (see [Command Hook Runtimes](#command-hook-runtimes) and [docs/command-hooks.md](docs/command-hooks.md)) |
-
-### Graph Connectors
-
-| Connector | Graph Component | Events Handled |
-|-----------|----------------|----------------|
-| `SkillGraphConnector` | [skills-graph](../skills-graph/) | Tool/message events matching skill access/search operations |
-| `ActionsGraphConnector` | [actions-graph](../actions-graph/) | Session, tool, message, subagent, and error events → action nodes |
-| `SessionsGraphConnector` | [sessions-graph](../sessions-graph/) | `SessionStartEvent`/`SessionEndEvent`/`TurnEndEvent` → `(:User)`, `(:Session)`, `HAD_SESSION`; embeds each ended turn and marks it for reconciliation, which only a session end starts |
-
-The installed plugin wires **all three** (`--connector skills-graph --connector actions-graph --connector sessions-graph`). Each connector lives in the package that owns its graph schema; additional connectors should too.
-
-### Adding a New Runtime Adapter
-
-Implement `RuntimeAdapter`:
-
-```python
-from memgraph_context_graph import AgentLink, ToolStartEvent
-from memgraph_context_graph.protocols import RuntimeAdapter
-
-
-class MyRuntimeAdapter(RuntimeAdapter):
-    def __init__(self, link: AgentLink, session_id: str):
-        self._link = link
-        self._session_id = session_id
-
-    def get_runtime_hooks(self):
-        # Return whatever your runtime expects.
-        ...
-
-    def _on_tool_call(self, name, args):
-        self._link.emit(
-            ToolStartEvent(
-                session_id=self._session_id,
-                tool_name=name,
-                tool_input=args,
-            )
-        )
+```text
+Runtime adapter → shared Event Protocol → graph connectors → Memgraph
 ```
 
-### Adding a New Command-Hook Runtime Adapter
+Adapters translate runtime-specific activity. Connectors decide what to persist and live in the package that owns the graph schema. Runtime plugins distribute the hooks and MCP wiring.
 
-The pattern above fits **in-process** runtimes — something that calls your Python code directly (an SDK callback, an embedded framework). **Command-hook** runtimes are different: the harness invokes an external command with a JSON payload on stdin (Claude Code, Codex), rather than calling into your process.
-
-Command-hook runtimes provide four pieces:
-
-1. **A payload translator.** Same idea as `RuntimeAdapter.get_runtime_hooks()`, but the input is the harness's raw JSON payload rather than a native callback. Map each of the harness's hook event names to the matching `Event` subclass and call `link.emit(...)`.
-2. **A hook-config generator** (`build_hooks_config(command)`). Builds whatever config shape the harness expects for wiring hooks, pointing every hook at your CLI entry point.
-3. **A response function** (`response_for_payload(payload)`). Returns the JSON the harness expects back on stdout, or `None`.
-4. **A native doctor probe** (`probe_payload`). This must use the runtime's own event name and field shape; not every runtime calls session completion `Stop`.
-
-Built-in command-hook adapters use the declarative `RuntimeSpec`,
-`SpecAdapter`, and `SpecPlugin` in `adapters/_spec.py`; a runtime supplies
-event rules, field aliases, hook responses, metadata keys, hook configuration,
-and its probe, and `SpecPlugin` derives the Runtime Registration from them. The stdin-loading, connector-construction, and CLI parsing
-remain shared in `hooks/runner.py`. External packages can either use that
-module or implement `RuntimeAdapter` directly, then publish a Runtime
-Registration through the entry-point group.
-
-A registration includes the adapter and probe:
-
-```python
-# my_package/adapter.py
-from dataclasses import dataclass, field
-
-from memgraph_context_graph.protocols import RuntimeAdapter
-
-
-class MyCommandHookAdapter(RuntimeAdapter):
-    def __init__(self, link, session_id: str | None = None):
-        self._link = link
-        self._session_id = session_id
-
-    def get_runtime_hooks(self):
-        return build_hooks_config("my-runtime hook run my-runtime")
-
-    def handle_payload(self, payload: dict) -> None:
-        for event in self._events_from_payload(payload):
-            self._link.emit(event)
-
-    def _events_from_payload(self, payload: dict):
-        # Map the harness's own hook_event_name / payload shape to Event subclasses.
-        ...
-
-
-def build_hooks_config(command: str, *, timeout: int = 30) -> dict:
-    # Return whatever config format your harness expects, every hook pointing at `command`.
-    ...
-
-
-def response_for_payload(payload: dict) -> dict | None:
-    # Return the JSON your harness expects back, or None.
-    ...
-
-
-@dataclass(frozen=True)
-class MyRuntimePlugin:
-    name: str = "my-runtime"
-    adapter_class: type = MyCommandHookAdapter
-    probe_payload: dict = field(default_factory=lambda: {"hook_event_name": "SessionEnd", "session_id": "doctor"})
-
-    def response_for_payload(self, payload: dict) -> dict | None:
-        return response_for_payload(payload)
-
-    def build_hooks_config(self, command: str, *, timeout: int = 30) -> dict:
-        return build_hooks_config(command, timeout=timeout)
-
-    # init(project_dir, connectors, **kwargs) is optional: omit it when there is no project-local file to write.
-
-
-PLUGIN = MyRuntimePlugin()
-```
-
-Then register it in your own package's `pyproject.toml` — this is the entire integration, no fork or PR against this repo required:
-
-```toml
-[project.entry-points."memgraph_context_graph.runtimes"]
-my-runtime = "my_package.adapter:PLUGIN"
-```
-
-Once installed, `doctor --runtime my-runtime`, `hook run my-runtime`, and `hook init my-runtime` (if `init` is implemented) work like the built-in registrations. See `runtime_plugin.py` for the full protocol and `pyproject.toml`'s own `[project.entry-points."memgraph_context_graph.runtimes"]` for registration examples.
-
-### Adding a New Graph Component
-
-Implement `GraphConnector` in the graph package:
-
-```python
-from memgraph_context_graph import EventType
-from memgraph_context_graph.protocols import GraphConnector
-
-
-class MyGraphConnector(GraphConnector):
-    def supports(self, event):
-        return event.event_type in {EventType.TOOL_START, EventType.TOOL_END}
-
-    def on_event(self, event):
-        # Write to your graph component.
-        ...
-```
-
-Then register it, so hooks, schema setup and `doctor` can find it:
-
-```python
-from memgraph_context_graph.connectors import ConnectorSpec
-
-CONNECTOR = ConnectorSpec(
-    name="my-graph",
-    graph=MyGraph,  # called with a Memgraph client, or its connection keyword arguments
-    build=lambda graph, config: MyGraphConnector(graph),  # config: the config file's HookConfig
-    check=None,  # optional: (config) -> (ok, detail) for doctor, beyond a reachable Memgraph
-)
-```
-
-```toml
-[project.entry-points."memgraph_context_graph.connectors"]
-my-graph = "my_graph.connector:CONNECTOR"
-```
-
-Once installed, `hook run <runtime> --connector my-graph`, `[capture] connectors = ["my-graph"]` and
-`doctor` work like the built-in connectors. `setup` only installs the connectors listed in
-`memgraph_context_graph.connectors.INSTALLABLE`; install your own package beside the tool yourself.
-
-Give the component's graph class a `forget_session(session_id) -> dict[str, int]`
-that deletes what it hangs off that Session and returns counts, and add it to
-`FORGET_ORDER` in `memgraph_context_graph/forget.py`, so `forget` reaches it.
+| Read more | Covers |
+|---|---|
+| [Claude Code plugin](../plugins/memgraph-context-graph-claude/) | Marketplace install and plugin specifics |
+| [Codex plugin](../plugins/memgraph-context-graph-codex/) | Marketplace install, hook trust, and tool approval |
+| [Command-hook reference](docs/command-hooks.md) | Payloads, generated files, and runtime differences |
+| [Architecture and extensions](docs/extending.md) | Events, custom connectors, and runtime registrations |
+| [Actions Graph](../actions-graph/) | Tool calls, messages, and subagents |
+| [Skills Graph](../skills-graph/) | Skill definitions and usage |
+| [Sessions Graph](../sessions-graph/) | Memories, reconciliation, and recall |
+| [Resources Graph](../resources-graph/) | Public GitHub resource caching |
 
 ## License
 

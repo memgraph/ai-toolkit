@@ -1,101 +1,72 @@
-# Memgraph Context Graph for Claude Code
+# Context Graph for Claude Code
 
-Claude Code runtime plugin for Memgraph Context Graph.
+Give Claude Code access to past sessions and durable memory in Memgraph. This plugin installs the hooks that capture activity and the MCP server that serves `recall` and, when enabled, `memory`.
 
-The plugin installs Claude Code lifecycle hooks that call:
+## Get started
 
-```bash
-memgraph-context-graph hook run claude-code --connector skills-graph --connector actions-graph --connector sessions-graph
-```
-
-Flow:
-
-```text
-Claude Code Plugin -> Claude Code Runtime Adapter -> Event Protocol -> Graph Connector -> Memgraph
-```
-
-The plugin is only deployment wiring. Memgraph Context Graph normalizes runtime events. Graph connectors decide what to persist.
-
-## First Run
-
-The plugin installs hook wiring; the runtime package and the rest come from one script:
+The [Context Graph installer](../../README.md#getting-started) installs the plugin and dependencies together. If the CLI is already installed:
 
 ```bash
-./scripts/bootstrap.sh
+memgraph-context-graph setup claude-code
+memgraph-context-graph doctor --runtime claude-code
 ```
 
-It installs the `memgraph-context-graph` CLI with its connectors through `uv`, then runs
-`memgraph-context-graph setup claude-code --no-tui`: it uses the Memgraph your config names, or one on
-`localhost:7687`, or starts one in Docker (with a volume, on a free port if 7687 is taken), sets your
-identity, and checks the hooks with `doctor`. Running it again skips what is already done.
+Setup connects to your configured Memgraph or starts its own Docker container, installs missing connectors, and sets your identity. Restart Claude Code afterwards.
 
-`uv` manages Python for the tool. If uv-managed Python downloads are blocked in your environment, install Python 3.10+ and rerun it.
-
-To set up every agent on the machine at once, interactively, run `memgraph-context-graph setup` instead.
-`memgraph-context-graph update claude-code` upgrades the package and refreshes the plugin; `memgraph-context-graph uninstall claude-code` removes the wiring and keeps your graph; `memgraph-context-graph uninstall --all` removes everything, graph included.
-
-## Recall
-
-The plugin also bundles an MCP server, `memgraph-context-graph mcp` (see `.mcp.json`), which gives the model a `recall` tool (`mcp__plugin_context-graph_context-graph__recall`) over the user's own past sessions. At session start the hook adds one line telling the model the tool is there; the model calls it when a question needs memory. Recall needs the `mcp` extra, which `bootstrap.sh` installs, and Memgraph with MAGE for its vector search. See [memgraph-context-graph § Recall](../../memgraph-context-graph/README.md#recall-memory-for-the-harnesss-model).
-
-## Configure
-
-Bootstrap writes `~/.config/context-graph/config.toml`; hooks read it at runtime (not environment variables). Set your identity — **required** for sessions-graph to attach sessions to a user:
-
-```bash
-memgraph-context-graph config set identity.user_id "your-name"
-```
-
-For a remote/HA Memgraph, also `memgraph-context-graph config set memgraph.url "neo4j://<host>:7687"` (and `memgraph.user`/`memgraph.password`/`memgraph.database`). The default is `bolt://localhost:7687`. See the [memgraph-context-graph README](../../memgraph-context-graph/README.md#configuration).
-
-## Reconciliation (optional)
-
-Captured sessions are marked `reconciliation_status = 'pending'` on end. To extract entities from that content into the graph:
-
-```bash
-pip install "sessions-graph[reconciliation]"
-export OPENAI_API_KEY=...    # or ANTHROPIC_API_KEY
-sessions-graph reconcile --pending
-```
-
-## Prerequisites
-
-- Memgraph running and reachable over Bolt.
-- `uv` available on `PATH`.
-- `memgraph-context-graph` available on `PATH` after `bootstrap.sh`.
-
-## Local Test
-
-From the plugin directory:
-
-```bash
-./scripts/doctor.sh
-```
-
-## Git Marketplace
-
-Register this repo as a Claude Code marketplace:
-
-```text
-/plugin marketplace add memgraph/ai-toolkit
-```
-
-CLI equivalent:
+## Install through the marketplace
 
 ```bash
 claude plugin marketplace add memgraph/ai-toolkit --sparse .claude-plugin
+claude plugin install context-graph@context-graph-plugins -y
 ```
 
-Install:
+The plugin supplies wiring; it also needs the Python CLI and connectors. From this plugin's directory, run `./scripts/bootstrap.sh` to install those and run setup, or use the [family installer](../../README.md#getting-started).
 
-```text
-/plugin install context-graph@context-graph-plugins
+Inside Claude Code, you can also install with `/plugin marketplace add memgraph/ai-toolkit` followed by `/plugin install context-graph@context-graph-plugins`. The bundled setup skill is `/context-graph:setup`.
+
+## Enable curated memory
+
+Recall searches your captured history. To also store the agent's long-term memory in Context Graph:
+
+```bash
+memgraph-context-graph setup claude-code --memory-backend context-graph
 ```
 
-The Memgraph Context Graph skill is exposed as:
+This is a user-wide setting. See the [memory guide](../../memgraph-context-graph/docs/memory.md) for import behavior, session-start context, and switching back.
 
-```text
-/context-graph:setup
+## Configuration
+
+Hooks read `~/.config/context-graph/config.toml`, rather than connection or credential environment variables:
+
+```bash
+memgraph-context-graph config set identity.user_id "your-name"
+memgraph-context-graph config set memgraph.url "bolt://my-host:7687"
+memgraph-context-graph config set memgraph.password  # prompts
 ```
 
-This is a Claude Code marketplace only. Codex uses the separate marketplace at `.agents/plugins/marketplace.json`.
+Setup writes your identity; sessions-graph needs `identity.user_id` to attach sessions to you. See [configuration and privacy](../../memgraph-context-graph/docs/configuration.md) for capture controls and connection settings.
+
+## Reconcile captured sessions
+
+To extract entities and relationships, add the `reconciliation` extra ([how](../../README.md#turn-conversations-into-a-knowledge-graph)), then run:
+
+```bash
+sessions-graph reconcile --pending
+```
+
+Extraction uses local GLiNER2 and needs no LLM key. See [reconciliation](../../sessions-graph/docs/reconciliation.md) for automatic processing and ontology settings.
+
+## Update or remove
+
+```bash
+memgraph-context-graph update claude-code
+memgraph-context-graph uninstall claude-code
+```
+
+Restart the agent after updating. Uninstall removes the wiring and restores built-in memory settings. On a terminal, it also offers to delete the graph, config, and tool; each defaults to keeping it. See [runtime setup](../../memgraph-context-graph/docs/runtime-setup.md) for removal flags.
+
+## Troubleshooting
+
+Run `memgraph-context-graph doctor --runtime claude-code`. Check that the plugin is enabled, the CLI is on `PATH`, and Memgraph is reachable. For source development, `./scripts/doctor.sh` runs the same checks from this directory.
+
+If this project has an older local hook file as well as the plugin, inspect it for duplicate or obsolete commands. The plugin calls `memgraph-context-graph hook run claude-code` and reads its connector selection from the shared config file.

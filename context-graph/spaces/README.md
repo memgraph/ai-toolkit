@@ -1,10 +1,24 @@
-# context-graph-spaces
+# Context Graph Spaces
 
 The Enterprise edition of [Context Graph](../README.md): memory for many users on
 one shared, licensed Memgraph. Each user gets a **personal space**, and teams get
 **shared spaces**. Memgraph Enterprise enforces the isolation through
 multi-tenancy, role-based access control and label- and property-based access
-control. Our code doesn't filter.
+control. Access is enforced by the database.
+
+## Requirements and installation
+
+- A licensed Memgraph Enterprise instance with multi-tenancy enabled.
+- An admin login for provisioning users, databases, and access rules.
+- A Context Graph installation for each user.
+
+```bash
+pip install context-graph-spaces
+```
+
+Install this package in each user's Context Graph tool environment as well as the environment running the admin commands.
+
+## Configure a user
 
 The Community edition (one user, one database) doesn't need this package and
 doesn't change when it's installed. A user's config file selects Enterprise
@@ -35,7 +49,9 @@ memory_limit_mb = 4096
 ```
 
 ```bash
-export MEMGRAPH_URL=bolt://memgraph.corp:7687 MEMGRAPH_USER=<admin> MEMGRAPH_PASSWORD=...
+export MEMGRAPH_URL="bolt://memgraph.corp:7687"
+export MEMGRAPH_USER="admin"
+export MEMGRAPH_PASSWORD="your-admin-password"
 context-graph-spaces plan spaces.toml     # what would change
 context-graph-spaces apply spaces.toml    # make it so; prints one-time setup lines for new logins
 ```

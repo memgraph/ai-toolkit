@@ -1,6 +1,6 @@
-# context-graph-viewer
+# Context Graph Viewer
 
-A read-only terminal viewer for your Context Graph. It shows what your Claude Code / Codex hooks captured, whether
+A read-only terminal viewer for your Context Graph. It shows what your agent hooks captured, whether
 capture is failing, where reconciliation stands, and what the graph learned, without Cypher or Memgraph Lab.
 
 ```bash
@@ -34,7 +34,7 @@ uv tool install "memgraph-context-graph[mcp]" \
 | **Entities** | `k` on the dashboard, `g` on a session | Entities merged by name, by support (how many sessions and memory files ground them) or most recent, with their provenance. |
 | **Neighbourhood** | `enter` on an entity | One entity's relations grouped by type, with the evidence behind each. `enter` on a neighbour moves there; `esc` walks back. |
 
-## Keys
+## Keyboard shortcuts
 
 | Key | Does |
 |---|---|
@@ -50,18 +50,13 @@ uv tool install "memgraph-context-graph[mcp]" \
 | `?` | All keys |
 | `esc` / `q` | Back / quit |
 
-## Look
-
-The viewer opens in Memgraph's brand: black surface, white text, grays for borders, and orange for focus, the
-selected row, key hints and the timeline bars. Yellow, red and green appear only for warning, error and success.
-The palette lives in `context_graph_viewer/theme.py`, and a test keeps views from naming a colour of their own.
-`ctrl+p` opens Textual's command palette, where any built-in theme can replace it.
-
 ## Scope
 
 By default you see your own sessions: `identity.user_id` in Community, your Memgraph login in Enterprise. Sessions
 captured before a user was configured belong to nobody (reconcile files them under an `anon-…` user), so if the
 dashboard opens empty, press `a`.
+
+Use `ctrl+p` to open Textual's command palette and change the theme.
 
 ## Development
 
