@@ -1,11 +1,11 @@
-# Experimental exchange recall evaluation
+# Exchange recall evaluation
 
 The recall implementation batches source lookups, groups shared chunks before
 fact/entity expansion, preserves deterministic cutoffs and fills passage-hit
 pools with distinct sources. Natural-language text tokens, including trailing
 `not`, are searched literally. These changes run against the existing graph.
 
-The optional exchange mode uses graph links to keep related user/assistant
+The default exchange mode uses graph links to keep related user/assistant
 messages together, ranks source groups with reciprocal rank fusion, and packs
 whole groups inside a token budget. Extracted facts vote for source messages
 without becoming separate answer-context rows. It uses the existing local
@@ -24,22 +24,26 @@ config = RecallConfig(
 result = recall(db, user_id, question, config=config)
 ```
 
-Install `sessions-graph[compact]`. The same options work in the hub's `[recall]`
-configuration. The default retains turn/fact formatting, but retrieval behavior
-changes: distinct-source filling replaces a passage-only cutoff, text words are
-literal, and fact selection follows entity priority with deterministic ties.
-Keeping the formatting default does not preserve historical retrieval output.
-The token budget covers source rows, memory notes and exchange headers, excluding `render()` reading
-instructions. It applies independently to each searched space.
+Exchange packing dependencies are included in `sessions-graph`; `[compact]` remains
+an empty compatibility extra. The same options work in the hub's `[recall]`
+configuration. `RecallConfig()` selects the configuration above, including
+supplemental discovery. Existing configurations that omit these keys also adopt
+the new defaults. To retain separate turn/fact rows, set `packing="turns"`;
+`supplemental_search=False` independently disables discovery in exchange mode.
+The token budget covers source rows, memory notes and exchange headers, excluding
+`render()` reading instructions. It applies independently to each searched space.
+Initialize the tokenizer cache before using the default in an offline deployment
+(see setup below); an unavailable cache fails before graph or embedding work.
 
 ## Status and generalization
 
-Exchange packing and supplemental discovery are experimental, opt-in policies.
-The 65.46% result applies to the exact configuration above; the baseline remains
-marked `prototype`. Default recall uses `packing="turns"` and
-`supplemental_search=False`. The published historical version points retain
-their original settings and scores. No complete 400-question score has been
-established for the optimized default alone.
+Exchanges are the product default, selected for their lower context-token use
+and source grouping. This is a rollout decision, not evidence of improvement on
+every metric. In the matched comparison below, exchanges cost 0.115 s more than
+optimized turn packing. Quality varies by question type, and the historical
+65.46% versus 63.60% comparison does not establish a quality gain.
+The baseline remains marked `prototype`, and published official version points
+retain their original settings and scores. No new official score is introduced.
 
 Batching and source-ownership changes apply to both packing modes; their
 performance depends on graph shape and indexes. Exchange widths,
@@ -50,14 +54,18 @@ holdout. Production retrieval uses the question and owned graph contents;
 benchmark question IDs, ability labels and reference answers are not policy
 inputs. That separation does not establish generalization.
 
-Before promoting exchanges to a default or claiming broader memory-quality
-gains, freeze the policy and validate it on independent, complete histories.
+To establish broader memory-quality gains, validate the frozen policy on
+independent, complete histories.
 Include answerable controls as well as abstention, ordering and multi-session
 cases, and measure tokens and latency under a matched protocol. The reduced
 LME checks below are diagnostic and do not satisfy this gate. Further tuning
 on the same BEAM failures must remain development evidence.
 
 ## Matched default validation, 2026-10-25
+
+This section records the validation before exchanges became the default.
+“Proposed default” in the table means optimized **turn packing**, the default at
+the time of that run. “Exchanges” is the current default configuration.
 
 The metric-only
 [`beam-100k-recall-review-diagnostic.json`](baselines/beam-100k-recall-review-diagnostic.json)
@@ -167,7 +175,7 @@ A smaller matched eight-question retrieval panel measured 0.786 s for the
 optimized default versus 0.863 s with exchanges, with 9,273 versus 5,896 mean
 tokens. Exchange packing adds work; this panel measures a token reduction, not
 an established answer-quality improvement. Abstention, ordering and multi-session
-regressions keep it opt-in.
+regressions remain relevant limitations of the default policy.
 
 Answering used the unchanged shared prompt and `gpt-4.1`, temperature zero.
 Judging used the official `gpt-4.1-mini` BEAM rubric; ordering retained upstream
@@ -203,8 +211,9 @@ Real-Memgraph regressions cover shared chunks, distinct-source limits,
 literal text queries, indexed/unindexed source lookup, ownership before fact
 confidence cutoffs, direction and session/agent boundaries, foreign-container
 neighbors, fallback, token budgets and SDK output. Config/CLI tests verify
-normal boolean and optional-value round trips. The frozen Community recall
-output remains unchanged. The implementation also reproduced 20 archived
+normal boolean and optional-value round trips. The frozen Community turn-mode
+output remains unchanged, with a separate snapshot for default exchanges.
+The implementation also reproduced 20 archived
 compact/complementary contexts exactly before the full run.
 
 Exact entity search remains linear in owned vectors. The policy limits and
@@ -227,8 +236,7 @@ vector/text pools widen to at least 24 sources and fact-source turns to 16;
 zero widths and disabled lanes remain disabled. Up to three directed
 `FOLLOWED_BY` edges join messages within their session or agent. Exchange RRF
 uses damping 20, direct-lane weight 1 and graph-lane weight 1/3. These are
-experimental constants selected during BEAM 100K development, not universal
-retrieval defaults.
+defaults selected during BEAM 100K development, not universal optimal settings.
 
 Supplemental discovery uses English problem/fix cues in at most four
 vector-selected owned sessions and selects up to 24 sources. The primary and

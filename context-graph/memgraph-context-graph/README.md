@@ -395,7 +395,7 @@ The same search from a shell:
 
 ```bash
 memgraph-context-graph recall "what did we decide about the deploy window?"
-memgraph-context-graph recall --json "..."    # the turns and facts as JSON
+memgraph-context-graph recall --json "..."    # source rows and exchange groups as JSON
 ```
 
 Whose memory is searched comes from `identity.user_id` in the config file, never
@@ -407,15 +407,21 @@ from the tool call, so a model can only read its own user's sessions.
 | `embedding_model` | `BAAI/bge-small-en-v1.5` | The model Memgraph embeds with; set with `config set recall.embedding_model` |
 | `lanes` | all six | Comma-separated subset of `memories,turns,text,entities,facts,user_facts` |
 | `memories_k` | `5` | Memory files shown, found by vector and full text (shown first) |
-| `turns_k`, `text_k` | `8`, `8` | Messages found by vector and by text search |
+| `turns_k`, `text_k` | `8`, `8` | Vector/text source widths; exchanges widen enabled pools to at least 24 |
 | `entities_k`, `edges_per_entity` | `15`, `6` | Entities matched, and facts read from each |
-| `facts_k`, `fact_turns_k` | `15`, `8` | Facts matched, and the messages they were read from |
+| `facts_k`, `fact_turns_k` | `15`, `8` | Facts matched and source width; exchanges widen enabled fact-source pools to at least 16 |
 | `user_fact_types`, `user_facts_k` | `2`, `30` | Relation types gathered whole, for counting questions |
-| `packing` | `turns` | Opt in to experimental source-only `exchanges`; requires `sessions-graph[compact]` |
+| `packing` | `exchanges` | Bounded source-only exchanges; `turns` restores separate turn/fact rows |
 | `token_budget` | `6000` | Maximum row tokens in exchange mode; rendering instructions are outside the budget |
-| `supplemental_search` | `false` | Experimental discovery of complementary problem-resolution exchanges in vector-selected sessions |
+| `supplemental_search` | `true` | Discovery of complementary problem-resolution exchanges in vector-selected sessions |
 | `turn_chars` | `1500` | Characters shown per message |
 | `query_instruction` | per model | Prefix embedded with the question; bge's English models get their retrieval instruction, other models none |
+
+Existing config files that omit these keys adopt the defaults above. Exchange
+dependencies are installed with `sessions-graph`. Before offline use, populate
+and preserve the tokenizer cache; see [exchange recall](../eval/recall-exchanges.md)
+for setup, measured tradeoffs and evaluation limits. The token budget applies
+per space, rather than across all fused results.
 
 Recall needs Memgraph with MAGE (`memgraph/memgraph-mage`) for its vector lanes;
 without it, it answers from text search and says so. `doctor` checks both

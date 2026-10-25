@@ -278,10 +278,10 @@ CONFIG_KEYS: tuple[ConfigKey, ...] = (
     ),
     ConfigKey(
         "recall.packing",
-        "Turn/fact rows or bounded source-only exchanges (requires sessions-graph[compact]).",
+        "Bounded source-only exchanges or separate turn/fact rows.",
         choices=("turns", "exchanges"),
-        unset="defaults to turns",
-        example="turns",
+        unset="defaults to exchanges",
+        example="exchanges",
     ),
     ConfigKey(
         "recall.token_budget",
@@ -294,7 +294,8 @@ CONFIG_KEYS: tuple[ConfigKey, ...] = (
         "recall.supplemental_search",
         "Discover complementary problem-resolution exchanges.",
         kind="bool",
-        unset="defaults to false",
+        unset="defaults to true",
+        example="True",
     ),
     ConfigKey(
         "ontology.path",

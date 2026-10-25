@@ -55,6 +55,25 @@ def seed(db):
     return r._assemble(db, "What problems did we fix?", ["a"], [], RecallConfig())
 
 
+def test_default_recall_matches_evaluated_exchange_policy(episodes):
+    from sessions_graph import SessionsGraph
+
+    graph = SessionsGraph(episodes)
+    graph.setup()
+    default = graph.recall("own", "What problems did we fix?", model="test")
+    explicit = graph.recall(
+        "own",
+        "What problems did we fix?",
+        model="test",
+        config=RecallConfig(packing="exchanges", token_budget=6000, supplemental_search=True),
+    )
+    assert default == explicit
+    assert default.exchanges and not default.facts
+    assert "cable" in default.render() and "SECRET" not in default.render()
+    encoding = tiktoken.get_encoding("cl100k_base")
+    assert len(encoding.encode("\n".join(default.lines()))) <= 6000
+
+
 def test_neighbors_preserve_direction_session_and_episode_boundaries(episodes):
     pairs = episodes.query(_NEIGHBORS, {"user": "own", "ids": ["a", "b", "c", "d", "secret"]})
     assert {(p["source"], p["neighbor"]) for p in pairs} == {("a", "b"), ("b", "a"), ("c", "d"), ("d", "c")}
@@ -75,7 +94,9 @@ def test_nested_agent_neighbors_stay_in_their_container(episodes):
 
 def test_exchange_sdk_render_json_budget_and_sources(episodes):
     initial = seed(episodes)
-    result = assemble(episodes, "own", initial, {"turns": ["a"], "text": []}, RecallConfig(), None)
+    result = assemble(
+        episodes, "own", initial, {"turns": ["a"], "text": []}, RecallConfig(supplemental_search=False), None
+    )
     assert isinstance(result, Recalled)
     assert result.exchanges == (("a", "b"),)
     assert {turn.action_id for turn in result.turns} == {"a", "b"}
@@ -110,7 +131,9 @@ def test_bounded_cues_exclude_other_sessions_and_preserve_full_sources(episodes,
 
 def test_local_document_cap_preserves_primary_context(episodes):
     initial = seed(episodes)
-    plain = assemble(episodes, "own", initial, {"turns": ["a"], "text": []}, RecallConfig(), None)
+    plain = assemble(
+        episodes, "own", initial, {"turns": ["a"], "text": []}, RecallConfig(supplemental_search=False), None
+    )
     episodes.query(
         "MATCH (s:Session {session_id: 'selected'}) UNWIND range(1, 513) AS i "
         "CREATE (a:Action {action_id: 'noise-' + toString(i), text: 'problem fixed'}) CREATE (s)-[:HAS_ACTION]->(a)"

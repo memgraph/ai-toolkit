@@ -29,12 +29,12 @@ from sessions_graph.recall import recall
 from sessions_graph.recall_exchanges import prepare
 """
     if warm:
-        script += "\nassert prepare(RecallConfig(packing='exchanges')).turns_k >= 24\n"
+        script += "\nassert prepare(RecallConfig()).turns_k >= 24\n"
     else:
         # None cannot embed/query: this also checks failure precedes all graph work.
         script += """
 try:
-    recall(None, "user", "question", config=RecallConfig(packing="exchanges"))
+    recall(None, "user", "question", config=RecallConfig())
 except RuntimeError as exc:
     assert "TIKTOKEN_CACHE_DIR" in str(exc), str(exc)
 else:
