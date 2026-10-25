@@ -413,8 +413,8 @@ or the same keys in `[recall]`; this groups source messages and uses extracted
 facts for ranking. The budget applies per space, and fused results preserve
 space-local groups. See [exchange recall](../eval/recall-exchanges.md) for setup
 (including the tokenizer's one-time download), policy limits and evaluation;
-the prototype used 37.9% fewer tokens than the historical run, but a quality
-improvement has not been established.
+the matched 400-question retrieval comparison used 38.1% fewer tokens with
+exchanges, but a quality improvement has not been established.
 
 Turn/fact formatting remains the default. Retrieval itself changes in this
 release: vector hits fill distinct source slots, text words are searched

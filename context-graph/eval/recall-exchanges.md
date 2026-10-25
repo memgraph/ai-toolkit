@@ -25,11 +25,11 @@ result = recall(db, user_id, question, config=config)
 ```
 
 Install `sessions-graph[compact]`. The same options work in the hub's `[recall]`
-configuration. The default retains turn/fact formatting, but retrieval behavior changes: distinct-source
-filling replaces a passage-only cutoff, text words are literal, and fact/rank ties
-are deterministic. Keeping the formatting default does not preserve historical
-retrieval output. The token budget covers
-source rows, memory notes and exchange headers, excluding `render()` reading
+configuration. The default retains turn/fact formatting, but retrieval behavior
+changes: distinct-source filling replaces a passage-only cutoff, text words are
+literal, and fact selection follows entity priority with deterministic ties.
+Keeping the formatting default does not preserve historical retrieval output.
+The token budget covers source rows, memory notes and exchange headers, excluding `render()` reading
 instructions. It applies independently to each searched space.
 
 ## Status and generalization
@@ -41,7 +41,8 @@ marked `prototype`. Default recall uses `packing="turns"` and
 their original settings and scores. No complete 400-question score has been
 established for the optimized default alone.
 
-Batching and source-ownership improvements apply generally. Exchange widths,
+Batching and source-ownership changes apply to both packing modes; their
+performance depends on graph shape and indexes. Exchange widths,
 rank-fusion weights, the token budget, problem/fix cue vocabulary and search
 thresholds were selected through repeated BEAM 100K experiments. The complete
 run includes questions used during development, so it is not an independent
@@ -56,7 +57,69 @@ cases, and measure tokens and latency under a matched protocol. The reduced
 LME checks below are diagnostic and do not satisfy this gate. Further tuning
 on the same BEAM failures must remain development evidence.
 
-## Full BEAM 100K result
+## Matched default validation, 2026-10-25
+
+The metric-only
+[`beam-100k-recall-review-diagnostic.json`](baselines/beam-100k-recall-review-diagnostic.json)
+records a new **400-question retrieval comparison** and a separate **20-question
+paired answer-quality pilot**. These are different sample sizes. No complete
+freshly judged 400-question optimized-default quality score is claimed.
+
+All three retrieval configurations ran sequentially on the same retained graph,
+rotating their order per question. Historical recall uses the pre-PR `e9194ce`
+implementation; the proposed implementation is committed at `a4870ef`, and all
+four production source files exactly match that commit. Full source hashes,
+configs and environment versions are recorded in the diagnostic. Query
+embedding inference is timed; model/type initialization, answering and judging
+are excluded. No graph reconstruction or writes occurred.
+
+| Metric, all 400 questions | Historical default | Proposed default | Exchanges |
+|---|---:|---:|---:|
+| Mean context tokens | 9,472.1 | 9,514.8 | 5,865.7 |
+| Mean recall | 8.961 s | 0.744 s | 0.859 s |
+| p95 recall | 10.337 s | 0.881 s | 1.018 s |
+| Mean cited evidence coverage | 0.5993 | 0.6265 | 0.7029 |
+| Retrieval errors | 0 | 0 | 0 |
+
+The proposed default changes rendered context on **375/400 questions**, with
+**0.45% more mean context tokens**. It does not preserve historical output.
+Exchanges use **38.1% fewer tokens** than the contemporaneous historical
+configuration, and all **400 exchange contexts exactly match** those from the
+frozen 65.46% prototype run. Evidence coverage is a retrieval diagnostic, not
+an answer-quality score. Source ownership and active vector lanes were checked
+for every request; the retained node count stayed unchanged.
+
+The retained graph lacks the Action ID property index that normal setup
+creates. This comparison does not establish the same speedup on indexed
+production graphs. The synthetic lookup table below measures that distinction.
+Short local validation/scaling tasks overlapped the initial portion of this
+run; it was not a perfectly idle-host microbenchmark.
+
+The quality pilot selected two questions per ability across all 20 chats using
+a fixed hash ordering, before retrieval results were inspected. Both defaults
+used `gpt-4.1` at temperature zero and the unchanged official `gpt-4.1-mini`
+rubric, including ordering alignment. A fresh run-local full-request cache was
+shared across the paired configurations; older answers/judgments were not
+reused. No policy changes followed inspection of the pilot results.
+
+| Quality pilot only | Historical default | Proposed default |
+|---|---:|---:|
+| Complete judgments | 20 | 20 |
+| Mean sample score | 59.01% | 66.76% |
+
+There were **4 gains, 2 losses and 14 ties**, with no unjudged cases or request
+errors. The exploratory paired bootstrap 95% interval for the score difference
+is **-4.5 to +21.5 percentage points**. This small panel neither establishes a
+quality improvement nor rules out a regression; it is not a new official
+benchmark score or an independent holdout. Only one answer/judge generation
+was made per distinct request, so model/judge variance is not estimated.
+
+The pilot used 254 new API requests, below its 600-attempt ceiling: 460,378
+prompt tokens and 16,192 completion tokens. Paid judging was limited to these
+20 selected questions; all 400-question comparisons above are retrieval-only.
+Published official numbers remain unchanged.
+
+## Earlier full exchange prototype result
 
 The separate
 [`beam-100k-recall-exchanges-prototype.json`](baselines/beam-100k-recall-exchanges-prototype.json)
@@ -68,14 +131,15 @@ judging are excluded.
 
 | Metric | Published historical configuration | Exchange prototype |
 |---|---:|---:|
-| BEAM score (official judge) | 63.60% | 65.46% |
 | Mean context tokens | 9,450.7 | 5,865.7 |
+| BEAM score (official judge) | 63.60% | 65.46% |
 | Mean cited evidence coverage | 0.599 | 0.703 |
 | Complete official verdicts | 400 | 400 |
 
 **37.9% fewer context tokens** is the observed reduction against the historical
 run. The point-score difference is **1.86 percentage points**, but does not
-establish a quality improvement under a matched protocol. Per-question grades show 88 gains, 79 losses and 233 ties.
+establish a quality improvement under a matched protocol. Per-question grades
+show 88 gains, 79 losses and 233 ties.
 This compares the combined query/packing changes against the published
 historical configuration, not packing alone against a freshly judged
 optimized default.
@@ -101,8 +165,9 @@ speedup over that historical timing is claimed.
 
 A smaller matched eight-question retrieval panel measured 0.786 s for the
 optimized default versus 0.863 s with exchanges, with 9,273 versus 5,896 mean
-tokens. Exchange packing adds work; this panel measures a token reduction, not an
-established answer-quality improvement. Abstention, ordering and multi-session regressions keep it opt-in.
+tokens. Exchange packing adds work; this panel measures a token reduction, not
+an established answer-quality improvement. Abstention, ordering and multi-session
+regressions keep it opt-in.
 
 Answering used the unchanged shared prompt and `gpt-4.1`, temperature zero.
 Judging used the official `gpt-4.1-mini` BEAM rubric; ordering retained upstream
@@ -142,12 +207,8 @@ normal boolean and optional-value round trips. The frozen Community recall
 output remains unchanged. The implementation also reproduced 20 archived
 compact/complementary contexts exactly before the full run.
 
-Supplemental discovery is bounded to four owned sessions. Above 10,000 global
-Action documents it uses at most 512 session-local documents and 2 MiB of
-ranking features, retaining the primary pool if that cap is exceeded. Prefixes
-are ranking features only; displayed source text is retained in full. Exact
-entity search remains linear in owned vectors. The global text count is
-request-local, not a transactional snapshot across concurrent writes.
+Exact entity search remains linear in owned vectors. The policy limits and
+concurrent-write caveats are detailed below.
 
 ## Installation, offline use and policy limits
 
@@ -187,3 +248,24 @@ remain available; rendering retains each space's group boundaries and excerpts.
 so identical source IDs from different databases remain distinct. Memory notes
 still compete for the existing shared `memories_k` limit; there is no global
 fused token ceiling. Mixed packing configurations retain each space's format.
+
+## Fact-source lookup scaling diagnostic
+
+A disposable synthetic graph held one user's 10k or 100k Actions, 15 selected
+entities, 1,500 candidate fact edges and 90 selected facts. Two warm samples per
+configuration followed one warmup; these timings isolate `_ENTITY_FACTS`, not
+full recall or benchmark answer quality.
+
+| Actions | Action ID index | Historical lookup | Batched lookup |
+|---|---|---:|---:|
+| 10,000 | absent | 31 ms | 236 ms |
+| 10,000 | present | 21 ms | 233 ms |
+| 100,000 | absent | 86,498 ms | 281 ms |
+| 100,000 | present | 25 ms | 278 ms |
+
+Batching avoids the severe unindexed plan at 100k Actions, but is slower for
+this indexed, high-candidate-fanout workload. It is not a universal per-query
+speedup. The `own` list contains owned candidate source IDs, not every message
+in the user's history; its membership checks still cost more as candidate
+fanout grows. Normal setup creates the Action ID index. The matched full-recall
+comparison below measures the combined implementation separately.
