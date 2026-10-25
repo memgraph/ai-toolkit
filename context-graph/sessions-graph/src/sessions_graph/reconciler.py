@@ -169,8 +169,8 @@ class Reconciler:
         """Record a successful pass over *session_id*: what extracted it, under which ontology version.
 
         ``extraction_backend`` is the class name of the backend that extracted
-        the session's entities -- what ``context_graph_eval.runner._require_reconciled``
-        checks before trusting which backend built a reused graph. ``None``
+        the session's entities -- what ``context_graph_eval.pipeline.require_built``
+        checks before asking a kept graph. ``None``
         means nothing was extracted (no reconcilable content), not an unknown
         backend. ``ontology_version`` is ``None`` when the caller supplied its
         own backend. A re-extraction keeps when the session was reconciled and

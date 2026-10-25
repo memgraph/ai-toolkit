@@ -40,6 +40,10 @@ if TYPE_CHECKING:  # pragma: no cover - import-time typing only
 #: up later as a mysterious recall regression.
 GOLD_SLICE_FACT = DEFAULT_REVISION[:12]
 
+#: The user the planting session runs as (``live.hooks_pointed_at``), and so
+#: whose history recall searches for the answer.
+GOLD_SLICE_USER = "context-graph-eval"
+
 #: The top-level prompt that plants the fact.
 #:
 #: Three constraints it has to satisfy at once:
@@ -85,6 +89,7 @@ def gold_slice_goldens() -> list[Golden]:
                 "carrier": "subagent",
                 "abstention": False,
                 "question_type": "nested-recall",
+                "user_id": GOLD_SLICE_USER,
                 # Carried on the Golden itself rather than a joined fixture
                 # file, so a question cannot outlive its planting script (#307).
                 "session_prompt": GOLD_SLICE_PROMPT,

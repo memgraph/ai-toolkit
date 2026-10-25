@@ -3,8 +3,8 @@ name: Run the context-graph eval loop (manual)
 # Manual-trigger only, deliberately not on push/pull_request -- the same
 # reasoning as test-live-graph-model.yaml, for three separate reasons:
 #
-#  1. Cost. Reconciliation is roughly two LLM calls per session, and a
-#     20-question batch injects ~900 sessions. Per-PR is untenable.
+#  1. Cost. A dev workload's build is hours of GLiNER2 on a runner's CPU,
+#     and every question is an answering call plus a judge call.
 #  2. Non-determinism. Judged scores vary run to run; #304 addresses that with
 #     repeat-and-compare calibration, not a pass/fail gate. Gating on a noisy
 #     metric produces flaky CI that teaches people to ignore it.
@@ -17,19 +17,18 @@ name: Run the context-graph eval loop (manual)
 on:
   workflow_dispatch:
     inputs:
-      limit:
-        description: "How many questions to run"
+      workload:
+        description: "Workload to run (see `context-graph-eval workloads`)"
+        type: choice
         required: false
-        default: "100"
-      judge_model:
-        description: "Anthropic model id for the judge (blank = skip judging, report payload size only)"
+        default: lme-s-dev
+        options:
+          - lme-s-dev
+          - beam-100k-dev
+      rubric_judge:
+        description: "LongMemEval only: 'provider:model_id' for the deepeval rubrics beside the official judge (blank = none)"
         required: false
         default: ""
-      skip_reconcile:
-        description: "Reuse an already-reconciled graph (cheap, but only valid if one exists)"
-        type: boolean
-        required: false
-        default: false
 
 jobs:
   eval-run:
@@ -50,10 +49,7 @@ jobs:
           # Enterprise licence; a dedicated instance gives the same
           # known-fixed-state guarantee on a community licence.
           #
-          # --schema-info-enabled is required: retrieval's schema description
-          # goes through memgraph-toolbox's SearchSchemaTool, which refuses
-          # without it, and the agent would silently fall back to bare labels.
-          docker run -d -p 7689:7687 --name eval-memgraph memgraph/memgraph-mage:latest --schema-info-enabled=True --telemetry-enabled=false
+          docker run -d -p 7689:7687 --name eval-memgraph memgraph/memgraph-mage:3.13.2 --telemetry-enabled=false
 
       - name: Wait for Memgraph to be ready
         run: |
@@ -75,24 +71,18 @@ jobs:
       - name: Sync workspace environment
         run: uv sync --package context-graph-eval --extra pipeline
 
-      - name: Run the eval batch
+      - name: Run the workload
         env:
-          MEMGRAPH_URL: bolt://localhost:7689
-          MEMGRAPH_USER: ""
-          MEMGRAPH_PASSWORD: ""
-          MEMGRAPH_DATABASE: memgraph
-          # The retrieval agent runs on OpenAI; the judge runs on Anthropic.
-          # #304 keeps them on different providers deliberately, so the judge
-          # does not share the extraction pipeline's blind spots and flatter it
-          # exactly where it is weakest.
+          # Answering and both upstream judges run on OpenAI; the optional
+          # rubric judge on Anthropic, a different provider (#304).
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          uv run --package context-graph-eval context-graph-eval run \
-            --limit "${{ inputs.limit }}" \
+          # A fresh runner has no kept graph, so this builds it first.
+          uv run --package context-graph-eval context-graph-eval run "${{ inputs.workload }}" \
             --memgraph-url bolt://localhost:7689 \
-            ${{ inputs.judge_model && format('--judge-model {0}', inputs.judge_model) || '' }} \
-            ${{ inputs.skip_reconcile && '--skip-reconcile' || '' }} \
+            --save eval-run.json \
+            ${{ inputs.rubric_judge && format('--rubric-judge {0}', inputs.rubric_judge) || '' }} \
             | tee eval-report.txt
 
       - name: Upload the report
@@ -100,4 +90,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: eval-report
-          path: eval-report.txt
+          path: |
+            eval-report.txt
+            eval-run.json

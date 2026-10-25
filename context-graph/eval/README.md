@@ -1,17 +1,19 @@
 # Context Graph Eval
 
-Measure how well [Context Graph](../) retrieves evidence from past sessions,
-and compare changes to graph construction and recall.
+The evaluation loop for the [Context Graph](../) family: it measures whether
+raw agent activity emerges into memory that can be recalled usefully.
 
 Design decisions live on
 [Map: Context-graph emergence pipeline](https://github.com/memgraph/ai-toolkit/issues/297);
-this README covers running and comparing evaluations.
+this README only summarises what the code does.
 
 ## Official numbers
 
 The current read path (hybrid recall over a GLiNER2 graph, no LLM in the build
-or the recall), measured end to end on two public benchmarks. Each row is a
-committed baseline with its settings; the [benchmark reports](docs/benchmark-results.md) have the per-type
+or the recall), measured end to end on two public benchmarks: the
+[official workloads](#workloads), whole and uncapped. These are the numbers we
+communicate. Each row is a committed baseline in `baselines/` with its
+settings; the [benchmark reports](docs/benchmark-results.md) have the per-type
 breakdowns, reproduction commands, and caveats.
 
 | Benchmark | Questions | Answer score | Evidence recall | Retrieval tokens | Recall latency (mean) |
@@ -30,167 +32,176 @@ ranking between benchmarks. **Evidence recall** (the share of the cited
 evidence turns that retrieval returned), **retrieval tokens**, recall-only and
 end-to-end latency are measured the same way on both.
 
+Both were measured with recall's turn packing (separate turn and fact rows).
+Exchange packing has since become recall's default; the
+[exchange recall evaluation](recall-exchanges.md) records a separate
+400-question BEAM diagnostic for it, not an official score. To re-measure a
+version point as it was, run it with `--packing turns`.
+
 LongMemEval-S also reports Contextual Recall (retrieval found what the answer
 needs) on 332 of 458 questions (72%), abstention 22/30, F1 0.117, BLEU 0.067 and
 0 unscored questions. Both ran on an AMD Ryzen 5 2600 (6 cores, 16 GB, no GPU) against
 Memgraph 3.13.2.
 
-## Two tiers, scored separately
+## Workloads
 
-| | Tier 1 — adopted | Tier 2 — authored |
-|---|---|---|
-| Source | LongMemEval v1 (`s` / `m`), converted; BEAM | written for this project (the gold slice) |
-| Asks | does recall work *mechanically*? | does it work for *what we are building*? |
+Everything the eval runs is a named **workload**: a fixed set of questions and
+the haystack they are asked of. There are two kinds.
 
-Tiers are never blended into one headline: an organizational-recall
-regression must not hide behind a personal-memory gain (#303).
+- **Official** workloads are whole benchmarks, uncapped. Their results are the
+  official numbers above, and they take days.
+- **Dev** workloads are small, fixed slices of the same benchmarks, sized for
+  iterating on recall and construction. Compare dev runs with each other, never
+  with an official number: a capped haystack makes LongMemEval easier, and four
+  BEAM chats are not BEAM.
 
-## Corpus
+| Workload | Kind | What it asks | Instance |
+|---|---|---|---|
+| `lme-s` | official | LongMemEval-S, all 500 questions, full haystacks (25 shards of 20) | `:7791` |
+| `beam-100k` | official | BEAM 100K, all 20 chats and 400 questions | `:7793` |
+| `lme-s-dev` | dev | LongMemEval-S, 50 questions stratified by type, haystacks capped at 10 sessions | `:7792` |
+| `beam-100k-dev` | dev | BEAM 100K chats 1, 6, 11 and 16, all 80 of their questions | `:7794` |
+| `gold-slice` | dev | Tier 2: one fact that exists only inside a subagent ([below](#the-gold-slice)) | `:7795` |
 
-LongMemEval questions are deepeval `Golden` records in committed JSONL
-(`corpus/tier1-longmemeval.jsonl`), deliberately not in Memgraph: the answer
-key must not live in the graph the eval mutates, and git proves two compared
-runs asked the same questions (#302). Upstream data is fetched from a pinned
-revision and cached under `$XDG_CACHE_HOME/context-graph-eval`; only converted
-output is committed.
+`context-graph-eval workloads` lists them with the state of each instance and
+the graph it keeps. The LongMemEval questions are committed JSONL
+(`corpus/longmemeval-s-500.jsonl`, `corpus/longmemeval-s-dev.jsonl`),
+deliberately not in Memgraph: the answer key must not live in the graph the
+eval builds, and git proves two compared runs asked the same questions (#302).
+Upstream data is fetched from a pinned revision and cached under
+`$XDG_CACHE_HOME/context-graph-eval`; BEAM is CC BY-SA, so none of it is
+committed.
 
-```bash
-uv run --package context-graph-eval context-graph-eval build-corpus \
-    --limit 100 --out context-graph/eval/corpus/tier1-longmemeval.jsonl
-```
-
-`--limit` samples deterministically, stratified by `(question_type,
-abstention)`, proportional to upstream with a floor of 2 per stratum, then
-shuffled with a fixed seed so that `run --limit N` (a prefix of the committed
-corpus) is an unbiased sample too. Bumping `--revision` invalidates prior
-baselines. The `oracle` variant is refused: with no distractors, retrieval
-scores well by construction.
-
-## Running a batch
+## Running a workload
 
 ```bash
-# --schema-info-enabled feeds the graph-agent's schema description
-docker run -d --name ai-toolkit-eval-memgraph -p 7689:7687 \
-    memgraph/memgraph-mage:latest --schema-info-enabled=true
-
-uv run --package context-graph-eval context-graph-eval run \
-    --limit 100 --retrieval-strategy hybrid \
-    --judge-model anthropic:claude-sonnet-4-5-20250929
+uv sync --all-packages --all-extras
+uv run context-graph-eval run lme-s-dev
 ```
 
-The eval instance is **wiped before each batch** — never point
-`--memgraph-url` at a shared or development database.
-
-The runner owns the pipeline; deepeval owns scoring underneath:
+One pipeline runs every workload, the same one the product runs:
 
 ```
-runner  ->  inject -> reconcile -> retrieve  ->  judge  ->  metrics
+build:  inject -> reconcile -> (derive) -> embed      once per construction
+ask:    recall -> answer -> benchmark's judge         every run
 ```
 
-- **Inject** — each question's haystack becomes its own user's sessions.
-  Session ids are namespaced by question, since upstream reuses distractors
-  across questions and reconciliation resolves one user per session.
-- **Reconcile** — the same pass a real session gets (`sessions-graph`).
-  `--extraction-backend` picks `gliner2` (default, local, LLM-free) or
-  `lightrag` (needs an LLM key). `--ontology` (GLiNER2 only for the last two)
-  picks what GLiNER2 extracts against: `fixed` (default,
-  `ontologies/longmemeval.yaml`), `default` (hygm's default model), or
-  `learned` (the default model, then each user's own model derived and
-  adopted via `sessions-graph derive`, `--derive-workers` users at a time,
-  before any question is asked; map #431).
-- **Retrieve** — `--retrieval-strategy`:
-  - `hybrid` — `sessions_graph.recall`, the product read path: turns by
-    vector and text search plus the typed graph's facts. `--hybrid-lanes`
-    drops lanes (e.g. `turns,text` is the graph ablation).
-  - `graph-agent` (CLI default) — an agent writes read-only Cypher against the
-    reconciled graph (#300).
-  - `text-search` — Memgraph's full-text index over raw turns; never
-    reconciles.
+- **Inject** writes each haystack session under its user: on LongMemEval each
+  question is its own user, on BEAM each chat is.
+- **Reconcile** extracts with local GLiNER2 under hygm's default model, the
+  pass a real session gets. `--ontology learned` then derives and adopts each
+  user's own model (`sessions-graph derive`, map #431).
+- **Embed** stores recall's vectors in Memgraph.
+- **Recall** is `sessions_graph.recall`, the product read path, with every
+  lane on and its default packing (exchanges); `--lanes turns,text` is the
+  graph ablation and `--packing turns` the separate turn/fact rows the
+  version points were measured with. Every benchmark answers
+  through the same prompt (`answering.answer_prompt`) with gpt-4.1
+  (`--agent-model`), so a score difference is down to what recall found.
+- **Judge** is each benchmark's own, vendored verbatim: LongMemEval's
+  (gpt-4o-2024-08-06) and BEAM's (gpt-4.1-mini).
 
-  Every strategy answers through the same `answer_prompt`, so a quality
-  difference is down to what was retrieved.
+A run prints its report and saves itself to `runs/<workload>/<label>.json`
+(git-ignored; the label defaults to the commit). It needs an `OPENAI_API_KEY`,
+resolved from context-graph's config file (ADR 0002) before the environment,
+and refuses to start if `CONFIDENT_API_KEY` is set, since deepeval would
+upload the run.
 
-`--skip-reconcile` reuses the graph as-is and refuses unless it holds this
-run's sessions, reconciled, by the claimed `--extraction-backend`.
-`--max-sessions-per-question` trims distractors (evidence is always kept);
-such a score is an upper bound. The runner refuses to start if
-`CONFIDENT_API_KEY` is set, since deepeval would upload the run.
+## Eval instances keep their graphs
 
-`--judge-model`/`--agent-model` take `provider:model_id`; a bare id keeps the
-role's default provider. A shared judge/agent provider is warned about, since
-#304 keeps them apart. LLM credentials resolve from context-graph's config
-file (ADR 0002) before the environment.
+Building a graph takes hours; asking it takes minutes. So every workload has
+its own Memgraph container, `context-graph-eval-<workload>`, created on first
+use with its data on a named volume, and a run asks the graph it finds there
+when nothing that shapes the graph has changed.
+
+The graph carries a manifest (an `(:EvalBuild)` node) with a fingerprint of
+what built it: the workload's questions, the build settings (ontology, GLiNER2
+checkpoint, decoder and caps, embedding model) and the source of every module
+that shapes the graph (actions-graph, unstructured2graph, hygm, the
+construction half of sessions-graph, and eval's own injection). On each run:
+
+| The instance holds | The run |
+|---|---|
+| a finished build with the same fingerprint | asks it (a recall or answering change: minutes) |
+| an interrupted build with the same fingerprint | finishes it: sessions already written and reconciled are kept |
+| anything else | wipes it and builds again, saying which input changed |
+
+`--rebuild` forces a rebuild. `--reuse` asks a finished graph of the same
+questions even though its inputs changed; the run is marked stale.
+`context-graph-eval build <workload>` builds and stops (e.g. overnight), and
+`context-graph-eval drop <workload>` deletes the instance and its graph.
+
+The instances are durable: the write-ahead log records every change, a
+snapshot is taken on exit, and both are recovered on start, so a crash or a
+restart loses nothing. They run `memgraph/memgraph-mage:3.13.2` (3.9.0 broke
+recall's text search), listen on loopback only, and are dedicated to eval:
+a rebuild wipes them. `--memgraph-url` points a run at an instance managed
+elsewhere (CI) instead.
+
+`lme-s` does not fit one graph in 16 GB, so it is asked in 25 shards of 20
+questions (the corpus shuffled with `random.Random(0)`), one shard in the
+instance at a time. Each shard's result is saved under
+`runs/lme-s/<label>.shards/` as it finishes, and a rerun with the same label
+skips the shards already done. A shard is independent of the others: each
+question is its own user.
 
 ## Scoring
 
-Quality is judged, cost is counted (#304).
+Every question gets a score from its benchmark's own judge, between 0 and 1,
+and quality is judged while cost is counted (#304):
 
-- **Coverage** — decided by LongMemEval's own judge (`official_judge.py`,
-  vendored verbatim, `gpt-4o-2024-08-06`) whenever judging runs and an OpenAI
-  key is present.
-  The deepeval rubrics (Coverage, Preference, Abstention `GEval`s) are reported
-  beside it, and decide only when the official judge is off. A question
-  answered from an empty retrieval cannot pass, except an abstention.
-- **Contextual Recall** — reported, never gating: a correct computed answer
-  ("17 days") has no single supporting row.
-- **Evidence recall** — share of the question's evidence turns found in the
-  retrieval payload; no judge.
-- **Efficiency** — tokens in the retrieval payload (`cl100k_base`, pinned).
-  Ranks only questions that cleared coverage (#309).
-- **BLEU-1, token F1, latency** — judge-free, over every question.
-
-A question the judge could not score is reported `unscored`, never as 0%.
+- **LongMemEval** — 1 when LongMemEval's judge says the answer is right, 0
+  when not. `--rubric-judge` adds the deepeval rubrics (Coverage, Preference,
+  Abstention `GEval`s and Contextual Recall) beside it as diagnostics; they
+  decide only questions no upstream template covers (the gold slice). The
+  headline is accuracy.
+- **BEAM** — the mean of the question's rubric items at 1, 0.5 or 0, or the
+  normalised Kendall tau for event ordering. The headline is the mean over
+  abilities, as upstream reports it. The judge never sees the question; read
+  per-question verdicts before trusting a small delta.
+- **On both** — a question answered from an empty retrieval scores 0, except
+  an abstention. Evidence recall (the share of cited evidence turns recall
+  returned), retrieval tokens (`cl100k_base`), recall-only and end-to-end
+  latency need no judge. A question the judge could not score is unjudged and
+  left out of every mean, never counted as 0.
 
 ## Comparing runs
 
 ```bash
-context-graph-eval run --limit 100 --save runs/baseline.json --label baseline
-context-graph-eval run --limit 100 --save runs/candidate.json --label candidate --changed "..."
-context-graph-eval compare runs/baseline.json runs/candidate.json --noise-floor 4
+context-graph-eval run lme-s-dev --label before
+# ... change recall or construction ...
+context-graph-eval run lme-s-dev --label after --changed "what changed"
+context-graph-eval compare runs/lme-s-dev/before.json runs/lme-s-dev/after.json --noise-floor 4
 ```
 
-`compare` **refuses** runs measured differently: corpus revision or variant,
-judge, agent model, extraction backend, tokenizer, coverage gate, official
-judge, or question count. Retrieval strategy is the one axis it does not pin.
-Without `--noise-floor` it calls nothing real. A real coverage regression
-decides the verdict even when efficiency improved.
+`compare` refuses runs measured differently: another workload, upstream
+revision, judge, answering model or tokenizer, or different questions. It
+reports the headline and per-type deltas, the questions that started and
+stopped passing, evidence recall, recall latency, and median tokens over the
+questions both runs passed (returning less is only cheaper if it still
+answers, #309). It lists what differs about the system: build inputs, recall
+lanes and packing, commit. Without `--noise-floor` it calls nothing real.
 
-`calibrate` derives the noise floor from repeated runs of the same questions,
-and reports pass-set stability and per-question pass rates beside it: a
-steady rate can hide a different passing set each run.
+`calibrate` derives the noise floor from repeated runs of the same workload,
+and reports pass-set stability and per-question pass rates beside it: a steady
+rate can hide a different passing set each run. Scores drift by about 0.04 on
+BEAM and 3 points on LongMemEval across hours, so re-run the baseline in the
+same session before attributing a change.
 
-## BEAM
+## Publishing a version point
 
-The [exchange recall evaluation](recall-exchanges.md) records
-a separate 400-question prototype baseline for its named configuration over the
-retained GLiNER2 graph. Its development used BEAM questions included in the full
-run; independent complete-history validation remains outstanding. The published
-version points below keep their original configurations and scores. Exchanges
-are now the recall default; new hybrid runs use exchange packing unless the
-caller explicitly supplies `RecallConfig(packing="turns")`.
-
-`context-graph-eval beam` runs [BEAM](https://github.com/mohammadtavakoli78/BEAM)'s
-probing questions through the hybrid read path, judged by BEAM's own judge
-(`beam_judge.py`, vendored verbatim: `gpt-4.1-mini`, temperature 0).
+An official run becomes a version point by committing it without benchmark
+text, adding it to the table at the top and writing its report in
+[`docs/benchmark-results.md`](docs/benchmark-results.md):
 
 ```bash
-context-graph-eval beam --size 100K --chats 1-20 --limit 100 \
-    --extraction-backend gliner2 --save runs/beam-100k-q100.json
+context-graph-eval run beam-100k
+context-graph-eval publish runs/beam-100k/<label>.json baselines/beam-100k-gliner2.json
 ```
 
-- One chat is one user; each time-anchored batch becomes a dated session.
-- BEAM data is CC BY-SA, so nothing converted is committed; the pinned
-  upstream commit keeps runs comparable. `chat_trunecated.json` is preferred,
-  as upstream's answering does.
-- Each rubric item scores 1, 0.5 or 0; event ordering is scored by normalised
-  Kendall tau. The headline is the mean over abilities. The judge is noisy
-  and never sees the question; read per-question verdicts before trusting a
-  small delta.
-- `--limit` asks a subset balanced across abilities and chats; every chat is
-  still loaded, so `--skip-reconcile` can reuse the graph.
-- `--ontology` and `--hybrid-lanes` work as on `run`.
-- A saved run also records end-to-end and recall-only latency, the build's
-  wall-clock, the commit, the Memgraph version and the GLiNER2 settings.
+`publish` drops every row's questions, answers and retrieval, keeping the
+scores, metrics and latencies `compare` needs, so a later run can be compared
+against the published one.
 
 ## Knowledge-graph construction (`kg`)
 
@@ -229,46 +240,39 @@ the same hardware.
 
 ## The gold slice
 
-Tier 1 injects fixtures directly, so it never exercises the capture layer.
-The gold slice drives a **real, billed Claude Code session** with hooks live
-and scores what was actually recorded — the only eval coverage for subagent
-nesting (#308). Its one question asks for a fact that exists only inside a
-subagent.
+LongMemEval and BEAM inject fixtures directly, so they never exercise the
+capture layer. The gold slice drives a **real, billed Claude Code session**
+with hooks live and scores what was actually recorded — the only eval coverage
+for subagent nesting (#308). Its one question asks for a fact that exists only
+inside a subagent. It is Tier 2: authored for this project, and never blended
+with the adopted benchmarks (#303).
 
 ```bash
-context-graph-eval gold-slice --memgraph-url bolt://localhost:7689
-context-graph-eval run --gold-slice --skip-reconcile --memgraph-url bolt://localhost:7689
+context-graph-eval gold-slice
+context-graph-eval run gold-slice --rubric-judge anthropic:claude-sonnet-4-5-20250929
 ```
 
 The planting prompt must not contain the fact, the fact must be unguessable
 (a hex revision), and the prompt must contain no literal `SKILL.md` path
 (#293). The run refuses unless the fact is planted, nested under an `Agent`,
-and absent from top level. Hooks are pointed at the eval instance through a
-throwaway config named by `CONTEXT_GRAPH_CONFIG` (ADR 0003).
+and absent from top level. Hooks are pointed at the gold slice's instance
+through a throwaway config named by `CONTEXT_GRAPH_CONFIG` (ADR 0003). No
+upstream judge has a template for it, so the rubric judge decides it.
 
 ## Known limitations
 
-- **Building the graph is expensive.** Local extraction and embedding dominate
-  batch runtime; the benchmark reports include build times and hardware.
-  LightRAG runs have separate LLM costs and settings. Compare like-for-like runs.
-- **The noise floor is large relative to deltas**; calibrate on the current
-  corpus size before trusting a small coverage change.
+- **Building dominates cost.** GLiNER2 on the CPU is most of a build: about
+  8 hours per 1,000 LongMemEval sessions, or 8 hours for BEAM 100K, on a
+  6-core machine.
+- **The noise floor is large relative to deltas**; calibrate on the workload
+  before trusting a small change.
 - **Tier 2 has one question.**
 
 ## Development
 
 ```bash
-uv sync
-uv run --package context-graph-eval --extra test --extra pipeline pytest context-graph/eval/tests
+./scripts/dev-memgraph.sh test context-graph-eval
 ```
 
-Tests read `EVAL_MEMGRAPH_URL` (default `bolt://localhost:7689`) and skip when
-no instance is reachable.
-
-## Version point: LongMemEval-S, hybrid recall over a GLiNER2 graph (2026-10-23)
-
-[Full report and settings](docs/benchmark-results.md#version-point-longmemeval-s-hybrid-recall-over-a-gliner2-graph-2026-10-23).
-
-## Version point: BEAM 100K, hybrid recall over a GLiNER2 graph (2026-10-14)
-
-[Full report and settings](docs/benchmark-results.md#version-point-beam-100k-hybrid-recall-over-a-gliner2-graph-2026-10-14).
+Tests read `EVAL_MEMGRAPH_URL` (default `bolt://localhost:7689`) and skip the
+end-to-end ones when no instance is reachable.

@@ -1,19 +1,18 @@
-"""Load a batch of session fixtures into the eval database.
+"""Load session fixtures into an eval instance, resumably.
 
-Injection stages content only. It does not distil anything -- reconciliation is
-a separate, LLM-backed pass the runner triggers afterwards, exactly as it would
-run over a real harness session.
+Injection stages content only. It does not distil anything -- reconciliation
+is a separate pass the build runs afterwards, exactly as it would run over a
+real harness session.
 
-A batch is one graph holding many people: each question's haystack is its
-own user's history (``SessionFixture.user_id``), and retrieval is scoped to the
-asking user. The distractors a question has to get past are its own
-haystack's, as LongMemEval frames them -- not other people's sessions.
+A graph holds many people: each question's haystack is its own user's
+history (``SessionFixture.user_id``), and retrieval is scoped to the asking
+user. The distractors a question has to get past are its own haystack's, as
+LongMemEval frames them -- not other people's sessions.
 
-The eval instance is cleared before each batch so every run starts from known,
-fixed state -- otherwise a question could be answered from a previous run's
-sessions rather than this batch's fixtures, and two runs would not be
-comparable. Clearing is safe only because the instance is dedicated to eval;
-this must never point at a shared or development database.
+Injection never clears the graph. A build that stopped part-way resumes:
+a session already marked for reconciliation was written whole and is kept;
+one present without that mark was cut off mid-write and is written again.
+Clearing is :func:`wipe`'s job, which a build calls only when it starts over.
 """
 
 from collections.abc import Iterable
@@ -47,42 +46,38 @@ def corpus_time(date: str) -> datetime | None:
 
 @dataclass(frozen=True)
 class Written:
-    """What a batch injection wrote."""
+    """What an injection wrote, and what it found already there."""
 
     sessions: int
     turns: int
+    #: Sessions a previous, interrupted injection had already written whole.
+    kept: int = 0
 
 
-def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph") -> Written:
-    """Clear the eval graph, then load ``fixtures`` into it.
+def inject(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph") -> Written:
+    """Write every fixture session the graph doesn't already hold whole, each linked to its ``(:User)``.
 
-    Each session is linked to its fixture's ``(:User)``. Fixtures are
-    deduplicated by ``session_id``: writing a repeat again would append its
-    turns a second time.
+    Fixtures are deduplicated by ``session_id``: writing a repeat again would
+    append its turns a second time.
 
-    Returns counts of what was written, so a caller can assert the batch landed
-    rather than inferring it from the absence of an exception.
+    Raises:
+        ValueError: a fixture has no session_id. Checked before anything is
+            written: a blank id would collapse distinct fixtures onto one node.
     """
     from actions_graph import MessageRole, Session
 
-    fixtures = list(fixtures)
-
-    # Validated before clearing: a blank session_id would collapse distinct
-    # fixtures onto one node, silently merging sessions and destroying the
-    # haystack. Failing first also avoids wiping the graph for a batch that was
-    # never going to load.
+    deduped: dict[str, SessionFixture] = {}
     for fixture in fixtures:
         if not fixture.session_id:
             raise ValueError(f"fixture has no session_id: {fixture!r}")
-
-    deduped: dict[str, SessionFixture] = {}
-    for fixture in fixtures:
         deduped.setdefault(fixture.session_id, fixture)
 
-    _wipe(graph)
+    whole = _drop_partial_sessions(graph, list(deduped))
 
-    turns = 0
+    sessions = turns = 0
     for fixture in deduped.values():
+        if fixture.session_id in whole:
+            continue
         started = corpus_time(fixture.date)
         graph.ensure_session(
             Session(
@@ -112,24 +107,45 @@ def inject_batch(fixtures: Iterable["SessionFixture"], *, graph: "ActionsGraph")
             "MERGE (u)-[:HAD_SESSION]->(s)",
             {"user_id": fixture.user_id, "session_id": fixture.session_id},
         )
+        # Last, so its presence means every turn above landed.
         _mark_pending(graph, fixture.session_id)
+        sessions += 1
 
-    return Written(sessions=len(deduped), turns=turns)
+    return Written(sessions=sessions, turns=turns, kept=len(whole))
 
 
-def _wipe(graph: "ActionsGraph") -> None:
+def wipe(graph: "ActionsGraph") -> None:
     """Delete everything in the eval graph, vector indexes included.
 
-    Not ``ActionsGraph.clear()``, which leaves the previous batch's distilled
-    memory (Chunk, Entity, Memory) standing (#309). Vector indexes are
-    dropped because lightrag-memgraph treats any failed ``CREATE VECTOR
-    INDEX`` as "already exists", so a leftover index sized for another
-    embedding model would survive. Safe only because the eval instance is
-    dedicated: **never point this at a shared or development database.**
+    Not ``ActionsGraph.clear()``, which leaves distilled memory (Chunk,
+    Entity, Memory) standing (#309). Vector indexes are dropped so an index
+    sized for another embedding model can't survive into the next build.
+    Safe only because the instance is dedicated to eval: **never point this
+    at a shared or development database.**
     """
     graph.db.query("MATCH (n) DETACH DELETE n")
     for row in graph.db.query("SHOW VECTOR INDEX INFO"):
         graph.db.query(f"DROP VECTOR INDEX {row['index_name']}")
+
+
+def _drop_partial_sessions(graph: "ActionsGraph", session_ids: list[str]) -> set[str]:
+    """The ids already written whole; sessions cut off mid-write are deleted with their turns.
+
+    A session carries ``reconciliation_status`` only once every turn was
+    written (see :func:`inject`), so its absence marks an interrupted write.
+    """
+    rows = graph.db.query(
+        "MATCH (s:Session) WHERE s.session_id IN $ids RETURN s.session_id AS id, s.reconciliation_status AS status",
+        {"ids": session_ids},
+    )
+    partial = [row["id"] for row in rows if row["status"] is None]
+    if partial:
+        graph.db.query(
+            "MATCH (s:Session) WHERE s.session_id IN $ids "
+            "OPTIONAL MATCH (s)-[:HAS_ACTION]->(a:Action) DETACH DELETE a, s",
+            {"ids": partial},
+        )
+    return {row["id"] for row in rows if row["status"] is not None}
 
 
 def _mark_pending(graph: "ActionsGraph", session_id: str) -> None:

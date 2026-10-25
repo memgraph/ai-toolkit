@@ -16,17 +16,13 @@ question's scores and latencies, but no LongMemEval text; the questions are
 `corpus/longmemeval-s-500.jsonl` (upstream revision `98d7416c24c7`).
 
 ```bash
-context-graph-eval build-corpus --variant s --out corpus/longmemeval-s-500.jsonl
-context-graph-eval run --variant s --corpus <batch>.jsonl --limit 20 \
-    --extraction-backend gliner2 --ontology default --retrieval-strategy hybrid \
-    --agent-model openai:gpt-4.1 --memgraph-url bolt://localhost:<port> --save <batch>.json
+context-graph-eval run lme-s --packing turns
 ```
 
 One graph for 500 questions does not fit in memory (every question has its own
-~50 sessions and the runner builds all of them), so the run was 25 batches of 20
-questions (the corpus shuffled with `random.Random(0)`), the eval Memgraph
-wiped before each, and the saved batches merged. A batch is independent of the
-others: each question is its own user.
+~50 sessions), so the run was 25 shards of 20 questions (the corpus shuffled
+with `random.Random(0)`), the eval Memgraph wiped before each, and the saved
+shards merged -- what `run lme-s` now does on its own.
 
 | Question type | Questions | Accuracy | Evidence recall |
 |---|---|---|---|
@@ -54,16 +50,16 @@ read accuracy, not those two.
   6,378 tokens; 0 questions unscored (the judge answered every one).
 - **Setup:** Memgraph 3.13.2 (`memgraph/memgraph-mage@sha256:e28eea42…`, snapshots
   and WAL off), `fastino/gliner2.5-base-v1` with the greedy decoder, every
-  recall lane, an AMD Ryzen 5 2600 (6 cores, 16 GB, no GPU). Batches 0-1 ran on the
+  recall lane, an AMD Ryzen 5 2600 (6 cores, 16 GB, no GPU). Shards 0-1 ran on the
   code of #552 (before its rebase onto main); the rest add a retry of recall's
   setup on a transient Memgraph error, the only other change.
 - **Recall timing:** measured before #548 moved recall into a worker thread, so
   recall ran on the event loop one question at a time and each recall time is
   uncontended. With #548, concurrent questions overlap their recalls: a run
   finishes sooner, but each recall can take longer than reported here.
-- **Build and answer:** 203 hours of wall clock across the 25 batches, ~8.1 h per
+- **Build and answer:** 203 hours of wall clock across the 25 shards, ~8.1 h per
   20 questions (~1,000 sessions), most of it GLiNER2 on the CPU. One further
-  attempt of batch 0 (7.7 h) was lost to that transient error right after its build.
+  attempt of shard 0 (7.7 h) was lost to that transient error right after its build.
 - **One question is a retrieval failure, scored 0:** `0bc8ad93` ("... Did I visit
   with a friend or not?"). Recall's text lane hands the question's trailing
   "not" to Tantivy as its `NOT` operator, the query is a syntax error, and the
@@ -72,12 +68,12 @@ read accuracy, not those two.
   costs 0.2 pp and is left in the score.
 - **The deepeval answer rubrics,** which are reported beside the official judge
   and do not decide coverage, pass 434/500.
-- **Not comparable to the 100-question baseline** (`corpus/tier1-longmemeval.jsonl`,
-  5-session cap, 88/100): that run predates recall's memories lane (#500), caps
-  the haystack, and is a different sample.
+- **Not comparable to the earlier 100-question baseline** (5-session cap,
+  88/100): that run predates recall's memories lane (#500), capped the
+  haystack, and was a different sample.
 - **Where it loses:** multi-session questions (75.9%), which need evidence from
   several sessions at once, then temporal reasoning (85.7%).
-- **"N failed"** in each batch's reconcile line counts sessions with
+- **"N failed"** in each shard's reconcile line counts sessions with
   relationships outside the default model's declared domain/range; every
   session was reconciled.
 
@@ -90,9 +86,7 @@ answered by gpt-4.1 and scored by BEAM's own judge.
 question's scores and latencies, but no BEAM text.
 
 ```bash
-context-graph-eval beam --size 100K --chats 1-20 --extraction-backend gliner2 \
-    --ontology default --agent-model openai:gpt-4.1 \
-    --memgraph-url bolt://localhost:<port> --save runs/beam-100k-gliner2.json
+context-graph-eval run beam-100k --packing turns
 ```
 
 | Ability | Score | Evidence recall |
@@ -126,7 +120,7 @@ context-graph-eval beam --size 100K --chats 1-20 --extraction-backend gliner2 \
   (6 cores, 16 GB, no GPU). Most of it is GLiNER2 on the CPU, then
   Memgraph embedding the passages, entities and facts.
 - **Noise:** the run that built the graph also answered and judged it, and
-  scored 0.628 (`rerun` in the JSON); the headline is a second answering pass
+  scored 0.628 (`notes.first_pass` in the JSON); the headline is a second answering pass
   over the same graph. Abilities moved by up to 0.075 between the two (40
   questions each); retrieval, and so evidence recall, was identical. Read an
   ability's delta under ~0.08 as noise.

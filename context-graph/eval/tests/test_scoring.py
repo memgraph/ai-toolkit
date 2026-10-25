@@ -2,50 +2,22 @@
 
 The judged half (ContextualRecall, the GEval coverage rubric) is LLM-backed and
 lives behind a gate. What is tested here without a key is everything that
-decides how a score is *composed*: the deterministic efficiency count, the
-coverage gate, and how tiers are kept apart.
+decides how a score is *composed*: the deterministic efficiency count, BLEU
+and F1, evidence recall, and which rubric judges which question.
 """
 
-from dataclasses import replace
-
-import pytest
-from context_graph_eval.retrieval import Retrieved
+from context_graph_eval.answering import Retrieved
 from context_graph_eval.scoring import (
-    DEFAULT_TOKENIZER,
     PREFERENCE_STEPS,
-    Scored,
-    aggregate,
     bleu_score,
     build_metrics,
     efficiency_tokens,
-    enforce_retrieval_floor,
     evidence_recall,
-    gate_and_rank,
     gate_score,
     rubric_for,
     token_f1_score,
-    tokenizer_in_use,
 )
 from deepeval.models import DeepEvalBaseLLM
-
-
-def _scored(
-    name, *, tier=1, covered=True, tokens=100, abstention=False, metric_scores=None, bleu=0.0, f1=0.0, latency=0.0
-):
-    return Scored(
-        name=name,
-        tier=tier,
-        coverage=1.0 if covered else 0.0,
-        covered=covered,
-        efficiency_tokens=tokens,
-        abstention=abstention,
-        # Non-empty by default: a Scored with no metric scores means the judge
-        # could not score it, which is a different thing from scoring zero.
-        metric_scores=metric_scores if metric_scores is not None else {"Coverage": 1.0 if covered else 0.0},
-        bleu=bleu,
-        f1=f1,
-        latency_seconds=latency,
-    )
 
 
 class _StubJudge(DeepEvalBaseLLM):
@@ -94,51 +66,6 @@ def test_an_abstention_question_is_not_scored_on_contextual_recall():
 
     assert "ContextualRecallMetric" not in names
     assert "GEval" in names
-
-
-def test_the_recorded_tokenizer_is_the_one_actually_used():
-    """A run records what it measured with, so two runs counted in different
-    units cannot compare cleanly. Reporting the configured name while silently
-    word-splitting would defeat compare()'s tokenizer check, which reads that
-    name and would see a match."""
-    assert tokenizer_in_use() == DEFAULT_TOKENIZER
-
-
-def test_a_question_the_judge_could_not_score_is_not_counted_as_a_failure():
-    """Observed live: the judge's provider ran out of credit, every metric
-    errored, and the run reported "coverage 0/2 (0%)" -- an outage presented as
-    a measurement. "Could not be scored" and "scored zero" must not collapse
-    into the same number."""
-    report = aggregate(
-        [
-            _scored("judged", covered=True, metric_scores={"Coverage": 1.0}),
-            Scored(name="unjudged", tier=1, coverage=0.0, covered=False, efficiency_tokens=10),
-        ]
-    )
-
-    assert report.by_tier[1].unscored == 1
-    # One question was judged and it passed. The unscoreable one is excluded
-    # rather than dragging the rate to 50%.
-    assert report.by_tier[1].questions == 1
-    assert report.by_tier[1].coverage_rate == 1.0
-
-
-def test_a_score_with_no_reasons_recorded_defaults_to_empty_not_missing():
-    """A Scored built without metric_reasons (every caller before this field
-    existed, and every judge-free question) must not raise on .get() -- an
-    absent reason is a normal case, not an error."""
-    scored = Scored(name="q1", tier=1, coverage=1.0, covered=True, efficiency_tokens=10)
-
-    assert scored.metric_reasons == {}
-
-
-def test_a_fully_unscoreable_tier_reports_no_rate():
-    """Better to say nothing than to report 0%."""
-    report = aggregate([Scored(name="q", tier=1, coverage=0.0, covered=False, efficiency_tokens=0)])
-
-    assert report.by_tier[1].unscored == 1
-    assert report.by_tier[1].questions == 0
-    assert report.by_tier[1].coverage_rate is None
 
 
 def test_efficiency_counts_the_payload_handed_back():
@@ -220,171 +147,7 @@ def test_f1_ignores_punctuation_the_answer_key_happens_to_carry():
     assert token_f1_score("A beagle.", "A beagle") == 1.0
 
 
-def test_only_questions_that_cleared_coverage_are_ranked():
-    """Coverage is a hard gate, not a weighted term (#309) -- otherwise a
-    retrieval change could trade real coverage for token savings and still
-    show a flat or improved headline."""
-    ranked = gate_and_rank(
-        [
-            _scored("passed-cheap", covered=True, tokens=50),
-            _scored("failed-cheapest", covered=False, tokens=1),
-            _scored("passed-costly", covered=True, tokens=500),
-        ]
-    )
-
-    assert [s.name for s in ranked] == ["passed-cheap", "passed-costly"]
-
-
-def test_a_failing_question_cannot_win_on_efficiency():
-    ranked = gate_and_rank([_scored("failed", covered=False, tokens=0)])
-
-    assert ranked == []
-
-
-def test_tiers_are_aggregated_separately():
-    """#303: a blended number would let an organizational-recall regression
-    hide behind a personal-memory gain."""
-    report = aggregate(
-        [
-            _scored("t1-a", tier=1, covered=True),
-            _scored("t1-b", tier=1, covered=True),
-            _scored("t2-a", tier=2, covered=False),
-        ]
-    )
-
-    assert report.by_tier[1].coverage_rate == 1.0
-    assert report.by_tier[2].coverage_rate == 0.0
-
-
-def test_aggregate_refuses_to_produce_a_single_blended_number():
-    report = aggregate([_scored("t1", tier=1), _scored("t2", tier=2, covered=False)])
-
-    assert not hasattr(report, "overall_coverage_rate")
-
-
-def test_median_efficiency_uses_only_questions_that_passed():
-    report = aggregate(
-        [
-            _scored("cheap", covered=True, tokens=10),
-            _scored("costly", covered=True, tokens=30),
-            _scored("failed", covered=False, tokens=1),
-        ]
-    )
-
-    assert report.by_tier[1].median_efficiency_tokens == 20
-
-
-def test_mean_bleu_f1_latency_include_every_scored_question_not_just_covered():
-    """Unlike efficiency's gate (#309, specific to that axis), BLEU/F1/latency
-    are their own independent, judge-free signal -- a failing question's
-    answer still has a real BLEU/F1/latency, and dropping it would hide
-    exactly the questions most worth looking at."""
-    report = aggregate(
-        [
-            _scored("passed", covered=True, bleu=1.0, f1=1.0, latency=2.0),
-            _scored("failed", covered=False, bleu=0.0, f1=0.0, latency=4.0),
-        ]
-    )
-
-    summary = report.by_tier[1]
-    assert summary.mean_bleu == 0.5
-    assert summary.mean_f1 == 0.5
-    assert summary.mean_latency_seconds == 3.0
-
-
-def test_mean_bleu_f1_latency_survive_a_judge_free_run():
-    """The bug this guards against (#342): with no judge (or one that
-    errored on every question) metric_scores is empty for every row, so
-    aggregating BLEU/F1/latency over the judge-scored subset -- rather than
-    over all_rows -- silently produced three None aggregates instead of the
-    judge-free run's only headline numbers."""
-    report = aggregate(
-        [
-            _scored("q1", metric_scores={}, bleu=0.4, f1=0.6, latency=1.0),
-            _scored("q2", metric_scores={}, bleu=0.8, f1=0.2, latency=3.0),
-        ]
-    )
-
-    summary = report.by_tier[1]
-    # Unscored by the judge -- coverage and the gated efficiency median stay
-    # unavailable, since neither can mean anything without a verdict.
-    assert summary.coverage_rate is None
-    assert summary.unscored == 2
-    # But BLEU/F1/latency need no verdict, so they must not be None too.
-    assert summary.mean_bleu == pytest.approx(0.6)
-    assert summary.mean_f1 == pytest.approx(0.4)
-    assert summary.mean_latency_seconds == pytest.approx(2.0)
-
-
-def test_abstention_questions_are_reported_apart():
-    """For these the correct answer is 'not in memory', so a confident answer
-    is the failure -- averaging them in with ordinary recall hides that."""
-    report = aggregate(
-        [
-            _scored("ordinary", covered=True),
-            _scored("abstain", covered=False, abstention=True),
-        ]
-    )
-
-    assert report.by_tier[1].abstention_total == 1
-    assert report.by_tier[1].abstention_correct == 0
-
-
-def test_an_empty_run_reports_nothing_rather_than_dividing_by_zero():
-    report = aggregate([])
-
-    assert report.by_tier == {}
-
-
-def test_a_tier_with_no_passing_question_has_no_median():
-    report = aggregate([_scored("failed", covered=False)])
-
-    assert report.by_tier[1].median_efficiency_tokens is None
-
-
 # --- Empty retrieval must not pass (#309's degenerate case, seen live) ---
-
-
-def test_a_question_answered_from_nothing_cannot_pass():
-    """Observed in calibration run 2: gpt4_59149c77, a temporal-reasoning
-    question whose expected answer is "7 days", retrieved ZERO tokens, answered
-    "not in memory", and scored Contextual Recall 1.0 and Coverage [GEval] 1.0
-    -- a perfect pass.
-
-    ContextualRecall over an empty context is vacuously satisfied, and the
-    rubric let a refusal stand in for a fact. Coverage measured on a question
-    the graph was never consulted for is not a measurement of recall, and it
-    inflates the headline in the one direction nobody checks.
-    """
-    scored = enforce_retrieval_floor(
-        [_scored("q1", covered=True, metric_scores={"Contextual Recall": 1.0, "Coverage [GEval]": 1.0})],
-        retrieved_tokens={"q1": 0},
-    )
-
-    assert scored[0].covered is False
-    assert scored[0].coverage == 0.0
-
-
-def test_an_abstention_question_may_legitimately_retrieve_nothing():
-    """For these the correct answer IS "not in memory", so an empty payload is
-    the right behaviour rather than the degenerate case -- applying the floor
-    here would make them unpassable, which is the bug this loop already fixed
-    once."""
-    scored = enforce_retrieval_floor(
-        [_scored("q1", covered=True, abstention=True, metric_scores={"Coverage": 1.0})],
-        retrieved_tokens={"q1": 0},
-    )
-
-    assert scored[0].covered is True
-
-
-def test_a_question_that_retrieved_something_is_left_alone():
-    scored = enforce_retrieval_floor(
-        [_scored("q1", covered=True, metric_scores={"Coverage": 1.0})],
-        retrieved_tokens={"q1": 250},
-    )
-
-    assert scored[0].covered is True
 
 
 def test_abstention_is_judged_on_refusing_not_on_reciting_the_near_miss():
@@ -438,19 +201,6 @@ def test_a_judge_that_returned_only_the_retrieval_signal_gates_nothing_through()
     assert gate_score({}) == 0.0
 
 
-def test_retrieval_is_reported_per_tier_without_gating():
-    report = aggregate(
-        [
-            _scored("q1", covered=True, metric_scores={"Contextual Recall": 0.0, "Coverage [GEval]": 1.0}),
-            _scored("q2", covered=True, metric_scores={"Contextual Recall": 1.0, "Coverage [GEval]": 1.0}),
-            _scored("q3", covered=True, abstention=True, metric_scores={"Abstention [GEval]": 1.0}),
-        ]
-    ).by_tier[1]
-
-    assert report.covered == 3
-    assert (report.retrieval_supported, report.retrieval_judged) == (1, 2)
-
-
 def test_each_question_is_routed_to_its_answer_rubric():
     assert rubric_for({"question_type": "multi-session"}) == "answer"
     assert rubric_for({"question_type": "single-session-preference"}) == "preference"
@@ -492,29 +242,3 @@ def test_a_long_evidence_turn_counts_when_its_opening_was_retrieved():
     row = "TURN [...]: " + " ".join(turn.split(": ", 1)[1].split())[:1500]
 
     assert evidence_recall([turn], [row.replace(" ", "  ", 3)]) == 1.0
-
-
-def test_evidence_recall_is_reported_per_tier():
-    report = aggregate(
-        [
-            Scored(name="q1", tier=1, coverage=1.0, covered=True, efficiency_tokens=1, evidence_recall=1.0),
-            Scored(name="q2", tier=1, coverage=0.0, covered=False, efficiency_tokens=1, evidence_recall=0.5),
-            Scored(name="q3", tier=1, coverage=1.0, covered=True, efficiency_tokens=1, abstention=True),
-        ]
-    ).by_tier[1]
-
-    assert (report.evidence_complete, report.evidence_judged) == (1, 2)
-    assert report.mean_evidence_recall == 0.75
-
-
-def test_recall_latency_is_summarised_over_rows_that_report_it():
-    """Recall-only timings come from strategies whose read path is separable;
-    rows without one don't drag the percentiles toward zero."""
-    rows = [_scored(f"q{i}") for i in range(20)]
-    rows[:10] = [replace(row, recall_seconds=(i + 1) / 10) for i, row in enumerate(rows[:10])]
-    summary = aggregate(rows).by_tier[1]
-
-    assert summary.mean_recall_seconds == pytest.approx(0.55)
-    assert summary.median_recall_seconds == pytest.approx(0.55)
-    assert summary.p95_recall_seconds == 1.0
-    assert aggregate([_scored("none")]).by_tier[1].mean_recall_seconds is None

@@ -10,7 +10,7 @@ Requires a dedicated eval instance -- see EVAL_MEMGRAPH_URL in conftest.
 
 import pytest
 from context_graph_eval.convert.longmemeval import SessionFixture, Turn
-from context_graph_eval.inject import inject_batch
+from context_graph_eval.inject import inject, wipe
 
 from actions_graph import ActionsGraph
 from actions_graph.models import Message
@@ -30,14 +30,14 @@ def _fixture(session_id: str, *, holds_evidence: bool = False, user_id: str = "u
 
 
 def test_every_fixture_session_lands_in_the_graph(eval_graph: ActionsGraph):
-    inject_batch([_fixture("s1"), _fixture("s2")], graph=eval_graph)
+    inject([_fixture("s1"), _fixture("s2")], graph=eval_graph)
 
     assert eval_graph.get_session("s1") is not None
     assert eval_graph.get_session("s2") is not None
 
 
 def test_turns_land_as_actions_under_their_session(eval_graph: ActionsGraph):
-    inject_batch([_fixture("s1")], graph=eval_graph)
+    inject([_fixture("s1")], graph=eval_graph)
 
     actions = eval_graph.get_session_actions("s1")
 
@@ -49,16 +49,33 @@ def test_turns_land_as_actions_under_their_session(eval_graph: ActionsGraph):
     ]
 
 
-def test_a_batch_starts_from_a_clean_graph(eval_graph: ActionsGraph):
-    """#309: each batch runs against known, fixed state. A previous batch's
-    sessions surviving would let a question be answered from the last run's
-    data rather than this batch's fixtures."""
-    inject_batch([_fixture("stale")], graph=eval_graph)
+def test_injection_keeps_what_an_earlier_injection_wrote(eval_graph: ActionsGraph):
+    """A build resumes rather than starting over: injection never clears, and a
+    session already written whole is neither duplicated nor rewritten."""
+    inject([_fixture("s1")], graph=eval_graph)
 
-    inject_batch([_fixture("fresh")], graph=eval_graph)
+    written = inject([_fixture("s1"), _fixture("s2")], graph=eval_graph)
 
-    assert eval_graph.get_session("stale") is None
-    assert eval_graph.get_session("fresh") is not None
+    assert (written.sessions, written.kept) == (1, 1)
+    assert len(eval_graph.get_session_actions("s1")) == 2
+    assert eval_graph.get_session("s2") is not None
+
+
+def test_a_session_cut_off_mid_write_is_written_again(eval_graph: ActionsGraph):
+    """A session without its pending mark was interrupted after some of its
+    turns landed; resuming must not leave it short, nor append to it."""
+    from actions_graph import MessageRole, Session
+
+    eval_graph.ensure_session(Session(session_id="s1", started_at="2023-05-20T14:03:00+00:00"))
+    eval_graph.record_message(session_id="s1", role=MessageRole.USER, content="a user turn in s1")
+
+    written = inject([_fixture("s1")], graph=eval_graph)
+
+    assert (written.sessions, written.kept) == (1, 0)
+    assert [a.content for a in eval_graph.get_session_actions("s1") if isinstance(a, Message)] == [
+        "a user turn in s1",
+        "an assistant reply in s1",
+    ]
 
 
 def test_a_session_shared_by_two_questions_is_written_once(eval_graph: ActionsGraph):
@@ -68,7 +85,7 @@ def test_a_session_shared_by_two_questions_is_written_once(eval_graph: ActionsGr
     duplicating content in the graph and paying to reconcile each copy."""
     shared = _fixture("shared")
 
-    inject_batch([shared, _fixture("unique"), shared], graph=eval_graph)
+    inject([shared, _fixture("unique"), shared], graph=eval_graph)
 
     actions = eval_graph.get_session_actions("shared")
     messages = [a for a in actions if isinstance(a, Message)]
@@ -82,31 +99,28 @@ def test_a_session_shared_by_two_questions_is_written_once(eval_graph: ActionsGr
 def test_deduplicated_sessions_are_not_counted_twice(eval_graph: ActionsGraph):
     shared = _fixture("shared")
 
-    written = inject_batch([shared, shared, _fixture("unique")], graph=eval_graph)
+    written = inject([shared, shared, _fixture("unique")], graph=eval_graph)
 
     assert written.sessions == 2
     assert written.turns == 4
 
 
-def test_a_batch_also_clears_memory_tier_nodes_from_the_previous_run(eval_graph: ActionsGraph):
+def test_wipe_also_clears_memory_tier_nodes(eval_graph: ActionsGraph):
     """ActionsGraph.clear() only removes Session|Agent|Action|Tool -- it leaves
     Chunk, Entity and Memory standing. Those are exactly what reconciliation
-    produces or reads, so relying on it alone would let the previous batch's
-    index survive into this one, and a question could be
-    answered from the last run rather than from this batch's fixtures. That is
-    the leak #309 exists to prevent.
-    """
-    eval_graph._db.query("CREATE (:Chunk {text: 'from a previous batch'})")
-    eval_graph._db.query("CREATE (:Memory {content: 'from a previous batch'})")
+    produces or reads, so relying on it alone would let the previous build's
+    index survive into a rebuild (#309)."""
+    eval_graph._db.query("CREATE (:Chunk {text: 'from a previous build'})")
+    eval_graph._db.query("CREATE (:Memory {content: 'from a previous build'})")
 
-    inject_batch([_fixture("fresh")], graph=eval_graph)
+    wipe(eval_graph)
 
-    survivors = eval_graph._db.query("MATCH (n) WHERE n:Chunk OR n:Memory RETURN count(n) AS n")
+    survivors = eval_graph._db.query("MATCH (n) RETURN count(n) AS n")
     assert survivors[0]["n"] == 0
 
 
 def test_injection_reports_what_it_wrote(eval_graph: ActionsGraph):
-    written = inject_batch([_fixture("s1"), _fixture("s2")], graph=eval_graph)
+    written = inject([_fixture("s1"), _fixture("s2")], graph=eval_graph)
 
     assert written.sessions == 2
     assert written.turns == 4
@@ -116,7 +130,7 @@ def test_evidence_marking_never_reaches_the_graph(eval_graph: ActionsGraph):
     """holds_evidence is corpus-side bookkeeping. Writing it would hand
     retrieval the answer's location -- the thing under test getting told where
     to look."""
-    inject_batch([_fixture("s1", holds_evidence=True)], graph=eval_graph)
+    inject([_fixture("s1", holds_evidence=True)], graph=eval_graph)
 
     rows = eval_graph._db.query("MATCH (n) UNWIND keys(n) AS key RETURN collect(DISTINCT key) AS keys")
     written_keys = set(rows[0]["keys"])
@@ -126,8 +140,8 @@ def test_evidence_marking_never_reaches_the_graph(eval_graph: ActionsGraph):
 
 def test_reconciliation_is_left_pending_for_each_session(eval_graph: ActionsGraph):
     """Injection stages content; it does not distil it. Reconciliation is a
-    separate, LLM-backed pass that the runner triggers afterwards."""
-    inject_batch([_fixture("s1")], graph=eval_graph)
+    separate pass the build runs afterwards."""
+    inject([_fixture("s1")], graph=eval_graph)
 
     rows = eval_graph._db.query("MATCH (s:Session {session_id: 's1'}) RETURN s.reconciliation_status AS status")
 
@@ -139,22 +153,19 @@ def test_a_fixture_without_a_session_id_is_refused(eval_graph: ActionsGraph, bad
     """A blank id would collapse every fixture onto one node, silently merging
     distinct sessions and destroying the haystack."""
     with pytest.raises(ValueError, match="session_id"):
-        inject_batch([_fixture("ok"), _fixture(bad_id)], graph=eval_graph)
+        inject([_fixture("ok"), _fixture(bad_id)], graph=eval_graph)
 
 
 def test_a_stale_vector_index_does_not_survive_a_wipe(eval_graph: ActionsGraph):
-    """lightrag-memgraph's vector storage creates its index once and treats a
-    second CREATE VECTOR INDEX as "already exists" no matter why creation
-    failed -- dimension mismatch included. A batch that changes embedding
-    model would otherwise inherit a previous batch's index at the wrong
-    dimension. Deleting nodes alone (the pre-fix behaviour) leaves the index
-    definition standing; wipe must drop it too."""
+    """Deleting nodes leaves an index definition standing, so a rebuild with
+    another embedding model would inherit the old index at the wrong
+    dimension; wipe must drop it too."""
     eval_graph._db.query(
         "CREATE VECTOR INDEX stale_test_index ON :StaleTestLabel(embedding) "
         'WITH CONFIG {"dimension": 384, "capacity": 1000, "metric": "cos"}'
     )
 
-    inject_batch([_fixture("s1")], graph=eval_graph)
+    wipe(eval_graph)
 
     names = {row["index_name"] for row in eval_graph._db.query("SHOW VECTOR INDEX INFO")}
     assert "stale_test_index" not in names
@@ -163,7 +174,7 @@ def test_a_stale_vector_index_does_not_survive_a_wipe(eval_graph: ActionsGraph):
 def test_turns_are_stamped_with_the_session_date_in_order(eval_graph: ActionsGraph):
     """An extracted fact's valid_at is its source turn's timestamp (#364), so a
     turn must carry its session's date, not the time the eval ran."""
-    inject_batch([_fixture("s1")], graph=eval_graph)
+    inject([_fixture("s1")], graph=eval_graph)
 
     session = eval_graph.get_session("s1")
     assert session is not None
@@ -178,7 +189,7 @@ def test_every_session_belongs_to_its_questions_user(eval_graph: ActionsGraph):
     """A haystack is one person's history: one question's sessions share a
     (:User), so its facts are gatherable across them, and another question's
     sessions belong to someone else."""
-    inject_batch(
+    inject(
         [_fixture("s1", user_id="q1"), _fixture("s2", user_id="q1"), _fixture("s3", user_id="q2")],
         graph=eval_graph,
     )

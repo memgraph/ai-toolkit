@@ -1,13 +1,15 @@
-"""BEAM: conversion, the vendored judge, and the report."""
+"""BEAM: conversion, the vendored judge, and the adapter's rows and headline."""
 
 import math
 from types import SimpleNamespace
 
 import pytest
-from context_graph_eval.beam import BeamRow, latency, summarize
+from context_graph_eval.answering import Retrieved
 from context_graph_eval.beam_judge import BeamJudge, kendall_tau_b, ordering_score, rubric_prompt, rubric_score
+from context_graph_eval.benchmarks.beam import Beam, beam_headline
 from context_graph_eval.cli import parse_chat_ids
 from context_graph_eval.convert.beam import BeamChat, to_goldens, to_session_fixtures
+from context_graph_eval.results import Row
 
 
 def _message(message_id, role, content, anchor=None):
@@ -156,64 +158,33 @@ async def test_event_ordering_is_scored_by_normalised_tau():
     assert verdict.score == 0.0
 
 
-def test_summary_weights_abilities_equally_and_skips_unjudged_questions():
+def test_the_headline_weights_abilities_equally_and_skips_unjudged_questions():
     def row(ability, score):
-        return BeamRow(
-            name="", user_id="u", ability=ability, question="", expected="", answer="", rubric=[], score=score
-        )
+        return Row(name="", user_id="u", question_type=ability, score=score)
 
-    scores, overall = summarize([row("abstention", 1.0), row("abstention", None), row("summarization", 0.0)])
+    assert beam_headline([row("abstention", 1.0), row("abstention", None), row("summarization", 0.0)]) == 0.5
 
-    assert [(s.ability, s.questions, s.judged, s.mean_score) for s in scores] == [
-        ("abstention", 2, 1, 1.0),
-        ("summarization", 1, 1, 0.0),
+
+async def test_the_adapter_scores_each_answer_and_keeps_benchmark_text_in_the_detail():
+    questions = to_goldens(CHAT)
+    retrieved = [
+        Retrieved(answer="not in memory"),
+        Retrieved(answer="April 2", retrieval_context=["TURN [...]: Now it ends April 2."], recall_seconds=0.5),
     ]
-    assert overall == 0.5
 
+    rows = await Beam(client=_Replies([1.0, 0.5])).judge(questions, retrieved)
 
-def test_recall_latency_skips_rows_whose_retrieval_raised():
-    def row(e2e, recall):
-        return BeamRow(
-            name="",
-            user_id="u",
-            ability="abstention",
-            question="",
-            expected="",
-            answer="",
-            rubric=[],
-            latency_seconds=e2e,
-            recall_seconds=recall,
-        )
-
-    times = latency([row(4.0, 1.0), row(2.0, 3.0), row(0.1, None)])
-
-    assert times["mean_e2e_seconds"] == pytest.approx(6.1 / 3)
-    assert times["median_e2e_seconds"] == 2.0
-    assert times["mean_recall_seconds"] == 2.0
-    assert times["p95_recall_seconds"] == 3.0
-
-
-def test_a_limited_run_asks_an_equal_share_per_ability_spread_over_the_chats():
-    from collections import Counter
-
-    from context_graph_eval.beam import select_questions
-    from context_graph_eval.convert.beam import ABILITIES
-
-    chats = [
-        BeamChat(
-            size="100K",
-            chat_id=chat_id,
-            batches=CHAT.batches,
-            probing_questions={ability: [{"question": "q", "rubric": ["r"]}] * 2 for ability in ABILITIES},
-        )
-        for chat_id in range(1, 5)
+    assert [(r.question_type, r.score, r.abstention) for r in rows] == [
+        ("abstention", 1.0, True),
+        ("knowledge_update", 0.5, False),
     ]
-    goldens = [golden for chat in chats for golden in to_goldens(chat)]
+    assert rows[1].user_id == "beam-100K-7"
+    assert rows[1].detail["answer"] == "April 2"
+    assert rows[1].efficiency_tokens > 0
+    assert rows[0].efficiency_tokens == 0
 
-    selected = select_questions(goldens, 20)
 
-    assert Counter((g.additional_metadata or {})["question_type"] for g in selected) == Counter(
-        {ability: 2 for ability in ABILITIES}
-    )
-    assert set(Counter((g.additional_metadata or {})["user_id"] for g in selected).values()) == {5}
-    assert select_questions(goldens, None) == goldens
+async def test_without_a_judge_every_question_is_unjudged_not_zero():
+    rows = await Beam(judge_model=None).judge(to_goldens(CHAT), [Retrieved(answer="a"), Retrieved(answer="b")])
+
+    assert [r.score for r in rows] == [None, None]
