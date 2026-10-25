@@ -9,6 +9,8 @@ from context_graph_spaces.provision import apply
 from context_graph_spaces.spec import parse_spec
 from memgraph_context_graph.adapters import _identity
 
+pytestmark = pytest.mark.usefixtures("warmed_embeddings")
+
 
 @pytest.fixture
 def team(admin):
