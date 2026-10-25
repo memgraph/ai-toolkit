@@ -411,6 +411,9 @@ from the tool call, so a model can only read its own user's sessions.
 | `entities_k`, `edges_per_entity` | `15`, `6` | Entities matched, and facts read from each |
 | `facts_k`, `fact_turns_k` | `15`, `8` | Facts matched, and the messages they were read from |
 | `user_fact_types`, `user_facts_k` | `2`, `30` | Relation types gathered whole, for counting questions |
+| `packing` | `turns` | Opt in to source-only `exchanges`; requires `sessions-graph[compact]` |
+| `token_budget` | `6000` | Maximum row tokens in exchange mode; rendering instructions are outside the budget |
+| `supplemental_search` | `false` | Find complementary problem-resolution exchanges in vector-selected sessions |
 | `turn_chars` | `1500` | Characters shown per message |
 | `query_instruction` | per model | Prefix embedded with the question; bge's English models get their retrieval instruction, other models none |
 

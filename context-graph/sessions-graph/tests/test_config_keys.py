@@ -41,6 +41,9 @@ def config_file(monkeypatch, tmp_path):
         ("extraction.entity_threshold", "1.5", "between 0 and 1"),
         ("extraction.chunk_size", "0", "> 0"),
         ("recall.lanes", "turns, gossip", "unknown recall lanes"),
+        ("recall.packing", "invalid", "turns"),
+        ("recall.token_budget", "-1", "non-negative"),
+        ("recall.supplemental_search", "sometimes", "true"),
     ],
 )
 def test_config_set_refuses_what_sessions_graph_would_reject(config_file, capsys, key, value, reason):
@@ -50,3 +53,17 @@ def test_config_set_refuses_what_sessions_graph_would_reject(config_file, capsys
     assert main(["config", "set", key, value]) == 2
     assert reason in capsys.readouterr().err
     assert not config_file.exists()
+
+
+@pytest.mark.parametrize("enabled", ["true", "false"])
+def test_exchange_config_round_trip(config_file, enabled):
+    from memgraph_context_graph.adapters import _identity
+    from memgraph_context_graph.cli import main
+
+    assert main(["config", "set", "recall.packing", "exchanges"]) == 0
+    assert main(["config", "set", "recall.token_budget", "4000"]) == 0
+    assert main(["config", "set", "recall.supplemental_search", enabled]) == 0
+    _identity._reset_cache()
+    config = RecallConfig.from_mapping(_identity.load_config().recall_settings)
+    assert config.packing == "exchanges" and config.token_budget == 4000
+    assert config.supplemental_search is (enabled == "true")

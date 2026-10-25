@@ -8578,6 +8578,10 @@ dependencies = [
 anthropic = [
     { name = "anthropic" },
 ]
+compact = [
+    { name = "nltk" },
+    { name = "tiktoken" },
+]
 memgraph-context-graph = [
     { name = "memgraph-context-graph" },
 ]
@@ -8592,8 +8596,10 @@ sdk = [
     { name = "memgraph-context-graph", extra = ["claude", "openai"] },
 ]
 test = [
+    { name = "nltk" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "tiktoken" },
 ]
 
 [package.metadata]
@@ -8606,12 +8612,16 @@ requires-dist = [
     { name = "memgraph-context-graph", marker = "extra == 'memgraph-context-graph'", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-context-graph", extras = ["claude", "openai"], marker = "extra == 'sdk'", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
+    { name = "nltk", marker = "extra == 'compact'", specifier = ">=3.9.1" },
+    { name = "nltk", marker = "extra == 'test'", specifier = ">=3.9.1" },
     { name = "openai", marker = "extra == 'reconciliation'", specifier = ">=2.0.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24.0" },
+    { name = "tiktoken", marker = "extra == 'compact'", specifier = ">=0.8.0" },
+    { name = "tiktoken", marker = "extra == 'test'", specifier = ">=0.8.0" },
     { name = "unstructured2graph", marker = "extra == 'reconciliation'", editable = "unstructured2graph" },
 ]
-provides-extras = ["anthropic", "memgraph-context-graph", "sdk", "reconciliation", "test"]
+provides-extras = ["compact", "anthropic", "memgraph-context-graph", "sdk", "reconciliation", "test"]
 
 [[package]]
 name = "setuptools"

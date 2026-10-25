@@ -277,6 +277,26 @@ CONFIG_KEYS: tuple[ConfigKey, ...] = (
         unset="defaults to the embedding model's own",
     ),
     ConfigKey(
+        "recall.packing",
+        "Turn/fact rows or bounded source-only exchanges (requires sessions-graph[compact]).",
+        choices=("turns", "exchanges"),
+        unset="defaults to turns",
+        example="turns",
+    ),
+    ConfigKey(
+        "recall.token_budget",
+        "Maximum row tokens for exchange packing.",
+        kind="int",
+        unset="defaults to 6000",
+        example="6000",
+    ),
+    ConfigKey(
+        "recall.supplemental_search",
+        "Discover complementary problem-resolution exchanges.",
+        kind="bool",
+        unset="defaults to false",
+    ),
+    ConfigKey(
         "ontology.path",
         "A schema file your sessions are extracted under.",
         field="ontology_path",

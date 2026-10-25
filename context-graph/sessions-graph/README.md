@@ -407,6 +407,42 @@ computed exactly over the user's own vectors, which costs time linear in
 their history: about 0.6 s for a few hundred messages, 0.7 s at 10k, 6.7 s at
 100k. Without MAGE, recall runs text search alone and says so in its result.
 
+For bounded source context, install `sessions-graph[compact]` and opt in through
+`RecallConfig(packing="exchanges", token_budget=6000, supplemental_search=True)`
+or the same keys in `[recall]`. This keeps the regular `Recalled` interface,
+including `turns`, `memories`, `lines()`, `render()` and `to_json()`. Extracted
+facts rank source exchanges but are not rendered as separate rows in this mode.
+The row budget includes memory notes, exchange headers and separators; the
+reading instructions in `render()` are outside that budget. Memory notes are
+packed first. An exchange too large for the remaining budget is skipped whole.
+
+Exchange mode widens enabled vector/text turn pools to at least 24 and fact-source
+turns to at least 16, then groups adjacent messages using at most three directed
+`FOLLOWED_BY` edges inside their owning session or agent. It preserves the
+original source text in `turns`; displayed excerpts still follow `turn_chars`.
+Disabled lanes and zero widths stay disabled. Group membership is available in
+`Recalled.exchanges` and serialized when present.
+
+Optional supplemental search looks for problem-resolution episodes in at most
+four vector-selected owned sessions when the question asks about problems or
+fixes. It shares the text lane's vote and reserves at most a quarter of the
+remaining row budget for new exchanges. Up to 10,000 global Action documents it
+reuses the main text lane's corpus count for indexed search. Above that, or if
+the count is unavailable, local BM25 examines at most 512 documents with 8,192
+characters per ranking prefix and a 2 MiB character budget. These prefixes are
+ranking features; displayed sources are fetched in full. Exceeding the local
+work cap keeps the primary candidate pool. Missing vector/text lanes also skip
+supplemental search. Query errors propagate to the caller. Retrieval uses exact
+owned entity vectors and requires no extraction or graph reconstruction.
+
+Exchange packing remains opt-in: a [400-question BEAM prototype run](../eval/recall-exchanges.md)
+scored 65.46% versus the historical 63.60%, with 37.9% fewer context tokens, but
+abstention and multi-session reasoning regressed. The official benchmark numbers
+still describe the original configuration. The global count is per request rather
+than a transactional snapshot; concurrent inserts may change the indexed
+supplemental candidate pool. In multi-space recall the budget applies per space;
+it is not a global ceiling over the fused result.
+
 Harnesses reach it as the `recall` tool: sessions-graph registers it under
 memgraph-context-graph's `memgraph_context_graph.tools` entry point
 (`sessions_graph.tool:RECALL`), and `memgraph-context-graph mcp` serves it, taking

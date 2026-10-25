@@ -57,11 +57,12 @@ TURN_TEXT_INDEX = "recall_turn_text_index"
 
 @dataclass(frozen=True)
 class RecallConfig:
-    """Which lanes run and how wide each is: the setup the hybrid benchmark measured."""
+    """Which recall lanes run and how wide each is."""
 
     lanes: tuple[str, ...] = LANES
     #: Memory files shown at most, found by vector and full text together.
     memories_k: int = 5
+    #: At most this many vector-selected turns, preserving the original top passage hits.
     turns_k: int = 8
     text_k: int = 8
     entities_k: int = 15
@@ -76,6 +77,13 @@ class RecallConfig:
     turn_chars: int = 1500
     #: Prepended to the question before embedding it; None means :func:`query_instruction` for the model.
     query_instruction: str | None = None
+
+    #: Opt-in coherent, source-only exchanges; the default preserves turn/fact rows.
+    packing: str = "turns"
+    #: Row budget in cl100k_base tokens, including exchange headers and separators.
+    token_budget: int = 6000
+    #: Discover problem-resolution episodes in vector-selected sessions (exchange packing only).
+    supplemental_search: bool = False
 
     @classmethod
     def from_mapping(cls, values: dict[str, Any]) -> RecallConfig:
@@ -95,8 +103,18 @@ class RecallConfig:
                 if unknown:
                     raise ValueError(f"unknown recall lanes {unknown}; choose from {', '.join(LANES)}")
                 overrides[key] = lanes
+            elif key == "packing":
+                if value not in ("turns", "exchanges"):
+                    raise ValueError("recall packing must be 'turns' or 'exchanges'")
+                overrides[key] = value
+            elif key == "supplemental_search":
+                if isinstance(value, str) and value.strip().lower() in ("true", "false"):
+                    value = value.strip().lower() == "true"
+                if not isinstance(value, bool):
+                    raise ValueError("recall supplemental_search must be a boolean")
+                overrides[key] = value
             elif key == "query_instruction":
-                overrides[key] = str(value)
+                overrides[key] = None if value is None else str(value)
             else:
                 number = int(value)
                 if number < 0:
@@ -189,8 +207,19 @@ class Recalled:
     #: Spaces that couldn't be searched, each with why; their rows are missing.
     missing_spaces: tuple[str, ...] = ()
 
+    #: Selected source IDs grouped into complete exchanges, in display order.
+    exchanges: tuple[tuple[str, ...], ...] = ()
+
     def lines(self) -> list[str]:
         """The rows as text: exactly what the benchmark's answerer was shown."""
+        if self.exchanges:
+            turns = {turn.action_id: turn for turn in self.turns}
+            rows = [note.line(self.turn_chars) for note in self.memories]
+            for group in self.exchanges:
+                first = turns[group[0]]
+                rows.append(f"EXCHANGE [session {first.session_id}, {first.timestamp[:19]}]:")
+                rows.extend(turns[source].line(self.turn_chars) for source in group)
+            return rows + [fact.line() for fact in self.facts]
         return (
             [note.line(self.turn_chars) for note in self.memories]
             + [turn.line(self.turn_chars) for turn in self.turns]
@@ -217,6 +246,7 @@ class Recalled:
             "facts": [asdict(fact) for fact in self.facts],
             "memories": [asdict(note) for note in self.memories],
             "vector_lanes_off": self.vector_lanes_off,
+            **({"exchanges": [list(group) for group in self.exchanges]} if self.exchanges else {}),
             **({"missing_spaces": list(self.missing_spaces)} if self.missing_spaces else {}),
         }
 
@@ -229,40 +259,61 @@ _OWN_TURNS = (
 )
 _SCORE = "vector_search.cosine_similarity({x}.embedding, $query)"
 
+# Preserve the top k passages, then fill distinct-source slots from a bounded
+# candidate pool. Existing hits keep their passages; new sources get one best
+# passage. Collection stays bounded even for users with very long histories.
 _TURNS = (
-    _OWN_TURNS + "AND a.embedding_model = $model AND a.passage_embeddings IS NOT NULL WITH DISTINCT a "
-    "UNWIND range(0, size(a.passage_embeddings) - 1) AS i "
-    "WITH a, i, vector_search.cosine_similarity(a.passage_embeddings[i], $query) AS score "
-    "ORDER BY score DESC LIMIT $k RETURN a.action_id AS id, i AS passage"
+    _OWN_TURNS + "AND a.embedding_model = $model AND a.passage_embeddings IS NOT NULL "
+    "WITH DISTINCT a, a.passage_embeddings AS vectors UNWIND range(0, size(vectors) - 1) AS i "
+    "WITH a, i, vector_search.cosine_similarity(vectors[i], $query) AS score "
+    "ORDER BY score DESC, a.action_id, i LIMIT $k * 8 "
+    "WITH collect({id: a.action_id, passage: i}) AS hits "
+    "UNWIND range(0, size(hits) - 1) AS rank "
+    "WITH hits[rank] AS hit, rank ORDER BY rank "
+    "WITH hit.id AS id, collect({passage: hit.passage, rank: rank}) AS passages "
+    "ORDER BY passages[0].rank LIMIT $k "
+    "WITH id, passages[0] AS best, [h IN passages WHERE h.rank < $k] AS original "
+    "UNWIND CASE WHEN size(original) > 0 THEN original ELSE [best] END AS kept "
+    "RETURN id, kept.passage AS passage ORDER BY kept.rank"
 )
+# A session's messages share chunks. Expand each chunk once, retaining the
+# exact source IDs: sharing a chunk does not grant ownership of all its facts.
+_OWN_CHUNKS = _OWN_TURNS + "MATCH (a)-[:HAS_CHUNK]->(c:Chunk) WITH c, collect(DISTINCT a.action_id) AS own "
 # An entity is the user's when one of its mentions is from the user's turn:
 # chunks are content-addressed, so another user's identical text shares the chunk.
 _ENTITIES = (
-    _OWN_TURNS + "MATCH (a)-[:HAS_CHUNK]->(:Chunk)<-[m:MENTIONED_IN]-(n) "
-    "WHERE n.embedding_model = $model AND a.action_id IN coalesce(m.sources, []) WITH DISTINCT n "
-    "WITH n, " + _SCORE.format(x="n") + " AS score ORDER BY score DESC LIMIT $k RETURN id(n) AS id"
+    _OWN_CHUNKS + "MATCH (c)<-[m:MENTIONED_IN]-(n) "
+    "WHERE n.embedding_model = $model AND any(source IN coalesce(m.sources, []) WHERE source IN own) "
+    "WITH DISTINCT n WITH n, " + _SCORE.format(x="n") + " AS score "
+    "ORDER BY score DESC, id(n) LIMIT $k RETURN id(n) AS id"
 )
 # A fact is the user's when it was read from the user's turn.
-_OWN_FACTS = (
-    _OWN_TURNS + "MATCH (a)-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(n)-[r]-() WHERE r.source_id = a.action_id "
-)
+_OWN_FACTS = _OWN_CHUNKS + "MATCH (c)<-[:MENTIONED_IN]-(n)-[r]-() WHERE r.source_id IN own "
 _FACT_FIELDS = (
     "RETURN coalesce(h.text, 'user') AS head, type(r) AS type, coalesce(t.text, 'user') AS tail, "
     "toString(r.valid_at) AS valid_at, r.role AS speaker, r.text AS sentence, r.source_id AS turn"
 )
 _FACTS = (
     _OWN_FACTS + "AND r.embedding_model = $model WITH DISTINCT r "
-    "WITH r, " + _SCORE.format(x="r") + " AS score ORDER BY score DESC LIMIT $k "
+    "WITH r, " + _SCORE.format(x="r") + " AS score ORDER BY score DESC, id(r) LIMIT $k "
     "WITH startNode(r) AS h, r, endNode(r) AS t " + _FACT_FIELDS
 )
-# Each entity's most confident facts, the user's own only: the source turn is
-# looked up by its indexed id and walked back to the user.
+# Check ownership of adjacent fact sources in one batch before confidence
+# cutoffs. Per-edge Action lookups are expensive when its ID index is absent.
+# Keep candidates outside the ownership aggregation to avoid grouping by a
+# potentially large list of edges.
 _ENTITY_FACTS = (
-    "UNWIND $ids AS i MATCH (n) WHERE id(n) = i MATCH (n)-[r]-() WHERE r.source_id IS NOT NULL "
-    "MATCH (src:Action {action_id: r.source_id})<-[:HAS_ACTION|HAS_AGENT*1..2]-(:Session)"
-    "<-[:HAD_SESSION]-(:User {user_id: $user}) "
-    "WITH n, r ORDER BY r.confidence DESC WITH n, collect(DISTINCT r) AS rs UNWIND rs[0..$per] AS r "
-    "WITH DISTINCT r WITH startNode(r) AS h, r, endNode(r) AS t " + _FACT_FIELDS
+    "UNWIND range(0, size($ids) - 1) AS rank MATCH (n) WHERE id(n) = $ids[rank] "
+    "MATCH (n)-[r]-() WHERE r.source_id IS NOT NULL "
+    "WITH collect({rank: rank, n: n, r: r}) AS candidates, collect(DISTINCT r.source_id) AS sources "
+    "CALL { WITH sources MATCH (src:Action) WHERE src.action_id IN sources "
+    "MATCH (src)<-[:HAS_ACTION|HAS_AGENT*1..2]-(:Session)<-[:HAD_SESSION]-(:User {user_id: $user}) "
+    "RETURN collect(DISTINCT src.action_id) AS own } UNWIND candidates AS candidate "
+    "WITH candidate.rank AS rank, candidate.n AS n, candidate.r AS r, own WHERE r.source_id IN own "
+    "WITH rank, n, r ORDER BY rank, r.confidence DESC, id(r) "
+    "WITH rank, n, collect(DISTINCT r) AS rs UNWIND rs[0..$per] AS r "
+    "WITH r, min(rank) AS entity_rank ORDER BY entity_rank, r.confidence DESC, id(r) "
+    "WITH startNode(r) AS h, r, endNode(r) AS t " + _FACT_FIELDS
 )
 # Every relation type on a fact read from the user's turns, whatever its head:
 # a learned domain relation (Project depends_on Library) needn't start at the
@@ -271,7 +322,7 @@ _ENTITY_FACTS = (
 _USER_FACT_TYPES = _OWN_FACTS + "RETURN DISTINCT type(r) AS type"
 _USER_FACTS = (
     _OWN_FACTS + "AND type(r) IN $types AND r.embedding_model = $model WITH DISTINCT r "
-    "WITH r, " + _SCORE.format(x="r") + " AS score ORDER BY score DESC LIMIT $k "
+    "WITH r, " + _SCORE.format(x="r") + " AS score ORDER BY score DESC, id(r) LIMIT $k "
     "WITH startNode(r) AS h, r, endNode(r) AS t " + _FACT_FIELDS
 )
 _TYPE_DESCRIPTIONS = (
@@ -280,11 +331,11 @@ _TYPE_DESCRIPTIONS = (
 _TEXT = (
     f"CALL text_search.search_all('{TURN_TEXT_INDEX}', $text, {{limit: $pool}}) YIELD node, score "
     "WITH node, score WHERE node.action_id IN $own "
-    "WITH node, score ORDER BY score DESC LIMIT $k RETURN node.action_id AS id"
+    "WITH node, score ORDER BY score DESC, node.action_id LIMIT $k RETURN node.action_id AS id"
 )
 _OWN_TURN_IDS = _OWN_TURNS + "RETURN DISTINCT a.action_id AS id"
 _TURN_ROWS = (
-    "UNWIND $ids AS id MATCH (a:Action {action_id: id}) "
+    "MATCH (a:Action) WHERE a.action_id IN $ids "
     "MATCH (s:Session)-[:HAS_ACTION|HAS_AGENT*1..2]->(a) "
     "RETURN DISTINCT a.action_id AS id, s.session_id AS session, toString(a.timestamp) AS ts, "
     "a.action_type AS kind, a.text AS text"
@@ -292,20 +343,20 @@ _TURN_ROWS = (
 # Without vectors: the facts read from the turns text search found.
 _FACTS_OF_TURNS = (
     "UNWIND $ids AS id MATCH (a:Action {action_id: id})-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(n)-[r]-() "
-    "WHERE r.source_id = a.action_id WITH DISTINCT r ORDER BY r.confidence DESC LIMIT $k "
+    "WHERE r.source_id = a.action_id WITH DISTINCT r ORDER BY r.confidence DESC, id(r) LIMIT $k "
     "WITH startNode(r) AS h, r, endNode(r) AS t " + _FACT_FIELDS
 )
 
 _MEMORY_VECTORS = (
     "MATCH (m:Memory {user_id: $user}) WHERE m.embedding_model = $model AND m.passage_embeddings IS NOT NULL "
-    "UNWIND range(0, size(m.passage_embeddings) - 1) AS i "
-    "WITH m, i, vector_search.cosine_similarity(m.passage_embeddings[i], $query) AS score "
-    "ORDER BY score DESC LIMIT $k RETURN m.memory_id AS id, i AS passage"
+    "WITH m, m.passage_embeddings AS vectors UNWIND range(0, size(vectors) - 1) AS i "
+    "WITH m, i, vector_search.cosine_similarity(vectors[i], $query) AS score "
+    "ORDER BY score DESC, m.memory_id, i LIMIT $k RETURN m.memory_id AS id, i AS passage"
 )
 _MEMORY_TEXT = (
     "CALL text_search.search_all($index, $text, {limit: $pool}) YIELD node, score "
     "WITH node, score WHERE node.user_id = $user "
-    "WITH node, score ORDER BY score DESC LIMIT $k RETURN node.memory_id AS id"
+    "WITH node, score ORDER BY score DESC, node.memory_id LIMIT $k RETURN node.memory_id AS id"
 )
 _MEMORY_ROWS = (
     "UNWIND $ids AS id MATCH (m:Memory {memory_id: id}) "
@@ -332,13 +383,19 @@ def recall(
         db: Anything with ``query(cypher, params)``, e.g. a ``Memgraph`` client.
         user_id: Whose memory; nothing from another user is read.
         question: Searched as written.
-        config: Lanes and widths; the benchmarked defaults when omitted.
+        config: Lanes and widths; the default widths when omitted.
         model: The embedding model the stored vectors were made with.
 
     Returns:
         The turns and facts found, turns first, each in time order.
     """
     config = config or RecallConfig()
+    if config.packing not in ("turns", "exchanges"):
+        raise ValueError("recall packing must be 'turns' or 'exchanges'")
+    if config.packing == "exchanges":
+        from .recall_exchanges import prepare
+
+        config = prepare(config)
     try:
         prefix = config.query_instruction if config.query_instruction is not None else query_instruction(model)
         query = embed_texts(db, [prefix + question], model)[0]
@@ -350,21 +407,36 @@ def recall(
     turn_ids: list[str] = []
     vector_hits: dict[str, list[int]] = {}
     facts: list[dict[str, Any]] = []
-    if "turns" in config.lanes:
+    lanes: dict[str, list[str]] = {}
+    text_state: dict[str, int] = {}
+    if "turns" in config.lanes and config.turns_k:
         for row in db.query(_TURNS, {**params, "k": config.turns_k}):
             turn_ids.append(row["id"])
             vector_hits.setdefault(row["id"], []).append(row["passage"])
-    if "text" in config.lanes:
-        turn_ids += _text_lane(db, user_id, question, config.text_k)
+        lanes["turns"] = list(dict.fromkeys(turn_ids))
+    if "text" in config.lanes and config.text_k:
+        lanes["text"] = _text_lane(db, user_id, question, config.text_k, state=text_state)
+        turn_ids += lanes["text"]
     if "entities" in config.lanes:
         entity_ids = [row["id"] for row in db.query(_ENTITIES, {**params, "k": config.entities_k})]
         if entity_ids:
-            facts += db.query(_ENTITY_FACTS, {"ids": entity_ids, "user": user_id, "per": config.edges_per_entity})
+            rows = db.query(_ENTITY_FACTS, {"ids": entity_ids, "user": user_id, "per": config.edges_per_entity})
+            facts += rows
+            lanes["entities"] = list(dict.fromkeys(row["turn"] for row in rows if row.get("turn")))
     if "facts" in config.lanes:
-        facts += db.query(_FACTS, {**params, "k": config.facts_k})
+        rows = db.query(_FACTS, {**params, "k": config.facts_k})
+        facts += rows
+        lanes["facts"] = list(dict.fromkeys(row["turn"] for row in rows if row.get("turn")))
     if "user_facts" in config.lanes:
-        facts += _user_facts(db, user_id, query, model, config)
-    return replace(_assemble(db, question, turn_ids, facts, config, vector_hits), memories=memories)
+        rows = _user_facts(db, user_id, query, model, config)
+        facts += rows
+        lanes["user_facts"] = list(dict.fromkeys(row["turn"] for row in rows if row.get("turn")))
+    result = replace(_assemble(db, question, turn_ids, facts, config, vector_hits), memories=memories)
+    if config.packing == "exchanges":
+        from .recall_exchanges import assemble
+
+        result = assemble(db, user_id, result, lanes, config, text_state.get("count"))
+    return result
 
 
 def _memories(
@@ -404,9 +476,9 @@ def _memories(
     return notes
 
 
-def _text_lane(db: Any, user_id: str, question: str, k: int) -> list[str]:
+def _text_lane(db: Any, user_id: str, question: str, k: int, *, state: dict[str, int] | None = None) -> list[str]:
     text = _safe_query(question)
-    if not text:
+    if not k or not text:
         return []
     own = [row["id"] for row in db.query(_OWN_TURN_IDS, {"user": user_id})]
     if not own:
@@ -414,6 +486,8 @@ def _text_lane(db: Any, user_id: str, question: str, k: int) -> list[str]:
     # search_all stops at 1,000 hits unless given a limit, which would drop
     # this user's turns before the ownership filter sees them.
     pool = db.query("MATCH (a:Action) WHERE a.text IS NOT NULL RETURN count(a) AS n")[0]["n"]
+    if state is not None:
+        state["count"] = pool
     return [row["id"] for row in db.query(_TEXT, {"text": text, "pool": max(pool, 1), "own": own, "k": k})]
 
 
@@ -473,11 +547,16 @@ def _type_text(name: str, description: str) -> str:
 def _text_only(db: Any, user_id: str, question: str, config: RecallConfig, *, reason: str) -> Recalled:
     turn_ids = _text_lane(db, user_id, question, config.text_k) if "text" in config.lanes else []
     facts = db.query(_FACTS_OF_TURNS, {"ids": turn_ids, "k": config.facts_k}) if turn_ids else []
-    return replace(
+    result = replace(
         _assemble(db, question, turn_ids, facts, config),
         memories=_memories(db, user_id, question, config, query=None, model=""),
         vector_lanes_off=reason,
     )
+    if config.packing == "exchanges":
+        from .recall_exchanges import assemble
+
+        result = assemble(db, user_id, result, {"text": turn_ids}, config, None)
+    return result
 
 
 def _assemble(
@@ -603,12 +682,12 @@ _QUERY_TOKEN = re.compile(r"\w+")
 
 
 def _safe_query(question: str) -> str:
-    """The question as bare word tokens for the full-text index, minus near-universal words.
+    """The question as literal word tokens for the full-text index, minus near-universal words.
 
-    Tantivy's query parser treats characters like ``: ( ) " * ~ ^`` specially;
-    reducing to words makes any question parseable.
+    Strip query punctuation and quote each remaining word: a word such as
+    ``not`` must be searched literally, never interpreted as an operator.
     """
-    return " ".join(t for t in _QUERY_TOKEN.findall(question) if t.lower() not in _STOPWORDS)
+    return " ".join(f'"{t}"' for t in _QUERY_TOKEN.findall(question) if t.lower() not in _STOPWORDS)
 
 
 #: Reciprocal rank fusion's damping constant: the usual 60, so a list's top few ranks don't drown the rest.
