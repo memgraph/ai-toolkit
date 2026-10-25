@@ -161,6 +161,12 @@ steady rate can hide a different passing set each run.
 
 ## BEAM
 
+An experimental, opt-in [exchange recall evaluation](recall-exchanges.md) records
+a separate 400-question prototype baseline for its named configuration over the
+retained GLiNER2 graph. Its development used BEAM questions included in the full
+run; independent complete-history validation remains outstanding. The published
+version points below keep their original configurations and scores.
+
 `context-graph-eval beam` runs [BEAM](https://github.com/mohammadtavakoli78/BEAM)'s
 probing questions through the hybrid read path, judged by BEAM's own judge
 (`beam_judge.py`, vendored verbatim: `gpt-4.1-mini`, temperature 0).

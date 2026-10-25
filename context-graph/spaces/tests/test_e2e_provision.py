@@ -5,7 +5,7 @@ from __future__ import annotations
 import neo4j
 import pytest
 
-from context_graph_spaces.provision import SERVICE_ACCOUNT, apply, observed_state, plan
+from context_graph_spaces.provision import SERVICE_ACCOUNT, apply, live_databases, observed_state, plan
 from context_graph_spaces.spec import parse_spec
 
 DENIED = neo4j.exceptions.ClientError
@@ -120,7 +120,8 @@ def test_removing_a_member_revokes_access_and_keeps_data_until_prune(admin, team
 
     apply(alice_only, admin, prune=True)
 
-    assert not any(row["Name"] in {"u_bob", "space_payments"} for row in admin("SHOW DATABASES", None, None))
+    # FORCE drops remain listed as DROPPING while existing connections drain.
+    assert not {"u_bob", "space_payments"} & live_databases(admin)
     assert "bob" not in {row["user"] for row in admin("SHOW USERS", None, None)}
     assert _plan(admin, alice_only, prune=True).empty
 

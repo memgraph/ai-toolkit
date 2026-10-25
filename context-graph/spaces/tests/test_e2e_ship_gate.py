@@ -23,7 +23,7 @@ CANARY = "canary-ante-4417"
 SHARED = "/memories/spaces/launch/decision.md"
 
 
-def test_two_users_one_shared_space(enterprise_url, admin, join, connect, monkeypatch):
+def test_two_users_one_shared_space(enterprise_url, admin, join, connect, monkeypatch, warmed_embeddings):
     monkeypatch.setattr(resolver, "REVOCATION_DELAY_SECONDS", 1.0)
     spec = parse_spec({"members": ["alice", "bob"], "spaces": {"launch": {"members": ["alice", "bob"]}}})
     passwords = apply(spec, admin).passwords

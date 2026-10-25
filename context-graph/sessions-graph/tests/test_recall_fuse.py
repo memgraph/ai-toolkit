@@ -44,3 +44,35 @@ def test_turns_stay_in_time_order_and_missing_spaces_are_said():
     assert [turn.timestamp for turn in fused.turns] == ["2026-09-02", "2026-09-03", "2026-09-04"]
     assert "Not searched, so rows from them are missing: shared space sales (timeout)." in fused.render()
     assert fused.to_json()["missing_spaces"] == ["shared space sales (timeout)"]
+
+
+def test_exchange_fusion_keeps_duplicate_ids_scoped_and_memory_budget_shared():
+    personal_turns = [
+        Turn("a", "personal", "2026-09-01", "user", "personal question"),
+        Turn("b", "personal", "2026-09-02", "assistant", "personal answer"),
+    ]
+    shared_turns = [
+        Turn("a", "shared", "2026-09-03", "user", "shared question"),
+        Turn("b", "shared", "2026-09-04", "assistant", "shared answer"),
+    ]
+    personal = Recalled("q", turns=personal_turns, exchanges=(("a", "b"),), memories=_notes("p"))
+    shared = Recalled("q", turns=shared_turns, exchanges=(("a", "b"),), memories=_notes("s"))
+
+    fused = fuse("q", [personal, shared], memories_k=1)
+
+    assert fused.space_results == (personal, shared)
+    assert fused.lines() == [personal.memories[0].line(1500), *personal.lines()[1:], *shared.lines()[1:]]
+    scoped = fused.to_json()["spaces"]
+    assert [space["exchanges"] for space in scoped] == [[["a", "b"]], [["a", "b"]]]
+    assert [space["turns"][0]["session_id"] for space in scoped] == ["personal", "shared"]
+    assert len(fused.turns) == 4
+
+
+def test_exchange_grouping_survives_missing_space_and_mixed_packing():
+    grouped = Recalled("q", turns=[_turn("2026-09-02")], exchanges=(("2026-09-02",),))
+    flat = Recalled("q", turns=[_turn("2026-09-01")])
+    for results in ([grouped], [grouped, flat]):
+        fused = fuse("q", results, memories_k=5, missing=("sales (timeout)",))
+        assert "EXCHANGE" in fused.render()
+        assert "sales (timeout)" in fused.render()
+        assert all(turn.line(1500) in fused.lines() for result in results for turn in result.turns)

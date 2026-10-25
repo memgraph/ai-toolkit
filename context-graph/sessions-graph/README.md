@@ -407,6 +407,21 @@ computed exactly over the user's own vectors, which costs time linear in
 their history: about 0.6 s for a few hundred messages, 0.7 s at 10k, 6.7 s at
 100k. Without MAGE, recall runs text search alone and says so in its result.
 
+For experimental bounded source context, install `sessions-graph[compact]` and
+set `RecallConfig(packing="exchanges", token_budget=6000, supplemental_search=True)`
+or the same keys in `[recall]`; this groups source messages and uses extracted
+facts for ranking. The budget applies per space, and fused results preserve
+space-local groups. See [exchange recall](../eval/recall-exchanges.md) for setup
+(including the tokenizer's one-time download), policy limits and evaluation;
+the matched 400-question retrieval comparison used 38.1% fewer tokens with
+exchanges, but a quality improvement has not been established.
+
+Turn/fact formatting remains the default. Retrieval itself changes in this
+release: vector hits fill distinct source slots, text words are searched
+literally, and fact selection has deterministic ordering. Historical benchmark
+scores do not establish the quality of this revised default.
+
+
 Harnesses reach it as the `recall` tool: sessions-graph registers it under
 memgraph-context-graph's `memgraph_context_graph.tools` entry point
 (`sessions_graph.tool:RECALL`), and `memgraph-context-graph mcp` serves it, taking
