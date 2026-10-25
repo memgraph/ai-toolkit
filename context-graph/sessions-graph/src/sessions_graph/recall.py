@@ -16,12 +16,12 @@ files gets exactly what the five conversation lanes give, header included. A tur
 shown as the passages that matched (:mod:`.passages`): the one a vector
 hit, the one a fact was read from, the one sharing most words with the
 question. The result is the evidence, not an
-answer: the caller's model answers from it. This is the hybrid retrieval the
-eval benchmarks (``context-graph-eval run --retrieval-strategy hybrid``),
-which calls this same code. Default exchange packing groups related
-source messages, uses facts only for ranking, and budgets whole groups together
-with memory notes. Supplemental discovery is enabled by default; turn/fact
-packing remains available with ``packing="turns"``.
+answer: the caller's model answers from it. This is what the eval
+benchmarks (``context-graph-eval run <workload>``), which calls this same
+code. Default exchange packing groups related source messages, uses facts
+only for ranking, and budgets whole groups together with memory notes.
+Supplemental discovery is enabled by default; turn/fact packing remains
+available with ``packing="turns"``.
 
 Vectors come from :mod:`.embeddings`, so similarity is computed in Memgraph
 over the user's own rows (``vector_search.search`` has no filter, and a

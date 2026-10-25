@@ -1,23 +1,23 @@
-"""Compare two eval runs and render the report a human decides on.
+"""Render a run, and compare two runs of the same workload.
 
-#299 chose human-gated promotion: eval produces a comparison a person reads and
-acts on, rather than a threshold that promotes automatically. So this report's
-job is not to decide -- it is to make the decision *makeable*, which means
-saying plainly what changed and whether the change is real.
+#299 chose human-gated promotion: eval produces a comparison a person reads
+and acts on, rather than a threshold that promotes automatically. So a
+comparison's job is not to decide -- it is to make the decision makeable,
+which means saying plainly what changed and whether the change is real.
 
-"Whether it's real" is the part that would otherwise go wrong. Judged scores
-vary run to run, so a human shown a bare 12/20 -> 13/20 will read a win into
-noise. #304's repeat-and-compare calibration exists to give that variance a
-number; this report refuses to call anything real without it.
+Judged scores vary run to run, so a human shown a bare 0.62 -> 0.64 will read
+a win into noise. #304's repeat-and-compare calibration gives that variance a
+number; a comparison refuses to call anything real without it.
 """
 
-import json
-from dataclasses import asdict, dataclass, field
-from enum import Enum
-from pathlib import Path
-from statistics import median
+from __future__ import annotations
 
-from .scoring import Scored
+from dataclasses import dataclass, field
+from enum import Enum
+from statistics import mean, median
+
+from .benchmarks import headline, type_order
+from .results import Row, Run, Summary, summarize
 
 
 class Verdict(str, Enum):
@@ -26,252 +26,249 @@ class Verdict(str, Enum):
     INCONCLUSIVE = "inconclusive"
 
 
+#: RunMeta fields that, differing, make two runs incomparable: a change to any
+#: of them is measured as though it were the change under test.
+PINNED = ("workload", "revision", "judge_model", "agent_model", "tokenizer")
+
+
+def summary_of(run: Run) -> Summary:
+    """``run``'s summary, around its benchmark's headline."""
+    return summarize(
+        run.rows, headline=headline(run.meta.benchmark, run.rows), type_order=type_order(run.meta.benchmark)
+    )
+
+
+def _score(value: float | None, benchmark: str) -> str:
+    if value is None:
+        return "-"
+    return f"{value:.1%}" if benchmark != "beam-100k" else f"{value:.3f}"
+
+
+def _seconds(value: float | None) -> str:
+    return f"{value:.2f}s" if value is not None else "-"
+
+
+def render(run: Run, *, notes: list[str] | None = None) -> str:
+    """``run`` as the text a person reads after it finishes."""
+    meta = run.meta
+    summary = summary_of(run)
+    lines = [
+        f"{meta.workload} -- {meta.label} ({meta.benchmark} @ {meta.revision[:12]})",
+        f"answering {meta.agent_model} | judge {meta.judge_model} | packing {meta.packing}"
+        + (f" | rubrics {meta.rubric_judge_model}" if meta.rubric_judge_model != "none" else ""),
+        "",
+        f"{'question type':<28} {'n':>4} {'judged':>6} {'score':>7} {'evidence':>8}",
+    ]
+    for t in summary.by_type:
+        evidence = f"{t.mean_evidence_recall:.2f}" if t.mean_evidence_recall is not None else "-"
+        lines.append(
+            f"{t.question_type:<28} {t.questions:>4} {t.judged:>6} {_score(t.mean_score, meta.benchmark):>7} {evidence:>8}"
+        )
+    lines.append(
+        f"{'HEADLINE':<28} {summary.questions:>4} {summary.judged:>6} {_score(summary.headline, meta.benchmark):>7}"
+    )
+    lines.append("")
+    if summary.judged < summary.questions:
+        # With a judge configured, unjudged means it errored -- an outage, not a 0.
+        lines.append(f"UNJUDGED      {summary.questions - summary.judged} question(s): left out of every score")
+    if summary.mean_evidence_recall is not None:
+        lines.append(f"evidence      mean recall {summary.mean_evidence_recall:.2f}")
+    if summary.mean_tokens is not None:
+        passed = f", median {summary.median_tokens_passed:,.0f} over passed" if summary.median_tokens_passed else ""
+        lines.append(f"tokens        mean {summary.mean_tokens:,.0f} retrieved{passed}")
+    times = summary.latency
+    lines.append(
+        f"recall only   mean {_seconds(times['mean_recall_seconds'])}, median {_seconds(times['median_recall_seconds'])}, "
+        f"p95 {_seconds(times['p95_recall_seconds'])}"
+    )
+    lines.append(f"end to end    mean {_seconds(times['mean_e2e_seconds'])}, p95 {_seconds(times['p95_e2e_seconds'])}")
+    if summary.errored:
+        lines.append(f"errors        {summary.errored} question(s) whose retrieval reported an error")
+    lines.extend(notes or [])
+    build = meta.build
+    if build.get("fingerprint"):
+        stale = "" if build.get("current", True) else " (STALE: asked with --reuse after its inputs changed)"
+        seconds = build.get("build_seconds")
+        took = f", {seconds / 60:.0f} min" if seconds else ""
+        lines.append(f"graph         build {build['fingerprint']} at {build.get('commit') or '?'}{took}{stale}")
+    return "\n".join(lines)
+
+
 @dataclass(frozen=True)
-class RunMeta:
-    """What a run was measured against.
-
-    Every field here is something that, if it differed between two runs, would
-    make their numbers incomparable -- which is why :func:`compare` refuses
-    rather than quietly producing a delta.
-    """
-
-    label: str
-    corpus_revision: str
-    corpus_variant: str
-    judge_model: str
-    tokenizer: str
-    questions: int
-    changed: str = ""
-    #: 'provider:model_id' actually used for answering, e.g. 'openai:gpt-4o'.
-    agent_model: str = ""
-    #: Judge and agent resolved to the same provider: #304's independence does not hold.
-    same_provider: bool = False
-    #: See reconcile.EXTRACTION_BACKENDS; "none" for text-search, which never reconciles.
-    extraction_backend: str = "lightrag"
-    #: See runner.RETRIEVAL_STRATEGIES. The one field compare() does not pin.
-    retrieval_strategy: str = "graph-agent"
-    #: "fixed" (the LongMemEval vocabulary), "default" (hygm's default model) or
-    #: "learned" (each user's derived model): different graphs, so different systems under test.
-    ontology: str = "fixed"
-    #: Which judge decided ``covered`` -- see scoring.COVERAGE_GATE.
-    coverage_gate: str = "min"
-    #: LongMemEval's judge model when it decided ``covered``, else "none".
-    official_judge_model: str = "none"
-
-
-@dataclass(frozen=True)
-class SavedRun:
-    meta: RunMeta
-    scored: list[Scored]
-
-
-@dataclass(frozen=True)
-class TierComparison:
-    tier: int
-    baseline_covered: int
-    candidate_covered: int
-    questions: int
-    coverage_delta_pp: float
-    #: True/False when calibrated, None when no noise floor is known -- the
-    #: distinction between "not real" and "cannot tell" matters to a decision.
-    coverage_is_real: bool | None
-    baseline_efficiency: int | None
-    candidate_efficiency: int | None
-    regressions: list[str] = field(default_factory=list)
-    improvements: list[str] = field(default_factory=list)
+class TypeDelta:
+    question_type: str
+    baseline: float | None
+    candidate: float | None
 
 
 @dataclass(frozen=True)
 class Comparison:
-    baseline: RunMeta
-    candidate: RunMeta
-    verdict: Verdict
+    baseline: Run
+    candidate: Run
+    baseline_headline: float | None
+    candidate_headline: float | None
+    #: Headline change in percentage points.
+    delta_pp: float | None
     noise_floor_pp: float | None
-    tiers: dict[int, TierComparison] = field(default_factory=dict)
+    #: True/False when calibrated, None when no noise floor is known -- "not
+    #: real" and "cannot tell" are different answers to a decision.
+    is_real: bool | None
+    verdict: Verdict
+    by_type: list[TypeDelta] = field(default_factory=list)
+    regressions: list[str] = field(default_factory=list)
+    improvements: list[str] = field(default_factory=list)
+    #: Median retrieval tokens over questions both runs passed (#309).
+    baseline_tokens: float | None = None
+    candidate_tokens: float | None = None
+    baseline_evidence: float | None = None
+    candidate_evidence: float | None = None
+    baseline_recall_seconds: float | None = None
+    candidate_recall_seconds: float | None = None
+    #: What differs about the system under test: build inputs, lanes, commit.
+    changes: list[str] = field(default_factory=list)
 
 
-def save_run(run: SavedRun, path: Path) -> Path:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"meta": asdict(run.meta), "scored": [asdict(s) for s in run.scored]}
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-    return path
+def compare(baseline: Run, candidate: Run, *, noise_floor_pp: float | None = None) -> Comparison:
+    """Compare two runs of the same questions, refusing when they were not measured the same way.
 
-
-def load_run(path: Path) -> SavedRun:
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    return SavedRun(
-        meta=RunMeta(**payload["meta"]),
-        scored=[Scored(**row) for row in payload["scored"]],
-    )
-
-
-def compare(baseline: SavedRun, candidate: SavedRun, noise_floor_pp: float | None = None) -> Comparison:
-    """Compare two runs, refusing when they were not measured the same way.
-
-    The refusals are the point. #302 pinned the corpus revision and #304 pinned
-    the judge model and tokenizer *so that* two runs could be compared; a
-    comparison across different pins measures the pin change as though it were
-    the schema change under test, and reports it confidently.
+    Raises:
+        ValueError: a pinned field (``PINNED``) differs, or the runs asked different questions.
     """
-    _require_same(baseline.meta, candidate.meta, "corpus_revision", "corpus")
-    _require_same(baseline.meta, candidate.meta, "corpus_variant", "corpus")
-    _require_same(baseline.meta, candidate.meta, "judge_model", "judge")
-    _require_same(baseline.meta, candidate.meta, "agent_model", "agent model")
-    # "none" is a text-search run with no backend at all, not a disagreement.
-    if "none" not in (baseline.meta.extraction_backend, candidate.meta.extraction_backend):
-        _require_same(baseline.meta, candidate.meta, "extraction_backend", "extraction backend")
-    _require_same(baseline.meta, candidate.meta, "tokenizer", "tokenizer")
-    _require_same(baseline.meta, candidate.meta, "coverage_gate", "coverage gate")
-    _require_same(baseline.meta, candidate.meta, "official_judge_model", "official judge")
-    # Rates over different corpus sizes only look comparable.
-    _require_same(baseline.meta, candidate.meta, "questions", "corpus size")
+    for attr in PINNED:
+        before, after = getattr(baseline.meta, attr), getattr(candidate.meta, attr)
+        if before != after:
+            raise ValueError(
+                f"runs are not comparable: {attr} differs ({before!r} vs {after!r}). "
+                "Re-run the baseline the same way before comparing."
+            )
+    if {row.name for row in baseline.rows} != {row.name for row in candidate.rows}:
+        raise ValueError("runs are not comparable: they asked different questions")
 
-    tiers: dict[int, TierComparison] = {}
-    for tier in sorted({s.tier for s in baseline.scored} | {s.tier for s in candidate.scored}):
-        tiers[tier] = _compare_tier(tier, baseline.scored, candidate.scored, noise_floor_pp)
+    benchmark = baseline.meta.benchmark
+    before = {row.name: row for row in baseline.rows}
+    after = {row.name: row for row in candidate.rows}
+    base_headline = headline(benchmark, baseline.rows)
+    cand_headline = headline(benchmark, candidate.rows)
+    delta = (cand_headline - base_headline) * 100 if base_headline is not None and cand_headline is not None else None
+    is_real = None if noise_floor_pp is None or delta is None else abs(delta) > noise_floor_pp
+    both_passed = [name for name in before if before[name].passed and after[name].passed]
 
     return Comparison(
-        baseline=baseline.meta,
-        candidate=candidate.meta,
-        verdict=_verdict(tiers),
+        baseline=baseline,
+        candidate=candidate,
+        baseline_headline=base_headline,
+        candidate_headline=cand_headline,
+        delta_pp=delta,
         noise_floor_pp=noise_floor_pp,
-        tiers=tiers,
+        is_real=is_real,
+        verdict=_verdict(delta, is_real),
+        by_type=_by_type(benchmark, baseline.rows, candidate.rows),
+        regressions=sorted(name for name in before if before[name].passed and not after[name].passed),
+        improvements=sorted(name for name in before if not before[name].passed and after[name].passed),
+        baseline_tokens=_median([before[name].efficiency_tokens for name in both_passed]),
+        candidate_tokens=_median([after[name].efficiency_tokens for name in both_passed]),
+        baseline_evidence=_mean([row.evidence_recall for row in baseline.rows]),
+        candidate_evidence=_mean([row.evidence_recall for row in candidate.rows]),
+        baseline_recall_seconds=_mean([row.recall_seconds for row in baseline.rows]),
+        candidate_recall_seconds=_mean([row.recall_seconds for row in candidate.rows]),
+        changes=_changes(baseline, candidate),
     )
 
 
-def _require_same(baseline: RunMeta, candidate: RunMeta, attr: str, noun: str) -> None:
-    before, after = getattr(baseline, attr), getattr(candidate, attr)
-    if before != after:
-        raise ValueError(
-            f"runs are not comparable: {noun} differs ({attr} {before!r} vs {after!r}). "
-            f"A {noun} change invalidates prior baselines -- re-run the baseline before comparing."
-        )
+def _verdict(delta: float | None, is_real: bool | None) -> Verdict:
+    """Deliberately conservative: nothing is called better or worse inside the noise floor, or without one."""
+    if not is_real or delta is None:
+        return Verdict.INCONCLUSIVE
+    return Verdict.IMPROVED if delta > 0 else Verdict.REGRESSED
 
 
-def _compare_tier(
-    tier: int,
-    baseline: list[Scored],
-    candidate: list[Scored],
-    noise_floor_pp: float | None,
-) -> TierComparison:
-    before = {s.name: s for s in baseline if s.tier == tier}
-    after = {s.name: s for s in candidate if s.tier == tier}
-    shared = before.keys() & after.keys()
-    # Efficiency compares only questions both runs passed (#309).
-    shared_passing = sorted(n for n in shared if before[n].covered and after[n].covered)
+def _by_type(benchmark: str, baseline: list[Row], candidate: list[Row]) -> list[TypeDelta]:
+    def means(rows: list[Row]) -> dict[str, float]:
+        by: dict[str, list[float]] = {}
+        for row in rows:
+            if row.score is not None:
+                by.setdefault(row.question_type, []).append(row.score)
+        return {key: mean(values) for key, values in by.items()}
 
-    baseline_covered = sum(1 for s in before.values() if s.covered)
-    candidate_covered = sum(1 for s in after.values() if s.covered)
-    questions = max(len(before), len(after)) or 1
-    delta_pp = (candidate_covered - baseline_covered) / questions * 100
-
-    is_real: bool | None = None if noise_floor_pp is None else abs(delta_pp) > noise_floor_pp
-
-    return TierComparison(
-        tier=tier,
-        baseline_covered=baseline_covered,
-        candidate_covered=candidate_covered,
-        questions=questions,
-        coverage_delta_pp=delta_pp,
-        coverage_is_real=is_real,
-        baseline_efficiency=_median_efficiency(before[n] for n in shared_passing),
-        candidate_efficiency=_median_efficiency(after[n] for n in shared_passing),
-        regressions=sorted(n for n in shared if before[n].covered and not after[n].covered),
-        improvements=sorted(n for n in shared if not before[n].covered and after[n].covered),
-    )
+    before, after = means(baseline), means(candidate)
+    present = before.keys() | after.keys()
+    ordered = [t for t in type_order(benchmark) if t in present] + sorted(present - set(type_order(benchmark)))
+    return [TypeDelta(t, before.get(t), after.get(t)) for t in ordered]
 
 
-def _median_efficiency(scored) -> int | None:
-    """Median payload over questions that cleared coverage (#309)."""
-    passing = [s.efficiency_tokens for s in scored if s.covered]
-    return int(median(passing)) if passing else None
+def _changes(baseline: Run, candidate: Run) -> list[str]:
+    changes = []
+    old, new = baseline.meta.build.get("inputs") or {}, candidate.meta.build.get("inputs") or {}
+    for key in sorted(old.keys() | new.keys()):
+        if old.get(key) != new.get(key) and key not in ("shard",):
+            changes.append(f"build {key}: {old.get(key)} -> {new.get(key)}")
+    if baseline.meta.packing != candidate.meta.packing:
+        changes.append(f"recall packing: {baseline.meta.packing} -> {candidate.meta.packing}")
+    if baseline.meta.hybrid_lanes != candidate.meta.hybrid_lanes:
+        changes.append(f"recall lanes: {baseline.meta.hybrid_lanes} -> {candidate.meta.hybrid_lanes}")
+    if baseline.meta.commit != candidate.meta.commit:
+        changes.append(f"commit: {baseline.meta.commit} -> {candidate.meta.commit}")
+    return changes
 
 
-def _verdict(tiers: dict[int, TierComparison]) -> Verdict:
-    """A verdict, deliberately conservative.
-
-    A real coverage regression decides the outcome even when efficiency
-    improved: coverage is the gate (#309), and a cheaper answer that is missing
-    facts is not a better one. Efficiency alone never declares an improvement
-    for the same reason -- returning less is only a win if coverage held, and
-    "held" cannot be established inside the noise floor.
-    """
-    if any(t.coverage_is_real and t.coverage_delta_pp < 0 for t in tiers.values()):
-        return Verdict.REGRESSED
-    if any(t.coverage_is_real and t.coverage_delta_pp > 0 for t in tiers.values()):
-        return Verdict.IMPROVED
-    return Verdict.INCONCLUSIVE
+def _mean(values: list[float | None]) -> float | None:
+    present = [value for value in values if value is not None]
+    return mean(present) if present else None
 
 
-def render(comparison: Comparison) -> str:
-    """Render the report as plain text."""
-    meta = comparison.candidate
+def _median(values: list[int]) -> float | None:
+    return median(values) if values else None
+
+
+def render_comparison(comparison: Comparison) -> str:
+    """The comparison as plain text."""
+    base, cand = comparison.baseline.meta, comparison.candidate.meta
+    benchmark = base.benchmark
     lines = [
-        f"context-graph eval - {meta.label} vs {comparison.baseline.label}",
-        f"corpus longmemeval-{meta.corpus_variant}@{meta.corpus_revision} ({meta.questions}q) "
-        f"- extraction {meta.extraction_backend}",
-        f"judge {meta.judge_model} | agent {meta.agent_model} - tok {meta.tokenizer}",
+        f"{cand.workload} -- {cand.label} vs {base.label}",
+        f"answering {cand.agent_model} | judge {cand.judge_model}",
         "",
         f"VERDICT  {comparison.verdict.value}",
     ]
-
-    # Its own line: the one axis compare() does not pin must be unmissable.
-    if comparison.baseline.retrieval_strategy != meta.retrieval_strategy:
-        lines.append(
-            f"retrieval  {comparison.baseline.retrieval_strategy} (baseline) vs {meta.retrieval_strategy} (candidate)"
-        )
-
-    if meta.same_provider:
-        lines.append(
-            "  WARNING: judge and agent share a provider -- #304's cross-provider "
-            "independence does not hold for this run."
-        )
-
     if comparison.noise_floor_pp is None:
-        lines.append("  noise floor NOT CALIBRATED - no delta can be called real.")
-        lines.append("  Run the repeat-and-compare check (#304) to establish one.")
+        lines.append("  noise floor NOT CALIBRATED - no delta can be called real (see `calibrate`).")
     else:
-        lines.append(f"  noise floor +/-{comparison.noise_floor_pp:.0f}pp")
-
-    for tier, t in sorted(comparison.tiers.items()):
-        lines += ["", f"Tier {tier}{'':14}base    cand   delta"]
-        verdict_note = _delta_note(t)
-        lines.append(
-            f"  coverage         {t.baseline_covered:>5}/{t.questions:<2}"
-            f"{t.candidate_covered:>4}/{t.questions:<2}"
-            f"{t.coverage_delta_pp:>+7.0f}pp  {verdict_note}"
+        lines.append(f"  noise floor +/-{comparison.noise_floor_pp:.1f}pp")
+    lines += ["", f"{'':<28} {'base':>8} {'cand':>8} {'delta':>8}"]
+    delta = f"{comparison.delta_pp:+.1f}pp" if comparison.delta_pp is not None else "-"
+    note = {None: "(uncalibrated)", True: "REAL", False: "(noise)"}[comparison.is_real]
+    lines.append(
+        f"{'HEADLINE':<28} {_score(comparison.baseline_headline, benchmark):>8} "
+        f"{_score(comparison.candidate_headline, benchmark):>8} {delta:>8}  {note}"
+    )
+    for t in comparison.by_type:
+        change = (
+            f"{(t.candidate - t.baseline) * 100:+.1f}pp" if t.baseline is not None and t.candidate is not None else ""
         )
         lines.append(
-            f"  efficiency med   {_fmt(t.baseline_efficiency):>7} {_fmt(t.candidate_efficiency):>7}"
-            f"{_efficiency_delta(t):>10}"
+            f"  {t.question_type:<26} {_score(t.baseline, benchmark):>8} {_score(t.candidate, benchmark):>8} {change:>8}"
         )
-        if t.baseline_efficiency is None:
-            lines.append("                   (no question cleared coverage in both runs -- nothing comparable)")
-        if t.regressions:
-            lines.append(f"  regressions      {', '.join(t.regressions)}")
-        if t.improvements:
-            lines.append(f"  improvements     {', '.join(t.improvements)}")
-
-    if meta.changed:
-        lines += ["", f"changed  {meta.changed}"]
-
+    lines.append("")
+    if comparison.baseline_evidence is not None and comparison.candidate_evidence is not None:
+        lines.append(f"evidence      {comparison.baseline_evidence:.2f} -> {comparison.candidate_evidence:.2f}")
+    if comparison.baseline_tokens is not None and comparison.candidate_tokens is not None:
+        lines.append(
+            f"tokens        median {comparison.baseline_tokens:,.0f} -> {comparison.candidate_tokens:,.0f} "
+            "(questions both runs passed)"
+        )
+    else:
+        lines.append("tokens        no question passed in both runs -- nothing comparable")
+    lines.append(
+        f"recall only   mean {_seconds(comparison.baseline_recall_seconds)} -> "
+        f"{_seconds(comparison.candidate_recall_seconds)}"
+    )
+    if comparison.regressions:
+        lines.append(f"stopped passing ({len(comparison.regressions)}): {', '.join(comparison.regressions)}")
+    if comparison.improvements:
+        lines.append(f"started passing ({len(comparison.improvements)}): {', '.join(comparison.improvements)}")
+    if comparison.changes:
+        lines += ["", "what differs:", *(f"  {change}" for change in comparison.changes)]
+    if cand.changed:
+        lines += ["", f"changed  {cand.changed}"]
     lines += ["", "This report is input to a human promotion decision (#299), not a gate."]
     return "\n".join(lines)
-
-
-def _delta_note(t: TierComparison) -> str:
-    if t.coverage_is_real is None:
-        return "(uncalibrated)"
-    return "REAL" if t.coverage_is_real else "(noise)"
-
-
-def _efficiency_delta(t: TierComparison) -> str:
-    if not t.baseline_efficiency or t.candidate_efficiency is None:
-        return ""
-    change = (t.candidate_efficiency - t.baseline_efficiency) / t.baseline_efficiency * 100
-    return f"{change:+.0f}%"
-
-
-def _fmt(value: int | None) -> str:
-    return f"{value:,}" if value is not None else "n/a"

@@ -20,29 +20,29 @@ from statistics import mean
 MIN_RUNS = 2
 
 
-def noise_floor_pp(coverage_rates: list[float]) -> float:
+def noise_floor_pp(headlines: list[float]) -> float:
     """Percentage-point spread across repeated runs of the same questions.
 
     The full range rather than a standard deviation: the floor's job is to stop
     a human believing a delta that the judge would have produced anyway, so it
     should cover the movement actually observed, not a summary of it.
     """
-    if len(coverage_rates) < MIN_RUNS:
+    if len(headlines) < MIN_RUNS:
         raise ValueError(
             f"a noise floor needs at least {MIN_RUNS} runs of the same questions; "
-            f"got {len(coverage_rates)}. One run has no spread, and reporting 0.0 "
+            f"got {len(headlines)}. One run has no spread, and reporting 0.0 "
             "would assert that any delta is real."
         )
-    return (max(coverage_rates) - min(coverage_rates)) * 100
+    return (max(headlines) - min(headlines)) * 100
 
 
-def describe(coverage_rates: list[float]) -> str:
+def describe(headlines: list[float]) -> str:
     """One-line summary of a calibration run."""
-    floor = noise_floor_pp(coverage_rates)
-    rates = ", ".join(f"{rate:.0%}" for rate in coverage_rates)
+    floor = noise_floor_pp(headlines)
+    rates = ", ".join(f"{rate:.1%}" for rate in headlines)
     return (
-        f"{len(coverage_rates)} runs: {rates} (mean {mean(coverage_rates):.0%})\n"
-        f"noise floor: +/-{floor:.0f}pp -- pass this to `compare --noise-floor {floor:.0f}`"
+        f"{len(headlines)} runs: {rates} (mean {mean(headlines):.1%})\n"
+        f"noise floor: +/-{floor:.1f}pp -- pass this to `compare --noise-floor {floor:.1f}`"
     )
 
 

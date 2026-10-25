@@ -1,30 +1,21 @@
-"""Score retrieval results against their Goldens, and aggregate a run.
+"""Per-question measurements shared by the benchmarks: cost, evidence, and the deepeval rubrics.
 
-The rubric splits by mechanism (#304): the LLM judges *quality* -- did retrieval
-surface the facts the answer needed -- while plain code counts *cost*. Asking a
-model to grade a number you can count adds variance to the headline for no
+The split is by mechanism (#304): an LLM judges *quality* -- did the answer
+state what the key asks -- while plain code counts *cost* and *evidence*.
+Asking a model to grade a number you can count adds variance for no
 information, and makes an efficiency regression arguable rather than factual.
 
-Coverage is a hard gate and efficiency ranks within it (#309). Efficiency alone
-is trivially gamed by returning nothing, and a weighted composite would let a
-retrieval change trade real coverage for token savings while the headline stayed
-flat -- exactly the regression this exists to catch.
-
-Tiers are aggregated separately and never blended (#303): Tier 1 is adopted from
-upstream and asks whether recall works mechanically; Tier 2 is authored and asks
-whether it works for what is actually being built. One averaged number would let
-an organizational-recall regression hide behind a personal-memory gain.
+The deepeval rubrics here are diagnostics: each benchmark's own judge decides
+its score (``benchmarks/``), and the rubrics decide only questions no
+upstream judge covers -- the gold slice.
 """
 
-import math
-from dataclasses import dataclass, field, replace
-from statistics import mean, median
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover - import-time typing only
     from deepeval.dataset import Golden
 
-    from .retrieval import Retrieved
+    from .answering import Retrieved
 
 #: Coverage at or above this counts as cleared. deepeval metrics express the
 #: same idea through their own ``threshold``; kept explicit here so the gate is
@@ -36,104 +27,10 @@ DEFAULT_COVERAGE_THRESHOLD = 0.7
 #: supporting it, so it scores 0 (#397).
 RETRIEVAL_SIGNAL = "Contextual Recall"
 
-#: Which judge decides ``covered``, recorded on every saved run so compare()
-#: refuses across a gate change: LongMemEval's own judge (#409), or the
-#: deepeval answer rubric when that isn't configured.
-COVERAGE_GATE = "official"
-RUBRIC_GATE = "answer"
-
 #: Tokenizer for the efficiency count. Pinned for the same reason #304 pins the
 #: judge model: a tokenizer change silently shifts every efficiency number, and
 #: two runs measured differently are not comparable.
 DEFAULT_TOKENIZER = "cl100k_base"
-
-
-@dataclass(frozen=True)
-class Scored:
-    """One question's outcome."""
-
-    name: str
-    tier: int
-    coverage: float
-    covered: bool
-    efficiency_tokens: int
-    abstention: bool = False
-    answer: str = ""
-    #: Every judge score, keyed by metric name. ``coverage`` is the answer
-    #: rubric's (see gate_score); RETRIEVAL_SIGNAL is kept beside it so a
-    #: failure can still be attributed to retrieval or to the answer.
-    #: Abstention questions carry no retrieval signal.
-    metric_scores: dict[str, float] = field(default_factory=dict)
-    #: The judge's own explanation behind each metric_scores entry, same keys.
-    metric_reasons: dict[str, str] = field(default_factory=dict)
-    #: Judge-free cross-checks against the answer key, not gated by coverage.
-    bleu: float = 0.0
-    f1: float = 0.0
-    #: Wall-clock seconds for retrieval and answering, including a failed attempt.
-    latency_seconds: float = 0.0
-    #: Wall-clock seconds of recall alone, with no answering LLM; None for
-    #: strategies whose read path isn't a separate step.
-    recall_seconds: float | None = None
-    #: Share of the question's evidence turns found in what retrieval returned;
-    #: None when the question marks no evidence, as abstention questions don't.
-    evidence_recall: float | None = None
-    #: Who decided ``covered``: "official" (LongMemEval's judge) or "answer"
-    #: (the deepeval answer rubric, whose score is ``coverage`` either way).
-    judged_by: str = "answer"
-    #: LongMemEval's judge's verdict; None when it didn't run or its call failed.
-    official_correct: bool | None = None
-
-    @property
-    def judged(self) -> bool:
-        """Whether the judge that decides ``covered`` produced a verdict -- not an outage."""
-        return self.official_correct is not None if self.judged_by == "official" else bool(self.metric_scores)
-
-
-@dataclass(frozen=True)
-class TierReport:
-    """Aggregate for one tier. Deliberately per-tier -- there is no overall."""
-
-    #: Questions the judge actually scored. Excludes unscoreable ones, so the
-    #: rate below is over what was measured rather than what was attempted.
-    questions: int
-    covered: int
-    #: None, not 0.0, when nothing in the tier could be scored: an outage is not a measurement.
-    coverage_rate: float | None
-    median_efficiency_tokens: int | None
-    abstention_total: int = 0
-    abstention_correct: int = 0
-    #: Questions with no metric scores at all. A judge failure, not a low score.
-    unscored: int = 0
-    #: Of the judge-scored questions carrying a retrieval signal, how many had
-    #: Contextual Recall at the threshold. Reported, not gated.
-    retrieval_supported: int = 0
-    retrieval_judged: int = 0
-    #: Means over every question in the tier, judged or not: these need no judge.
-    mean_bleu: float | None = None
-    mean_f1: float | None = None
-    mean_latency_seconds: float | None = None
-    #: Recall-only latency (no answering LLM), over the questions that report it.
-    mean_recall_seconds: float | None = None
-    median_recall_seconds: float | None = None
-    p95_recall_seconds: float | None = None
-    #: The deepeval answer rubrics' own coverage count, shown beside the
-    #: official judge's when that decides ``covered``; None when it doesn't.
-    rubric_covered: int | None = None
-    #: Questions with marked evidence, and how many had every evidence turn retrieved.
-    evidence_judged: int = 0
-    evidence_complete: int = 0
-    mean_evidence_recall: float | None = None
-
-
-@dataclass(frozen=True)
-class RunReport:
-    """A whole run, kept split by tier.
-
-    There is intentionally no blended headline field: a single number across
-    tiers is the thing #303 ruled out.
-    """
-
-    by_tier: dict[int, TierReport] = field(default_factory=dict)
 
 
 def efficiency_tokens(retrieved: "Retrieved", tokenizer: str = DEFAULT_TOKENIZER) -> int:
@@ -245,12 +142,6 @@ def token_f1_score(expected_output: str | None, answer: str) -> float:
     return 2 * precision * recall / (precision + recall)
 
 
-def tokenizer_in_use(tokenizer: str = DEFAULT_TOKENIZER) -> str:
-    """The tokenizer name to record on a run, verified to actually load."""
-    _encoding(tokenizer)
-    return tokenizer
-
-
 def _encoding(tokenizer: str = DEFAULT_TOKENIZER):
     import tiktoken
 
@@ -265,85 +156,6 @@ def gate_score(scores: dict[str, float]) -> float:
     """
     answer = [score for name, score in scores.items() if name != RETRIEVAL_SIGNAL]
     return min(answer) if answer else 0.0
-
-
-def gate_and_rank(scored: list[Scored]) -> list[Scored]:
-    """Questions that cleared coverage, cheapest payload first.
-
-    Anything that failed coverage is dropped rather than ranked: it has no
-    meaningful efficiency, and letting a zero-token failure top the ranking is
-    precisely the gaming this guards against.
-    """
-    passed = [s for s in scored if s.covered]
-    return sorted(passed, key=lambda s: (s.efficiency_tokens, s.name))
-
-
-def _percentile(values: list[float], pct: float) -> float:
-    """Nearest-rank percentile of ``values`` (non-empty), as latency tails are reported."""
-    ordered = sorted(values)
-    return ordered[max(0, math.ceil(pct / 100 * len(ordered)) - 1)]
-
-
-def aggregate(scored: list[Scored]) -> RunReport:
-    """Summarise a run, per tier."""
-    by_tier: dict[int, TierReport] = {}
-    for tier in sorted({s.tier for s in scored}):
-        all_rows = [s for s in scored if s.tier == tier]
-        recall_times = [s.recall_seconds for s in all_rows if s.recall_seconds is not None]
-        # An unjudged row is an outage, not a failure: excluded from coverage
-        # and gated efficiency, and counted as unscored instead.
-        judge_scored_rows = [s for s in all_rows if s.judged]
-        official = any(s.judged_by == "official" for s in all_rows)
-        unscored = len(all_rows) - len(judge_scored_rows)
-        covered = [s for s in judge_scored_rows if s.covered]
-        abstentions = [s for s in judge_scored_rows if s.abstention]
-        recall = [s.metric_scores[RETRIEVAL_SIGNAL] for s in judge_scored_rows if RETRIEVAL_SIGNAL in s.metric_scores]
-        evidence = [s.evidence_recall for s in all_rows if s.evidence_recall is not None]
-        by_tier[tier] = TierReport(
-            unscored=unscored,
-            questions=len(judge_scored_rows),
-            covered=len(covered),
-            coverage_rate=(len(covered) / len(judge_scored_rows) if judge_scored_rows else None),
-            # Median, not mean: robust to one pathological payload.
-            median_efficiency_tokens=(int(median([s.efficiency_tokens for s in covered])) if covered else None),
-            abstention_total=len(abstentions),
-            abstention_correct=sum(1 for s in abstentions if s.covered),
-            retrieval_supported=sum(1 for score in recall if score >= DEFAULT_COVERAGE_THRESHOLD),
-            retrieval_judged=len(recall),
-            # Judge-free metrics, so over all_rows.
-            mean_bleu=(mean(s.bleu for s in all_rows) if all_rows else None),
-            mean_f1=(mean(s.f1 for s in all_rows) if all_rows else None),
-            mean_latency_seconds=(mean(s.latency_seconds for s in all_rows) if all_rows else None),
-            mean_recall_seconds=(mean(recall_times) if recall_times else None),
-            median_recall_seconds=(median(recall_times) if recall_times else None),
-            p95_recall_seconds=(_percentile(recall_times, 95) if recall_times else None),
-            rubric_covered=(
-                sum(1 for s in judge_scored_rows if s.metric_scores and s.coverage >= DEFAULT_COVERAGE_THRESHOLD)
-                if official
-                else None
-            ),
-            evidence_judged=len(evidence),
-            evidence_complete=sum(1 for share in evidence if share == 1.0),
-            mean_evidence_recall=(mean(evidence) if evidence else None),
-        )
-    return RunReport(by_tier=by_tier)
-
-
-def enforce_retrieval_floor(scored: list[Scored], *, retrieved_tokens: dict[str, int]) -> list[Scored]:
-    """Fail any question answered without retrieving anything.
-
-    An empty payload is not evidence of recall, whatever the judge made of the
-    answer -- ``ContextualRecallMetric`` is vacuously satisfied by an empty
-    context. Abstention questions are exempt: for them an empty payload is
-    correct.
-    """
-    floored: list[Scored] = []
-    for row in scored:
-        if row.abstention or retrieved_tokens.get(row.name, 0) > 0:
-            floored.append(row)
-            continue
-        floored.append(replace(row, coverage=0.0, covered=False))
-    return floored
 
 
 #: The rubrics' evaluation steps, fixed rather than generated. deepeval copies
