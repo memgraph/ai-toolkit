@@ -31,9 +31,9 @@ def memgraph_chain(memgraph_connection):
     os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "")
 
     chain = MemgraphQAChain.from_llm(
-        ChatOpenAI(temperature=0),
+        ChatOpenAI(temperature=0, model_name="gpt-4.1-mini"),
         graph=memgraph_connection,
-        model_name="gpt-4-turbo",
+        model_name="gpt-4.1-mini",
         allow_dangerous_requests=True,
     )
     return chain

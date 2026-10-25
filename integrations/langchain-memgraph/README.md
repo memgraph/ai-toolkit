@@ -67,9 +67,9 @@ password = os.getenv("MEMGRAPH_PASSWORD", "")
 graph = MemgraphLangChain(url=url, username=username, password=password, refresh_schema=False)
 
 chain = MemgraphQAChain.from_llm(
-    ChatOpenAI(temperature=0),
+    ChatOpenAI(temperature=0, model_name="gpt-4.1-mini"),
     graph=graph,
-    model_name="gpt-4-turbo",
+    model_name="gpt-4.1-mini",
     allow_dangerous_requests=True,
 )
 response = chain.invoke("Is there a any Person node in the dataset?")

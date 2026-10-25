@@ -30,7 +30,7 @@ def memgraph_connection():
 def llm_transformer():
     """Setup LLM transformer fixture."""
     os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "")
-    llm = ChatOpenAI(temperature=0, model_name="gpt-4-turbo")
+    llm = ChatOpenAI(temperature=0, model_name="gpt-4.1-mini")
     return LLMGraphTransformer(llm=llm)
 
 

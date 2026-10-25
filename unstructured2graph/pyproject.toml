@@ -35,6 +35,9 @@ dependencies = [
     "transformers==5.5.4",
     "pyyaml>=6.0",
     "nltk<3.11",
+    # preshed 3.0.14 makes spaCy 3.8 fail to load its tokenizer on Python 3.13 (OverflowError), which
+    # unstructured's text partitioning loads; lift once a spaCy or preshed release fixes it.
+    "preshed<3.0.14",
 ]
 [project.optional-dependencies]
 all-docs = [
