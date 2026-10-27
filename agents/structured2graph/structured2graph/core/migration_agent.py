@@ -1,4 +1,4 @@
-# flake8: noqa — standalone agent adjusts sys.path before importing local modules.
+# flake8: noqa — legacy agent module, not yet lint-clean; see AGENTS.md.
 """
 SQL Database to Graph Migration Agent
 
@@ -10,14 +10,7 @@ import hashlib
 import json
 import logging
 import os
-import sys
 from typing import Dict, List, Any, TypedDict, Optional, cast
-from pathlib import Path
-
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent.parent.parent / "memgraph-toolbox" / "src"))
-sys.path.append(str(Path(__file__).parent.parent / "langchain-memgraph"))
-sys.path.append(str(Path(__file__).parent.parent))  # Add agents root to path
 
 from langgraph.graph import StateGraph, END  # noqa: E402
 from langchain_core.runnables.config import RunnableConfig  # noqa: E402
@@ -26,12 +19,12 @@ from langchain_anthropic import ChatAnthropic  # noqa: E402
 from langchain_google_genai import ChatGoogleGenerativeAI  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
-from query_generation.cypher_generator import CypherGenerator  # noqa: E402
-from core.hygm import HyGM, ModelingMode, GraphModelingStrategy  # noqa: E402
-from core.hygm.validation import validate_memgraph_data  # noqa: E402
+from structured2graph.query_generation.cypher_generator import CypherGenerator  # noqa: E402
+from structured2graph.core.hygm import HyGM, ModelingMode, GraphModelingStrategy  # noqa: E402
+from structured2graph.core.hygm.validation import validate_memgraph_data  # noqa: E402
 from memgraph_toolbox.api.memgraph import Memgraph  # noqa: E402
-from database.factory import DatabaseAnalyzerFactory  # noqa: E402
-from core.utils.meta_graph import (  # noqa: E402
+from structured2graph.database.factory import DatabaseAnalyzerFactory  # noqa: E402
+from structured2graph.core.utils.meta_graph import (  # noqa: E402
     node_key as meta_node_key,
     relationship_key as meta_relationship_key,
     summarize_node as meta_summarize_node,

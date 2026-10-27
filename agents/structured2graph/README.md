@@ -30,7 +30,7 @@ uv pip install -e .
 Run the migration agent:
 
 ```bash
-uv run main
+uv run structured2graph
 ```
 
 The agent will guide you through:
@@ -47,7 +47,7 @@ The agent will guide you through:
 You can also preconfigure the workflow using CLI flags or environment variables:
 
 ```bash
-uv run main --mode incremental --strategy llm --meta-graph reset --log-level DEBUG
+uv run structured2graph --mode incremental --strategy llm --meta-graph reset --log-level DEBUG
 ```
 
 | Option                                 | Environment          | Description                                                   |
@@ -94,10 +94,10 @@ CREATE GRAPH shop FROM FILE '/output/mapping.json';
 
 ```bash
 # Generate a new mapping from the source database
-uv run main --mapping output/mapping.json
+uv run structured2graph --mapping output/mapping.json
 
 # Re-open an existing mapping for editing
-uv run main --mapping output/mapping.json
+uv run structured2graph --mapping output/mapping.json
 ```
 
 When the mapping file does not exist, the agent connects to the source database, analyzes the schema, builds a graph model, writes the mapping JSON, and enters the interactive editor. When the file already exists, it is loaded directly into the editor.
@@ -129,7 +129,7 @@ docker build -f Dockerfile.local -t memgraph/structured2graph .
 docker run -d --rm --net memgql-net --name structured2graph-dev \
   --env-file .env -v $(pwd)/output:/output \
   --entrypoint sleep memgraph/structured2graph infinity
-docker exec -it structured2graph-dev uv run main.py --mapping /output/mapping.json
+docker exec -it structured2graph-dev uv run structured2graph --mapping /output/mapping.json
 ```
 
 > **Note:** If your `.env` file quotes values (e.g. `ANTHROPIC_API_KEY="sk-..."`),
@@ -199,16 +199,16 @@ The agent supports multiple LLM providers for AI-powered graph modeling:
 
 ```bash
 # Auto-detect provider based on API keys
-uv run main --strategy llm
+uv run structured2graph --strategy llm
 
 # Use specific provider
-uv run main --strategy llm --provider anthropic
+uv run structured2graph --strategy llm --provider anthropic
 
 # Use specific model
-uv run main --strategy llm --provider openai --model gpt-4o
+uv run structured2graph --strategy llm --provider openai --model gpt-4o
 
 # All options together
-uv run main --mode incremental --strategy llm --provider gemini --model gemini-1.5-flash
+uv run structured2graph --mode incremental --strategy llm --provider gemini --model gemini-1.5-flash
 ```
 
 All providers support **structured outputs** for consistent graph model generation. The system automatically validates schemas using Pydantic models.

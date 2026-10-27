@@ -8,12 +8,12 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from core.hygm.models.graph_models import GraphModel
+    from structured2graph.core.hygm.models.graph_models import GraphModel
 
 try:
     from .base import BaseModelingStrategy
 except ImportError:
-    from core.hygm.strategies.base import BaseModelingStrategy
+    from structured2graph.core.hygm.strategies.base import BaseModelingStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class DeterministicStrategy(BaseModelingStrategy):
         logger.info("Creating deterministic graph model...")
 
         # Import here to avoid circular imports
-        from core.hygm.models.graph_models import (
+        from structured2graph.core.hygm.models.graph_models import (
             GraphConstraint,
             GraphIndex,
             GraphModel,
@@ -45,7 +45,7 @@ class DeterministicStrategy(BaseModelingStrategy):
             GraphProperty,
             GraphRelationship,
         )
-        from core.hygm.models.sources import (
+        from structured2graph.core.hygm.models.sources import (
             ConstraintSource,
             IndexSource,
             NodeSource,

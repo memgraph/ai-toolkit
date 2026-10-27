@@ -206,14 +206,7 @@ def get_memgraph_config() -> dict[str, str]:
 def probe_source_connection(source_db_config: dict[str, Any]) -> tuple[bool, str | None]:
     """Test source database connection using the configured analyzer."""
     try:
-        import sys
-        from pathlib import Path
-
-        agents_root = Path(__file__).parent.parent
-        if str(agents_root) not in sys.path:
-            sys.path.insert(0, str(agents_root))
-
-        from database.factory import DatabaseAnalyzerFactory
+        from structured2graph.database.factory import DatabaseAnalyzerFactory
 
         config = source_db_config.copy()
         db_type = config.pop("database_type", "mysql")

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-# flake8: noqa — standalone entry point adjusts sys.path before importing local modules.
+# flake8: noqa — legacy entry point, not yet lint-clean; see AGENTS.md.
 """
 SQL Database to Graph Migration Agent - Main Entry Point
 
 This is the main entry point for the SQL database to graph migration agent.
-Run with: uv run main.py
+Run with: structured2graph
 """
 
 import argparse
@@ -18,10 +18,8 @@ import tempfile
 from typing import Dict, Any, Optional
 from pathlib import Path
 
-# Add current directory to Python path for absolute imports
-sys.path.insert(0, str(Path(__file__).parent))
 
-from utils import (  # noqa: E402
+from structured2graph.utils import (  # noqa: E402
     MigrationEnvironmentError,
     DatabaseConnectionError,
     setup_and_validate_environment,
@@ -31,9 +29,9 @@ from utils import (  # noqa: E402
     print_environment_help,
     print_troubleshooting_help,
 )
-from core import SQLToMemgraphAgent  # noqa: E402
-from core.hygm import GraphModelingStrategy, ModelingMode  # noqa: E402
-from core.memgql_mapping import (  # noqa: E402
+from structured2graph.core import SQLToMemgraphAgent  # noqa: E402
+from structured2graph.core.hygm import GraphModelingStrategy, ModelingMode  # noqa: E402
+from structured2graph.core.memgql_mapping import (  # noqa: E402
     graph_model_to_mapping,
     mapping_connector,
     mapping_to_graph_model,
@@ -583,7 +581,7 @@ def edit_mapping_interactive(
     None (rather than a real mapping dict) to signal that the caller should
     discard the mapping and regenerate it from the source database.
     """
-    from core.hygm import HyGM, GraphModelingStrategy, ModelingMode
+    from structured2graph.core.hygm import HyGM, GraphModelingStrategy, ModelingMode
 
     # Auto-detect LLM if not provided (e.g. deterministic strategy)
     if not llm:
@@ -685,8 +683,8 @@ def _generate_fresh_mapping(
     connector: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Analyse the source database and return a new mapping dict."""
-    from database.factory import DatabaseAnalyzerFactory
-    from core.hygm import HyGM
+    from structured2graph.database.factory import DatabaseAnalyzerFactory
+    from structured2graph.core.hygm import HyGM
 
     print("🔍 Analyzing source database schema...")
     config = source_db_config.copy()
