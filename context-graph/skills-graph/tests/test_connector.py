@@ -372,3 +372,98 @@ def test_non_skill_file_read_is_ignored():
     )
 
     assert not connector.supports(event)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'git commit -m "Notes\ncat /repo/skills/release/SKILL.md\n"',
+        "python3 - <<'PY'\ncat /repo/skills/release/SKILL.md\nPY",
+        "cat <<EOF > notes.md\ncat /repo/skills/release/SKILL.md\nEOF",
+    ],
+)
+def test_skill_file_read_inside_quoted_text_or_a_heredoc_records_nothing(command):
+    connector, _graph = _connector()
+
+    assert not connector.supports(ToolStartEvent(session_id="s1", tool_name="Bash", tool_input={"command": command}))
+
+
+def test_command_after_a_heredoc_is_still_read(tmp_path):
+    skill_file = _write_skill(tmp_path, "release")
+    connector, graph = _connector()
+
+    connector.on_event(
+        ToolStartEvent(
+            session_id="s1",
+            tool_name="Bash",
+            tool_input={"command": f"python3 - <<'PY'\nprint(1)\nPY\ncat {skill_file}"},
+        )
+    )
+
+    assert graph.record_skill_usage.call_args.kwargs["source_path"] == str(skill_file)
+
+
+def test_relative_read_resolves_against_the_codex_workdir(tmp_path):
+    skill_file = _write_skill(tmp_path / "repo" / "skills", "release")
+    connector, graph = _connector()
+
+    connector.on_event(
+        ToolStartEvent(
+            session_id="s1",
+            tool_name="exec_command",
+            tool_input={"cmd": "cat skills/release/SKILL.md", "workdir": str(tmp_path / "repo")},
+            metadata={"cwd": str(tmp_path)},
+        )
+    )
+
+    params = graph.record_skill_usage.call_args.kwargs
+    assert params["source_path"] == str(skill_file)
+    assert params["description"] == "Does a thing"
+
+
+def test_relative_read_follows_cd_in_the_command(tmp_path):
+    skill_file = _write_skill(tmp_path / "repo" / "skills", "release")
+    connector, graph = _connector()
+
+    connector.on_event(
+        ToolStartEvent(
+            session_id="s1",
+            tool_name="Bash",
+            tool_input={"command": "cd repo && cat skills/release/SKILL.md"},
+            metadata={"cwd": str(tmp_path)},
+        )
+    )
+
+    assert graph.record_skill_usage.call_args.kwargs["source_path"] == str(skill_file)
+
+
+def test_bare_skill_file_read_resolves_against_the_working_directory(tmp_path):
+    skill_file = _write_skill(tmp_path, "release")
+    connector, graph = _connector()
+
+    connector.on_event(
+        ToolStartEvent(
+            session_id="s1",
+            tool_name="Bash",
+            tool_input={"command": "cat SKILL.md"},
+            metadata={"cwd": str(skill_file.parent)},
+        )
+    )
+
+    params = graph.record_skill_usage.call_args.kwargs
+    assert params["skill_name"] == "release"
+    assert params["source_path"] == str(skill_file)
+
+
+def test_claude_code_skill_tool_keeps_the_invoked_name(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    skill_file = tmp_path / "home" / ".claude" / "skills" / "release" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text("---\nname: other-name\ndescription: Ship it\n---\n", encoding="utf-8")
+    connector, graph = _connector()
+
+    connector.on_event(ToolStartEvent(session_id="s1", tool_name="Skill", tool_input={"skill": "release"}))
+
+    params = graph.record_skill_usage.call_args.kwargs
+    assert params["skill_name"] == "release"
+    assert params["description"] == "Ship it"

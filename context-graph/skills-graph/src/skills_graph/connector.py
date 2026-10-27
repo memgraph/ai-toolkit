@@ -18,6 +18,8 @@ Usage::
 from __future__ import annotations
 
 import json
+import os
+import re
 import shlex
 from pathlib import Path, PurePath
 from typing import Any
@@ -43,8 +45,9 @@ _SKILL_EXPANSION_MARKER = "Base directory for this skill:"
 _FILE_READ_TOOLS = frozenset({"read", "read_file", "readfile", "view", "view_file"})
 # Programs whose file arguments are read, not written, searched or staged.
 _READ_PROGRAMS = frozenset({"cat", "head", "tail", "sed", "less", "more", "bat", "nl"})
-_SHELL_OPERATORS = frozenset({";", "&&", "||", "|", "&", "(", ")"})
-_REDIRECTIONS = frozenset({">", ">>", "<", "<<", "<<<", "&>", ">&", ">|"})
+# Unquoted newlines separate commands like ``;`` does; quoted ones stay inside their word.
+_SHELL_PUNCTUATION = "();<>|&\n"
+_HEREDOC_START = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 # Characters that mean the shell had not expanded the path yet, so it names no one file.
 _UNEXPANDED = frozenset("$*?[{`")
 _SKILL_TOOLS = frozenset(
@@ -133,8 +136,8 @@ class SkillGraphConnector(GraphConnector):
         if skill_file is not None:
             metadata = self._metadata_from_skill_file(skill_file)
         else:
-            metadata = {"name": name, "content": "", "metadata": {"source": "claude_code_skill_tool"}}
-        self._record_local_skill(event, metadata, fallback_name=name, action="invoke_skill")
+            metadata = {"content": "", "metadata": {"source": "claude_code_skill_tool"}}
+        self._record_local_skill(event, {**metadata, "name": name}, fallback_name=name, action="invoke_skill")
 
     def _record_local_skill(self, event: Event, metadata: dict[str, Any], *, fallback_name: str, action: str) -> None:
         self._graph.record_skill_usage(
@@ -258,14 +261,17 @@ class SkillGraphConnector(GraphConnector):
         """
         if not isinstance(tool_input, dict):
             return []
+        workdir = tool_input.get("workdir")
+        if isinstance(workdir, str) and workdir:
+            cwd = _resolve_path(workdir, cwd)
         if cls._operation_name(tool_name).lower() in _FILE_READ_TOOLS:
-            candidates = [value for value in tool_input.values() if isinstance(value, str)]
+            reads = [(value, cwd) for value in tool_input.values() if isinstance(value, str)]
         else:
             command = _command_text(tool_input.get("command", tool_input.get("cmd")))
-            candidates = _shell_read_arguments(command) if command is not None else []
+            reads = _shell_reads(command, cwd) if command is not None else []
         skill_files: list[Path] = []
-        for candidate in candidates:
-            skill_file = _skill_file_from_candidate(candidate, cwd)
+        for candidate, directory in reads:
+            skill_file = _skill_file_from_candidate(candidate, directory)
             if skill_file is not None and skill_file not in skill_files:
                 skill_files.append(skill_file)
         return skill_files
@@ -348,28 +354,52 @@ def _command_text(command: Any) -> str | None:
     return None
 
 
-def _shell_read_arguments(command: str) -> list[str]:
-    """File arguments of the read programs in *command*, segment by segment."""
-    arguments: list[str] = []
+def _shell_reads(command: str, cwd: Path | None) -> list[tuple[str, Path | None]]:
+    """File arguments of the read programs in *command*, each with the directory the shell resolves it in.
+
+    ``cd`` moves that directory for the commands after it; a ``cd`` the connector
+    can't follow leaves it unknown (None), and later relative paths are kept as written.
+    """
+    reads: list[tuple[str, Path | None]] = []
+    directory = cwd
+    for segment in _shell_segments(_without_heredoc_bodies(command)):
+        while segment and "=" in segment[0] and not segment[0].startswith("-"):
+            segment = segment[1:]  # leading VAR=value assignments
+        if not segment:
+            continue
+        program, *rest = segment
+        program = PurePath(program).name
+        if program == "cd":
+            targets = [word for word in rest if not word.startswith("-")]
+            target = targets[0] if targets else "~"
+            directory = None if _UNEXPANDED.intersection(target) else _resolve_path(target, directory)
+            continue
+        if program not in _READ_PROGRAMS:
+            continue
+        if program == "sed" and any(word.startswith(("-i", "--in-place")) for word in rest):
+            continue
+        reads.extend((word, directory) for word in rest if not word.startswith("-"))
+    return reads
+
+
+def _without_heredoc_bodies(command: str) -> str:
+    """*command* with each heredoc's body removed: it is input text, not commands."""
+    kept: list[str] = []
+    delimiters: list[str] = []
     for line in command.splitlines():
-        for segment in _shell_segments(line):
-            while segment and "=" in segment[0] and not segment[0].startswith("-"):
-                segment = segment[1:]  # leading VAR=value assignments
-            if not segment:
-                continue
-            program, *rest = segment
-            program = PurePath(program).name
-            if program not in _READ_PROGRAMS:
-                continue
-            if program == "sed" and any(word.startswith(("-i", "--in-place")) for word in rest):
-                continue
-            arguments.extend(word for word in rest if not word.startswith("-"))
-    return arguments
+        if delimiters:
+            if line.strip() == delimiters[0]:
+                delimiters.pop(0)
+            continue
+        kept.append(line)
+        delimiters = [match.group(2) for match in _HEREDOC_START.finditer(line.replace("<<<", ""))]
+    return "\n".join(kept)
 
 
-def _shell_segments(line: str) -> list[list[str]]:
-    """Split one command line into simple commands, dropping redirection targets."""
-    lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+def _shell_segments(command: str) -> list[list[str]]:
+    """Split *command* into simple commands, dropping redirection targets."""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=_SHELL_PUNCTUATION)
+    lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
     try:
         tokens = list(lexer)
@@ -380,24 +410,35 @@ def _shell_segments(line: str) -> list[list[str]]:
     for token in tokens:
         if skip_next:
             skip_next = False
-        elif token in _SHELL_OPERATORS:
-            segments.append([])
-        elif token in _REDIRECTIONS:
-            skip_next = True
+        elif set(token) <= set(_SHELL_PUNCTUATION):
+            if "<" in token or ">" in token:
+                skip_next = True  # the redirection's target is not an argument
+            else:
+                segments.append([])
         else:
             segments[-1].append(token)
     return [segment for segment in segments if segment]
 
 
+def _resolve_path(path: str, base: Path | None) -> Path | None:
+    """*path* as the shell would resolve it from *base*; None when it is relative to an unknown directory."""
+    expanded = Path(path).expanduser()
+    if not expanded.is_absolute():
+        if base is None:
+            return None
+        expanded = base / expanded
+    return Path(os.path.normpath(expanded))
+
+
 def _skill_file_from_candidate(candidate: str, cwd: Path | None) -> Path | None:
     candidate = candidate.strip()
-    if not candidate or _UNEXPANDED.intersection(candidate):
+    if not candidate or _UNEXPANDED.intersection(candidate) or PurePath(candidate).name != _SKILL_FILE_NAME:
         return None
-    path = Path(candidate).expanduser()
-    if path.name != _SKILL_FILE_NAME or path.parent.name == "":
+    path = _resolve_path(candidate, cwd)
+    if path is None and PurePath(candidate).parent.name:
+        path = Path(candidate)  # relative, with no known directory: keep the path as given
+    if path is None or path.parent.name == "":
         return None
-    if not path.is_absolute() and cwd is not None:
-        path = cwd / path
     return path
 
 
