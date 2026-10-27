@@ -60,7 +60,7 @@ link.add_connector(SkillGraphConnector(skills))
 
 For SDK application wiring, see the [SDK quick starts](../memgraph-context-graph/docs/sdk-memory.md).
 
-The connector detects skill usage from `TOOL_START`/`TOOL_END`/`MESSAGE` events — direct tool names like `get_skill`, MCP-style names like `mcp__skills__get_skill`, and local reads of an Agent Skills definition (`.../skills/<name>/SKILL.md`), which covers runtimes where using a skill appears as a file read rather than a dedicated tool call. Search/list results that surface skill objects are also recorded through `USED_SKILL`.
+The connector detects skill usage from `TOOL_START`/`TOOL_END`/`MESSAGE` events — direct tool names like `get_skill`, MCP-style names like `mcp__skills__get_skill`, Claude Code's `Skill` tool, and reads of an Agent Skills definition (`.../skills/<name>/SKILL.md`) by a file-read tool or a read program such as `cat` or `sed`, which covers runtimes where using a skill appears as a file read rather than a dedicated tool call. A `SKILL.md` that is only mentioned, staged, searched or written is not usage, and neither is other Markdown with skill-like frontmatter. Search/list results that surface skill objects are also recorded through `USED_SKILL`.
 
 ## Graph model
 

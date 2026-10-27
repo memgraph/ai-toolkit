@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not installed")
 
-from memgraph_context_graph.events import ToolEndEvent, ToolStartEvent
+from memgraph_context_graph.events import MessageEvent, ToolEndEvent, ToolStartEvent
 from skills_graph.connector import SkillGraphConnector
 
 if TYPE_CHECKING:
@@ -143,103 +143,221 @@ description: Use mgconsole with Memgraph
     assert params["source_path"] == str(skill_file)
 
 
-def test_read_tool_result_with_skill_frontmatter_is_recorded():
-    connector, graph = _connector()
-    event = ToolEndEvent(
-        session_id="s1",
-        tool_name="Read",
-        result="""---
-name: caveman
-description: Ultra-compressed communication mode.
----
+def _write_skill(root, name, description="Does a thing"):
+    skill_file = root / name / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text(f"---\nname: {name}\ndescription: {description}\n---\n\n# {name}\n", encoding="utf-8")
+    return skill_file
 
-# Caveman
-""",
-        metadata={"tool_input": {"path": "SKILL.md"}},
-        timestamp="2026-04-30T00:00:00+00:00",
+
+def test_claude_code_skill_tool_records_usage_from_the_installed_skill(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    skill_file = _write_skill(tmp_path / "home" / ".agents" / "skills", "grilling", "Grill the user")
+    connector, graph = _connector()
+    event = ToolStartEvent(
+        session_id="s1",
+        tool_name="Skill",
+        tool_input={"skill": "grilling"},
+        metadata={"cwd": str(tmp_path / "project")},
     )
 
     assert connector.supports(event)
-
     connector.on_event(event)
 
     params = graph.record_skill_usage.call_args.kwargs
-    assert params["session_id"] == "s1"
-    assert params["skill_name"] == "caveman"
-    assert params["action"] == "read_skill_file"
+    assert params["skill_name"] == "grilling"
+    assert params["action"] == "invoke_skill"
     assert params["create_missing"] is True
-    assert params["description"] == "Ultra-compressed communication mode."
-    assert "# Caveman" in params["content"]
+    assert params["description"] == "Grill the user"
+    assert params["source_path"] == str(skill_file)
 
 
-def test_read_tool_result_with_skill_preamble_is_recorded():
+def test_claude_code_skill_tool_prefers_the_project_skill(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    _write_skill(tmp_path / "home" / ".claude" / "skills", "release")
+    project_skill = _write_skill(tmp_path / "project" / ".claude" / "skills", "release")
     connector, graph = _connector()
-    event = ToolEndEvent(
-        session_id="s1",
-        tool_name="Read",
-        result="""Base directory for this skill: /Users/antejavor/.agents/skills/caveman
 
----
-name: caveman
-description: Ultra-compressed communication mode.
----
-
-# Caveman
-""",
-        metadata={"tool_input": {"path": "/Users/antejavor/.agents/skills/caveman/SKILL.md"}},
-        timestamp="2026-04-30T00:00:00+00:00",
+    connector.on_event(
+        ToolStartEvent(
+            session_id="s1",
+            tool_name="Skill",
+            tool_input={"skill": "release"},
+            metadata={"cwd": str(tmp_path / "project")},
+        )
     )
 
-    assert connector.supports(event)
+    assert graph.record_skill_usage.call_args.kwargs["source_path"] == str(project_skill)
 
-    connector.on_event(event)
+
+def test_plugin_qualified_skill_reduces_to_its_name_and_resolves_from_the_plugin_cache(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    cache = tmp_path / "home" / ".claude" / "plugins" / "cache" / "market" / "context-graph" / "0.11.0" / "skills"
+    skill_file = _write_skill(cache, "setup", "Set up capture")
+    connector, graph = _connector()
+
+    connector.on_event(ToolStartEvent(session_id="s1", tool_name="Skill", tool_input={"skill": "context-graph:setup"}))
 
     params = graph.record_skill_usage.call_args.kwargs
-    assert params["session_id"] == "s1"
+    assert params["skill_name"] == "setup"
+    assert params["source_path"] == str(skill_file)
+
+
+def test_claude_code_skill_tool_records_usage_when_no_skill_file_is_found(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    connector, graph = _connector()
+
+    connector.on_event(ToolStartEvent(session_id="s1", tool_name="Skill", tool_input={"skill": "caveman"}))
+
+    params = graph.record_skill_usage.call_args.kwargs
     assert params["skill_name"] == "caveman"
-    assert params["action"] == "read_skill_file"
     assert params["create_missing"] is True
-    assert params["description"] == "Ultra-compressed communication mode."
-    assert params["source_path"] == "/Users/antejavor/.agents/skills/caveman/SKILL.md"
-    assert "# Caveman" in params["content"]
+    assert params["source_path"] is None
 
 
-def test_read_tool_result_without_skill_frontmatter_is_ignored():
+def test_claude_code_skill_tool_result_is_not_a_second_usage():
     connector, _graph = _connector()
     event = ToolEndEvent(
         session_id="s1",
-        tool_name="Read",
-        result="# Regular README\n\nNo skill metadata here.",
-        metadata={"tool_input": {"path": "README.md"}},
+        tool_name="Skill",
+        result={"success": True, "commandName": "grilling"},
+        metadata={"tool_input": {"skill": "grilling"}},
     )
 
     assert not connector.supports(event)
 
 
-def test_read_tool_result_with_non_skill_frontmatter_is_ignored():
-    connector, _graph = _connector()
-    event = ToolEndEvent(
-        session_id="s1",
-        tool_name="Read",
-        result="""---
-title: Project Notes
----
+def test_read_tool_records_skill_file_read(tmp_path):
+    skill_file = _write_skill(tmp_path / "skills", "caveman", "Ultra-compressed communication mode.")
+    connector, graph = _connector()
 
-# Notes
-""",
-        metadata={"tool_input": {"path": "README.md"}},
+    connector.on_event(ToolStartEvent(session_id="s1", tool_name="Read", tool_input={"file_path": str(skill_file)}))
+
+    params = graph.record_skill_usage.call_args.kwargs
+    assert params["skill_name"] == "caveman"
+    assert params["action"] == "read_skill_file"
+    assert params["description"] == "Ultra-compressed communication mode."
+    assert "# caveman" in params["content"]
+
+
+def test_relative_skill_path_resolves_against_the_session_cwd(tmp_path):
+    skill_file = _write_skill(tmp_path / "skills", "release")
+    connector, graph = _connector()
+
+    connector.on_event(
+        ToolStartEvent(
+            session_id="s1",
+            tool_name="Bash",
+            tool_input={"command": "cat skills/release/SKILL.md"},
+            metadata={"cwd": str(tmp_path)},
+        )
+    )
+
+    assert graph.record_skill_usage.call_args.kwargs["source_path"] == str(skill_file)
+
+
+def test_every_skill_file_read_in_one_command_is_recorded(tmp_path):
+    first = _write_skill(tmp_path, "first")
+    second = _write_skill(tmp_path, "second")
+    connector, graph = _connector()
+
+    connector.on_event(
+        ToolStartEvent(session_id="s1", tool_name="Bash", tool_input={"command": f"cat {first}; head -50 {second}"})
+    )
+
+    assert [call.kwargs["skill_name"] for call in graph.record_skill_usage.call_args_list] == ["first", "second"]
+
+
+def test_codex_argv_command_reading_a_skill_file_is_recorded(tmp_path):
+    skill_file = _write_skill(tmp_path, "diagnose")
+    connector, graph = _connector()
+
+    connector.on_event(
+        ToolStartEvent(
+            session_id="s1", tool_name="shell", tool_input={"command": ["bash", "-lc", f"sed -n '1,80p' {skill_file}"]}
+        )
+    )
+
+    assert graph.record_skill_usage.call_args.kwargs["skill_name"] == "diagnose"
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "tool_input"),
+    [
+        ("Bash", {"command": "git add skills/release/SKILL.md"}),
+        ("Bash", {"command": "git diff -- skills/release/SKILL.md"}),
+        ("Bash", {"command": "rg -n TODO skills/release/SKILL.md"}),
+        ("Bash", {"command": "ls ../plugins/*/skills/*/SKILL.md"}),
+        ("Bash", {"command": 'for D in skills/*; do cat "$D/SKILL.md"; done'}),
+        ("Bash", {"command": "sed -i 's/a/b/' skills/release/SKILL.md"}),
+        ("Bash", {"command": "cat notes.md > skills/release/SKILL.md"}),
+        ("Write", {"file_path": "/repo/skills/release/SKILL.md", "content": "---"}),
+        ("Edit", {"file_path": "/repo/skills/release/SKILL.md", "old_string": "a", "new_string": "b"}),
+        ("Agent", {"prompt": "read skills/release/SKILL.md and summarize it", "subagent_type": "Explore"}),
+    ],
+)
+def test_a_skill_file_that_is_not_read_records_nothing(tool_name, tool_input):
+    connector, graph = _connector()
+    event = ToolStartEvent(session_id="s1", tool_name=tool_name, tool_input=tool_input)
+
+    assert not connector.supports(event)
+    connector.on_event(event)
+    graph.record_skill_usage.assert_not_called()
+
+
+def test_a_path_in_metadata_alone_is_not_a_read():
+    connector, _graph = _connector()
+    event = ToolStartEvent(
+        session_id="s1",
+        tool_name="Agent",
+        tool_input={"prompt": "summarize the release skill"},
+        metadata={"tool_input": {"prompt": "cat skills/release/SKILL.md"}},
     )
 
     assert not connector.supports(event)
 
 
-def test_skill_path_without_skill_frontmatter_result_is_ignored():
+def test_reading_a_memory_file_with_name_and_description_records_nothing(tmp_path):
+    memory_file = tmp_path / "memory" / "feedback.md"
+    memory_file.parent.mkdir()
+    memory_file.write_text("---\nname: feedback\ndescription: Prefer small PRs\n---\nBody\n", encoding="utf-8")
     connector, _graph = _connector()
-    event = ToolEndEvent(
+
+    assert not connector.supports(
+        ToolStartEvent(session_id="s1", tool_name="Read", tool_input={"file_path": str(memory_file)})
+    )
+    assert not connector.supports(
+        ToolEndEvent(
+            session_id="s1",
+            tool_name="Read",
+            result=memory_file.read_text(encoding="utf-8"),
+            metadata={"tool_input": {"file_path": str(memory_file)}},
+        )
+    )
+
+
+def test_injected_skill_content_with_the_expansion_marker_is_recorded():
+    connector, graph = _connector()
+    event = MessageEvent(
         session_id="s1",
-        tool_name="Read",
-        result="# Caveman\n\nNo frontmatter in this result.",
-        metadata={"tool_input": {"path": "/Users/antejavor/.agents/skills/caveman/SKILL.md"}},
+        role="user",
+        content="Base directory for this skill: /home/u/.agents/skills/caveman\n\n"
+        "---\nname: caveman\ndescription: Ultra-compressed communication mode.\n---\n\n# Caveman\n",
+    )
+
+    assert connector.supports(event)
+    connector.on_event(event)
+
+    params = graph.record_skill_usage.call_args.kwargs
+    assert params["skill_name"] == "caveman"
+    assert params["action"] == "prompt_expansion"
+    assert params["source_path"] == "/home/u/.agents/skills/caveman/SKILL.md"
+
+
+def test_message_with_frontmatter_but_no_expansion_marker_is_ignored():
+    connector, _graph = _connector()
+    event = MessageEvent(
+        session_id="s1", role="user", content="---\nname: feedback\ndescription: Prefer small PRs\n---\n"
     )
 
     assert not connector.supports(event)
