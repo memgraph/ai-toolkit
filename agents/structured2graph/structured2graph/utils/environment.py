@@ -49,12 +49,13 @@ def _find_dotenv() -> str | None:
     Returns the first path that exists, or None.  The search order is:
     1. Current working directory
     2. /app (Docker WORKDIR convention)
-    3. Directory containing this source file (dev checkout)
+    3. The project directory above the package (dev checkout)
     """
+    package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     candidates = [
         os.path.join(os.getcwd(), ".env"),
         "/app/.env",
-        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+        os.path.join(os.path.dirname(package_dir), ".env"),
     ]
     for path in candidates:
         if os.path.isfile(path):

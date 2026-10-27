@@ -29,6 +29,7 @@ from structured2graph.utils import (  # noqa: E402
     print_environment_help,
     print_troubleshooting_help,
 )
+from structured2graph.utils.environment import load_environment  # noqa: E402
 from structured2graph.core import SQLToMemgraphAgent  # noqa: E402
 from structured2graph.core.hygm import GraphModelingStrategy, ModelingMode  # noqa: E402
 from structured2graph.core.memgql_mapping import (  # noqa: E402
@@ -761,6 +762,8 @@ def generate_mapping(
 def main(argv: Optional[list[str]] = None) -> None:
     """Main entry point for the migration agent."""
     global _editor_override
+    # Load .env first: the CLI defaults read SQL2MG_* from the environment.
+    load_environment()
     args = parse_cli_args(argv)
     _editor_override = args.editor
 
