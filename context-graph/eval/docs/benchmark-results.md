@@ -4,11 +4,14 @@
 
 Paths in commands and file references below are relative to `context-graph/eval/`.
 
-## Version point: LongMemEval-S, exchange recall over a GLiNER2 graph (2026-10-28)
+Each version point is named for the memgraph-context-graph release whose code
+it measured; the components it ships with are listed under **Setup**.
+
+## memgraph-context-graph 0.12.0: LongMemEval-S (2026-10-28)
 
 The full LongMemEval-S benchmark through the shipped read path as it is now:
 recall's default exchange packing (#610, #611) over the same kind of graph as
-the [previous version point](#version-point-longmemeval-s-hybrid-recall-over-a-gliner2-graph-2026-10-23)
+[0.6.0](#memgraph-context-graph-060-longmemeval-s-2026-10-23)
 (GLiNER2 under hygm's default model, no LLM in the build or the recall). All
 500 questions with their whole haystacks, answered by gpt-4.1 and judged by
 LongMemEval's own judge (gpt-4o-2024-08-06).
@@ -39,7 +42,7 @@ Abstention (30 of the 500, inside the types above): 23 correct.
 Retrieval returns 5,863 tokens on average (median 5,888 over the passed
 questions), against 6,465 for turn packing. F1 is 0.118 and BLEU 0.068.
 
-- **Against the previous version point:** the score is level (+0.4 pp, inside
+- **Against 0.6.0:** the score is level (+0.4 pp, inside
   the ~3-point drift between runs), evidence recall rises from 0.92 to 0.96,
   and retrieval is 9% smaller. Per type the moves are within noise except
   single-session-preference (90.0% to 80.0%, 3 of 30 questions).
@@ -48,7 +51,8 @@ questions), against 6,465 for turn packing. F1 is 0.118 and BLEU 0.068.
   retrieval; on 7 it returned none.
 - **`0bc8ad93` now answers:** the trailing-"not" query that the text lane once
   handed to Tantivy as a syntax error retrieves normally and scores.
-- **Setup:** commit `e31e945`, Memgraph 3.13.2
+- **Setup:** memgraph-context-graph 0.12.0 with sessions-graph 0.12.0 (commit
+  `e31e945`), Memgraph 3.13.2
   (`memgraph/memgraph-mage@sha256:e28eea42…`, write-ahead log and snapshots on,
   as the eval instances now run), `fastino/gliner2.5-base-v1` with the greedy
   decoder, every recall lane, an Apple M2 Pro (10 cores, 16 GB, Docker limited
@@ -61,7 +65,7 @@ questions), against 6,465 for turn packing. F1 is 0.118 and BLEU 0.068.
   questions in flight, so recalls overlap and the tail is longer than the
   median.
 
-## Version point: BEAM 100K, exchange recall over a GLiNER2 graph (2026-10-28)
+## memgraph-context-graph 0.12.0: BEAM 100K (2026-10-28)
 
 The full BEAM 100K benchmark through the shipped read path as it is now:
 recall's default exchange packing over a freshly rebuilt GLiNER2 graph, all 20
@@ -96,13 +100,14 @@ context-graph-eval run beam-100k --rebuild
 Retrieval returns 5,865 tokens on average (median 5,888 over the passed
 questions), against 9,451 for turn packing.
 
-- **Against the previous version point:** the score is level (0.631 against
+- **Against [0.6.0](#memgraph-context-graph-060-beam-100k-2026-10-14):** the score is level (0.631 against
   0.636, inside BEAM's ~0.04 drift between runs), evidence recall rises from
   0.60 to 0.70, retrieval is 38% smaller, and recall is ~17x faster (0.50 s
   against 8.8 s mean). Abilities moved by up to 0.10 either way
   (multi-session reasoning down, knowledge update up), at the ~0.08 noise
   floor of a 40-question ability.
-- **Setup:** commit `e31e945` (the run records `e31e945-dirty` for an
+- **Setup:** memgraph-context-graph 0.12.0 with sessions-graph 0.12.0 (commit
+  `e31e945`; the run records `e31e945-dirty` for an
   untracked driver script in the checkout; no module that builds or reads the
   graph differed), Memgraph 3.13.2 (`memgraph/memgraph-mage@sha256:e28eea42…`),
   `fastino/gliner2.5-base-v1` with the greedy decoder, hygm's default model,
@@ -114,7 +119,7 @@ questions), against 9,451 for turn packing.
   before. Temporal reasoning finds 97% of the cited evidence, so its misses
   are in answering from it.
 
-## Version point: LongMemEval-S, hybrid recall over a GLiNER2 graph (2026-10-23)
+## memgraph-context-graph 0.6.0: LongMemEval-S (2026-10-23)
 
 The full LongMemEval-S benchmark through the shipped read path: all 500
 questions with their whole haystacks (~50 sessions each, no
@@ -158,7 +163,9 @@ read accuracy, not those two.
 - **Other metrics:** Contextual Recall passed (at 0.7) on 332 of 458 judged
   questions; the median retrieval payload over the 435 covered questions is
   6,378 tokens; 0 questions unscored (the judge answered every one).
-- **Setup:** Memgraph 3.13.2 (`memgraph/memgraph-mage@sha256:e28eea42…`, snapshots
+- **Setup:** memgraph-context-graph 0.6.0 with sessions-graph 0.8.1 (branched
+  from main at #546), Memgraph 3.13.2
+  (`memgraph/memgraph-mage@sha256:e28eea42…`, snapshots
   and WAL off), `fastino/gliner2.5-base-v1` with the greedy decoder, every
   recall lane, an AMD Ryzen 5 2600 (6 cores, 16 GB, no GPU). Shards 0-1 ran on the
   code of #552 (before its rebase onto main); the rest add a retry of recall's
@@ -187,7 +194,7 @@ read accuracy, not those two.
   relationships outside the default model's declared domain/range; every
   session was reconciled.
 
-## Version point: BEAM 100K, hybrid recall over a GLiNER2 graph (2026-10-14)
+## memgraph-context-graph 0.6.0: BEAM 100K (2026-10-14)
 
 The full BEAM 100K benchmark through the shipped read path: all 20 chats and
 400 questions, the graph built by GLiNER2 (no LLM in the build or the recall),
@@ -218,7 +225,8 @@ context-graph-eval run beam-100k --packing turns
 | End to end (recall, answer) | 31.8 s | 28.2 s | 66.6 s |
 | Recall only (`sessions_graph.recall`, no answering model) | 8.8 s | 8.9 s | 10.4 s |
 
-- **Setup:** commit `d585cea`, Memgraph 3.13.2
+- **Setup:** memgraph-context-graph 0.6.0 with sessions-graph 0.8.1 (commit
+  `d585cea`), Memgraph 3.13.2
   (`memgraph/memgraph-mage@sha256:e28eea42…`), `fastino/gliner2.5-base-v1`
   with the greedy decoder, hygm's default model, every recall lane, BEAM
   revision `b2da22ea`. Four questions are answered at a time.

@@ -9,8 +9,9 @@ this README only summarises what the code does.
 
 ## Official numbers
 
-The current read path (hybrid recall over a GLiNER2 graph, no LLM in the build
-or the recall), measured end to end on two public benchmarks: the
+**memgraph-context-graph 0.12.0** (sessions-graph 0.12.0): the current read
+path, hybrid recall over a GLiNER2 graph with no LLM in the build or the
+recall, measured end to end on two public benchmarks: the
 [official workloads](#workloads), whole and uncapped. These are the numbers we
 communicate. Each row is a committed baseline in `baselines/` with its
 settings; the [benchmark reports](docs/benchmark-results.md) have the per-type
@@ -18,8 +19,8 @@ breakdowns, reproduction commands, and caveats.
 
 | Benchmark | Questions | Answer score | Evidence recall | Retrieval tokens | Recall latency (mean) |
 |---|---|---|---|---|---|
-| [LongMemEval-S](docs/benchmark-results.md#version-point-longmemeval-s-exchange-recall-over-a-gliner2-graph-2026-10-28), full haystacks | 500 | **87.4%** | 0.96 | 5,863 | 1.56 s |
-| [BEAM 100K](docs/benchmark-results.md#version-point-beam-100k-exchange-recall-over-a-gliner2-graph-2026-10-28) | 400 | **63.1%** | 0.70 | 5,865 | 0.50 s |
+| [LongMemEval-S](docs/benchmark-results.md#memgraph-context-graph-0120-longmemeval-s-2026-10-28), full haystacks | 500 | **87.4%** | 0.96 | 5,863 | 1.56 s |
+| [BEAM 100K](docs/benchmark-results.md#memgraph-context-graph-0120-beam-100k-2026-10-28) | 400 | **63.1%** | 0.70 | 5,865 | 0.50 s |
 
 **Answer score** is the headline both share: the share of the answer key the
 system's answer gets right, as decided by the benchmark's own judge. On
@@ -33,11 +34,11 @@ evidence turns that retrieval returned), **retrieval tokens**, recall-only and
 end-to-end latency are measured the same way on both.
 
 Both were measured with recall's default exchange packing at commit `e31e945`.
-Against the previous version points, measured with turn packing (separate turn
-and fact rows), the answer scores are level and retrieval finds more of the
-evidence in fewer tokens, faster; the
-[benchmark reports](docs/benchmark-results.md) keep both. To re-measure the
-earlier points as they were, run them with `--packing turns`.
+Against the previous version points, memgraph-context-graph 0.6.0 with turn
+packing (separate turn and fact rows), the answer scores are level and
+retrieval finds more of the evidence in fewer tokens, faster; the
+[benchmark reports](docs/benchmark-results.md) keep every version point. To
+re-measure 0.6.0's packing on the current code, run with `--packing turns`.
 
 LongMemEval-S also reports abstention 23/30, F1 0.118, BLEU 0.068 and 0
 unscored questions; BEAM had none unscored. Both ran on an Apple M2 Pro
@@ -196,12 +197,18 @@ text, adding it to the table at the top and writing its report in
 
 ```bash
 context-graph-eval run beam-100k
-context-graph-eval publish runs/beam-100k/<label>.json baselines/beam-100k-gliner2.json
+context-graph-eval publish runs/beam-100k/<label>.json baselines/beam-100k-exchanges-gliner2.json
 ```
 
 `publish` drops every row's questions, answers and retrieval, keeping the
 scores, metrics and latencies `compare` needs, so a later run can be compared
 against the published one.
+
+A version point is named for the memgraph-context-graph release whose code it
+measured, normally the release it ships with: its report heading (e.g.
+`memgraph-context-graph 0.12.0: BEAM 100K`), the "Official numbers" text above,
+and the baseline's `meta.notes` (`memgraph_context_graph`, `sessions_graph`)
+all say which.
 
 ## Knowledge-graph construction (`kg`)
 

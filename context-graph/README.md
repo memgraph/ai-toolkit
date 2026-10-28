@@ -110,7 +110,7 @@ User → Session → Actions and subagents
 
 ## How well does recall work?
 
-Measured end to end on public long-memory benchmarks, through the shipped read path (hybrid recall over a graph built locally by GLiNER2, no LLM in the build or the recall):
+Measured end to end on public long-memory benchmarks for **memgraph-context-graph 0.12.0**, through the shipped read path (hybrid recall over a graph built locally by GLiNER2, no LLM in the build or the recall):
 
 | Benchmark | Answer score | Evidence recall | Retrieval tokens | Recall latency (mean) |
 |---|---|---|---|---|

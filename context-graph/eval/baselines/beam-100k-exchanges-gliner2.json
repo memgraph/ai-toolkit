@@ -37,7 +37,10 @@
   "commit": "e31e945-dirty",
   "memgraph_version": "3.13.2",
   "rubric_judge_model": "none",
-  "notes": {}
+  "notes": {
+   "memgraph_context_graph": "0.12.0",
+   "sessions_graph": "0.12.0"
+  }
  },
  "summary": {
   "headline": 0.6313148155046173,
