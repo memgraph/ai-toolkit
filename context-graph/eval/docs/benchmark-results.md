@@ -4,6 +4,116 @@
 
 Paths in commands and file references below are relative to `context-graph/eval/`.
 
+## Version point: LongMemEval-S, exchange recall over a GLiNER2 graph (2026-10-28)
+
+The full LongMemEval-S benchmark through the shipped read path as it is now:
+recall's default exchange packing (#610, #611) over the same kind of graph as
+the [previous version point](#version-point-longmemeval-s-hybrid-recall-over-a-gliner2-graph-2026-10-23)
+(GLiNER2 under hygm's default model, no LLM in the build or the recall). All
+500 questions with their whole haystacks, answered by gpt-4.1 and judged by
+LongMemEval's own judge (gpt-4o-2024-08-06).
+`baselines/lme-s-exchanges-gliner2.json` holds the settings, the report and
+each question's scores and latencies, but no LongMemEval text.
+
+```bash
+context-graph-eval run lme-s
+```
+
+| Question type | Questions | Accuracy | Evidence recall |
+|---|---|---|---|
+| single-session-user | 70 | 100.0% | 1.00 |
+| single-session-assistant | 56 | 94.6% | 1.00 |
+| knowledge-update | 78 | 94.9% | 1.00 |
+| single-session-preference | 30 | 80.0% | 0.94 |
+| temporal-reasoning | 133 | 86.5% | 0.92 |
+| multi-session | 133 | 75.9% | 0.93 |
+| **All** | **500** | **87.4% (437/500)** | **0.96** |
+
+Abstention (30 of the 500, inside the types above): 23 correct.
+
+| | Mean | Median | p95 |
+|---|---|---|---|
+| End to end (recall, answer) | 2.92 s | 1.98 s | 6.66 s |
+| Recall only (`sessions_graph.recall`, no answering model) | 1.56 s | 0.65 s | 5.13 s |
+
+Retrieval returns 5,863 tokens on average (median 5,888 over the passed
+questions), against 6,465 for turn packing. F1 is 0.118 and BLEU 0.068.
+
+- **Against the previous version point:** the score is level (+0.4 pp, inside
+  the ~3-point drift between runs), evidence recall rises from 0.92 to 0.96,
+  and retrieval is 9% smaller. Per type the moves are within noise except
+  single-session-preference (90.0% to 80.0%, 3 of 30 questions).
+- **Misses:** 56 outside abstention. On 28 of them recall returned all of the
+  cited evidence and on 21 some of it, so most misses are in answering, not
+  retrieval; on 7 it returned none.
+- **`0bc8ad93` now answers:** the trailing-"not" query that the text lane once
+  handed to Tantivy as a syntax error retrieves normally and scores.
+- **Setup:** commit `e31e945`, Memgraph 3.13.2
+  (`memgraph/memgraph-mage@sha256:e28eea42…`, write-ahead log and snapshots on,
+  as the eval instances now run), `fastino/gliner2.5-base-v1` with the greedy
+  decoder, every recall lane, an Apple M2 Pro (10 cores, 16 GB, Docker limited
+  to 8 GB, no GPU). Four questions are answered at a time.
+- **Build:** 25 shards of 20 questions as `run lme-s` builds them (same
+  workload, shard order and build fingerprint), each kept in its own instance
+  instead of wiped, then asked. ~41 h of build in all, ~1.7 h per shard
+  (~950 sessions); every session reconciled.
+- **Recall timing** is measured with recall in a worker thread (#548) and four
+  questions in flight, so recalls overlap and the tail is longer than the
+  median.
+
+## Version point: BEAM 100K, exchange recall over a GLiNER2 graph (2026-10-28)
+
+The full BEAM 100K benchmark through the shipped read path as it is now:
+recall's default exchange packing over a freshly rebuilt GLiNER2 graph, all 20
+chats and 400 questions, answered by gpt-4.1 and scored by BEAM's own judge
+(gpt-4.1-mini). `baselines/beam-100k-exchanges-gliner2.json` holds the
+settings, the report and each question's scores and latencies, but no BEAM
+text.
+
+```bash
+context-graph-eval run beam-100k --rebuild
+```
+
+| Ability | Score | Evidence recall |
+|---|---|---|
+| preference_following | 0.919 | 0.76 |
+| information_extraction | 0.779 | 0.82 |
+| instruction_following | 0.756 | 0.53 |
+| knowledge_update | 0.725 | 0.91 |
+| multi_session_reasoning | 0.725 | 0.70 |
+| contradiction_resolution | 0.672 | 0.92 |
+| abstention | 0.525 | – |
+| summarization | 0.471 | 0.32 |
+| temporal_reasoning | 0.463 | 0.97 |
+| event_ordering | 0.278 | 0.34 |
+| **BEAM score (mean of abilities)** | **0.631** | |
+
+| | Mean | Median | p95 |
+|---|---|---|---|
+| End to end (recall, answer) | 2.50 s | 2.22 s | 4.01 s |
+| Recall only (`sessions_graph.recall`, no answering model) | 0.50 s | 0.48 s | 0.63 s |
+
+Retrieval returns 5,865 tokens on average (median 5,888 over the passed
+questions), against 9,451 for turn packing.
+
+- **Against the previous version point:** the score is level (0.631 against
+  0.636, inside BEAM's ~0.04 drift between runs), evidence recall rises from
+  0.60 to 0.70, retrieval is 38% smaller, and recall is ~17x faster (0.50 s
+  against 8.8 s mean). Abilities moved by up to 0.10 either way
+  (multi-session reasoning down, knowledge update up), at the ~0.08 noise
+  floor of a 40-question ability.
+- **Setup:** commit `e31e945` (the run records `e31e945-dirty` for an
+  untracked driver script in the checkout; no module that builds or reads the
+  graph differed), Memgraph 3.13.2 (`memgraph/memgraph-mage@sha256:e28eea42…`),
+  `fastino/gliner2.5-base-v1` with the greedy decoder, hygm's default model,
+  every recall lane, BEAM revision `b2da22ea`, an Apple M2 Pro (10 cores,
+  16 GB, Docker limited to 8 GB, no GPU). Four questions are answered at a time.
+- **Build:** 120 min for the 82 sessions, every one reconciled.
+- **Every question scored:** no answering timeouts and none unscored.
+- **Where it loses:** event ordering, temporal reasoning and summarization, as
+  before. Temporal reasoning finds 97% of the cited evidence, so its misses
+  are in answering from it.
+
 ## Version point: LongMemEval-S, hybrid recall over a GLiNER2 graph (2026-10-23)
 
 The full LongMemEval-S benchmark through the shipped read path: all 500

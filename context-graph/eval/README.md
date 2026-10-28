@@ -18,30 +18,30 @@ breakdowns, reproduction commands, and caveats.
 
 | Benchmark | Questions | Answer score | Evidence recall | Retrieval tokens | Recall latency (mean) |
 |---|---|---|---|---|---|
-| [LongMemEval-S](docs/benchmark-results.md#version-point-longmemeval-s-hybrid-recall-over-a-gliner2-graph-2026-10-23), full haystacks | 500 | **87.0%** | 0.92 | 6,465 | 2.85 s |
-| [BEAM 100K](docs/benchmark-results.md#version-point-beam-100k-hybrid-recall-over-a-gliner2-graph-2026-10-14) | 400 | **63.6%** | 0.60 | 9,451 | 8.8 s |
+| [LongMemEval-S](docs/benchmark-results.md#version-point-longmemeval-s-exchange-recall-over-a-gliner2-graph-2026-10-28), full haystacks | 500 | **87.4%** | 0.96 | 5,863 | 1.56 s |
+| [BEAM 100K](docs/benchmark-results.md#version-point-beam-100k-exchange-recall-over-a-gliner2-graph-2026-10-28) | 400 | **63.1%** | 0.70 | 5,865 | 0.50 s |
 
 **Answer score** is the headline both share: the share of the answer key the
 system's answer gets right, as decided by the benchmark's own judge. On
-LongMemEval-S each question is right or wrong (435 of 500, LongMemEval's
+LongMemEval-S each question is right or wrong (437 of 500, LongMemEval's
 gpt-4o judge). On BEAM each question earns partial credit per rubric item
-(1, 0.5 or 0) and the score is the mean over its ten abilities, 0.636 (BEAM's
+(1, 0.5 or 0) and the score is the mean over its ten abilities, 0.631 (BEAM's
 gpt-4.1-mini judge). The two are the same idea on different judges and
 granularity, so compare them as "how much of the answer is right", not as a
 ranking between benchmarks. **Evidence recall** (the share of the cited
 evidence turns that retrieval returned), **retrieval tokens**, recall-only and
 end-to-end latency are measured the same way on both.
 
-Both were measured with recall's turn packing (separate turn and fact rows).
-Exchange packing has since become recall's default; the
-[exchange recall evaluation](recall-exchanges.md) records a separate
-400-question BEAM diagnostic for it, not an official score. To re-measure a
-version point as it was, run it with `--packing turns`.
+Both were measured with recall's default exchange packing at commit `e31e945`.
+Against the previous version points, measured with turn packing (separate turn
+and fact rows), the answer scores are level and retrieval finds more of the
+evidence in fewer tokens, faster; the
+[benchmark reports](docs/benchmark-results.md) keep both. To re-measure the
+earlier points as they were, run them with `--packing turns`.
 
-LongMemEval-S also reports Contextual Recall (retrieval found what the answer
-needs) on 332 of 458 questions (72%), abstention 22/30, F1 0.117, BLEU 0.067 and
-0 unscored questions. Both ran on an AMD Ryzen 5 2600 (6 cores, 16 GB, no GPU) against
-Memgraph 3.13.2.
+LongMemEval-S also reports abstention 23/30, F1 0.118, BLEU 0.068 and 0
+unscored questions; BEAM had none unscored. Both ran on an Apple M2 Pro
+(10 cores, 16 GB, no GPU) against Memgraph 3.13.2.
 
 ## Workloads
 

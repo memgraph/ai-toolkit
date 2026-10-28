@@ -114,8 +114,8 @@ Measured end to end on public long-memory benchmarks, through the shipped read p
 
 | Benchmark | Answer score | Evidence recall | Retrieval tokens | Recall latency (mean) |
 |---|---|---|---|---|
-| LongMemEval-S, all 500 questions | **87.0%** | 0.92 | 6,465 | 2.85 s |
-| BEAM 100K, all 400 questions | **63.6%** | 0.60 | 9,451 | 8.8 s |
+| LongMemEval-S, all 500 questions | **87.4%** | 0.96 | 5,863 | 1.56 s |
+| BEAM 100K, all 400 questions | **63.1%** | 0.70 | 5,865 | 0.50 s |
 
 Answer score is the share of the answer key the answer gets right, by each benchmark's own judge (LongMemEval's, BEAM's), so read the two rows as one metric on two judges.
 
