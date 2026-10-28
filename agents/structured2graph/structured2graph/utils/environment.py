@@ -49,12 +49,13 @@ def _find_dotenv() -> str | None:
     Returns the first path that exists, or None.  The search order is:
     1. Current working directory
     2. /app (Docker WORKDIR convention)
-    3. Directory containing this source file (dev checkout)
+    3. The project directory above the package (dev checkout)
     """
+    package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     candidates = [
         os.path.join(os.getcwd(), ".env"),
         "/app/.env",
-        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+        os.path.join(os.path.dirname(package_dir), ".env"),
     ]
     for path in candidates:
         if os.path.isfile(path):
@@ -206,14 +207,7 @@ def get_memgraph_config() -> dict[str, str]:
 def probe_source_connection(source_db_config: dict[str, Any]) -> tuple[bool, str | None]:
     """Test source database connection using the configured analyzer."""
     try:
-        import sys
-        from pathlib import Path
-
-        agents_root = Path(__file__).parent.parent
-        if str(agents_root) not in sys.path:
-            sys.path.insert(0, str(agents_root))
-
-        from database.factory import DatabaseAnalyzerFactory
+        from structured2graph.database.factory import DatabaseAnalyzerFactory
 
         config = source_db_config.copy()
         db_type = config.pop("database_type", "mysql")

@@ -49,7 +49,7 @@ members = [
     "integrations/langchain-memgraph/",
     "integrations/mcp-memgraph/",
     "integrations/lightrag-memgraph",
-    "agents/sql2graph/",
+    "agents/structured2graph/",
     "unstructured2graph",
     "context-graph/skills-graph",
     "context-graph/actions-graph",

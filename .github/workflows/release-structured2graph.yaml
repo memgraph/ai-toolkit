@@ -19,7 +19,7 @@ jobs:
         run: python -m pip install uv
 
       - name: Build and release structured2graph
-        working-directory: agents/sql2graph
+        working-directory: agents/structured2graph
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
         run: |

@@ -7,7 +7,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from core.hygm.models.graph_models import GraphConstraint, GraphIndex
+    from structured2graph.core.hygm.models.graph_models import GraphConstraint, GraphIndex
 
 logger = logging.getLogger(__name__)
 

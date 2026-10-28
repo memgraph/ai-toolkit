@@ -27,4 +27,4 @@ RUN uv sync --frozen --no-dev
 #      docker run -it --env-file .env memgraph/structured2graph
 COPY .env.example /app/.env.example
 
-ENTRYPOINT ["uv", "run", "main.py"]
+ENTRYPOINT ["uv", "run", "structured2graph"]

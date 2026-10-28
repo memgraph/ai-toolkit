@@ -44,7 +44,7 @@ class RelationType:
         description: Documentation only for GLiNER2, whose joint compiler drops
             relation descriptions; the label is its only steering surface (#360).
         start_labels: Labels the relationship may start at. Empty means any
-            declared label -- OWL's rdfs:domain, sql2graph's start_node_labels.
+            declared label -- OWL's rdfs:domain, structured2graph's start_node_labels.
         end_labels: Labels the relationship may end at. Empty means any
             declared label -- OWL's rdfs:range.
     """
