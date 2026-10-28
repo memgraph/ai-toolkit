@@ -54,31 +54,56 @@ mcp = FastMCP(
 # Read-only mode flag (from config)
 READ_ONLY_MODE = mcp_config.read_only
 
-# Read-only mode is best effort, in layers: a keyword check, a list of procedures
-# that can write although Memgraph flags them as reads, and a read transaction in
-# which Memgraph rejects the rest. Only a Memgraph user with read-only privileges
-# guarantees that nothing is written.
+# Read-only mode is a best-effort guard, in layers: a check of the query text for
+# write keywords and for procedures that can write although Memgraph flags them as
+# reads, then a read transaction in which Memgraph rejects the rest. The text check
+# is not a parser and can be bypassed; only Memgraph's own access control can
+# guarantee that nothing is written.
 
 # Memgraph ends a line comment at \r or \n.
 _LEADING_COMMENTS = re.compile(r"^(?:\s+|//[^\r\n]*|/\*.*?\*/)*", re.DOTALL)
-# String literals and comments, so a word inside them isn't read as a keyword.
-_STRINGS_AND_COMMENTS = re.compile(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"|//[^\r\n]*|/\*.*?\*/", re.DOTALL)
+# Backticked names, string literals and comments, matched in one pass so a quote
+# inside a name or a name inside a string can't hide what follows.
+_NAMES_STRINGS_AND_COMMENTS = re.compile(
+    r"`(?:[^`]|``)*`|'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"|//[^\r\n]*|/\*.*?\*/", re.DOTALL
+)
+# Whitespace Memgraph accepts that Python's \s doesn't match.
+_EXTRA_WHITESPACE = re.compile("[᠎​‌‍⁠﻿]")
 
 # Write clauses, plus auth commands, which Memgraph runs in a read transaction too.
-_WRITE_KEYWORDS = re.compile(r"\b(?:CREATE|MERGE|DELETE|REMOVE|SET|DROP|GRANT|REVOKE|DENY)\b", re.IGNORECASE)
+# Not after a dot (n.set, map.merge) and not as a map key ({set: 1}).
+_WRITE_KEYWORDS = re.compile(
+    r"(?<![.\w])(?:CREATE|MERGE|DELETE|REMOVE|SET|DROP|GRANT|REVOKE|DENY|CLEAR)\b(?!\s*:)", re.IGNORECASE
+)
 
-# Procedures Memgraph flags as reads that run other queries in their own
-# transaction or connection, load or change code, or touch files or other systems.
-_UNSAFE_PROCEDURES = re.compile(
-    r"\bCALL\s+(?:"
-    r"(?:do|periodic|csv_utils|export_util|migrate|tgn|elastic_search_serialization)\s*\.\s*\w+"
+# Procedures and functions Memgraph flags as reads that run other queries in their
+# own transaction or connection, load or change code, write files or models, or call
+# other systems. Matched anywhere in the query, including their APOC names.
+_UNSAFE_CALLABLES = re.compile(
+    r"(?<![\w.])(?:"
+    r"(?:apoc\s*\.\s*)?(?:do|periodic)\s*\.\s*\w+"
+    r"|apoc\s*\.\s*(?:export|load|cypher)\s*\.\s*\w+"
+    r"|(?:csv_utils|export_util|migrate|cross_database|tgn|elastic_search_serialization|xml_module|llm)\s*\.\s*\w+"
     r"|mg\s*\.\s*(?:load|load_all|create_module_file|update_module_file|delete_module_file"
     r"|kafka_set_stream_offset)\b"
     r"|meta\s*\.\s*(?:update|reset)\b"
-    r"|node_classification\s*\.\s*save_model\b"
+    r"|node_classification\s*\.\s*(?:train|save_model|load_model|set_model_parameters|reset)\b"
+    r"|link_prediction\s*\.\s*(?:train|load_model|set_model_parameters|reset_parameters)\b"
+    r"|json_util\s*\.\s*load_from_url\b"
     r")",
     re.IGNORECASE,
 )
+
+
+def _query_code(query: str) -> str:
+    """The query with strings and comments blanked and backticked names unquoted."""
+
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(0)
+        return f" {token[1:-1]} " if token.startswith("`") else " "
+
+    return _EXTRA_WHITESPACE.sub(" ", _NAMES_STRINGS_AND_COMMENTS.sub(replace, query))
+
 
 # Queries that can't run in a transaction and only read; in read-only mode
 # they're the only ones allowed to run outside one, with PROFILE of a read query.
@@ -101,8 +126,8 @@ def is_write_query(query: str) -> bool:
     Ignores words inside string literals and comments. Backticked names count,
     so a label named `SET` is refused too.
     """
-    code = _STRINGS_AND_COMMENTS.sub(" ", query).replace("`", "")
-    return bool(_WRITE_KEYWORDS.search(code) or _UNSAFE_PROCEDURES.search(code))
+    code = _query_code(query)
+    return bool(_WRITE_KEYWORDS.search(code) or _UNSAFE_CALLABLES.search(code))
 
 
 def _is_access_mode_error(error: Neo4jError) -> bool:
@@ -158,6 +183,8 @@ def read_only_query(db: Memgraph, query: str) -> list[dict[str, Any]]:
         elif not _READ_OUTSIDE_TRANSACTION.match(query):
             raise ReadOnlyViolationError(e.message) from e
 
+    # Memgraph applies the read access mode only to explicit transactions, so this
+    # path relies on the checks above.
     with db.driver.session(database=db.database, default_access_mode=READ_ACCESS) as session:
         return serialize_records(session.run(cast("Any", query)))
 

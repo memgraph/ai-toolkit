@@ -216,6 +216,16 @@ def _db_state(driver) -> dict:
         "CALL periodic.delete({label: 'ReadOnlyTest', batch_size: 10}) YIELD success RETURN success",
         "CALL mg.create_module_file('leak.py', 'import mgp') YIELD path RETURN path",
         "CALL mg.load_all()",
+        # The same procedures under their APOC names and in harder-to-read forms.
+        "CALL apoc.do.when(true, 'CREATE (:Leak)', '', {}) YIELD value RETURN value",
+        "CALL apoc.periodic.iterate('MATCH (n:ReadOnlyTest) RETURN n', 'SET n.leak = 1', {batchSize: 10}) "
+        "YIELD batches RETURN batches",
+        "PROFILE CALL apoc.do.when(true, 'CREATE (:Leak)', '', {}) YIELD value RETURN value",
+        "CALL`do`.when(true, 'CREATE (:Leak)', '', {}) YIELD value RETURN value",
+        "CALL᠎do.when(true, 'CREATE (:Leak)', '', {}) YIELD value RETURN value",
+        "WITH 1 AS `a'` CALL do.when(true, 'CREATE (:Leak)', '', {}) YIELD value RETURN value",
+        "MATCH (`x//`) CALL do.when(true, 'CREATE (:Leak)', '', {}) YIELD value RETURN value",
+        "RETURN 1 AS value UNION ALL CALL apoc.do.when(true, 'CREATE (:Leak)', '', {}) YIELD value RETURN value",
         # Auth commands run even in a read transaction.
         "CREATE USER leak IDENTIFIED BY 'leak12345'",
         # Memgraph ends a line comment at \r; the rest must not pass as a SHOW query.
@@ -237,6 +247,9 @@ async def test_writes_blocked_in_readonly_mode(readonly_run_cypher_query, seeded
         "RETURN 'set' AS word",
         "RETURN 'CALL do.when' AS text",
         "MATCH (n) WHERE n.name = 'please delete me' RETURN count(n) AS c",
+        "MATCH (n:ReadOnlyTest) RETURN n.set AS value",
+        "RETURN {set: 1, drop: 2} AS m",
+        "RETURN map.merge({a: 1}, {b: 2}) AS m",
         "CALL pagerank.get() YIELD node, rank RETURN count(node) AS c",
         "SHOW INDEX INFO",
         "SHOW STORAGE INFO",
