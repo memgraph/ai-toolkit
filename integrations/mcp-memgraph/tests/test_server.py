@@ -137,6 +137,63 @@ async def test_write_query_blocked_in_readonly_mode():
             os.environ.pop("MCP_READ_ONLY", None)
 
 
+@pytest.fixture
+def readonly_run_cypher_query():
+    """run_cypher_query from a server reloaded with MCP_READ_ONLY=true."""
+    original_value = os.environ.get("MCP_READ_ONLY")
+    os.environ["MCP_READ_ONLY"] = "true"
+
+    import importlib
+
+    import mcp_memgraph.config
+    import mcp_memgraph.servers.server
+
+    importlib.reload(mcp_memgraph.config)
+    importlib.reload(mcp_memgraph.servers.server)
+    try:
+        yield mcp_memgraph.servers.server.run_cypher_query
+    finally:
+        if original_value is not None:
+            os.environ["MCP_READ_ONLY"] = original_value
+        else:
+            os.environ.pop("MCP_READ_ONLY", None)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "CALL schema.assert({}, {}) YIELD action RETURN action",
+        "MATCH (n:ReadOnlyTest) WITH collect(n) AS ns "
+        "CALL refactor.rename_label('ReadOnlyTest', 'Renamed', ns) YIELD nodes_changed RETURN nodes_changed",
+        "ANALYZE GRAPH",
+        "FREE MEMORY",
+        "STORAGE MODE IN_MEMORY_ANALYTICAL",
+        "PROFILE CREATE (n:ReadOnlyTest)",
+    ],
+)
+async def test_writes_without_write_keywords_blocked_in_readonly_mode(readonly_run_cypher_query, query):
+    """Write procedures and admin commands are blocked even without CREATE, SET, ... in the query."""
+    response = readonly_run_cypher_query(query)
+    assert response and "read-only" in response[0].get("error", "").lower(), response
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "RETURN 'set' AS word",
+        "MATCH (n) WHERE n.name = 'please delete me' RETURN count(n) AS c",
+        "SHOW INDEX INFO",
+        "SHOW STORAGE INFO",
+        "// list indexes\nSHOW INDEX INFO",
+        "PROFILE MATCH (n) RETURN count(n) AS c",
+    ],
+)
+async def test_reads_allowed_in_readonly_mode(readonly_run_cypher_query, query):
+    """Reads run in read-only mode, including ones that mention a write keyword."""
+    response = readonly_run_cypher_query(query)
+    assert not (response and "error" in response[0]), response
+
+
 @pytest.mark.asyncio
 async def test_write_query_allowed_when_readonly_disabled():
     """Test that write queries work when MCP_READ_ONLY=false."""

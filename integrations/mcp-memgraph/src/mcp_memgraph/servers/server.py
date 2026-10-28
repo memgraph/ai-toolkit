@@ -1,7 +1,9 @@
 import re
-from typing import Any
+from typing import Any, cast
 
 from fastmcp import Context, FastMCP
+from neo4j import READ_ACCESS, RoutingControl
+from neo4j.exceptions import Neo4jError
 from starlette.responses import JSONResponse
 
 from mcp_memgraph.auth import current_session_auth
@@ -10,6 +12,7 @@ from mcp_memgraph.tenant_routing import UnknownTenantError, get_registry
 from memgraph_toolbox.api.memgraph import Memgraph
 from memgraph_toolbox.tools.schema import EnumSchemaTool, NodeSchemaTool, RelationshipSchemaTool, SearchSchemaTool
 from memgraph_toolbox.utils.logger import logger_init
+from memgraph_toolbox.utils.serialization import serialize_records
 
 # Get configuration instances
 memgraph_config = get_memgraph_config()
@@ -51,25 +54,70 @@ mcp = FastMCP(
 # Read-only mode flag (from config)
 READ_ONLY_MODE = mcp_config.read_only
 
-# Patterns for write operations in Cypher
-WRITE_PATTERNS = [
-    r"\bCREATE\b",
-    r"\bMERGE\b",
-    r"\bDELETE\b",
-    r"\bREMOVE\b",
-    r"\bSET\b",
-    r"\bDROP\b",
-    r"\bCREATE\s+INDEX\b",
-    r"\bDROP\s+INDEX\b",
-    r"\bCREATE\s+CONSTRAINT\b",
-    r"\bDROP\s+CONSTRAINT\b",
-]
+# Memgraph enforces the READ access mode only inside a transaction, and some
+# queries can't run inside one. Of those, only SHOW queries (SHOW INDEX INFO,
+# SHOW STORAGE INFO, SHOW SCHEMA INFO, ...) and PROFILE of a read query are
+# allowed to run outside a transaction in read-only mode.
+_LEADING_COMMENTS = r"^\s*(?:(?://[^\n]*(?:\n|$)|/\*.*?\*/)\s*)*"
+_SHOW_QUERY = re.compile(_LEADING_COMMENTS + r"SHOW\b", re.IGNORECASE | re.DOTALL)
+_PROFILE_QUERY = re.compile(_LEADING_COMMENTS + r"PROFILE\b", re.IGNORECASE | re.DOTALL)
 
 
-def is_write_query(query: str) -> bool:
-    """Check if a Cypher query contains write operations"""
-    query_upper = query.upper()
-    return any(re.search(pattern, query_upper) for pattern in WRITE_PATTERNS)
+class ReadOnlyViolationError(Exception):
+    """The query would change data, schema or server state in read-only mode."""
+
+
+def _is_access_mode_error(error: Neo4jError) -> bool:
+    # e.g. "Accessor type READ and query type WRITE are misaligned!"
+    return "misaligned" in (error.message or "")
+
+
+def _is_not_allowed_in_transaction(error: Neo4jError) -> bool:
+    return "multicommand transactions" in (error.message or "")
+
+
+def _check_read_only(db: Memgraph, query: str) -> None:
+    """Raise ReadOnlyViolationError unless Memgraph accepts *query* in a read transaction.
+
+    Fetches at most one row and rolls back: Memgraph rejects a write before
+    executing it, so this costs little for queries that do read.
+    """
+    with db.driver.session(database=db.database, default_access_mode=READ_ACCESS, fetch_size=1) as session:
+        tx = session.begin_transaction()
+        try:
+            tx.run(cast("Any", query)).peek()
+        except Neo4jError as e:
+            if _is_access_mode_error(e) or _is_not_allowed_in_transaction(e):
+                raise ReadOnlyViolationError(e.message) from e
+            raise
+        finally:
+            tx.close()
+
+
+def read_only_query(db: Memgraph, query: str) -> list[dict[str, Any]]:
+    """Run *query* so that Memgraph itself rejects anything that writes.
+
+    The query runs in a read transaction, where Memgraph refuses writes,
+    including write procedures. A query that can't run in a transaction runs
+    outside one only if it's a SHOW query or PROFILE of a read query; any other
+    (ANALYZE GRAPH, FREE MEMORY, STORAGE MODE, index changes, schema
+    procedures, ...) raises ReadOnlyViolationError.
+    """
+    try:
+        records, _, _ = db.driver.execute_query(cast("Any", query), database_=db.database, routing_=RoutingControl.READ)
+        return serialize_records(records)
+    except Neo4jError as e:
+        if _is_access_mode_error(e):
+            raise ReadOnlyViolationError(e.message) from e
+        if not _is_not_allowed_in_transaction(e):
+            raise
+        if _PROFILE_QUERY.match(query):
+            _check_read_only(db, _PROFILE_QUERY.sub("", query, count=1))
+        elif not _SHOW_QUERY.match(query):
+            raise ReadOnlyViolationError(e.message) from e
+
+    with db.driver.session(database=db.database, default_access_mode=READ_ACCESS) as session:
+        return serialize_records(session.run(cast("Any", query)))
 
 
 # Per-tenant client registry. Falls back to a single default client when auth
@@ -188,19 +236,24 @@ def run_cypher_query(query: str, ctx: Context | None = None) -> list[dict[str, A
     """
     logger.info("Running query: %s", query)
 
-    # Check if query is a write operation in read-only mode
-    if READ_ONLY_MODE and is_write_query(query):
-        logger.warning("Write operation blocked in read-only mode: %s", query)
-        return [
-            {
-                "error": "Write operations are not allowed in read-only mode",
-                "query": query,
-                "mode": "read-only",
-                "hint": "Set MCP_READ_ONLY=false to enable write operations",
-            }
-        ]
+    if not READ_ONLY_MODE:
+        return _safe_call(lambda: _get_db().query(query), on_error="Error running query")
 
-    return _safe_call(lambda: _get_db().query(query), on_error="Error running query")
+    def run() -> list[dict[str, Any]]:
+        try:
+            return read_only_query(_get_db(), query)
+        except ReadOnlyViolationError:
+            logger.warning("Write operation blocked in read-only mode: %s", query)
+            return [
+                {
+                    "error": "Write operations are not allowed in read-only mode",
+                    "query": query,
+                    "mode": "read-only",
+                    "hint": "Set MCP_READ_ONLY=false to enable write operations",
+                }
+            ]
+
+    return _safe_call(run, on_error="Error running query")
 
 
 @mcp.tool(annotations={"readOnlyHint": True})

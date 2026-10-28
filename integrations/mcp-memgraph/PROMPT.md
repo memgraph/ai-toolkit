@@ -33,7 +33,7 @@ The server runs in **read-only mode by default** to prevent accidental data modi
 - **Transport Types**: The server supports two MCP transports:
   - `stdio` (default) — Standard input/output, used by Claude Desktop and other MCP clients.
   - `streamable-http` — HTTP-based transport for web integrations.
-- **Read-Only Mode**: Enabled by default (`MCP_READ_ONLY=true`). Write operations (CREATE, MERGE, DELETE, SET, DROP, REMOVE) are automatically blocked and return an error. Set `MCP_READ_ONLY=false` to enable writes.
+- **Read-Only Mode**: Enabled by default (`MCP_READ_ONLY=true`). Queries run in a read transaction, so Memgraph rejects writes, and blocked queries return an error. Set `MCP_READ_ONLY=false` to enable writes.
 - **Multi-Server Support**: Use `MCP_SERVER` environment variable to select which server implementation to run. Options: `server` (default), `experimental`. Servers are registered in `servers/__init__.py` and loaded dynamically via `importlib`.
 - **Configuration System**: Uses singleton pattern with dataclasses (`MemgraphConfig`, `MCPServerConfig`) to centralize environment variable access. Configuration is loaded once and reused across all servers, avoiding duplication.
 
@@ -291,10 +291,11 @@ Tests use:
 
 ### Write Query Protection
 
-The server includes regex-based detection of write operations in `is_write_query()`:
+When `MCP_READ_ONLY=true`, `run_cypher_query` runs queries through `read_only_query()`:
 
-- Patterns: CREATE, MERGE, DELETE, REMOVE, SET, DROP, CREATE INDEX, DROP INDEX, CREATE CONSTRAINT, DROP CONSTRAINT
-- When `MCP_READ_ONLY=true`, write queries return an error dictionary instead of executing
+- The query runs in a read transaction, where Memgraph rejects writes, including write procedures
+- Queries that can't run in a transaction run outside one only if they are `SHOW ...` or `PROFILE` of a read query; others (`ANALYZE GRAPH`, `FREE MEMORY`, `STORAGE MODE`, index changes, schema procedures) are blocked
+- Blocked queries return an error dictionary instead of executing
 
 ## Development Tips
 
@@ -308,7 +309,7 @@ The server includes regex-based detection of write operations in `is_write_query
 - **Testing New Features**: Add tests to `tests/test_server.py`. Use the `MCPClient` class for integration tests. Mock Memgraph responses when testing error handling. Set `MCP_SERVER` in tests to target specific servers.
 - **Logging**: Use the `logger` instance from your server module. Initialize it via `memgraph_toolbox.utils.logger.logger_init("server-name")`.
 - **Error Handling**: Always wrap tool logic in try/except blocks. Return `[{"error": "..."}]` on failures to match the expected return type.
-- **Read-Only Mode**: When adding new tools that execute Cypher, use `is_write_query()` to check for write operations if read-only enforcement is needed.
+- **Read-Only Mode**: When adding new tools that execute Cypher, run them through `read_only_query()` if read-only enforcement is needed.
 - **Transport Switching**: The `main.py` file handles transport selection. `stdio` is parameterless; `streamable-http` requires host/port.
 - **Dependencies**: Use `uv` for all dependency management. Add new dependencies to `pyproject.toml` under `dependencies` or `optional-dependencies.test`.
 
