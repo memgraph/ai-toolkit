@@ -1,6 +1,6 @@
 [project]
 name = "memgraph-ai"
-version = "0.2.3"
+version = "0.2.4"
 description = "Memgraph AI Toolkit"
 readme = "README.md"
 license = { text = "MIT" }
