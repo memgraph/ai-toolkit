@@ -33,7 +33,7 @@ The server runs in **read-only mode by default** to prevent accidental data modi
 - **Transport Types**: The server supports two MCP transports:
   - `stdio` (default) — Standard input/output, used by Claude Desktop and other MCP clients.
   - `streamable-http` — HTTP-based transport for web integrations.
-- **Read-Only Mode**: Enabled by default (`MCP_READ_ONLY=true`). Queries run in a read transaction, so Memgraph rejects writes, and blocked queries return an error. Set `MCP_READ_ONLY=false` to enable writes.
+- **Read-Only Mode**: Enabled by default (`MCP_READ_ONLY=true`). A best-effort guard: write keywords, procedures that can write, and anything Memgraph rejects in a read transaction are refused with an error. Set `MCP_READ_ONLY=false` to enable writes.
 - **Multi-Server Support**: Use `MCP_SERVER` environment variable to select which server implementation to run. Options: `server` (default), `experimental`. Servers are registered in `servers/__init__.py` and loaded dynamically via `importlib`.
 - **Configuration System**: Uses singleton pattern with dataclasses (`MemgraphConfig`, `MCPServerConfig`) to centralize environment variable access. Configuration is loaded once and reused across all servers, avoiding duplication.
 
@@ -291,11 +291,14 @@ Tests use:
 
 ### Write Query Protection
 
-When `MCP_READ_ONLY=true`, `run_cypher_query` runs queries through `read_only_query()`:
+When `MCP_READ_ONLY=true`, `run_cypher_query` runs queries through `read_only_query()`, a best-effort guard in layers:
 
-- The query runs in a read transaction, where Memgraph rejects writes, including write procedures
-- Queries that can't run in a transaction run outside one only if they are `SHOW ...` or `PROFILE` of a read query; others (`ANALYZE GRAPH`, `FREE MEMORY`, `STORAGE MODE`, index changes, schema procedures) are blocked
+- Leading comments are stripped (some Memgraph versions crash on a comment before `EXPLAIN`/`PROFILE`)
+- `is_write_query()` refuses write keywords outside strings and comments (including auth commands, which Memgraph runs even in a read transaction) and calls to procedures that can write although Memgraph flags them as reads (`do.*`, `periodic.*`, `mg.load*`, module files, file export)
+- The rest runs in a read transaction, where Memgraph rejects writes and write procedures
+- Queries that can't run in a transaction run outside one only if they are `SHOW ...`, `DATA DIRECTORY LOCK STATUS` or `PROFILE` of a read query; others (`ANALYZE GRAPH`, `FREE MEMORY`, `STORAGE MODE`, index changes, schema procedures) are blocked
 - Blocked queries return an error dictionary instead of executing
+- Only a Memgraph user with read-only privileges guarantees that nothing is written
 
 ## Development Tips
 

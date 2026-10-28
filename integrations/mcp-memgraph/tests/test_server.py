@@ -159,39 +159,101 @@ def readonly_run_cypher_query():
             os.environ.pop("MCP_READ_ONLY", None)
 
 
+@pytest.fixture
+def seeded_db():
+    """A direct driver to a database holding two :ReadOnlyTest nodes and an index on them."""
+    from neo4j import GraphDatabase
+
+    driver = GraphDatabase.driver(os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687"))
+    with driver.session() as session:
+        session.run("MATCH (n:ReadOnlyTest) DETACH DELETE n").consume()
+        session.run("CREATE (:ReadOnlyTest {name: 'a'}), (:ReadOnlyTest {name: 'b'})").consume()
+        session.run("CREATE INDEX ON :ReadOnlyTest(name)").consume()
+    try:
+        yield driver
+    finally:
+        with driver.session() as session:
+            session.run("MATCH (n:ReadOnlyTest) DETACH DELETE n").consume()
+            session.run("DROP INDEX ON :ReadOnlyTest(name)").consume()
+        driver.close()
+
+
+def _db_state(driver) -> dict:
+    """What a leaked write would change: the graph, indexes, users, storage mode, query modules."""
+    with driver.session() as session:
+        return {
+            "nodes": session.run(
+                "MATCH (n) RETURN labels(n) AS labels, properties(n) AS props ORDER BY props.name"
+            ).data(),
+            "indexes": session.run("SHOW INDEX INFO").data(),
+            "users": session.run("SHOW USERS").data(),
+            "storage_mode": [
+                row for row in session.run("SHOW STORAGE INFO").data() if "storage_mode" in row["storage info"]
+            ],
+            "module_files": session.run("CALL mg.get_module_files() YIELD path RETURN path ORDER BY path").data(),
+        }
+
+
 @pytest.mark.parametrize(
     "query",
     [
+        "CREATE (:Leak)",
+        "PROFILE CREATE (:Leak)",
+        # Write procedures and admin commands without a write keyword.
         "CALL schema.assert({}, {}) YIELD action RETURN action",
         "MATCH (n:ReadOnlyTest) WITH collect(n) AS ns "
         "CALL refactor.rename_label('ReadOnlyTest', 'Renamed', ns) YIELD nodes_changed RETURN nodes_changed",
         "ANALYZE GRAPH",
         "FREE MEMORY",
         "STORAGE MODE IN_MEMORY_ANALYTICAL",
-        "PROFILE CREATE (n:ReadOnlyTest)",
+        # Procedures flagged as reads that run other queries or touch code and files.
+        "CALL do.when(true, 'MATCH (n) DETACH DELETE n', '', {}) YIELD value RETURN value",
+        "CALL do.case([true, 'CREATE (:Leak)'], '', {}) YIELD value RETURN value",
+        "CALL `do`.when(true, 'CREATE (:Leak)', '', {}) YIELD value RETURN value",
+        "/* x */ PROFILE CALL do.when(true, 'CREATE (:Leak)', '', {}) YIELD value RETURN value",
+        "CALL periodic.iterate('MATCH (n:ReadOnlyTest) RETURN n', 'SET n.leak = 1', {batch_size: 10}) "
+        "YIELD success RETURN success",
+        "CALL periodic.delete({label: 'ReadOnlyTest', batch_size: 10}) YIELD success RETURN success",
+        "CALL mg.create_module_file('leak.py', 'import mgp') YIELD path RETURN path",
+        "CALL mg.load_all()",
+        # Auth commands run even in a read transaction.
+        "CREATE USER leak IDENTIFIED BY 'leak12345'",
+        # Memgraph ends a line comment at \r; the rest must not pass as a SHOW query.
+        "// x\rCREATE INDEX ON :ReadOnlyTest(name) /*\nSHOW */",
     ],
 )
-async def test_writes_without_write_keywords_blocked_in_readonly_mode(readonly_run_cypher_query, query):
-    """Write procedures and admin commands are blocked even without CREATE, SET, ... in the query."""
+async def test_writes_blocked_in_readonly_mode(readonly_run_cypher_query, seeded_db, query):
+    """Writes are refused in read-only mode and leave the database unchanged."""
+    before = _db_state(seeded_db)
     response = readonly_run_cypher_query(query)
     assert response and "read-only" in response[0].get("error", "").lower(), response
+    assert _db_state(seeded_db) == before
 
 
 @pytest.mark.parametrize(
     "query",
     [
+        "MATCH (n:ReadOnlyTest) RETURN n.name AS name",
         "RETURN 'set' AS word",
+        "RETURN 'CALL do.when' AS text",
         "MATCH (n) WHERE n.name = 'please delete me' RETURN count(n) AS c",
+        "CALL pagerank.get() YIELD node, rank RETURN count(node) AS c",
         "SHOW INDEX INFO",
         "SHOW STORAGE INFO",
+        "DATA DIRECTORY LOCK STATUS",
         "// list indexes\nSHOW INDEX INFO",
         "PROFILE MATCH (n) RETURN count(n) AS c",
+        # A comment before EXPLAIN or PROFILE crashes some Memgraph versions unless it's stripped.
+        "/* x */ EXPLAIN MATCH (n) RETURN n",
+        "/* x */ PROFILE MATCH (n) RETURN count(n) AS c",
     ],
 )
-async def test_reads_allowed_in_readonly_mode(readonly_run_cypher_query, query):
-    """Reads run in read-only mode, including ones that mention a write keyword."""
+async def test_reads_allowed_in_readonly_mode(readonly_run_cypher_query, seeded_db, query):
+    """Reads run in read-only mode, including ones that mention a write keyword in a string."""
+    before = _db_state(seeded_db)
     response = readonly_run_cypher_query(query)
     assert not (response and "error" in response[0]), response
+    assert _db_state(seeded_db) == before
 
 
 @pytest.mark.asyncio

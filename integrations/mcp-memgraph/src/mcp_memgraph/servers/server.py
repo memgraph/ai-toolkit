@@ -54,17 +54,55 @@ mcp = FastMCP(
 # Read-only mode flag (from config)
 READ_ONLY_MODE = mcp_config.read_only
 
-# Memgraph enforces the READ access mode only inside a transaction, and some
-# queries can't run inside one. Of those, only SHOW queries (SHOW INDEX INFO,
-# SHOW STORAGE INFO, SHOW SCHEMA INFO, ...) and PROFILE of a read query are
-# allowed to run outside a transaction in read-only mode.
-_LEADING_COMMENTS = r"^\s*(?:(?://[^\n]*(?:\n|$)|/\*.*?\*/)\s*)*"
-_SHOW_QUERY = re.compile(_LEADING_COMMENTS + r"SHOW\b", re.IGNORECASE | re.DOTALL)
-_PROFILE_QUERY = re.compile(_LEADING_COMMENTS + r"PROFILE\b", re.IGNORECASE | re.DOTALL)
+# Read-only mode is best effort, in layers: a keyword check, a list of procedures
+# that can write although Memgraph flags them as reads, and a read transaction in
+# which Memgraph rejects the rest. Only a Memgraph user with read-only privileges
+# guarantees that nothing is written.
+
+# Memgraph ends a line comment at \r or \n.
+_LEADING_COMMENTS = re.compile(r"^(?:\s+|//[^\r\n]*|/\*.*?\*/)*", re.DOTALL)
+# String literals and comments, so a word inside them isn't read as a keyword.
+_STRINGS_AND_COMMENTS = re.compile(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"|//[^\r\n]*|/\*.*?\*/", re.DOTALL)
+
+# Write clauses, plus auth commands, which Memgraph runs in a read transaction too.
+_WRITE_KEYWORDS = re.compile(r"\b(?:CREATE|MERGE|DELETE|REMOVE|SET|DROP|GRANT|REVOKE|DENY)\b", re.IGNORECASE)
+
+# Procedures Memgraph flags as reads that run other queries in their own
+# transaction or connection, load or change code, or touch files or other systems.
+_UNSAFE_PROCEDURES = re.compile(
+    r"\bCALL\s+(?:"
+    r"(?:do|periodic|csv_utils|export_util|migrate|tgn|elastic_search_serialization)\s*\.\s*\w+"
+    r"|mg\s*\.\s*(?:load|load_all|create_module_file|update_module_file|delete_module_file"
+    r"|kafka_set_stream_offset)\b"
+    r"|meta\s*\.\s*(?:update|reset)\b"
+    r"|node_classification\s*\.\s*save_model\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Queries that can't run in a transaction and only read; in read-only mode
+# they're the only ones allowed to run outside one, with PROFILE of a read query.
+_READ_OUTSIDE_TRANSACTION = re.compile(r"(?:SHOW|DATA\s+DIRECTORY\s+LOCK\s+STATUS)\b", re.IGNORECASE)
+_PROFILE_QUERY = re.compile(r"PROFILE\b", re.IGNORECASE)
 
 
 class ReadOnlyViolationError(Exception):
     """The query would change data, schema or server state in read-only mode."""
+
+
+def strip_leading_comments(query: str) -> str:
+    """Drop comments before the first clause; Memgraph can crash on some of them."""
+    return _LEADING_COMMENTS.sub("", query, count=1)
+
+
+def is_write_query(query: str) -> bool:
+    """True if the query has a write keyword or calls a procedure that can write.
+
+    Ignores words inside string literals and comments. Backticked names count,
+    so a label named `SET` is refused too.
+    """
+    code = _STRINGS_AND_COMMENTS.sub(" ", query).replace("`", "")
+    return bool(_WRITE_KEYWORDS.search(code) or _UNSAFE_PROCEDURES.search(code))
 
 
 def _is_access_mode_error(error: Neo4jError) -> bool:
@@ -95,14 +133,18 @@ def _check_read_only(db: Memgraph, query: str) -> None:
 
 
 def read_only_query(db: Memgraph, query: str) -> list[dict[str, Any]]:
-    """Run *query* so that Memgraph itself rejects anything that writes.
+    """Run *query* in read-only mode, or raise ReadOnlyViolationError.
 
-    The query runs in a read transaction, where Memgraph refuses writes,
-    including write procedures. A query that can't run in a transaction runs
-    outside one only if it's a SHOW query or PROFILE of a read query; any other
-    (ANALYZE GRAPH, FREE MEMORY, STORAGE MODE, index changes, schema
-    procedures, ...) raises ReadOnlyViolationError.
+    Refuses queries that is_write_query flags. The rest run in a read
+    transaction, where Memgraph rejects writes and write procedures. A query
+    that can't run in a transaction runs outside one only if it's a SHOW query,
+    DATA DIRECTORY LOCK STATUS or PROFILE of a read query; any other (ANALYZE
+    GRAPH, FREE MEMORY, STORAGE MODE, index changes, schema procedures, ...) is
+    refused.
     """
+    query = strip_leading_comments(query)
+    if is_write_query(query):
+        raise ReadOnlyViolationError("write keyword or procedure that can write")
     try:
         records, _, _ = db.driver.execute_query(cast("Any", query), database_=db.database, routing_=RoutingControl.READ)
         return serialize_records(records)
@@ -113,7 +155,7 @@ def read_only_query(db: Memgraph, query: str) -> list[dict[str, Any]]:
             raise
         if _PROFILE_QUERY.match(query):
             _check_read_only(db, _PROFILE_QUERY.sub("", query, count=1))
-        elif not _SHOW_QUERY.match(query):
+        elif not _READ_OUTSIDE_TRANSACTION.match(query):
             raise ReadOnlyViolationError(e.message) from e
 
     with db.driver.session(database=db.database, default_access_mode=READ_ACCESS) as session:

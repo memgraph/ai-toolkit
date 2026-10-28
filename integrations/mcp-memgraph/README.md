@@ -45,7 +45,9 @@ RETURN collect(DISTINCT nx) AS nodes, relationships
 Each collected node and relationship comes back in the same typed form as above,
 so the result is a compact graph payload without repeating shared nodes per row.
 
-**Read-Only Mode:** By default, the server runs in read-only mode to prevent accidental data modifications. Queries run in a read transaction, so Memgraph itself rejects anything that writes, including write procedures. Queries that can't run in a transaction are allowed only for `SHOW ...` and `PROFILE` of a read query; others, such as `ANALYZE GRAPH`, `FREE MEMORY` or `STORAGE MODE`, are blocked. Blocked queries return an error. Set `MCP_READ_ONLY=false` to enable write operations.
+**Read-Only Mode:** By default, the server runs in read-only mode to prevent accidental data modifications. Blocked queries return an error. Set `MCP_READ_ONLY=false` to enable write operations.
+
+Read-only mode is a best-effort guard, not a security boundary. It refuses queries with a write keyword (outside strings and comments) and calls to procedures that can write although Memgraph flags them as reads (`do.*`, `periodic.*`, `mg.load*`, module files, file export). Everything else runs in a read transaction, where Memgraph rejects writes and write procedures. Queries that can't run in a transaction are allowed only for `SHOW ...`, `DATA DIRECTORY LOCK STATUS` and `PROFILE` of a read query. A custom query module flagged as read-only can still do anything its code does. To guarantee that nothing is written, connect as a Memgraph user with read-only privileges.
 
 Parameters:
 
