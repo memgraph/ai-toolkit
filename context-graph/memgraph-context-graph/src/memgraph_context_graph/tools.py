@@ -19,6 +19,10 @@ the tool is neither listed nor callable, nor is its session hint shown. The
 A tool may define ``session_context(config, payload) -> str | None`` to write
 its session-start text from the SessionStart payload (e.g. its ``cwd``) instead
 of the fixed ``session_hint``; if it raises, the fixed hint is used.
+
+A tool that writes its connector's graph sets ``writes_graph = True``, so the
+MCP server refuses it once a newer Context Graph has reshaped that graph
+(:mod:`memgraph_context_graph.graph_version`); every tool is checked as a reader.
 """
 
 from __future__ import annotations
@@ -98,6 +102,11 @@ def is_available(tool: Tool, config: HookConfig) -> bool:
     """Whether *tool* is on for *config*; tools without an ``available`` check always are."""
     available = getattr(tool, "available", None)
     return available is None or bool(available(config))
+
+
+def writes_graph(tool: Tool) -> bool:
+    """Whether *tool* writes its connector's graph; tools that don't say only read it."""
+    return bool(getattr(tool, "writes_graph", False))
 
 
 def session_hints(

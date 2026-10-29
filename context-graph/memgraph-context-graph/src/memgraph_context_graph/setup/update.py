@@ -111,12 +111,14 @@ def _refresh(agent: agents_mod.Agent, project_dirs: Sequence[Path], log: Callabl
 
 def _schema() -> Outcome:
     """Create the indexes and constraints a newer release added; each ``setup()`` skips what already exists."""
+    from memgraph_context_graph import graph_version
     from memgraph_context_graph.adapters._identity import resolve_memgraph_env
     from memgraph_context_graph.connectors import configured_connectors
     from memgraph_context_graph.hooks.runner import setup_connector_schemas
 
     try:
         memgraph_env = resolve_memgraph_env()
+        graph_version.setup_at(memgraph_env)
         setup_connector_schemas(configured_connectors(), memgraph_env=memgraph_env)
     except Exception as exc:  # the driver raises its own error types for an unreachable or refusing server
         return Outcome("Schema", "fail", f"{type(exc).__name__}: {exc}", fix=_schema_fix(exc))

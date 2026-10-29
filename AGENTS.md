@@ -47,6 +47,15 @@ node; only `sessions-graph` owns `(:User)` and `HAD_SESSION`. Create it through
 new session, and only `ensure` retries the uniqueness conflict. Each component
 therefore depends on `memgraph-context-graph`, not just its connector.
 
+**Graph epochs.** Every installed client checks the graph's per-component
+`(:ContextGraphSchema)` rules before it writes or reads
+(`memgraph_context_graph/graph_version.py`, "Graph Epoch" in its `CONTEXT.md`).
+That rule is frozen into every client ever shipped, so never change what those
+properties mean. A release that changes a component's shape so that an older
+client would write it wrong or misread it must raise that component's epoch in
+`graph_version.EPOCHS` and set `min_writer_epoch`/`min_reader_epoch` in the
+graph from its migration; a purely additive change raises nothing.
+
 Substantial design work in this family is tracked as GitHub issues labeled
 `wayfinder:map` (title `Map: ...`), broken into `wayfinder:grilling` /
 `wayfinder:research` / `wayfinder:prototype` / `wayfinder:task` child issues,

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
 import time
 from typing import TYPE_CHECKING, Any, NoReturn, TypedDict
 
-from memgraph_context_graph import capture_log
+from memgraph_context_graph import capture_log, graph_version
 from memgraph_context_graph.capture_policy import CapturePolicy, policy_from_config
 from memgraph_context_graph.connectors import (
     INSTALLABLE,
@@ -68,6 +69,11 @@ def create_link(
     Memgraph raises, since no connector could run. Without it each connector
     connects on its own, as library callers always have.
 
+    With *memgraph_env*, a connector whose part of the graph a newer Context
+    Graph has reshaped (:mod:`memgraph_context_graph.graph_version`) is not
+    added: it fails like one that can't be set up, with a
+    :class:`~memgraph_context_graph.graph_version.GraphTooNewError`.
+
     Args:
         connector_names: Connectors to enable, by distribution name.
         memgraph_env: Resolved Memgraph settings (``resolve_memgraph_env``).
@@ -87,8 +93,19 @@ def create_link(
 
     link = AgentLink(on_error=report if on_error is not None else None, policy=policy)
     shared = _hook_memgraph(memgraph_env) if names and memgraph_env is not None else None
+    rules = (
+        graph_version.check(
+            lambda: contextlib.nullcontext(shared),
+            url=memgraph_env["MEMGRAPH_URL"],
+            database=memgraph_env["MEMGRAPH_DATABASE"],
+        )
+        if shared is not None and memgraph_env is not None
+        else graph_version.Rules()
+    )
     for name in names:
         try:
+            if not rules.may_write(name):
+                raise rules.refuse_write(name)
             link.add_connector(_build_connector(name, memgraph_env, memgraph=shared))
         except Exception as exc:
             if on_error is None:
@@ -344,11 +361,17 @@ def session_start_text(connector_names: list[str], payload: dict[str, Any] | Non
     its index of the user's memory files, standing in for the harness's own
     memory it replaces (#484). Each runtime wraps the text in the shape its
     session-start hook output takes (``RuntimeSpec.session_context``).
+
+    While a newer Context Graph's graph refuses this client, a notice comes first
+    (:func:`~memgraph_context_graph.graph_version.configured_notice`), so the
+    model can tell the user to update.
     """
     from memgraph_context_graph.tools import session_hints
 
+    notice = graph_version.configured_notice()
+    lines = [notice] if notice else []
     try:
-        hints = session_hints(connector_names, payload=_with_cwd(payload or {}))
+        lines += session_hints(connector_names, payload=_with_cwd(payload or {}))
     except Exception as exc:  # A tool that fails to load must not fail the hook; the model just isn't told.
         capture_log.record_failure(
             "respond",
@@ -357,8 +380,7 @@ def session_start_text(connector_names: list[str], payload: dict[str, Any] | Non
             hook_event="SessionStart",
             session_id=_payload_session_id(payload or {}),
         )
-        return None
-    return "\n".join(hints) or None
+    return "\n".join(lines) or None
 
 
 def _with_cwd(payload: dict[str, Any]) -> dict[str, Any]:

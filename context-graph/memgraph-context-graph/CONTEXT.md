@@ -78,6 +78,10 @@ _Avoid_: MCP tool (the protocol it is served over, not the thing), Graph Connect
 `ConnectorSpec` (`connectors.py`): a graph component's name, its graph class, how to build its **Graph Connector** from **Hook Configuration**, and an optional `doctor` check. Published via the `memgraph_context_graph.connectors` entry-point group; the hook runner, schema setup and `doctor` find connectors only through it. The hub keeps just what it needs before a component is installed: each installable connector's requirement (`INSTALLABLE`) and the default set.
 _Avoid_: Component (the package), Graph Connector (the object a registration builds)
 
+**Graph Epoch**:
+The version of one component's shape in the graph, an integer that only a migration raises; every graph is at epoch 1 until one does. The graph states per component the oldest epoch that may write and read it, `(:ContextGraphSchema {component, epoch, min_writer_epoch, min_reader_epoch})`, and every client checks that before writing or reading (`graph_version.py`): a client older than the graph stops, never corrupts. No node means no constraint. Clients record themselves as `(:ContextGraphClient)`, so a migration can see who still writes an old shape. Not a package version: a release that leaves the graph's shape alone keeps the epoch.
+_Avoid_: schema version, package version, migration (raises an epoch; isn't one)
+
 ## Relationships
 
 - **Memgraph Context Graph** belongs to broader **Context Graph** family.
