@@ -20,7 +20,7 @@ from memgraph_context_graph.setup.agents import BY_RUNTIME
 
 
 class Files:
-    """An in-memory ``/memories`` tree with the two calls an import makes."""
+    """An in-memory ``/memories`` tree with the calls an import makes."""
 
     def __init__(self, existing=()):
         self.files: dict[str, str] = dict.fromkeys(existing, "")
@@ -29,6 +29,12 @@ class Files:
         if path not in self.files:
             raise FileNotFoundError(path)
         return self.files[path]
+
+    def read(self, path):
+        return self.files.get(path)
+
+    def versions(self, path):
+        return []
 
     def create(self, path, file_text):
         self.files[path] = file_text

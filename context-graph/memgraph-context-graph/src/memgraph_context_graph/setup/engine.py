@@ -201,9 +201,9 @@ def run(
     for runtime in choices.runtimes:
         done(_agent(agents_mod.BY_RUNTIME[runtime], choices, log))
     if choices.memory_backend:
-        for runtime in choices.runtimes:
-            if (outcome := _memory(runtime, choices.memory_backend)) is not None:
-                done(outcome)
+        switchable = [runtime for runtime in choices.runtimes if has_native_memory(runtime)]
+        for runtime in switchable:
+            done(_memory(runtime, choices.memory_backend, last=runtime == switchable[-1]))
     for outcome in verify(choices.runtimes):
         done(outcome)
     return outcomes
@@ -427,21 +427,29 @@ def _home_relative(path: Path) -> str:
         return str(path)
 
 
-def _memory(runtime: str, backend: str) -> Outcome | None:
+def _memory(runtime: str, backend: str, *, last: bool) -> Outcome:
+    """Switch *runtime*'s memory to *backend*.
+
+    Handing back to native copies from the graph only while ``memory.backend`` is still the graph's, and
+    that value is shared, so every runtime but the *last* is handed back without changing it.
+    """
     from memgraph_context_graph.adapters._identity import MEMORY_BACKEND_GRAPH
     from memgraph_context_graph.hooks.runtime_plugin import get_runtime_plugin
     from memgraph_context_graph.memory_backend import (
         MemoryBackendError,
-        native_memory_of,
+        hand_back_memory,
         use_graph_memory,
         use_native_memory,
     )
 
     plugin = get_runtime_plugin(runtime)
-    if native_memory_of(plugin) is None:
-        return None
     label = f"{agents_mod.BY_RUNTIME[runtime].label} memory"
-    switch = use_graph_memory if backend == MEMORY_BACKEND_GRAPH else use_native_memory
+    if backend == MEMORY_BACKEND_GRAPH:
+        switch = use_graph_memory
+    elif last:
+        switch = use_native_memory
+    else:
+        switch = hand_back_memory
     try:
         lines = switch(plugin)
     except MemoryBackendError as exc:
