@@ -284,6 +284,49 @@ def test_a_blackholed_memgraph_fails_inside_the_hook_timeout(monkeypatch, tmp_pa
     assert [line["stage"] for line in _lines(_capture_log_in_tmp)] == ["connect"]
 
 
+def test_a_hook_blocked_past_its_deadline_answers_and_logs_where(tmp_path):
+    """A query waiting on Memgraph's storage never raises, so the runtime killed the hook at its timeout, unlogged.
+
+    Run as its own process: the deadline ends the process, as it must to beat a hook thread that is still blocked.
+    """
+    log = tmp_path / "capture-failures.jsonl"
+    hook = textwrap.dedent(
+        f"""
+        import dataclasses, sys, threading
+        from pathlib import Path
+        from memgraph_context_graph import AgentLink, capture_log
+        from memgraph_context_graph.adapters.claude_code import PLUGIN
+        from memgraph_context_graph.hooks import runner
+
+        capture_log._path_override = Path({str(log)!r})
+        runner.create_link = lambda *args, **kwargs: AgentLink()
+
+        class BlockedAdapter:
+            def __init__(self, link, session_id=None):
+                pass
+
+            def handle_payload(self, payload):
+                threading.Event().wait()
+
+        sys.exit(runner.run_hook(dataclasses.replace(PLUGIN, adapter_class=BlockedAdapter), ["--deadline", "1"]))
+        """
+    )
+
+    start = time.monotonic()
+    done = subprocess.run(
+        [sys.executable, "-c", hook],
+        input='{"hook_event_name":"Stop","session_id":"s1"}',
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert time.monotonic() - start < 30
+    assert (done.returncode, done.stdout.strip()) == (0, '{"continue": true}')
+    (line,) = _lines(log)
+    assert (line["stage"], line["error_type"], line["session_id"]) == ("translate", "HookDeadline", "s1")
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
 def test_writer_cost_is_small(_capture_log_in_tmp):
     start = time.perf_counter()

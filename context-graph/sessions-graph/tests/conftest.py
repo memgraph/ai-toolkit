@@ -9,6 +9,7 @@ isn't reachable.
 from __future__ import annotations
 
 import contextlib
+import threading
 
 import pytest
 from sessions_graph import SessionsGraph
@@ -52,6 +53,36 @@ def link_user(memgraph, user_id, session_id):
         "MERGE (u:User {user_id: $u}) WITH u MATCH (s:Session {session_id: $s}) MERGE (u)-[:HAD_SESSION]->(s)",
         {"u": user_id, "s": session_id},
     )
+
+
+@pytest.fixture
+def busy_storage(memgraph):
+    """Hold another client's read transaction open, as a long-running query does, for ``with busy_storage(...)``.
+
+    Schema statements need the storage's unique access, so while it is held
+    they wait Memgraph's storage-access timeout (1 s by default) and fail with
+    ``TransientError``; ordinary reads and writes go ahead. Pass
+    ``release_after`` to commit it that many seconds in, else it is held to the
+    end of the block.
+    """
+
+    @contextlib.contextmanager
+    def hold(release_after: float | None = None):
+        with memgraph.driver.session() as session:
+            tx = session.begin_transaction()
+            tx.run("MATCH (n) RETURN count(n)").consume()
+            timer = threading.Timer(release_after, tx.commit) if release_after is not None else None
+            if timer is not None:
+                timer.start()
+            try:
+                yield
+            finally:
+                if timer is not None:
+                    timer.join()
+                if not tx.closed():
+                    tx.commit()
+
+    return hold
 
 
 @pytest.fixture

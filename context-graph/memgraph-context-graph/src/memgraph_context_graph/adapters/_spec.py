@@ -353,6 +353,10 @@ def write_hook_config(
         raise FileExistsError(f"Refusing to overwrite existing {spec.name} config: {config_path} (pass force=True)")
 
     command = hook_command or hook_command_for(spec.name, connectors, windows_shell=spec.config.windows_shell)
+    if hook_command is None and timeout != 30:
+        from memgraph_context_graph.hooks.runner import deadline_for
+
+        command = f"{command} --deadline {deadline_for(timeout):g}"
     hooks = build_hooks_config(spec, command, timeout=timeout)
     document: dict[str, Any]
     if config_path.exists() and spec.config.merge:

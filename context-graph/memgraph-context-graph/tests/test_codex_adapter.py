@@ -1,9 +1,10 @@
 """Tests for the OpenAI Codex hooks adapter."""
 
 import io
+import json
 
 from memgraph_context_graph import AgentLink
-from memgraph_context_graph.adapters.codex import PLUGIN, CodexHooksAdapter
+from memgraph_context_graph.adapters.codex import PLUGIN, CodexHooksAdapter, init
 from memgraph_context_graph.events import (
     Event,
     EventType,
@@ -212,3 +213,14 @@ def test_load_payload_requires_json_object():
     payload = load_payload(io.StringIO('{"hook_event_name": "Stop"}'))
 
     assert payload == {"hook_event_name": "Stop"}
+
+
+def test_init_with_a_shorter_timeout_gives_the_hook_a_deadline_inside_it(tmp_path):
+    init(tmp_path, ["actions-graph"], timeout=10)
+    init(tmp_path / "default", ["actions-graph"])
+
+    def stop_command(project):
+        return json.loads((project / ".codex" / "hooks.json").read_text())["hooks"]["Stop"][0]["hooks"][0]["command"]
+
+    assert stop_command(tmp_path).endswith("--connector actions-graph --deadline 5")
+    assert stop_command(tmp_path / "default").endswith("--connector actions-graph")
