@@ -104,15 +104,25 @@ class CodexMemory:
 
         Keys that didn't exist then are removed, which leaves Codex's own
         defaults (``features.memories`` is off by default), and so is a table
-        the switch created and left empty.
+        the switch created and left empty. Without a switch backup, settings
+        are preserved; the output explains how to enable memories if needed.
 
         Raises:
             MemoryBackendError: the config file or its backup isn't valid TOML.
         """
         path = _config_path(home)
         switch_backup = _switch_backup(path)
-        before = _read(switch_backup)
         config = _read(path)
+        if not switch_backup.exists():
+            lines = [f"Unchanged {path}: no memory-switch backup; kept the current memory settings."]
+            if any(_get(config, keys, None) is False for keys, _off in _SWITCHES):
+                lines.append(
+                    f"To turn Codex memories on, review {path} and set features.memories, memories.use_memories"
+                    " and memories.generate_memories to true. An older config.toml.context-graph.bak may predate"
+                    " the memory switch, so it wasn't restored automatically."
+                )
+            return lines
+        before = _read(switch_backup)
         for keys, _off in _SWITCHES:
             previous = _get(before, keys, None)
             if previous is None:
@@ -169,7 +179,7 @@ class CodexMemory:
         Codex still has them.
         """
         notes = _memory_root(home).joinpath(*_NOTES_DIR)
-        left = {path.read_text(encoding="utf-8") for path in notes.glob(f"*-{_NOTE_PREFIX}*.md")}
+        left = {_read_text(path) for path in notes.glob(f"*-{_NOTE_PREFIX}*.md")}
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
         report = ExportReport()
         for memory in source.files():

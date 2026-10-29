@@ -203,7 +203,10 @@ def run(
     if choices.memory_backend:
         switchable = [runtime for runtime in choices.runtimes if has_native_memory(runtime)]
         for runtime in switchable:
-            done(_memory(runtime, choices.memory_backend, last=runtime == switchable[-1]))
+            outcome = done(_memory(runtime, choices.memory_backend, last=runtime == switchable[-1]))
+            # Later hand-backs must still see the graph as the backend when this one is retried.
+            if outcome.status == "fail" and choices.memory_backend == "native":
+                break
     for outcome in verify(choices.runtimes):
         done(outcome)
     return outcomes
