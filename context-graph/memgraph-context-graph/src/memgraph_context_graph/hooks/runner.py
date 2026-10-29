@@ -10,7 +10,7 @@ import sys
 import time
 from typing import TYPE_CHECKING, Any, NoReturn, TypedDict
 
-from memgraph_context_graph import capture_log, graph_version
+from memgraph_context_graph import capture_log, graph_version, refused_events
 from memgraph_context_graph.capture_policy import CapturePolicy, policy_from_config
 from memgraph_context_graph.connectors import (
     INSTALLABLE,
@@ -72,7 +72,9 @@ def create_link(
     With *memgraph_env*, a connector whose part of the graph a newer Context
     Graph has reshaped (:mod:`memgraph_context_graph.graph_version`) is not
     added: it fails like one that can't be set up, with a
-    :class:`~memgraph_context_graph.graph_version.GraphTooNewError`.
+    :class:`~memgraph_context_graph.graph_version.GraphTooNewError`, and
+    its events are spooled for ``update`` to replay
+    (:mod:`memgraph_context_graph.refused_events`).
 
     Args:
         connector_names: Connectors to enable, by distribution name.
@@ -102,15 +104,19 @@ def create_link(
         if shared is not None and memgraph_env is not None
         else graph_version.Rules()
     )
+    refused: list[str] = []
     for name in names:
         try:
             if not rules.may_write(name):
+                refused.append(name)
                 raise rules.refuse_write(name)
             link.add_connector(_build_connector(name, memgraph_env, memgraph=shared))
         except Exception as exc:
             if on_error is None:
                 raise
             on_error(name, None, exc)
+    if refused:
+        link.add_connector(refused_events.Spool(refused))
     return link
 
 

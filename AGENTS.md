@@ -54,7 +54,12 @@ That rule is frozen into every client ever shipped, so never change what those
 properties mean. A release that changes a component's shape so that an older
 client would write it wrong or misread it must raise that component's epoch in
 `graph_version.EPOCHS` and set `min_writer_epoch`/`min_reader_epoch` in the
-graph from its migration; a purely additive change raises nothing.
+graph from its migration; a purely additive change raises nothing. Two more
+records are read by releases other than the one that wrote them: the
+refused-event spool's line format (`refused_events.FORMAT_VERSION`, keep a
+reader for every version) and `Session.captured_by`, set when a session is
+created, which tells a migration that an install from before epochs is still
+capturing.
 
 Substantial design work in this family is tracked as GitHub issues labeled
 `wayfinder:map` (title `Map: ...`), broken into `wayfinder:grilling` /

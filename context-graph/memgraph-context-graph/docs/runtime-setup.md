@@ -78,7 +78,9 @@ Running agent sessions keep the hooks they loaded: restart them. Outside the uv 
 package step only warns, and you upgrade it yourself first.
 Once a newer Context Graph has reshaped your graph, an older install stops writing (and, if needed, reading) the
 parts it no longer knows instead of corrupting them: the session-start context, the capture-failure log and
-`doctor` say so, and `update` brings it level.
+`doctor` say so, and `update` brings it level. What the agents did meanwhile isn't lost: it is kept, redacted
+like any capture, in `refused-events.jsonl` beside the capture-failure log (readable only by you, at most 64 MB),
+and `update` adds it to the graph with its original times.
 
 **Identity and connection.** setup writes `~/.config/context-graph/config.toml`; hooks read their configuration from that file at runtime (see [Configuration](configuration.md) — env vars are **not** read at hook time). To change your identity later:
 

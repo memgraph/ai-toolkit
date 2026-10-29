@@ -96,9 +96,11 @@ class Rules:
         if not writes and not reads:
             return None
         paused = ", ".join(dict.fromkeys(writes + reads))
+        # Refused writes are spooled for replay (refused_events); refused reads have nothing to keep.
+        kept = " What this session does is kept on this machine and added after the update." if writes else ""
         return (
             f"Context Graph is paused for {paused}: a newer Context Graph upgraded this graph, and the "
-            f"version installed here can't safely use it. Ask the user to run `{UPDATE_COMMAND}`."
+            f"version installed here can't safely use it.{kept} Ask the user to run `{UPDATE_COMMAND}`."
         )
 
     def _newer(self, required: Mapping[str, int], component: str) -> list[str]:
@@ -123,10 +125,7 @@ def setup(db: Any) -> None:
 
 def setup_at(memgraph_env: dict[str, str]) -> None:
     """:func:`setup` on the graph a resolved Memgraph environment (``resolve_memgraph_env``) names."""
-    from memgraph_context_graph.hooks.runner import memgraph_kwargs
-    from memgraph_toolbox.api.memgraph import Memgraph
-
-    with contextlib.closing(Memgraph(**memgraph_kwargs(memgraph_env))) as db:
+    with _connect(memgraph_env) as db:
         setup(db)
 
 
@@ -136,6 +135,7 @@ def check(
     url: str,
     database: str = "",
     fresh: bool = False,
+    strict: bool = False,
     now: datetime | None = None,
 ) -> Rules:
     """The graph's rules for this client, from the cache while it holds, else from the graph.
@@ -145,10 +145,11 @@ def check(
         url: The graph's Bolt URL; with *database*, what the cache keys on.
         database: The Memgraph database, empty for the default one.
         fresh: Ask the graph even while the cache holds.
+        strict: Raise when the graph can't be asked, instead of allowing everything.
         now: The current time, for tests.
 
     Returns:
-        The rules; no rules (everything allowed) when the graph can't be asked.
+        The rules; no rules (everything allowed) when the graph can't be asked and not *strict*.
     """
     now = now or datetime.now(timezone.utc)
     state = _load_state()
@@ -163,6 +164,8 @@ def check(
             with contextlib.suppress(Exception):
                 _record_client(db, state["client_id"], now)
     except Exception:
+        if strict:
+            raise
         return Rules()
     state["graphs"][key] = {"checked_at": now.isoformat(), "rules": _rules_to(rules)}
     _save_state(state)
@@ -176,21 +179,32 @@ def cached_rules(url: str, database: str = "") -> Rules:
 
 
 def check_configured(*, fresh: bool = False) -> Rules:
-    """:func:`check` for the graph the config file names, connecting only when the cache doesn't hold."""
+    """:func:`check` for the graph the config file names; no rules when the config can't name one."""
     from memgraph_context_graph.adapters._identity import resolve_memgraph_env
-    from memgraph_context_graph.hooks.runner import memgraph_kwargs
-    from memgraph_toolbox.api.memgraph import Memgraph
 
     try:
         env = resolve_memgraph_env()
     except Exception:
         return Rules()
+    return check_at(env, fresh=fresh)
+
+
+def check_at(memgraph_env: dict[str, str], *, fresh: bool = False, strict: bool = False) -> Rules:
+    """:func:`check` for the graph a resolved Memgraph environment (``resolve_memgraph_env``) names."""
     return check(
-        lambda: contextlib.closing(Memgraph(**memgraph_kwargs(env))),
-        url=env["MEMGRAPH_URL"],
-        database=env["MEMGRAPH_DATABASE"],
+        lambda: _connect(memgraph_env),
+        url=memgraph_env["MEMGRAPH_URL"],
+        database=memgraph_env["MEMGRAPH_DATABASE"],
         fresh=fresh,
+        strict=strict,
     )
+
+
+def _connect(memgraph_env: dict[str, str]) -> AbstractContextManager[Any]:
+    from memgraph_context_graph.hooks.runner import memgraph_kwargs
+    from memgraph_toolbox.api.memgraph import Memgraph
+
+    return contextlib.closing(Memgraph(**memgraph_kwargs(memgraph_env)))
 
 
 def configured_notice() -> str | None:

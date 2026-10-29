@@ -75,7 +75,7 @@ def _installed_version() -> str | None:
 def run(
     runtimes: Sequence[str], project_dirs: Sequence[Path], log: Callable[[str], None], report: Callable[[Outcome], None]
 ) -> list[Outcome]:
-    """Refresh each of *runtimes*, then the graph's schema, then check; one failing doesn't stop the rest."""
+    """Refresh each of *runtimes*, the graph's schema and kept events, then check; one failing doesn't stop the rest."""
     outcomes: list[Outcome] = []
 
     def done(outcome: Outcome) -> None:
@@ -85,6 +85,8 @@ def run(
     for runtime in runtimes:
         done(_refresh(agents_mod.BY_RUNTIME[runtime], project_dirs, log))
     done(_schema())
+    if (replayed := replay_kept()) is not None:
+        done(replayed)
     for outcome in engine.verify(runtimes):
         done(outcome)
     return outcomes
@@ -123,6 +125,25 @@ def _schema() -> Outcome:
     except Exception as exc:  # the driver raises its own error types for an unreachable or refusing server
         return Outcome("Schema", "fail", f"{type(exc).__name__}: {exc}", fix=_schema_fix(exc))
     return Outcome("Schema", "ok", f"up to date on {memgraph_env['MEMGRAPH_URL']}")
+
+
+def replay_kept() -> Outcome | None:
+    """Add what hooks kept while the graph refused them (``refused_events``); None when nothing was kept."""
+    from memgraph_context_graph import refused_events
+    from memgraph_context_graph.adapters._identity import resolve_memgraph_env
+
+    if not refused_events.pending():
+        return None
+    try:
+        result = refused_events.replay(resolve_memgraph_env())
+    except Exception as exc:  # the driver raises its own error types for an unreachable or refusing server
+        return Outcome("Kept events", "fail", f"{type(exc).__name__}: {exc}", fix="memgraph-context-graph update")
+    summary = f"added {result.replayed}"
+    if result.waiting:
+        summary += f"; {result.waiting} still wait for a newer Context Graph"
+    if result.dropped:
+        summary += f"; dropped {result.dropped} (see the capture-failure log)"
+    return Outcome("Kept events", "warn" if result.waiting or result.dropped else "ok", summary)
 
 
 def _schema_fix(exc: Exception) -> str:
