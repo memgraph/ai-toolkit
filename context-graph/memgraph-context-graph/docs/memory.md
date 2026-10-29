@@ -134,9 +134,21 @@ the reverse of the import, so it picks up where the graph left off:
 Then it removes the setting. The copy runs only while the backend is
 `context-graph`, so handing back twice never overwrites newer files. If
 Memgraph is down, `setup` switches nothing; `uninstall` turns the memory back
-on anyway, with what it held before, and warns. Codex, Copilot CLI and Grok
-Build get nothing copied back: their memory is generated or hosted by the
-agent itself.
+on anyway, with what it held before, and warns. Copilot CLI and Grok Build
+get nothing copied back: their memory is hosted by the agent, or kept in
+folders only it can name.
+
+Codex rewrites its own memory files at each consolidation, so handing back
+leaves each graph memory as an ad-hoc note in
+`~/.codex/memories/extensions/ad_hoc/notes/` (`memories_v2/` under
+`[memories] version = "v2"`), the one place Codex takes outside writes. Its
+next consolidation folds them into `memory_summary.md` and `MEMORY.md`, in its
+own words, so they aren't copied exactly. That runs only while
+`features.memories` and `memories.generate_memories` are on; the output says
+when they weren't before the switch. A note names its project when the memory
+had one, since Codex keeps one store for all projects. Files the import took
+from Codex and the graph never changed aren't noted, and a note already left
+isn't left again.
 
 `doctor` fails when the backend is `context-graph` but Claude Code's own memory
 is still on, including when the project's `.claude/settings.json` or

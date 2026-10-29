@@ -46,10 +46,12 @@ class ImportReport:
 
 @dataclass
 class ExportReport:
-    """What an export wrote into the harness's store, and which graph paths it had no place for."""
+    """What an export wrote into the harness's store, which graph paths it had no place for, and what to tell."""
 
     exported: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
+    #: Lines for the user about how the harness takes the exported files in, when that isn't immediate.
+    notes: list[str] = field(default_factory=list)
 
 
 class StoredMemory(Protocol):
@@ -174,7 +176,7 @@ def export_graph_memory(native: NativeMemory, name: str, *, home: Path) -> list[
     lines = [f"Copied back {path}" for path in report.exported]
     if report.skipped:
         lines.append(f"Kept in Memgraph only, with no place in {name}'s memory: {', '.join(report.skipped)}")
-    return lines
+    return lines + report.notes
 
 
 def keep_in_graph(source: MemorySource) -> ExportReport:
