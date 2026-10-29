@@ -21,6 +21,8 @@ on:
       - "context-graph/spaces/**"
       - "context-graph/eval/**"
       - "context-graph/viewer/**"
+      - "uv.lock"
+      - "pyproject.toml"
       - ".github/workflows/tests.yaml"
   pull_request:
     paths:
@@ -40,6 +42,8 @@ on:
       - "context-graph/spaces/**"
       - "context-graph/eval/**"
       - "context-graph/viewer/**"
+      - "uv.lock"
+      - "pyproject.toml"
       - ".github/workflows/tests.yaml"
 
 # A new push to a PR supersedes the run before it; main keeps every run.
@@ -76,41 +80,59 @@ jobs:
           filters: |
             memgraph-toolbox:
               - 'memgraph-toolbox/**'
+              - 'uv.lock'
+              - 'pyproject.toml'
               - '.github/workflows/tests.yaml'
             hygm:
               - 'hygm/**'
+              - 'uv.lock'
+              - 'pyproject.toml'
               - '.github/workflows/tests.yaml'
             mcp-memgraph:
               - 'integrations/mcp-memgraph/**'
               - 'memgraph-toolbox/**'
+              - 'uv.lock'
+              - 'pyproject.toml'
               - '.github/workflows/tests.yaml'
             langchain-memgraph:
               - 'integrations/langchain-memgraph/**'
               - 'memgraph-toolbox/**'
+              - 'uv.lock'
+              - 'pyproject.toml'
               - '.github/workflows/tests.yaml'
             lightrag-memgraph:
               - 'integrations/lightrag-memgraph/**'
               - 'memgraph-toolbox/**'
+              - 'uv.lock'
+              - 'pyproject.toml'
               - '.github/workflows/tests.yaml'
             unstructured2graph:
               - 'unstructured2graph/**'
               - 'hygm/**'
               - 'memgraph-toolbox/**'
+              - 'uv.lock'
+              - 'pyproject.toml'
               - '.github/workflows/tests.yaml'
             memgraph-context-graph:
               - 'context-graph/memgraph-context-graph/**'
               - 'scripts/dev-memgraph.sh'
               - 'context-graph/scripts/install.sh'
+              - 'uv.lock'
+              - 'pyproject.toml'
               - '.github/workflows/tests.yaml'
             skills-graph:
               - 'context-graph/skills-graph/**'
               - 'context-graph/memgraph-context-graph/**'
               - 'memgraph-toolbox/**'
+              - 'uv.lock'
+              - 'pyproject.toml'
               - '.github/workflows/tests.yaml'
             actions-graph:
               - 'context-graph/actions-graph/**'
               - 'context-graph/memgraph-context-graph/**'
               - 'memgraph-toolbox/**'
+              - 'uv.lock'
+              - 'pyproject.toml'
               - '.github/workflows/tests.yaml'
             sessions-graph:
               - 'context-graph/sessions-graph/**'
@@ -119,6 +141,8 @@ jobs:
               - 'unstructured2graph/**'
               - 'hygm/**'
               - 'memgraph-toolbox/**'
+              - 'uv.lock'
+              - 'pyproject.toml'
               - '.github/workflows/tests.yaml'
             resources-graph:
               - 'context-graph/resources-graph/**'
@@ -126,6 +150,8 @@ jobs:
               - 'context-graph/actions-graph/**'
               - 'context-graph/memgraph-context-graph/**'
               - 'memgraph-toolbox/**'
+              - 'uv.lock'
+              - 'pyproject.toml'
               - '.github/workflows/tests.yaml'
             context-graph-spaces:
               - 'context-graph/spaces/**'
@@ -134,6 +160,8 @@ jobs:
               - 'unstructured2graph/**'
               - 'memgraph-toolbox/**'
               - 'scripts/dev-memgraph.sh'
+              - 'uv.lock'
+              - 'pyproject.toml'
               - '.github/workflows/tests.yaml'
             context-graph-viewer:
               - 'context-graph/viewer/**'
@@ -142,6 +170,8 @@ jobs:
               - 'context-graph/resources-graph/**'
               - 'context-graph/memgraph-context-graph/**'
               - 'memgraph-toolbox/**'
+              - 'uv.lock'
+              - 'pyproject.toml'
               - '.github/workflows/tests.yaml'
             context-graph-eval:
               - 'context-graph/eval/**'
@@ -150,6 +180,8 @@ jobs:
               - 'unstructured2graph/**'
               - 'hygm/**'
               - 'memgraph-toolbox/**'
+              - 'uv.lock'
+              - 'pyproject.toml'
               - '.github/workflows/tests.yaml'
 
   test-memgraph-toolbox:
