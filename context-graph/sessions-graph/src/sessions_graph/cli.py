@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import os
 import sys
+import time
 from typing import TYPE_CHECKING, cast
 
 from sessions_graph.extraction import ExtractionConfig
@@ -119,7 +120,9 @@ def _embed(argv: list[str]) -> int:
 
     model = parsed.model or _configured_embedding_model()
     with _logged_before_session("embed", parsed.session):
-        graph = _setup_graph()
+        # No schema setup: embedding writes vectors onto nodes that exist and needs no index, and every turn
+        # spawns this, so its DDL would contend for the storage's unique access with every other client.
+        graph = _graph()
     session_ids = (
         [parsed.session] if parsed.session else graph.reconciler.pending_embeddings(model=model, limit=parsed.limit)
     )
@@ -247,10 +250,32 @@ def _no_user() -> int:
     return 2
 
 
-def _setup_graph() -> SessionsGraph:
+def _graph() -> SessionsGraph:
     from sessions_graph import SessionsGraph
 
-    graph = SessionsGraph(extraction=_configured_extraction())
+    return SessionsGraph(extraction=_configured_extraction())
+
+
+#: Seconds between attempts at the schema while another client holds the storage's unique access.
+_SETUP_BACKOFF = (0.5, 1.0, 2.0, 4.0)
+
+
+def _setup_graph() -> SessionsGraph:
+    """The graph with its schema set up, retrying while Memgraph reports the storage busy.
+
+    Schema statements need the storage's unique access, and run auto-committed,
+    which the driver never retries; another client's DDL or a snapshot makes
+    them fail with ``TransientError`` until it is done.
+    """
+    from neo4j.exceptions import TransientError
+
+    graph = _graph()
+    for wait in _SETUP_BACKOFF:
+        try:
+            graph.setup()
+            return graph
+        except TransientError:
+            time.sleep(wait)
     graph.setup()
     return graph
 

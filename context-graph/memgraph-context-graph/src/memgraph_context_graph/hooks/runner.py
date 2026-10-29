@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
 from typing import TYPE_CHECKING, Any, NoReturn, TypedDict
 
@@ -35,6 +36,16 @@ if TYPE_CHECKING:
 #: (30 s in our plugins): the driver's own 30 s default let a blackholed host outlast the hook,
 #: so the runtime killed it before the failure could be logged (#378).
 HOOK_CONNECT_TIMEOUT = 5.0
+
+#: Seconds a hook runs before it logs where it was stuck, answers the runtime, and exits, for the 30 s hook
+#: timeout our plugins declare. A query waiting on Memgraph's storage access never raises, so without a deadline
+#: of its own the hook is killed at the runtime's timeout and nothing is logged.
+HOOK_DEADLINE = 25.0
+
+
+def deadline_for(timeout: float) -> float:
+    """The ``--deadline`` for a hook the runtime kills after *timeout* seconds: enough margin to log and answer."""
+    return max(timeout - 5.0, timeout / 2)
 
 
 def load_payload(stream: Any | None = None) -> dict[str, Any]:
@@ -161,6 +172,13 @@ def _hook_parser(plugin: RuntimeCLIPlugin) -> argparse.ArgumentParser:
     parser.add_argument("--memgraph-password", default=None, help="Memgraph password. Overrides config file value.")
     parser.add_argument("--memgraph-database", default=None, help="Memgraph database. Overrides config file value.")
     parser.add_argument(
+        "--deadline",
+        type=float,
+        default=HOOK_DEADLINE,
+        help=f"Seconds before the hook gives up, logs why, and answers the runtime (default: {HOOK_DEADLINE:g}). "
+        "Keep it under the runtime's hook timeout.",
+    )
+    parser.add_argument(
         "--strict",
         action="store_true",
         help="Return a non-zero status if the hook payload cannot be recorded.",
@@ -198,6 +216,54 @@ class _FailureReport:
             self.record("emit", exc, connector=name, event_type=event.event_type.value, session_id=event.session_id)
 
 
+class _Deadline:
+    """Answers the runtime and ends the process once a hook has run too long, logging the stage it was stuck in.
+
+    Every response goes through :meth:`respond`, so the runtime reads one
+    answer whichever of the hook and the deadline gets there first.
+    """
+
+    def __init__(self, plugin: RuntimeCLIPlugin, report: _FailureReport) -> None:
+        self._plugin = plugin
+        self._report = report
+        self._lock = threading.Lock()
+        self._responded = False
+        self._timer: threading.Timer | None = None
+
+    def start(self, seconds: float) -> None:
+        self._timer = threading.Timer(seconds, self._expire, args=(seconds,))
+        self._timer.daemon = True
+        self._timer.start()
+
+    def cancel(self) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
+
+    def respond(self, response: dict[str, Any]) -> None:
+        with self._lock:
+            if self._responded:
+                return
+            self._responded = True
+            if response:
+                print(json.dumps(response))
+
+    def _expire(self, seconds: float) -> None:
+        # Never released once answering here: the hook's own thread may still be blocked and must not answer too.
+        self._lock.acquire()
+        if self._responded:
+            self._lock.release()
+            return
+        self._report.record(
+            self._report.stage, error_type="HookDeadline", error=f"hook still running after {seconds:g} s"
+        )
+        # The plain response: the session-start text would query the graph that is holding the hook up.
+        response = self._plugin.response_for_payload(self._report.payload) or {}
+        if response:
+            print(json.dumps(response))
+        sys.stdout.flush()
+        os._exit(0)
+
+
 def _text(value: Any) -> str | None:
     return value if isinstance(value, str) else None
 
@@ -216,14 +282,21 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
     normal response, and the exit status is 0. ``--strict`` (or the
     ``_STRICT`` env flag) re-raises after logging, for developers; a connector
     failure then raises :class:`ConnectorFailuresError` once every connector has run.
+
+    A hook that blocks, on a query waiting for Memgraph's storage access, never
+    raises: at ``--deadline`` it logs a ``HookDeadline`` failure at the stage it
+    was stuck in, prints the runtime's plain response, and exits 0 itself,
+    before the runtime's own timeout would kill it unlogged.
     """
     report = _FailureReport(plugin.name)
+    deadline = _Deadline(plugin, report)
     strict = os.environ.get(f"{_env_prefix(plugin.name)}_STRICT") == "1"
     payload: dict[str, Any] = {}
     connector_names: list[str] = []
     try:
         args = _hook_parser(plugin).parse_args(argv)
         strict = strict or args.strict
+        deadline.start(args.deadline)
 
         from memgraph_context_graph.adapters._identity import load_config, resolve_memgraph_env
 
@@ -245,7 +318,7 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
         if problems := [*load_config().problems, *policy_problems]:
             report.record("config", level="warning", error_type="MalformedConfig", error="; ".join(problems))
         if policy.excludes_project(_with_cwd(payload)["cwd"]):
-            _print_response(plugin, payload, connector_names)
+            deadline.respond(_response(plugin, payload, connector_names))
             return 0
 
         report.stage = "setup"
@@ -258,7 +331,9 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
         adapter = plugin.adapter_class(link, session_id=args.session_id)
         adapter.handle_payload(payload)
         report.stage = "respond"
-        _print_response(plugin, payload, connector_names, before_tool=_context_before_tool(link, tool_starts.events))
+        deadline.respond(
+            _response(plugin, payload, connector_names, before_tool=_context_before_tool(link, tool_starts.events))
+        )
     except Exception as exc:
         if report.stage in {"args", "config"}:
             # Failed before stdin was read: read it now, so the runtime still gets the response its event expects
@@ -269,9 +344,11 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
         report.record(report.stage, exc, error_type="HookArgumentError" if report.stage == "args" else None)
         if strict:
             raise
-        _print_response(plugin, payload, connector_names)
+        deadline.respond(_response(plugin, payload, connector_names))
         _debug_log(plugin.name, f"memgraph-context-graph {plugin.name} hook skipped: {exc}")
         return 0
+    finally:
+        deadline.cancel()
     if strict and report.connector_failures:
         raise ConnectorFailuresError(report.connector_failures)
     return 0
@@ -293,9 +370,9 @@ def _payload_session_id(payload: dict[str, Any]) -> str | None:
     return None
 
 
-def _print_response(
+def _response(
     plugin: RuntimeCLIPlugin, payload: dict[str, Any], connector_names: list[str], *, before_tool: Sequence[str] = ()
-) -> None:
+) -> dict[str, Any]:
     response = plugin.response_for_payload(payload) or {}
     render_session = getattr(plugin, "session_context_response", None)
     if render_session is not None:
@@ -303,8 +380,7 @@ def _print_response(
     render = getattr(plugin, "context_before_tool_response", None)
     if before_tool and render is not None:
         response.update(render("\n".join(before_tool)) or {})
-    if response:
-        print(json.dumps(response))
+    return response
 
 
 class _ToolStarts(GraphConnector):
