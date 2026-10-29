@@ -406,6 +406,24 @@ class MemoryStore:
         )
         return [MemoryFile(row["path"], row["content"], row["updated_at"] or "") for row in rows]
 
+    def written_in(self, path: str) -> list[str]:
+        """The project keys of the sessions that wrote the file at *path*, sorted; empty when none recorded one.
+
+        Raises:
+            MemoryValidationError: *path* is not a valid memory path.
+        """
+        rows = self._db.query(
+            """
+            MATCH (:User {user_id: $user_id})-[:HAS_MEMORY]->(m:Memory {path: $path})
+            MATCH (s:Session)-[:PRODUCED_MEMORY]->(m)
+            WHERE s.project_key IS NOT NULL
+            RETURN DISTINCT s.project_key AS project_key
+            ORDER BY project_key
+            """,
+            params={"user_id": self.user_id, "path": normalize_memory_path(path)},
+        )
+        return [row["project_key"] for row in rows]
+
     # ------------------------------------------------------------------
     # Graph access
     # ------------------------------------------------------------------
