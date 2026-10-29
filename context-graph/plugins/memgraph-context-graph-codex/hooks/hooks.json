@@ -74,7 +74,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run codex",
+            "command": "memgraph-context-graph hook run codex --deadline 1.5",
             "timeout": 3
           }
         ]
