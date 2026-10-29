@@ -67,10 +67,10 @@ if (-not (Test-Command 'uv')) {
 # The viewer is installed here, not left to setup: setup would add it by running `uv tool install` from
 # inside the tool's own environment, and Windows won't let uv replace the running memgraph-context-graph.exe.
 $Packages = @(
-    'tool', 'install', '--quiet', '--python', '3.12', 'memgraph-context-graph[mcp]>=0.12.1',
+    'tool', 'install', '--quiet', '--python', '3.12', 'memgraph-context-graph[mcp]>=0.12.2',
     '--with', 'skills-graph[memgraph-context-graph]>=0.4.0',
     '--with', 'actions-graph[memgraph-context-graph]>=0.7.1',
-    '--with', 'sessions-graph[memgraph-context-graph]>=0.12.1'
+    '--with', 'sessions-graph[memgraph-context-graph]>=0.12.2'
 )
 if ($SetupArgs -notcontains '--no-viewer') { $Packages += @('--with', 'context-graph-viewer>=0.1.1') }
 Write-Host "Installing memgraph-context-graph with skills-graph, actions-graph and sessions-graph"
