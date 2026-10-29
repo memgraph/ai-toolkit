@@ -93,7 +93,7 @@ def test_wiring_refuses_the_home_directory(setup_home):
 
 
 @pytest.mark.parametrize("runtime, binary", [("claude-code", "claude"), ("codex", "codex")])
-def test_plugin_wiring_registers_installs_and_comes_off_again(fake_agents, runtime, binary):
+def test_plugin_wiring_registers_installs_and_comes_off_again(fake_agents, setup_home, runtime, binary):
     agent = BY_RUNTIME[runtime]
     lines, log = _logged()
 

@@ -111,8 +111,13 @@ its global store, with three differences:
   file is first copied to `config.toml.context-graph-memory.bak`, apart from
   the backup setup's own writes leave. Handing memory back restores those keys
   from it, drops a `[memories]` table the switch created, and deletes the
-  backup. If the user's own `[mcp_servers.context-graph]` narrows tools with
-  `enabled_tools`, `memory` is added there.
+  backup. Repeating the hand-back preserves the restored settings. If the
+  switch backup is missing, including on older installs, current settings stay
+  unchanged. The general `config.toml.context-graph.bak` may predate the switch
+  and is never used to guess the prior settings; the output explains how to
+  turn Codex memories on explicitly when needed. If the user's own
+  `[mcp_servers.context-graph]` narrows tools with `enabled_tools`, `memory` is
+  added there.
 - **Compaction.** The Codex plugin's `SessionStart` hook also fires after
   compaction (`compact`), so the memory index comes back once the context is
   summarized.
@@ -161,7 +166,9 @@ isn't left again.
 
 The backend is one setting for every agent, and the copy runs only while it
 is `context-graph`. So `setup codex claude-code --memory-backend native` hands
-each named agent back first and changes the setting last. An agent left out
+each named agent back first and changes the setting last. Setup stops handing
+back agents at the first failure and keeps the graph backend, so retrying the
+command can still export their memories. An agent left out
 of that command gets nothing copied back once the setting is `native`, so name
 every agent that uses the graph's memory.
 

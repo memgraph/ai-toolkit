@@ -140,9 +140,12 @@ def test_handing_memory_back_leaves_the_graphs_memories_as_notes_codex_consolida
     assert any("folds them into its memory at its next consolidation" in line for line in lines)
 
 
-def test_handing_memory_back_twice_never_leaves_the_same_note_twice(home, graph):
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_handing_memory_back_twice_never_leaves_the_same_note_twice(home, graph, newline):
     use_graph_memory(PLUGIN, home=home)
-    graph.memory_store("alice").create("/memories/user/role.md", "Works on Memgraph.\n")
+    graph.memory_store("alice").create(
+        "/memories/user/role.md", newline.join(["---", "description: My role", "---", "Works on Memgraph.", ""])
+    )
     use_native_memory(PLUGIN, home=home)
 
     use_graph_memory(PLUGIN, home=home)

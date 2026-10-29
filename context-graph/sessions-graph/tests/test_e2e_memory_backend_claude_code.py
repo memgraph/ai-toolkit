@@ -317,3 +317,29 @@ def test_setup_hands_every_named_agent_back_before_the_shared_backend_changes(ho
     assert native.read_text().endswith("Map #484.\n")
     assert _settings(home) == {"theme": "dark"}
     assert _identity.load_config().memory_backend == "native"
+
+
+@pytest.mark.parametrize("runtimes", [("codex", "claude-code"), ("claude-code", "codex")])
+def test_a_failed_hand_back_keeps_the_graph_backend_until_retry(home, claude_with_plugin, monkeypatch, runtimes):
+    from memgraph_context_graph.adapters.codex import PLUGIN as CODEX_PLUGIN
+
+    monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
+    use_graph_memory(PLUGIN, home=home)
+    use_graph_memory(CODEX_PLUGIN, home=home)
+    backup = home / ".codex" / "config.toml.context-graph-memory.bak"
+    original = backup.read_bytes()
+    backup.write_text("[broken")
+    native = _memory_dir(home, "ai-toolkit") / "project_map.md"
+    native.unlink()
+    command = ["setup", *runtimes, "--memory-backend", "native", "--no-tui", "--no-viewer"]
+
+    top_level_main(command)
+
+    assert _identity.load_config().graph_memory
+    backup.write_bytes(original)
+
+    top_level_main(command)
+
+    assert native.read_text().endswith("Map #484.\n")
+    assert _settings(home) == {"theme": "dark"}
+    assert _identity.load_config().memory_backend == "native"
