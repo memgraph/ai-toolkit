@@ -6,7 +6,7 @@ import sys
 from typing import cast
 
 try:
-    from litellm import acompletion, experimental_mcp_client
+    from litellm import ModelResponse, acompletion, experimental_mcp_client
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 except ImportError as e:
@@ -69,10 +69,13 @@ async def prompt_with_tools(
         logger.info(f"{len(tools)} MCP tools loaded")
 
         messages = [*tool_selection_system_messages, {"role": "user", "content": prompt}]
-        resp = await acompletion(
-            model=tool_selection_model_name,
-            messages=messages,
-            tools=tools,
+        resp = cast(
+            "ModelResponse",
+            await acompletion(
+                model=tool_selection_model_name,
+                messages=messages,
+                tools=tools,
+            ),
         )
         msg = resp["choices"][0]["message"]
         tool_calls = msg.get("tool_calls", [])
@@ -147,9 +150,12 @@ async def prompt_with_tools(
                     )
 
             messages = messages + response_system_messages
-            final_resp = await acompletion(
-                model=response_model_name,
-                messages=messages,
+            final_resp = cast(
+                "ModelResponse",
+                await acompletion(
+                    model=response_model_name,
+                    messages=messages,
+                ),
             )
             return final_resp["choices"][0]["message"].content
 
