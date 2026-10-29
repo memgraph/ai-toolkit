@@ -27,10 +27,10 @@ fi
 # --python: without it uv takes the first Python it finds, and on a Mac that is often Apple's 3.9, which
 # the packages refuse; naming a version makes uv download it when it isn't there.
 echo "Installing memgraph-context-graph with skills-graph, actions-graph and sessions-graph"
-uv tool install --quiet --python 3.12 "memgraph-context-graph[mcp]>=0.12.0" \
+uv tool install --quiet --python 3.12 "memgraph-context-graph[mcp]>=0.12.1" \
   --with "skills-graph[memgraph-context-graph]>=0.4.0" \
   --with "actions-graph[memgraph-context-graph]>=0.7.1" \
-  --with "sessions-graph[memgraph-context-graph]>=0.12.0" \
+  --with "sessions-graph[memgraph-context-graph]>=0.12.1" \
   --upgrade
 
 # uv's tool shims live in `uv tool dir --bin` (usually ~/.local/bin), which may not be on PATH yet.
