@@ -301,21 +301,19 @@ def test_uninstall_gives_claude_code_its_own_memory_back(home, claude_with_plugi
     assert _identity.load_config().memory_backend == "native"
 
 
-def test_setup_hands_every_named_agent_back_before_the_shared_backend_changes(
-    home, graph, claude_with_plugin, monkeypatch
-):
+def test_setup_hands_every_named_agent_back_before_the_shared_backend_changes(home, claude_with_plugin, monkeypatch):
     """Codex first, then Claude Code: Claude Code's copy-back must still see the graph as the backend."""
     from memgraph_context_graph.adapters.codex import PLUGIN as CODEX_PLUGIN
 
     monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
     use_graph_memory(PLUGIN, home=home)
     use_graph_memory(CODEX_PLUGIN, home=home)
-    graph.memory_store("alice").create(
-        "/memories/projects/github.com_memgraph_ai-toolkit/plan.md", "---\ndescription: The plan\n---\nShip.\n"
-    )
+    # Setup reads the graph the config names, so the file to copy back is one the import put there.
+    native = _memory_dir(home, "ai-toolkit") / "project_map.md"
+    native.unlink()
 
     top_level_main(["setup", "codex", "claude-code", "--memory-backend", "native", "--no-tui", "--no-viewer"])
 
-    assert (_memory_dir(home, "ai-toolkit") / "project_plan.md").read_text().endswith("Ship.\n")
+    assert native.read_text().endswith("Map #484.\n")
     assert _settings(home) == {"theme": "dark"}
     assert _identity.load_config().memory_backend == "native"
