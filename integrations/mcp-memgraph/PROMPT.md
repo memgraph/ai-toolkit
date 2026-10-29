@@ -294,7 +294,7 @@ Tests use:
 When `MCP_READ_ONLY=true`, `run_cypher_query` runs queries through `read_only_query()`, a best-effort guard in layers:
 
 - Leading comments are stripped (some Memgraph versions crash on a comment before `EXPLAIN`/`PROFILE`)
-- `is_write_query()` refuses write keywords outside strings and comments (including auth commands, which Memgraph runs even in a read transaction) and calls to procedures and functions that can write although Memgraph flags them as reads, including their APOC names (`do.*`, `periodic.*`, `mg.load*`, module files, file export, model training, outbound requests)
+- `is_write_query()` refuses write keywords outside strings and comments (including auth commands, which Memgraph runs even in a read transaction) and calls to procedures and functions that can write although Memgraph flags them as reads, including their APOC names (`do.*`, `periodic.*`, `mg.load*`, module files, file export, model training)
 - The rest runs in a read transaction, where Memgraph rejects writes and write procedures
 - Queries that can't run in a transaction run outside one only if they are `SHOW ...`, `DATA DIRECTORY LOCK STATUS` or `PROFILE` of a read query; others (`ANALYZE GRAPH`, `FREE MEMORY`, `STORAGE MODE`, index changes, schema procedures) are blocked
 - Blocked queries return an error dictionary instead of executing

@@ -72,24 +72,27 @@ _EXTRA_WHITESPACE = re.compile("[᠎​‌‍⁠﻿]")
 
 # Write clauses, plus auth commands, which Memgraph runs in a read transaction too.
 # Not after a dot (n.set, map.merge) and not as a map key ({set: 1}).
-_WRITE_KEYWORDS = re.compile(
-    r"(?<![.\w])(?:CREATE|MERGE|DELETE|REMOVE|SET|DROP|GRANT|REVOKE|DENY|CLEAR)\b(?!\s*:)", re.IGNORECASE
-)
+_WRITE_KEYWORDS = re.compile(r"(?<![.\w])(?:CREATE|MERGE|DELETE|REMOVE|SET|DROP)\b(?!\s*:)", re.IGNORECASE)
+# Auth commands, which Memgraph runs in a read transaction too. They only start a
+# query, so a label or alias with the same name isn't refused.
+_AUTH_COMMANDS = re.compile(r"(?:GRANT|REVOKE|DENY|CLEAR)\b", re.IGNORECASE)
 
-# Procedures and functions Memgraph flags as reads that run other queries in their
-# own transaction or connection, load or change code, write files or models, or call
-# other systems. Matched anywhere in the query, including their APOC names.
-_UNSAFE_CALLABLES = re.compile(
-    r"(?<![\w.])(?:"
+# Procedures Memgraph flags as reads that change something anyway: they run other
+# queries in their own transaction or connection, write files, load or change code,
+# or change a module's shared model or state. Includes their APOC names. Procedures
+# and functions that only read, including from files or other systems, aren't listed.
+_UNSAFE_PROCEDURES = re.compile(
+    r"\bCALL\s+(?:"
     r"(?:apoc\s*\.\s*)?(?:do|periodic)\s*\.\s*\w+"
-    r"|apoc\s*\.\s*(?:export|load|cypher)\s*\.\s*\w+"
-    r"|(?:csv_utils|export_util|migrate|cross_database|tgn|elastic_search_serialization|xml_module|llm)\s*\.\s*\w+"
+    r"|apoc\s*\.\s*(?:export|cypher)\s*\.\s*\w+"
+    r"|(?:csv_utils|export_util)\s*\.\s*\w+"
+    r"|elastic_search_serialization\s*\.\s*(?:create_index|index|index_db|reindex)\b"
     r"|mg\s*\.\s*(?:load|load_all|create_module_file|update_module_file|delete_module_file"
     r"|kafka_set_stream_offset)\b"
     r"|meta\s*\.\s*(?:update|reset)\b"
     r"|node_classification\s*\.\s*(?:train|save_model|load_model|set_model_parameters|reset)\b"
     r"|link_prediction\s*\.\s*(?:train|load_model|set_model_parameters|reset_parameters)\b"
-    r"|json_util\s*\.\s*load_from_url\b"
+    r"|tgn\s*\.\s*(?:train_and_eval|update|reset|set_params|set_eval|save_tgn_params|revert_from_database)\b"
     r")",
     re.IGNORECASE,
 )
@@ -127,7 +130,7 @@ def is_write_query(query: str) -> bool:
     so a label named `SET` is refused too.
     """
     code = _query_code(query)
-    return bool(_WRITE_KEYWORDS.search(code) or _UNSAFE_CALLABLES.search(code))
+    return bool(_WRITE_KEYWORDS.search(code) or _AUTH_COMMANDS.match(code.lstrip()) or _UNSAFE_PROCEDURES.search(code))
 
 
 def _is_access_mode_error(error: Neo4jError) -> bool:

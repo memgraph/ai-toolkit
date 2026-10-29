@@ -269,6 +269,32 @@ async def test_reads_allowed_in_readonly_mode(readonly_run_cypher_query, seeded_
     assert _db_state(seeded_db) == before
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        # Read procedures and functions in modules that also have procedures that change state.
+        "RETURN xml_module.parse('<a/>') AS x",
+        "CALL xml_module.load('https://example.com/a.xml') YIELD output_map RETURN output_map",
+        "CALL json_util.load_from_url('https://example.com/a.json') YIELD objects RETURN objects",
+        "RETURN llm.complete('hi') AS answer",
+        "CALL tgn.get() YIELD node, embedding RETURN node, embedding",
+        "CALL tgn.get_results() YIELD epoch_num RETURN epoch_num",
+        "CALL elastic_search_serialization.search('index', '{}') YIELD search_results RETURN search_results",
+        "CALL migrate.mysql('SELECT 1', {}) YIELD row RETURN row",
+        # Names that look like commands or modules.
+        "MATCH (n:Grant) RETURN n",
+        "RETURN 1 AS clear",
+        "MATCH (do) RETURN do.name",
+        "MATCH (meta) RETURN meta.update",
+    ],
+)
+async def test_reads_pass_text_check_in_readonly_mode(readonly_run_cypher_query, query):
+    """Reads allowed before the text check existed aren't refused by it."""
+    import mcp_memgraph.servers.server as server
+
+    assert not server.is_write_query(query)
+
+
 @pytest.mark.asyncio
 async def test_write_query_allowed_when_readonly_disabled():
     """Test that write queries work when MCP_READ_ONLY=false."""
