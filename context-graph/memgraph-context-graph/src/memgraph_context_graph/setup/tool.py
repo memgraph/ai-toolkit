@@ -17,11 +17,11 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 #: Kept in step with the plugins' bootstrap scripts and install.sh, which install the default connectors first.
-BASE = "memgraph-context-graph[mcp]>=0.12.1"
+BASE = "memgraph-context-graph[mcp]>=0.12.2"
 VIEWER = ("context-graph-viewer", "context-graph-viewer>=0.1.1")
 SPACES = ("context-graph-spaces", "context-graph-spaces>=0.1.2")
 #: sessions-graph's local extraction, which setup doesn't install itself; ``unstructured2graph`` tells it is there.
-RECONCILIATION = ("unstructured2graph", "sessions-graph[memgraph-context-graph,reconciliation]>=0.12.1")
+RECONCILIATION = ("unstructured2graph", "sessions-graph[memgraph-context-graph,reconciliation]>=0.12.2")
 #: Connectors whose own command people run: ``sessions-graph reconcile``, ``resources-graph sweep``.
 EXECUTABLES = ("sessions-graph", "resources-graph")
 
