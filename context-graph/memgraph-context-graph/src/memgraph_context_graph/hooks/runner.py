@@ -58,6 +58,7 @@ def create_link(
     memgraph_env: dict[str, str] | None = None,
     on_error: ConnectorFailureHandler | None = None,
     policy: CapturePolicy | None = None,
+    spool_refused: bool = True,
 ) -> AgentLink:
     """Create an AgentLink with optional connectors named by CLI/config.
 
@@ -83,6 +84,8 @@ def create_link(
             event, is reported here and the others still run. Without it the
             first failure raises.
         policy: The capture policy every event passes before a connector sees it.
+        spool_refused: Keep refused connectors' events for replay; off for the
+            replay itself, which keeps them on its own terms.
 
     Raises:
         ValueError: if a connector name is not supported, or Memgraph can't be reached.
@@ -115,7 +118,7 @@ def create_link(
             if on_error is None:
                 raise
             on_error(name, None, exc)
-    if refused:
+    if refused and spool_refused:
         link.add_connector(refused_events.Spool(refused))
     return link
 

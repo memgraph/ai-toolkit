@@ -187,7 +187,8 @@ def test_replay_keeps_what_the_graph_still_refuses(db, component, env, recorder)
 
     assert refused_events.replay(env) == ReplayResult(waiting=1)
     assert recorder.events == []
-    assert [entry["connectors"] for entry in _spooled()] == [[component]]
+    assert refused_events.pending()
+    assert [entry["connectors"] for entry in refused_events._entries(refused_events._claim())] == [[component]]
 
 
 def test_replay_retries_a_failing_connector_then_drops_the_event(db, component, env, recorder):
@@ -215,3 +216,120 @@ def test_replay_leaves_the_events_when_the_graph_cannot_be_reached():
         refused_events.replay(unreachable)
 
     assert refused_events.pending()
+
+
+_LATER = ToolStartEvent(
+    session_id="s-1",
+    timestamp="2026-10-29T10:05:00+00:00",
+    tool_name="Read",
+    tool_input={"file_path": "a.py"},
+    tool_use_id="t-2",
+)
+
+
+def test_replay_retries_a_connector_that_cannot_be_set_up_then_drops_the_event(db, component, env, monkeypatch):
+    monkeypatch.setattr(runner, "supported_connectors", lambda names: list(names))
+    monkeypatch.setattr(runner, "_hook_memgraph", lambda memgraph_env: db)
+
+    def cannot_be_set_up(name, memgraph_env, memgraph):
+        raise RuntimeError("the connector isn't installed")
+
+    monkeypatch.setattr(runner, "_build_connector", cannot_be_set_up)
+    refused_events.append(_TOOL_START, [component])
+
+    assert refused_events.replay(env) == ReplayResult(waiting=1)
+    (entry,) = refused_events._entries(refused_events._claim())
+    assert entry["connectors"] == [component]
+    assert entry["attempts"] == 1
+    for _ in range(refused_events.MAX_ATTEMPTS - 2):
+        assert refused_events.replay(env) == ReplayResult(waiting=1)
+    assert refused_events.replay(env) == ReplayResult(dropped=1)
+
+
+def test_what_replay_keeps_is_not_lost_when_writing_it_fails(db, component, env, recorder, monkeypatch):
+    _refuse(db, component)
+    refused_events.append(_TOOL_START, [component])
+    monkeypatch.setattr(refused_events, "_keep", lambda entries: False)
+
+    assert refused_events.replay(env) == ReplayResult(waiting=1)
+
+    assert refused_events.pending()
+    (entry,) = refused_events._entries(refused_events._claim())
+    assert refused_events.decode(entry["event"]) == _TOOL_START
+
+
+def test_what_replay_keeps_is_not_held_to_the_spools_size_cap(db, component, env, recorder, monkeypatch):
+    _refuse(db, component)
+    refused_events.append(_TOOL_START, [component])
+    monkeypatch.setattr(refused_events, "MAX_BYTES", 10)
+
+    assert refused_events.replay(env) == ReplayResult(waiting=1)
+
+    (entry,) = refused_events._entries(refused_events._claim())
+    assert refused_events.decode(entry["event"]) == _TOOL_START
+
+
+def test_replay_sends_events_in_the_order_they_happened(db, component, env, recorder):
+    refused_events.append(_LATER, [component])
+    refused_events.append(_TOOL_START, [component])
+
+    assert refused_events.replay(env) == ReplayResult(replayed=2)
+    assert recorder.events == [_TOOL_START, _LATER]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX locking; on Windows an open file can't be renamed at all")
+def test_replay_waits_for_a_hook_writing_to_the_spool():
+    import fcntl
+    import threading
+
+    refused_events.append(_TOOL_START, ["skills-graph"])
+    writer = os.open(refused_events.path(), os.O_WRONLY | os.O_APPEND)
+    fcntl.flock(writer, fcntl.LOCK_SH)
+    claimed: list = []
+    claiming = threading.Thread(target=lambda: claimed.append(refused_events._claim()))
+    claiming.start()
+    claiming.join(0.3)
+    assert claiming.is_alive(), "replay renamed the spool while a hook was writing to it"
+
+    late = {"v": 1, "connectors": ["skills-graph"], "attempts": 0, "event": refused_events.encode(_LATER)}
+    os.write(writer, (json.dumps(late) + "\n").encode())
+    os.close(writer)
+    claiming.join(5)
+
+    (files,) = claimed
+    assert [refused_events.decode(e["event"]) for e in refused_events._entries(files)] == [_TOOL_START, _LATER]
+
+
+def test_a_hook_that_opened_the_spool_before_replay_renamed_it_writes_to_the_new_one():
+    refused_events.append(_TOOL_START, ["skills-graph"])
+    stale = os.open(refused_events.path(), os.O_WRONLY | os.O_APPEND)
+    try:
+        (claimed,) = refused_events._claim()
+        assert not refused_events._still_at(stale, refused_events.path())
+    finally:
+        os.close(stale)
+
+    assert refused_events.append(_LATER, ["skills-graph"])
+    assert [refused_events.decode(e["event"]) for e in refused_events._entries([claimed])] == [_TOOL_START]
+    assert [refused_events.decode(e["event"]) for e in refused_events._entries([refused_events.path()])] == [_LATER]
+
+
+def test_a_running_sdk_app_spools_a_connector_once_the_graph_refuses_it(db, component, recorder, monkeypatch):
+    from datetime import timedelta
+
+    from memgraph_context_graph.sdk import ContextGraphMemory
+
+    monkeypatch.setattr("memgraph_context_graph.sdk.supported_connectors", lambda names: list(names))
+    # Every emit rereads the rules, from this test's Memgraph.
+    monkeypatch.setattr(graph_version, "CHECK_INTERVAL", timedelta(0))
+    monkeypatch.setattr(graph_version, "_connect", lambda memgraph_env: contextlib.nullcontext(db))
+    memory = ContextGraphMemory(connectors=[component], memory_tool=False)
+
+    memory.emit(_TOOL_START)
+    _refuse(db, component)
+    memory.emit(_LATER)
+
+    assert recorder.events == [_TOOL_START]
+    (entry,) = _spooled()
+    assert entry["connectors"] == [component]
+    assert refused_events.decode(entry["event"]) == _LATER
