@@ -265,14 +265,30 @@ def _lineage(files: MemoryFiles, path: str) -> set[str]:
 
 
 def _checkout_for(slug: str) -> Path | None:
-    """The directory Claude Code named *slug*, found by walking the filesystem from ``/``.
+    """The directory Claude Code named *slug*, found by walking the filesystem from its root.
 
     The slug is lossy: ``/repos/ai-toolkit`` and ``/repos/ai/toolkit`` give
     the same one. So each step matches the directory's real entries by their
     own slugs, preferring the longest, and backtracks when a path dead-ends.
     """
-    tokens = slug.lstrip("-").split("-")
-    return _walk(Path("/"), tokens) if tokens and tokens[0] else None
+    start = _slug_root(slug)
+    return _walk(*start) if start else None
+
+
+def _slug_root(slug: str) -> tuple[Path, list[str]] | None:
+    """The filesystem root *slug* starts from, and the tokens left to walk below it.
+
+    A POSIX slug starts with the ``-`` of ``/``. A Windows one starts with the
+    drive letter, and the drive's ``:\\`` makes a double dash: ``C:\\source\\x`` is
+    ``C--source-x``.
+    """
+    if slug.startswith("-"):
+        tokens = slug[1:].split("-")
+        return (Path("/"), tokens) if tokens[0] else None
+    drive, double_dash, rest = slug.partition("--")
+    if len(drive) == 1 and drive.isalpha() and double_dash and rest:
+        return Path(f"{drive}:/"), rest.split("-")
+    return None
 
 
 def _walk(directory: Path, tokens: list[str]) -> Path | None:
