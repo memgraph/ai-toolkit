@@ -100,14 +100,17 @@ Opting in does three things, in this order:
 For Codex, `setup codex --memory-backend context-graph` does the same against
 its global store, with three differences:
 - **Import.** `memory_summary.md`, the profile Codex injected each session,
-  becomes `/memories/user/codex-memory-summary.md`, and `MEMORY.md` becomes
-  `/memories/codex/memory.md`.
+  becomes `/memories/codex/memory-summary.md`, and `MEMORY.md` becomes
+  `/memories/codex/memory.md`. Both stay under `/memories/codex/` rather than
+  the user-wide root, since Codex wrote them across every project.
 - **Switch.** It turns off `features.memories`, `memories.use_memories` and
   `memories.generate_memories` in `~/.codex/config.toml` (or under
-  `$CODEX_HOME`), keeping the user's comments and layout. Handing memory back
-  restores whatever those keys were before. If the user's own
-  `[mcp_servers.context-graph]` narrows tools with `enabled_tools`, `memory` is
-  added there.
+  `$CODEX_HOME`), keeping the user's comments, layout and line endings. The
+  file is first copied to `config.toml.context-graph-memory.bak`, apart from
+  the backup setup's own writes leave. Handing memory back restores those keys
+  from it, drops a `[memories]` table the switch created, and deletes the
+  backup. If the user's own `[mcp_servers.context-graph]` narrows tools with
+  `enabled_tools`, `memory` is added there.
 - **Compaction.** The Codex plugin's `SessionStart` hook also fires after
   compaction (`compact`), so the memory index comes back once the context is
   summarized.
@@ -134,9 +137,21 @@ the reverse of the import, so it picks up where the graph left off:
 Then it removes the setting. The copy runs only while the backend is
 `context-graph`, so handing back twice never overwrites newer files. If
 Memgraph is down, `setup` switches nothing; `uninstall` turns the memory back
-on anyway, with what it held before, and warns. Codex, Copilot CLI and Grok
-Build get nothing copied back: their memory is generated or hosted by the
-agent itself.
+on anyway, with what it held before, and warns. Copilot CLI and Grok Build
+get nothing copied back: their memory is hosted by the agent, or kept in
+folders only it can name.
+
+Codex rewrites its own memory files at each consolidation, so handing back
+leaves each graph memory as an ad-hoc note in
+`~/.codex/memories/extensions/ad_hoc/notes/` (`memories_v2/` under
+`[memories] version = "v2"`), the one place Codex takes outside writes. Its
+next consolidation folds them into `memory_summary.md` and `MEMORY.md`, in its
+own words, so they aren't copied exactly. That runs only while
+`features.memories` and `memories.generate_memories` are on; the output says
+when they weren't before the switch. A note names its project when the memory
+had one, since Codex keeps one store for all projects. Files the import took
+from Codex and the graph never changed aren't noted, and a note already left
+isn't left again.
 
 `doctor` fails when the backend is `context-graph` but Claude Code's own memory
 is still on, including when the project's `.claude/settings.json` or
