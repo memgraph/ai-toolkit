@@ -100,14 +100,17 @@ Opting in does three things, in this order:
 For Codex, `setup codex --memory-backend context-graph` does the same against
 its global store, with three differences:
 - **Import.** `memory_summary.md`, the profile Codex injected each session,
-  becomes `/memories/user/codex-memory-summary.md`, and `MEMORY.md` becomes
-  `/memories/codex/memory.md`.
+  becomes `/memories/codex/memory-summary.md`, and `MEMORY.md` becomes
+  `/memories/codex/memory.md`. Both stay under `/memories/codex/` rather than
+  the user-wide root, since Codex wrote them across every project.
 - **Switch.** It turns off `features.memories`, `memories.use_memories` and
   `memories.generate_memories` in `~/.codex/config.toml` (or under
-  `$CODEX_HOME`), keeping the user's comments and layout. Handing memory back
-  restores whatever those keys were before. If the user's own
-  `[mcp_servers.context-graph]` narrows tools with `enabled_tools`, `memory` is
-  added there.
+  `$CODEX_HOME`), keeping the user's comments, layout and line endings. The
+  file is first copied to `config.toml.context-graph-memory.bak`, apart from
+  the backup setup's own writes leave. Handing memory back restores those keys
+  from it, drops a `[memories]` table the switch created, and deletes the
+  backup. If the user's own `[mcp_servers.context-graph]` narrows tools with
+  `enabled_tools`, `memory` is added there.
 - **Compaction.** The Codex plugin's `SessionStart` hook also fires after
   compaction (`compact`), so the memory index comes back once the context is
   summarized.

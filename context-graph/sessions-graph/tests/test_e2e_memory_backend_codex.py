@@ -63,9 +63,10 @@ def test_opting_in_turns_codex_memories_off_lets_the_tool_through_and_imports(ho
     assert _identity.load_config().graph_memory
 
     files = {f.path: f.content for f in graph.memory_store("alice").files()}
-    assert set(files) == {"/memories/user/codex-memory-summary.md", "/memories/codex/memory.md"}
-    assert files["/memories/user/codex-memory-summary.md"].startswith("---\ndescription: What Codex had learned")
-    assert files["/memories/user/codex-memory-summary.md"].endswith("Prefers uv.\n")
+    # Codex's summary spans every project, so it stays a Codex reference rather than a user-wide memory.
+    assert set(files) == {"/memories/codex/memory-summary.md", "/memories/codex/memory.md"}
+    assert files["/memories/codex/memory-summary.md"].startswith("---\ndescription: What Codex had learned")
+    assert files["/memories/codex/memory-summary.md"].endswith("Prefers uv.\n")
 
 
 def test_handing_memory_back_restores_what_was_there(home):
@@ -77,6 +78,31 @@ def test_handing_memory_back_restores_what_was_there(home):
     assert "use_memories" not in config.get("memories", {})
     assert PLUGIN.native_memory.enabled(home)
     assert not _identity.load_config().graph_memory
+
+
+def test_a_round_trip_gives_back_the_config_byte_for_byte_with_no_empty_table(home):
+    config = home / ".codex" / "config.toml"
+    original = b'# mine\r\nmodel = "gpt-x"\r\n\r\n[features]\r\nhooks = true\r\n'
+    config.write_bytes(original)
+
+    use_graph_memory(PLUGIN, home=home)
+    assert b"\r\n[memories]\r\n" in config.read_bytes()
+    use_native_memory(PLUGIN, home=home)
+
+    assert config.read_bytes() == original
+    assert not (home / ".codex" / "config.toml.context-graph-memory.bak").exists()
+
+
+def test_handing_back_restores_the_state_before_the_switch_not_an_older_setup_backup(home):
+    """Setup's backup of config.toml can be weeks older than the switch; it must not decide what comes back."""
+    (home / ".codex" / "config.toml.context-graph.bak").write_text("[features]\nmemories = false\n")
+
+    use_graph_memory(PLUGIN, home=home)
+    use_graph_memory(PLUGIN, home=home)  # setup re-run while on the graph: the keys are off, the backup stays
+    use_native_memory(PLUGIN, home=home)
+
+    assert _config(home)["features"]["memories"] is True
+    assert PLUGIN.native_memory.enabled(home)
 
 
 def _notes(home, store="memories"):

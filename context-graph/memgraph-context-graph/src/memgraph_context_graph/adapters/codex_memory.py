@@ -8,8 +8,9 @@ Codex keeps one global memory store in ``$CODEX_HOME/memories/`` (default
 on, and ``generate_memories`` controls whether new threads feed the pipeline.
 
 Switching to Context Graph turns all three off in the user-level
-``config.toml``, the same scope ``[memory] backend`` has. Handing memory back
-restores whatever they were before, after leaving the graph's memories as
+``config.toml``, the same scope ``[memory] backend`` has, after copying the file
+to its own memory-switch backup. Handing memory back restores whatever they
+were before from that backup, then removes it, after leaving the graph's memories as
 ad-hoc notes: the one place Codex takes outside writes, which its
 consolidation pass folds into the files it injects. The plugin's MCP server allows every tool
 unless the user's own ``[mcp_servers.context-graph]`` narrows it with
@@ -32,6 +33,9 @@ if TYPE_CHECKING:
     from memgraph_context_graph.memory_backend import MemoryFiles, MemorySource
 
 _BACKUP_SUFFIX = ".context-graph.bak"
+#: The config as it was before the memory switch, apart from the backup any write leaves: setup writes
+#: ``config.toml`` too, and its older backup must never be taken for the state the switch should restore.
+_SWITCH_BACKUP_SUFFIX = ".context-graph-memory.bak"
 _SERVER = "context-graph"
 #: (table, key) pairs this switch owns, and the value that turns each off.
 _SWITCHES = (
@@ -40,9 +44,10 @@ _SWITCHES = (
     (("memories", "generate_memories"), False),
 )
 #: Files a Codex memory store may hold, under v1's ``memories/`` or v2's ``memories_v2/``,
-#: and where each lands in ``/memories``. Codex's store is global, so nothing is per project.
+#: and where each lands in ``/memories``. Codex's store is global, so nothing is per project, and both stay
+#: under ``/memories/codex/``: a summary written across every project isn't one the user wrote for all of them.
 _IMPORTS = (
-    ("memory_summary.md", "/memories/user/codex-memory-summary.md", "What Codex had learned about the user", "user"),
+    ("memory_summary.md", "/memories/codex/memory-summary.md", "What Codex had learned about the user", "reference"),
     ("MEMORY.md", "/memories/codex/memory.md", "Codex's task-by-task memory, as it consolidated it", "reference"),
 )
 #: Codex's note-file contract (``ext/memories/src/local/ad_hoc_note.rs``): ``YYYY-MM-DDTHH-MM-SS-<slug>.md``,
@@ -68,11 +73,21 @@ class CodexMemory:
     def disable(self, home: Path) -> list[str]:
         """Turn Codex's memories off in its user ``config.toml`` and let the ``memory`` tool through.
 
+        The config is first copied to the switch's own backup, unless one is there from a switch not yet
+        handed back: then the memory keys are already off, and the backup still holds what they were.
+
         Raises:
             MemoryBackendError: the config file isn't valid TOML.
         """
         path = _config_path(home)
         config = _read(path)
+        switch_backup = _switch_backup(path)
+        if not switch_backup.exists():
+            switch_backup.parent.mkdir(parents=True, exist_ok=True)
+            if path.exists():
+                shutil.copy2(path, switch_backup)
+            else:
+                switch_backup.touch()
         for keys, off in _SWITCHES:
             _set(config, keys, off)
         server = config.get("mcp_servers", {}).get(_SERVER)
@@ -85,17 +100,18 @@ class CodexMemory:
         return _write(path, config)
 
     def enable(self, home: Path) -> list[str]:
-        """Restore the memory keys to what they were before :meth:`disable` first ran.
+        """Restore the memory keys to what they were before :meth:`disable` first ran, then drop its backup.
 
         Keys that didn't exist then are removed, which leaves Codex's own
-        defaults (``features.memories`` is off by default).
+        defaults (``features.memories`` is off by default), and so is a table
+        the switch created and left empty.
 
         Raises:
             MemoryBackendError: the config file or its backup isn't valid TOML.
         """
         path = _config_path(home)
-        backup = path.with_name(path.name + _BACKUP_SUFFIX)
-        before = _read(backup) if backup.exists() else {}
+        switch_backup = _switch_backup(path)
+        before = _read(switch_backup)
         config = _read(path)
         for keys, _off in _SWITCHES:
             previous = _get(before, keys, None)
@@ -103,13 +119,21 @@ class CodexMemory:
                 _remove(config, keys)
             else:
                 _set(config, keys, previous)
-        return _write(path, config)
+        created = [
+            t for t in {keys[0] for keys, _off in _SWITCHES} if t in config and not config[t] and t not in before
+        ]
+        for table in created:
+            del config[table]
+        lines = _write(path, config, trim_end=bool(created)) if path.exists() or config else []
+        switch_backup.unlink(missing_ok=True)
+        return lines
 
     def import_into(self, files: MemoryFiles, home: Path) -> ImportReport:
         """Copy Codex's consolidated memories into ``/memories``, never overwriting a path.
 
-        The summary Codex injected each session becomes a ``user`` memory;
-        its task-group ``MEMORY.md`` a ``reference`` file the model can open.
+        The summary Codex injected each session and its task-group
+        ``MEMORY.md`` become ``reference`` files under ``/memories/codex/``,
+        which the model can open.
         Rollout summaries and raw memories are Codex's intermediate state and
         stay where they are.
         """
@@ -257,7 +281,7 @@ def _create_note(notes: Path, stamp: str, slug: str, text: str) -> None:
         suffix = f"-{attempt}" if attempt else ""
         name = f"{stamp}-{slug[: _NOTE_SLUG_MAX - len(suffix)]}{suffix}.md"
         try:
-            with (notes / name).open("x", encoding="utf-8") as file:
+            with (notes / name).open("x", encoding="utf-8", newline="") as file:
                 file.write(text)
         except FileExistsError:
             continue
@@ -268,7 +292,7 @@ def _create_note(notes: Path, stamp: str, slug: str, text: str) -> None:
 def _when_folded_in(notes: Path, home: Path) -> str:
     """When Codex takes the notes in: its next consolidation, which runs only while its memories are on again."""
     path = _config_path(home)
-    before = _read(path.with_name(path.name + _BACKUP_SUFFIX))
+    before = _read(_switch_backup(path))
     on = (
         bool(_get(before, ("features", "memories"), False))
         and _get(before, ("memories", "generate_memories"), True) is not False
@@ -279,6 +303,21 @@ def _when_folded_in(notes: Path, home: Path) -> str:
         f"Left them as notes in {notes}; Codex folds them in only once its memories are on"
         f" (features.memories and memories.generate_memories in {path}), which they weren't before."
     )
+
+
+def _switch_backup(path: Path) -> Path:
+    return path.with_name(path.name + _SWITCH_BACKUP_SUFFIX)
+
+
+def _read_text(path: Path) -> str:
+    """The file's text with its own line endings, which a default ``read_text`` would turn into ``\\n``."""
+    with path.open(encoding="utf-8", newline="") as file:
+        return file.read()
+
+
+def _write_text(path: Path, text: str) -> None:
+    """Write *text* as given, so a file keeps the line endings it was read with; Windows would add ``\\r``."""
+    path.write_text(text, encoding="utf-8", newline="")
 
 
 def _codex_home(home: Path) -> Path:
@@ -297,7 +336,7 @@ def _read(path: Path) -> Any:
     if not path.exists():
         return tomlkit.document()
     try:
-        return tomlkit.parse(path.read_text(encoding="utf-8"))
+        return tomlkit.parse(_read_text(path))
     except ParseError as exc:
         raise MemoryBackendError(f"{path} is not valid TOML ({exc}); fix it, then re-run.") from exc
 
@@ -323,17 +362,24 @@ def _remove(config: Any, keys: tuple[str, str]) -> None:
         del table[keys[1]]
 
 
-def _write(path: Path, config: Any) -> list[str]:
+def _write(path: Path, config: Any, *, trim_end: bool = False) -> list[str]:
+    """Write *config* to *path*, backing up the first version; *trim_end* drops the blank lines a removed table left."""
     import tomlkit
 
+    current = _read_text(path) if path.exists() else None
     rendered = tomlkit.dumps(config)
-    if path.exists() and path.read_text(encoding="utf-8") == rendered:
+    if trim_end and rendered.strip():
+        rendered = rendered.rstrip() + "\n"
+    if current is not None and "\r\n" in current:
+        # tomlkit renders the keys it adds with "\n" even in a CRLF file; keep the file's one style.
+        rendered = rendered.replace("\r\n", "\n").replace("\n", "\r\n")
+    if current == rendered:
         return [f"Unchanged {path}"]
     backup = path.with_name(path.name + _BACKUP_SUFFIX)
     if path.exists() and not backup.exists():
         shutil.copy2(path, backup)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(rendered, encoding="utf-8")
+    _write_text(path, rendered)
     return [f"Wrote {path}"]
 
 
