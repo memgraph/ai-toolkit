@@ -6,6 +6,7 @@ Payload shapes are trimmed from a live agy 1.2.13 session.
 import json
 
 from memgraph_context_graph import AgentLink
+from memgraph_context_graph.adapters import _spec
 from memgraph_context_graph.adapters.antigravity_cli import PLUGIN, AntigravityCLIHooksAdapter, init
 from memgraph_context_graph.events import (
     ErrorOccurredEvent,
@@ -162,3 +163,18 @@ def test_init_writes_a_named_group_with_flat_lifecycle_hooks(tmp_path):
     # agy rejects a nested entry on a lifecycle event, and with it the whole file.
     assert group["Stop"] == [{"command": "capture --event-name Stop", "type": "command", "timeout": 12}]
     assert group["SessionStart"] == [{"command": "capture --event-name SessionStart", "type": "command", "timeout": 12}]
+
+
+def test_init_on_windows_writes_commands_cmd_exe_can_run(tmp_path, monkeypatch):
+    # agy hands each command to cmd.exe inside its own quotes: a POSIX-quoted
+    # 'C:\...' path is not a filename there, and a double-quoted one is quoted twice.
+    exe = r"C:\Users\dev\.local\bin\memgraph-context-graph.EXE"
+    monkeypatch.setattr(_spec, "_ON_WINDOWS", True)
+    monkeypatch.setattr(_spec.shutil, "which", lambda name: exe)
+
+    init(tmp_path, ["actions-graph"])
+
+    group = json.loads((tmp_path / ".agents" / "hooks.json").read_text())["memgraph-context-graph"]
+    assert group["Stop"][0]["command"] == (
+        rf"{exe} hook run antigravity-cli --connector actions-graph --event-name Stop"
+    )
