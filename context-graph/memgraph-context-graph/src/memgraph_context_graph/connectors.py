@@ -60,7 +60,7 @@ class ConnectorSpec:
 INSTALLABLE: dict[str, str] = {
     "skills-graph": "skills-graph[memgraph-context-graph]>=0.4.0",
     "actions-graph": "actions-graph[memgraph-context-graph]>=0.7.1",
-    "sessions-graph": "sessions-graph[memgraph-context-graph]>=0.12.1",
+    "sessions-graph": "sessions-graph[memgraph-context-graph]>=0.12.2",
     "resources-graph": "resources-graph[memgraph-context-graph]>=0.3.0",
 }
 
