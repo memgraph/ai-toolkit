@@ -405,6 +405,7 @@ def doctor_checks(runtimes: Sequence[str], connectors: Sequence[str]) -> list[_C
     # produce one, the config check already says why, and the rest would only repeat it.
     if _edition_resolves():
         checks.append(_check_memgraph())
+        checks.append(_check_graph_version(connectors))
         for connector in connectors:
             checks.append(_check_connector(connector))
         if any(normalize_connector_name(connector) == "sessions-graph" for connector in connectors):
@@ -501,6 +502,19 @@ def _check_memgraph() -> _CheckResult:
         return {"name": "memgraph", "ok": False, "detail": f"{url} — {type(exc).__name__}: {exc}"}
     finally:
         _close(db)
+
+
+def _check_graph_version(connectors: Sequence[str]) -> _CheckResult:
+    """Whether a newer Context Graph has reshaped the graph past what this install can write or read."""
+    from memgraph_context_graph import graph_version
+
+    rules = graph_version.check_configured(fresh=True)
+    components = [graph_version.HUB, *(normalize_connector_name(connector) for connector in connectors)]
+    refused = [rules.refuse_write(c) for c in components if not rules.may_write(c)]
+    refused += [rules.refuse_read(c) for c in components if not rules.may_read(c)]
+    if refused:
+        return {"name": "graph version", "ok": False, "detail": "; ".join(dict.fromkeys(map(str, refused)))}
+    return {"name": "graph version", "ok": True, "detail": "this install can write and read the graph"}
 
 
 def _close(db: Any) -> None:

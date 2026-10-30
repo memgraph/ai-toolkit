@@ -377,6 +377,7 @@ def test_uninstall_finds_what_is_wired_and_keeps_data(fake_agents, setup_home, p
 def no_schema(monkeypatch):
     """Update's schema step and doctor checks need a Memgraph and the connectors; ``test_setup_docker.py`` has them."""
     monkeypatch.setattr("memgraph_context_graph.hooks.runner.setup_connector_schemas", lambda *a, **k: None)
+    monkeypatch.setattr("memgraph_context_graph.graph_version.setup_at", lambda memgraph_env: None)
     monkeypatch.setattr(engine, "verify", lambda runtimes: [])
 
 
@@ -458,6 +459,7 @@ def test_update_says_to_delete_duplicates_when_a_constraint_cannot_be_created(
         )
 
     monkeypatch.setattr("memgraph_context_graph.hooks.runner.setup_connector_schemas", refuse)
+    monkeypatch.setattr("memgraph_context_graph.graph_version.setup_at", lambda memgraph_env: None)
     agents.wire_plugin(BY_RUNTIME["claude-code"], lambda _: None)
 
     assert main(["update", "--no-upgrade", "--project-dir", str(project)]) == 1

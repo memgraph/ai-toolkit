@@ -221,6 +221,8 @@ class MemoryTool(_GraphPerConfig):
 
     name = "memory"
     connector = "sessions-graph"
+    #: Refused by the MCP server once a newer Context Graph reshapes the memory graph (graph_version).
+    writes_graph = True
     description = _MEMORY_DESCRIPTION
     input_schema: ClassVar[dict[str, Any]] = {
         "type": "object",

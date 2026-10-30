@@ -94,6 +94,11 @@ class ContextGraphMemory:
         self.cwd = cwd or os.getcwd()
         self.connectors = supported_connectors(connectors if connectors is not None else configured_connectors())
         self._link: AgentLink | None = link
+        #: Only a link this memory built is rebuilt when the graph's rules change; a caller's own is theirs.
+        self._owns_link = link is None
+        self._memgraph_env: dict[str, str] = {}
+        self._refused: frozenset[str] = frozenset()
+        self._rules_checked = 0.0
         self._unreachable_since: float | None = None
         self._lock = threading.Lock()
         self._started: dict[str, str] = {}
@@ -112,21 +117,47 @@ class ContextGraphMemory:
     def link(self) -> AgentLink:
         """The link capture emits through, connected on first use.
 
+        An app outlives the graph's rules (``graph_version``): a newer Context
+        Graph may migrate the graph while it runs. So at most every
+        ``CHECK_INTERVAL`` the rules are read again, and when the connectors
+        they refuse have changed, the link is built anew, sending a refused
+        connector's events to the spool instead of writing the old shape.
+
         Raises:
             ValueError: Memgraph can't be reached.
         """
+        if self._link is not None and self._owns_link and self._refusals_changed():
+            self._link = None
         if self._link is None:
             from memgraph_context_graph.hooks.runner import create_link
             from memgraph_context_graph.spaces import spaces_for
 
             policy, _problems = policy_from_config(self.config)
+            self._memgraph_env = spaces_for(self.config).personal().target.env()
             self._link = create_link(
                 self.connectors,
-                memgraph_env=spaces_for(self.config).personal().target.env(),
+                memgraph_env=self._memgraph_env,
                 on_error=self._connector_failed,
                 policy=policy,
             )
+            # create_link has just checked, so this reads its cached rules.
+            self._refused = self._refusals()
+            self._rules_checked = time.monotonic()
         return self._link
+
+    def _refusals(self) -> frozenset[str]:
+        from memgraph_context_graph import graph_version
+
+        rules = graph_version.check_at(self._memgraph_env)
+        return frozenset(c for c in self.connectors if not rules.may_write(c))
+
+    def _refusals_changed(self) -> bool:
+        from memgraph_context_graph import graph_version
+
+        if time.monotonic() - self._rules_checked < graph_version.CHECK_INTERVAL.total_seconds():
+            return False
+        self._rules_checked = time.monotonic()
+        return self._refusals() != self._refused
 
     def emit(self, event: Event) -> None:
         """Send *event* through the configured connectors; dropped while Memgraph is unreachable."""

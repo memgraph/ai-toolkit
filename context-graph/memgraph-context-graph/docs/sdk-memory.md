@@ -31,6 +31,10 @@ from memgraph_context_graph.sdk import ContextGraphMemory
 memory = ContextGraphMemory(user_id="alice")
 ```
 
+A long-running app keeps working across a Context Graph upgrade elsewhere. About every ten minutes it checks whether
+a newer Context Graph has reshaped the graph. If it has, the app stops writing the parts it no longer knows, keeps
+those events on the machine, and `memgraph-context-graph update` adds them once this install is upgraded.
+
 ## Claude Agent SDK
 
 The SDK's hook callbacks get Claude Code's own hook payloads, so the `claude-code` rules translate them, under `source_sdk = "claude-agent-sdk"`. Python callbacks get no `SessionStart` or `SessionEnd`, which changes two things:
