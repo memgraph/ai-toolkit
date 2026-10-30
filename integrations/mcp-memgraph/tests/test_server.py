@@ -295,6 +295,30 @@ async def test_reads_pass_text_check_in_readonly_mode(readonly_run_cypher_query,
     assert not server.is_write_query(query)
 
 
+async def test_readonly_mode_over_stdio(monkeypatch, seeded_db):
+    """An MCP client talking to the server process over stdio gets refusals for writes and rows for reads."""
+    monkeypatch.setenv("MCP_READ_ONLY", "true")
+    client = MCPClient()
+    try:
+        await client.connect_to_server("src/mcp_memgraph/main.py")
+        before = _db_state(seeded_db)
+
+        for query in [
+            "CREATE (:Leak)",
+            "CALL do.when(true, 'MATCH (n) DETACH DELETE n', '', {}) YIELD value RETURN value",
+        ]:
+            result = await client.session.call_tool("run_cypher_query", {"query": query})
+            assert "read-only mode" in result.content[0].text, f"Expected a refusal for: {query}"
+        assert _db_state(seeded_db) == before, "A write reached the database over stdio"
+
+        result = await client.session.call_tool(
+            "run_cypher_query", {"query": "MATCH (n:ReadOnlyTest) RETURN n.name AS name ORDER BY name"}
+        )
+        assert result.structuredContent == {"result": [{"name": "a"}, {"name": "b"}]}
+    finally:
+        await client.exit_stack.aclose()
+
+
 @pytest.mark.asyncio
 async def test_write_query_allowed_when_readonly_disabled():
     """Test that write queries work when MCP_READ_ONLY=false."""
