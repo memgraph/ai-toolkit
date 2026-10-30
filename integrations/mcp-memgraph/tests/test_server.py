@@ -301,17 +301,20 @@ async def test_readonly_mode_over_stdio(monkeypatch, seeded_db):
     client = MCPClient()
     try:
         await client.connect_to_server("src/mcp_memgraph/main.py")
+        assert client.session is not None, "Session should be initialized"
+        session = client.session
         before = _db_state(seeded_db)
 
         for query in [
             "CREATE (:Leak)",
             "CALL do.when(true, 'MATCH (n) DETACH DELETE n', '', {}) YIELD value RETURN value",
         ]:
-            result = await client.session.call_tool("run_cypher_query", {"query": query})
-            assert "read-only mode" in result.content[0].text, f"Expected a refusal for: {query}"
+            result = await session.call_tool("run_cypher_query", {"query": query})
+            rows = (result.structuredContent or {}).get("result", [])
+            assert rows and rows[0].get("mode") == "read-only", f"Expected a refusal for: {query}"
         assert _db_state(seeded_db) == before, "A write reached the database over stdio"
 
-        result = await client.session.call_tool(
+        result = await session.call_tool(
             "run_cypher_query", {"query": "MATCH (n:ReadOnlyTest) RETURN n.name AS name ORDER BY name"}
         )
         assert result.structuredContent == {"result": [{"name": "a"}, {"name": "b"}]}
