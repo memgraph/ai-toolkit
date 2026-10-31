@@ -205,3 +205,42 @@ async def test_get_all_status_counts_includes_all_key(monkeypatch):
     counts = await store.get_all_status_counts()
     assert counts["all"] == 5
     assert counts[DocStatus.PROCESSED.value] == 3
+
+
+def _doc_status_store():
+    from lightrag_memgraph import MemgraphDocStatusStorage
+
+    return MemgraphDocStatusStorage(
+        namespace="doc_status",
+        workspace="base",
+        global_config=_global_config(),
+        embedding_func=_fake_embedding_func(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_scheduling_guards_do_not_touch_memgraph():
+    """Cursor and empty-input guards return before any Bolt call."""
+    from lightrag.base import CURSOR_END, CursorAfter, DocStatus, SourceAbsent
+    from lightrag.exceptions import StorageControlPlaneError
+
+    store = _doc_status_store()
+
+    with pytest.raises(ValueError, match="page limit"):
+        await store.get_docs_by_statuses_page([DocStatus.PENDING], limit=0)
+
+    empty = await store.get_docs_by_statuses_page([], limit=10)
+    assert empty.docs == {}
+    assert empty.next_position is CURSOR_END
+
+    done = await store.get_docs_by_statuses_page([DocStatus.PENDING], limit=10, position=CURSOR_END)
+    assert done.docs == {}
+    assert done.next_position is CURSOR_END
+
+    with pytest.raises(StorageControlPlaneError, match="Malformed scheduling cursor"):
+        await store.get_docs_by_statuses_page([DocStatus.PENDING], limit=10, position=CursorAfter("nope"))
+
+    assert isinstance(await store.resolve_doc_source_strict(""), SourceAbsent)
+    assert isinstance(await store.resolve_doc_source_strict("unknown_source"), SourceAbsent)
+    assert await store.get_docs_by_ids([]) == {}
+    assert await store.get_full_docs_by_ids([]) == {}

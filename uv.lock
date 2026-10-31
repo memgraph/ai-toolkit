@@ -4006,7 +4006,7 @@ wheels = [
 
 [[package]]
 name = "lightrag-hku"
-version = "1.5.4"
+version = "1.5.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -4033,9 +4033,9 @@ dependencies = [
     { name = "tiktoken", version = "0.14.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "xlsxwriter" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/77/02/154120751550ec5ce8edb2ba6cc599c3e232dc9b9b01858fc09de2189c02/lightrag_hku-1.5.4.tar.gz", hash = "sha256:48737d21ec545e36d1d495a28b067f28f78136fe5f8b0b31d7f12632244b302c", size = 4094726, upload-time = "2026-06-24T10:25:02.446Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ee/68/658c8e014108a4143be985189bf442bab5800ae50bdc6ee4ad8763a10f61/lightrag_hku-1.5.5.tar.gz", hash = "sha256:a77e1c59d97f8d74e4f070a2ac7fcfa3ac3cc4c55161c7c1ce31379521053aa0", size = 4607687, upload-time = "2026-07-31T12:08:31.06Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/1c/98bafa29b030be57e96f5f0ebe21dc6908ad308abfc0b9e6efeea4952cf4/lightrag_hku-1.5.4-py3-none-any.whl", hash = "sha256:3bb28b2a763a91fb11b9ac87798140be852891edf71266cff59018d23afeea9d", size = 4216903, upload-time = "2026-06-24T10:25:00.12Z" },
+    { url = "https://files.pythonhosted.org/packages/98/53/f06051b64e76e682db39dcd9a0bc684a27f0f2a3b202cef961bd8924e59e/lightrag_hku-1.5.5-py3-none-any.whl", hash = "sha256:6e6fa0cc1048a6c084f04a4ab2b3ac7f48e0630dd3efe8d7d1d45c0484213713", size = 4737467, upload-time = "2026-07-31T12:08:28.786Z" },
 ]
 
 [[package]]
@@ -4065,7 +4065,7 @@ requires-dist = [
     { name = "anthropic", specifier = ">=0.40.0" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=26.3.1" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.0.0" },
-    { name = "lightrag-hku", specifier = "==1.5.4" },
+    { name = "lightrag-hku", specifier = "==1.5.5" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "numpy", specifier = ">=1.22.0" },
     { name = "openai", specifier = ">=1.0.0" },

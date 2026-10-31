@@ -23,6 +23,7 @@ tests actually run there.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import uuid
@@ -30,7 +31,17 @@ import uuid
 import numpy as np
 import pytest
 import pytest_asyncio
-from lightrag.base import DocStatus
+from lightrag.base import (
+    CURSOR_END,
+    CURSOR_START,
+    CursorAfter,
+    DocProcessingStatus,
+    DocStatus,
+    SourceAbsent,
+    SourceConflict,
+    SourceUnique,
+)
+from lightrag.constants import CUSTOM_CHUNK_PATCH_METADATA_KEY
 from lightrag.utils import EmbeddingFunc
 
 from lightrag_memgraph import MemgraphLightRAGWrapper
@@ -274,6 +285,15 @@ async def test_kv_roundtrip(shared_driver, workspace):
 # --- doc-status storage ------------------------------------------------------
 
 
+def _doc_store(workspace: str) -> MemgraphDocStatusStorage:
+    return MemgraphDocStatusStorage(
+        namespace="doc_status",
+        workspace=workspace,
+        global_config=_global_config(),
+        embedding_func=_fake_embedding_func(),
+    )
+
+
 def _doc(status: DocStatus, summary: str, file_path: str, content_hash: str | None = None) -> dict:
     doc = {
         "content": "full content that should be dropped from status",
@@ -400,6 +420,230 @@ async def test_doc_status_pagination_breaks_ties_by_id(shared_driver, workspace,
         assert set(first_pass) == set(doc_ids), "a document was missing from every page"
         assert first_pass == sorted(doc_ids, reverse=sort_direction == "desc")
         assert await page_through() == first_pass
+    finally:
+        await store.drop()
+
+
+def _doc_at(
+    status: DocStatus,
+    summary: str,
+    file_path: str,
+    created_at: str,
+    *,
+    content_hash: str | None = None,
+    metadata: dict | None = None,
+    updated_at: str | None = None,
+) -> dict:
+    doc = _doc(status, summary, file_path, content_hash=content_hash)
+    doc["created_at"] = created_at
+    doc["updated_at"] = updated_at or created_at
+    if metadata is not None:
+        doc["metadata"] = metadata
+    return doc
+
+
+async def test_doc_status_scheduling_page_orders_by_created_at_then_id(shared_driver, workspace):
+    """Keyset pages follow (created_at, id) and stop only on CURSOR_END."""
+    store = _doc_store(workspace)
+    await store.initialize()
+    try:
+        await store.upsert(
+            {
+                # Same timestamp: id is the tiebreak, and they are written out of order.
+                "m": _doc_at(DocStatus.PROCESSED, "m", "m.txt", "2026-02-01T00:00:00"),
+                "a": _doc_at(DocStatus.PENDING, "a", "a.txt", "2026-02-01T00:00:00"),
+                "z": _doc_at(DocStatus.FAILED, "z", "z.txt", "2026-03-01T00:00:00"),
+                "early": _doc_at(DocStatus.PROCESSED, "early", "early.txt", "2026-01-01T00:00:00"),
+            }
+        )
+
+        seen: list[str] = []
+        position = CURSOR_START
+        for _ in range(4):
+            page_result = await store.get_docs_by_statuses_page(
+                [DocStatus.PROCESSED, DocStatus.PENDING, DocStatus.FAILED],
+                limit=2,
+                position=position,
+            )
+            seen.extend(page_result.docs)
+            if page_result.next_position is CURSOR_END:
+                break
+            position = page_result.next_position
+        else:
+            raise AssertionError("scheduling sweep did not terminate")
+
+        assert seen == ["early", "a", "m", "z"]
+        # A page that filled must be resumable, and the resume must not repeat.
+        first = await store.get_docs_by_statuses_page(
+            [DocStatus.PROCESSED, DocStatus.PENDING],
+            limit=2,
+        )
+        assert list(first.docs) == ["early", "a"]
+        assert isinstance(first.next_position, CursorAfter)
+        second = await store.get_docs_by_statuses_page(
+            [DocStatus.PROCESSED, DocStatus.PENDING],
+            limit=2,
+            position=first.next_position,
+        )
+        assert list(second.docs) == ["m"]
+        assert second.next_position is CURSOR_END
+
+        journal = await store.get_docs_by_ids(["early"])
+        assert journal["early"].has_custom_chunk_journal is False
+    finally:
+        await store.drop()
+
+
+async def test_doc_status_batch_reads_and_source_resolution(shared_driver, workspace):
+    store = _doc_store(workspace)
+    await store.initialize()
+    try:
+        await store.upsert(
+            {
+                "primary": _doc_at(
+                    DocStatus.PROCESSED,
+                    "primary",
+                    "shared.txt",
+                    "2026-01-01T00:00:00",
+                    metadata={CUSTOM_CHUNK_PATCH_METADATA_KEY: {"ops": [1]}},
+                ),
+                "other": _doc_at(DocStatus.PENDING, "other", "shared.txt", "2026-01-02T00:00:00"),
+                "marker": _doc_at(
+                    DocStatus.PROCESSED,
+                    "marker",
+                    "only-marker.txt",
+                    "2026-01-03T00:00:00",
+                    metadata={"is_duplicate": True, "original_doc_id": "primary"},
+                ),
+                "solo": _doc_at(DocStatus.FAILED, "solo", "solo.txt", "2026-01-04T00:00:00"),
+            }
+        )
+
+        scheduling = await store.get_docs_by_ids(["solo", "missing", "primary"], strict=True)
+        assert set(scheduling) == {"solo", "primary"}
+        assert scheduling["primary"].has_custom_chunk_journal is True
+        assert scheduling["primary"].status == DocStatus.PROCESSED
+        assert scheduling["solo"].file_path == "solo.txt"
+
+        full = await store.get_full_docs_by_ids(["solo", "missing"], strict=True)
+        assert set(full) == {"solo"}
+        assert isinstance(full["solo"], DocProcessingStatus)
+        assert full["solo"].content_summary == "solo"
+        assert not hasattr(full["solo"], "content")
+
+        absent = await store.resolve_doc_source_strict("does-not-exist.txt")
+        assert isinstance(absent, SourceAbsent)
+        # A file path that only has a duplicate marker is not a primary.
+        marker_only = await store.resolve_doc_source_strict("only-marker.txt")
+        assert isinstance(marker_only, SourceAbsent)
+
+        unique = await store.resolve_doc_source_strict("solo.txt")
+        assert isinstance(unique, SourceUnique)
+        assert unique.doc_id == "solo"
+        assert unique.doc.status == DocStatus.FAILED
+
+        conflict = await store.resolve_doc_source_strict("shared.txt")
+        assert isinstance(conflict, SourceConflict)
+        assert conflict.candidate_count is None
+        assert conflict.sample_doc_ids == ("other", "primary")
+    finally:
+        await store.drop()
+
+
+async def test_doc_status_content_hash_is_earliest_and_excludes_pointers(shared_driver, workspace):
+    store = _doc_store(workspace)
+    await store.initialize()
+    try:
+        await store.upsert(
+            {
+                # Later created_at but smaller id: must NOT win.
+                "a": _doc_at(DocStatus.PROCESSED, "a", "a.txt", "2026-02-01T00:00:00", content_hash="H"),
+                # Earliest independent holder.
+                "z": _doc_at(DocStatus.PROCESSED, "z", "z.txt", "2026-01-02T00:00:00", content_hash="H"),
+                # Sorts before z, but only points at z.
+                "p": _doc_at(
+                    DocStatus.PROCESSED,
+                    "p",
+                    "p.txt",
+                    "2026-01-01T00:00:00",
+                    content_hash="H",
+                    metadata={"is_duplicate": True, "original_doc_id": "z"},
+                ),
+            }
+        )
+
+        found = await store.get_doc_by_content_hash("H")
+        assert found is not None
+        assert found[0] == "p"  # earliest row overall is the pointer
+
+        excluded = await store.get_doc_by_content_hash("H", exclude_doc_id="z")
+        assert excluded is not None
+        # Pointer at z is skipped, and z itself is skipped, so "a" remains.
+        assert excluded[0] == "a"
+        assert excluded[1]["content_hash"] == "H"
+
+        untouched = await store.get_doc_by_content_hash("H", exclude_doc_id="not-a-holder")
+        assert untouched is not None
+        assert untouched[0] == "p"
+        only_self = await store.get_doc_by_content_hash("missing", exclude_doc_id="z")
+        assert only_self is None
+    finally:
+        await store.drop()
+
+
+async def test_doc_status_strict_reads_fail_on_corrupt_rows(shared_driver, workspace):
+    """A row that cannot be decoded raises under strict and is skipped when relaxed.
+
+    The relaxed scheduling page still consumes the bad row, so the cursor
+    moves past it instead of terminating or rereading it.
+    """
+    store = _doc_store(workspace)
+    await store.initialize()
+    try:
+        await store.upsert(
+            {
+                "bad": _doc_at(DocStatus.PENDING, "bad", "bad.txt", "2026-01-01T00:00:00"),
+                "good": _doc_at(DocStatus.PENDING, "good", "good.txt", "2026-01-02T00:00:00"),
+            }
+        )
+        driver = await get_driver()
+        async with driver.session(database=get_database()) as session:
+            await (
+                await session.run(
+                    as_literal_query(f"MATCH (n:`{store._label}` {{id: $id}}) SET n.data = $data"),
+                    id="bad",
+                    data="not-json",
+                )
+            ).consume()
+
+        relaxed = await store.get_docs_by_statuses([DocStatus.PENDING], strict=False)
+        assert set(relaxed) == {"good"}
+        with pytest.raises(json.JSONDecodeError):
+            await store.get_docs_by_statuses([DocStatus.PENDING], strict=True)
+
+        assert await store.get_docs_by_ids(["bad"], strict=False) == {}
+        with pytest.raises(json.JSONDecodeError):
+            await store.get_docs_by_ids(["bad"], strict=True)
+        assert set(await store.get_full_docs_by_ids(["good", "bad"], strict=False)) == {"good"}
+        with pytest.raises(json.JSONDecodeError):
+            await store.get_full_docs_by_ids(["bad"], strict=True)
+
+        with pytest.raises(json.JSONDecodeError):
+            await store.get_docs_by_statuses_page([DocStatus.PENDING], limit=2, strict=True)
+        skipped = await store.get_docs_by_statuses_page([DocStatus.PENDING], limit=1, strict=False)
+        assert skipped.docs == {}
+        assert isinstance(skipped.next_position, CursorAfter)
+        rest = await store.get_docs_by_statuses_page(
+            [DocStatus.PENDING], limit=1, position=skipped.next_position, strict=False
+        )
+        assert list(rest.docs) == ["good"]
+        # A full page is not exhaustion: the next call is the one that ends.
+        assert isinstance(rest.next_position, CursorAfter)
+        done = await store.get_docs_by_statuses_page(
+            [DocStatus.PENDING], limit=1, position=rest.next_position, strict=False
+        )
+        assert done.docs == {}
+        assert done.next_position is CURSOR_END
     finally:
         await store.drop()
 

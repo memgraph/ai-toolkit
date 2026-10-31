@@ -22,15 +22,11 @@ classifiers = [
 ]
 
 dependencies = [
-    # Pinned to exactly 1.5.4: 1.5.5 (2026-07-31) added new @abstractmethod
-    # requirements to DocStatusStorage (a "memory-bounded scheduling" API --
-    # get_docs_by_statuses_page/get_docs_by_ids/get_full_docs_by_ids/
-    # resolve_doc_source_strict) that MemgraphDocStatusStorage doesn't
-    # implement yet, so LightRAG() construction raises TypeError. See #250.
-    # Also still capped below 1.6 for the separate reason registry.py's
-    # compat guard documents (lightrag.kg internals this integration
-    # monkey-patches). Bump only after implementing the new interface.
-    "lightrag-hku==1.5.4",
+    # Exactly 1.5.5. 1.5.4 has open advisories, including an SSRF in the
+    # native-markdown image download, fixed in this release. MemgraphDocStatusStorage
+    # implements the DocStatusStorage scheduling API that 1.5.5 made abstract.
+    # Still capped below 1.6: registry.py monkey-patches lightrag.kg internals.
+    "lightrag-hku==1.5.5",
     "memgraph-toolbox>=0.1.11",
     "numpy>=1.22.0",
     "anthropic>=0.40.0",
