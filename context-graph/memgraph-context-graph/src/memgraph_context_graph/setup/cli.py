@@ -165,9 +165,12 @@ def update_main(argv: Sequence[str]) -> int:
             return update.rerun(args.runtimes, project_dirs)
     runtimes = args.runtimes or update.wired(project_dirs)
     if not runtimes:
+        # An SDK app captures without any wiring, so what it kept is still added.
+        if (replayed := update.replay_kept()) is not None:
+            _report(replayed)
         print("Nothing is wired: no Context Graph plugin, and no hook files in " + ", ".join(map(str, project_dirs)))
         print("Run memgraph-context-graph setup to install it.")
-        return 0
+        return 1 if replayed is not None and replayed.status == "fail" else 0
     outcomes = update.run(runtimes, project_dirs, log=_log, report=_report)
     print()
     if engine.failed(outcomes):

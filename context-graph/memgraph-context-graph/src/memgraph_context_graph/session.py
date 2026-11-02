@@ -9,6 +9,12 @@ can create a new session together; :func:`ensure` survives that race.
 A component calls :func:`setup` from its own ``setup()`` and :func:`ensure`
 before any query that needs the node, which then MATCHes it.
 
+A new Session Node records which release created it, ``captured_by``
+(``"memgraph-context-graph 0.12.2"``). Releases before that record nothing,
+so a recent session without one shows an older install still capturing into
+this graph, which no other record can show (``graph_version`` sees only
+clients new enough to report themselves).
+
 A forgotten session (``memgraph-context-graph forget``) leaves a
 ``(:ForgottenSession {session_id, forgotten_at})`` behind and nothing else.
 :func:`ensure` never recreates a session that has one, so a hook or a
@@ -40,8 +46,8 @@ def ensure(db: Any, session_id: str, **on_create: Any) -> None:
     Args:
         db: The Memgraph client to write through.
         session_id: The session's key.
-        **on_create: Properties a newly created node starts with; an existing
-            node is left as it is.
+        **on_create: Properties a newly created node starts with, besides
+            ``captured_by``; an existing node is left as it is.
     """
     merge_with_retry(
         db,
@@ -50,8 +56,15 @@ def ensure(db: Any, session_id: str, **on_create: Any) -> None:
         WITH f WHERE f IS NULL
         MERGE (s:Session {session_id: $session_id}) ON CREATE SET s += $props
         """,
-        params={"session_id": session_id, "props": on_create},
+        params={"session_id": session_id, "props": {**on_create, "captured_by": captured_by()}},
     )
+
+
+def captured_by() -> str:
+    """What a new Session Node records as the release that created it."""
+    from memgraph_context_graph import __version__
+
+    return f"memgraph-context-graph {__version__}"
 
 
 def mark_forgotten(db: Any, session_id: str) -> None:

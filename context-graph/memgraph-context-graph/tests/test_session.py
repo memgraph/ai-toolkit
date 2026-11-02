@@ -83,3 +83,12 @@ def test_other_sessions_are_not_forgotten(db, session_id):
         assert _sessions(db, session_id) == [{"model": None}]
     finally:
         db.query("MATCH (f:ForgottenSession {session_id: $sid}) DELETE f", {"sid": f"{session_id}-other"})
+
+
+def test_a_new_session_records_the_release_that_created_it(db, session_id):
+    session.ensure(db, session_id, captured_by="a caller's value is overridden")
+    session.ensure(db, session_id)
+
+    rows = db.query("MATCH (s:Session {session_id: $sid}) RETURN s.captured_by AS by", {"sid": session_id})
+    assert rows == [{"by": session.captured_by()}]
+    assert rows[0]["by"].startswith("memgraph-context-graph ")
