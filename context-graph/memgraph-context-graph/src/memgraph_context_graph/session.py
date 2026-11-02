@@ -10,7 +10,7 @@ A component calls :func:`setup` from its own ``setup()`` and :func:`ensure`
 before any query that needs the node, which then MATCHes it.
 
 A new Session Node records which release created it, ``captured_by``
-(``"memgraph-context-graph 0.12.2"``). Releases before that record nothing,
+(``"memgraph-context-graph 0.12.3"``). Releases before that record nothing,
 so a recent session without one shows an older install still capturing into
 this graph, which no other record can show (``graph_version`` sees only
 clients new enough to report themselves).
