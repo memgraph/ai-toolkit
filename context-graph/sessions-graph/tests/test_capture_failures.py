@@ -5,6 +5,8 @@ the log is the only place a failure before the Session can be updated shows up.
 """
 
 import json
+import os
+import sys
 
 import pytest
 from sessions_graph import connector as connector_module
@@ -31,6 +33,20 @@ def test_a_child_that_cannot_start_is_logged(monkeypatch):
     (line,) = _log_lines()
     assert (line["stage"], line["connector"], line["session_id"]) == ("spawn", "sessions-graph", "s-1")
     assert line["error_type"] == "FileNotFoundError"
+
+
+def test_a_child_runs_on_the_hooks_own_python_not_a_sessions_graph_found_on_path(monkeypatch, tmp_path):
+    # A `sessions-graph` on PATH can belong to another install, whose older code would write to the graph unchecked.
+    stray = tmp_path / "sessions-graph"
+    stray.write_text("#!/bin/sh\nexit 0\n")
+    stray.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
+    started = []
+    monkeypatch.setattr(connector_module.subprocess, "Popen", lambda argv, **_: started.append(argv))
+
+    connector_module._spawn_detached(["embed", "--session", "s-1"], env={})
+
+    assert started == [[sys.executable, "-m", "sessions_graph.cli", "embed", "--session", "s-1"]]
 
 
 @pytest.mark.parametrize("command", ["embed", "reconcile"])
