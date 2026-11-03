@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from memgraph_context_graph.adapters._text_file import write_text_keeping_newlines
 from memgraph_context_graph.memory_backend import ExportReport, ImportReport, MemoryBackendError
 
 if TYPE_CHECKING:
@@ -236,7 +237,7 @@ def _write_memory(folder: Path, name: str, text: str, lineage: set[str]) -> bool
         if current == text or current not in lineage:
             return False
     folder.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    write_text_keeping_newlines(path, text)
     return True
 
 
@@ -250,7 +251,7 @@ def _write_index(folder: Path) -> None:
         title = match["value"].strip("\"'") if (match := _NAME_RE.search(frontmatter)) else path.stem
         hook = match["value"].strip("\"'") if (match := _DESCRIPTION_RE.search(frontmatter)) else ""
         lines.append(f"- [{title}]({path.name})" + (f" — {hook}" if hook else ""))
-    (folder / _INDEX_FILE).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_text_keeping_newlines(folder / _INDEX_FILE, "\n".join(lines) + "\n")
 
 
 def _frontmatter(text: str) -> str:
@@ -359,7 +360,7 @@ def _set(path: Path, value: bool | None) -> list[str]:
     if path.exists() and not backup.exists():
         shutil.copy2(path, backup)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    write_text_keeping_newlines(path, json.dumps(settings, indent=2) + "\n")
     state = "removed" if value is None else json.dumps(value)
     return [f"Wrote {path} ({_SETTING} {state})"]
 

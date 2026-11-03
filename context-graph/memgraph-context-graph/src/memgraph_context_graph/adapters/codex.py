@@ -19,6 +19,7 @@ from memgraph_context_graph.adapters._spec import (
     turn_end,
     write_hook_config,
 )
+from memgraph_context_graph.adapters._text_file import write_text_keeping_newlines
 from memgraph_context_graph.adapters.codex_memory import CODEX_MEMORY
 from memgraph_context_graph.events import MessageEvent
 
@@ -116,7 +117,7 @@ def init(
         raise FileExistsError(f"Refusing to overwrite existing Codex config: {names} (pass force=True to replace)")
 
     write_hook_config(SPEC, project_dir, connectors, hook_command=hook_command, timeout=timeout, force=True)
-    config_path.write_text("[features]\nhooks = true\n", encoding="utf-8")
+    write_text_keeping_newlines(config_path, "[features]\nhooks = true\n")
     print(f"Wrote {config_path}")
     print(f"Wrote {hooks_path}")
 

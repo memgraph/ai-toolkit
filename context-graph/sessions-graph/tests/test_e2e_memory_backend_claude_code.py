@@ -188,6 +188,18 @@ def test_handing_memory_back(home):
     assert _identity.load_config().memory_backend == "native"
 
 
+def test_a_round_trip_gives_back_a_crlf_settings_file_byte_for_byte(home):
+    settings = home / ".claude" / "settings.json"
+    original = (json.dumps({"theme": "dark"}, indent=2) + "\n").replace("\n", "\r\n").encode()
+    settings.write_bytes(original)
+
+    use_graph_memory(PLUGIN, home=home)
+    assert b"\r\n" in settings.read_bytes() and b"\n" not in settings.read_bytes().replace(b"\r\n", b"")
+    use_native_memory(PLUGIN, home=home)
+
+    assert settings.read_bytes() == original
+
+
 def test_handing_memory_back_copies_what_the_graph_learned_since(home, graph):
     use_graph_memory(PLUGIN, home=home)
     graph.record_session_start("s-toolkit", user_id="alice", project_key="github.com_memgraph_ai-toolkit")
