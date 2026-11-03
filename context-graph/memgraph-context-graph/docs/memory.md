@@ -192,7 +192,10 @@ change shows from the next session.
 At session start the hook loads the memory, the way the harness's built-in
 memory would have. It adds:
 - an index of the root and the current project's files, one line each with
-  the file's `description:` frontmatter or first line, up to 200 lines;
+  the file's `description:` frontmatter or first line, up to 200 lines. The
+  current project's files come first, then root files written in this
+  project's sessions, then the rest, newest first, so an import of every
+  project's `user`/`feedback` memories can't crowd this project's out;
 - the full text of any file with `pin: true` in its frontmatter;
 - the current project's folder.
 

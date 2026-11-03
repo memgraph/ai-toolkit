@@ -6,7 +6,9 @@ does that instead, but generates the index from the files themselves, so
 the model never has to maintain it and it can't go stale:
 
 - one line per file in the user-wide root and the current project's folder:
-  its path and a description (the ``description:`` frontmatter, or its first line);
+  its path and a description (the ``description:`` frontmatter, or its first line),
+  the current project's files first, then root files its sessions wrote, then
+  the rest, newest first within each;
 - the full text of files marked ``pin: true``, for rules that must never
   depend on the model choosing to open a file;
 - where the current project's folder is, and how to use the memory.
@@ -73,6 +75,7 @@ def render_index(store: MemoryStore, project: str | None, *, guidance: str, max_
     budget = math.inf if max_chars is None else max_chars
     project_folder = f"{_PROJECTS}/{project}" if project else None
     files = [file for file in store.files() if _in_scope(file.path, project_folder)]
+    files = _ranked(files, project_folder, store.written_from(project) if project and files else set())
 
     lines = [guidance]
     if project_folder:
@@ -88,9 +91,25 @@ def render_index(store: MemoryStore, project: str | None, *, guidance: str, max_
     if pinned:
         lines += _pinned(pinned, min(MAX_PINNED_CHARS, budget // 2))
 
-    lines.append("Memory index (view a file for its full text):")
+    lines.append("Memory index (view a file for its full text; this project's files first, then the newest):")
     lines += index_lines(files, budget - _length(lines), limit=MAX_INDEX_LINES, folder=MEMORY_ROOT)
     return "\n".join(lines)
+
+
+def _ranked(files: list[MemoryFile], project_folder: str | None, written_here: set[str]) -> list[MemoryFile]:
+    """The current project's files, then root files its sessions wrote, then the rest; newest first within each.
+
+    The index is cut from its tail, and a user-wide import lands every
+    project's ``user``/``feedback`` memories at the root, so path order would
+    put other projects' notes ahead of this one's.
+    """
+
+    def rank(file: MemoryFile) -> int:
+        if project_folder and file.path.startswith(project_folder + "/"):
+            return 0
+        return 1 if file.path in written_here else 2
+
+    return sorted(sorted(files, key=lambda file: file.updated_at, reverse=True), key=rank)
 
 
 def index_lines(files: list[MemoryFile], room: float, *, limit: int, folder: str) -> list[str]:
@@ -113,13 +132,12 @@ def index_lines(files: list[MemoryFile], room: float, *, limit: int, folder: str
 
 
 def _pinned(files: list[MemoryFile], budget: float) -> list[str]:
-    """Pinned files in full while *budget* lasts; a file that doesn't fit, and those after it, are named instead."""
+    """Pinned files in full while *budget* lasts; one that doesn't fit is named instead, and smaller ones still fit."""
     lines = ["Pinned memories (always apply):"]
     for file in files:
         block = [f'<memory path="{file.path}">', _body(file.content).strip(), "</memory>"]
         if _length(block) > budget:
-            lines.append(f"[{file.path} and further pinned files cut at the pinned-memory budget; view them.]")
-            break
+            block = [f"[{file.path} is over the pinned-memory budget; view it.]"]
         lines += block
         budget -= _length(block)
     return lines

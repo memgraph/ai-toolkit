@@ -424,6 +424,18 @@ class MemoryStore:
         )
         return [row["project_key"] for row in rows]
 
+    def written_from(self, project: str) -> set[str]:
+        """The paths of this user's files that a session in *project* wrote: one query for a whole index."""
+        rows = self._db.query(
+            """
+            MATCH (:User {user_id: $user_id})-[:HAS_MEMORY]->(m:Memory)<-[:PRODUCED_MEMORY]-(s:Session)
+            WHERE s.project_key = $project
+            RETURN DISTINCT m.path AS path
+            """,
+            params={"user_id": self.user_id, "project": project},
+        )
+        return {row["path"] for row in rows}
+
     # ------------------------------------------------------------------
     # Graph access
     # ------------------------------------------------------------------

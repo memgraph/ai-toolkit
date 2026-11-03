@@ -60,10 +60,37 @@ def test_index_lists_root_and_current_project_only(store):
     assert text.split("\n") == [
         GUIDANCE,
         "Current project folder: /memories/projects/repo/",
-        "Memory index (view a file for its full text):",
-        "- /memories/feedback/tests.md — Prefer real Memgraph",
+        "Memory index (view a file for its full text; this project's files first, then the newest):",
         "- /memories/projects/repo/decisions.md — Decisions",
+        "- /memories/feedback/tests.md — Prefer real Memgraph",
     ]
+
+
+def test_index_ranks_this_project_then_what_it_wrote_then_the_newest(graph):
+    """After a user-wide import, other projects' root notes must not crowd out this one's."""
+    importer = graph.memory_store("alice")
+    for n in range(100):
+        importer.create(f"/memories/feedback/{n:04d}-elsewhere.md", _long_description(n))
+    importer.create("/memories/projects/repo/decisions.md", "---\ndescription: We chose X\n---\n")
+    graph.record_session_start("s-here", user_id="alice", project_key="repo")
+    graph.memory_store("alice", session_id="s-here").create(
+        "/memories/feedback/here.md", "---\ndescription: Mine\n---\n"
+    )
+    graph.record_session_start("s-there", user_id="alice", project_key="other")
+    graph.memory_store("alice", session_id="s-there").create(
+        "/memories/feedback/there.md", "---\ndescription: Not\n---\n"
+    )
+
+    lines = render_index(importer, "repo", guidance=GUIDANCE, max_chars=2_000).split("\n")
+
+    entries = [line.split(" — ")[0] for line in lines if line.startswith("- /memories/")]
+    assert entries[:4] == [
+        "- /memories/projects/repo/decisions.md",
+        "- /memories/feedback/here.md",
+        "- /memories/feedback/there.md",
+        "- /memories/feedback/0099-elsewhere.md",
+    ]
+    assert lines[-1] == f"- ...and {103 - len(entries)} more; view /memories to list them."
 
 
 def test_index_reads_descriptions_nested_like_claude_codes_own_files(store):
@@ -120,7 +147,7 @@ def test_index_cut_to_the_budget_says_how_many_it_left_out(store):
     listed = sum(line.startswith("- /memories/") for line in lines)
     assert len("\n".join(lines)) <= 2_000
     assert lines[-1] == f"- ...and {400 - listed} more; view /memories to list them."
-    assert lines[-2] == f"- /memories/n/{listed - 1:04d}.md"
+    assert lines[-2] == f"- /memories/n/{400 - listed:04d}.md"
 
 
 def test_pinned_text_takes_at_most_half_the_budget(store):
@@ -132,8 +159,8 @@ def test_pinned_text_takes_at_most_half_the_budget(store):
 
     assert "Short rule." in text
     assert '<memory path="/memories/b-essay.md">' not in text
-    assert "[/memories/b-essay.md and further pinned files cut at the pinned-memory budget; view them.]" in text
-    assert text.endswith("- /memories/c-note.md — still listed")
+    assert "[/memories/b-essay.md is over the pinned-memory budget; view it.]" in text
+    assert "- /memories/c-note.md — still listed" in text
 
 
 def test_empty_memory_says_so(store):
