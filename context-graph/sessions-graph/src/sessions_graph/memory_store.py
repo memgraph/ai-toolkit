@@ -21,7 +21,7 @@ so a model can't reach another user's memory.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -487,23 +487,7 @@ class MemoryStore:
         return rows[0]["path"] if rows else None
 
     def _listing(self, directory: str) -> str:
-        sizes: dict[str, int] = {}
-        total = 0
-        for file in self.files(directory):
-            relative = file.path[len(directory) + 1 :].split("/")
-            if any(segment.startswith(".") or segment == "node_modules" for segment in relative):
-                continue
-            size = len(file.content.encode("utf-8"))
-            total += size
-            for depth in range(1, min(len(relative), _LISTING_DEPTH) + 1):
-                entry = "/".join(relative[:depth]) + ("/" if depth < len(relative) else "")
-                sizes[entry] = sizes.get(entry, 0) + size
-        lines = [f"{_human_size(total)}\t{directory}"]
-        lines += [f"{_human_size(sizes[entry])}\t{directory}/{entry}" for entry in sorted(sizes)]
-        return (
-            f"Here're the files and directories up to 2 levels deep in {directory}, "
-            "excluding hidden items and node_modules:\n" + "\n".join(lines)
-        )
+        return render_listing(directory, self.files(directory))
 
     def _write(self, path: str, content: str, *, expected: str | None = None) -> None:
         """Store *content* at *path*, creating the file when *expected* is None.
@@ -681,6 +665,37 @@ def _occurrence_lines(content: str, needle: str) -> list[int]:
         lines.append(content[:position].count("\n") + 1)
         start = position + 1
     return lines
+
+
+def render_listing(directory: str, files: Iterable[MemoryFile], folders: Iterable[str] = ()) -> str:
+    """The ``view`` listing of *directory*: *files* under it, two levels deep, each entry with its size.
+
+    Args:
+        directory: The normalized directory being listed.
+        files: Files under *directory*, from one store or several.
+        folders: Folders under *directory* to list even when they hold no files, e.g. an empty shared space.
+    """
+    sizes: dict[str, int] = {}
+    for folder in folders:
+        relative = folder[len(directory) + 1 :].strip("/").split("/")
+        for depth in range(1, min(len(relative), _LISTING_DEPTH) + 1):
+            sizes.setdefault("/".join(relative[:depth]) + "/", 0)
+    total = 0
+    for file in files:
+        relative = file.path[len(directory) + 1 :].split("/")
+        if any(segment.startswith(".") or segment == "node_modules" for segment in relative):
+            continue
+        size = len(file.content.encode("utf-8"))
+        total += size
+        for depth in range(1, min(len(relative), _LISTING_DEPTH) + 1):
+            entry = "/".join(relative[:depth]) + ("/" if depth < len(relative) else "")
+            sizes[entry] = sizes.get(entry, 0) + size
+    lines = [f"{_human_size(total)}\t{directory}"]
+    lines += [f"{_human_size(sizes[entry])}\t{directory}/{entry}" for entry in sorted(sizes)]
+    return (
+        f"Here're the files and directories up to 2 levels deep in {directory}, "
+        "excluding hidden items and node_modules:\n" + "\n".join(lines)
+    )
 
 
 def _human_size(size: int) -> str:
