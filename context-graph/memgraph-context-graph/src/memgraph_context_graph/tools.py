@@ -18,7 +18,10 @@ the tool is neither listed nor callable, nor is its session hint shown. The
 
 A tool may define ``session_context(config, payload) -> str | None`` to write
 its session-start text from the SessionStart payload (e.g. its ``cwd``) instead
-of the fixed ``session_hint``; if it raises, the fixed hint is used.
+of the fixed ``session_hint``; if it raises, the fixed hint is used. One that
+also takes a keyword ``max_chars`` is told how much of the harness's
+session-start budget (:data:`SESSION_CONTEXT_CHARS`) the other tools left, so
+it can fit its own text instead of having it cut from the end.
 
 A tool that writes its connector's graph sets ``writes_graph = True``, so the
 MCP server refuses it once a newer Context Graph has reshaped that graph
@@ -27,6 +30,7 @@ MCP server refuses it once a newer Context Graph has reshaped that graph
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
 from importlib import metadata
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -35,6 +39,11 @@ if TYPE_CHECKING:
     from memgraph_context_graph.adapters._identity import HookConfig
 
 _ENTRY_POINT_GROUP = "memgraph_context_graph.tools"
+
+#: Characters of session-start text a harness shows its model, unless its runtime spec says less.
+#: Claude Code's cap on a hook's ``additionalContext``: past it, the model gets a file path and a
+#: 2,000-character preview, and is never asked to read the file.
+SESSION_CONTEXT_CHARS = 10_000
 
 
 @dataclass(frozen=True)
@@ -110,29 +119,45 @@ def writes_graph(tool: Tool) -> bool:
 
 
 def session_hints(
-    connectors: list[str], config: HookConfig | None = None, *, payload: dict[str, Any] | None = None
+    connectors: list[str],
+    config: HookConfig | None = None,
+    *,
+    payload: dict[str, Any] | None = None,
+    max_chars: int = SESSION_CONTEXT_CHARS,
 ) -> list[str]:
-    """The session-start text of the available tools that read one of ``connectors``' graphs."""
+    """The session-start text of the available tools that read one of ``connectors``' graphs, in registry order.
+
+    Tools that can fit their text to a budget share what the others leave of
+    *max_chars*, each offered what is still left.
+    """
     if config is None:
         from memgraph_context_graph.adapters._identity import load_config
 
         config = load_config()
     enabled = {normalize_connector_name(connector) for connector in connectors}
-    hints = []
-    for tool in available_tools(config).values():
-        if normalize_connector_name(tool.connector) in enabled and (hint := _session_text(tool, config, payload or {})):
-            hints.append(hint)
-    return hints
+    tools = [tool for tool in available_tools(config).values() if normalize_connector_name(tool.connector) in enabled]
+    texts = {id(tool): _session_text(tool, config, payload or {}) for tool in tools if not _fits_budget(tool)}
+    room = max_chars - sum(len(text) + 1 for text in texts.values() if text)
+    for tool in filter(_fits_budget, tools):
+        if text := _session_text(tool, config, payload or {}, max_chars=max(room, 0)):
+            texts[id(tool)] = text
+            room -= len(text) + 1
+    return [text for tool in tools if (text := texts.get(id(tool)))]
 
 
-def _session_text(tool: Tool, config: HookConfig, payload: dict[str, Any]) -> str | None:
+def _fits_budget(tool: Tool) -> bool:
     session_context = getattr(tool, "session_context", None)
-    if session_context is not None:
-        try:
-            return session_context(config, payload)
-        except Exception:  # Never fail the hook over memory context; fall back to the fixed hint.
-            return tool.session_hint
-    return tool.session_hint
+    return session_context is not None and "max_chars" in inspect.signature(session_context).parameters
+
+
+def _session_text(tool: Tool, config: HookConfig, payload: dict[str, Any], **budget: int) -> str | None:
+    session_context = getattr(tool, "session_context", None)
+    if session_context is None:
+        return tool.session_hint
+    try:
+        return session_context(config, payload, **budget)
+    except Exception:  # Never fail the hook over memory context; fall back to the fixed hint.
+        return tool.session_hint
 
 
 def normalize_connector_name(name: str) -> str:

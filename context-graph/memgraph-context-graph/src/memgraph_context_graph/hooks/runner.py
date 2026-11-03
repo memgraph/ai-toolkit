@@ -22,6 +22,7 @@ from memgraph_context_graph.connectors import (
 from memgraph_context_graph.events import ToolStartEvent
 from memgraph_context_graph.link import AgentLink, ConnectorFailuresError
 from memgraph_context_graph.protocols import GraphConnector
+from memgraph_context_graph.tools import SESSION_CONTEXT_CHARS
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -402,7 +403,12 @@ def _response(
     response = plugin.response_for_payload(payload) or {}
     render_session = getattr(plugin, "session_context_response", None)
     if render_session is not None:
-        response.update(render_session(payload, lambda: session_start_text(connector_names, payload)) or {})
+        limit = getattr(plugin, "session_context_limit", SESSION_CONTEXT_CHARS)
+
+        def text() -> str | None:
+            return session_start_text(connector_names, payload, max_chars=limit)
+
+        response.update(render_session(payload, text) or {})
     render = getattr(plugin, "context_before_tool_response", None)
     if before_tool and render is not None:
         response.update(render("\n".join(before_tool)) or {})
@@ -437,7 +443,9 @@ def _context_before_tool(link: AgentLink, events: list[ToolStartEvent]) -> list[
     return lines
 
 
-def session_start_text(connector_names: list[str], payload: dict[str, Any] | None = None) -> str | None:
+def session_start_text(
+    connector_names: list[str], payload: dict[str, Any] | None = None, *, max_chars: int = SESSION_CONTEXT_CHARS
+) -> str | None:
     """The session-start text telling the model which memory tools it has; None when there are none.
 
     Recall announces itself and adds where the user left off in this project,
@@ -450,13 +458,18 @@ def session_start_text(connector_names: list[str], payload: dict[str, Any] | Non
     While a newer Context Graph's graph refuses this client, a notice comes first
     (:func:`~memgraph_context_graph.graph_version.configured_notice`), so the
     model can tell the user to update.
+
+    All of it fits in *max_chars*, what the harness shows: the tools fit
+    their own text, and anything still over is cut here at a line, with a
+    note, rather than by the harness wherever it likes.
     """
     from memgraph_context_graph.tools import session_hints
 
     notice = graph_version.configured_notice()
     lines = [notice] if notice else []
     try:
-        lines += session_hints(connector_names, payload=_with_cwd(payload or {}))
+        room = max_chars - len(notice) - 1 if notice else max_chars
+        lines += session_hints(connector_names, payload=_with_cwd(payload or {}), max_chars=room)
     except Exception as exc:  # A tool that fails to load must not fail the hook; the model just isn't told.
         capture_log.record_failure(
             "respond",
@@ -465,7 +478,17 @@ def session_start_text(connector_names: list[str], payload: dict[str, Any] | Non
             hook_event="SessionStart",
             session_id=_payload_session_id(payload or {}),
         )
-    return "\n".join(lines) or None
+    return _fit("\n".join(lines), max_chars) or None
+
+
+def _fit(text: str, max_chars: int) -> str:
+    """*text*, or as many of its first lines as fit in *max_chars* with a note that the rest was cut."""
+    if len(text) <= max_chars:
+        return text
+    note = f"[Session-start text cut to the {max_chars:,} characters this agent shows.]"
+    kept = text[: max(max_chars - len(note) - 1, 0)]
+    whole_lines = kept.rpartition("\n")[0] or kept
+    return f"{whole_lines}\n{note}"
 
 
 def _with_cwd(payload: dict[str, Any]) -> dict[str, Any]:
