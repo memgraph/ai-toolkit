@@ -122,8 +122,8 @@ its global store, with three differences:
   compaction (`compact`), so the memory index comes back once the context is
   summarized.
 
-Codex caps hook context at about 2,500 tokens, so pinned files come before the
-index and a long index is cut from its tail. See
+Codex caps hook context at about 2,500 tokens, so its session-start text is
+kept to 9,000 characters, with pinned files before the index. See
 [the Codex research note](research/2026-10-codex-memory.md).
 
 If the import can't run, for example because Memgraph is down, nothing is
@@ -195,6 +195,13 @@ memory would have. It adds:
   the file's `description:` frontmatter or first line, up to 200 lines;
 - the full text of any file with `pin: true` in its frontmatter;
 - the current project's folder.
+
+All of that, with recall's "where you left off", fits in what the agent shows
+its model at session start: 10,000 characters, Claude Code's cap on a hook's
+context (past it, the model sees only a 2,000-character preview), and 9,000 for
+Codex. Pinned text takes at most half. The index shortens its descriptions,
+down to bare paths, before it leaves any file out, and then ends with how many
+it left out and where to list them.
 
 The index is generated from the graph, so the model never maintains an index
 file and it can't go stale. The project folder is keyed by the checkout's git

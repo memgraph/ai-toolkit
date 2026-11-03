@@ -21,6 +21,7 @@ own memory rather than sitting beside it.
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -35,7 +36,7 @@ from memgraph_context_graph.tools import ToolError, ToolResult
 
 from .core import SessionsGraph
 from .embeddings import DEFAULT_EMBEDDING_MODEL
-from .memory_index import describe, project_key_for, render_index
+from .memory_index import index_lines, project_key_for, render_index
 from .memory_store import MemoryCommandError, MemoryStore
 from .models import MEMORY_ROOT, MemoryValidationError, normalize_memory_path
 from .recall import RecallConfig, Recalled, fuse
@@ -110,7 +111,8 @@ class RecallTool(_GraphPerConfig):
 
         The project comes from the SessionStart payload's ``cwd``. The brief
         quotes the last sessions' turns rather than answering a question, so
-        recall itself stays pull-only (#394).
+        recall itself stays pull-only (#394). It is short by construction, and
+        the memory index fits itself to what the brief leaves.
         """
         user_id = self._user_id(config)
         cwd = payload.get("cwd")
@@ -255,10 +257,14 @@ class MemoryTool(_GraphPerConfig):
         "before work that could depend on earlier sessions, and to save what you learn."
     )
 
-    def session_context(self, config: HookConfig, payload: dict[str, Any]) -> str | None:
-        """The memory index for this session: root files, the current project's files, pinned text.
+    def session_context(
+        self, config: HookConfig, payload: dict[str, Any], *, max_chars: int | None = None
+    ) -> str | None:
+        """The memory index for this session: root files, the current project's files, pinned text, shared spaces.
 
-        The project comes from the SessionStart payload's ``cwd``.
+        The project comes from the SessionStart payload's ``cwd``. *max_chars*
+        is how much the harness still shows; shared spaces get what the
+        personal index leaves.
         """
         user_id = self._user_id(config)
         if not user_id:
@@ -266,9 +272,13 @@ class MemoryTool(_GraphPerConfig):
         cwd = payload.get("cwd")
         project = project_key_for(cwd) if isinstance(cwd, str) and cwd else None
         store = self._graph_for(config).memory_store(user_id)
-        index = render_index(store, project, guidance=self.session_hint)
-        shared = [space for space in _spaces(config).readable() if space.shared]
-        return "\n".join([index, *(self._shared_index(space, user_id) for space in shared)])
+        parts = [render_index(store, project, guidance=self.session_hint, max_chars=max_chars)]
+        room = math.inf if max_chars is None else max_chars - len(parts[0])
+        for space in _spaces(config).readable():
+            if space.shared:
+                parts.append(self._shared_index(space, user_id, room - 1))
+                room -= len(parts[-1]) + 1
+        return "\n".join(parts)
 
     def available(self, config: HookConfig) -> bool:
         """Only for users who made Context Graph their memory backend."""
@@ -345,14 +355,12 @@ class MemoryTool(_GraphPerConfig):
         where = f"shared space {destination}" if destination else "your personal memory"
         return f"Successfully renamed {old_path} to {new_path} (now in {where})"
 
-    def _shared_index(self, space: Space, user_id: str) -> str:
-        """One shared space's part of the session-start index."""
+    def _shared_index(self, space: Space, user_id: str, room: float) -> str:
+        """One shared space's part of the session-start index, in about *room* characters."""
         folder = f"{SPACES_ROOT}/{space.name}"
         files = self._shared_store(space, user_id).files(folder)
         lines = [f"Shared space {space.name} ({folder}/; every member can read and edit it):"]
-        lines += [f"- {file.path} — {describe(file.content)}" for file in files[:MAX_SHARED_INDEX_LINES]]
-        if len(files) > MAX_SHARED_INDEX_LINES:
-            lines.append(f"- ...and {len(files) - MAX_SHARED_INDEX_LINES} more; view {folder} to list them.")
+        lines += index_lines(files, room - len(lines[0]) - 1, limit=MAX_SHARED_INDEX_LINES, folder=folder)
         if not files:
             lines.append(f"- (empty; create files under {folder}/ to share them)")
         return "\n".join(lines)

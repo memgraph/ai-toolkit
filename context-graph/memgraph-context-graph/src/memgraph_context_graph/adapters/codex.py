@@ -82,6 +82,9 @@ SPEC = RuntimeSpec(
     responses={"Stop": {"continue": True}},
     context_before_tool=pre_tool_use_context,
     session_context=hook_specific_session_context,
+    # Codex cuts hook context at about 2,500 tokens (docs/research/2026-10-codex-memory.md);
+    # 9,000 characters stays under that even with multi-byte text.
+    session_context_limit=9_000,
     probe_payload={"hook_event_name": "Stop", "session_id": "doctor"},
 )
 

@@ -94,6 +94,48 @@ def test_index_is_capped(store):
     assert lines[-1] == "- ...and 5 more; view /memories to list them."
 
 
+def _long_description(n: int) -> str:
+    return f"---\ndescription: note {n} {'about something worth remembering ' * 5}\n---\nbody"
+
+
+def test_index_narrows_descriptions_to_list_every_file_in_the_budget(store):
+    for n in range(60):
+        store.create(f"/memories/feedback/{n:04d}.md", _long_description(n))
+
+    text = render_index(store, None, guidance=GUIDANCE, max_chars=10_000)
+
+    entries = [line for line in text.split("\n") if line.startswith("- /memories/")]
+    assert len(text) <= 10_000
+    assert len(entries) == 60
+    assert all(" — note " in entry for entry in entries)
+    assert len(render_index(store, None, guidance=GUIDANCE)) > 10_000
+
+
+def test_index_cut_to_the_budget_says_how_many_it_left_out(store):
+    for n in range(400):
+        store.create(f"/memories/n/{n:04d}.md", f"note {n}")
+
+    lines = render_index(store, None, guidance=GUIDANCE, max_chars=2_000).split("\n")
+
+    listed = sum(line.startswith("- /memories/") for line in lines)
+    assert len("\n".join(lines)) <= 2_000
+    assert lines[-1] == f"- ...and {400 - listed} more; view /memories to list them."
+    assert lines[-2] == f"- /memories/n/{listed - 1:04d}.md"
+
+
+def test_pinned_text_takes_at_most_half_the_budget(store):
+    store.create("/memories/a-rules.md", "---\npin: true\n---\nShort rule.")
+    store.create("/memories/b-essay.md", "---\npin: true\n---\n" + "long " * 1_500)
+    store.create("/memories/c-note.md", "---\ndescription: still listed\n---\n")
+
+    text = render_index(store, None, guidance=GUIDANCE, max_chars=10_000)
+
+    assert "Short rule." in text
+    assert '<memory path="/memories/b-essay.md">' not in text
+    assert "[/memories/b-essay.md and further pinned files cut at the pinned-memory budget; view them.]" in text
+    assert text.endswith("- /memories/c-note.md — still listed")
+
+
 def test_empty_memory_says_so(store):
     assert render_index(store, "repo", guidance=GUIDANCE).endswith(
         "No memory files yet in /memories or /memories/projects/repo/."

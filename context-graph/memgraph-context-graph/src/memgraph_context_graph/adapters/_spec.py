@@ -30,6 +30,7 @@ from memgraph_context_graph.events import (
     TurnEndEvent,
 )
 from memgraph_context_graph.protocols import RuntimeAdapter
+from memgraph_context_graph.tools import SESSION_CONTEXT_CHARS
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -115,7 +116,8 @@ class RuntimeSpec:
     modifying the call. ``session_context`` renders the stdout JSON that puts
     the session-start text (memory index, where the user left off) in front of
     the model when ``session_context_event`` fires; None where no hook output
-    reaches the model at session start.
+    reaches the model at session start. ``session_context_limit`` is how many
+    characters of that text the runtime shows its model.
     """
 
     name: str
@@ -133,6 +135,7 @@ class RuntimeSpec:
     context_before_tool: Callable[[str], Mapping[str, Any]] | None = None
     session_context: Callable[[str], Mapping[str, Any]] | None = None
     session_context_event: str = "SessionStart"
+    session_context_limit: int = SESSION_CONTEXT_CHARS
 
     def event_name(self, payload: Mapping[str, Any]) -> str:
         """Return *payload*'s canonical event name."""
@@ -250,6 +253,11 @@ class SpecPlugin:
     def name(self) -> str:
         """Return the runtime's registered name."""
         return self.spec.name
+
+    @property
+    def session_context_limit(self) -> int:
+        """Return how many characters of session-start text the runtime shows its model."""
+        return self.spec.session_context_limit
 
     @property
     def probe_payload(self) -> Mapping[str, Any]:
