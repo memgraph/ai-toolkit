@@ -35,6 +35,31 @@ password = "..."
 
 ## For admins: provisioning
 
+### The admin login
+
+Provisioning needs a login with Memgraph's built-in `admin` role. `ALL PRIVILEGES`
+alone isn't enough: `apply` also writes into every personal database.
+
+- **On a fresh instance**, the first user you create turns authentication on and
+  gets the `admin` role. Don't name it `admin`, because that name is taken by the
+  built-in role:
+
+  ```cypher
+  CREATE USER cgadmin IDENTIFIED BY 'a-strong-password';
+  ```
+
+- **On an instance that already has users**, an existing admin gives the role to
+  another login:
+
+  ```cypher
+  SET ROLE FOR cgadmin TO admin;
+  ```
+
+If the login falls short, `plan` and `apply` name the missing privilege and print
+the line above. They don't print a stack trace.
+
+### The spec
+
 Spaces are declared in a spec file and applied idempotently:
 
 ```toml
@@ -50,7 +75,7 @@ memory_limit_mb = 4096
 
 ```bash
 export MEMGRAPH_URL="bolt://memgraph.corp:7687"
-export MEMGRAPH_USER="admin"
+export MEMGRAPH_USER="cgadmin"
 export MEMGRAPH_PASSWORD="your-admin-password"
 context-graph-spaces plan spaces.toml     # what would change
 context-graph-spaces apply spaces.toml    # make it so; prints one-time setup lines for new logins
@@ -65,6 +90,10 @@ What `apply` maintains:
 | Roles | `cg_u_<login>_<hash>`, `space_<name>_member_<hash>`, `cg_worker_<hash>` | named after what they grant |
 | Service login | `cg_service` | writes Chunks and entities in shared spaces |
 | Tenant profiles | `cg_<mb>mb` | memory caps from the spec |
+
+The setup lines are the only copy of the new passwords. If `apply` fails partway,
+it still prints the lines for logins it already created, then the error. Run it
+again once the error is fixed, and it continues from where it stopped.
 
 Removing someone from the spec revokes their access. Removing a space revokes
 access to it. Users and databases are only dropped with `--prune`. Only objects
