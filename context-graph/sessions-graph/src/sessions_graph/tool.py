@@ -37,7 +37,7 @@ from memgraph_context_graph.tools import ToolError, ToolResult
 from .core import SessionsGraph
 from .embeddings import DEFAULT_EMBEDDING_MODEL
 from .memory_index import index_lines, project_key_for, render_index
-from .memory_store import MemoryCommandError, MemoryStore
+from .memory_store import MemoryCommandError, MemoryStore, render_listing
 from .models import MEMORY_ROOT, MemoryValidationError, normalize_memory_path
 from .recall import RecallConfig, Recalled, fuse
 from .resume import recent_sessions, render_brief
@@ -308,6 +308,8 @@ class MemoryTool(_GraphPerConfig):
             space = _space_of(arguments.get("path"))
             if space == "" and arguments.get("command") == "view":
                 return ToolResult(text=_list_spaces(spaces))
+            if arguments.get("command") == "view" and _is_memory_root(arguments.get("path")):
+                return ToolResult(text=self._root_listing(spaces, user_id))
             return ToolResult(text=self._store(spaces, user_id, space).execute(arguments))
         except MemoryCommandError as exc:
             raise ToolError(str(exc)) from exc
@@ -324,6 +326,29 @@ class MemoryTool(_GraphPerConfig):
         if not space:
             return self._graph_at(spaces.personal()).memory_store(user_id)
         return self._shared_store(spaces.shared_space(space), user_id)
+
+    def _root_listing(self, spaces: SpaceResolver, user_id: str) -> str:
+        """``view /memories``: the personal files, with each readable shared space mounted under /memories/spaces/.
+
+        A shared space Memgraph refuses is named after the listing instead of failing it: the personal tree must
+        stay browsable while a revoked membership is still cached.
+        """
+        files = self._store(spaces, user_id, None).files(MEMORY_ROOT)
+        folders: list[str] = []
+        refused: list[str] = []
+        for space in spaces.readable():
+            if not space.shared:
+                continue
+            folder = f"{SPACES_ROOT}/{space.name}"
+            try:
+                files += self._shared_store(space, user_id).files(folder)
+            except Neo4jError as exc:
+                refused.append(f"Shared space {space.name} is unavailable: {exc.message or exc}")
+                continue
+            folders.append(folder)
+        if refused and (refresh := getattr(spaces, "refresh", None)):
+            refresh()
+        return "\n".join([render_listing(MEMORY_ROOT, files, folders), *refused])
 
     def _shared_store(self, space: Space, user_id: str) -> MemoryStore:
         return self._graph_at(space).memory_store(SHARED_OWNER, author=user_id, forget_derived=False)
@@ -410,6 +435,15 @@ def _space_of(path: Any) -> str | None:
     if path.startswith(SPACES_ROOT + "/"):
         return path[len(SPACES_ROOT) + 1 :].split("/", 1)[0]
     return None
+
+
+def _is_memory_root(path: Any) -> bool:
+    if not isinstance(path, str):
+        return False
+    try:
+        return normalize_memory_path(path) == MEMORY_ROOT
+    except MemoryValidationError:
+        return False
 
 
 def _list_spaces(spaces: SpaceResolver) -> str:

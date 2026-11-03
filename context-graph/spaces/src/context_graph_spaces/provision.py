@@ -370,36 +370,56 @@ class Applied:
     kept: list[str]
 
 
+class ApplyError(Exception):
+    """``apply`` stopped at a statement Memgraph rejected; what it did before that stays applied.
+
+    Re-running ``apply`` continues from where it stopped, but it can't recover the passwords of
+    logins already created, so :attr:`applied` carries them to be handed out now.
+    """
+
+    def __init__(self, applied: Applied, cause: Exception) -> None:
+        super().__init__(str(cause))
+        self.applied = applied
+        self.cause = cause
+
+
 def apply(spec: Spec, query: Query, *, prune: bool = False) -> Applied:
     """Make Memgraph match *spec*, then return what was done.
 
     Raises:
-        neo4j.exceptions.Neo4jError: a statement Memgraph rejected; the steps before it stay applied, and
-            re-running ``apply`` continues from where it stopped.
+        ApplyError: a statement Memgraph rejected, with the steps done and the logins created before it.
+        neo4j.exceptions.Neo4jError: reading Memgraph's current state failed, before anything changed.
     """
     the_plan = plan(spec, observed_state(query, spec.members), prune=prune)
     desired = desired_state(spec)
-    passwords = {login: secrets.token_urlsafe(18) for login in the_plan.new_users}
-    for step in the_plan.steps:
-        for statement, target in step.statements:
-            if statement == _CATALOG:
-                assert target is not None
-                _write_catalog(query, target, desired.catalogs[target])
-            elif "{password}" in statement:
-                assert target is not None
-                # token_urlsafe only yields [A-Za-z0-9_-], so the quoted literal can't be broken out of;
-                # Memgraph's CREATE USER takes no query parameters.
-                query(statement.format(login=target, password=f"'{passwords[target]}'"), None, None)
-            else:
+    generated = {login: secrets.token_urlsafe(18) for login in the_plan.new_users}
+    done: list[Step] = []
+    created: dict[str, str] = {}
+    try:
+        for step in the_plan.steps:
+            for statement, target in step.statements:
+                if statement == _CATALOG:
+                    assert target is not None
+                    _write_catalog(query, target, desired.catalogs[target])
+                elif "{password}" in statement:
+                    assert target is not None
+                    # token_urlsafe only yields [A-Za-z0-9_-], so the quoted literal can't be broken out of;
+                    # Memgraph's CREATE USER takes no query parameters.
+                    query(statement.format(login=target, password=f"'{generated[target]}'"), None, None)
+                    created[target] = generated[target]
+                else:
+                    query(statement, target, None)
+            done.append(step)
+        # Memgraph can't report a user's main database, so plan can't see it drift (a revoke clears it); re-assert.
+        for login in spec.members:
+            for statement, target in _main_database(login):
                 query(statement, target, None)
-    # Memgraph can't report a user's main database, so plan can't see it drift (a revoke clears it); re-assert it.
-    for login in spec.members:
-        for statement, target in _main_database(login):
-            query(statement, target, None)
-    # Members can't create indexes or constraints in a shared space, so the memory store's schema is set up here.
-    for space in spec.spaces:
-        setup_shared_schema(query, shared_database(space.name))
-    return Applied(the_plan.steps, passwords, the_plan.kept)
+        # Members can't create indexes or constraints in a shared space, so the memory store's schema is set up here.
+        for space in spec.spaces:
+            setup_shared_schema(query, shared_database(space.name))
+    except Exception as exc:
+        raise ApplyError(Applied(done, created, the_plan.kept), exc) from exc
+    return Applied(the_plan.steps, created, the_plan.kept)
 
 
 def setup_shared_schema(query: Query, database: str) -> None:

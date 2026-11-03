@@ -106,7 +106,7 @@ def _drop_owned(query: Query) -> None:
 
 
 #: Every login the tests provision, so a failed run's leftovers are cleaned up too.
-TEST_LOGINS = {"alice", "bob", "carol"}
+TEST_LOGINS = {"alice", "bob", "carol", "halfadmin"}
 
 
 @pytest.fixture
