@@ -131,53 +131,106 @@ def test_post_tool_use_error_result_marks_error():
     assert event.error_message == "nope"
 
 
-def _tool_end_for(tool_name: str, tool_response) -> ToolEndEvent:
+_TURN = "turn-1"
+# item_completed records as Codex 0.162 writes them to its rollout (trimmed).
+_FAILED_BASH = {
+    "type": "CommandExecution",
+    "id": "exec-bash-3",
+    "command": ["/bin/zsh", "-lc", "exit 3"],
+    "status": "failed",
+    "aggregated_output": "",
+    "exit_code": 3,
+}
+_PASSED_BASH = {
+    **_FAILED_BASH,
+    "id": "exec-bash-0",
+    "status": "completed",
+    "aggregated_output": "hello\n",
+    "exit_code": 0,
+}
+_FAILED_MCP = {
+    "type": "McpToolCall",
+    "id": "exec-mcp",
+    "server": "context-graph",
+    "tool": "memory",
+    "status": "failed",
+    "result": {"content": [{"type": "text", "text": "The path /memories/x.md does not exist."}], "isError": True},
+}
+_PATCH = {"type": "FileChange", "id": "exec-patch", "status": "completed", "stdout": "Success.\n", "stderr": ""}
+
+
+def _rollout(tmp_path, *items, turn_id=_TURN):
+    path = tmp_path / "rollout.jsonl"
+    with path.open("a") as file:
+        file.write(json.dumps({"type": "event_msg", "payload": {"type": "task_started"}}) + "\n")
+        for item in items:
+            record = {"type": "item_completed", "turn_id": turn_id, "item": item}
+            file.write(json.dumps({"type": "event_msg", "payload": record}) + "\n")
+    return str(path)
+
+
+def _handle(payload) -> list[Event]:
     rec = _RecordingConnector()
     link = AgentLink()
     link.add_connector(rec)
-    CodexHooksAdapter(link).handle_payload(
-        {"hook_event_name": "PostToolUse", "session_id": "s1", "tool_name": tool_name, "tool_response": tool_response}
+    CodexHooksAdapter(link).handle_payload({"session_id": "s1", "turn_id": _TURN, **payload})
+    return rec.events
+
+
+def _bash_end(transcript_path, tool_use_id) -> ToolEndEvent:
+    (event,) = _handle(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_use_id": tool_use_id,
+            "tool_response": "",
+            "transcript_path": transcript_path,
+        }
     )
-    (event,) = rec.events
     assert isinstance(event, ToolEndEvent)
     return event
 
 
-def test_a_non_zero_exit_code_header_marks_the_result_failed():
-    event = _tool_end_for("apply_patch", "Exit code: 1\nWall time: 0 seconds\nOutput:\npatch rejected: no such file\n")
+def test_a_bash_call_the_rollout_records_as_failed_is_an_error(tmp_path):
+    event = _bash_end(_rollout(tmp_path, _FAILED_BASH), "exec-bash-3")
 
     assert event.is_error
-    assert event.error_message == "patch rejected: no such file\n"
+    assert event.error_message == "exit code 3"
 
 
-def test_a_zero_exit_code_header_is_a_success():
-    event = _tool_end_for("apply_patch", "Exit code: 0\nWall time: 0 seconds\nOutput:\nSuccess. Updated the files.\n")
-
-    assert not event.is_error
-    assert event.error_message is None
-
-
-def test_bash_output_that_only_mentions_an_exit_code_is_not_a_failure():
-    event = _tool_end_for("Bash", "Exit code: 3\n")
+def test_a_bash_call_the_rollout_records_as_completed_is_a_success(tmp_path):
+    event = _bash_end(_rollout(tmp_path, _FAILED_BASH, _PASSED_BASH), "exec-bash-0")
 
     assert not event.is_error
 
 
-def test_a_failed_mcp_call_is_an_error_carrying_its_text():
-    event = _tool_end_for(
-        "mcp__context_graph__memory",
-        {"content": [{"type": "text", "text": "No such file: /memories/x.md"}], "isError": True},
+def test_a_bash_call_missing_from_the_rollout_stays_a_success(tmp_path, monkeypatch):
+    monkeypatch.setattr("memgraph_context_graph.adapters.codex._ITEM_WAIT_SECONDS", 0)
+
+    assert not _bash_end(_rollout(tmp_path, _PASSED_BASH), "exec-other").is_error
+    assert not _bash_end(str(tmp_path / "missing.jsonl"), "exec-bash-3").is_error
+
+
+def test_stop_records_the_turns_failed_tools_before_ending_it(tmp_path):
+    events = _handle(
+        {"hook_event_name": "Stop", "transcript_path": _rollout(tmp_path, _FAILED_MCP, _PATCH, _FAILED_BASH)}
     )
 
-    assert event.is_error
-    assert event.error_message == "No such file: /memories/x.md"
-    assert event.result == [{"type": "text", "text": "No such file: /memories/x.md"}]
+    failures = [event for event in events if isinstance(event, ToolEndEvent)]
+    assert [(e.tool_use_id, e.tool_name, e.is_error) for e in failures] == [
+        ("exec-mcp", "mcp__context_graph__memory", True),
+        ("exec-bash-3", "Bash", True),
+    ]
+    assert failures[0].error_message == "The path /memories/x.md does not exist."
+    assert failures[0].result == _FAILED_MCP["result"]["content"]
+    assert events[-1].event_type == EventType.TURN_END
 
 
-def test_a_successful_mcp_call_is_not_an_error():
-    event = _tool_end_for("mcp__context_graph__memory", {"content": [{"type": "text", "text": "ok"}], "isError": False})
+def test_stop_ignores_failures_from_other_turns(tmp_path):
+    _rollout(tmp_path, _FAILED_MCP, turn_id="turn-0")
+    events = _handle({"hook_event_name": "Stop", "transcript_path": _rollout(tmp_path, _PATCH)})
 
-    assert not event.is_error
+    assert not [event for event in events if isinstance(event, ToolEndEvent)]
 
 
 def test_stop_ends_the_turn_with_the_reply_and_keeps_the_session_open():

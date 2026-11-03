@@ -505,7 +505,7 @@ def extract_tool_result(tool_response: Any) -> tuple[Any, bool, str | None]:
         return tool_response, False, None
     error = tool_response.get("error")
     exit_code = tool_response.get("exit_code", tool_response.get("exitCode"))
-    is_error = bool(tool_response.get("is_error", tool_response.get("isError")) or error or exit_code not in (None, 0))
+    is_error = bool(tool_response.get("is_error", False) or error or exit_code not in (None, 0))
     error_message = error or tool_response.get("stderr")
     result = tool_response.get(
         "content",
