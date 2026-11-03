@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from typing import TYPE_CHECKING, Any, cast
 
-from .provision import SERVICE_ACCOUNT, Plan, Query, Step, apply, observed_state, plan
+from .provision import SERVICE_ACCOUNT, ApplyError, Plan, Query, Step, apply, observed_state, plan
 from .spec import SpecError, load_spec
 
 if TYPE_CHECKING:
@@ -55,6 +56,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print_plan(plan(spec, observed_state(query, spec.members), prune=args.prune))
             return 0
         applied = apply(spec, query, prune=args.prune)
+    except ApplyError as failed:
+        _print_steps(failed.applied.steps, "Applied before the failure:")
+        _print_passwords(failed.applied.passwords, args.url)
+        advice = _describe(failed.cause, args.url, args.user)
+        print(f"\napply stopped; run it again once this is fixed:\n{advice}", file=sys.stderr)
+        return 1
     except Exception as exc:
         explained = _explain(exc, args.url, args.user)
         if explained is None:
@@ -65,14 +72,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         close()
     _print_steps(applied.steps, "Applied" if applied.steps else "Nothing to change; Memgraph matches the spec.")
     _print_kept(applied.kept)
-    for login, password in sorted(applied.passwords.items()):
+    _print_passwords(applied.passwords, args.url)
+    return 0
+
+
+def _print_passwords(passwords: dict[str, str], url: str) -> None:
+    """The one-time setup line for each login apply created; the passwords aren't stored anywhere else."""
+    for login, password in sorted(passwords.items()):
         if login == SERVICE_ACCOUNT:
             print(f"\nNew service login {login!r} for the shared-space reconcile worker; it isn't stored anywhere.")
             print(f"  Give the worker: {SERVICE_PASSWORD_ENV}='{password}'")
             continue
         print(f"\nNew login {login!r}. Hand this to them once; it isn't stored anywhere:")
-        print(f"  memgraph-context-graph join {args.url} {login} --password='{password}'")
-    return 0
+        print(f"  memgraph-context-graph join {url} {login} --password='{password}'")
 
 
 def _reconcile(spec: Spec, url: str, *, watch: bool, interval: float) -> int:
@@ -99,7 +111,7 @@ def _reconcile(spec: Spec, url: str, *, watch: bool, interval: float) -> int:
 
 
 def _explain(exc: Exception, url: str, user: str) -> str | None:
-    """What to tell an admin whose connection failed, or None for an error that isn't about the connection."""
+    """What to tell an admin whose connection or privileges fell short, or None for any other error."""
     import neo4j
 
     if isinstance(exc, neo4j.exceptions.ServiceUnavailable):
@@ -112,7 +124,23 @@ def _explain(exc: Exception, url: str, user: str) -> str | None:
             f"Memgraph at {url} refused the admin {login}. "
             "Pass an admin login with --user and --password, or set MEMGRAPH_USER and MEMGRAPH_PASSWORD."
         )
+    if isinstance(exc, neo4j.exceptions.ClientError) and _UNPRIVILEGED.search(exc.message or ""):
+        return (
+            f"Memgraph refused the login {user!r}: {exc.message}\n"
+            "Provisioning needs Memgraph's built-in admin role. As an existing admin, run:\n"
+            f"  SET ROLE FOR {user} TO admin;\n"
+            "(On a fresh instance the first user created already holds it.)"
+        )
     return None
+
+
+def _describe(exc: Exception, url: str, user: str) -> str:
+    """:func:`_explain`'s advice when there is some, else the error itself."""
+    return _explain(exc, url, user) or f"{type(exc).__name__}: {exc}"
+
+
+#: How Memgraph words a refusal for missing privileges: a role-based one, a database grant, or a label permission.
+_UNPRIVILEGED = re.compile(r"not authorized|missing \w+ permission")
 
 
 def admin_query(url: str, user: str, password: str) -> tuple[Query, Any]:
