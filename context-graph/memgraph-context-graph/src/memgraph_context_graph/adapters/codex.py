@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import dataclasses
+import re
+from typing import TYPE_CHECKING, Any
 
 from memgraph_context_graph.adapters._spec import (
     EventContext,
@@ -20,12 +22,14 @@ from memgraph_context_graph.adapters._spec import (
     write_hook_config,
 )
 from memgraph_context_graph.adapters.codex_memory import CODEX_MEMORY
-from memgraph_context_graph.events import MessageEvent
+from memgraph_context_graph.events import MessageEvent, ToolEndEvent
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from memgraph_context_graph.events import Event
+
+_EXIT_HEADER = re.compile(r"Exit code: (-?\d+)\nWall time: [^\n]*\nOutput:\n?")
 
 
 def _user_prompt(context: EventContext) -> MessageEvent:
@@ -39,6 +43,28 @@ def _user_prompt(context: EventContext) -> MessageEvent:
 
 def _permission(context: EventContext) -> MessageEvent:
     return MessageEvent(**context.base(), role="system", content=context.text("tool_name", "permission_request"))
+
+
+def _content_text(blocks: list[Any]) -> str | None:
+    texts = [block["text"] for block in blocks if isinstance(block, dict) and isinstance(block.get("text"), str)]
+    return "\n".join(texts) or None
+
+
+def _tool_end(context: EventContext) -> ToolEndEvent:
+    """Read a failure out of Codex's tool results, which are mostly not dicts.
+
+    ``apply_patch`` (and older shell tools) report as text headed ``Exit code: N``; MCP tools as the
+    serialized ``CallToolResult``, whose ``isError`` the shared rule reads and whose text blocks are the
+    error. Codex's exec tool hands the hook only its output, without the exit code, so a failed
+    ``Bash`` call cannot be told apart from a successful one here.
+    """
+    event = tool_end(context)
+    result = event.result
+    if isinstance(result, str) and (header := _EXIT_HEADER.match(result)) and int(header.group(1)) != 0:
+        return dataclasses.replace(event, is_error=True, error_message=result[header.end() :] or None)
+    if event.is_error and event.error_message is None and isinstance(result, list):
+        return dataclasses.replace(event, error_message=_content_text(result))
+    return event
 
 
 def _turn_end(context: EventContext) -> list[Event]:
@@ -56,7 +82,7 @@ SPEC = RuntimeSpec(
         "SessionStart": session_start,
         "UserPromptSubmit": _user_prompt,
         "PreToolUse": tool_start,
-        "PostToolUse": tool_end,
+        "PostToolUse": _tool_end,
         "PermissionRequest": _permission,
         "Stop": _turn_end,
         "SessionEnd": session_end,

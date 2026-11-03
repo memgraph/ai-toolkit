@@ -131,6 +131,55 @@ def test_post_tool_use_error_result_marks_error():
     assert event.error_message == "nope"
 
 
+def _tool_end_for(tool_name: str, tool_response) -> ToolEndEvent:
+    rec = _RecordingConnector()
+    link = AgentLink()
+    link.add_connector(rec)
+    CodexHooksAdapter(link).handle_payload(
+        {"hook_event_name": "PostToolUse", "session_id": "s1", "tool_name": tool_name, "tool_response": tool_response}
+    )
+    (event,) = rec.events
+    assert isinstance(event, ToolEndEvent)
+    return event
+
+
+def test_a_non_zero_exit_code_header_marks_the_result_failed():
+    event = _tool_end_for("apply_patch", "Exit code: 1\nWall time: 0 seconds\nOutput:\npatch rejected: no such file\n")
+
+    assert event.is_error
+    assert event.error_message == "patch rejected: no such file\n"
+
+
+def test_a_zero_exit_code_header_is_a_success():
+    event = _tool_end_for("apply_patch", "Exit code: 0\nWall time: 0 seconds\nOutput:\nSuccess. Updated the files.\n")
+
+    assert not event.is_error
+    assert event.error_message is None
+
+
+def test_bash_output_that_only_mentions_an_exit_code_is_not_a_failure():
+    event = _tool_end_for("Bash", "Exit code: 3\n")
+
+    assert not event.is_error
+
+
+def test_a_failed_mcp_call_is_an_error_carrying_its_text():
+    event = _tool_end_for(
+        "mcp__context_graph__memory",
+        {"content": [{"type": "text", "text": "No such file: /memories/x.md"}], "isError": True},
+    )
+
+    assert event.is_error
+    assert event.error_message == "No such file: /memories/x.md"
+    assert event.result == [{"type": "text", "text": "No such file: /memories/x.md"}]
+
+
+def test_a_successful_mcp_call_is_not_an_error():
+    event = _tool_end_for("mcp__context_graph__memory", {"content": [{"type": "text", "text": "ok"}], "isError": False})
+
+    assert not event.is_error
+
+
 def test_stop_ends_the_turn_with_the_reply_and_keeps_the_session_open():
     link = AgentLink()
     rec = _RecordingConnector()
