@@ -487,6 +487,7 @@ def test_upgrading_asks_uv_to_refresh_every_package(monkeypatch, default_connect
             return 0
 
     monkeypatch.setattr(tool.shutil, "which", lambda _: "/bin/uv")
+    monkeypatch.setattr(tool, "_uv_dir", lambda uv, *flags: None)
     monkeypatch.setattr(tool.subprocess, "Popen", lambda argv, **_: seen.setdefault("argv", argv) and Fake())
     monkeypatch.setattr(tool, "installed", lambda package: False)
 
@@ -871,6 +872,41 @@ def test_reinstalling_the_tool_keeps_local_extraction_and_the_connectors_command
     monkeypatch.setattr(tool, "installed", lambda package: False)
     assert INSTALLABLE["sessions-graph"] in tool.requirements()
     _identity._reset_cache()
+
+
+@pytest.fixture
+def uv_tools(tmp_path, monkeypatch, default_connectors):
+    """A throwaway uv tool directory and bin, holding a standalone ``sessions-graph`` tool that owns its command.
+
+    With another install holding that command, uv refused update's install and removed the tool,
+    leaving every hook without its command.
+    """
+    import shutil
+
+    from memgraph_context_graph.setup import tool
+
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.skip("needs uv")
+    tools, bin_dir = tmp_path / "uv-tools", tmp_path / "uv-bin"
+    monkeypatch.setenv("UV_TOOL_DIR", str(tools))
+    monkeypatch.setenv("UV_TOOL_BIN_DIR", str(bin_dir))
+    monkeypatch.setattr(tool, "installed", lambda package: False)
+    subprocess.run([uv, "tool", "install", "--quiet", "sessions-graph==0.12.2"], check=True)
+    return tools, bin_dir
+
+
+def test_a_connector_command_another_tool_holds_is_left_to_it_and_the_tool_still_installs(uv_tools):
+    from memgraph_context_graph.setup import tool
+
+    tools, bin_dir = uv_tools
+    logged = []
+
+    tool.install(viewer=False, log=logged.append, upgrade=True)
+
+    assert (bin_dir / tool.TOOL).resolve().is_relative_to(tools / tool.TOOL)
+    assert (bin_dir / "sessions-graph").resolve().is_relative_to(tools / "sessions-graph")
+    assert any(line.startswith("Leaving `sessions-graph` off PATH: sessions-graph has it there") for line in logged)
 
 
 def test_the_enterprise_hint_names_the_whole_install_not_just_the_spaces_package(monkeypatch, default_connectors):
