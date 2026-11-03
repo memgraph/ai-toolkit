@@ -93,7 +93,11 @@ Opting in does three things, in this order:
      project already put a different memory of the same name there, this one
      goes to its own project's folder instead, so neither is lost;
    - `project`/`reference` memories go to that project's folder;
-   - `MEMORY.md` is skipped, and anything already in the graph is never overwritten.
+   - `MEMORY.md` is skipped, and anything already in the graph is never overwritten;
+   - each file remembers the project it came from and keeps its own
+     modification time, so the session-start index can still put a project's
+     `user`/`feedback` memories with that project. Running the switch again
+     records this for files an earlier import brought in.
 2. Sets `autoMemoryEnabled: false` in `~/.claude/settings.json`, the user-level
    settings file, because a plugin can't set it itself. The file is backed up
    once to `settings.json.context-graph.bak`.
@@ -193,18 +197,20 @@ At session start the hook loads the memory, the way the harness's built-in
 memory would have. It adds:
 - an index of the root and the current project's files, one line each with
   the file's `description:` frontmatter or first line, up to 200 lines. The
-  current project's files come first, then root files written in this
-  project's sessions, then the rest, newest first, so an import of every
-  project's `user`/`feedback` memories can't crowd this project's out;
+  current project's files come first, then root files from this project
+  (imported from its memory, or written in its sessions by an SDK app), then
+  the rest, newest first, so an import of every project's `user`/`feedback`
+  memories can't crowd this project's out;
 - the full text of any file with `pin: true` in its frontmatter;
 - the current project's folder.
 
 All of that, with recall's "where you left off", fits in what the agent shows
 its model at session start: 10,000 characters, Claude Code's cap on a hook's
 context (past it, the model sees only a 2,000-character preview), and 9,000 for
-Codex. Pinned text takes at most half. The index shortens its descriptions,
-down to bare paths, before it leaves any file out, and then ends with how many
-it left out and where to list them.
+Codex. Pinned text takes at most half. The index lists every file by its path
+before it describes any, then gives descriptions in its order, so the current
+project's files keep theirs longest. When even the paths don't fit, it ends
+with how many it left out and where to list them.
 
 The index is generated from the graph, so the model never maintains an index
 file and it can't go stale. The project folder is keyed by the checkout's git

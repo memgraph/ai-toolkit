@@ -21,6 +21,7 @@ import re
 import shutil
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -92,9 +93,16 @@ class ClaudeCodeMemory:
         goes under its project's folder under its own filename instead, where
         handing memory back finds it again. ``MEMORY.md`` is skipped: the index
         is generated now. The original files are left as they are.
+
+        Each file is marked with the project it came from and when it last
+        changed there, which the session-start index ranks by. A file already
+        in the graph with the same text is marked too, so re-running the import
+        fills that in for an earlier one.
         """
         from sessions_graph.memory_index import project_key_for
 
+        # An older sessions-graph can't record where a file came from; the import still works without it.
+        mark = getattr(files, "mark_imported", None)
         report = ImportReport()
         for memory_dir in sorted((home / ".claude" / "projects").glob("*/memory")):
             checkout = _checkout_for(memory_dir.parent.name)
@@ -112,13 +120,15 @@ class ClaudeCodeMemory:
                     lineage = _lineage(files, target)
                 if lineage:
                     report.skipped.append(target)
-                    continue
-                try:
-                    files.create(target, text)
-                except Exception:  # Too large, or the path is taken by a directory: keep going.
-                    report.skipped.append(target)
-                    continue
-                report.imported.append(target)
+                else:
+                    try:
+                        files.create(target, text)
+                    except Exception:  # Too large, or the path is taken by a directory: keep going.
+                        report.skipped.append(target)
+                        continue
+                    report.imported.append(target)
+                if mark is not None and (not lineage or text in lineage):
+                    mark(target, project, text=text, modified=_modified(source))
         return report
 
     def export_from(self, source: MemorySource, home: Path) -> ExportReport:
@@ -306,6 +316,11 @@ def _walk(directory: Path, tokens: list[str]) -> Path | None:
         if entry is not None and (found := _walk(entry, tokens[width:])) is not None:
             return found
     return None
+
+
+def _modified(source: Path) -> str:
+    """When *source* last changed, in the ISO 8601 UTC form the graph's ``updated_at`` uses."""
+    return datetime.fromtimestamp(source.stat().st_mtime, timezone.utc).isoformat()
 
 
 def _fallback_key(slug: str) -> str:

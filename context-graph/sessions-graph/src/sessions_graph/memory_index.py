@@ -7,8 +7,9 @@ the model never has to maintain it and it can't go stale:
 
 - one line per file in the user-wide root and the current project's folder:
   its path and a description (the ``description:`` frontmatter, or its first line),
-  the current project's files first, then root files its sessions wrote, then
-  the rest, newest first within each;
+  the current project's files first, then root files from it (written in its
+  sessions or imported from its harness memory), then the rest, newest first
+  within each;
 - the full text of files marked ``pin: true``, for rules that must never
   depend on the model choosing to open a file;
 - where the current project's folder is, and how to use the memory.
@@ -16,8 +17,9 @@ the model never has to maintain it and it can't go stale:
 All of it fits in what the harness shows its model of session-start text:
 Claude Code shows a hook's first 10,000 characters and otherwise only a
 2,000-character preview the model is never told to read past. Pinned text
-takes at most half of that; the index narrows its descriptions before it
-drops any file, and says how many it dropped.
+takes at most half of that. The index lists every file by path before it
+describes any, gives descriptions to the most relevant first, and when even
+the paths don't fit, says how many it dropped.
 
 The current project is keyed by its git remote, so every clone and every
 teammate's checkout of a repository lands in the same folder.
@@ -40,9 +42,7 @@ if TYPE_CHECKING:
 MAX_INDEX_LINES = 200
 #: Pinned text shown at most, in characters, likewise matching that budget's 25KB.
 MAX_PINNED_CHARS = 25_000
-#: Description widths an index tries, widest first, before it drops files: a path with no description
-#: still tells the model the file exists and can be opened.
-_DESCRIPTION_WIDTHS = (150, 100, 60, 0)
+_DESCRIPTION_CHARS = 150
 _GIT_TIMEOUT_SECONDS = 2
 _PROJECTS = f"{MEMORY_ROOT}/projects"
 _SCP_REMOTE_RE = re.compile(r"^(?:[^@/]+@)?(?P<host>[^:/]+):(?P<path>.+)$")
@@ -75,7 +75,7 @@ def render_index(store: MemoryStore, project: str | None, *, guidance: str, max_
     budget = math.inf if max_chars is None else max_chars
     project_folder = f"{_PROJECTS}/{project}" if project else None
     files = [file for file in store.files() if _in_scope(file.path, project_folder)]
-    files = _ranked(files, project_folder, store.written_from(project) if project and files else set())
+    files = _ranked(files, project_folder, store.from_project(project) if project and files else set())
 
     lines = [guidance]
     if project_folder:
@@ -96,8 +96,8 @@ def render_index(store: MemoryStore, project: str | None, *, guidance: str, max_
     return "\n".join(lines)
 
 
-def _ranked(files: list[MemoryFile], project_folder: str | None, written_here: set[str]) -> list[MemoryFile]:
-    """The current project's files, then root files its sessions wrote, then the rest; newest first within each.
+def _ranked(files: list[MemoryFile], project_folder: str | None, from_here: set[str]) -> list[MemoryFile]:
+    """The current project's files, then root files from it, then the rest; newest first within each.
 
     The index is cut from its tail, and a user-wide import lands every
     project's ``user``/``feedback`` memories at the root, so path order would
@@ -107,28 +107,31 @@ def _ranked(files: list[MemoryFile], project_folder: str | None, written_here: s
     def rank(file: MemoryFile) -> int:
         if project_folder and file.path.startswith(project_folder + "/"):
             return 0
-        return 1 if file.path in written_here else 2
+        return 1 if file.path in from_here else 2
 
     return sorted(sorted(files, key=lambda file: file.updated_at, reverse=True), key=rank)
 
 
 def index_lines(files: list[MemoryFile], room: float, *, limit: int, folder: str) -> list[str]:
-    """One line per file, at most *limit* of them, in at most *room* characters counting newlines.
+    """One line per file of *files* (most relevant first), at most *limit*, in *room* characters counting newlines.
 
-    Descriptions narrow before any file is dropped; the files left out are
-    counted in a last line that points at *folder*.
+    Every file is listed by its path before any gets a description, since a
+    path alone still tells the model the file exists; what room is left goes
+    to descriptions in order. Files that don't fit even as paths are dropped
+    from the end and counted in a last line that points at *folder*.
     """
-    shown = files[:limit]
-    entries: list[str] = []
-    for width in _DESCRIPTION_WIDTHS:
-        entries = [_entry(file, width) for file in shown]
-        if _length(lines := entries + _more(len(files) - len(entries), folder)) <= room:
-            return lines
-    while entries:
+    entries = [_entry(file, 0) for file in files[:limit]]
+    while entries and _length(entries + _more(len(files) - len(entries), folder)) > room:
         entries.pop()
-        if _length(lines := entries + _more(len(files) - len(entries), folder)) <= room:
-            return lines
-    return _more(len(files), folder)
+    if not entries:
+        return _more(len(files), folder)
+    spare = room - _length(entries + _more(len(files) - len(entries), folder))
+    for n, file in enumerate(files[: len(entries)]):
+        described = _entry(file, _DESCRIPTION_CHARS)
+        if len(described) - len(entries[n]) <= spare:
+            spare -= len(described) - len(entries[n])
+            entries[n] = described
+    return entries + _more(len(files) - len(entries), folder)
 
 
 def _pinned(files: list[MemoryFile], budget: float) -> list[str]:
@@ -189,7 +192,7 @@ def _body(content: str) -> str:
     return content
 
 
-def describe(content: str, width: int = _DESCRIPTION_WIDTHS[0]) -> str:
+def describe(content: str, width: int = _DESCRIPTION_CHARS) -> str:
     """A file's one-line index entry, at most *width* characters: its frontmatter ``description``, else its first line."""
     description = _frontmatter(content).get("description")
     if not description:

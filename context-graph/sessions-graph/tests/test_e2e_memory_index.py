@@ -125,16 +125,19 @@ def _long_description(n: int) -> str:
     return f"---\ndescription: note {n} {'about something worth remembering ' * 5}\n---\nbody"
 
 
-def test_index_narrows_descriptions_to_list_every_file_in_the_budget(store):
+def test_index_lists_every_file_and_describes_the_most_relevant_first(store):
     for n in range(60):
         store.create(f"/memories/feedback/{n:04d}.md", _long_description(n))
 
     text = render_index(store, None, guidance=GUIDANCE, max_chars=10_000)
 
     entries = [line for line in text.split("\n") if line.startswith("- /memories/")]
+    described = [" — note " in entry for entry in entries]
     assert len(text) <= 10_000
     assert len(entries) == 60
-    assert all(" — note " in entry for entry in entries)
+    assert entries[0].startswith("- /memories/feedback/0059.md — note 59")
+    assert 0 < sum(described) < 60
+    assert described == sorted(described, reverse=True)
     assert len(render_index(store, None, guidance=GUIDANCE)) > 10_000
 
 
@@ -147,7 +150,7 @@ def test_index_cut_to_the_budget_says_how_many_it_left_out(store):
     listed = sum(line.startswith("- /memories/") for line in lines)
     assert len("\n".join(lines)) <= 2_000
     assert lines[-1] == f"- ...and {400 - listed} more; view /memories to list them."
-    assert lines[-2] == f"- /memories/n/{400 - listed:04d}.md"
+    assert lines[-2].split(" — ")[0] == f"- /memories/n/{400 - listed:04d}.md"
 
 
 def test_pinned_text_takes_at_most_half_the_budget(store):
