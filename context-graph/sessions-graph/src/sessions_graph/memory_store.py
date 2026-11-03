@@ -424,6 +424,49 @@ class MemoryStore:
         )
         return [row["project_key"] for row in rows]
 
+    def from_project(self, project: str) -> set[str]:
+        """The paths of this user's files a session in *project* wrote or that were imported from its memory.
+
+        One query for a whole index, where :meth:`written_in` is one per file.
+        """
+        rows = self._db.query(
+            """
+            MATCH (:User {user_id: $user_id})-[:HAS_MEMORY]->(m:Memory)
+            WHERE exists((m)<-[:PRODUCED_MEMORY]-(:Session {project_key: $project}))
+               OR exists((m)-[:IMPORTED_FROM]->(:Project {key: $project}))
+            RETURN m.path AS path
+            """,
+            params={"user_id": self.user_id, "project": project},
+        )
+        return {row["path"] for row in rows}
+
+    def mark_imported(self, path: str, project: str, *, text: str, modified: str) -> None:
+        """Record that the file at *path* came from *project*'s harness memory, last changed there at *modified*.
+
+        A user-wide import moves a project's ``user``/``feedback`` memories to
+        the root, where nothing else says which project they belong to, and
+        stamps them with the import's time. *modified* (ISO 8601, UTC) becomes
+        the file's ``updated_at`` when it is earlier and the file still holds
+        *text*, so marking a file again after an edit keeps the edit's time.
+        """
+        self._db.query(
+            """
+            MATCH (:User {user_id: $user_id})-[:HAS_MEMORY]->(m:Memory {path: $path})
+            MERGE (p:Project {key: $project})
+            MERGE (m)-[:IMPORTED_FROM]->(p)
+            WITH m
+            WHERE m.content = $text AND $modified < m.updated_at
+            SET m.updated_at = $modified
+            """,
+            params={
+                "user_id": self.user_id,
+                "path": normalize_memory_path(path),
+                "project": project,
+                "text": text,
+                "modified": modified,
+            },
+        )
+
     # ------------------------------------------------------------------
     # Graph access
     # ------------------------------------------------------------------

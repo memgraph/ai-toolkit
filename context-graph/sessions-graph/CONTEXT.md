@@ -86,6 +86,7 @@ _Avoid_: Status, session status (`status` already tracks session completion)
 - Every **Memory** owned by a **Memory Owner** via `HAS_MEMORY`: `(:User)-[:HAS_MEMORY]->(:Memory)`.
 - A **Memory File** under `/memories/projects/<key>/` is `(:Memory)-[:ABOUT]->(:Project {key})`; the key is one path segment.
 - **Memory Provenance** encoded as `(:Session)-[:PRODUCED_MEMORY]->(:Memory)`.
+- A Memory File a harness-memory import brought in links the project whose memory held it: `(:Memory)-[:IMPORTED_FROM]->(:Project {key})`. A user-wide file at the root has no other trace of its project; the session-start index ranks it with that project's files.
 - Scope derived from graph topology, not stored as attribute.
 - Session Reconciliation reads Message/ToolCall/ToolResult Actions + Memories, passes text to unstructured2graph.
 - Each source Action/Memory links to resulting Chunks: `(:Action|:Memory)-[:HAS_CHUNK]->(:Chunk)`. If combined session document splits into several Chunks, every source links to every Chunk — these links express session-level provenance. `MENTIONED_IN.sources` and typed edges' `source_id` retain exact turn provenance used by recall.

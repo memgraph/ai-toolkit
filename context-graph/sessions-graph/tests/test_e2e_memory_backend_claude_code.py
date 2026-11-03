@@ -6,8 +6,10 @@ import json
 import os
 import re
 import subprocess
+from datetime import datetime, timezone
 
 import pytest
+from sessions_graph.memory_index import render_index
 
 pytest.importorskip("memgraph_context_graph")
 
@@ -92,10 +94,13 @@ def test_rerunning_keeps_what_the_graph_already_has(home, graph):
     store = graph.memory_store("alice")
     store.str_replace("/memories/feedback/trailers.md", "Never add them.", "Edited since import.")
 
+    edited_at = _updated_at(store, "/memories/feedback/trailers.md")
+
     lines = use_graph_memory(PLUGIN, home=home)
 
     assert "Kept existing /memories/feedback/trailers.md" in lines
     assert store.read("/memories/feedback/trailers.md").endswith("Edited since import.\n")
+    assert _updated_at(store, "/memories/feedback/trailers.md") == edited_at
     assert len(store.files()) == 3
 
 
@@ -127,6 +132,50 @@ def test_same_named_memories_from_two_projects_are_both_kept(home, tmp_path, gra
 
 def _memory_dir(home, project):
     return next((home / ".claude" / "projects").glob(f"*{project}")) / "memory"
+
+
+_TOOLKIT = "github.com_memgraph_ai-toolkit"
+_NEW_YEAR = datetime(2026, 1, 2, tzinfo=timezone.utc)
+
+
+def _updated_at(store, path):
+    return next(file.updated_at for file in store.files() if file.path == path)
+
+
+def test_an_imported_memory_keeps_the_project_it_came_from_and_its_own_time(home, tmp_path, graph):
+    trailers = _memory_dir(home, "ai-toolkit") / "feedback_trailers.md"
+    os.utime(trailers, (_NEW_YEAR.timestamp(), _NEW_YEAR.timestamp()))
+    lint = "---\nname: lint\ndescription: Run ruff\nmetadata:\n  type: feedback\n---\nRun ruff.\n"
+    _add_project(home, tmp_path, "zeta", {"feedback_lint.md": lint, "feedback_trailers.md": trailers.read_text()})
+
+    use_graph_memory(PLUGIN, home=home)
+
+    store = graph.memory_store("alice")
+    assert store.from_project(_TOOLKIT) == {"/memories/feedback/trailers.md", f"/memories/projects/{_TOOLKIT}/map.md"}
+    # The same rule kept in two projects belongs to both.
+    assert store.from_project("github.com_acme_zeta") == {
+        "/memories/feedback/trailers.md",
+        "/memories/feedback/lint.md",
+    }
+    assert _updated_at(store, "/memories/feedback/trailers.md") == _NEW_YEAR.isoformat()
+
+
+def test_rerunning_the_switch_records_where_an_earlier_import_came_from(home, tmp_path, graph):
+    """An import from before origins were recorded left the file, stamped at import time, and nothing else."""
+    store = graph.memory_store("alice")
+    trailers = _memory_dir(home, "ai-toolkit") / "feedback_trailers.md"
+    os.utime(trailers, (_NEW_YEAR.timestamp(), _NEW_YEAR.timestamp()))
+    store.create("/memories/feedback/trailers.md", trailers.read_text())
+    _add_project(home, tmp_path, "zeta", {"feedback_lint.md": "---\nmetadata:\n  type: feedback\n---\nRun ruff.\n"})
+    store.create("/memories/feedback/lint.md", "---\nmetadata:\n  type: feedback\n---\nRun ruff.\n")
+    assert store.from_project(_TOOLKIT) == set()
+
+    use_graph_memory(PLUGIN, home=home)
+
+    assert store.from_project(_TOOLKIT) == {"/memories/feedback/trailers.md", f"/memories/projects/{_TOOLKIT}/map.md"}
+    assert _updated_at(store, "/memories/feedback/trailers.md") == _NEW_YEAR.isoformat()
+    index = render_index(store, _TOOLKIT, guidance="")
+    assert index.index("/memories/feedback/trailers.md") < index.index("/memories/feedback/lint.md")
 
 
 def test_handing_memory_back(home):

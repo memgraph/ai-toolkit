@@ -85,7 +85,11 @@ class MemorySource(Protocol):
 
 
 class MemoryFiles(Protocol):
-    """The part of sessions-graph's ``MemoryStore`` an import writes through."""
+    """The part of sessions-graph's ``MemoryStore`` an import writes through.
+
+    A newer store also has ``mark_imported(path, project, *, text, modified)``,
+    recording which project's memory a file came from; an import checks for it.
+    """
 
     def view(self, path: str, view_range: tuple[int, int] | None = None) -> str: ...
 
