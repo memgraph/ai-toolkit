@@ -311,6 +311,8 @@ def _join(argv: list[str]) -> int:
     """Point the config file at an Enterprise Memgraph as one login, then prove the login works."""
     import getpass
 
+    import neo4j
+
     from memgraph_context_graph.adapters._identity import config_file, reload_config, write_config
     from memgraph_context_graph.spaces import EDITION_ENTERPRISE, SpaceError, spaces_for
 
@@ -339,6 +341,11 @@ def _join(argv: list[str]) -> int:
         shared = [space.name for space in spaces.readable() if space.shared]
     except (SpaceError, ValueError) as exc:
         print(f"Wrote {config_file()}, but the login doesn't work yet: {exc}", file=sys.stderr)
+        return 1
+    except neo4j.exceptions.Neo4jError as exc:
+        refused = "Unauthenticated" in str(exc.code)
+        reason = f"Memgraph refused the login {args.login!r}; check its password" if refused else exc.message
+        print(f"Wrote {config_file()}, but the login doesn't work yet: {reason}", file=sys.stderr)
         return 1
     print(f"Wrote {config_file()}: edition = enterprise, login {args.login!r}.")
     print(f"Personal space: {row['Current']}. Shared spaces: {', '.join(shared) or 'none yet'}.")
