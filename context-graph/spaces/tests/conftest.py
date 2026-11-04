@@ -15,6 +15,7 @@ import neo4j
 import pytest
 
 from context_graph_spaces.cli import admin_query
+from context_graph_spaces.instance import create_first_admin
 from context_graph_spaces.provision import live_databases
 
 if TYPE_CHECKING:
@@ -43,15 +44,8 @@ def enterprise_url() -> str:
 
 
 def _bootstrap_admin(url: str) -> None:
-    """Create the admin on a fresh instance, where the first connection is anonymous."""
-    driver = neo4j.GraphDatabase.driver(url, auth=("", ""))
-    try:
-        with driver.session() as session:
-            session.run(f"CREATE USER IF NOT EXISTS {ADMIN[0]} IDENTIFIED BY '{ADMIN[1]}'").consume()
-    except neo4j.exceptions.Neo4jError:
-        pass  # Users exist already, so anonymous access is closed (Security.Unauthenticated); the admin is one of them.
-    finally:
-        driver.close()
+    """Create the admin on a fresh instance the way ``context-graph-spaces init`` does; a no-op once it has users."""
+    create_first_admin(url, *ADMIN)
 
 
 @pytest.fixture(scope="session")

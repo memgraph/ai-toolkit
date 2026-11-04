@@ -313,7 +313,7 @@ def _join(argv: list[str]) -> int:
 
     import neo4j
 
-    from memgraph_context_graph.adapters._identity import config_file, reload_config, write_config
+    from memgraph_context_graph.adapters._identity import MEMORY_BACKEND_GRAPH, config_file, reload_config, write_config
     from memgraph_context_graph.spaces import EDITION_ENTERPRISE, SpaceError, spaces_for
 
     parser = argparse.ArgumentParser(
@@ -349,7 +349,14 @@ def _join(argv: list[str]) -> int:
         return 1
     print(f"Wrote {config_file()}: edition = enterprise, login {args.login!r}.")
     print(f"Personal space: {row['Current']}. Shared spaces: {', '.join(shared) or 'none yet'}.")
-    print("Next: memgraph-context-graph setup <runtime> (e.g. claude-code) if this machine isn't set up yet.")
+    if reload_config().memory_backend == MEMORY_BACKEND_GRAPH:
+        print("Your agents' memory tool reaches them under /memories/spaces/<space>/.")
+    else:
+        # Shared spaces are only reachable through the memory tool, and that is on only with this backend (ADR 0006).
+        print(
+            "Next: memgraph-context-graph setup <runtime> (e.g. claude-code) --memory-backend context-graph\n"
+            "  Shared spaces are reached through the memory tool, which only that backend turns on."
+        )
     return 0
 
 

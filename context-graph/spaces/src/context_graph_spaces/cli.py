@@ -1,4 +1,7 @@
-"""``context-graph-spaces``: the admin's commands for provisioning spaces from a spec.
+"""``context-graph-spaces``: the admin's commands for a spaces server.
+
+``compose`` prints a server to run, ``init`` makes its first admin login and checks it,
+``plan``/``apply`` provision spaces from a spec, and ``reconcile`` is the shared-space worker.
 
 The admin connection comes from flags, falling back to ``MEMGRAPH_URL`` /
 ``MEMGRAPH_USER`` / ``MEMGRAPH_PASSWORD``. This is an interactive admin tool,
@@ -27,7 +30,7 @@ SERVICE_PASSWORD_ENV = "CG_SERVICE_PASSWORD"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run ``plan`` or ``apply``; returns the process exit code."""
+    """Run one admin command; returns the process exit code."""
     parser = argparse.ArgumentParser(prog="context-graph-spaces", description=__doc__)
     parser.add_argument("--url", default=os.environ.get("MEMGRAPH_URL", "bolt://localhost:7687"))
     parser.add_argument("--user", default=os.environ.get("MEMGRAPH_USER", ""), help="An admin login.")
@@ -41,8 +44,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     reconcile.add_argument("spec", help="The spaces spec (TOML): which shared spaces to reconcile.")
     reconcile.add_argument("--watch", action="store_true", help="Keep going, one pass every --interval seconds.")
     reconcile.add_argument("--interval", type=float, default=30.0)
+    init = commands.add_parser(
+        "init", help="Create a fresh Memgraph's first admin login, then check it can host spaces."
+    )
+    init.add_argument("--admin", default="cgadmin", help="The admin login to create on a fresh Memgraph.")
+    compose = commands.add_parser("compose", help="Print a docker-compose file for a spaces server and its worker.")
+    compose.add_argument("--bind", default="127.0.0.1", help="The host address Bolt listens on, e.g. a private IP.")
+    compose.add_argument("--port", type=int, default=7687)
+    compose.add_argument("--memory-gib", type=int, default=4, help="The Memgraph container's memory.")
+    compose.add_argument("--spec", default="./spaces.toml", help="The spec's path on the server, for the worker.")
     args = parser.parse_args(argv)
 
+    if args.command == "compose":
+        return _compose(args.bind, args.port, args.memory_gib, args.spec)
+    if args.command == "init":
+        return _init(args.url, args.admin, args.user, args.password)
     try:
         spec = load_spec(args.spec)
     except SpecError as exc:
@@ -76,6 +92,63 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
+def _compose(bind: str, port: int, memory_gib: int, spec: str) -> int:
+    from .compose import compose_file
+
+    try:
+        print(compose_file(bind=bind, port=port, memory_gib=memory_gib, spec=spec), end="")
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    return 0
+
+
+def _init(url: str, admin: str, user: str, password: str) -> int:
+    """Create the first admin on a fresh Memgraph, or use the given one; then check the instance, exit 1 on a failure."""
+    from .instance import check_instance, create_first_admin
+
+    try:
+        created = create_first_admin(url, admin)
+    except SpecError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    except Exception as exc:
+        explained = _explain(exc, url, admin)
+        if explained is None:
+            raise
+        print(explained, file=sys.stderr)
+        return 1
+    if created is not None:
+        user, password = admin, created
+        print(f"Created the admin login {admin!r}; it holds Memgraph's built-in admin role. Shown once, never stored:")
+        print(f"  export MEMGRAPH_URL='{url}' MEMGRAPH_USER='{admin}' MEMGRAPH_PASSWORD='{created}'")
+    elif not user:
+        print(
+            f"Memgraph at {url} already has logins, so init created none. To check it, pass an admin login "
+            "with --user and --password, or set MEMGRAPH_USER and MEMGRAPH_PASSWORD.",
+            file=sys.stderr,
+        )
+        return 1
+    query, close = admin_query(url, user, password)
+    try:
+        checks = check_instance(query, user)
+    except Exception as exc:
+        explained = _explain(exc, url, user)
+        if explained is None:
+            raise
+        print(explained, file=sys.stderr)
+        return 1
+    finally:
+        close()
+    print("Checks:")
+    for check in checks:
+        print(f"  {'ok  ' if check.ok else 'FAIL'} {check.name}: {check.detail}")
+    if not all(check.ok for check in checks):
+        return 1
+    print("Ready for spaces. Next: context-graph-spaces plan|apply <spec>")
+    return 0
+
+
 def _print_passwords(passwords: dict[str, str], url: str) -> None:
     """The one-time setup line for each login apply created; the passwords aren't stored anywhere else."""
     for login, password in sorted(passwords.items()):
@@ -104,7 +177,11 @@ def _reconcile(spec: Spec, url: str, *, watch: bool, interval: float) -> int:
                 print(f"{report.space}: not reconciled: {report.error}", file=sys.stderr)
                 continue
             failed = "".join(f"\n  failed {path}: {error}" for path, error in report.failed)
-            print(f"{report.space}: {len(report.completed)} reconciled, {report.pruned} leftovers removed{failed}")
+            # flush: under a service manager stdout is a pipe, block-buffered, and a pass's report would sit unseen.
+            print(
+                f"{report.space}: {len(report.completed)} reconciled, {report.pruned} leftovers removed{failed}",
+                flush=True,
+            )
         if not watch:
             return 1 if any(report.error or report.failed for report in reports) else 0
         time.sleep(interval)
