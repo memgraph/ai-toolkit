@@ -148,13 +148,14 @@ _PASSED_BASH = {
     "aggregated_output": "hello\n",
     "exit_code": 0,
 }
+_MCP_ERROR_CONTENT = [{"type": "text", "text": "The path /memories/x.md does not exist."}]
 _FAILED_MCP = {
     "type": "McpToolCall",
     "id": "exec-mcp",
     "server": "context-graph",
     "tool": "memory",
     "status": "failed",
-    "result": {"content": [{"type": "text", "text": "The path /memories/x.md does not exist."}], "isError": True},
+    "result": {"content": _MCP_ERROR_CONTENT, "isError": True},
 }
 _PATCH = {"type": "FileChange", "id": "exec-patch", "status": "completed", "stdout": "Success.\n", "stderr": ""}
 
@@ -225,7 +226,7 @@ def test_stop_records_every_tool_that_finished_in_the_turn_before_ending_it(tmp_
         ("exec-bash-0", "Bash", False),
     ]
     assert ends[0].error_message == "The path /memories/x.md does not exist."
-    assert ends[0].result == _FAILED_MCP["result"]["content"]
+    assert ends[0].result == _MCP_ERROR_CONTENT
     assert (ends[3].result, ends[3].error_message) == ("hello\n", None)
     assert events[-1].event_type == EventType.TURN_END
 
