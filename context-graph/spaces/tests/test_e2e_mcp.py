@@ -82,8 +82,9 @@ def test_the_memory_tool_is_served_only_once_context_graph_is_the_memory(member)
     native, _ = harness(member("alice", graph_memory=False))
     graph, _ = harness(member("alice"))
 
-    assert native == ["recall"]
-    assert graph == ["memory", "recall"]
+    # Other installed connectors may serve tools of their own (resources-graph's resource), so only these two are asserted.
+    assert "recall" in native and "memory" not in native
+    assert {"memory", "recall"} <= set(graph)
 
 
 def test_members_share_a_space_through_their_own_servers_and_nothing_else(member):
