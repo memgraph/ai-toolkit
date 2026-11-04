@@ -1372,6 +1372,7 @@ dependencies = [
 
 [package.optional-dependencies]
 test = [
+    { name = "memgraph-context-graph", extra = ["mcp"] },
     { name = "pytest" },
     { name = "sessions-graph", extra = ["memgraph-context-graph", "reconciliation"] },
 ]
@@ -1379,6 +1380,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "memgraph-context-graph", editable = "context-graph/memgraph-context-graph" },
+    { name = "memgraph-context-graph", extras = ["mcp"], marker = "extra == 'test'", editable = "context-graph/memgraph-context-graph" },
     { name = "memgraph-toolbox", editable = "memgraph-toolbox" },
     { name = "neo4j", specifier = ">=5.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },

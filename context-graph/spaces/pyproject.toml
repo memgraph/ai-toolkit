@@ -24,6 +24,8 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
+    # The MCP e2e tests start `memgraph-context-graph mcp` as a harness does, which needs the mcp extra.
+    "memgraph-context-graph[mcp]",
     "pytest>=9.0.3",
     "sessions-graph[memgraph-context-graph,reconciliation]>=0.11.0",
 ]
