@@ -211,10 +211,21 @@ class DatabaseAnalyzer(ABC):
         if len(table_info.foreign_keys) < 2:
             return False
 
+        # A table that owns a surrogate primary key (e.g. store.store_id,
+        # inventory.inventory_id) is an entity in its own right even when
+        # most of its other columns are foreign keys. A real join table's
+        # primary key is made of its foreign keys (film_actor.actor_id +
+        # film_actor.film_id), or is a bare ``id`` column.
+        fk_column_names = {fk.column_name for fk in table_info.foreign_keys}
+        own_key_columns = [
+            pk for pk in table_info.primary_keys if pk not in fk_column_names and pk.lower() != "id"
+        ]
+        if own_key_columns:
+            return False
+
         # Count non-FK columns (excluding common metadata / temporal columns
         # that often appear on join tables as relationship properties)
         non_fk_columns = []
-        fk_column_names = {fk.column_name for fk in table_info.foreign_keys}
         auxiliary_columns = {
             "id",
             "created_at",
