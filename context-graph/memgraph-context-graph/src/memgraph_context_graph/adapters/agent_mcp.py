@@ -27,6 +27,7 @@ import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from memgraph_context_graph.adapters._text_file import write_text_keeping_newlines
 from memgraph_context_graph.memory_backend import MemoryBackendError
 
 if TYPE_CHECKING:
@@ -322,5 +323,5 @@ def _write(path: Path, rendered: str) -> list[str]:
     if path.exists() and not backup.exists():
         shutil.copy2(path, backup)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(rendered, encoding="utf-8")
+    write_text_keeping_newlines(path, rendered)
     return [f"Wrote {path}"]

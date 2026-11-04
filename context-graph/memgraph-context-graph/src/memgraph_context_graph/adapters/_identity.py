@@ -30,6 +30,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from memgraph_context_graph.adapters._text_file import write_text_keeping_newlines
 from memgraph_context_graph.config_schema import (
     CONFIG_KEYS,
     SECTIONS,
@@ -355,7 +356,7 @@ def _write_config_file(content: str) -> Path:
     global _cached_config
     path = config_file()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    write_text_keeping_newlines(path, content)
     path.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600: the file holds credentials.
     _cached_config = None
     return path

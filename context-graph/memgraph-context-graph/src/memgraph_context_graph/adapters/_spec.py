@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 from memgraph_context_graph.adapters._identity import resolve_user_id
+from memgraph_context_graph.adapters._text_file import write_text_keeping_newlines
 from memgraph_context_graph.events import (
     AgentEndEvent,
     AgentStartEvent,
@@ -385,7 +386,7 @@ def write_hook_config(
     document[spec.config.root_key] = merged
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    write_text_keeping_newlines(config_path, json.dumps(document, indent=2) + "\n")
     return config_path
 
 
@@ -416,7 +417,7 @@ def remove_hook_config(spec: RuntimeSpec, project_dir: Path) -> bool:
     if set(document) <= {"version"}:
         config_path.unlink()
     else:
-        config_path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+        write_text_keeping_newlines(config_path, json.dumps(document, indent=2) + "\n")
     return True
 
 
