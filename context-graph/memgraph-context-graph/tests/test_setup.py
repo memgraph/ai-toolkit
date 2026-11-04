@@ -892,6 +892,9 @@ def uv_tools(tmp_path, monkeypatch, default_connectors):
     monkeypatch.setenv("UV_TOOL_DIR", str(tools))
     monkeypatch.setenv("UV_TOOL_BIN_DIR", str(bin_dir))
     monkeypatch.setattr(tool, "installed", lambda package: False)
+    # Install what PyPI holds: a release raises these floors before it publishes them.
+    requirements = tool.requirements
+    monkeypatch.setattr(tool, "requirements", lambda **kw: [re.sub(r">=[\d.]+$", "", r) for r in requirements(**kw)])
     subprocess.run([uv, "tool", "install", "--quiet", "sessions-graph==0.12.2"], check=True)
     return tools, bin_dir
 
