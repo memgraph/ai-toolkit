@@ -37,7 +37,9 @@ _ROLLOUT_TAIL_BYTES = 4 * 1024 * 1024
 #: How long PostToolUse waits for Codex's rollout writer to record the call it is about.
 _ITEM_WAIT_SECONDS = 0.5
 _ITEM_POLL_SECONDS = 0.05
+#: Rollout item types for the tools Codex's hooks report, and the ``tool_name`` the hooks give each.
 _ITEM_TOOL_NAMES = {"CommandExecution": "Bash", "FileChange": "apply_patch"}
+_TOOL_ITEM_TYPES = frozenset({*_ITEM_TOOL_NAMES, "McpToolCall"})
 
 
 def _user_prompt(context: EventContext) -> MessageEvent:
@@ -116,7 +118,7 @@ def _hook_tool_name(item: dict[str, Any]) -> str:
     if item.get("type") == "McpToolCall":
         server = re.sub(r"[^A-Za-z0-9_]", "_", str(item.get("server", "")))
         return f"mcp__{server}__{item.get('tool', '')}"
-    return _ITEM_TOOL_NAMES.get(str(item.get("type")), str(item.get("type", "tool")))
+    return _ITEM_TOOL_NAMES[item["type"]]
 
 
 def _tool_end(context: EventContext) -> ToolEndEvent:
@@ -137,28 +139,34 @@ def _tool_end(context: EventContext) -> ToolEndEvent:
     return dataclasses.replace(event, is_error=True, error_message=message) if message else event
 
 
-def _turn_end(context: EventContext) -> list[Event]:
-    """End the turn, first recording the tool calls that failed in it.
+def _rollout_tool_end(context: EventContext, item_id: str, item: dict[str, Any]) -> ToolEndEvent:
+    message = _failure(item)
+    return ToolEndEvent(
+        **context.base(),
+        tool_name=_hook_tool_name(item),
+        tool_use_id=item_id,
+        result=_item_result(item),
+        is_error=message is not None,
+        error_message=message,
+    )
 
-    Codex runs no PostToolUse hook for a failed tool (an MCP error, a rejected patch), so its failures
-    are read from the turn's rollout. A failure PostToolUse already recorded is the same event again,
-    which connectors store once. A patch Codex rejects before applying leaves no rollout item and
-    stays a call without a result.
+
+def _turn_end(context: EventContext) -> list[Event]:
+    """End the turn, first recording the outcome of every tool call that finished in it.
+
+    PostToolUse misses calls: Codex runs none for a failed tool (an MCP error, a rejected patch), nor for
+    a command that outlived its first yield and finished later. The turn's rollout records every one,
+    so each is recorded from there; one PostToolUse already recorded is the same event again, which
+    connectors store once. A patch Codex rejects before applying leaves no rollout item and stays a call
+    without a result.
     """
-    failures: list[Event] = [
-        ToolEndEvent(
-            **context.base(),
-            tool_name=_hook_tool_name(item),
-            tool_use_id=item_id,
-            result=_item_result(item),
-            is_error=True,
-            error_message=message,
-        )
+    outcomes: list[Event] = [
+        _rollout_tool_end(context, item_id, item)
         for item_id, item in _completed_items(context).items()
-        if (message := _failure(item))
+        if item.get("type") in _TOOL_ITEM_TYPES
     ]
     # Stop fires after every turn; SessionEnd, registered separately, ends the session.
-    return [*failures, *turn_end(context, reply=context.value("reply"))]
+    return [*outcomes, *turn_end(context, reply=context.value("reply"))]
 
 
 _HOOKS_PATH = ".codex/hooks.json"

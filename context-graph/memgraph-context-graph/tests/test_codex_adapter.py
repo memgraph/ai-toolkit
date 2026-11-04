@@ -211,26 +211,30 @@ def test_a_bash_call_missing_from_the_rollout_stays_a_success(tmp_path, monkeypa
     assert not _bash_end(str(tmp_path / "missing.jsonl"), "exec-bash-3").is_error
 
 
-def test_stop_records_the_turns_failed_tools_before_ending_it(tmp_path):
-    events = _handle(
-        {"hook_event_name": "Stop", "transcript_path": _rollout(tmp_path, _FAILED_MCP, _PATCH, _FAILED_BASH)}
-    )
+def test_stop_records_every_tool_that_finished_in_the_turn_before_ending_it(tmp_path):
+    reply = {"type": "AgentMessage", "id": "msg-1", "text": "Done."}
+    path = _rollout(tmp_path, _FAILED_MCP, _PATCH, reply, _FAILED_BASH, _PASSED_BASH)
 
-    failures = [event for event in events if isinstance(event, ToolEndEvent)]
-    assert [(e.tool_use_id, e.tool_name, e.is_error) for e in failures] == [
+    events = _handle({"hook_event_name": "Stop", "transcript_path": path})
+
+    ends = [event for event in events if isinstance(event, ToolEndEvent)]
+    assert [(e.tool_use_id, e.tool_name, e.is_error) for e in ends] == [
         ("exec-mcp", "mcp__context_graph__memory", True),
+        ("exec-patch", "apply_patch", False),
         ("exec-bash-3", "Bash", True),
+        ("exec-bash-0", "Bash", False),
     ]
-    assert failures[0].error_message == "The path /memories/x.md does not exist."
-    assert failures[0].result == _FAILED_MCP["result"]["content"]
+    assert ends[0].error_message == "The path /memories/x.md does not exist."
+    assert ends[0].result == _FAILED_MCP["result"]["content"]
+    assert (ends[3].result, ends[3].error_message) == ("hello\n", None)
     assert events[-1].event_type == EventType.TURN_END
 
 
-def test_stop_ignores_failures_from_other_turns(tmp_path):
+def test_stop_ignores_tools_from_other_turns(tmp_path):
     _rollout(tmp_path, _FAILED_MCP, turn_id="turn-0")
     events = _handle({"hook_event_name": "Stop", "transcript_path": _rollout(tmp_path, _PATCH)})
 
-    assert not [event for event in events if isinstance(event, ToolEndEvent)]
+    assert [event.tool_use_id for event in events if isinstance(event, ToolEndEvent)] == ["exec-patch"]
 
 
 def test_stop_ends_the_turn_with_the_reply_and_keeps_the_session_open():
