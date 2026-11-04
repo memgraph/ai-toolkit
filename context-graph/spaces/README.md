@@ -33,30 +33,59 @@ user = "ante"        # your Memgraph login is your identity
 password = "..."
 ```
 
-## For admins: provisioning
+## For admins: a server
+
+`compose` prints a docker-compose file for a spaces server. Its `memgraph` service
+runs a licensed Memgraph with MAGE, which recall's embeddings need, and its memory
+limit stays below the container's. Its `worker` service is the shared-space worker
+(see below):
+
+```bash
+context-graph-spaces compose --bind 10.0.0.5 --port 7687 --memory-gib 4 > docker-compose.yml
+cat > .env <<'ENV'
+MEMGRAPH_ENTERPRISE_LICENSE=...
+MEMGRAPH_ORGANIZATION_NAME=...
+ENV
+docker compose up -d
+```
+
+`--bind` is the host address Bolt listens on. Use a private network's address,
+not `0.0.0.0`.
 
 ### The admin login
 
 Provisioning needs a login with Memgraph's built-in `admin` role. `ALL PRIVILEGES`
 alone isn't enough: `apply` also writes into every personal database.
 
-- **On a fresh instance**, the first user you create turns authentication on and
-  gets the `admin` role. Don't name it `admin`, because that name is taken by the
-  built-in role:
+`init` creates that login on a fresh instance, then checks the instance can host
+spaces:
 
-  ```cypher
-  CREATE USER cgadmin IDENTIFIED BY 'a-strong-password';
-  ```
+```bash
+context-graph-spaces --url bolt://memgraph.corp:7687 init      # --admin cgadmin is the default
+```
 
-- **On an instance that already has users**, an existing admin gives the role to
-  another login:
+It checks four things:
 
-  ```cypher
-  SET ROLE FOR cgadmin TO admin;
-  ```
+- the Enterprise licence
+- the admin role
+- MAGE's `embeddings.text`
+- Memgraph's memory limit
 
-If the login falls short, `plan` and `apply` name the missing privilege and print
-the line above. They don't print a stack trace.
+The new admin's password is printed once, as an `export` line for the commands
+below.
+
+On an instance that already has users, `init` creates nothing. Pass it the
+existing admin (`--user`/`--password` or `MEMGRAPH_USER`/`MEMGRAPH_PASSWORD`) to
+run the checks. An existing admin gives the role to another login like this:
+
+```cypher
+SET ROLE FOR cgadmin TO admin;
+```
+
+The admin can't be named `admin`, which is the built-in role's name, or start with
+`u_`, `space_` or `cg_`, which `apply` owns. If the login falls short, `init`,
+`plan` and `apply` name the missing privilege and print the line above, not a
+stack trace.
 
 ### The spec
 
@@ -110,6 +139,16 @@ password `apply` printed once:
 export CG_SERVICE_PASSWORD=...
 context-graph-spaces reconcile spaces.toml --watch     # one pass every 30s
 ```
+
+On a server from `compose`, add `CG_SERVICE_PASSWORD=...` to `.env`, put the spec
+where `--spec` said (`./spaces.toml` by default), and start it:
+
+```bash
+docker compose --profile worker up -d
+```
+
+It installs a CPU-only torch and keeps its packages and model on a volume, so
+only the first start downloads them.
 
 Each pass, for each shared space, it does two things:
 
