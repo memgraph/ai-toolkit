@@ -112,6 +112,16 @@ def merge_with_retry(db: Any, query: str, params: dict | None = None, *, attempt
     raise ValueError(f"attempts must be at least 1, got {attempts}")
 
 
+def _driver_database(name: str) -> str | None:
+    """The database to hand the driver: *name*, or None for an empty one (the login's main database).
+
+    Over a direct ``bolt://`` connection ``""`` and None both leave the database to the
+    server. A routing ``neo4j://`` driver instead asks the cluster for the routing table
+    of a database named ``""``, which has no writer, so every write fails.
+    """
+    return name or None
+
+
 class Memgraph:
     """
     Base Memgraph client for interacting with Memgraph database.
@@ -141,7 +151,7 @@ class Memgraph:
             url: The Memgraph connection URL
             username: Username for authentication
             password: Password for authentication
-            database: The database name to connect to (default: "memgraph")
+            database: The database name to connect to (default: "memgraph"); "" for the login's main database
             driver_config: Additional Neo4j driver configuration
             user_agent: Client name sent to the server (e.g. "mcp-memgraph", "langchain-memgraph", "sql2graph", etc.)
         """
@@ -157,7 +167,7 @@ class Memgraph:
 
         self.driver = GraphDatabase.driver(url, auth=(username, password), **config)
 
-        self.database = env["MEMGRAPH_DATABASE"]
+        self.database = _driver_database(env["MEMGRAPH_DATABASE"])
 
         try:
             import neo4j
@@ -251,7 +261,7 @@ class AsyncMemgraph:
             url: The Memgraph connection URL
             username: Username for authentication
             password: Password for authentication
-            database: The database name to connect to (default: "memgraph")
+            database: The database name to connect to (default: "memgraph"); "" for the login's main database
             driver_config: Additional Neo4j driver configuration
             user_agent: Client name sent to the server (e.g. "mcp-memgraph", "langchain-memgraph", "sql2graph", etc.)
         """
@@ -266,7 +276,7 @@ class AsyncMemgraph:
         config.setdefault("user_agent", user_agent or self.DEFAULT_USER_AGENT)
 
         self.driver = AsyncGraphDatabase.driver(url, auth=(username, password), **config)
-        self.database = env["MEMGRAPH_DATABASE"]
+        self.database = _driver_database(env["MEMGRAPH_DATABASE"])
 
     async def verify_connectivity(self) -> None:
         """
