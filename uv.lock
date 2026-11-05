@@ -1360,7 +1360,7 @@ provides-extras = ["pipeline", "test"]
 
 [[package]]
 name = "context-graph-spaces"
-version = "0.1.4"
+version = "0.1.5"
 source = { editable = "context-graph/spaces" }
 dependencies = [
     { name = "memgraph-context-graph" },
@@ -4760,7 +4760,7 @@ wheels = [
 
 [[package]]
 name = "memgraph-ai"
-version = "0.2.8"
+version = "0.2.9"
 source = { virtual = "." }
 dependencies = [
     { name = "mcp", extra = ["cli"] },
@@ -4777,7 +4777,7 @@ requires-dist = [
 
 [[package]]
 name = "memgraph-context-graph"
-version = "0.12.4"
+version = "0.12.5"
 source = { editable = "context-graph/memgraph-context-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -4815,7 +4815,7 @@ provides-extras = ["claude", "mcp", "openai", "test"]
 
 [[package]]
 name = "memgraph-toolbox"
-version = "0.2.2"
+version = "0.2.3"
 source = { editable = "memgraph-toolbox" }
 dependencies = [
     { name = "neo4j" },
