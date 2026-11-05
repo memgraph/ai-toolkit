@@ -1,6 +1,6 @@
 [project]
 name = "context-graph-spaces"
-version = "0.1.4"
+version = "0.1.5"
 description = "The Enterprise edition of Context Graph: personal and shared memory spaces for many users on one Memgraph"
 readme = "README.md"
 license = { text = "MIT" }
@@ -13,7 +13,7 @@ classifiers = [
 ]
 dependencies = [
     "memgraph-context-graph>=0.5.0",
-    "memgraph-toolbox",
+    "memgraph-toolbox>=0.2.3",
     # Shared spaces hold sessions-graph's memory files: apply sets up its schema there, and the
     # worker reconciles them (the reconciliation extra brings unstructured2graph).
     "sessions-graph[reconciliation]>=0.11.0",
