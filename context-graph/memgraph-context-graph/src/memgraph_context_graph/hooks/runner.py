@@ -299,7 +299,8 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
     """Read one hook payload from stdin, run it through *plugin*, print a response.
 
     This is what ``memgraph-context-graph hook run <runtime>`` invokes: parse
-    the shared CLI flags, resolve Memgraph config, translate the payload via
+    the shared CLI flags, resolve Memgraph config (through the profile ``[agents]``
+    maps the runtime to, if any), translate the payload via
     ``plugin.adapter_class``, and write back whatever ``plugin.response_for_payload``
     says the runtime expects -- identical flow for every registered runtime.
 
@@ -315,6 +316,10 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
     was stuck in, prints the runtime's plain response, and exits 0 itself,
     before the runtime's own timeout would kill it unlogged.
     """
+    from memgraph_context_graph.adapters._identity import select_agent
+
+    # Before anything reads the config: the profile [agents] maps this runtime to decides where it captures.
+    select_agent(plugin.name)
     report = _FailureReport(plugin.name)
     deadline = _Deadline(plugin, report)
     strict = os.environ.get(f"{_env_prefix(plugin.name)}_STRICT") == "1"

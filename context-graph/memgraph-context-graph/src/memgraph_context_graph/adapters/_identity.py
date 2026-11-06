@@ -20,11 +20,21 @@ Config file location: ``~/.config/context-graph/config.toml``, unless
 to read, never what is in it, and exists because the default is a single global:
 pointing one session's hooks at a different Memgraph would otherwise redirect
 every other Claude Code session on the machine.  See ADR 0003.
+
+Inside that one file, a profile (``[profiles.<name>]``) is another destination:
+its own ``edition``, ``[memgraph]`` and ``[memory]``, used in place of the top
+level's by the agents ``[agents]`` maps to it, so one agent's memory can go to
+a team's Memgraph while the others stay where they are.  Which profile applies
+is chosen per process, never written into a value (ADR 0008): the agent a hook
+or MCP server runs for (:func:`select_agent`), a command's ``--profile``
+(:func:`select_profile`), or :data:`PROFILE_ENV`, which a parent hands to the
+processes it spawns alongside the file's path.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import stat
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -42,10 +52,37 @@ from memgraph_context_graph.config_schema import (
 from memgraph_context_graph.config_schema import MEMORY_BACKEND_GRAPH as MEMORY_BACKEND_GRAPH
 from memgraph_context_graph.config_schema import MEMORY_BACKEND_NATIVE as MEMORY_BACKEND_NATIVE
 from memgraph_context_graph.config_schema import MEMORY_BACKENDS as MEMORY_BACKENDS
+from memgraph_context_graph.spaces import EDITION_ENTERPRISE
 
 #: Selects which config *file* hooks read, never a value in it (ADR 0003): a parent
 #: process hands the path to the session it spawns, so nothing is ambient.
 CONFIG_PATH_ENV = "CONTEXT_GRAPH_CONFIG"
+
+#: Selects which profile of that file applies, never a value in it (ADR 0008): handed down like
+#: :data:`CONFIG_PATH_ENV`, so a process a hook spawns writes where the hook did.
+PROFILE_ENV = "CONTEXT_GRAPH_PROFILE"
+
+#: The reserved profile name for the top level, for choosing it over an agent's mapping or :data:`PROFILE_ENV`.
+DEFAULT_PROFILE = "default"
+
+#: What a profile sets in place of the top level: where memory goes. How capture behaves (``[capture]``,
+#: ``[redact]``, exclusions) stays shared, so pointing an agent elsewhere can't switch redaction off.
+PROFILE_KEYS = (
+    "edition",
+    "memgraph.url",
+    "memgraph.user",
+    "memgraph.password",
+    "memgraph.database",
+    "memory.backend",
+)
+_PROFILE_SECTIONS = ("", "memgraph", "memory")
+_PROFILE_FIELDS = {key.field: key.name for key in CONFIG_KEYS if key.name in PROFILE_KEYS and key.field}
+_PROFILE_NAME = re.compile(r"[A-Za-z0-9_-]+")
+
+#: The profile a command chose with ``--profile``; wins over :data:`PROFILE_ENV` and the agent's mapping.
+_selected_profile: str | None = None
+#: The agent this process runs for, whose ``[agents]`` mapping picks the profile.
+_selected_agent: str | None = None
 
 _DEFAULT_CONFIG_DIR = Path.home() / ".config" / "context-graph"
 
@@ -130,6 +167,12 @@ class HookConfig:
     #: Values those lines meant to set fell back to defaults, which can point hooks at the wrong
     #: Memgraph, so hooks log these to the capture-failure log and ``doctor`` fails on them.
     problems: tuple[str, ...] = ()
+    #: The profile the values above were resolved through; None for the top level.
+    profile: str | None = None
+    #: Every ``[profiles.<name>]``, as written: name to ``{key name: value}`` over :data:`PROFILE_KEYS`.
+    profiles: dict[str, dict[str, str]] = field(default_factory=dict)
+    #: ``[agents]``: runtime to the profile it uses; an agent not listed uses the top level.
+    agents: dict[str, str] = field(default_factory=dict)
 
     @property
     def graph_memory(self) -> bool:
@@ -143,6 +186,65 @@ def load_config() -> HookConfig:
     if _cached_config is None:
         _cached_config = _read_config_file()
     return _cached_config
+
+
+def select_agent(runtime: str | None) -> None:
+    """Resolve the config for *runtime*: through the profile ``[agents]`` maps it to, if any.
+
+    A ``--profile`` (:func:`select_profile`) or :data:`PROFILE_ENV` still wins: both are an
+    explicit choice made by whoever started this process.
+    """
+    global _selected_agent, _cached_config
+    _selected_agent = runtime
+    _cached_config = None
+
+
+def select_profile(name: str | None) -> None:
+    """Resolve the config through profile *name*, ahead of :data:`PROFILE_ENV` and any agent's mapping.
+
+    :data:`DEFAULT_PROFILE` chooses the top level; None drops the choice. Writes go to the same place.
+
+    Raises:
+        ValueError: *name* is not a valid profile name.
+    """
+    global _selected_profile, _cached_config
+    if name is not None and name != DEFAULT_PROFILE:
+        check_profile_name(name)
+    _selected_profile = name
+    _cached_config = None
+
+
+def check_profile_name(name: str) -> str:
+    """*name*, if it can name a profile: letters, digits, ``-`` and ``_``, and not :data:`DEFAULT_PROFILE`.
+
+    Raises:
+        ValueError: it can't; the message says why.
+    """
+    if name == DEFAULT_PROFILE:
+        raise ValueError(f"{DEFAULT_PROFILE!r} is reserved for the top level")
+    if not _PROFILE_NAME.fullmatch(name):
+        raise ValueError(f"{name!r} is not a profile name: use letters, digits, - and _")
+    return name
+
+
+def map_agents(runtimes: list[str] | tuple[str, ...], profile: str) -> Path:
+    """Point *runtimes* at *profile* in ``[agents]``; :data:`DEFAULT_PROFILE` maps them back to the top level.
+
+    Returns the path written to.
+
+    Raises:
+        ValueError: *profile* is not a valid profile name.
+    """
+    if profile != DEFAULT_PROFILE:
+        check_profile_name(profile)
+    config = _read_config_file(overlay=False)
+    agents = dict(config.agents)
+    for runtime in runtimes:
+        if profile == DEFAULT_PROFILE:
+            agents.pop(runtime, None)
+        else:
+            agents[runtime] = profile
+    return _write_config_file(_render_config(replace(config, agents=agents)))
 
 
 def reload_config() -> HookConfig:
@@ -234,11 +336,14 @@ def spawn_env() -> dict[str, str]:
     """The environment for a process a hook spawns: this one's, minus every config-backed variable.
 
     The child resolves those itself with :func:`fill_env_from_config`, from the file this names in
-    :data:`CONFIG_PATH_ENV`: the parent hands down which file, never what is in it (ADR 0003), and
+    :data:`CONFIG_PATH_ENV` and the profile it names in :data:`PROFILE_ENV`: the parent hands down
+    which file and which profile, never what is in them (ADR 0003, ADR 0008), and
     an ambient credential can't stand in for a key the file leaves empty (ADR 0002).
     """
     env = {key: value for key, value in os.environ.items() if key not in {*CONFIG_ENV_KEYS, *_CONFIG_ENV_ALIASES}}
     env[CONFIG_PATH_ENV] = str(config_file())
+    # Always named, the top level included, so an ambient profile can't redirect the child.
+    env[PROFILE_ENV] = load_config().profile or DEFAULT_PROFILE
     return env
 
 
@@ -295,6 +400,8 @@ def write_config(
 
     Only updates supplied values; preserves existing values for unspecified keys.
     ``capture_settings`` replaces the ``[capture]`` keys other than ``connectors`` as a whole.
+    While a profile applies (:func:`select_agent`, :func:`select_profile`), the destination keys
+    (:data:`PROFILE_KEYS`) go to that profile, creating it, and the rest to the top level.
     Creates the file with 0600 permissions if it does not exist.
     """
     updates = {
@@ -317,12 +424,18 @@ def write_config(
         "memory_backend": memory_backend,
         "session_resume": session_resume,
     }
-    config = replace(_read_config_file(), **{key: value for key, value in updates.items() if value is not None})
-    return _write_config_file(_render_config(config))
+    supplied = {key: value for key, value in updates.items() if value is not None}
+    config = _read_config_file(overlay=False)
+    if (profile := _profile_name(config, [], writing=True)) is not None:
+        destination = {_PROFILE_FIELDS[key]: str(supplied.pop(key)) for key in list(supplied) if key in _PROFILE_FIELDS}
+        config = _with_profile_values(config, profile, destination)
+    return _write_config_file(_render_config(replace(config, **supplied)))
 
 
 def set_config_value(name: str, raw: str) -> str:
     """Validate and write one key, as ``config set`` does; an empty value unsets an optional key.
+
+    A destination key (:data:`PROFILE_KEYS`) goes to the profile that applies, if any, as in :func:`write_config`.
 
     Returns:
         The value as written, normalized (``"OFF"`` becomes ``"false"``, a list is re-joined).
@@ -338,8 +451,10 @@ def set_config_value(name: str, raw: str) -> str:
     if key is None:
         raise KeyError(name)
     value = key.normalize(raw)
-    config = _read_config_file()
-    if key.field is not None:
+    config = _read_config_file(overlay=False)
+    if key.name in PROFILE_KEYS and (profile := _profile_name(config, [], writing=True)) is not None:
+        config = _with_profile_values(config, profile, {key.name: value})
+    elif key.field is not None:
         config = replace(config, **{key.field: key.parse(value)})
     else:
         attr = SETTINGS_SECTIONS[key.section]
@@ -362,12 +477,16 @@ def _write_config_file(content: str) -> Path:
     return path
 
 
-def _read_config_file() -> HookConfig:
+def _read_config_file(*, overlay: bool = True) -> HookConfig:
     """Parse the config file, every key as :data:`CONFIG_KEYS` describes it.
 
     A missing file gives defaults. An unreadable or partly unparsable one also
     gives defaults for whatever it failed to set, never an exception (a hook
     must not crash on its config), and says so in :attr:`HookConfig.problems`.
+
+    With *overlay*, the profile that applies replaces the top level's destination
+    (:func:`_apply_profile`); without it, the values are the top level's as written,
+    which is what a rewrite must start from.
     """
     problems: list[str] = []
     try:
@@ -376,6 +495,14 @@ def _read_config_file() -> HookConfig:
         sections = _parse_toml(config_file(), problems)
     except Exception as exc:
         return HookConfig(problems=(f"unreadable: {type(exc).__name__}: {exc}",))
+
+    profiles = _pop_profiles(sections, problems)
+    agents = sections.pop("agents", {})
+    profile = None
+    if overlay:
+        profile = _profile_name(HookConfig(profiles=profiles, agents=agents), problems)
+        if profile is not None:
+            _apply_profile(sections, profiles.get(profile, {}))
 
     fields: dict[str, Any] = {}
     for key in CONFIG_KEYS:
@@ -397,6 +524,80 @@ def _read_config_file() -> HookConfig:
             if value
         ),
         problems=tuple(problems),
+        profile=profile,
+        profiles=profiles,
+        agents=agents,
+    )
+
+
+def _profile_name(config: HookConfig, problems: list[str], *, writing: bool = False) -> str | None:
+    """The profile that applies in this process, by :func:`select_profile`, :data:`PROFILE_ENV`, then ``[agents]``.
+
+    None means the top level. A profile named by the environment or ``[agents]`` that the file
+    doesn't define is a problem: its values fall back to the top level's, which may be the wrong
+    Memgraph. One chosen with ``--profile`` is not, since the command is about to create it, and
+    neither is any when *writing*, since the write creates it.
+    """
+    if _selected_profile is not None:
+        name, origin = _selected_profile, ""
+    elif env := os.environ.get(PROFILE_ENV):
+        name, origin = env, PROFILE_ENV
+    elif _selected_agent is not None and _selected_agent in config.agents:
+        name, origin = config.agents[_selected_agent], f"[agents] {_selected_agent}"
+    else:
+        return None
+    if name == DEFAULT_PROFILE:
+        return None
+    if origin and not writing and name not in config.profiles:
+        problems.append(f"{origin} names profile {name!r}, which the file doesn't define; using the top level")
+        return None
+    return name
+
+
+def _pop_profiles(sections: dict[str, dict[str, str]], problems: list[str]) -> dict[str, dict[str, str]]:
+    """Take every ``[profiles.<name>]`` and ``[profiles.<name>.<section>]`` out of *sections*, as profiles.
+
+    A key outside :data:`PROFILE_KEYS`, or a section that doesn't name a profile, is a problem and is dropped.
+    """
+    profiles: dict[str, dict[str, str]] = {}
+    for section in [name for name in sections if name == "profiles" or name.startswith("profiles.")]:
+        values = sections.pop(section)
+        name, _, subsection = section.partition(".")[2].partition(".")
+        if not _PROFILE_NAME.fullmatch(name) or name == DEFAULT_PROFILE:
+            problems.append(f"[{section}] doesn't name a profile (letters, digits, - and _) and was ignored")
+            continue
+        profile = profiles.setdefault(name, {})
+        for key, value in values.items():
+            full = f"{subsection}.{key}" if subsection else key
+            if full in PROFILE_KEYS:
+                profile[full] = value
+            else:
+                problems.append(f"[{section}] {key} can't differ per profile and was ignored")
+    return profiles
+
+
+def _apply_profile(sections: dict[str, dict[str, str]], profile: dict[str, str]) -> None:
+    """Replace *sections*' destination with *profile*'s, in place.
+
+    A profile is a whole destination: what it leaves out is the default, never the top level's,
+    so a top-level ``memgraph.database`` can't leak into an Enterprise profile, whose login decides it.
+    For the same reason an Enterprise profile drops ``identity.user_id``.
+    """
+    sections[""] = {key: value for key, value in sections.get("", {}).items() if key != "edition"}
+    sections["memgraph"] = {}
+    sections["memory"] = {}
+    for name, value in profile.items():
+        section, _, key = name.rpartition(".")
+        sections[section][key] = value
+    if sections[""].get("edition") == EDITION_ENTERPRISE:
+        sections.get("identity", {}).pop("user_id", None)
+
+
+def _with_profile_values(config: HookConfig, profile: str, values: dict[str, str]) -> HookConfig:
+    """*config* with *values* (key name to value) written into *profile*, creating it; an empty value unsets a key."""
+    merged = {**config.profiles.get(profile, {}), **values}
+    return replace(
+        config, profiles={**config.profiles, profile: {key: value for key, value in merged.items() if value}}
     )
 
 
@@ -485,11 +686,35 @@ def _render_config(config: HookConfig) -> str:
             lines += [f"{name} = '{pattern}'" for name, pattern in config.redact_patterns.items()]
             if not config.redact_patterns:
                 lines.append("# ticket = 'ACME-[0-9]+'")
+    lines += _render_profiles(config)
     lines.append("")
     return "\n".join(lines)
 
 
+def _render_profiles(config: HookConfig) -> list[str]:
+    """The ``[profiles.<name>]`` sections and ``[agents]``, as set; nothing when the file uses neither."""
+    if not config.profiles and not config.agents:
+        return []
+    lines = [
+        "",
+        "# Profiles: other places an agent's memory can go. Each sets its own edition, [memgraph] and [memory]",
+        "# in place of the ones above; everything else (capture, redaction, recall) is shared by every agent.",
+    ]
+    for name, values in config.profiles.items():
+        for section in _PROFILE_SECTIONS:
+            keys = [key for key in CONFIG_KEYS if key.name in values and key.section == section]
+            if section and not keys:
+                continue
+            lines += ["", f"[profiles.{name}.{section}]" if section else f"[profiles.{name}]"]
+            lines += [f"{key.key} = {key.format(values[key.name])}" for key in keys]
+    lines += ["", "# The profile each agent uses; an agent not listed uses the top level.", "[agents]"]
+    lines += [f'{runtime} = "{profile}"' for runtime, profile in config.agents.items()]
+    return lines
+
+
 def _reset_cache() -> None:
-    """Reset the module cache (for testing)."""
-    global _cached_config
+    """Reset the module cache and the profile selection (for testing)."""
+    global _cached_config, _selected_agent, _selected_profile
     _cached_config = None
+    _selected_agent = None
+    _selected_profile = None

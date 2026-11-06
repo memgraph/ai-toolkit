@@ -341,3 +341,34 @@ def test_hook_run_enables_the_defaults_while_capture_connectors_is_unset(monkeyp
     _identity._reset_cache()
 
     assert _enabled_connectors(monkeypatch, []) == list(DEFAULT_CONNECTORS)
+
+
+def _hook_memgraph_url(monkeypatch, runtime):
+    """The Memgraph URL `hook run <runtime>` hands create_link, for a turn-end payload."""
+    from memgraph_context_graph.adapters import _identity
+    from memgraph_context_graph.link import AgentLink
+
+    urls = []
+
+    def recording(names, **kwargs):
+        urls.append(kwargs["memgraph_env"]["MEMGRAPH_URL"])
+        return AgentLink()
+
+    _identity._reset_cache()
+    monkeypatch.setattr("memgraph_context_graph.hooks.runner.create_link", recording)
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"hook_event_name":"Stop","session_id":"s1"}'))
+    assert main(["run", runtime]) == 0
+    (url,) = urls
+    return url
+
+
+def test_hook_run_captures_to_the_profile_its_runtime_is_mapped_to(monkeypatch):
+    from memgraph_context_graph.adapters import _identity
+
+    _identity.write_config(memgraph_url="bolt://localhost:7687")
+    _identity.select_profile("second")
+    _identity.write_config(memgraph_url="bolt://localhost:7688")
+    _identity.map_agents(["codex"], "second")
+
+    assert _hook_memgraph_url(monkeypatch, "codex") == "bolt://localhost:7688"
+    assert _hook_memgraph_url(monkeypatch, "claude-code") == "bolt://localhost:7687"
