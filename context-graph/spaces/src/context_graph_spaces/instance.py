@@ -22,6 +22,25 @@ if TYPE_CHECKING:
 BUILTIN_ADMIN_ROLE = "admin"
 #: The procedure recall embeds with; only the MAGE images ship it.
 EMBEDDINGS_PROCEDURE = "embeddings.text"
+#: What init and apply run as the admin: the licence and storage checks (CONFIG, STATS); logins, roles and
+#: grants; databases and their memory caps; and, in each shared space, the memory store's schema and
+#: membership. The built-in admin role implies all of them.
+ADMIN_PRIVILEGES = (
+    "CONFIG",
+    "STATS",
+    "AUTH",
+    "MULTI_DATABASE_EDIT",
+    "MULTI_DATABASE_USE",
+    "PROFILE_RESTRICTION",
+    "MATCH",
+    "CREATE",
+    "MERGE",
+    "SET",
+    "DELETE",
+    "REMOVE",
+    "INDEX",
+    "CONSTRAINT",
+)
 
 
 def check_admin_name(login: str) -> None:
@@ -83,7 +102,7 @@ class Check:
 
 def check_instance(query: Query, login: str) -> list[Check]:
     """What spaces need from the Memgraph behind *query*, connected as the admin *login*."""
-    return [_licence(query), _admin_role(query, login), _embeddings(query), _memory_limit(query)]
+    return [_licence(query), _admin_privileges(query, login), _embeddings(query), _memory_limit(query)]
 
 
 def _licence(query: Query) -> Check:
@@ -98,28 +117,96 @@ def _licence(query: Query) -> Check:
     )
 
 
-def _admin_role(query: Query, login: str) -> Check:
+def _admin_privileges(query: Query, login: str) -> Check:
+    """Whether *login* can run init and apply: the built-in admin role, or every privilege they use on every database.
+
+    An admin created before multi-tenancy often holds no role, only privileges granted directly; apply
+    works for it, so the check asks for what they use, not which role grants it.
+    """
+    name = "Admin privileges"
     roles = {row["role"] for row in query("SHOW CURRENT ROLE", None, None)}
     if BUILTIN_ADMIN_ROLE in roles:
-        return Check("Admin role", True, f"{login} holds Memgraph's built-in admin role")
+        return Check(name, True, f"{login} holds Memgraph's built-in admin role")
+    missing = _missing_privileges(query, login)
+    if not missing:
+        return Check(name, True, f"{login} holds every privilege init and apply use, on every database")
     return Check(
-        "Admin role",
+        name,
         False,
-        f"{login} lacks Memgraph's built-in admin role, which apply needs. As an admin, run: "
-        f"SET ROLE FOR {login} TO {BUILTIN_ADMIN_ROLE};",
+        f"{login} can't provision: it lacks {', '.join(missing)}. As an admin, run: "
+        f"SET ROLE FOR {login} TO {BUILTIN_ADMIN_ROLE}; or, to grant the privileges directly: "
+        f"GRANT {', '.join(ADMIN_PRIVILEGES)} TO {login}; GRANT DATABASE * TO {login};",
     )
+
+
+def _missing_privileges(query: Query, login: str) -> list[str]:
+    """What of :data:`ADMIN_PRIVILEGES` and access to every database *login* lacks, as Memgraph names them."""
+    import neo4j
+
+    # Login names can't be query parameters; backticks, doubled inside, quote any name as one identifier.
+    quoted = "`" + login.replace("`", "``") + "`"
+    try:
+        privileges = query(f"SHOW PRIVILEGES FOR {quoted} ON MAIN", None, None)
+        databases = query(f"SHOW DATABASE PRIVILEGES FOR {quoted}", None, None)
+    except neo4j.exceptions.ClientError:
+        # Reading privileges needs AUTH, which apply needs too.
+        return ["AUTH"]
+    granted = {row["privilege"] for row in privileges if row["effective"] == "GRANT"}
+    missing = [privilege for privilege in ADMIN_PRIVILEGES if privilege not in granted]
+    if not any(row["grants"] == "*" and not row["denies"] for row in databases):
+        missing.append("DATABASE *")
+    return missing
 
 
 def _embeddings(query: Query) -> Check:
+    """Whether recall's model loads here: the procedure alone says nothing about a model it can't download."""
+    from sessions_graph.embeddings import DEFAULT_EMBEDDING_MODEL
+
+    model = DEFAULT_EMBEDDING_MODEL
+
     found = query(
         "CALL mg.procedures() YIELD name WHERE name = $name RETURN name", None, {"name": EMBEDDINGS_PROCEDURE}
     )
-    if found:
-        return Check("Embeddings", True, f"{EMBEDDINGS_PROCEDURE} is installed (MAGE)")
-    return Check(
-        "Embeddings",
-        False,
-        f"{EMBEDDINGS_PROCEDURE} is missing, so recall can't embed. Run Memgraph from the memgraph/memgraph-mage image.",
+    if not found:
+        return Check(
+            "Embeddings",
+            False,
+            f"{EMBEDDINGS_PROCEDURE} is missing, so recall can't embed. "
+            "Run Memgraph from the memgraph/memgraph-mage image.",
+        )
+    rows = query(
+        f"CALL {EMBEDDINGS_PROCEDURE}([$text], {{model_name: $model}}) YIELD success, embeddings "
+        "RETURN success, embeddings",
+        None,
+        {"text": "context graph", "model": model},
+    )
+    if rows and rows[0]["success"] and rows[0]["embeddings"]:
+        dimensions = len(rows[0]["embeddings"][0])
+        return Check(
+            "Embeddings",
+            True,
+            f"{model} loads ({dimensions} dimensions); on a cluster, every data instance needs it, or recall "
+            "breaks at the next failover",
+        )
+    return Check("Embeddings", False, f"{EMBEDDINGS_PROCEDURE} can't load {model}: {_model_error(query, model)}")
+
+
+def _model_error(query: Query, model: str) -> str:
+    """Why *model* doesn't load, from the error ``embeddings.model_info`` raises, and how to fix it."""
+    try:
+        query("CALL embeddings.model_info({model_name: $model}) YIELD info RETURN info", None, {"model": model})
+        cause = "the model loads for model_info but not for embedding"
+    except Exception as exc:  # the procedure's own exception, whatever the model hub or the filesystem raised
+        lines = [line.strip() for line in str(exc).splitlines() if line.strip() not in {"", "}"}]
+        cause = lines[-1] if lines else type(exc).__name__
+    if "Read-only file system" in cause:
+        return (
+            f"{cause}. The model cache is read-only (e.g. the Helm chart's readOnlyRootFilesystem). Point it at a "
+            "writable mount on every data instance: HF_HOME=/var/lib/memgraph/huggingface (Helm: extraEnv.data)."
+        )
+    return (
+        f"{cause}. The first call downloads the model, so each data instance needs outbound HTTPS to "
+        "huggingface.co once, or a pre-seeded HF_HOME with HF_HUB_OFFLINE=1."
     )
 
 

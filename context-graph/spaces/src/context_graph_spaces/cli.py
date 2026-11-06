@@ -191,6 +191,8 @@ def _explain(exc: Exception, url: str, user: str) -> str | None:
     """What to tell an admin whose connection or privileges fell short, or None for any other error."""
     import neo4j
 
+    from .instance import ADMIN_PRIVILEGES
+
     if isinstance(exc, neo4j.exceptions.ServiceUnavailable):
         return f"Can't reach Memgraph at {url}. Is it running, and is the URL right (--url or MEMGRAPH_URL)?"
     if isinstance(exc, neo4j.exceptions.AuthError) or (
@@ -204,9 +206,11 @@ def _explain(exc: Exception, url: str, user: str) -> str | None:
     if isinstance(exc, neo4j.exceptions.ClientError) and _UNPRIVILEGED.search(exc.message or ""):
         return (
             f"Memgraph refused the login {user!r}: {exc.message}\n"
-            "Provisioning needs Memgraph's built-in admin role. As an existing admin, run:\n"
+            "Provisioning needs Memgraph's built-in admin role, or the privileges it uses granted directly. "
+            "As an existing admin, run either:\n"
             f"  SET ROLE FOR {user} TO admin;\n"
-            "(On a fresh instance the first user created already holds it.)"
+            f"  GRANT {', '.join(ADMIN_PRIVILEGES)} TO {user}; GRANT DATABASE * TO {user};\n"
+            "(On a fresh instance the first user created already holds the role.)"
         )
     return None
 
