@@ -75,7 +75,7 @@ The setting is user-wide. Setup imports supported existing memory before switchi
 
 ## Configuration
 
-Hooks read values from `~/.config/context-graph/config.toml`. `CONTEXT_GRAPH_CONFIG` can select another file; connection settings and API keys are read from that file, rather than environment variables.
+Hooks read values from `~/.config/context-graph/config.toml`. `CONTEXT_GRAPH_CONFIG` can select another file; connection settings and API keys are read from that file, rather than environment variables. A [profile](docs/configuration.md#profiles-one-agents-memory-somewhere-else) sends one agent's memory to another Memgraph, e.g. `join <url> <login> --agent codex`, while the other agents stay where they are.
 
 ```bash
 memgraph-context-graph config show

@@ -85,6 +85,61 @@ memgraph-context-graph config --help                  # every key, with what it 
 # [redact] patterns are named by you, so they are edited in the file.
 ```
 
+### Profiles: one agent's memory somewhere else
+
+The top level of the file is where every agent's memory goes. A profile is another
+destination in the same file, with its own `edition`, `[memgraph]` and `[memory]`, and
+`[agents]` says which agents use it. To put Codex on a team's Enterprise Memgraph while
+the other agents stay on your local one:
+
+```bash
+memgraph-context-graph join neo4j://memgraph.corp:7687 alice --agent codex
+memgraph-context-graph setup codex --memory-backend context-graph
+```
+
+`join --agent` writes the login into a profile named after the host (`--profile` names it)
+and maps the agent to it:
+
+```toml
+[profiles.memgraph-corp]
+edition = "enterprise"
+
+[profiles.memgraph-corp.memgraph]
+url = "neo4j://memgraph.corp:7687"
+user = "alice"
+password = "..."
+
+[profiles.memgraph-corp.memory]
+backend = "context-graph"
+
+[agents]
+codex = "memgraph-corp"
+```
+
+- **A profile is a whole destination.** What it leaves out is the default, never the top
+  level's value. That way a local `memgraph.database` can't leak into an Enterprise login,
+  which decides its own database and user.
+- **Privacy is shared.** `[capture]`, `[redact]`, `[recall]` and the rest stay at the top
+  level for every agent, so pointing an agent elsewhere can't turn redaction off. A profile
+  key outside its three sections is reported by `doctor` and ignored.
+- **Agents on different profiles don't share memory.** What Codex learns on the team
+  Memgraph, an agent on the top level won't recall.
+- **Who uses which profile:**
+  - Hooks use the profile of the agent they run for.
+  - The MCP server uses the profile of the agent named by `mcp --agent <runtime>`, which
+    setup writes into each agent's MCP config.
+  - A process a hook spawns gets the hook's profile in `CONTEXT_GRAPH_PROFILE`, next to
+    `CONTEXT_GRAPH_CONFIG`
+    ([ADR 0008](adr/0008-profiles-pick-an-agents-destination.md)).
+- **Commands:**
+  - `setup <runtime>` and `doctor --runtime <runtime>` act on that agent's profile.
+  - `setup <runtime> --profile <name>` maps the agent to a profile, and creates it if it's new.
+  - `setup <runtime> --profile default` maps the agent back to the top level.
+  - Other commands use the top level. Set `CONTEXT_GRAPH_PROFILE=<name>` to point them at a
+    profile, e.g. `CONTEXT_GRAPH_PROFILE=memgraph-corp memgraph-context-graph config show`.
+
+A file without `[profiles.*]` and `[agents]` works as before.
+
 ## Capture privacy
 
 Every hook event passes the capture policy before any connector sees it, so

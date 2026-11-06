@@ -283,6 +283,12 @@ exists because the config file is otherwise a single global: pointing one
 session's hooks at a different Memgraph would silently redirect every other
 session on the machine. Config *values* stay file-only.
 
+`CONTEXT_GRAPH_PROFILE` is the same kind of selector, one level down. It picks which
+`[profiles.<name>]` of that file applies (ADR 0008). Hooks (`hook run <runtime>`) and the
+MCP server (`mcp --agent <runtime>`) pick their agent's profile from `[agents]` the same way.
+A profile holds only the destination (`edition`, `[memgraph]`, `[memory]`); keep privacy
+settings out of it.
+
 ## Releases
 
 All release workflows are manual (`workflow_dispatch` from the Actions tab);

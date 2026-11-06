@@ -120,6 +120,11 @@ What `apply` maintains:
 | Service login | `cg_service` | writes Chunks and entities in shared spaces |
 | Tenant profiles | `cg_<mb>mb` | memory caps from the spec |
 
+Each setup line moves all of that member's agents to the team Memgraph. A member
+who wants only some of them there adds `--agent <runtime>` (repeatable). The login
+then goes into a [profile](../memgraph-context-graph/docs/configuration.md#profiles-one-agents-memory-somewhere-else),
+and the other agents keep their Memgraph.
+
 The setup lines are the only copy of the new passwords. If `apply` fails partway,
 it still prints the lines for logins it already created, then the error. Run it
 again once the error is fixed, and it continues from where it stopped.

@@ -1114,3 +1114,40 @@ def test_codex_wiring_keeps_an_approval_mode_the_user_chose(fake_agents, setup_h
 
     mode = tomlkit.parse(config.read_text()).unwrap()["plugins"][agents.PLUGIN_ID]["mcp_servers"]["context-graph"]
     assert mode == {"default_tools_approval_mode": "prompt"}
+
+
+def test_setup_for_agents_on_a_profile_plans_and_writes_that_profile(fake_agents, setup_home, capsys):
+    from memgraph_context_graph.adapters import _identity
+
+    _identity.write_config(memgraph_url="bolt://localhost:7687")
+
+    assert main(["setup", "--plan", "codex", "--profile", "second", "--memgraph-url", "bolt://localhost:7688"]) == 0
+    assert "Profile: second" in capsys.readouterr().out
+    _identity._reset_cache()
+    assert _identity.load_config().agents == {}, "--plan changes nothing"
+
+    _identity.select_profile("second")
+    _identity.write_config(memgraph_url="bolt://localhost:7688")
+    _identity.map_agents(["codex"], "second")
+    _identity._reset_cache()
+    assert main(["setup", "--plan", "codex"]) == 0
+    assert "Memgraph: use bolt://localhost:7688 (configured)" in capsys.readouterr().out
+
+
+def test_setup_refuses_agents_on_different_profiles_in_one_run(fake_agents, setup_home, capsys):
+    from memgraph_context_graph.adapters import _identity
+
+    _identity.select_profile("second")
+    _identity.write_config(memgraph_url="bolt://localhost:7688")
+    _identity.map_agents(["codex"], "second")
+    _identity._reset_cache()
+
+    with pytest.raises(SystemExit):
+        main(["setup", "--plan", "codex", "claude-code"])
+    assert "codex on second, claude-code on default" in capsys.readouterr().err
+
+
+def test_setup_profile_needs_the_agents_that_use_it(setup_home, capsys):
+    with pytest.raises(SystemExit):
+        main(["setup", "--plan", "--profile", "second"])
+    assert "--profile needs the agents" in capsys.readouterr().err

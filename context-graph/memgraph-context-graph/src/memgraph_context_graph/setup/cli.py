@@ -51,6 +51,11 @@ def setup_main(argv: Sequence[str]) -> int:
     parser.add_argument(
         "--memory-backend", choices=sorted(MEMORY_BACKENDS), help="whose memory the selected agents use"
     )
+    parser.add_argument(
+        "--profile",
+        help="the profile the named agents use: their own Memgraph and memory in the config file, created if new; "
+        "'default' maps them back to the top level. Default: the profile they are mapped to",
+    )
     parser.add_argument("--no-viewer", action="store_true", help="don't install the terminal viewer")
     parser.add_argument(
         "--memgraph-container", default=CONTAINER, help=f"the container to find or start (default {CONTAINER})"
@@ -59,6 +64,10 @@ def setup_main(argv: Sequence[str]) -> int:
     parser.add_argument("--no-tui", action="store_true", help="plain output even on a terminal")  # fmt: skip
     args = parser.parse_args(list(argv))
     _check_runtimes(parser, args.runtimes)
+    try:
+        _select_destination(args.runtimes, args.profile, write=not args.plan)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     interactive = not args.plan and not args.no_tui and _interactive()
     terminal = None
@@ -187,6 +196,39 @@ def _check_runtimes(parser: argparse.ArgumentParser, runtimes: Sequence[str]) ->
     unknown = [runtime for runtime in runtimes if runtime not in _RUNTIMES]
     if unknown:
         parser.error(f"unknown runtime {', '.join(unknown)} (choose from {', '.join(_RUNTIMES)})")
+
+
+def _select_destination(runtimes: Sequence[str], profile: str | None, *, write: bool) -> None:
+    """Resolve the config for this run through the profile the named agents use; with *write*, map them to *profile*.
+
+    Every step after this reads and writes that profile's Memgraph and memory, so agents mapped to
+    different profiles are set up one run each.
+
+    Raises:
+        ValueError: *profile* is not a valid name or names no agent, or the agents are on different profiles.
+    """
+    from memgraph_context_graph.adapters._identity import (
+        DEFAULT_PROFILE,
+        load_config,
+        map_agents,
+        select_agent,
+        select_profile,
+    )
+
+    if profile is not None:
+        if not runtimes:
+            raise ValueError("--profile needs the agents that use it, e.g. setup codex --profile team")
+        select_profile(profile)
+        if write:
+            map_agents(list(runtimes), profile)
+        return
+    mapped = load_config().agents
+    profiles = {runtime: mapped.get(runtime, DEFAULT_PROFILE) for runtime in runtimes}
+    if len(set(profiles.values())) > 1:
+        listing = ", ".join(f"{runtime} on {name}" for runtime, name in profiles.items())
+        raise ValueError(f"these agents use different profiles ({listing}); set up one profile at a time")
+    if runtimes:
+        select_agent(runtimes[0])
 
 
 def _interactive() -> bool:

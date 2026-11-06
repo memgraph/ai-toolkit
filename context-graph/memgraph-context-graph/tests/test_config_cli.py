@@ -274,3 +274,26 @@ def test_config_show_and_get_mask_every_secret(config_dir, capsys):
             assert top_level_main(["config", "get", key.name]) == 0
     assert top_level_main(["config", "show"]) == 0
     assert "s3cret-value" not in capsys.readouterr().out
+
+
+def test_config_set_writes_a_destination_key_into_the_chosen_profile(config_dir, monkeypatch, capsys):
+    _identity.write_config(memgraph_url="bolt://localhost:7687")
+    _identity.select_profile("team")
+    _identity.write_config(memgraph_url="bolt://team:7687")
+    _identity.map_agents(["codex"], "team")
+    _identity._reset_cache()
+    monkeypatch.setenv(_identity.PROFILE_ENV, "team")
+
+    assert top_level_main(["config", "set", "memgraph.url", "bolt://team-2:7687"]) == 0
+    assert top_level_main(["config", "set", "reconcile.auto_reconcile", "true"]) == 0
+    assert top_level_main(["config", "show"]) == 0
+
+    out = capsys.readouterr().out
+    assert "# profile team:" in out
+    assert "memgraph.url = 'bolt://team-2:7687'" in out
+    assert "reconcile.auto_reconcile = true" in out
+    assert "agents.codex = 'team'" in out
+    monkeypatch.setenv(_identity.PROFILE_ENV, _identity.DEFAULT_PROFILE)
+    _identity._reset_cache()
+    top = _identity.load_config()
+    assert (top.memgraph_url, top.auto_reconcile) == ("bolt://localhost:7687", True)

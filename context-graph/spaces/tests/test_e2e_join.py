@@ -86,3 +86,26 @@ def test_joining_again_shows_the_spaces_granted_since(enterprise_url, team, admi
 
     assert _join(enterprise_url, "carol", team["carol"]) == 0
     assert "Shared spaces: payments." in capsys.readouterr().out
+
+
+def test_join_for_one_agent_moves_only_that_agent(enterprise_url, team, capsys):
+    _identity.write_config(memgraph_url="bolt://localhost:7687", user_id="alice-local")
+
+    _identity._reset_cache()
+    spaces._reset_cache()
+    assert cli.main(["join", enterprise_url, "alice", f"--password={team['alice']}", "--agent", "codex"]) == 0
+
+    out = capsys.readouterr().out
+    assert "in profile" in out and "for codex" in out
+    assert "Next: memgraph-context-graph setup codex --memory-backend context-graph" in out
+    _identity._reset_cache()
+    _identity.select_agent("codex")
+    codex = _identity.load_config()
+    assert (codex.edition, codex.memgraph_user) == ("enterprise", "alice")
+    assert spaces.spaces_for(codex).personal().target.url == enterprise_url
+    _identity._reset_cache()
+    _identity.select_agent("claude-code")
+    claude = _identity.load_config()
+    assert (claude.edition, claude.memgraph_url, claude.user_id) == (None, "bolt://localhost:7687", "alice-local")
+    _identity._reset_cache()
+    spaces._reset_cache()
