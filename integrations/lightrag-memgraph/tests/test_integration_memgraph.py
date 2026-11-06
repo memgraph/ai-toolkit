@@ -552,6 +552,37 @@ async def test_vector_query_logs_and_excludes_stale_candidates(
         await store.drop()
 
 
+async def test_vector_query_recheck_looks_up_candidates_by_id(shared_driver, vector_search_supported, workspace):
+    """query()'s liveness recheck must fetch each candidate by internal id, not scan
+    for it: a ScanAll / ScanAllByLabel there makes every query cost grow with the
+    namespace (or the whole database) instead of with top_k.
+    """
+    store = MemgraphVectorStorage(
+        namespace="chunks",
+        workspace=workspace,
+        global_config=_global_config(),
+        embedding_func=_fake_embedding_func(),
+        meta_fields={"content"},
+    )
+    await store.initialize()
+    try:
+        driver = await get_driver()
+        async with driver.session(database=get_database()) as session:
+            result = await session.run(
+                as_literal_query("EXPLAIN " + store._search_query()),
+                top_k=4,
+                embedding=_vector_for("cat"),
+            )
+            plan = [record[0].strip(" |*") async for record in result]
+            await result.consume()
+        operators = [line.split(" ")[0] for line in plan]
+        assert "ScanAllById" in operators, plan
+        assert "ScanAll" not in operators, plan
+        assert "ScanAllByLabel" not in operators, plan
+    finally:
+        await store.drop()
+
+
 # --- zero-config MemgraphLightRAGWrapper (#217 regression) -------------------
 
 # All Memgraph-related names the wrapper/backends could possibly read, so the
