@@ -54,8 +54,11 @@ not `0.0.0.0`.
 
 ### The admin login
 
-Provisioning needs a login with Memgraph's built-in `admin` role. `ALL PRIVILEGES`
-alone isn't enough: `apply` also writes into every personal database.
+Provisioning needs a login with Memgraph's built-in `admin` role, or the
+privileges `init` and `apply` use granted directly. Many admins created before
+multi-tenancy are set up the second way. A directly granted login also needs
+access to every database (`GRANT DATABASE *`), because `apply` writes into every
+personal database it creates.
 
 `init` creates that login on a fresh instance, then checks the instance can host
 spaces:
@@ -67,8 +70,9 @@ context-graph-spaces --url bolt://memgraph.corp:7687 init      # --admin cgadmin
 It checks four things:
 
 - the Enterprise licence
-- the admin role
-- MAGE's `embeddings.text`
+- the admin's privileges
+- that MAGE's `embeddings.text` loads the model recall embeds with (it says why
+  when it can't)
 - Memgraph's memory limit
 
 The new admin's password is printed once, as an `export` line for the commands
@@ -76,16 +80,43 @@ below.
 
 On an instance that already has users, `init` creates nothing. Pass it the
 existing admin (`--user`/`--password` or `MEMGRAPH_USER`/`MEMGRAPH_PASSWORD`) to
-run the checks. An existing admin gives the role to another login like this:
+run the checks. An existing admin gives another login the role, or the
+privileges directly:
 
 ```cypher
 SET ROLE FOR cgadmin TO admin;
+-- or
+GRANT CONFIG, STATS, AUTH, MULTI_DATABASE_EDIT, MULTI_DATABASE_USE, PROFILE_RESTRICTION,
+      MATCH, CREATE, MERGE, SET, DELETE, REMOVE, INDEX, CONSTRAINT TO cgadmin;
+GRANT DATABASE * TO cgadmin;
 ```
 
 The admin can't be named `admin`, which is the built-in role's name, or start with
 `u_`, `space_` or `cg_`, which `apply` owns. If the login falls short, `init`,
-`plan` and `apply` name the missing privilege and print the line above, not a
+`plan` and `apply` name the missing privilege and print the lines above, not a
 stack trace.
+
+### On Kubernetes
+
+The MAGE image ships no embedding model. The first `embeddings.text` call
+downloads the one recall uses into `$HOME/.cache/huggingface`. The
+`memgraph-high-availability` Helm chart runs data instances with
+`readOnlyRootFilesystem: true`, so that download fails and recall times out in
+every space. Point the cache at the data volume on every data instance:
+
+```yaml
+extraEnv:
+  data:
+    - name: HF_HOME
+      value: /var/lib/memgraph/huggingface   # persistent: survives restarts and failovers
+```
+
+If `extraEnv.data` is already set, add this entry to it. Each data pod needs
+outbound HTTPS to huggingface.co for its first download, about 130 MB per pod.
+Without that access, pre-seed the directory and set `HF_HUB_OFFLINE=1`. Every data
+instance needs the model, not just the current main, or recall breaks at the next
+failover. `init` checks only the instance it reaches, which on a cluster is the
+main.
 
 ### The spec
 

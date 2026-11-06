@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from context_graph_spaces.cli import main
-from context_graph_spaces.instance import create_first_admin
+from context_graph_spaces.instance import ADMIN_PRIVILEGES, _embeddings, create_first_admin
 
 from .conftest import ADMIN
 
@@ -15,9 +15,24 @@ def test_init_checks_an_instance_that_already_has_its_admin(enterprise_url, admi
 
     out = capsys.readouterr().out
     assert "Created" not in out
-    for check in ("Enterprise licence", "Admin role", "Embeddings", "Memory limit"):
+    for check in ("Enterprise licence", "Admin privileges", "Embeddings", "Memory limit"):
         assert f"ok   {check}: " in out
+    assert "BAAI/bge-small-en-v1.5 loads (384 dimensions)" in out
     assert "Ready for spaces" in out
+
+
+def test_init_accepts_an_admin_with_the_privileges_granted_directly_and_no_role(enterprise_url, admin, capsys):
+    login, password = "directadmin", "directadmin-test-password"
+    admin(f"CREATE USER {login} IDENTIFIED BY '{password}'", None, None)
+    admin(f"GRANT {', '.join(ADMIN_PRIVILEGES)} TO {login}", None, None)
+    admin(f"GRANT DATABASE * TO {login}", None, None)
+    try:
+        assert main(["--url", enterprise_url, "--user", login, "--password", password, "init"]) == 0
+    finally:
+        admin(f"DROP USER {login}", None, None)
+
+    out = capsys.readouterr().out
+    assert f"ok   Admin privileges: {login} holds every privilege init and apply use, on every database" in out
 
 
 def test_init_creates_no_second_admin_and_asks_for_the_existing_one(enterprise_url, admin, capsys):
@@ -38,7 +53,29 @@ def test_init_tells_an_admin_without_the_admin_role_how_to_get_it(enterprise_url
 
     out, err = capsys.readouterr()
     assert f"SET ROLE FOR {login} TO admin" in out + err
+    assert f"GRANT DATABASE * TO {login}" in out + err
     assert "Traceback" not in err
+
+
+def test_init_says_why_the_model_wont_load_when_the_procedure_is_there():
+    import neo4j
+
+    def query(statement, database, params):
+        if statement.startswith("CALL mg.procedures()"):
+            return [{"name": "embeddings.text"}]
+        if statement.startswith("CALL embeddings.text"):
+            return [{"success": False, "embeddings": None}]
+        # embeddings.model_info re-raises what the download hit, with its traceback.
+        raise neo4j.exceptions.ClientError(
+            "Traceback (most recent call last):\n  File ...\n"
+            "OSError: [Errno 30] Read-only file system: '/home/memgraph/.cache'\n}"
+        )
+
+    check = _embeddings(query)
+
+    assert not check.ok
+    assert "can't load BAAI/bge-small-en-v1.5: OSError: [Errno 30] Read-only file system" in check.detail
+    assert "HF_HOME=/var/lib/memgraph/huggingface" in check.detail
 
 
 @pytest.mark.parametrize("name", ["admin", "cg_admin", "Admin"])
