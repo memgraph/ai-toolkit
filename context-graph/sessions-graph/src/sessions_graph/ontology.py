@@ -35,6 +35,7 @@ from hygm import (
     default_model,
     model_from_mapping,
     model_to_mapping,
+    needs_version_2,
     validate_model,
     with_core,
 )
@@ -235,6 +236,15 @@ def reject(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
 
 
 def _params(version: OntologyVersion) -> dict[str, Any]:
+    # Installed clients read stored versions with a reader that ignores unknown
+    # keys, so a version-2 model would lose its hierarchy and properties there
+    # without a word. Storing one waits for a graph epoch that turns those
+    # clients away (#698).
+    if needs_version_2(version.model) or needs_version_2(version.pool):
+        raise ValueError(
+            "sessions-graph can't store an ontology that needs hygm's format version 2 yet "
+            "(parents, properties, key, iri or profiles beyond identity)"
+        )
     return {
         "user_id": version.user_id,
         "version": version.version,

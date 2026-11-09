@@ -317,6 +317,13 @@ class LlmRecommendationStrategy:
         """
         if not conversations:
             raise DerivationError(["no conversations to derive from"])
+        # Merges, retirements and the propose prompt rebuild types from label,
+        # description and endpoints alone, so a hierarchy or declared
+        # properties would be silently dropped (docs/contract.md, section 8).
+        for name, model in (("current model", current), ("pool", pool)):
+            unsupported = model.uses_hierarchy_or_properties() if model else ()
+            if unsupported:
+                raise DerivationError([f"derivation does not support {', '.join(unsupported)} yet; the {name} uses it"])
         protected = frozenset(CORE_LABELS) | frozenset(CATCH_ALL_LABELS) | frozenset(pinned)
         pool = pool or HygmModel(node_types=())
         rules = _RULES.format(values=", ".join(VALUE_LABELS))

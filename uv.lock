@@ -3231,7 +3231,7 @@ wheels = [
 
 [[package]]
 name = "hygm"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "hygm" }
 dependencies = [
     { name = "pyyaml" },
@@ -3242,12 +3242,14 @@ owl = [
     { name = "rdflib" },
 ]
 test = [
+    { name = "jsonschema" },
     { name = "pytest" },
     { name = "rdflib" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "jsonschema", marker = "extra == 'test'", specifier = ">=4.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rdflib", marker = "extra == 'owl'", specifier = ">=7.0.0" },

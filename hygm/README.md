@@ -56,6 +56,42 @@ supplied = with_core(my_model)  # a supplied model with any missing core type ad
 `validate_model` is the hard gate every model passes before anything extracts
 against it. `ManualStrategy` runs it on load.
 
+## The model file
+
+A model file is YAML or JSON in one of two format versions; both are read.
+Version 1 is every model written before version 2 existed (`entity_types`,
+node-level `identity`). Version 2 adds properties, a type hierarchy, keys and
+IRIs:
+
+```yaml
+version: 2
+node_types:
+  - label: Party
+    description: any person or organization the shop deals with
+  - label: Customer
+    description: a party that has placed an order
+    parents: [Party]                 # a Customer node is also a Party
+    key: [customer_id]               # identifies one customer across sources
+    properties:
+      - {name: customer_id, type: string, required: true}
+      - {name: tier, values: [standard, gold]}
+    profiles: {extraction: {identity: global}}
+relation_types:
+  - {label: placed, description: placed the order, start_labels: [Customer], end_labels: [Order]}
+```
+
+`model_to_mapping` writes version 1 whenever a model fits in it, so models
+stored before version 2 serialize exactly as they did. Unknown keys are
+refused at every level. Every refusal is a `ModelError` (a `ValueError`) whose
+`codes` come from the contract's error table, and
+[`conformance/`](conformance/) holds the fixtures any reader, in any language,
+must agree with. The JSON Schemas ship in the package (`hygm.model_schema(2)`).
+
+Readers that can't honor a feature yet refuse models that use it:
+unstructured2graph refuses `parents`, derivation refuses `parents`,
+`properties` and `key`, and sessions-graph doesn't store a model that needs
+version 2 until older clients can be turned away (#698).
+
 Named after, but separate from, `agents/sql2graph`'s HyGM, which is untouched.
 Its validation types are lifted here in the same shape, so a later
 consolidation is a type swap.

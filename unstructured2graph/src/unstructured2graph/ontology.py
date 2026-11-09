@@ -38,6 +38,22 @@ class Ontology:
 
     @classmethod
     def from_model(cls, model: HygmModel) -> "Ontology":
+        """The vocabulary of `model`.
+
+        Declared properties, keys and IRIs don't change what extraction
+        produces, so they are carried but unused.
+
+        Raises:
+            ValueError: if `model` declares `parents`. Realizing a hierarchy
+                means writing every ancestor label on each extracted node,
+                which extraction doesn't do yet; refusing beats silently
+                dropping the hierarchy (docs/contract.md, section 8).
+        """
+        with_parents = [t.label for t in model.node_types if t.parents]
+        if with_parents:
+            raise ValueError(
+                f"unstructured2graph does not support type hierarchies yet: {with_parents} declare parents"
+            )
         return cls(entity_types=model.node_types, relation_types=model.relation_types)
 
     @property

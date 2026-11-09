@@ -1,0 +1,9 @@
+version: 2
+node_types:
+  - label: Author
+    description: a person who writes
+    profiles: {extraction: {identity: global}, x_mytool: {color: blue}}
+relation_types:
+  - {label: knows, description: "", profiles: {x_mytool: {weight: 2}}}
+profiles:
+  x_mytool: {generated_by: hand}

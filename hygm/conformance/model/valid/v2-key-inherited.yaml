@@ -1,0 +1,8 @@
+version: 2
+node_types:
+  - label: Account
+    description: an account
+    key: [account_no]
+    properties: [{name: account_no, type: integer, required: true}]
+  - {label: SavingsAccount, description: an account that earns interest, parents: [Account]}
+  - {label: YouthSavingsAccount, description: a savings account for minors, parents: [SavingsAccount]}

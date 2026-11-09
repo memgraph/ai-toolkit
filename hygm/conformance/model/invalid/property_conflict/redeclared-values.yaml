@@ -1,0 +1,4 @@
+version: 2
+node_types:
+  - {label: A, description: a, properties: [{name: p, values: [small, large]}]}
+  - {label: B, description: b, parents: [A], properties: [{name: p, values: [small]}]}

@@ -1,0 +1,3 @@
+version: 2
+node_types:
+  - {label: Thing, description: ""}

@@ -89,6 +89,21 @@ def test_an_invalid_schema_writes_nothing(graph, memgraph, tmp_path):
     assert _chain(memgraph, "alice") == []
 
 
+def test_a_schema_that_needs_model_format_2_writes_nothing_yet(graph, memgraph, tmp_path):
+    """Installed clients would misread it until the graph epoch turns them away (#698)."""
+    path = tmp_path / "hierarchy.yaml"
+    path.write_text(
+        "version: 2\n"
+        "node_types:\n"
+        "  - {label: Artifact, description: a thing made or used}\n"
+        "  - {label: Library, description: a code library, parents: [Artifact]}\n"
+    )
+
+    with pytest.raises(ValueError, match="format version 2"):
+        graph.supply_ontology_file("alice", path, derive="off")
+    assert _chain(memgraph, "alice") == []
+
+
 def test_sync_adopts_a_file_only_when_its_content_or_mode_changes(graph, schema):
     assert graph.sync_ontology_file("alice", schema).version == 1
     assert graph.sync_ontology_file("alice", schema) is None
