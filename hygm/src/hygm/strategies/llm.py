@@ -37,6 +37,18 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Protocol
 
+from ..errors import ModelError
+from ..evolution import (
+    AddNodeType,
+    AddRelationType,
+    MergeNodeTypes,
+    MergeRelationTypes,
+    Operation,
+    RemoveNodeType,
+    RemoveRelationType,
+    apply,
+    diff,
+)
 from ..profiles import catch_all_labels, protected_labels, validate_for_conversation, value_labels
 from ..types import IDENTITIES, HygmModel, NodeType, RelationType
 from ..validation import PERSON_LABEL, USER_LABEL, validate_model
@@ -93,13 +105,49 @@ class DerivationLimits:
 
 @dataclass(frozen=True)
 class Change:
-    """One line of a run's changelog: add, merge, retire, restore (from the pool) or a vetoed merge."""
+    """One line of a run's changelog: add, merge, retire, restore (from the pool) or a vetoed merge.
+
+    The record sessions-graph stores, field for field, so its shape stays
+    fixed; operations() says it in hygm's operation vocabulary. Each is
+    operations plus a reason: an add or a restore adds the type, a merge
+    merges it, a retire removes it (derivation keeps its definition in the
+    pool, which is derivation's store, not the model's), and a veto names a
+    merge that was refused, so it changes nothing.
+    """
 
     op: Literal["add", "merge", "retire", "restore", "veto"]
     kind: Literal["node", "relation"]
     label: str
     into: str | None = None
     reason: str = ""
+
+    def operations(self, *definitions: HygmModel) -> tuple[Operation, ...]:
+        """The operations this change made.
+
+        Args:
+            definitions: Where an add or a restore finds the type it added,
+                first match wins: the run's model, then its pool.
+
+        Raises:
+            ModelError: unknown_type if an add or restore's type is in none
+                of `definitions`, or invalid_format for a merge without `into`.
+        """
+        if self.op == "veto":
+            return ()
+        if self.op == "retire":
+            return (RemoveNodeType(self.label) if self.kind == "node" else RemoveRelationType(self.label),)
+        if self.op == "merge":
+            if self.into is None:
+                raise ModelError("invalid_format", f"merge of {self.label!r} names nothing to merge into")
+            node = self.kind == "node"
+            return (MergeNodeTypes(self.label, self.into) if node else MergeRelationTypes(self.label, self.into),)
+        for model in definitions:
+            if self.kind == "node" and (found := model.node_type(self.label)):
+                return (AddNodeType(found),)
+            relation = next((r for r in model.relation_types if r.label == self.label), None)
+            if self.kind == "relation" and relation:
+                return (AddRelationType(relation),)
+        raise ModelError("unknown_type", f"{self.op} of {self.kind} type {self.label!r}, which no model given declares")
 
 
 @dataclass(frozen=True)
@@ -112,6 +160,9 @@ class Derivation:
         counts: Observation counts summed over every run, ``{"nodes": {...}, "relations": {...}}``,
             for active and pooled labels alike.
         changelog: What this run changed, in order.
+        operations: The same run as hygm operations: ``apply(current, operations) == model``.
+            The changelog's operations in order, then what they leave out: the
+            endpoints a retired type drops from, and the order prune kept.
         unanchored_values: Value types no relation points into; reporting only,
             since such a type is never extracted (#366).
         observation: The observer's tables for this run.
@@ -125,6 +176,7 @@ class Derivation:
     unanchored_values: tuple[str, ...] = ()
     observation: Mapping[str, Any] = field(default_factory=dict)
     llm_calls: int = 0
+    operations: tuple[Operation, ...] = ()
 
 
 class DerivationError(ValueError):
@@ -406,7 +458,16 @@ class LlmRecommendationStrategy:
             unanchored_values=tuple(label for label in values if label not in tails),
             observation=observation,
             llm_calls=len(proposals) + 2,
+            operations=_operations(current, candidate, pool, changelog),
         )
+
+
+def _operations(
+    current: HygmModel, candidate: HygmModel, pool: HygmModel, changelog: Sequence[Change]
+) -> tuple[Operation, ...]:
+    """The run as operations from `current` to `candidate`: the changelog's, then diff's for what it doesn't say."""
+    said = tuple(op for change in changelog for op in change.operations(candidate, pool))
+    return said + diff(apply(current, said, validate=False), candidate)
 
 
 def _batches(conversations: Sequence[str], limits: DerivationLimits, seed: int) -> list[list[str]]:
