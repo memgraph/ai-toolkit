@@ -125,6 +125,9 @@ relation_types:
 | `node_types` | list of node types | yes | |
 | `relation_types` | list of relation types | no, default `[]` | |
 | `profiles` | map of profile name → settings | no | Model-wide profile settings (section 5). |
+| `ontology` | map | no | What the ontology is for: scope, competency questions, conventions (4.11). |
+| `imports` | list of `{path}` | no | Models this one builds on (4.12). |
+| `individuals` | list of individuals | no | Instances the ontology carries (4.17). |
 
 ### 4.3 Node type
 
@@ -137,6 +140,8 @@ relation_types:
 | `key` | list of property names | no | Properties whose values identify one entity across sources (4.8). |
 | `iri` | string | no | The type's IRI when it came from, or must round-trip to, RDF/OWL. |
 | `profiles` | map | no | Per-type profile settings (section 5). |
+| `abstract`, `disjoint_with`, `synonyms`, `names` | | no | 4.13. |
+| `relation_restrictions` | list | no | Narrower relations for this type's instances (4.16). |
 
 ### 4.4 Relation type
 
@@ -149,6 +154,8 @@ relation_types:
 | `properties` | list of properties | no, default `[]` | Declared relationship properties. |
 | `iri` | string | no | As for node types. |
 | `profiles` | map | no | Per-type profile settings. |
+| `min_count`, `max_count`, `inverse_of`, `symmetric` | | no | 4.16. |
+| `synonyms`, `names` | | no | As for node types (4.13). |
 
 ### 4.5 Property
 
@@ -161,6 +168,8 @@ relation_types:
 | `values` | list of strings | no | The allowed values; only on a `string` property. |
 | `iri` | string | no | As for node types. |
 | `profiles` | map | no | Per-property profile settings. |
+| `min_count`, `max_count`, `default`, `value`, `minimum`, `maximum`, `unit` | | no | Facets (4.14). |
+| `synonyms`, `names` | | no | As for node types (4.13). |
 
 ### 4.6 Property types
 
@@ -191,10 +200,9 @@ An XSD type not listed maps to `string`.
 - **Endpoints:** a relation whose `start_labels` or `end_labels` names `T`
   admits every descendant of `T`.
 - **Properties are inherited.** A descendant may redeclare an inherited
-  property only with the same `type` and `values`. It may change
-  `description` and may tighten `required` from `false` to `true`. A
-  property inherited through two parents must have the same `type` and
-  `values` on both; it is required if either side says so.
+  property to narrow its facets (4.15), never to change its type. A
+  property inherited through two parents takes the narrowest facets both
+  allow.
 - Relation types have no inheritance (`rdfs:subPropertyOf` is out of scope).
 
 ### 4.8 Properties and keys
@@ -232,7 +240,11 @@ it:
 
 The implied profiles are the rules that applied to every version-1 model
 before profiles existed, when they were hardcoded, so reading a version-1
-file means what it always meant.
+file means what it always meant. They are context-graph's rules, not
+hygm's (5.6): hygm itself maps a version-1 `identity` into the `extraction`
+profile and implies nothing else, and the owners of the other rows apply
+them when they read version-1 files. A writer that should keep such a model
+in version 1 passes its implied profiles to the writer.
 
 Version 1 has none of the other keys. A writer writes the lowest version
 that can express the model: a model that only uses version 1 features, and
@@ -247,6 +259,235 @@ Labels, relation types and property names are valid Cypher identifiers
 (`^[A-Za-z_][A-Za-z0-9_]*$`, as `require_valid_identifier` checks). That is
 what lets every consumer interpolate them into a query safely. Comparisons
 are exact and case-sensitive.
+
+### 4.11 The ontology itself: scope and competency questions
+
+An ontology starts from what it is for (Noy and McGuinness, "Ontology
+Development 101", step 1): its domain, what it will be used for, the
+questions it must answer and who maintains it. The optional top-level
+`ontology` block records that, so the model carries its own scope and a
+consumer can test it against its purpose.
+
+```yaml
+ontology:
+  name: wine
+  description: Wines and the foods they pair with, for menu suggestions
+  iri: https://example.org/wine
+  version_info: "2026.11"
+  scope:
+    includes: [wine characteristics, food types, good and bad pairings]
+    excludes: [cellar inventory, restaurant staff]
+  competency_questions:
+    - Which wine characteristics should I consider when choosing a wine?
+    - Does Cabernet Sauvignon go well with seafood?
+  maintainers: [the sommelier team]
+  conventions: {node_case: upper_camel, property_case: snake, relation_case: snake, number: singular}
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `name` | string | A short name. |
+| `description` | string | The domain the ontology covers. |
+| `iri` | string | The ontology's IRI (`owl:Ontology`). |
+| `version_info` | string | Free-form release name (`owl:versionInfo`); not the format `version`. |
+| `scope.includes`, `scope.excludes` | lists of strings | What is deliberately in and out (101, 4.7). |
+| `competency_questions` | list of strings | The questions the ontology must answer; the litmus test of its scope. |
+| `maintainers` | list of strings | Who maintains it. |
+| `conventions` | map | The naming conventions the lint checks (9.1, 101 section 6). Keys: `node_case`, `property_case`, `relation_case` (each `upper_camel`, `lower_camel`, `snake` or `upper_snake`) and `number` (`singular` or `plural`). |
+
+Every key is optional. Nothing in the block changes what the model means.
+
+### 4.12 Imports: reusing other models
+
+A model may build on others (101, step 2):
+
+```yaml
+imports:
+  - {path: food.model.yaml}
+```
+
+- `path` is relative to the importing file. An imported model's node types,
+  relation types and individuals become part of the importing model, as if
+  declared there, and the importing model may use them as `parents`,
+  endpoints and individuals' types.
+- Imports are transitive and may not form a cycle (`import_cycle`).
+- A label declared both in the importing model and in an import, or in two
+  imports, must be the same declaration (`duplicate_label` otherwise). A
+  diamond of imports is fine.
+- An importing model doesn't change imported types. It refines them by
+  subtyping them.
+- The OWL counterpart is `owl:imports`. A reader that can't read files (one
+  given a model as data) refuses a model with imports (`unknown_model`)
+  unless the caller resolves them first.
+
+### 4.13 Node types: abstract, disjoint, names
+
+New node-type keys:
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `abstract` | boolean | `false` | The type has no direct instances; every instance belongs to a descendant (101, 4.6). An individual (4.17) may not have an abstract type. |
+| `disjoint_with` | list of labels | `[]` | No instance is of both this type and one listed (101, 4.8). Symmetric: declaring it on one side is enough. |
+| `synonyms` | list of strings | `[]` | Other names for the same concept (101, 4.1: synonyms are not separate classes). |
+| `names` | map of language tag → string | `{}` | Display names and translations (`{en: Red wine, fr: Vin rouge}`); the `label` stays the identifier. |
+
+Rules:
+
+- Two disjoint types can't share a descendant, and a type can't be
+  disjoint with one of its own ancestors (`disjoint_conflict`).
+- A synonym may not equal another type's label or synonym, compared
+  case-insensitively (`duplicate_name`). One concept, one type.
+
+Relation types and properties take `synonyms` and `names` too.
+
+### 4.14 Property facets
+
+New property keys, all optional:
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `min_count` | integer ≥ 0 | `0`, or `1` when `required` | The fewest values an instance has. |
+| `max_count` | integer ≥ 0 or `null` | `1` | The most values an instance has. `null` means no limit; more than 1 makes the property multi-valued (a list). `0` means the type may not have the property at all, which only makes sense refining an inherited one (4.15). |
+| `default` | a value of the property's type | none | Filled in when an instance is created without one. A convenience, not a constraint (101, 5.2). |
+| `value` | a value of the property's type | none | Every instance has exactly this value (101, 5.2 "slot values"); for refining an inherited property on a subtype. |
+| `minimum`, `maximum` | a value of the property's type | none | Inclusive bounds; only on `integer`, `float`, `decimal`, `date` and `datetime`. |
+| `unit` | string | none | The unit of a numeric value (`EUR`, `ml`). Documentation; a consumer may use it. |
+
+- `required: true` is shorthand for `min_count: 1`; a file may use either,
+  and they must agree (`count_conflict`). `min_count` ≤ `max_count`.
+- A multi-valued property holds a list of values of its type; `values`,
+  bounds and `default` apply to each element.
+- `default`, `value`, `minimum` and `maximum` must be valid values of the
+  type, inside `values` and the bounds (`invalid_value`). JSON has no date,
+  so `date` and `datetime` values are ISO 8601 strings.
+- A key property must be single-valued (`max_count: 1`).
+
+### 4.15 Refining inherited facets in a subtype
+
+A subtype differs from its parent by having more properties, different
+restrictions on inherited ones, or different relationships (101, 4.4). The
+second needs a way to restrict an inherited property without changing its
+meaning. A subtype redeclares the property, and the redeclaration may only
+**narrow** it:
+
+| Facet | A redeclaration may |
+|---|---|
+| `type` | not change |
+| `values` | name a subset of the inherited values |
+| `min_count` / `required` | raise it |
+| `max_count` | lower it, to `0` to forbid the property |
+| `minimum` / `maximum` | raise / lower it |
+| `value` | set it, to a value the inherited facets allow |
+| `default` | set or change it |
+| `description`, `synonyms`, `names`, `unit` | change |
+
+Anything else is `property_conflict`. Doubly inherited properties merge by
+the same rule: the result must be the narrowest facets both parents allow,
+and if no value satisfies both, it is `property_conflict`.
+
+This replaces 4.7's "only with the same `type` and `values`". The old rule
+is a special case.
+
+```yaml
+- label: DessertWine
+  parents: [Wine]
+  properties:
+    - {name: sugar, values: [dry, off_dry, sweet], value: sweet}   # every dessert wine is sweet
+- label: WhiteWine
+  parents: [Wine]
+  properties:
+    - {name: tannin_level, max_count: 0}                            # white wines don't have one
+```
+
+### 4.16 Relation facets
+
+New relation-type keys:
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `min_count`, `max_count` | as for properties | `0`, `null` | How many relationships of this type a start node has. `max_count: 1` is a single-valued slot such as a wine's `maker` (101, step 6). |
+| `inverse_of` | relation label | none | Every `(a)-[:R]->(b)` implies `(b)-[:S]->(a)` (101, 5.1). Declaring it on one side is enough; the two must have swapped endpoints (`inverse_conflict`). |
+| `symmetric` | boolean | `false` | `(a)-[:R]->(b)` implies `(b)-[:R]->(a)`: the relation is undirected. Its start and end labels must be equal. |
+
+A node type narrows a relation for its own instances with
+`relation_restrictions`, the relation counterpart of 4.15:
+
+```yaml
+- label: FrenchWine
+  parents: [Wine]
+  relation_restrictions:
+    - {relation: maker, end_labels: [FrenchWinery]}   # a narrower range for this type (101, step 6)
+    - {relation: grape, min_count: 1}
+```
+
+A restriction names a relation the type may start, and may only narrow its
+end labels (to descendants of the inherited ones) and its counts. Anything
+else is `relation_conflict`.
+
+### 4.17 Individuals
+
+An ontology plus individual instances is a knowledge base (101, section 2
+and step 7). A model may carry individuals: reference data the ontology
+needs, such as the wine regions, or examples.
+
+```yaml
+individuals:
+  - id: bordeaux
+    type: WineRegion
+    properties: {name: Bordeaux}
+  - id: chateau_margaux
+    type: Winery
+    properties: {name: Château Margaux}
+    relations: {located_in: [bordeaux]}
+```
+
+- `id` is an identifier, unique among individuals (`duplicate_individual`),
+  and stands for the individual in `relations`. With an `iri` it maps to an
+  `owl:NamedIndividual`.
+- `type` names a declared, non-abstract node type (`unknown_type`,
+  `abstract_instance`). The individual is an instance of it and its
+  ancestors.
+- `properties` must be declared on the type, directly or inherited
+  (`undeclared_property`), and their values must satisfy every facet,
+  including counts, `values`, bounds and `value` (`invalid_value`). A
+  required property must be present (`missing_value`), and a property
+  whose `max_count` is more than 1 takes a list.
+- `relations` maps a relation type to target individual ids
+  (`unknown_individual`). The relation must admit both ends and its counts
+  must hold (`endpoint_not_admitted`, `count_conflict`). Inverse and
+  symmetric relations are implied, not repeated.
+- Individuals are data, not schema. A consumer may load them (the Memgraph
+  plan seeds them on request, 7.1), show them, or ignore them.
+
+### 4.18 Coverage of Ontology Development 101
+
+The format and its tools cover every construct and guideline of Noy and
+McGuinness's guide:
+
+| Ontology 101 | hygm |
+|---|---|
+| Step 1: domain, scope, competency questions | `ontology` (4.11) |
+| Step 2: reuse existing ontologies | `imports` (4.12), OWL import and export (10) |
+| Step 3: enumerate terms | node types, relation types and properties, with `synonyms` |
+| Step 4 and section 4: classes and hierarchy; is-a, transitivity, multiple inheritance, no cycles | node types, `parents` (4.7) |
+| 4.1: classes and their names; synonyms aren't classes | `names`, `synonyms`, `duplicate_name` (4.13) |
+| 4.2: siblings; how many subclasses | lint (9.1) |
+| 4.4, 4.5: when to introduce a class, class or property value | lint (9.1) |
+| 4.6: instance or class; abstract classes | `individuals` (4.17), `abstract` (4.13) |
+| 4.7: limiting the scope | `ontology.scope` (4.11) |
+| 4.8: disjoint subclasses | `disjoint_with` (4.13) |
+| Step 5: slots, intrinsic and extrinsic properties, parts, relationships | properties (4.5) and relation types (4.4) |
+| Slot inheritance; attach at the most general class | `properties_of` (4.7); lint (9.1) |
+| Step 6: facets: value type, allowed values, cardinality, min and max | `type`, `values`, `min_count`/`max_count`, `minimum`/`maximum` (4.14, 4.16) |
+| Instance-type slots: allowed classes, domain and range | relation types, `start_labels`/`end_labels` |
+| Restricting a slot's range for a class | `relation_restrictions` (4.16) |
+| Subclasses overriding facets; slot values | refinement (4.15), `value` |
+| 5.1: inverse slots | `inverse_of` (4.16) |
+| 5.2: default values | `default` (4.14) |
+| Step 7: instances | `individuals` (4.17) |
+| Section 6: naming conventions | `ontology.conventions` (4.11), lint (9.1) |
+| Evolution of a class hierarchy | operations, diff (11) |
+| Ontology analysis (diagnostics) | validation (9) and lint (9.1) |
 
 ## 5. Layer 2: profiles
 
@@ -315,6 +556,36 @@ With 5.3–5.5, the default model declares in its own file what is now
 hardcoded in `labels.py`. A model for another domain declares its own value
 types and catch-alls instead of inheriting the conversational ones. The
 constants stay as the default model's values for code that reads them.
+
+### 5.6 Where profile semantics live
+
+hygm is general by itself: it knows no consumer, no domain and no
+application. It owns profiles only as a mechanism: the `profiles` map, the
+name rule (registered or `x_`), and a registry of profile names, each with
+its owner and the JSON Schema of its settings. What a profile *means*, and
+the rules it adds, belong to the package that owns it:
+
+| Profile | Owner, where its code lives |
+|---|---|
+| `extraction` | `unstructured2graph` (`unstructured2graph.profile`) |
+| `conversation` | `sessions-graph` (`sessions_graph.profile`) |
+| `learning` | `sessions-graph` (`sessions_graph.profile`) |
+
+- An owner registers its profile's settings, and their validators, through
+  the `hygm.profiles` Python entry point. hygm validates the settings of
+  every profile whose owner is installed, and only checks the names of the
+  others. A model never needs its consumers installed to be read.
+- hygm's core types carry no consumer field. In Python, mention identity is
+  the `extraction` profile's setting, read through unstructured2graph's
+  accessor, not a `NodeType` attribute.
+- The conversational default model (`User`, `Person`, the value types, the
+  catch-alls), the profiles a version-1 file implies (4.9), and the
+  derivation that learns a model from sessions are context-graph's. They
+  live in sessions-graph and unstructured2graph, not in hygm.
+- hygm's own strategies produce models from general inputs: a model file,
+  OWL, a SQL catalog, or an LLM over a corpus and a base model, with a
+  caller-supplied prompt policy. Nothing in hygm mentions conversations,
+  sessions, users or a particular extractor.
 
 ## 6. Layer 3: mappings
 
@@ -430,6 +701,9 @@ idempotent. hygm computes it; it is not a file format.
 | a property's `type` | a data type constraint (`IS TYPED`) |
 | `values` | an enum, and the property typed with it |
 | `parents` | the ancestor labels every write sets |
+| a multi-valued property | a `LIST` type constraint where Memgraph has one; no per-element type |
+| `minimum`/`maximum`, `max_count`, `disjoint_with`, `value` | nothing: Memgraph can't enforce them; consumers that write data check them |
+| `individuals` | `MERGE` statements seeding them, only when the caller asks |
 | a mapping's `join` relation | an index on each endpoint's join property |
 
 Target-specific additions that aren't implied by the model, such as a vector
@@ -505,8 +779,49 @@ fixture holds exactly one problem.
 | `endpoint_not_admitted` | 3 | A relation binding's endpoint types aren't admitted by its relation type. |
 | `endpoint_columns` | 3 | A table relation's `from` or `to` columns don't match what they point at: the endpoint binding's `id` in the same source, else the endpoint type's `key`. |
 | `unknown_model` | 3 | The mapping's `model` can't be read. |
+| `import_cycle` | 1 | Imports form a cycle (4.12). |
+| `disjoint_conflict` | 1 | Two disjoint types share a descendant, or a type is disjoint with an ancestor (4.13). |
+| `duplicate_name` | 1 | A synonym equals another type's label or synonym (4.13). |
+| `count_conflict` | 1 | `min_count` above `max_count`, `required` disagreeing with `min_count`, a multi-valued key, or an individual breaking a count (4.14, 4.17). |
+| `invalid_value` | 1 | A `default`, `value`, bound or individual's value that isn't valid for its property (4.14, 4.17). |
+| `relation_conflict` | 1 | A relation restriction that widens instead of narrowing (4.16). |
+| `inverse_conflict` | 1 | Inverse relations whose endpoints aren't swapped, or a symmetric relation with different endpoints (4.16). |
+| `duplicate_individual` | 1 | Two individuals with one `id` (4.17). |
+| `abstract_instance` | 1 | An individual of an abstract type (4.17). |
+| `missing_value` | 1 | An individual without a required property (4.17). |
+| `unknown_individual` | 1 | A relation naming an individual that isn't declared (4.17). |
 | `unknown_operation` | 6 | An operation hygm doesn't define. |
 | `invalid_operation` | 6 | A rename or merge into itself, or an order list that doesn't name each item exactly once. |
+
+### 9.1 Lint: the design guidelines
+
+Validation (above) is the hard gate: a model that fails it is refused. The
+guidelines of Ontology Development 101 are judgement calls, so hygm checks
+them as **lint**. Lint only reports, and never refuses a model or blocks a
+pipeline. Each finding has a code, a severity (`warning` or `info`), the
+element it is about and a suggestion. `hygm lint` prints them, and
+`lint_model(model)` returns them.
+
+| Code | Severity | Guideline (101) | Finding |
+|---|---|---|---|
+| `single_subtype` | warning | 4.2 | A type with exactly one direct subtype: a modeling problem or an incomplete ontology. |
+| `many_subtypes` | info | 4.2 | More than a dozen direct subtypes: intermediate categories may be missing. |
+| `redundant_endpoint` | warning | step 6 | An endpoint list naming a type and one of its descendants; drop the descendant. |
+| `endpoint_covers_all_subtypes` | info | step 6 | An endpoint list naming every subtype of a type but not the type: use the type. |
+| `property_on_every_subtype` | info | step 5 | Every direct subtype declares the same property (same type) and the parent doesn't: attach it to the parent. |
+| `empty_subtype` | info | 4.4 | A subtype that adds no property, refinement or relation. Fine in a terminological hierarchy; worth a look otherwise. |
+| `plural_of_parent` | warning | 4.1, 6.2 | A type whose label is the plural (or singular) of an ancestor's (`Wine` under `Wines`). |
+| `naming_case` | warning | 6.1 | A label that doesn't follow `ontology.conventions`. With no conventions, the majority style of the model is assumed. |
+| `naming_number` | info | 6.2 | A type label that breaks the singular/plural convention. |
+| `meta_word_in_name` | warning | 6.4 | A label containing `Class`, `Type`, `Property`, `Slot`, `Relation` or `Concept` as a word. |
+| `sibling_naming` | info | 6.4 | Siblings where some repeat the parent's name and some don't (`RedWine` beside `White`). |
+| `missing_description` | warning | step 3 | A type, relation type or property with an empty description. |
+| `no_competency_questions` | info | step 1 | No `ontology.competency_questions`. |
+| `unused_type` | info | 4.7 | A node type no relation names, no type inherits from and no individual has. |
+| `inverse_not_declared` | info | 5.1 | Two relation types with swapped endpoints and names like `maker`/`produces` that aren't declared inverse. Heuristic. |
+
+A consumer that wants a gate on top of lint builds it from the codes. hygm
+never does.
 
 ## 10. OWL import
 
@@ -523,6 +838,23 @@ fixture holds exactly one problem.
 | `owl:hasKey` | `key`, each key property marked `required` |
 | `owl:FunctionalProperty` with an `owl:minCardinality 1` restriction | `required: true` |
 | each IRI | `iri` |
+| `owl:Ontology` with `rdfs:comment`, `owl:versionInfo` | `ontology` (4.11) |
+| `owl:imports` | `imports`, the imported ontology converted too |
+| `owl:disjointWith`, `owl:AllDisjointClasses` | `disjoint_with` |
+| `rdfs:label` with a language tag, `skos:prefLabel` | `names` |
+| `skos:altLabel` | `synonyms` |
+| `owl:inverseOf` | `inverse_of` |
+| `owl:SymmetricProperty` | `symmetric` |
+| `owl:FunctionalProperty` | `max_count: 1` |
+| a cardinality restriction (`min`/`max`/exact, qualified or not) on a class | `min_count`/`max_count` on the property or relation restriction |
+| `owl:hasValue` restriction | `value` |
+| `owl:allValuesFrom` restriction on an object property | `relation_restrictions` end labels |
+| `xsd:minInclusive`/`maxInclusive` datatype restriction | `minimum`/`maximum` |
+| `owl:NamedIndividual` with its assertions | `individuals` |
+
+**OWL export** writes the same table backwards, so a model round-trips
+through OWL. `abstract` has no OWL counterpart and is written as an
+annotation (`hygm:abstract`); `default`, `unit` and the profiles likewise.
 
 Restrictions, equivalence, disjointness and other axioms stay out. hygm is
 a schema, not a reasoner.
@@ -544,6 +876,10 @@ schema grows a column. Today sessions-graph's `Change` and sql2graph's
   of versions.
 - **Data migration is the consumer's.** hygm says what changed; moving the
   data is sessions-graph's or sql2graph's job.
+- **Every key has an operation.** The keys of 4.11–4.17 (the `ontology`
+  block, imports, `abstract`, `disjoint_with`, names, facets, relation facets
+  and restrictions, individuals) each get a `set_*` or add/remove operation,
+  so `diff` and `apply` cover the whole model.
 
 Storing a version-2 model in a user's graph is a change older
 sessions-graph clients would misread, since today they ignore unknown keys.
@@ -603,6 +939,9 @@ language every reader implements.
   additive: it keeps the format version, but every reader learns it before
   any producer writes it. Changing what an existing file means needs a new
   format version.
+  The keys of 4.11–4.17 are additive in this sense: they stay in version 2,
+  and a version-2 reader from before them refuses a file that uses them
+  (unknown keys) rather than misreading it.
 
 ## 14. Python package
 
@@ -612,7 +951,8 @@ hygm/
   profiles/     layer 2: extraction, conversation, learning
   mapping/      layer 3: Mapping, bindings, I/O, validation, rendering
   plan/         layer 4: memgraph
-  strategies/   layer 5: manual, owl, catalog, llm_text, llm_schema
+  strategies/   layer 5: manual, owl (import and export), catalog, llm
+  lint/         the design guidelines (9.1)
   evolution/    layer 6: operations, diff, versions
   schema/       JSON Schemas
 ```
@@ -651,8 +991,5 @@ then move.
 ## 16. Out of scope
 
 - Relation inheritance (`rdfs:subPropertyOf`), relation keys, cardinality.
-- List-valued properties: how they map to XSD and to other tools' types
-  needs its own decision.
-- OWL export. The `iri` fields make it possible later.
 - Reasoning of any kind.
 - Connection details and credentials (principle 7).
