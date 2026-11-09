@@ -16,8 +16,14 @@ Strategies:
 
 - `ManualStrategy`: a hand-authored YAML file (see its docstring for the shape).
 - `OwlImportStrategy`: a standard OWL ontology. `owl:Class` becomes a node type,
-  `owl:ObjectProperty` a relation type, and `rdfs:domain`/`rdfs:range` (one
-  class or an `owl:unionOf`) the start/end labels. Needs `hygm[owl]` (rdflib).
+  `rdfs:subClassOf` a named class its `parents`, `owl:ObjectProperty` a
+  relation type, and `rdfs:domain`/`rdfs:range` (one class or an
+  `owl:unionOf`) the start/end labels. `owl:DatatypeProperty` becomes a
+  property on its domain class(es), typed from its XSD range (unlisted types
+  are `string`; an `owl:oneOf` range gives `values`); `owl:hasKey` the `key`,
+  its properties required; a functional property with an at-least-one
+  cardinality restriction is required; every term keeps its `iri`. Other
+  axioms are ignored. Needs `hygm[owl]` (rdflib).
 - `LlmRecommendationStrategy`: grows a model from a delta of new sessions. One
   `derive()` run takes the current model and returns a candidate
   (`Derivation`) with a changelog, observation counts and a pool of retired
