@@ -96,7 +96,7 @@ node_types:
     key: [customer_id]
     iri: https://example.org/shop#Customer
     properties:
-      - {name: customer_id, type: string, required: true, description: Customer id, stable across systems}
+      - {name: customer_id, type: string, required: true, description: "Customer id, stable across systems"}
       - {name: tier, type: string, values: [standard, gold, platinum]}
       - {name: loyalty_points, type: integer}
 
@@ -580,10 +580,12 @@ language every reader implements.
   `model.v1.schema.json`, `model.v2.schema.json`, `mapping.v1.schema.json`,
   and one per registered profile. Rules a JSON Schema can't express are
   defined by this document.
-- **Conformance fixtures** in `hygm/conformance/{model,mapping}/{valid,invalid}/`.
-  Each invalid fixture names the error code it must produce. hygm's tests
-  run all of them, and a reader in another language runs the same files,
-  so a change on one side fails the other side's CI.
+- **Conformance fixtures** in `hygm/conformance/{model,mapping}/`: every
+  file under `valid/` must load, and every file under `invalid/<code>/`
+  must be refused with that error code. Each invalid fixture holds exactly
+  one problem. hygm's tests run all of them, and a reader in another
+  language runs the same files, so a change on one side fails the other
+  side's CI.
 - **Versioning.** Adding an optional key, a property type or a profile is
   additive: it keeps the format version, but every reader learns it before
   any producer writes it. Changing what an existing file means needs a new
