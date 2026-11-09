@@ -560,32 +560,35 @@ constants stay as the default model's values for code that reads them.
 ### 5.6 Where profile semantics live
 
 hygm is general by itself: it knows no consumer, no domain and no
-application. It owns profiles only as a mechanism: the `profiles` map, the
-name rule (registered or `x_`), and a registry of profile names, each with
-its owner and the JSON Schema of its settings. What a profile *means*, and
-the rules it adds, belong to the package that owns it:
+application. Of profiles it owns only the mechanism and the contract data:
+the `profiles` map, the name rule (registered or `x_`), and the registry
+itself, which gives each name its owner and the shape of its settings at
+each level (a JSON Schema fragment shipped with hygm). So any reader checks
+every registered profile's settings without its owner installed, and the
+shared fixtures mean the same everywhere. What a setting *means*, and the
+rules a profile adds, belong to its owner:
 
-| Profile | Owner, where its code lives |
+| Profile | Owner, where its meaning lives |
 |---|---|
-| `extraction` | `unstructured2graph` (`unstructured2graph.profile`) |
-| `conversation` | `sessions-graph` (`sessions_graph.profile`) |
-| `learning` | `sessions-graph` (`sessions_graph.profile`) |
+| `extraction` | `unstructured2graph` (`unstructured2graph.profile`): mention identity, value types |
+| `conversation` | `unstructured2graph` (`unstructured2graph.profile`): the speaker and the other-person rule its mention resolver relies on |
+| `learning` | `sessions-graph` (`sessions_graph.learning`): what derivation may change |
 
-- An owner registers its profile's settings, and their validators, through
-  the `hygm.profiles` Python entry point. hygm validates the settings of
-  every profile whose owner is installed, and only checks the names of the
-  others. A model never needs its consumers installed to be read.
-- hygm's core types carry no consumer field. In Python, mention identity is
-  the `extraction` profile's setting, read through unstructured2graph's
+- hygm's core types carry no consumer field. Mention identity is the
+  `extraction` profile's setting, read through unstructured2graph's
   accessor, not a `NodeType` attribute.
+- The profiles a version-1 file implies (4.9) are the owners' rule too. The
+  reader and the writer take the same hook,
+  `version_1_profiles(model) -> (model profiles, profiles per node label)`:
+  the reader adds what it returns to a version-1 file, and the writer keeps a
+  model in version 1 when its profiles are exactly that. Without the hook,
+  hygm maps a version-1 `identity` into `extraction` and implies nothing
+  else.
 - The conversational default model (`User`, `Person`, the value types, the
-  catch-alls), the profiles a version-1 file implies (4.9), and the
-  derivation that learns a model from sessions are context-graph's. They
-  live in sessions-graph and unstructured2graph, not in hygm.
-- hygm's own strategies produce models from general inputs: a model file,
-  OWL, a SQL catalog, or an LLM over a corpus and a base model, with a
-  caller-supplied prompt policy. Nothing in hygm mentions conversations,
-  sessions, users or a particular extractor.
+  catch-alls) and the derivation that learns a model from sessions are
+  context-graph's, and live in sessions-graph.
+- Nothing in hygm mentions conversations, sessions, users or a particular
+  extractor.
 
 ## 6. Layer 3: mappings
 
