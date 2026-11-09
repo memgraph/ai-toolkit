@@ -92,6 +92,37 @@ unstructured2graph refuses `parents`, derivation refuses `parents`,
 `properties` and `key`, and sessions-graph doesn't store a model that needs
 version 2 until older clients can be turned away (#698).
 
+## The Memgraph plan
+
+`memgraph_plan(model)` derives the constraints, indexes and enums a Memgraph
+needs to hold a model, in declaration order; `apply_plan(plan, run)` creates
+the ones that don't exist yet, so applying it twice is a no-op. `run` is your
+client: a callable that runs one Cypher string and returns its rows, so hygm
+takes no Memgraph dependency.
+
+```python
+from hygm import apply_plan, enum_for, labels_for, memgraph_plan
+
+apply_plan(memgraph_plan(model), lambda q: [r.data() for r in session.run(q)])
+labels_for(model, "VipCustomer")  # ("VipCustomer", "Customer", "Party"): set them all on write
+enum_for(model, "Customer", "tier")  # "Customer_tier": write ToEnum("Customer_tier", "gold")
+```
+
+| Model | Plan |
+|---|---|
+| a type's `key` | uniqueness constraint (composite for several properties) and a label-property index |
+| `required: true` | existence constraint |
+| `type` | `IS TYPED` constraint: `string` STRING, `integer` INTEGER, `float` and `decimal` FLOAT, `boolean` BOOLEAN, `date` DATE, `json` MAP; `datetime` none (Local or Zoned) |
+| `values` | an enum `<Label>_<property>`, and the property `IS TYPED ENUM` |
+| `parents` | no DDL; writers set `labels_for` |
+
+Each fact is constrained once, on the label of the type that declares it: a
+key on `Customer` covers `VipCustomer` nodes, which carry the `Customer`
+label. Memgraph can type a property only as "some enum", not one named enum,
+and has no constraints on relationship properties, so relation types add
+nothing. A property already typed differently, or an enum with other values,
+raises `PlanConflictError` before anything runs.
+
 Named after, but separate from, `agents/sql2graph`'s HyGM, which is untouched.
 Its validation types are lifted here in the same shape, so a later
 consolidation is a type swap.
