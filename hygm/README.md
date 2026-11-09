@@ -92,6 +92,60 @@ unstructured2graph refuses `parents`, derivation refuses `parents`,
 `properties` and `key`, and sessions-graph doesn't store a model that needs
 version 2 until older clients can be turned away (#698).
 
+## Mappings
+
+A mapping file binds a model's types to the sources their data comes from.
+It is a separate file, so one model can have many mappings, and a model with
+no mapping is complete. Sources are names with a `kind` (`table` or `graph`),
+never connection details:
+
+```yaml
+version: 1
+model: shop.model.yaml               # relative to this file
+sources:
+  - {name: crm, kind: table}
+  - {name: graph, kind: graph}
+nodes:
+  - type: Customer
+    source: crm
+    table: {schema: public, name: customers}
+    id: [customer_id]                # columns identifying a row
+    properties:
+      - {name: customer_id, column: customer_id}
+      - {name: loyalty_points, column: attributes, path: $.points}
+  - type: Customer                   # bound twice, so Customer needs a key
+    source: graph
+    graph: {label: Client}           # the source's own label, to read
+relations:
+  - type: placed
+    source: crm
+    table: {name: orders}
+    from: {type: Customer, columns: [customer_id]}
+    to: {type: Order, columns: [order_id]}
+  # or, with no rows: a join on equal endpoint properties
+  # - {type: placed, join: {from: {type: Customer, property: customer_id}, to: {type: Order, property: customer_ref}}}
+```
+
+```python
+from hygm import load_mapping, mapping_to_mapping
+
+model, mapping = load_mapping("shop.mapping.yaml")
+```
+
+`load_mapping` reads the model with `ManualStrategy` and checks the mapping
+against it (`check_mapping`): declared types, sources and properties; the
+binding each source kind allows; a `key` for a type bound in several sources;
+endpoints the relation type admits; and `from`/`to` columns that match the
+endpoint's `id` in the same source (or its `key` when it isn't bound there).
+A mapping never declares labels: a bound node carries its type and its
+ancestors' labels. A property binds to one column, optionally through a JSON
+`path`, and nothing else. Refusals are `ModelError`s with the contract's
+codes; the schema ships as `hygm.mapping_schema()`.
+
+Other tools keep their own formats. A `Renderer` (`render(model, mapping)`)
+turns a model and mapping into one of them, losslessly, and refuses whatever
+its target can't express rather than dropping it.
+
 Named after, but separate from, `agents/sql2graph`'s HyGM, which is untouched.
 Its validation types are lifted here in the same shape, so a later
 consolidation is a type swap.

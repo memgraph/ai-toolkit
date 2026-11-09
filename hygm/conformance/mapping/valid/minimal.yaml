@@ -1,0 +1,3 @@
+# A mapping that binds nothing yet.
+version: 1
+model: ../models/shop.model.yaml
