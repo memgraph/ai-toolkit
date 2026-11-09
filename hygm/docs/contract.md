@@ -498,10 +498,12 @@ fixture holds exactly one problem.
 | `profile_rule` | 2 | A consumed profile's own rule fails (such as 5.4's). |
 | `unknown_type` | 3 | A binding names a type the model doesn't declare. |
 | `unknown_source` | 3 | A binding names a source the mapping doesn't declare. |
+| `duplicate_source` | 3 | Two sources with one name. |
 | `binding_kind` | 3 | A binding doesn't set exactly one of `table`, `graph`, `join`, or sets one its source's kind doesn't allow. |
 | `undeclared_property` | 3 | A binding binds a property its type doesn't declare or inherit. |
 | `unbound_key` | 3 | A type bound in more than one source has no `key`. |
 | `endpoint_not_admitted` | 3 | A relation binding's endpoint types aren't admitted by its relation type. |
+| `endpoint_columns` | 3 | A table relation's `from` or `to` columns don't match what they point at: the endpoint binding's `id` in the same source, else the endpoint type's `key`. |
 | `unknown_model` | 3 | The mapping's `model` can't be read. |
 
 ## 10. OWL import
