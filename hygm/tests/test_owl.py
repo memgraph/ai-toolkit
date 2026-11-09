@@ -408,7 +408,8 @@ def test_a_datatype_property_whose_domain_is_owl_thing_is_skipped(tmp_path):
     assert _properties(model, "Person") == {}
 
 
-def test_owl_thing_in_a_union_leaves_just_the_named_classes(tmp_path):
+def test_a_union_containing_owl_thing_leaves_the_relation_unconstrained_there(tmp_path):
+    """A union with owl:Thing is owl:Thing: anything."""
     model = _import(
         tmp_path,
         """
@@ -416,13 +417,22 @@ def test_owl_thing_in_a_union_leaves_just_the_named_classes(tmp_path):
         :Place a owl:Class .
         :visited a owl:ObjectProperty ; rdfs:domain :Person ;
             rdfs:range [ a owl:Class ; owl:unionOf ( owl:Thing :Place ) ] .
+        """,
+    )
+
+    assert (model.relation_types[0].start_labels, model.relation_types[0].end_labels) == (("Person",), ())
+
+
+def test_a_datatype_property_whose_domain_is_a_union_containing_owl_thing_is_skipped(tmp_path):
+    model = _import(
+        tmp_path,
+        """
+        :Place a owl:Class .
         :label a owl:DatatypeProperty ; rdfs:domain [ a owl:Class ; owl:unionOf ( :Place owl:Thing ) ] .
         """,
     )
 
-    assert model.relation_types[0].end_labels == ("Place",)
-    assert list(_properties(model, "Place")) == ["label"]
-    assert _properties(model, "Person") == {}
+    assert _properties(model, "Place") == {}
 
 
 def test_an_imported_version_2_model_round_trips(tmp_path):

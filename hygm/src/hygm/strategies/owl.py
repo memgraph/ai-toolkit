@@ -57,12 +57,12 @@ class OwlImportStrategy:
     - each `owl:ObjectProperty` is a RelationType, its `rdfs:domain` and
       `rdfs:range` the start and end labels. A domain or range may be one class
       or an `owl:unionOf` of several; both become a tuple of labels, and a
-      missing one means any declared label. `owl:Thing` means anything, so a
-      domain or range that is only `owl:Thing` is a missing one, and it is
-      dropped from an `owl:unionOf`;
+      missing one means any declared label. `owl:Thing` means anything, and so
+      does an `owl:unionOf` that contains it: such a domain or range is a
+      missing one;
     - each `owl:DatatypeProperty` is a Property on its domain class, or on each
       class of an `owl:unionOf` domain; one with no domain, or whose domain is
-      only `owl:Thing`, is skipped. Its
+      `owl:Thing` or a union containing it, is skipped. Its
       `rdfs:range` is the type by the contract's XSD table, `string` for a
       datatype the table doesn't list, for no range, or for several ranges that
       disagree. A range that is an `owl:oneOf` of literals is a `string`
@@ -190,18 +190,17 @@ class _Importer:
         return ""
 
     def classes_of(self, term: Any) -> list[Any]:
-        if isinstance(term, self.URIRef):
-            return [term]
+        """The named classes `term` names: none for `owl:Thing` or a union containing it, which mean anything."""
+        members = [term]
         if isinstance(term, self.BNode):
             union = self.graph.value(term, self.OWL.unionOf)
-            if union is not None:
-                return [m for m in self.Collection(self.graph, union) if isinstance(m, self.URIRef)]
-        return []
+            members = list(self.Collection(self.graph, union)) if union is not None else []
+        if self.OWL.Thing in members:
+            return []
+        return [m for m in members if isinstance(m, self.URIRef)]
 
     def endpoint(self, prop: Any, predicate: Any) -> list[Any]:
-        """The named classes a domain or range names; `owl:Thing` means anything, so it names none."""
-        values = self.graph.objects(prop, predicate)
-        return [cls for value in values for cls in self.classes_of(value) if cls != self.OWL.Thing]
+        return [cls for value in self.graph.objects(prop, predicate) for cls in self.classes_of(value)]
 
     def parents(self, cls: Any) -> list[Any]:
         named = (p for p in self.graph.objects(cls, self.RDFS.subClassOf) if isinstance(p, self.URIRef))
