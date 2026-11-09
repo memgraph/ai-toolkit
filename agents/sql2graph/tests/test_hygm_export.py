@@ -462,95 +462,73 @@ def test_one_relationship_type_between_several_pairs_admits_each_and_says_what_i
 
 # A sample schema run end to end: sakila, the MySQL sample sql2graph's README
 # and defaults point at, through sql2graph's own analyzer and deterministic
-# strategy. Columns are trimmed to what shapes the model; every table and
-# foreign key is sakila's.
-_SAKILA: dict[str, tuple[list[tuple[str, str, bool]], list[tuple[str, str, str]]]] = {
-    "actor": ([("actor_id", "smallint", True), ("first_name", "varchar", False), ("last_name", "varchar", False)], []),
-    "country": ([("country_id", "smallint", True), ("country", "varchar", False)], []),
-    "city": (
-        [("city_id", "smallint", True), ("city", "varchar", False), ("country_id", "smallint", False)],
-        [("country_id", "country", "country_id")],
-    ),
+# strategy. Tables, columns and foreign keys are sakila's (views left out):
+# table -> (columns, primary key columns, foreign keys as (column, table, column)).
+_SAKILA: dict[str, tuple[str, tuple[str, ...], tuple[tuple[str, str, str], ...]]] = {
+    "actor": ("actor_id first_name last_name last_update", ("actor_id",), ()),
     "address": (
-        [("address_id", "smallint", True), ("address", "varchar", False), ("city_id", "smallint", False)],
-        [("city_id", "city", "city_id")],
+        "address_id address address2 district city_id postal_code phone location last_update",
+        ("address_id",),
+        (("city_id", "city", "city_id"),),
     ),
-    "language": ([("language_id", "tinyint", True), ("name", "char", False)], []),
-    "category": ([("category_id", "tinyint", True), ("name", "varchar", False)], []),
+    "category": ("category_id name last_update", ("category_id",), ()),
+    "city": ("city_id city country_id last_update", ("city_id",), (("country_id", "country", "country_id"),)),
+    "country": ("country_id country last_update", ("country_id",), ()),
+    "customer": (
+        "customer_id store_id first_name last_name email address_id active create_date last_update",
+        ("customer_id",),
+        (("store_id", "store", "store_id"), ("address_id", "address", "address_id")),
+    ),
     "film": (
-        [
-            ("film_id", "smallint", True),
-            ("title", "varchar", False),
-            ("rating", "enum('G','PG','PG-13','R','NC-17')", False),
-            ("language_id", "tinyint", False),
-            ("original_language_id", "tinyint", False),
-        ],
-        [("language_id", "language", "language_id"), ("original_language_id", "language", "language_id")],
+        "film_id title description release_year language_id original_language_id rental_duration "
+        "rental_rate length replacement_cost rating special_features last_update",
+        ("film_id",),
+        (("language_id", "language", "language_id"), ("original_language_id", "language", "language_id")),
     ),
     "film_actor": (
-        [("actor_id", "smallint", True), ("film_id", "smallint", True), ("last_update", "timestamp", False)],
-        [("actor_id", "actor", "actor_id"), ("film_id", "film", "film_id")],
+        "actor_id film_id last_update",
+        ("actor_id", "film_id"),
+        (("actor_id", "actor", "actor_id"), ("film_id", "film", "film_id")),
     ),
     "film_category": (
-        [("film_id", "smallint", True), ("category_id", "tinyint", True), ("last_update", "timestamp", False)],
-        [("film_id", "film", "film_id"), ("category_id", "category", "category_id")],
+        "film_id category_id last_update",
+        ("film_id", "category_id"),
+        (("film_id", "film", "film_id"), ("category_id", "category", "category_id")),
     ),
-    "film_text": ([("film_id", "smallint", True), ("title", "varchar", False)], []),
-    "staff": (
-        [
-            ("staff_id", "tinyint", True),
-            ("first_name", "varchar", False),
-            ("address_id", "smallint", False),
-            ("store_id", "tinyint", False),
-            ("username", "varchar", False),
-        ],
-        [("address_id", "address", "address_id"), ("store_id", "store", "store_id")],
-    ),
-    "store": (
-        [("store_id", "tinyint", True), ("manager_staff_id", "tinyint", False), ("address_id", "smallint", False)],
-        [("manager_staff_id", "staff", "staff_id"), ("address_id", "address", "address_id")],
-    ),
-    "customer": (
-        [
-            ("customer_id", "smallint", True),
-            ("store_id", "tinyint", False),
-            ("first_name", "varchar", False),
-            ("email", "varchar", False),
-            ("address_id", "smallint", False),
-        ],
-        [("store_id", "store", "store_id"), ("address_id", "address", "address_id")],
-    ),
+    "film_text": ("film_id title description", ("film_id",), ()),
     "inventory": (
-        [("inventory_id", "mediumint", True), ("film_id", "smallint", False), ("store_id", "tinyint", False)],
-        [("film_id", "film", "film_id"), ("store_id", "store", "store_id")],
+        "inventory_id film_id store_id last_update",
+        ("inventory_id",),
+        (("film_id", "film", "film_id"), ("store_id", "store", "store_id")),
     ),
-    "rental": (
-        [
-            ("rental_id", "int", True),
-            ("rental_date", "datetime", False),
-            ("inventory_id", "mediumint", False),
-            ("customer_id", "smallint", False),
-            ("staff_id", "tinyint", False),
-        ],
-        [
-            ("inventory_id", "inventory", "inventory_id"),
-            ("customer_id", "customer", "customer_id"),
-            ("staff_id", "staff", "staff_id"),
-        ],
-    ),
+    "language": ("language_id name last_update", ("language_id",), ()),
     "payment": (
-        [
-            ("payment_id", "smallint", True),
-            ("customer_id", "smallint", False),
-            ("staff_id", "tinyint", False),
-            ("rental_id", "int", False),
-            ("amount", "decimal", False),
-        ],
-        [
+        "payment_id customer_id staff_id rental_id amount payment_date last_update",
+        ("payment_id",),
+        (
             ("customer_id", "customer", "customer_id"),
             ("staff_id", "staff", "staff_id"),
             ("rental_id", "rental", "rental_id"),
-        ],
+        ),
+    ),
+    "rental": (
+        "rental_id rental_date inventory_id customer_id return_date staff_id last_update",
+        ("rental_id",),
+        (
+            ("inventory_id", "inventory", "inventory_id"),
+            ("customer_id", "customer", "customer_id"),
+            ("staff_id", "staff", "staff_id"),
+        ),
+    ),
+    "staff": (
+        "staff_id first_name last_name address_id picture email store_id active username password last_update",
+        ("staff_id",),
+        (("address_id", "address", "address_id"), ("store_id", "store", "store_id")),
+    ),
+    "store": (
+        "store_id manager_staff_id address_id last_update",
+        ("store_id",),
+        (("manager_staff_id", "staff", "staff_id"), ("address_id", "address", "address_id")),
     ),
 }
 
@@ -571,15 +549,21 @@ class _SakilaAnalyzer(DatabaseAnalyzer):
         return list(_SAKILA)
 
     def get_table_schema(self, table_name):
-        columns, foreign_keys = _SAKILA[table_name]
+        columns, primary_key, foreign_keys = _SAKILA[table_name]
         fk_columns = {column for column, _, _ in foreign_keys}
         return [
-            ColumnInfo(name, data_type, is_nullable=False, is_primary_key=pk, is_foreign_key=name in fk_columns)
-            for name, data_type, pk in columns
+            ColumnInfo(
+                name,
+                "varchar",
+                is_nullable=False,
+                is_primary_key=name in primary_key,
+                is_foreign_key=name in fk_columns and name not in primary_key,
+            )
+            for name in columns.split()
         ]
 
     def get_foreign_keys(self, table_name):
-        return [ForeignKeyInfo(column, table, referenced) for column, table, referenced in _SAKILA[table_name][1]]
+        return [ForeignKeyInfo(column, table, referenced) for column, table, referenced in _SAKILA[table_name][2]]
 
     def get_table_data(self, table_name, limit=None):
         return []
@@ -605,16 +589,15 @@ def test_sakila_through_the_deterministic_strategy_validates(tmp_path):
     assert set(model.node_labels()) == {t.title() for t in structure["entity_tables"]}
     assert len(mapping.nodes) == len(graph_model.nodes)
     assert all(model.key_of(label) for label in model.node_labels())
-    # sql2graph's join-table heuristic makes store, inventory, rental and payment
-    # relationships, so the relationships that end at store or start at
-    # inventory have no node type there: sql2graph's own model is inconsistent,
-    # and the export says so rather than guessing.
+    # sql2graph's join-table heuristic makes store and inventory relationships,
+    # so the foreign keys onto them end at labels no node has: sql2graph's own
+    # model is inconsistent there, and the export says so rather than guessing.
     dropped = {g.element for g in gaps if g.kind == "undeclared_endpoint"}
     assert dropped == {
         "relationship CUSTOMER_TO_STORE",
         "relationship STAFF_TO_STORE",
         "relationship INVENTORY",
-        "relationship RENTAL",
+        "relationship RENTAL_TO_INVENTORY",
     }
     assert {g.kind for g in gaps} <= {"undeclared_endpoint", "index"}
 
