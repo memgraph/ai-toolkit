@@ -105,9 +105,12 @@ def run_kg(
     """
     from dataclasses import replace
 
-    from hygm import CATCH_ALL_LABELS, USER_LABEL, VALUE_LABELS, default_model
+    from sessions_graph.default_model import default_model
+    from sessions_graph.learning import CATCH_ALL_LABELS
+
     from unstructured2graph import gliner2_backend
     from unstructured2graph.gliner2_observer import GLiNER2Observer
+    from unstructured2graph.profile import USER_LABEL, VALUE_LABELS
 
     model = model or default_model()
     built = documents(chats)

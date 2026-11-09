@@ -1,20 +1,27 @@
 """The model file: reading versions 1 and 2, writing the lowest one that fits (docs/contract.md, section 4).
 
-Version 1 is every model written before the contract, including the ontology
-versions stored in users' graphs: `entity_types`, a node-level `identity`, no
-`version` key. Version 2 adds `node_types`, properties, `parents`, `key`,
-`iri` and profiles. A reader refuses any key the version doesn't define, so a
+Version 1 is every model written before the contract: `entity_types`, a
+node-level `identity`, no `version` key. Version 2 adds `node_types`,
+properties, `parents`, `key`, `iri` and profiles. A reader refuses any key the version doesn't define, so a
 typo is an error rather than silently dropped meaning.
 """
 
 import json
 from collections.abc import Callable
-from dataclasses import replace
 from importlib.resources import files
 from typing import Any
 
 from .errors import ModelError
-from .profiles import REGISTERED_PROFILES, SETTINGS, has_implied_profiles, implied_profiles
+from .profiles import (
+    IDENTITIES,
+    REGISTERED_PROFILES,
+    SETTINGS,
+    Version1Profiles,
+    has_version_1_profiles,
+    no_implied_profiles,
+    setting,
+    with_version_1_profiles,
+)
 from .types import HygmModel, NodeType, Property, RelationType
 from .validation import validate_model
 
@@ -30,7 +37,9 @@ _V2_RELATION = {"label", "description", "start_labels", "end_labels", "propertie
 _V2_PROPERTY = {"name", "type", "description", "required", "values", "iri", "profiles"}
 
 
-def model_from_mapping(raw: Any, source: str, *, validate: bool = True) -> HygmModel:
+def model_from_mapping(
+    raw: Any, source: str, *, validate: bool = True, version_1_profiles: Version1Profiles | None = None
+) -> HygmModel:
     """A model from the mapping a model file holds, in either format version.
 
     Args:
@@ -39,6 +48,9 @@ def model_from_mapping(raw: Any, source: str, *, validate: bool = True) -> HygmM
         validate: False for a store of types that is not itself extracted
             against, like a pool of retired ones, whose relations may name
             types it doesn't hold. Each entry is still checked.
+        version_1_profiles: The profiles a version-1 file implies, its owner's
+            rule (docs/contract.md, 4.9). Applied to version-1 files only;
+            without it, a version-1 file implies nothing beyond `identity`.
 
     Raises:
         ModelError: (a ValueError) if the mapping breaks the format, or
@@ -55,6 +67,8 @@ def model_from_mapping(raw: Any, source: str, *, validate: bool = True) -> HygmM
 
     reader = _Reader(where_from)
     model = reader.v1(raw) if version == 1 else reader.v2(raw)
+    if version == 1 and version_1_profiles is not None:
+        model = with_version_1_profiles(model, version_1_profiles)
     if not validate:
         return model
     result = validate_model(model)
@@ -65,14 +79,16 @@ def model_from_mapping(raw: Any, source: str, *, validate: bool = True) -> HygmM
     return model
 
 
-def model_to_mapping(model: HygmModel) -> dict[str, Any]:
+def model_to_mapping(model: HygmModel, *, version_1_profiles: Version1Profiles | None = None) -> dict[str, Any]:
     """`model` as the mapping model_from_mapping() reads back: JSON- and YAML-safe.
 
     Writes version 1, exactly as before the contract, whenever the model uses
-    nothing version 1 lacks, so stored versions stay byte-stable. Otherwise
-    writes version 2, leaving out every default.
+    nothing version 1 lacks and its profiles are exactly what
+    `version_1_profiles` says a version-1 file implies, so stored versions
+    stay byte-stable. Otherwise writes version 2, leaving out every default.
+    Pass the same rule the reader was given.
     """
-    return _v2_mapping(model) if needs_version_2(model) else _v1_mapping(model)
+    return _v2_mapping(model) if needs_version_2(model, version_1_profiles) else _v1_mapping(model)
 
 
 def model_schema(version: int) -> dict[str, Any]:
@@ -89,10 +105,10 @@ def model_schema(version: int) -> dict[str, Any]:
     return json.loads((files("hygm") / "schema" / f"model.v{version}.schema.json").read_text(encoding="utf-8"))
 
 
-def needs_version_2(model: HygmModel) -> bool:
-    """Whether `model` uses anything format version 1 can't express."""
+def needs_version_2(model: HygmModel, version_1_profiles: Version1Profiles | None = None) -> bool:
+    """Whether `model` uses anything format version 1 can't express, given what a version-1 file implies."""
     return bool(
-        not has_implied_profiles(model)
+        not has_version_1_profiles(model, version_1_profiles or no_implied_profiles)
         or any(t.parents or t.properties or t.key or t.iri for t in model.node_types)
         or any(r.properties or r.iri or r.profiles for r in model.relation_types)
     )
@@ -154,7 +170,7 @@ def check_profile(profile: str, settings: Any, level: str, source: str) -> None:
 def _v1_mapping(model: HygmModel) -> dict[str, Any]:
     return {
         "entity_types": [
-            {"label": t.label, "description": t.description, "identity": t.identity} for t in model.node_types
+            {"label": t.label, "description": t.description, "identity": _identity(t)} for t in model.node_types
         ],
         "relation_types": [
             {
@@ -188,8 +204,6 @@ def _v2_node(node: NodeType) -> dict[str, Any]:
     if node.iri:
         out["iri"] = node.iri
     profiles = _plain(node.profiles)
-    if node.identity != "chunk":
-        profiles["extraction"] = {**profiles.get("extraction", {}), "identity": node.identity}
     if profiles:
         out["profiles"] = profiles
     return out
@@ -251,17 +265,17 @@ class _Reader:
             where = f"entity_types[{index}]"
             label, description = self.labeled(item, where)
             self.known(item, _V1_NODE, where)
-            node_types.append(self.build(NodeType, where, label, description, identity=item.get("identity", "chunk")))
+            identity = item.get("identity", "chunk")
+            if identity not in IDENTITIES:
+                raise self.fail(
+                    "invalid_profile_value", where, f"identity must be one of {IDENTITIES}, got {identity!r}"
+                )
+            profiles = {"extraction": {"identity": identity}} if identity != "chunk" else {}
+            node_types.append(self.build(NodeType, where, label, description, profiles=profiles))
         relation_types = [
             self.relation(item, f"relation_types[{index}]", _V1_RELATION) for index, item in enumerate(relations)
         ]
-        model = HygmModel(node_types=tuple(node_types), relation_types=tuple(relation_types))
-        top, nodes = implied_profiles(model)
-        return HygmModel(
-            node_types=tuple(replace(t, profiles=nodes[t.label]) for t in model.node_types),
-            relation_types=model.relation_types,
-            profiles=top,
-        )
+        return HygmModel(node_types=tuple(node_types), relation_types=tuple(relation_types))
 
     def v2(self, raw: dict) -> HygmModel:
         if "entity_types" not in raw:
@@ -279,23 +293,17 @@ class _Reader:
     def node(self, item: Any, where: str) -> NodeType:
         label, description = self.labeled(item, where)
         self.known(item, _V2_NODE, where)
-        profiles = self.profiles(item.get("profiles", {}), f"{where} profiles", "node")
-        identity = profiles.get("extraction", {}).get("identity", "chunk")
-        rest = {name: settings for name, settings in profiles.items() if name != "extraction"}
-        extraction = {k: v for k, v in profiles.get("extraction", {}).items() if k != "identity"}
-        if extraction:
-            rest["extraction"] = extraction
+        profiles = _without_default_identity(self.profiles(item.get("profiles", {}), f"{where} profiles", "node"))
         return self.build(
             NodeType,
             where,
             label,
             description,
-            identity=identity,
             parents=self.labels(item, "parents", where),
             properties=self.properties(item, where),
             key=self.labels(item, "key", where, what="list of property names"),
             iri=self.optional_string(item, "iri", where),
-            profiles=rest,
+            profiles=profiles,
         )
 
     def relation(self, item: Any, where: str, allowed: set[str]) -> RelationType:
@@ -402,3 +410,19 @@ class _Reader:
         if value is not None and not isinstance(value, str):
             raise self.fail("invalid_format", where, f"{key} must be a string")
         return value
+
+
+def _identity(node: NodeType) -> str:
+    return setting(node.profiles, "extraction", "identity", "chunk")
+
+
+def _without_default_identity(profiles: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """`profiles` without an `extraction.identity` of `chunk`, the default, so both spellings read as one model."""
+    extraction = profiles.get("extraction")
+    if not extraction or extraction.get("identity") != "chunk":
+        return profiles
+    rest = {k: v for k, v in extraction.items() if k != "identity"}
+    trimmed = {name: settings for name, settings in profiles.items() if name != "extraction"}
+    if rest:
+        trimmed["extraction"] = rest
+    return trimmed

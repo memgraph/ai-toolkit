@@ -1,17 +1,17 @@
-"""The generic default model learned models start from (#436)."""
+"""The conversational default model a user's graph is extracted under, and every learned model starts from (#436)."""
 
 from dataclasses import replace
 from importlib.resources import as_file, files
 
-from .labels import CORE_LABELS
-from .strategies import ManualStrategy
-from .types import HygmModel
+from hygm import HygmModel, ManualStrategy
+
+from .learning import CORE_LABELS, VERSION_1
 
 
 def default_model() -> HygmModel:
     """The generic default: the fixed core, Organization/Location/Event, the catch-alls, and generic relations."""
-    with as_file(files("hygm") / "default_ontology.yaml") as path:
-        return ManualStrategy().create_model(path)
+    with as_file(files("sessions_graph") / "default_ontology.yaml") as path:
+        return ManualStrategy(version_1_profiles=VERSION_1).create_model(path)
 
 
 def with_core(model: HygmModel) -> HygmModel:

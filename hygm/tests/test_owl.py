@@ -78,16 +78,15 @@ def test_owl_classes_and_object_properties_map_onto_the_model(tmp_path):
     )
 
 
-def test_an_owl_model_is_not_held_to_the_conversation_rule(tmp_path):
-    """The User/Person rule belongs to the conversation profile, which an imported ontology doesn't declare."""
-    from hygm import conversation, validate_for_conversation
-
+def test_an_owl_import_sets_no_profiles(tmp_path):
+    """OWL has no counterpart to a profile, so an import declares none, the conversation profile included."""
     body = TURTLE.replace("owl:unionOf ( :User :Person )", "owl:unionOf ( :User )")
 
     model = OwlImportStrategy().create_model(_write(tmp_path, body))
 
-    assert conversation(model) is None
-    assert validate_for_conversation(model).success
+    assert model.profiles == {}
+    assert all(t.profiles == {} for t in model.node_types)
+    assert all(r.profiles == {} for r in model.relation_types)
 
 
 def test_owl_local_name_that_is_not_an_identifier_is_rejected(tmp_path):

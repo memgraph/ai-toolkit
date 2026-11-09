@@ -285,14 +285,6 @@ def _set_profile(model: HygmModel, op: SetProfile) -> HygmModel:
         return _with(
             model, replace(owner, properties=tuple(prop if p.name == prop.name else p for p in owner.properties))
         )
-    if isinstance(owner, NodeType) and op.profile == "extraction":
-        # A node type's identity is a field; the rest of `extraction` stays a profile, as in a model file.
-        settings = dict(op.settings or {})
-        identity = settings.pop("identity", "chunk")
-        rest = settings if settings or (op.settings is not None and "identity" not in op.settings) else None
-        return _with(
-            model, replace(owner, identity=identity, profiles=_profiles_with(owner.profiles, op.profile, rest))
-        )
     return _with(model, replace(owner, profiles=_profiles_with(owner.profiles, op.profile, op.settings)))
 
 

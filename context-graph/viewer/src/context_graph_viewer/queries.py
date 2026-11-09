@@ -29,7 +29,7 @@ MAX_ACTIONS = 2000
 #: Upper bound on rows in the merged entity list.
 MAX_ENTITIES = 1000
 
-#: hygm.VALUE_LABELS: span-scoped values get one node per mention, so they swamp entity lists (#383).
+#: unstructured2graph.profile.VALUE_LABELS: span-scoped values get one node per mention, so they swamp entity lists (#383).
 VALUE_LABELS = ("Duration", "Quantity", "Money", "Date", "TimeWindow")
 
 # Entities are whatever is MENTIONED_IN a Chunk (unstructured2graph's contract, for every backend), plus the

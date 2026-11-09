@@ -1,22 +1,30 @@
 """One derivation run, with the LLM and the observer stood in for."""
 
 from dataclasses import replace
+from typing import Any
 
 import pytest
-
-from hygm import (
+from sessions_graph.default_model import default_model
+from sessions_graph.derive_strategy import (
+    CONSOLIDATE_SCHEMA,
+    PROPOSE_SCHEMA,
+    PRUNE_SCHEMA,
     Change,
     DerivationError,
     DerivationLimits,
-    HygmModel,
     LlmRecommendationStrategy,
-    NodeType,
-    Property,
-    RelationType,
-    default_model,
+    _batches,
 )
-from hygm.evolution import AddNodeType, MergeNodeTypes, RemoveNodeType, RemoveRelationType, apply
-from hygm.strategies.llm import CONSOLIDATE_SCHEMA, PROPOSE_SCHEMA, PRUNE_SCHEMA, _batches
+
+from hygm import HygmModel, ModelError, NodeType, Property, RelationType
+from hygm.evolution import (
+    AddNodeType,
+    MergeNodeTypes,
+    MergeRelationTypes,
+    RemoveNodeType,
+    RemoveRelationType,
+    apply,
+)
 
 
 class ScriptedLlm:
@@ -90,7 +98,9 @@ def test_an_observed_addition_joins_the_model_with_its_observed_endpoints():
 
     derivation = _derive(llm, observer)
 
-    assert derivation.model.node_type("Library") == NodeType("Library", "a code library", "global")
+    assert derivation.model.node_type("Library") == NodeType(
+        "Library", "a code library", profiles={"extraction": {"identity": "global"}}
+    )
     maintains = next(r for r in derivation.model.relation_types if r.label == "maintains")
     assert (maintains.start_labels, maintains.end_labels) == (("User", "Person"), ("Library",))
     assert maintains.description == "is responsible for a code library"  # what recall ranks it by, not prune's reason
@@ -136,8 +146,8 @@ def _with_frameworks():
     return HygmModel(
         node_types=(
             *base.node_types,
-            NodeType("Framework", "a framework", "global"),
-            NodeType("Library", "a library", "global"),
+            NodeType("Framework", "a framework", profiles={"extraction": {"identity": "global"}}),
+            NodeType("Library", "a library", profiles={"extraction": {"identity": "global"}}),
         ),
         relation_types=(
             *base.relation_types,
@@ -193,7 +203,9 @@ def test_a_type_below_the_share_threshold_retires_with_its_relations_and_can_ret
     )
 
     assert "Framework" not in derivation.model.node_labels()
-    assert derivation.pool.node_type("Framework") == NodeType("Framework", "a framework", "global")
+    assert derivation.pool.node_type("Framework") == NodeType(
+        "Framework", "a framework", profiles={"extraction": {"identity": "global"}}
+    )
     assert "builds_with" in derivation.pool.relation_labels()
     assert Change("retire", "relation", "builds_with", reason="an endpoint type retired") in derivation.changelog
     assert {RemoveNodeType("Framework"), RemoveRelationType("builds_with")} <= set(derivation.operations)
@@ -206,9 +218,14 @@ def test_a_type_below_the_share_threshold_retires_with_its_relations_and_can_ret
         counts=derivation.counts,
         limits=DerivationLimits(retire_min_total=1000),
     )
-    assert restored.model.node_type("Framework") == NodeType("Framework", "a framework", "global")
+    assert restored.model.node_type("Framework") == NodeType(
+        "Framework", "a framework", profiles={"extraction": {"identity": "global"}}
+    )
     assert Change("restore", "node", "Framework") in restored.changelog
-    assert AddNodeType(NodeType("Framework", "a framework", "global")) in restored.operations
+    assert (
+        AddNodeType(NodeType("Framework", "a framework", profiles={"extraction": {"identity": "global"}}))
+        in restored.operations
+    )
 
 
 def test_the_cap_retires_the_lowest_share_types_but_never_protected_ones():
@@ -308,3 +325,35 @@ def test_a_model_using_what_derivation_would_drop_is_refused(node, unsupported):
 
     with pytest.raises(DerivationError, match=f"does not support.*{unsupported}"):
         _derive(ScriptedLlm(consolidate={}, prune={}), FixedObserver(), current=current)
+
+
+def test_a_stored_changelog_entry_reads_as_operations():
+    """sessions-graph stores each Change as its fields; that dict reads back and says what it did."""
+    model = default_model()
+    topic = model.node_type("Topic")
+    assert topic is not None
+    pool = HygmModel(node_types=(NodeType("Library", "a code library"),))
+    stored: list[dict[str, Any]] = [
+        {"op": "add", "kind": "node", "label": "Topic", "into": None, "reason": ""},
+        {"op": "restore", "kind": "node", "label": "Library", "into": None, "reason": ""},
+        {"op": "merge", "kind": "node", "label": "Framework", "into": "Library", "reason": "synonyms"},
+        {"op": "merge", "kind": "relation", "label": "built_with", "into": "uses", "reason": ""},
+        {"op": "retire", "kind": "relation", "label": "uses", "into": None, "reason": "share 0.0001"},
+        {"op": "retire", "kind": "node", "label": "Library", "into": None, "reason": "share 0.0001"},
+        {"op": "veto", "kind": "node", "label": "User", "into": "Person", "reason": "User is protected"},
+    ]
+
+    operations = [Change(**entry).operations(model, pool) for entry in stored]
+
+    assert operations == [
+        (AddNodeType(topic),),
+        (AddNodeType(pool.node_types[0]),),
+        (MergeNodeTypes("Framework", "Library"),),
+        (MergeRelationTypes("built_with", "uses"),),
+        (RemoveRelationType("uses"),),
+        (RemoveNodeType("Library"),),
+        (),
+    ]
+    with pytest.raises(ModelError) as missing:
+        Change("add", "node", "Planet").operations(model, pool)
+    assert missing.value.code == "unknown_type"

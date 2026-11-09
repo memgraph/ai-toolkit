@@ -37,8 +37,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Protocol
 
-from ..errors import ModelError
-from ..evolution import (
+from hygm import HygmModel, ModelError, NodeType, RelationType, merge_profiles, validate_model
+from hygm.evolution import (
     AddNodeType,
     AddRelationType,
     MergeNodeTypes,
@@ -49,9 +49,16 @@ from ..evolution import (
     apply,
     diff,
 )
-from ..profiles import catch_all_labels, protected_labels, validate_for_conversation, value_labels
-from ..types import IDENTITIES, HygmModel, NodeType, RelationType
-from ..validation import PERSON_LABEL, USER_LABEL, validate_model
+from unstructured2graph.profile import (
+    IDENTITIES,
+    PERSON_LABEL,
+    USER_LABEL,
+    identity_of,
+    validate_for_conversation,
+    value_labels,
+)
+
+from .learning import catch_all_labels, protected_labels
 
 #: ``llm(system, prompt, schema) -> reply``: one call returning a mapping that matches the JSON schema.
 Llm = Callable[[str, str, Mapping[str, Any]], Mapping[str, Any]]
@@ -541,8 +548,8 @@ def _node_merge_veto(
         return f"{target} is a catch-all; merging into it would hide {source} rather than name it"
     if source not in nodes or target not in nodes or source == target:
         return "unknown or identical types"
-    if nodes[source].identity != nodes[target].identity:
-        return f"identities differ ({nodes[source].identity} vs {nodes[target].identity})"
+    if identity_of(nodes[source]) != identity_of(nodes[target]):
+        return f"identities differ ({identity_of(nodes[source])} vs {identity_of(nodes[target])})"
     return ""
 
 
@@ -621,9 +628,9 @@ def _apply_prune(
     kept_nodes = []
     for t in added_nodes:
         restored = any(c.op == "restore" and c.label == t.label for c in changelog)
-        chosen = t.identity if restored else identity.get(t.label)
+        chosen = identity_of(t) if restored else identity.get(t.label)
         if chosen in IDENTITIES and observed_types.get(t.label, {}).get("mentions", 0) > 0:
-            kept_nodes.append(replace(t, identity=chosen))
+            kept_nodes.append(_with_identity(t, chosen))
             if not restored:
                 changelog.append(Change("add", "node", t.label))
     declared = set(merged.node_labels()) | {t.label for t in kept_nodes}
@@ -729,3 +736,12 @@ def _retire(
             relation_types=tuple(r for label, r in pooled_relations.items() if label not in relations),
         ),
     )
+
+
+def _with_identity(node: NodeType, identity: str) -> NodeType:
+    """`node` with its `extraction` identity set; `chunk`, the default, isn't stored, as a model file reads it."""
+    extraction = {k: v for k, v in node.profiles.get("extraction", {}).items() if k != "identity"}
+    if identity != "chunk":
+        extraction["identity"] = identity
+    profiles = {name: dict(s) for name, s in node.profiles.items() if name != "extraction"}
+    return replace(node, profiles=merge_profiles(profiles, {"extraction": extraction} if extraction else {}))

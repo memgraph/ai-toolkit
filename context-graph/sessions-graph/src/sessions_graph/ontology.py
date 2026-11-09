@@ -3,7 +3,7 @@
 Each version is one ``(:OntologyVersion {user_id, version})`` node holding
 its model as JSON (#434). ``(:User)-[:ADOPTED]->`` points at the current
 one and ``NEXT`` chains them, oldest first. A user with no version is on
-version 0, ``hygm.default_model()``, which is never stored.
+version 0, ``default_model.default_model()``, which is never stored.
 
 A version comes from one of two places:
 
@@ -32,17 +32,17 @@ from typing import TYPE_CHECKING, Any, Literal
 from hygm import (
     HygmModel,
     ManualStrategy,
-    default_model,
     model_from_mapping,
     model_to_mapping,
     needs_version_2,
-    validate_for_conversation,
     validate_model,
-    with_core,
 )
 from memgraph_context_graph import graph_version
 from memgraph_toolbox.api.memgraph import merge_with_retry
+from unstructured2graph.profile import validate_for_conversation
 
+from .default_model import default_model, with_core
+from .learning import VERSION_1
 from .models import _utc_now
 
 if TYPE_CHECKING:
@@ -150,7 +150,7 @@ def supply_file(db: Memgraph, user_id: str, path: str | Path, *, derive: Derive 
     Raises:
         ValueError: if the file can't be read or parsed, or the model fails validation.
     """
-    model = ManualStrategy().create_model(path)
+    model = ManualStrategy(version_1_profiles=VERSION_1).create_model(path)
     return supply(db, user_id, model, derive=derive, source_hash=file_hash(path))
 
 
@@ -257,7 +257,7 @@ def _store(db: Memgraph, version: OntologyVersion, query: str) -> None:
     that they may still read. Graphs that never store one keep their rules.
     """
     params = _params(version)
-    if needs_version_2(version.model) or needs_version_2(version.pool):
+    if needs_version_2(version.model, VERSION_1) or needs_version_2(version.pool, VERSION_1):
         if graph_version.known_epoch(COMPONENT) < MODEL_FORMAT_2_EPOCH:
             raise ValueError(
                 "this ontology needs hygm's model format 2, which the installed memgraph-context-graph "
@@ -287,11 +287,11 @@ def _params(version: OntologyVersion) -> dict[str, Any]:
         "created_at": version.created_at,
         "source": version.source,
         "derive": version.derive,
-        "model": json.dumps(model_to_mapping(version.model)),
+        "model": json.dumps(model_to_mapping(version.model, version_1_profiles=VERSION_1)),
         "pinned": list(version.pinned),
         "source_hash": version.source_hash,
         "counts": json.dumps(version.counts),
-        "pool": json.dumps(model_to_mapping(version.pool)),
+        "pool": json.dumps(model_to_mapping(version.pool, version_1_profiles=VERSION_1)),
         "changelog": json.dumps(list(version.changelog)),
         "report": json.dumps(version.report),
     }
@@ -333,7 +333,7 @@ def _from_properties(properties: dict[str, Any]) -> OntologyVersion:
     return OntologyVersion(
         user_id=properties["user_id"],
         version=version,
-        model=model_from_mapping(json.loads(properties["model"]), f"version {version}"),
+        model=model_from_mapping(json.loads(properties["model"]), f"version {version}", version_1_profiles=VERSION_1),
         source=properties["source"],
         derive=properties["derive"],
         pinned=tuple(properties.get("pinned") or ()),
@@ -341,7 +341,9 @@ def _from_properties(properties: dict[str, Any]) -> OntologyVersion:
         created_at=properties.get("created_at"),
         counts=json.loads(properties.get("counts") or "{}"),
         # A pool's relations may name types it doesn't hold: it is a store, never extracted against.
-        pool=model_from_mapping(json.loads(properties["pool"]), f"version {version} pool", validate=False)
+        pool=model_from_mapping(
+            json.loads(properties["pool"]), f"version {version} pool", validate=False, version_1_profiles=VERSION_1
+        )
         if properties.get("pool")
         else HygmModel(node_types=()),
         changelog=tuple(json.loads(properties.get("changelog") or "[]")),

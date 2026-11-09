@@ -77,10 +77,26 @@ def test_real_inference_extracts_values_in_a_user_turn(gliner2_backend):
 
     ontology = Ontology(
         entity_types=(
-            EntityType("User", "the person speaking in the first person -- I, me, my, myself", "global"),
-            EntityType("Person", "another named individual: a family member, friend, colleague", "global"),
-            EntityType("Location", "a place: a city, country, neighbourhood, venue or building", "global"),
-            EntityType("Duration", "a length of time: 25:50, 45 minutes, three weeks", "span"),
+            EntityType(
+                "User",
+                "the person speaking in the first person -- I, me, my, myself",
+                profiles={"extraction": {"identity": "global"}},
+            ),
+            EntityType(
+                "Person",
+                "another named individual: a family member, friend, colleague",
+                profiles={"extraction": {"identity": "global"}},
+            ),
+            EntityType(
+                "Location",
+                "a place: a city, country, neighbourhood, venue or building",
+                profiles={"extraction": {"identity": "global"}},
+            ),
+            EntityType(
+                "Duration",
+                "a length of time: 25:50, 45 minutes, three weeks",
+                profiles={"extraction": {"identity": "span"}},
+            ),
         ),
         relation_types=(
             RelationType("visited", "", ("User", "Person"), ("Location",)),
@@ -161,10 +177,26 @@ async def test_a_conversation_binds_the_users_facts_to_their_node_conformantly(m
 
     ontology = Ontology(
         entity_types=(
-            EntityType("User", "the person speaking in the first person -- I, me, my, myself", "global"),
-            EntityType("Person", "another named individual: a family member, friend, colleague", "global"),
-            EntityType("Location", "a place: a city, country, neighbourhood, venue or building", "global"),
-            EntityType("Duration", "a length of time: 25:50, 45 minutes, three weeks", "span"),
+            EntityType(
+                "User",
+                "the person speaking in the first person -- I, me, my, myself",
+                profiles={"extraction": {"identity": "global"}},
+            ),
+            EntityType(
+                "Person",
+                "another named individual: a family member, friend, colleague",
+                profiles={"extraction": {"identity": "global"}},
+            ),
+            EntityType(
+                "Location",
+                "a place: a city, country, neighbourhood, venue or building",
+                profiles={"extraction": {"identity": "global"}},
+            ),
+            EntityType(
+                "Duration",
+                "a length of time: 25:50, 45 minutes, three weeks",
+                profiles={"extraction": {"identity": "span"}},
+            ),
         ),
         relation_types=(
             RelationType("visited", "", ("User", "Person"), ("Location",)),

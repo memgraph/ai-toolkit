@@ -3,11 +3,11 @@
 import json
 import random
 from dataclasses import replace
-from typing import Any
+from pathlib import Path
 
 import pytest
 
-from hygm import Change, HygmModel, ModelError, NodeType, Property, RelationType, default_model, validate_model
+from hygm import HygmModel, ManualStrategy, ModelError, NodeType, Property, RelationType, setting, validate_model
 from hygm.evolution import (
     OPERATIONS,
     AddNodeType,
@@ -41,6 +41,20 @@ LABELS = ("Person", "Org", "Place", "Tool", "Event", "Doc", "Team", "City")
 RELATIONS = ("works_at", "lives_in", "uses", "owns", "attends", "wrote")
 PROPERTIES = ("name", "age", "email", "since", "score", "code")
 TYPES = ("string", "integer", "float", "boolean", "date", "json")
+VALID_MODELS = Path(__file__).parent.parent / "conformance" / "model" / "valid"
+
+
+def _fixture(name: str) -> HygmModel:
+    return ManualStrategy().create_model(VALID_MODELS / name)
+
+
+def _with_identity(profiles: dict, identity: str) -> dict:
+    """`profiles` with `extraction.identity` set, leaving out `chunk`, the default a model file reader drops."""
+    extraction = {k: v for k, v in profiles.get("extraction", {}).items() if k != "identity"}
+    if identity != "chunk":
+        extraction["identity"] = identity
+    rest = {name: settings for name, settings in profiles.items() if name != "extraction"}
+    return {**rest, "extraction": extraction} if extraction else rest
 
 
 def _property(rng: random.Random, name: str) -> Property:
@@ -64,10 +78,10 @@ def _node(rng: random.Random, label: str, earlier: list[str]) -> NodeType:
         profiles["learning"] = {"protected": rng.random() < 0.5}
     if rng.random() < 0.2:
         profiles["extraction"] = {"value": True}
+    profiles = _with_identity(profiles, rng.choice(["global", "chunk", "span"]))
     return NodeType(
         label,
         description=rng.choice(["", f"a {label.lower()}"]),
-        identity=rng.choice(["global", "chunk", "span"]),
         parents=tuple(rng.sample(earlier, rng.randint(0, min(2, len(earlier))))) if rng.random() < 0.5 else (),
         properties=properties,
         key=(rng.choice(required),) if required and rng.random() < 0.5 else (),
@@ -129,7 +143,7 @@ def _perturbed(rng: random.Random, model: HygmModel) -> HygmModel:
         node = rng.choice(
             [
                 replace(node, description="changed"),
-                replace(node, identity=rng.choice(["global", "chunk", "span"])),
+                replace(node, profiles=_with_identity(dict(node.profiles), rng.choice(["global", "chunk", "span"]))),
                 replace(node, properties=tuple(rng.sample(node.properties, len(node.properties)))),
                 replace(node, properties=node.properties[1:], key=()),
                 replace(node, properties=(*node.properties, _property(rng, "extra"))),
@@ -163,10 +177,13 @@ def _perturbed(rng: random.Random, model: HygmModel) -> HygmModel:
 
 def _pairs() -> list[tuple[HygmModel, HygmModel]]:
     rng = random.Random(704)
+    conversational, shop = _fixture("v2-conversation-profiles.yaml"), _fixture("v2-shop.yaml")
     pairs = [
-        (HygmModel(node_types=()), default_model()),
-        (default_model(), HygmModel(node_types=())),
-        (default_model(), default_model()),
+        (HygmModel(node_types=()), conversational),
+        (conversational, HygmModel(node_types=())),
+        (conversational, conversational),
+        (conversational, shop),
+        (_fixture("v1-identity-and-endpoints.yaml"), conversational),
     ]
     for _ in range(150):
         a = _model(rng)
@@ -196,7 +213,9 @@ def test_a_renamed_type_diffs_as_a_removal_and_an_addition():
 
 NAME = Property("name", required=True)
 EVERY_OPERATION = (
-    AddNodeType(NodeType("Org", "a company", identity="global", properties=(NAME,), key=("name",))),
+    AddNodeType(
+        NodeType("Org", "a company", properties=(NAME,), key=("name",), profiles={"extraction": {"identity": "global"}})
+    ),
     RemoveNodeType("Org"),
     RenameNodeType("Org", "Company"),
     MergeNodeTypes("Org", "Team"),
@@ -238,7 +257,9 @@ def test_the_json_form_is_flat_and_embeds_model_file_entries():
         "label": "Org",
         "to": "Company",
     }
-    assert operation_to_mapping(AddNodeType(NodeType("Org", "a company", identity="global"))) == {
+    assert operation_to_mapping(
+        AddNodeType(NodeType("Org", "a company", profiles={"extraction": {"identity": "global"}}))
+    ) == {
         "op": "add_node_type",
         "node_type": {"label": "Org", "description": "a company", "profiles": {"extraction": {"identity": "global"}}},
     }
@@ -412,13 +433,14 @@ def test_merging_relation_types_joins_their_endpoints():
     assert into_any.relation_types[-1].start_labels == ()
 
 
-def test_a_node_types_extraction_profile_sets_its_identity():
+def test_a_node_types_extraction_profile_holds_its_identity():
     model = apply(BASE, [SetProfile("extraction", {"identity": "global", "value": True}, "node", "Org")])
-    assert _node_of(model, "Org").identity == "global"
-    assert _node_of(model, "Org").profiles == {"extraction": {"value": True}}
+    assert setting(_node_of(model, "Org").profiles, "extraction", "identity") == "global"
+    assert _node_of(model, "Org").profiles == {"extraction": {"identity": "global", "value": True}}
 
     cleared = apply(model, [SetProfile("extraction", None, "node", "Org")])
-    assert (_node_of(cleared, "Org").identity, _node_of(cleared, "Org").profiles) == ("chunk", {})
+    assert setting(_node_of(cleared, "Org").profiles, "extraction", "identity", "chunk") == "chunk"
+    assert _node_of(cleared, "Org").profiles == {}
 
 
 def test_sql2graph_operations_have_a_counterpart():
@@ -448,33 +470,3 @@ def test_sql2graph_operations_have_a_counterpart():
     assert result.node_labels() == ("Client", "Order")
     assert result.relation_types == (RelationType("ORDERED", start_labels=("Client",), end_labels=("Order",)),)
     assert _node_of(result, "Client").properties == (Property("client_id", "string"),)
-
-
-def test_a_stored_changelog_entry_reads_as_operations():
-    """sessions-graph stores each Change as its fields; that dict reads back and says what it did."""
-    model = default_model()
-    pool = HygmModel(node_types=(NodeType("Library", "a code library"),))
-    stored: list[dict[str, Any]] = [
-        {"op": "add", "kind": "node", "label": "Topic", "into": None, "reason": ""},
-        {"op": "restore", "kind": "node", "label": "Library", "into": None, "reason": ""},
-        {"op": "merge", "kind": "node", "label": "Framework", "into": "Library", "reason": "synonyms"},
-        {"op": "merge", "kind": "relation", "label": "built_with", "into": "uses", "reason": ""},
-        {"op": "retire", "kind": "relation", "label": "uses", "into": None, "reason": "share 0.0001"},
-        {"op": "retire", "kind": "node", "label": "Library", "into": None, "reason": "share 0.0001"},
-        {"op": "veto", "kind": "node", "label": "User", "into": "Person", "reason": "User is protected"},
-    ]
-
-    operations = [Change(**entry).operations(model, pool) for entry in stored]
-
-    assert operations == [
-        (AddNodeType(_node_of(model, "Topic")),),
-        (AddNodeType(pool.node_types[0]),),
-        (MergeNodeTypes("Framework", "Library"),),
-        (MergeRelationTypes("built_with", "uses"),),
-        (RemoveRelationType("uses"),),
-        (RemoveNodeType("Library"),),
-        (),
-    ]
-    with pytest.raises(ModelError) as missing:
-        Change("add", "node", "Planet").operations(model, pool)
-    assert missing.value.code == "unknown_type"

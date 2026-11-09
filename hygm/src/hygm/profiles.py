@@ -1,17 +1,10 @@
 """Profiles: what one kind of consumer needs from a model, kept out of the core (docs/contract.md, section 5).
 
-Three are registered, all for reading conversations into a graph:
-
-- ``extraction`` (per node type): ``identity``, how mentions merge, and
-  ``value``, extracted as a claim about something else rather than as an entity.
-- ``conversation`` (per model): ``speaker``, the person the conversation is
-  with, and ``other_person``, what a speaker mention that is someone else is
-  re-typed to (#358).
-- ``learning`` (per node type): ``protected``, never merged or retired by
-  derivation, and ``catch_all``, measured by the adoption gate.
-
-A version-1 file implies the profiles that were hardcoded before profiles
-existed (``implied_profiles``), so it means what it always meant.
+hygm owns the mechanism and the contract data only: the registry of profile
+names, each with its owner and the shape of its settings at each level, so
+any reader checks every registered profile's settings without its owner
+installed. What a setting means, and the rules a profile adds, belong to the
+owner (docs/contract.md, 5.6).
 """
 
 from collections.abc import Callable, Mapping
@@ -19,27 +12,22 @@ from dataclasses import replace
 from typing import Any
 
 from .identifiers import is_valid_identifier
-from .types import IDENTITIES, HygmModel
-from .validation import (
-    PERSON_LABEL,
-    USER_LABEL,
-    ValidationCategory,
-    ValidationIssue,
-    ValidationResult,
-    ValidationSeverity,
-)
+from .types import HygmModel
 
-#: Version-1 conventions: one node per mention, since every "3" in a session is a different fact.
-VALUE_LABELS: tuple[str, ...] = ("Duration", "Quantity", "Money", "Date", "TimeWindow")
+#: Profile settings by profile name, as a model, a type or a property holds them.
+Profiles = Mapping[str, Mapping[str, Any]]
 
-#: Version-1 conventions: the fixed core derivation never merges or retires (#353).
-CORE_LABELS: tuple[str, ...] = (USER_LABEL, PERSON_LABEL, *VALUE_LABELS)
+#: The profiles a version-1 file implies: (model profiles, profiles per node label).
+ImpliedProfiles = tuple[dict[str, dict[str, Any]], dict[str, dict[str, dict[str, Any]]]]
 
-#: Version-1 conventions: the types that collect what has no better type. The
-#: adoption gate measures the share of mentions landing here.
-CATCH_ALL_LABELS: tuple[str, ...] = ("Topic", "Artifact")
+#: An owner's rule for what a version-1 file implies beyond its node-level
+#: `identity` (docs/contract.md, 4.9). The reader adds it; the writer keeps a
+#: model in version 1 when its profiles are exactly it.
+Version1Profiles = Callable[[HygmModel], ImpliedProfiles]
 
-REGISTERED_PROFILES = ("extraction", "conversation", "learning")
+#: `extraction.identity`'s values: the one setting the version-1 format itself
+#: carries, as a node type's `identity`.
+IDENTITIES: tuple[str, ...] = ("global", "chunk", "span")
 
 
 def _boolean(value: Any) -> bool:
@@ -50,9 +38,22 @@ def _label(value: Any) -> bool:
     return is_valid_identifier(value)
 
 
-#: The settings each registered profile defines at each level, with what makes a value valid.
+def _identity(value: Any) -> bool:
+    return value in IDENTITIES
+
+
+#: The registry (docs/contract.md, 5.2 and 5.6): each registered profile's owner.
+OWNERS: Mapping[str, str] = {
+    "extraction": "unstructured2graph",
+    "conversation": "unstructured2graph",
+    "learning": "sessions-graph",
+}
+
+REGISTERED_PROFILES: tuple[str, ...] = tuple(OWNERS)
+
+#: The shape of each registered profile's settings at each level, with what makes a value valid.
 SETTINGS: dict[tuple[str, str], dict[str, Callable[[Any], bool]]] = {
-    ("extraction", "node"): {"identity": lambda value: value in IDENTITIES, "value": _boolean},
+    ("extraction", "node"): {"identity": _identity, "value": _boolean},
     ("conversation", "model"): {"speaker": _label, "other_person": _label},
     ("learning", "node"): {"protected": _boolean, "catch_all": _boolean},
 }
@@ -63,111 +64,70 @@ def label_settings(profile: str, level: str) -> tuple[str, ...]:
     return tuple(key for key, valid in SETTINGS.get((profile, level), {}).items() if valid is _label)
 
 
-def implied_profiles(model: HygmModel) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, dict[str, Any]]]]:
-    """The profiles a version-1 file implies for `model`'s labels: (model-level, per node label)."""
-    labels = model.node_labels()
-    nodes: dict[str, dict[str, dict[str, Any]]] = {}
-    for label in labels:
-        profiles: dict[str, dict[str, Any]] = {}
-        if label in VALUE_LABELS:
-            profiles["extraction"] = {"value": True}
-        learning = {}
-        if label in CORE_LABELS:
-            learning["protected"] = True
-        if label in CATCH_ALL_LABELS:
-            learning["catch_all"] = True
-        if learning:
-            profiles["learning"] = learning
-        nodes[label] = profiles
-    top = {"conversation": {"speaker": USER_LABEL, "other_person": PERSON_LABEL}} if USER_LABEL in labels else {}
-    return top, nodes
+def setting(profiles: Profiles, profile: str, key: str, default: Any = None) -> Any:
+    """`profiles[profile][key]`, or `default` when either is absent."""
+    return profiles.get(profile, {}).get(key, default)
 
 
-def with_implied_profiles(model: HygmModel) -> HygmModel:
-    """`model` with the profiles a version-1 file implies added, its own settings winning.
-
-    For a model built in code that means what a version-1 file of the same
-    types would: values, the core, the catch-alls and the conversation roles.
-    """
-    top, nodes = implied_profiles(model)
-    return replace(
-        model,
-        node_types=tuple(replace(t, profiles=_merged(nodes[t.label], t.profiles)) for t in model.node_types),
-        profiles=_merged(top, model.profiles),
-    )
+def no_implied_profiles(model: HygmModel) -> ImpliedProfiles:
+    """The version-1 rule without an owner's: nothing beyond the node-level `identity`."""
+    return {}, {label: {} for label in model.node_labels()}
 
 
-def _merged(base: Mapping[str, Mapping[str, Any]], own: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
-    merged = _plain(base)
+def merge_profiles(base: Profiles, own: Profiles) -> dict[str, dict[str, Any]]:
+    """`base` with `own` laid over it, setting by setting."""
+    merged = plain_profiles(base)
     for name, settings in own.items():
         merged[name] = {**merged.get(name, {}), **settings}
     return merged
 
 
-def has_implied_profiles(model: HygmModel) -> bool:
-    """Whether `model`'s profiles are exactly the ones a version-1 file would imply."""
-    top, nodes = implied_profiles(model)
-    return _plain(model.profiles) == top and all(_plain(t.profiles) == nodes[t.label] for t in model.node_types)
+def combine_implied(*rules: Version1Profiles) -> Version1Profiles:
+    """One version-1 rule from several owners' rules, laid over each other in order."""
+
+    def combined(model: HygmModel) -> ImpliedProfiles:
+        top: dict[str, dict[str, Any]] = {}
+        nodes: dict[str, dict[str, dict[str, Any]]] = {label: {} for label in model.node_labels()}
+        for rule in rules:
+            rule_top, rule_nodes = rule(model)
+            top = merge_profiles(top, rule_top)
+            for label, profiles in rule_nodes.items():
+                nodes[label] = merge_profiles(nodes.get(label, {}), profiles)
+        return top, nodes
+
+    return combined
 
 
-def _setting(profiles: Mapping[str, Mapping[str, Any]], profile: str, key: str) -> Any:
-    return profiles.get(profile, {}).get(key)
+def with_version_1_profiles(model: HygmModel, rule: Version1Profiles) -> HygmModel:
+    """`model` with what `rule` says a version-1 file implies added, its own settings winning."""
+    top, nodes = rule(model)
+    return replace(
+        model,
+        node_types=tuple(
+            replace(t, profiles=merge_profiles(nodes.get(t.label, {}), t.profiles)) for t in model.node_types
+        ),
+        profiles=merge_profiles(top, model.profiles),
+    )
 
 
-def value_labels(model: HygmModel) -> tuple[str, ...]:
-    """Node types the `extraction` profile marks as values."""
-    return tuple(t.label for t in model.node_types if _setting(t.profiles, "extraction", "value"))
+def has_version_1_profiles(model: HygmModel, rule: Version1Profiles) -> bool:
+    """Whether `model`'s profiles, apart from `extraction.identity`, are exactly what `rule` implies."""
+    top, nodes = rule(model)
+    return plain_profiles(model.profiles) == plain_profiles(top) and all(
+        _without_identity(t.profiles) == plain_profiles(nodes.get(t.label, {})) for t in model.node_types
+    )
 
 
-def protected_labels(model: HygmModel) -> tuple[str, ...]:
-    """Node types the `learning` profile protects from merging and retirement."""
-    return tuple(t.label for t in model.node_types if _setting(t.profiles, "learning", "protected"))
+def plain_profiles(profiles: Profiles) -> dict[str, dict[str, Any]]:
+    """`profiles` as plain dicts, dropping profiles with no settings."""
+    return {name: dict(settings) for name, settings in profiles.items() if settings}
 
 
-def catch_all_labels(model: HygmModel) -> tuple[str, ...]:
-    """Node types the `learning` profile marks as catch-alls."""
-    return tuple(t.label for t in model.node_types if _setting(t.profiles, "learning", "catch_all"))
-
-
-def conversation(model: HygmModel) -> tuple[str, str] | None:
-    """The model's (speaker, other_person) labels, or None without a `conversation` profile."""
-    settings = model.profiles.get("conversation")
-    if not settings:
-        return None
-    return settings.get("speaker", USER_LABEL), settings.get("other_person", PERSON_LABEL)
-
-
-def validate_for_conversation(model: HygmModel) -> ValidationResult:
-    """The `conversation` profile's rule: every endpoint admitting the speaker admits the other person.
-
-    A speaker mention that turns out to be someone else is re-typed to the
-    other person (#358), and that re-typed edge must still conform. A model
-    without the profile passes. Consumers that read conversations apply this
-    beside validate_model().
-    """
-    result = ValidationResult("conversation")
-    roles = conversation(model)
-    if roles is None:
-        return result
-    speaker, other_person = roles
-    for relation in model.relation_types:
-        for side in ("start", "end"):
-            admitted = model.endpoint_labels(relation, side)
-            if speaker in admitted and other_person not in admitted:
-                result.add_issue(
-                    ValidationIssue(
-                        ValidationSeverity.CRITICAL,
-                        ValidationCategory.STRUCTURE,
-                        f"Relation type {relation.label!r}: {side}_labels includes {speaker!r} but not {other_person!r}",
-                        recommendation=(
-                            f"A {speaker} mention that is not the speaker is re-typed to {other_person}, "
-                            "so every endpoint that accepts one must accept the other"
-                        ),
-                        code="profile_rule",
-                    )
-                )
-    return result
-
-
-def _plain(profiles: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
-    return {name: dict(settings) for name, settings in profiles.items()}
+def _without_identity(profiles: Profiles) -> dict[str, dict[str, Any]]:
+    plain = plain_profiles(profiles)
+    extraction = {k: v for k, v in plain.get("extraction", {}).items() if k != "identity"}
+    if extraction:
+        plain["extraction"] = extraction
+    else:
+        plain.pop("extraction", None)
+    return plain

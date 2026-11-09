@@ -3,7 +3,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from hygm import HygmModel, ManualStrategy, NodeType, RelationType, validate_for_conversation, with_implied_profiles
+from hygm import HygmModel, ManualStrategy, NodeType, RelationType, has_version_1_profiles, no_implied_profiles
+
+from .profile import implied_profiles, validate_for_conversation, with_implied_profiles
 
 SCRIPT_DIR = Path(__file__).parent
 DEFAULT_ONTOLOGY_PATH = SCRIPT_DIR / "default_ontology.yaml"
@@ -40,13 +42,14 @@ class Ontology:
     #: The model's own profiles (its `conversation` roles); per-type ones ride on each type.
     profiles: Mapping[str, Mapping[str, Any]] = field(default_factory=dict, hash=False)
     #: False (the default) when a vocabulary is built in code: one declaring no
-    #: profiles at all then means what a version-1 file of the same types does
-    #: (its value types, its conversation roles), as it did before profiles.
-    #: from_model() passes True, so a model's profiles are taken exactly.
+    #: profiles beyond each type's identity then means what a version-1 file of
+    #: the same types does (its value types, its conversation roles), as it did
+    #: before profiles. from_model() passes True, so a model's profiles are taken exactly.
     as_given: bool = field(default=False, compare=False, repr=False)
 
     def __post_init__(self) -> None:
-        if self.as_given or self.profiles or any(t.profiles for t in self.entity_types):
+        # Identity was a field before it was a profile; setting it alone must not opt out of the implied ones.
+        if self.as_given or not has_version_1_profiles(self.model, no_implied_profiles):
             return
         implied = with_implied_profiles(self.model)
         object.__setattr__(self, "entity_types", implied.node_types)
@@ -125,7 +128,7 @@ def load_ontology(path: str | Path) -> Ontology:
     Raises:
         ValueError: if the file cannot be read, parsed or validated.
     """
-    return Ontology.from_model(ManualStrategy().create_model(path))
+    return Ontology.from_model(ManualStrategy(version_1_profiles=implied_profiles).create_model(path))
 
 
 # Mirrors LightRAG's own built-in entity type vocabulary, so label promotion

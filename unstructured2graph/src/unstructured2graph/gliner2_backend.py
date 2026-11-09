@@ -41,11 +41,12 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from hygm import PERSON_LABEL, USER_LABEL, require_valid_identifier, value_labels
+from hygm import require_valid_identifier
 from memgraph_toolbox.api.memgraph import Memgraph
 
 from .memgraph import Endpoint, create_nodes_from_list, link_mentions, upsert_extracted_relationships
 from .ontology import DEFAULT_ONTOLOGY, Ontology
+from .profile import PERSON_LABEL, USER_LABEL, identity_of, value_labels
 
 if TYPE_CHECKING:
     from .loaders import Chunk, Segment
@@ -402,7 +403,7 @@ class GLiNER2Backend:
         self._chunk_size = chunk_size
         self._chunk_overlap = chunk_overlap
         self._resolve = mention_resolver
-        self._identity = {t.label: t.identity for t in self.ontology.entity_types}
+        self._identity = {t.label: identity_of(t) for t in self.ontology.entity_types}
         self._config = self._make_config(candidate_cap)
         self._schema = self.engine.compile_schema(self._build_schema())
         value_schema = self._build_value_schema()

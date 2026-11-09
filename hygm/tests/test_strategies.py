@@ -1,8 +1,11 @@
 import textwrap
+from pathlib import Path
 
 import pytest
 
 from hygm import ManualStrategy, NodeType, RelationType
+
+VALID_MODELS = Path(__file__).parent.parent / "conformance" / "model" / "valid"
 
 
 def _write(tmp_path, body):
@@ -26,14 +29,13 @@ def test_manual_strategy_parses_identity_and_endpoints(tmp_path):
         """,
     )
     model = ManualStrategy().create_model(path)
-    protected = {"learning": {"protected": True}}
     assert model.node_types == (
-        NodeType("User", "the user", "global", profiles=protected),
-        NodeType("Person", "someone else", "global", profiles=protected),
-        NodeType("Duration", "a length of time", "span", profiles={"extraction": {"value": True}, **protected}),
-        NodeType("Topic", "a subject", "chunk", profiles={"learning": {"catch_all": True}}),
+        NodeType("User", "the user", profiles={"extraction": {"identity": "global"}}),
+        NodeType("Person", "someone else", profiles={"extraction": {"identity": "global"}}),
+        NodeType("Duration", "a length of time", profiles={"extraction": {"identity": "span"}}),
+        NodeType("Topic", "a subject"),
     )
-    assert model.profiles == {"conversation": {"speaker": "User", "other_person": "Person"}}
+    assert model.profiles == {}
     assert model.relation_types == (
         RelationType("personal_best", "best time", ("User", "Person"), ("Duration",)),
         RelationType("mentions", "anything"),
@@ -70,10 +72,22 @@ def test_manual_strategy_missing_file(tmp_path):
         ManualStrategy().create_model(tmp_path / "missing.yaml")
 
 
-def test_a_model_round_trips_through_its_mapping():
-    from hygm import default_model, model_from_mapping, model_to_mapping
+def test_manual_strategy_applies_its_owners_version_1_rule(tmp_path):
+    path = _write(tmp_path, "entity_types: [{label: User, description: the user, identity: global}]")
 
-    model = default_model()
+    def speaker(model):
+        return {"conversation": {"speaker": "User"}}, {label: {} for label in model.node_labels()}
+
+    model = ManualStrategy(version_1_profiles=speaker).create_model(path)
+
+    assert model.profiles == {"conversation": {"speaker": "User"}}
+    assert model.node_types == (NodeType("User", "the user", profiles={"extraction": {"identity": "global"}}),)
+
+
+def test_a_model_round_trips_through_its_mapping():
+    from hygm import model_from_mapping, model_to_mapping
+
+    model = ManualStrategy().create_model(VALID_MODELS / "v1-identity-and-endpoints.yaml")
 
     assert model_from_mapping(model_to_mapping(model), "version 1") == model
 

@@ -1,6 +1,5 @@
 """hygm: a shared graph schema/ontology model, the strategies that produce one, and mappings onto sources."""
 
-from .default import default_model, with_core
 from .errors import ModelError
 from .evolution import (
     OPERATIONS,
@@ -33,7 +32,6 @@ from .evolution import (
 )
 from .format import model_schema, needs_version_2
 from .identifiers import CYPHER_IDENTIFIER_PATTERN, is_valid_identifier, require_valid_identifier
-from .labels import CATCH_ALL_LABELS, CORE_LABELS, VALUE_LABELS
 from .mapping import (
     SOURCE_KINDS,
     BindingKind,
@@ -66,32 +64,22 @@ from .plan import (
     memgraph_plan,
 )
 from .profiles import (
+    IDENTITIES,
+    OWNERS,
     REGISTERED_PROFILES,
-    catch_all_labels,
-    conversation,
-    implied_profiles,
-    protected_labels,
-    validate_for_conversation,
-    value_labels,
-    with_implied_profiles,
+    ImpliedProfiles,
+    Profiles,
+    Version1Profiles,
+    combine_implied,
+    has_version_1_profiles,
+    merge_profiles,
+    no_implied_profiles,
+    setting,
+    with_version_1_profiles,
 )
-from .strategies import (
-    Change,
-    Derivation,
-    DerivationError,
-    DerivationLimits,
-    Llm,
-    LlmRecommendationStrategy,
-    ManualStrategy,
-    Observer,
-    OwlImportStrategy,
-    model_from_mapping,
-    model_to_mapping,
-)
-from .types import IDENTITIES, PROPERTY_TYPES, HygmModel, Identity, NodeType, Property, PropertyType, RelationType
+from .strategies import ManualStrategy, OwlImportStrategy, model_from_mapping, model_to_mapping
+from .types import PROPERTY_TYPES, HygmModel, NodeType, Property, PropertyType, RelationType
 from .validation import (
-    PERSON_LABEL,
-    USER_LABEL,
     ValidationCategory,
     ValidationIssue,
     ValidationResult,
@@ -100,34 +88,24 @@ from .validation import (
 )
 
 __all__ = [
-    "CATCH_ALL_LABELS",
-    "CORE_LABELS",
     "CYPHER_IDENTIFIER_PATTERN",
     "IDENTITIES",
     "MEMGRAPH_TYPES",
     "OPERATIONS",
-    "PERSON_LABEL",
+    "OWNERS",
     "PROPERTY_TYPES",
     "REGISTERED_PROFILES",
     "SOURCE_KINDS",
-    "USER_LABEL",
-    "VALUE_LABELS",
     "AddNodeType",
     "AddProperty",
     "AddRelationType",
     "BindingKind",
-    "Change",
     "ColumnEndpoint",
-    "Derivation",
-    "DerivationError",
-    "DerivationLimits",
     "GraphRef",
     "HygmModel",
-    "Identity",
+    "ImpliedProfiles",
     "Join",
     "JoinEndpoint",
-    "Llm",
-    "LlmRecommendationStrategy",
     "ManualStrategy",
     "Mapping",
     "MemgraphPlan",
@@ -136,13 +114,13 @@ __all__ = [
     "ModelError",
     "NodeBinding",
     "NodeType",
-    "Observer",
     "Operation",
     "OrderNodeTypes",
     "OrderProperties",
     "OrderRelationTypes",
     "OwlImportStrategy",
     "PlanConflictError",
+    "Profiles",
     "Property",
     "PropertyBinding",
     "PropertyType",
@@ -170,15 +148,14 @@ __all__ = [
     "ValidationIssue",
     "ValidationResult",
     "ValidationSeverity",
+    "Version1Profiles",
     "apply",
     "apply_plan",
-    "catch_all_labels",
     "check_mapping",
-    "conversation",
-    "default_model",
+    "combine_implied",
     "diff",
     "enum_for",
-    "implied_profiles",
+    "has_version_1_profiles",
     "is_valid_identifier",
     "labels_for",
     "load_mapping",
@@ -186,17 +163,16 @@ __all__ = [
     "mapping_schema",
     "mapping_to_mapping",
     "memgraph_plan",
+    "merge_profiles",
     "model_from_mapping",
     "model_schema",
     "model_to_mapping",
     "needs_version_2",
+    "no_implied_profiles",
     "operation_from_mapping",
     "operation_to_mapping",
-    "protected_labels",
     "require_valid_identifier",
-    "validate_for_conversation",
+    "setting",
     "validate_model",
-    "value_labels",
-    "with_core",
-    "with_implied_profiles",
+    "with_version_1_profiles",
 ]
