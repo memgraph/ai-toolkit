@@ -16,13 +16,16 @@ market="${1:?usage: local-marketplace.sh <directory>}/context-graph-marketplace"
 rm -rf "$market"
 mkdir -p "$market/.claude-plugin"
 cp -R "$root/context-graph/plugins/memgraph-context-graph-claude" "$market/plugin"
-python3 - "$root/.claude-plugin/marketplace.json" "$market/.claude-plugin/marketplace.json" <<'PY'
+python3 - "$market/plugin/.claude-plugin/plugin.json" "$market/.claude-plugin/marketplace.json" <<'PY'
 import json
 import sys
 
-marketplace = json.load(open(sys.argv[1]))
-marketplace["name"] = "memgraph"
-marketplace["plugins"][0]["source"] = "./plugin"
+plugin = json.load(open(sys.argv[1]))
+marketplace = {
+    "name": "memgraph",
+    "owner": {"name": "Memgraph"},
+    "plugins": [{"name": "context-graph", "source": "./plugin", "description": plugin["description"]}],
+}
 json.dump(marketplace, open(sys.argv[2], "w"), indent=2)
 PY
 claude plugin marketplace remove memgraph >/dev/null 2>&1 || true

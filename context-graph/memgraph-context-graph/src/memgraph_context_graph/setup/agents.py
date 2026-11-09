@@ -27,8 +27,8 @@ if TYPE_CHECKING:
 MARKETPLACE = "memgraph"
 PLUGIN_ID = f"context-graph@{MARKETPLACE}"
 MARKETPLACE_SOURCE = "memgraph/marketplace"
-#: Where the plugin came from before the Memgraph marketplace: this repo's own marketplace. Setup and update
-#: move an install from there, so an agent never runs two copies of the plugin's hooks.
+#: Where the plugin came from before the Memgraph marketplace: this repo's own marketplace, now removed. Setup
+#: and update move an install from there, so an agent never runs two copies of the plugin's hooks.
 LEGACY_MARKETPLACE = "context-graph-plugins"
 LEGACY_PLUGIN_ID = f"context-graph@{LEGACY_MARKETPLACE}"
 
