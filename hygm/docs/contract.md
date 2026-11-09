@@ -471,7 +471,7 @@ Every reader of a model checks, as critical errors:
 A mapping reader also checks section 6.2. A profile's consumer also checks
 that profile's rules.
 
-Each error has a **code** from the table below and a message for people.
+Each error has a **code** from the table below and a message for people. Applying an operation (layer 6) to a model it doesn't fit reuses the layer-1 codes (`unknown_type`, `undeclared_property`, `duplicate_label`, `duplicate_property`).
 Readers emit the same codes; their messages are their own. A file with
 several problems may report any non-empty subset of them, so a conformance
 fixture holds exactly one problem.
@@ -505,6 +505,8 @@ fixture holds exactly one problem.
 | `endpoint_not_admitted` | 3 | A relation binding's endpoint types aren't admitted by its relation type. |
 | `endpoint_columns` | 3 | A table relation's `from` or `to` columns don't match what they point at: the endpoint binding's `id` in the same source, else the endpoint type's `key`. |
 | `unknown_model` | 3 | The mapping's `model` can't be read. |
+| `unknown_operation` | 6 | An operation hygm doesn't define. |
+| `invalid_operation` | 6 | A rename or merge into itself, or an order list that doesn't name each item exactly once. |
 
 ## 10. OWL import
 
