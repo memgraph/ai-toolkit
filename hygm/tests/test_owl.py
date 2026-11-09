@@ -378,6 +378,53 @@ def test_equivalence_and_disjointness_are_ignored(tmp_path):
     assert model.node_labels() == ("Person", "Robot")
 
 
+def test_an_owl_thing_range_or_domain_leaves_the_relation_unconstrained_there(tmp_path):
+    model = _import(
+        tmp_path,
+        """
+        :Person a owl:Class .
+        :likes a owl:ObjectProperty ; rdfs:domain :Person ; rdfs:range owl:Thing .
+        :about a owl:ObjectProperty ; rdfs:domain owl:Thing ; rdfs:range :Person .
+        """,
+    )
+
+    assert model.node_labels() == ("Person",)
+    assert {r.label: (r.start_labels, r.end_labels) for r in model.relation_types} == {
+        "about": ((), ("Person",)),
+        "likes": (("Person",), ()),
+    }
+
+
+def test_a_datatype_property_whose_domain_is_owl_thing_is_skipped(tmp_path):
+    model = _import(
+        tmp_path,
+        """
+        :Person a owl:Class .
+        :note a owl:DatatypeProperty ; rdfs:domain owl:Thing ; rdfs:range xsd:string .
+        """,
+    )
+
+    assert model.node_labels() == ("Person",)
+    assert _properties(model, "Person") == {}
+
+
+def test_owl_thing_in_a_union_leaves_just_the_named_classes(tmp_path):
+    model = _import(
+        tmp_path,
+        """
+        :Person a owl:Class .
+        :Place a owl:Class .
+        :visited a owl:ObjectProperty ; rdfs:domain :Person ;
+            rdfs:range [ a owl:Class ; owl:unionOf ( owl:Thing :Place ) ] .
+        :label a owl:DatatypeProperty ; rdfs:domain [ a owl:Class ; owl:unionOf ( :Place owl:Thing ) ] .
+        """,
+    )
+
+    assert model.relation_types[0].end_labels == ("Place",)
+    assert list(_properties(model, "Place")) == ["label"]
+    assert _properties(model, "Person") == {}
+
+
 def test_an_imported_version_2_model_round_trips(tmp_path):
     model = _import(
         tmp_path,
