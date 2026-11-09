@@ -62,6 +62,11 @@ CONFIG_PATH_ENV = "CONTEXT_GRAPH_CONFIG"
 #: :data:`CONFIG_PATH_ENV`, so a process a hook spawns writes where the hook did.
 PROFILE_ENV = "CONTEXT_GRAPH_PROFILE"
 
+#: Names the agent an MCP server runs for, as ``mcp --agent`` does, so its ``[agents]`` mapping picks the
+#: profile. A harness config that can't rely on the installed CLI knowing ``--agent`` sets this instead:
+#: an older CLI ignores the variable, where it would refuse the flag and the server wouldn't start.
+AGENT_ENV = "CONTEXT_GRAPH_AGENT"
+
 #: The reserved profile name for the top level, for choosing it over an agent's mapping or :data:`PROFILE_ENV`.
 DEFAULT_PROFILE = "default"
 

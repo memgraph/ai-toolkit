@@ -3,6 +3,7 @@
     "context-graph": {
       "command": "memgraph-context-graph",
       "args": ["mcp"],
+      "env": { "CONTEXT_GRAPH_AGENT": "codex" },
       "env_vars": ["CONTEXT_GRAPH_CONFIG"]
     }
   }

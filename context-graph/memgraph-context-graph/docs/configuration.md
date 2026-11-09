@@ -127,7 +127,8 @@ codex = "memgraph-corp"
 - **Who uses which profile:**
   - Hooks use the profile of the agent they run for.
   - The MCP server uses the profile of the agent named by `mcp --agent <runtime>`, which
-    setup writes into each agent's MCP config.
+    setup writes into each agent's MCP config. Without `--agent` it takes the agent from
+    `CONTEXT_GRAPH_AGENT`, which the Claude Code and Codex plugins set in their `.mcp.json`.
   - A process a hook spawns gets the hook's profile in `CONTEXT_GRAPH_PROFILE`, next to
     `CONTEXT_GRAPH_CONFIG`
     ([ADR 0008](adr/0008-profiles-pick-an-agents-destination.md)).
