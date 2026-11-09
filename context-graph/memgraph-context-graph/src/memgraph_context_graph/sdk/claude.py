@@ -45,7 +45,7 @@ from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, SdkMcpTool, create
 from memgraph_context_graph import capture_log
 from memgraph_context_graph.adapters._spec import SpecAdapter
 from memgraph_context_graph.adapters.claude_code import SPEC as CLAUDE_CODE_SPEC
-from memgraph_context_graph.setup.agents import PLUGIN_ID
+from memgraph_context_graph.setup.agents import LEGACY_PLUGIN_ID, PLUGIN_ID
 
 if TYPE_CHECKING:
     from claude_agent_sdk.types import HookEvent, McpSdkServerConfig
@@ -173,7 +173,7 @@ class ClaudeAgentMemory:
 
 
 def _without_the_plugin(settings: str | None) -> str:
-    """*settings* as a JSON string, with the Context Graph Claude Code plugin turned off.
+    """*settings* as a JSON string, with the Context Graph Claude Code plugin turned off, under either marketplace's ID.
 
     The SDK passes them as ``--settings``, which outranks the user's settings,
     so this wins over the plugin being enabled there; the rest is kept.
@@ -191,5 +191,5 @@ def _without_the_plugin(settings: str | None) -> str:
         merged = json.loads(text)
     if not isinstance(merged, dict):
         raise ValueError(f"settings must be a JSON object, got {settings!r}")
-    merged["enabledPlugins"] = {**(merged.get("enabledPlugins") or {}), PLUGIN_ID: False}
+    merged["enabledPlugins"] = {**(merged.get("enabledPlugins") or {}), PLUGIN_ID: False, LEGACY_PLUGIN_ID: False}
     return json.dumps(merged)

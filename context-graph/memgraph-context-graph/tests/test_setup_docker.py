@@ -187,7 +187,7 @@ def test_setup_then_uninstall_end_to_end(names, stranger, fake_agents, setup_hom
     assert f"OK    Cursor: memory tools registered; wired {project.resolve()}" in out
     assert "OK    Check memgraph:" in out
     assert "OK    Check config:" in out
-    assert fake_agents.of("claude")["plugins"] == ["context-graph@context-graph-plugins"]
+    assert fake_agents.of("claude")["plugins"] == ["context-graph@memgraph"]
 
     main(argv)
     out = capsys.readouterr().out

@@ -1,7 +1,7 @@
 {
   "name": "context-graph-plugins",
   "interface": {
-    "displayName": "Context Graph Plugins"
+    "displayName": "Context Graph Plugins (replaced by memgraph/marketplace)"
   },
   "plugins": [
     {

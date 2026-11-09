@@ -583,7 +583,7 @@ from memgraph_context_graph.adapters.claude_code import PLUGIN
 # this code. This form always resolves to the exact checkout being verified,
 # in CI or locally, regardless of what else is installed. --connector flags
 # match the installed marketplace plugin's own generated command
-# (context-graph-plugins/context-graph/*/hooks/hooks.json) -- without them,
+# (memgraph/context-graph/*/hooks/hooks.json) -- without them,
 # `hook run` does nothing (a second real, silent gap this verification
 # tripped over).
 command = (

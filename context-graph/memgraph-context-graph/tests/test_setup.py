@@ -102,13 +102,54 @@ def test_plugin_wiring_registers_installs_and_comes_off_again(fake_agents, setup
     assert agents.wire_plugin(agent, log) == "plugin already installed"
     state = fake_agents.of(binary)
     assert state["plugins"] == [agents.PLUGIN_ID]
-    assert ["plugin", "marketplace", "add", "memgraph/ai-toolkit", "--sparse", agent.sparse] in state["calls"]
+    assert ["plugin", "marketplace", "add", "memgraph/marketplace"] in state["calls"]
     assert f"Installed {agents.PLUGIN_ID}" in lines
 
-    assert agents.unwire_plugin(agent, log) == "removed the plugin and marketplace"
+    # The Memgraph marketplace stays: it also serves the memgraph plugin.
+    assert agents.unwire_plugin(agent, log) == "removed the plugin"
+    assert fake_agents.of(binary)["plugins"] == []
+    assert fake_agents.of(binary)["marketplaces"] == ["memgraph"]
+    assert agents.unwire_plugin(agent, log) == "wasn't installed"
+
+
+def _install_from_legacy_marketplace(binary: str) -> None:
+    """Install the plugin the way setup did before the Memgraph marketplace, from this repo's own marketplace."""
+    install = ["install", agents.LEGACY_PLUGIN_ID, "-y"] if binary == "claude" else ["add", agents.LEGACY_PLUGIN_ID]
+    for args in (["marketplace", "add", "memgraph/ai-toolkit", "--sparse", ".claude-plugin"], install):
+        subprocess.run([binary, "plugin", *args], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize("runtime, binary", [("claude-code", "claude"), ("codex", "codex")])
+def test_setup_moves_an_install_from_the_previous_marketplace(fake_agents, setup_home, runtime, binary):
+    """Two installs would run the hooks twice, so the old one goes, with its marketplace."""
+    agent = BY_RUNTIME[runtime]
+    _install_from_legacy_marketplace(binary)
+    assert agents.installed_plugin_id(agent) == agents.LEGACY_PLUGIN_ID
+
+    assert agents.wire_plugin(agent, lambda _: None) == "plugin moved to the Memgraph marketplace"
+    assert fake_agents.of(binary)["plugins"] == [agents.PLUGIN_ID]
+    assert fake_agents.of(binary)["marketplaces"] == ["memgraph"]
+
+
+@pytest.mark.parametrize("runtime, binary", [("claude-code", "claude"), ("codex", "codex")])
+def test_update_moves_an_install_from_the_previous_marketplace(fake_agents, setup_home, runtime, binary):
+    agent = BY_RUNTIME[runtime]
+    _install_from_legacy_marketplace(binary)
+    assert agents.plugin_wired(agent)
+
+    assert agents.update_plugin(agent, lambda _: None) == "plugin moved to the Memgraph marketplace"
+    assert fake_agents.of(binary)["plugins"] == [agents.PLUGIN_ID]
+    assert fake_agents.of(binary)["marketplaces"] == ["memgraph"]
+
+
+@pytest.mark.parametrize("runtime, binary", [("claude-code", "claude"), ("codex", "codex")])
+def test_uninstall_removes_an_install_from_the_previous_marketplace(fake_agents, setup_home, runtime, binary):
+    agent = BY_RUNTIME[runtime]
+    _install_from_legacy_marketplace(binary)
+
+    assert agents.unwire_plugin(agent, lambda _: None) == "removed the plugin"
     assert fake_agents.of(binary)["plugins"] == []
     assert fake_agents.of(binary)["marketplaces"] == []
-    assert agents.unwire_plugin(agent, log) == "wasn't installed"
 
 
 def test_a_failing_plugin_install_says_what_the_agent_said(fake_agents, monkeypatch):
@@ -158,6 +199,16 @@ def test_doctor_fails_until_the_plugin_is_installed_and_enabled(fake_agents, mon
     assert f"claude plugin enable {agents.PLUGIN_ID}" in check["detail"]
 
     assert _check_plugin("cursor") is None
+
+
+def test_doctor_points_an_install_from_the_previous_marketplace_to_update(fake_agents):
+    from memgraph_context_graph.cli import _check_plugin
+
+    _install_from_legacy_marketplace("claude")
+    check = _check_plugin("claude-code")
+    assert check is not None
+    assert check["ok"]
+    assert "run: memgraph-context-graph update claude-code" in check["detail"]
 
 
 def test_only_agents_on_path_are_detected(fake_agents):
@@ -350,7 +401,7 @@ def test_the_interactive_uninstall_unwires_removes_and_lists_what_it_kept(fake_a
 
     assert fake_agents.of("claude")["plugins"] == []
     assert not config_file().exists()
-    assert "✓  Claude Code      removed the plugin and marketplace" in term.text
+    assert "✓  Claude Code      removed the plugin" in term.text
     assert "the graph:   docker rm -f cg && docker volume rm cg-data" in term.text
     assert "└  Done." in term.text
 
@@ -362,7 +413,7 @@ def test_uninstall_finds_what_is_wired_and_keeps_data(fake_agents, setup_home, p
     assert main(["uninstall", "--project-dir", str(project)]) == 0
 
     out = capsys.readouterr().out
-    assert "OK    Claude Code: removed the plugin and marketplace" in out
+    assert "OK    Claude Code: removed the plugin" in out
     assert f"OK    Cursor: unwired {project.resolve()}" in out
     assert "docker rm -f context-graph-memgraph && docker volume rm context-graph-memgraph-data" in out
     assert fake_agents.of("claude")["plugins"] == []

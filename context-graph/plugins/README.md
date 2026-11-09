@@ -15,13 +15,11 @@ Copilot CLI, Cursor, OpenCode, Antigravity CLI, and Grok Build use generated pro
 
 ## For plugin maintainers
 
-Both plugins are published as `context-graph` in the `context-graph-plugins` marketplace. They call runtime adapters; graph connectors decide what to store.
+Both plugins are published as `context-graph` in the [Memgraph marketplace](https://github.com/memgraph/marketplace), named `memgraph`, which lists every Memgraph plugin. Its entries point at these folders on this repository's default branch. The plugins call runtime adapters; graph connectors decide what to store.
 
-The marketplace files use different schemas:
+This repository's own `context-graph-plugins` marketplace is the one setup used before. It stays for a while, so installs made with an older `memgraph-context-graph` keep updating; setup and update move them to the Memgraph marketplace. Don't point anything new at it:
 
-| Runtime | Marketplace file |
+| Runtime | Previous marketplace file |
 |---|---|
 | Codex | [`.agents/plugins/marketplace.json`](../../.agents/plugins/marketplace.json) |
 | Claude Code | [`.claude-plugin/marketplace.json`](../../.claude-plugin/marketplace.json) |
-
-Keep each plugin in its own runtime's marketplace. Entries follow the repository's default branch rather than a pinned ref.

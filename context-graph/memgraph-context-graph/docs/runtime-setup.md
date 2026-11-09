@@ -118,7 +118,7 @@ OK connector:sessions-graph: installed=...; memgraph=reachable
 OK embeddings: BAAI/bge-small-en-v1.5 (384 dimensions) inside Memgraph
 OK mcp: serves recall
 OK runtime:claude-code: connectors accept its probe event
-OK plugin:claude-code: context-graph@context-graph-plugins installed and enabled
+OK plugin:claude-code: context-graph@memgraph installed and enabled
 ```
 
 The `runtime:` probe runs the connectors inside `doctor` itself; `plugin:` is what says Claude Code (or Codex)

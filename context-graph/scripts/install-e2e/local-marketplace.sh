@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Register a copy of this checkout's Claude Code marketplace, its plugin served from the copy.
+# Register a Claude Code marketplace named like the Memgraph marketplace, its Context Graph plugin served from
+# a copy of this checkout.
 #
 # The published marketplace fetches the plugin from GitHub's main branch, so a PR's plugin changes would
-# go untested. Setup installs from a marketplace already registered under our name, so registering
-# this one first makes setup install the plugin under review. Run it again after uninstall, which
-# removes the marketplace.
+# go untested. Setup installs from a marketplace already registered under the Memgraph marketplace's name,
+# so registering this one first makes setup install the plugin under review. A marketplace already
+# registered under that name is removed first, the published one included, since uninstall keeps it.
 #
 # Usage: ./context-graph/scripts/install-e2e/local-marketplace.sh <directory>
 
@@ -20,7 +21,9 @@ import json
 import sys
 
 marketplace = json.load(open(sys.argv[1]))
+marketplace["name"] = "memgraph"
 marketplace["plugins"][0]["source"] = "./plugin"
 json.dump(marketplace, open(sys.argv[2], "w"), indent=2)
 PY
+claude plugin marketplace remove memgraph >/dev/null 2>&1 || true
 claude plugin marketplace add "$market"

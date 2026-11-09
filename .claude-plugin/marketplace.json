@@ -3,7 +3,7 @@
   "owner": {
     "name": "Memgraph"
   },
-  "description": "Runtime plugins for Memgraph Context Graph.",
+  "description": "Replaced by the Memgraph marketplace, memgraph/marketplace. Kept so installs made with an older memgraph-context-graph keep updating.",
   "plugins": [
     {
       "name": "context-graph",
