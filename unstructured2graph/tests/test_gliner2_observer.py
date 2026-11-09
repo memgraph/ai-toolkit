@@ -2,20 +2,22 @@
 
 from typing import Any, cast
 
-from hygm import HygmModel, NodeType, RelationType
+from hygm import HygmModel, NodeType, RelationType, with_implied_profiles
 from unstructured2graph import Document, Segment
 from unstructured2graph.gliner2_observer import GLiNER2Observer
 
 from .gliner2_fakes import FakeEngine
 
-MODEL = HygmModel(
-    node_types=(
-        NodeType("User", "the user", "global"),
-        NodeType("Person", "someone else", "global"),
-        NodeType("Location", "a place", "global"),
-        NodeType("Quantity", "a count", "span"),
-    ),
-    relation_types=(RelationType("visited"), RelationType("owns_count", end_labels=("Quantity",))),
+MODEL = with_implied_profiles(
+    HygmModel(
+        node_types=(
+            NodeType("User", "the user", "global"),
+            NodeType("Person", "someone else", "global"),
+            NodeType("Location", "a place", "global"),
+            NodeType("Quantity", "a count", "span"),
+        ),
+        relation_types=(RelationType("visited"), RelationType("owns_count", end_labels=("Quantity",))),
+    )
 )
 
 

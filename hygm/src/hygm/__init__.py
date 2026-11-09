@@ -5,6 +5,16 @@ from .errors import ModelError
 from .format import model_schema, needs_version_2
 from .identifiers import CYPHER_IDENTIFIER_PATTERN, is_valid_identifier, require_valid_identifier
 from .labels import CATCH_ALL_LABELS, CORE_LABELS, VALUE_LABELS
+from .profiles import (
+    REGISTERED_PROFILES,
+    catch_all_labels,
+    conversation,
+    implied_profiles,
+    protected_labels,
+    validate_for_conversation,
+    value_labels,
+    with_implied_profiles,
+)
 from .strategies import (
     Change,
     Derivation,
@@ -36,6 +46,7 @@ __all__ = [
     "IDENTITIES",
     "PERSON_LABEL",
     "PROPERTY_TYPES",
+    "REGISTERED_PROFILES",
     "USER_LABEL",
     "VALUE_LABELS",
     "Change",
@@ -58,13 +69,20 @@ __all__ = [
     "ValidationIssue",
     "ValidationResult",
     "ValidationSeverity",
+    "catch_all_labels",
+    "conversation",
     "default_model",
+    "implied_profiles",
     "is_valid_identifier",
     "model_from_mapping",
     "model_schema",
     "model_to_mapping",
     "needs_version_2",
+    "protected_labels",
     "require_valid_identifier",
+    "validate_for_conversation",
     "validate_model",
+    "value_labels",
     "with_core",
+    "with_implied_profiles",
 ]

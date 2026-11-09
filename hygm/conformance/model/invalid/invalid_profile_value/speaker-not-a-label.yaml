@@ -1,0 +1,5 @@
+version: 2
+profiles:
+  conversation: {speaker: "the user"}
+node_types:
+  - {label: A, description: a}

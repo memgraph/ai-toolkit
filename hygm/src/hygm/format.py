@@ -9,17 +9,16 @@ typo is an error rather than silently dropped meaning.
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from importlib.resources import files
 from typing import Any
 
 from .errors import ModelError
+from .profiles import REGISTERED_PROFILES, SETTINGS, has_implied_profiles, implied_profiles
 from .types import HygmModel, NodeType, Property, RelationType
 from .validation import validate_model
 
 VERSIONS = (1, 2)
-
-#: Registered profiles (docs/contract.md, 5.2). Others must start with `x_`.
-REGISTERED_PROFILES = ("extraction",)
 
 _V1_TOP = {"version", "entity_types", "relation_types"}
 _V1_NODE = {"label", "description", "identity"}
@@ -29,9 +28,6 @@ _V2_TOP = {"version", "node_types", "relation_types", "profiles"}
 _V2_NODE = {"label", "description", "parents", "properties", "key", "iri", "profiles"}
 _V2_RELATION = {"label", "description", "start_labels", "end_labels", "properties", "iri", "profiles"}
 _V2_PROPERTY = {"name", "type", "description", "required", "values", "iri", "profiles"}
-
-#: Settings each registered profile defines at each level.
-_PROFILE_KEYS = {("extraction", "node"): {"identity"}}
 
 
 def model_from_mapping(raw: Any, source: str, *, validate: bool = True) -> HygmModel:
@@ -96,8 +92,8 @@ def model_schema(version: int) -> dict[str, Any]:
 def needs_version_2(model: HygmModel) -> bool:
     """Whether `model` uses anything format version 1 can't express."""
     return bool(
-        model.profiles
-        or any(t.parents or t.properties or t.key or t.iri or t.profiles for t in model.node_types)
+        not has_implied_profiles(model)
+        or any(t.parents or t.properties or t.key or t.iri for t in model.node_types)
         or any(r.properties or r.iri or r.profiles for r in model.relation_types)
     )
 
@@ -206,7 +202,13 @@ class _Reader:
         relation_types = [
             self.relation(item, f"relation_types[{index}]", _V1_RELATION) for index, item in enumerate(relations)
         ]
-        return HygmModel(node_types=tuple(node_types), relation_types=tuple(relation_types))
+        model = HygmModel(node_types=tuple(node_types), relation_types=tuple(relation_types))
+        top, nodes = implied_profiles(model)
+        return HygmModel(
+            node_types=tuple(replace(t, profiles=nodes[t.label]) for t in model.node_types),
+            relation_types=model.relation_types,
+            profiles=top,
+        )
 
     def v2(self, raw: dict) -> HygmModel:
         if "entity_types" not in raw:
@@ -299,7 +301,11 @@ class _Reader:
                     where,
                     f"names unknown profile {name!r}; registered: {REGISTERED_PROFILES}, or prefix a private one x_",
                 )
-            self.known(settings, _PROFILE_KEYS.get((name, level), set()), f"{where} {name}")
+            allowed = SETTINGS.get((name, level), {})
+            self.known(settings, set(allowed), f"{where} {name}")
+            for key, valid in allowed.items():
+                if key in settings and not valid(settings[key]):
+                    raise self.fail("invalid_profile_value", f"{where} {name}", f"{key} can't be {settings[key]!r}")
         return {name: dict(settings) for name, settings in value.items()}
 
     def build(self, kind: Callable[..., Any], where: str, *args: Any, **kwargs: Any) -> Any:

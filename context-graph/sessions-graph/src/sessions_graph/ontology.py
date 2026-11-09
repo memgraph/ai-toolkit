@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -36,6 +36,7 @@ from hygm import (
     model_from_mapping,
     model_to_mapping,
     needs_version_2,
+    validate_for_conversation,
     validate_model,
     with_core,
 )
@@ -119,9 +120,9 @@ def supply(
     pinned = model.node_labels() + model.relation_labels()
     if derive == "extend":
         model = _carry_learned(with_core(model), current)
-    result = validate_model(model)
-    if not result.success:
-        raise ValueError("; ".join(issue.message for issue in result.critical_issues))
+    problems = validate_model(model).critical_issues + validate_for_conversation(model).critical_issues
+    if problems:
+        raise ValueError("; ".join(issue.message for issue in problems))
     return adopt(
         db,
         OntologyVersion(
@@ -198,7 +199,7 @@ def _carry_learned(model: HygmModel, current: OntologyVersion) -> HygmModel:
         and r.label not in model.relation_labels()
         and set(r.start_labels) | set(r.end_labels) <= declared
     )
-    return HygmModel(node_types=nodes, relation_types=relations)
+    return replace(model, node_types=nodes, relation_types=relations)
 
 
 def next_version(db: Memgraph, user_id: str) -> int:

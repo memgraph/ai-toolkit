@@ -37,7 +37,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Protocol
 
-from ..labels import CATCH_ALL_LABELS, CORE_LABELS, VALUE_LABELS
+from ..profiles import catch_all_labels, protected_labels, validate_for_conversation, value_labels
 from ..types import IDENTITIES, HygmModel, NodeType, RelationType
 from ..validation import PERSON_LABEL, USER_LABEL, validate_model
 
@@ -324,9 +324,11 @@ class LlmRecommendationStrategy:
             unsupported = model.uses_hierarchy_or_properties() if model else ()
             if unsupported:
                 raise DerivationError([f"derivation does not support {', '.join(unsupported)} yet; the {name} uses it"])
-        protected = frozenset(CORE_LABELS) | frozenset(CATCH_ALL_LABELS) | frozenset(pinned)
+        core = protected_labels(current)
+        values = value_labels(current)
+        protected = frozenset(core) | frozenset(catch_all_labels(current)) | frozenset(pinned)
         pool = pool or HygmModel(node_types=())
-        rules = _RULES.format(values=", ".join(VALUE_LABELS))
+        rules = _RULES.format(values=", ".join(values))
         has_pool = bool(pool.node_types or pool.relation_types)
 
         proposals = [
@@ -359,8 +361,8 @@ class LlmRecommendationStrategy:
         merged, renames = _merge(current, consolidated.get("merges", []), protected, changelog)
         added_nodes, added_relations = _additions(merged, pool, consolidated, changelog)
 
-        candidate = HygmModel(
-            node_types=merged.node_types + added_nodes, relation_types=merged.relation_types + added_relations
+        candidate = replace(
+            merged, node_types=merged.node_types + added_nodes, relation_types=merged.relation_types + added_relations
         )
         # Only additions need open endpoints: prune picks theirs from what they
         # fire on. Opening N's relations too multiplies the candidate pairs the
@@ -370,7 +372,7 @@ class LlmRecommendationStrategy:
             candidate,
             relation_types=merged.relation_types
             + tuple(
-                replace(r, start_labels=(), end_labels=r.end_labels if _into_values(r.end_labels) else ())
+                replace(r, start_labels=(), end_labels=r.end_labels if _into_values(r.end_labels, values) else ())
                 for r in added_relations
             ),
         )
@@ -391,7 +393,8 @@ class LlmRecommendationStrategy:
         candidate, pool = _retire(candidate, pool, counts, protected, added, self.limits, changelog)
 
         problems = [issue.message for issue in validate_model(candidate).critical_issues]
-        problems += [f"core type {label!r} is missing" for label in CORE_LABELS if label not in candidate.node_labels()]
+        problems += [f"core type {label!r} is missing" for label in core if label not in candidate.node_labels()]
+        problems += [issue.message for issue in validate_for_conversation(candidate).critical_issues]
         if problems:
             raise DerivationError(problems)
         tails = {label for r in candidate.relation_types for label in candidate.endpoint_labels(r, "end")}
@@ -400,7 +403,7 @@ class LlmRecommendationStrategy:
             pool=pool,
             counts=counts,
             changelog=tuple(changelog),
-            unanchored_values=tuple(label for label in VALUE_LABELS if label not in tails),
+            unanchored_values=tuple(label for label in values if label not in tails),
             observation=observation,
             llm_calls=len(proposals) + 2,
         )
@@ -445,7 +448,7 @@ def _merge(
     for merge in merges:
         kind, source, target = merge.get("kind"), merge.get("from", ""), merge.get("into", "")
         if kind == "node":
-            veto = _node_merge_veto(nodes, source, target, protected)
+            veto = _node_merge_veto(nodes, source, target, protected, catch_all_labels(model))
             if not veto:
                 del nodes[source]
                 relations = {label: _rename_endpoint(r, source, target) for label, r in relations.items()}
@@ -465,13 +468,15 @@ def _merge(
             continue
         renames["nodes" if kind == "node" else "relations"][source] = target
         changelog.append(Change("merge", kind, source, target, merge.get("reason", "")))
-    return HygmModel(node_types=tuple(nodes.values()), relation_types=tuple(relations.values())), renames
+    return replace(model, node_types=tuple(nodes.values()), relation_types=tuple(relations.values())), renames
 
 
-def _node_merge_veto(nodes: Mapping[str, NodeType], source: str, target: str, protected: frozenset[str]) -> str:
+def _node_merge_veto(
+    nodes: Mapping[str, NodeType], source: str, target: str, protected: frozenset[str], catch_alls: Sequence[str]
+) -> str:
     if source in protected:
         return f"{source} is protected"
-    if target in CATCH_ALL_LABELS:
+    if target in catch_alls:
         return f"{target} is a catch-all; merging into it would hide {source} rather than name it"
     if source not in nodes or target not in nodes or source == target:
         return "unknown or identical types"
@@ -532,12 +537,13 @@ def _additions(
         if name in model.relation_labels() or name in relations or not _RELATION_NAME.match(name):
             continue
         tail = tuple(dict.fromkeys(item.get("intended_tail", [])))
-        relations[name] = RelationType(name, item.get("description", ""), end_labels=tail if _into_values(tail) else ())
+        into_values = _into_values(tail, value_labels(model))
+        relations[name] = RelationType(name, item.get("description", ""), end_labels=tail if into_values else ())
     return tuple(nodes.values()), tuple(relations.values())
 
 
-def _into_values(labels: Sequence[str]) -> bool:
-    return bool(labels) and set(labels) <= set(VALUE_LABELS)
+def _into_values(labels: Sequence[str], values: Sequence[str]) -> bool:
+    return bool(labels) and set(labels) <= set(values)
 
 
 def _apply_prune(
@@ -575,7 +581,8 @@ def _apply_prune(
             continue
         kept_relations.append(RelationType(name, proposed[name].description, head, tail))
         changelog.append(Change("add", "relation", name))
-    return HygmModel(
+    return replace(
+        merged,
         node_types=merged.node_types + tuple(kept_nodes),
         relation_types=merged.relation_types + tuple(kept_relations),
     )
@@ -655,7 +662,7 @@ def _retire(
         changelog.append(Change("retire", "relation", label, reason=f"share {share('relations', label):.4f}"))
 
     return (
-        HygmModel(node_types=tuple(nodes.values()), relation_types=tuple(relations.values())),
+        replace(model, node_types=tuple(nodes.values()), relation_types=tuple(relations.values())),
         HygmModel(
             node_types=tuple(pooled_nodes.values()),
             relation_types=tuple(r for label, r in pooled_relations.items() if label not in relations),

@@ -13,9 +13,9 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .types import HygmModel, NodeType, Property
 
-#: The node label for the person a conversation is with. A mention the
-#: extractor types `User` may be a third party, which the mention resolver
-#: re-types to `Person` (#358); that re-typed edge must still conform.
+#: The `conversation` profile's labels in a version-1 file: the person a
+#: conversation is with, and what a `User` mention that is a third party is
+#: re-typed to (#358).
 USER_LABEL = "User"
 PERSON_LABEL = "Person"
 
@@ -91,8 +91,8 @@ def validate_model(model: "HygmModel") -> ValidationResult:
     section 9): labels and property names are unique; `parents` and every
     relation endpoint name declared node types; the parent graph has no
     cycle; redeclared and doubly inherited properties agree; every key names
-    required properties and no type has two keys; and `User` never appears in
-    an endpoint without `Person` beside it (#358). Identifier syntax, property
+    required properties and no type has two keys. A profile's own rules are
+    its consumers' to check (`profiles.validate_for_conversation`). Identifier syntax, property
     types, `values` and `identity` are enforced when the types are constructed.
 
     Returns:
@@ -134,19 +134,6 @@ def validate_model(model: "HygmModel") -> ValidationResult:
                             actual=label,
                         )
                     )
-            resolved = labels or declared
-            if USER_LABEL in resolved and PERSON_LABEL not in resolved:
-                result.add_issue(
-                    _critical(
-                        "profile_rule",
-                        ValidationCategory.STRUCTURE,
-                        f"Relation type {relation.label!r}: {side} includes {USER_LABEL!r} but not {PERSON_LABEL!r}",
-                        recommendation=(
-                            f"A {USER_LABEL} mention that is not the user is re-typed to {PERSON_LABEL}, "
-                            "so every endpoint that accepts one must accept the other"
-                        ),
-                    )
-                )
     return result
 
 
