@@ -17,7 +17,7 @@ from typing import Any, ClassVar
 import pytest
 
 from memgraph_context_graph import graph_version
-from memgraph_context_graph.graph_version import HUB, GraphTooNewError, Rules
+from memgraph_context_graph.graph_version import HUB, GraphTooNewError, Rules, known_epoch
 from memgraph_context_graph.hooks import runner
 from memgraph_context_graph.tools import ToolResult
 from memgraph_toolbox.api.memgraph import Memgraph
@@ -54,7 +54,7 @@ def test_a_newer_session_node_refuses_every_connector():
 
 
 def test_readers_and_writers_are_refused_separately():
-    rules = Rules(min_reader={"sessions-graph": 2})
+    rules = Rules(min_reader={"sessions-graph": known_epoch("sessions-graph") + 1})
 
     assert rules.may_write("sessions-graph")
     assert not rules.may_read("sessions-graph")
