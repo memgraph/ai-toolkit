@@ -58,6 +58,11 @@ SETTINGS: dict[tuple[str, str], dict[str, Callable[[Any], bool]]] = {
 }
 
 
+def label_settings(profile: str, level: str) -> tuple[str, ...]:
+    """The settings of `profile` at `level` whose value names a node type; renames and merges carry them."""
+    return tuple(key for key, valid in SETTINGS.get((profile, level), {}).items() if valid is _label)
+
+
 def implied_profiles(model: HygmModel) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, dict[str, Any]]]]:
     """The profiles a version-1 file implies for `model`'s labels: (model-level, per node label)."""
     labels = model.node_labels()

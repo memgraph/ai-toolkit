@@ -181,6 +181,49 @@ codes; the schema ships as `hygm.mapping_schema()`.
 Other tools keep their own formats. A `Renderer` (`render(model, mapping)`)
 turns a model and mapping into one of them, losslessly, and refuses whatever
 its target can't express rather than dropping it.
+## Evolution
+
+A model changes by operations: pure functions from a model to a model, each
+with a JSON form (`{"op": "rename_node_type", "label": "Org", "to": "Company"}`,
+read and written by `operation_from_mapping` and `operation_to_mapping`).
+
+```python
+from hygm import AddProperty, Property, RenameNodeType, SetKey, apply, diff
+
+changed = apply(
+    model,
+    [
+        RenameNodeType("Org", "Company"),
+        AddProperty("node", "Company", Property("company_id", required=True)),
+        SetKey("Company", ("company_id",)),
+    ],
+)
+assert apply(model, diff(model, changed)) == changed
+```
+
+- **Types:** `AddNodeType`, `RemoveNodeType`, `RenameNodeType`, `MergeNodeTypes`
+  and the same four for relation types.
+- **Properties** (on a node or relation type): `AddProperty`, `RemoveProperty`,
+  `RenameProperty`, `SetProperty`.
+- **Settings:** `SetDescription`, `SetIri`, `SetParents`, `SetKey`,
+  `SetEndpoints`, `SetProfile` (one profile's settings at the top level, on a
+  type or on a property; a node type's `extraction` includes `identity`).
+- **Order:** `OrderNodeTypes`, `OrderRelationTypes`, `OrderProperties`.
+
+`apply` validates only the result, so a list may pass through invalid models:
+removing a type leaves what names it for a later operation to change. Renames
+and merges carry through to parents, endpoints, keys and label-valued profile
+settings. An operation that doesn't apply raises `ModelError` with
+`unknown_type`, `undeclared_property`, `duplicate_label`, `duplicate_property`
+or `invalid_operation`; reading an unknown `op` raises `unknown_operation`.
+
+`diff(a, b)` can't tell a rename from a removal and an addition, so it emits
+those; a caller that knows better records its own operations. Derivation does:
+`Derivation.operations` turns the current model into the candidate, and each
+changelog `Change` (the record sessions-graph stores) says what it did through
+`Change.operations()`. A retire is a removal (its definition goes to the pool,
+derivation's store), a restore an addition, and a veto names a merge that
+wasn't applied. Moving the data a change implies is each consumer's job.
 
 Named after, but separate from, `agents/sql2graph`'s HyGM, which is untouched.
 Its validation types are lifted here in the same shape, so a later
