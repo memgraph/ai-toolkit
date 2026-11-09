@@ -33,6 +33,7 @@ from utils import (  # noqa: E402
 )
 from core import SQLToMemgraphAgent  # noqa: E402
 from core.hygm import GraphModelingStrategy, ModelingMode  # noqa: E402
+from core.hygm_export import write_hygm_files  # noqa: E402
 from core.memgql_mapping import (  # noqa: E402
     graph_model_to_mapping,
     mapping_connector,
@@ -676,15 +677,30 @@ def edit_mapping_interactive(
     with open(output, "w", encoding="utf-8") as f:
         json.dump(mapping, f, indent=2)
     print(f"📄 Mapping saved to {output}")
+    _write_hygm_beside(graph_model, output)
     return mapping
+
+
+def _write_hygm_beside(graph_model: Any, output: Path) -> None:
+    """Write the graph model as hygm model, mapping and gaps files beside the mapping at `output`.
+
+    The hygm files are an extra output: a failure to write them is reported
+    and never stops the mapping flow.
+    """
+    try:
+        files = write_hygm_files(graph_model, output)
+    except Exception as e:  # pylint: disable=broad-except
+        logger.warning("Could not write the hygm model and mapping beside %s: %s", output, e)
+        return
+    print(f"📄 hygm model and mapping written to {files.model} and {files.mapping} (gaps: {files.gaps})")
 
 
 def _generate_fresh_mapping(
     agent: SQLToMemgraphAgent,
     source_db_config: Dict[str, Any],
     connector: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Analyse the source database and return a new mapping dict."""
+) -> tuple[Dict[str, Any], Any]:
+    """Analyse the source database and return a new mapping dict and the graph model it renders."""
     from database.factory import DatabaseAnalyzerFactory
     from core.hygm import HyGM
 
@@ -712,7 +728,7 @@ def _generate_fresh_mapping(
     )
     print(f"  {len(graph_model.nodes)} node types, {len(graph_model.edges)} relationship types")
 
-    return graph_model_to_mapping(graph_model, connector)
+    return graph_model_to_mapping(graph_model, connector), graph_model
 
 
 def generate_mapping(
@@ -739,11 +755,12 @@ def generate_mapping(
             mapping = graph_model_to_mapping(mapping_to_graph_model(mapping), connector)
             print("   Converted from the legacy sql2graph format; /save writes the MemGQL format.")
     else:
-        mapping = _generate_fresh_mapping(agent, source_db_config, connector)
+        mapping, graph_model = _generate_fresh_mapping(agent, source_db_config, connector)
         output.parent.mkdir(parents=True, exist_ok=True)
         with open(output, "w", encoding="utf-8") as f:
             json.dump(mapping, f, indent=2)
         print(f"\n📄 Mapping file written to {output}")
+        _write_hygm_beside(graph_model, output)
 
     print_mapping_summary(mapping)
 
@@ -752,11 +769,12 @@ def generate_mapping(
         if result is not None:
             break
         print("\n🔄 Resetting mapping — regenerating from source database...\n")
-        mapping = _generate_fresh_mapping(agent, source_db_config, connector)
+        mapping, graph_model = _generate_fresh_mapping(agent, source_db_config, connector)
         output.parent.mkdir(parents=True, exist_ok=True)
         with open(output, "w", encoding="utf-8") as f:
             json.dump(mapping, f, indent=2)
         print(f"\n📄 Mapping file written to {output}")
+        _write_hygm_beside(graph_model, output)
         print_mapping_summary(mapping)
 
 
