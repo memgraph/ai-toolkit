@@ -225,10 +225,19 @@ it:
 |---|---|
 | `entity_types` | `node_types` |
 | node `identity: X` | node `profiles: {extraction: {identity: X}}` |
+| a node type labelled `Duration`, `Quantity`, `Money`, `Date` or `TimeWindow` | also `profiles: {extraction: {value: true}}` |
+| a node type labelled `User`, `Person` or one of the value labels above | also `profiles: {learning: {protected: true}}` |
+| a node type labelled `Topic` or `Artifact` | also `profiles: {learning: {catch_all: true}}` |
+| a model declaring `User` | also top-level `profiles: {conversation: {speaker: User, other_person: Person}}` |
+
+The implied profiles are the rules that applied to every version-1 model
+before profiles existed, when they were hardcoded, so reading a version-1
+file means what it always meant.
 
 Version 1 has none of the other keys. A writer writes the lowest version
-that can express the model, so a model that only uses version 1 features is
-written exactly as it is today. sessions-graph keeps writing what it writes
+that can express the model: a model that only uses version 1 features, and
+whose profiles are exactly the ones version 1 implies, is written exactly as
+it is today. sessions-graph keeps writing what it writes
 now until it stores a model that needs version 2, and must raise its graph
 epoch before it does (section 11).
 
