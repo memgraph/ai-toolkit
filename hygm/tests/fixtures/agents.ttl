@@ -1,0 +1,33 @@
+# A small slice in the shape of FOAF and schema.org: agents, people and
+# organizations, with datatype properties, a key and a closed vocabulary.
+@prefix : <https://example.org/agents#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<https://example.org/agents> a owl:Ontology ; rdfs:label "Agents" .
+
+:Agent a owl:Class ; rdfs:comment "A thing that does stuff: a person, group or organization" ;
+    owl:hasKey ( :identifier ) .
+:Person a owl:Class ; rdfs:subClassOf :Agent ; rdfs:comment "A person, alive, dead or fictional" ;
+    rdfs:subClassOf [ a owl:Restriction ; owl:onProperty :name ; owl:minCardinality 1 ] .
+:Organization a owl:Class ; rdfs:subClassOf :Agent ; rdfs:comment "An organization such as a company or club" .
+:Corporation a owl:Class ; rdfs:subClassOf :Organization ; rdfs:label "a business" .
+:Place a owl:Class ; rdfs:comment "Entities with a somewhat fixed physical extension" .
+
+:identifier a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:comment "An identifier stable across systems" ; rdfs:domain :Agent ; rdfs:range xsd:string .
+:name a owl:DatatypeProperty , owl:FunctionalProperty ; rdfs:domain :Agent ; rdfs:range xsd:string .
+:email a owl:DatatypeProperty ; rdfs:domain :Agent ; rdfs:range xsd:anyURI .
+:birthDate a owl:DatatypeProperty , owl:FunctionalProperty ; rdfs:domain :Person ; rdfs:range xsd:date .
+:numberOfEmployees a owl:DatatypeProperty ; rdfs:domain :Organization ; rdfs:range xsd:nonNegativeInteger .
+:foundingDate a owl:DatatypeProperty ; rdfs:domain :Organization ; rdfs:range xsd:date .
+:gender a owl:DatatypeProperty ; rdfs:domain :Person ;
+    rdfs:range [ a rdfs:Datatype ; owl:oneOf ( "female" "male" "nonbinary" ) ] .
+:latitude a owl:DatatypeProperty ; rdfs:domain :Place ; rdfs:range xsd:double .
+:longitude a owl:DatatypeProperty ; rdfs:domain :Place ; rdfs:range xsd:double .
+
+:knows a owl:ObjectProperty ; rdfs:domain :Person ; rdfs:range :Person .
+:member a owl:ObjectProperty ; rdfs:domain :Organization ; rdfs:range :Agent .
+:location a owl:ObjectProperty ;
+    rdfs:domain [ a owl:Class ; owl:unionOf ( :Person :Organization ) ] ; rdfs:range :Place .
