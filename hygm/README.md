@@ -62,6 +62,11 @@ supplied = with_core(my_model)  # a supplied model with any missing core type ad
 `validate_model` is the hard gate every model passes before anything extracts
 against it. `ManualStrategy` runs it on load.
 
+hygm is becoming the general component for graph models shared across
+projects (sql2graph and the rest of the Memgraph ecosystem), with
+language-neutral file formats for the model and its mappings; see
+[docs/contract.md](docs/contract.md) (draft, tracked in #693).
+
 ## The model file
 
 A model file is YAML or JSON in one of two format versions; both are read.
@@ -98,6 +103,6 @@ unstructured2graph refuses `parents`, derivation refuses `parents`,
 `properties` and `key`, and sessions-graph doesn't store a model that needs
 version 2 until older clients can be turned away (#698).
 
-Named after, but separate from, `agents/sql2graph`'s HyGM, which is untouched.
-Its validation types are lifted here in the same shape, so a later
-consolidation is a type swap.
+`agents/sql2graph` has its own HyGM today. It will move onto this package and
+drop its own (#701, #702). The validation types here are lifted from it in the
+same shape, so that move is a type swap.
