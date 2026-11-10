@@ -1,7 +1,9 @@
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
-from hygm import HygmModel, ManualStrategy, NodeType, RelationType
+from hygm import HygmModel, ManualStrategy, NodeType, RelationType, validate_for_conversation, with_implied_profiles
 
 SCRIPT_DIR = Path(__file__).parent
 DEFAULT_ONTOLOGY_PATH = SCRIPT_DIR / "default_ontology.yaml"
@@ -35,6 +37,20 @@ class Ontology:
 
     entity_types: tuple[EntityType, ...]
     relation_types: tuple[RelationType, ...] = ()
+    #: The model's own profiles (its `conversation` roles); per-type ones ride on each type.
+    profiles: Mapping[str, Mapping[str, Any]] = field(default_factory=dict, hash=False)
+    #: False (the default) when a vocabulary is built in code: one declaring no
+    #: profiles at all then means what a version-1 file of the same types does
+    #: (its value types, its conversation roles), as it did before profiles.
+    #: from_model() passes True, so a model's profiles are taken exactly.
+    as_given: bool = field(default=False, compare=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.as_given or self.profiles or any(t.profiles for t in self.entity_types):
+            return
+        implied = with_implied_profiles(self.model)
+        object.__setattr__(self, "entity_types", implied.node_types)
+        object.__setattr__(self, "profiles", implied.profiles)
 
     @classmethod
     def from_model(cls, model: HygmModel) -> "Ontology":
@@ -47,18 +63,26 @@ class Ontology:
             ValueError: if `model` declares `parents`. Realizing a hierarchy
                 means writing every ancestor label on each extracted node,
                 which extraction doesn't do yet; refusing beats silently
-                dropping the hierarchy (docs/contract.md, section 8).
+                dropping the hierarchy (docs/contract.md, section 8). Also
+                if `model` breaks its `conversation` profile's rule, since
+                the mention resolver re-types a speaker mention that is
+                someone else.
         """
         with_parents = [t.label for t in model.node_types if t.parents]
         if with_parents:
             raise ValueError(
                 f"unstructured2graph does not support type hierarchies yet: {with_parents} declare parents"
             )
-        return cls(entity_types=model.node_types, relation_types=model.relation_types)
+        problems = validate_for_conversation(model).critical_issues
+        if problems:
+            raise ValueError("; ".join(issue.message for issue in problems))
+        return cls(
+            entity_types=model.node_types, relation_types=model.relation_types, profiles=model.profiles, as_given=True
+        )
 
     @property
     def model(self) -> HygmModel:
-        return HygmModel(node_types=self.entity_types, relation_types=self.relation_types)
+        return HygmModel(node_types=self.entity_types, relation_types=self.relation_types, profiles=self.profiles)
 
     def entity_types_guidance(self) -> str:
         bullets = "\n".join(f"- {t.label}: {t.description}" for t in self.entity_types)

@@ -33,7 +33,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Protocol
 
-from hygm import CATCH_ALL_LABELS, DerivationError, LlmRecommendationStrategy, require_valid_identifier
+from hygm import DerivationError, LlmRecommendationStrategy, catch_all_labels, require_valid_identifier
 
 from .models import _utc_now
 from .ontology import OntologyVersion, adopt, adopted, next_version, reject
@@ -209,7 +209,7 @@ async def run(
 
         gate_docs = [documents[sid] for sid in gate_on]
         clock = time.monotonic()
-        base_measured = observer.measure(current.model, gate_docs, CATCH_ALL_LABELS)
+        base_measured = observer.measure(current.model, gate_docs, catch_all_labels(current.model))
         report.base = GateScore.of(base_measured)
         report.base_seconds = round(time.monotonic() - clock, 1)
 
@@ -238,7 +238,7 @@ async def run(
                 continue
             candidate.derive_seconds = round(time.monotonic() - clock, 1)
             clock = time.monotonic()
-            measured = observer.measure(derivation.model, gate_docs, CATCH_ALL_LABELS)
+            measured = observer.measure(derivation.model, gate_docs, catch_all_labels(derivation.model))
             candidate.gate_seconds = round(time.monotonic() - clock, 1)
             candidate.score = GateScore.of(measured)
             candidate.passed = candidate.score.passes_against(report.base)

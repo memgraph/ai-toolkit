@@ -2,11 +2,12 @@
 # until derivation has learned from their sessions, and version 0 of every
 # learned model. Load it with hygm.default_model().
 #
-# - The fixed core (hygm.CORE_LABELS) is User, Person and the value types. It
-#   is never merged or retired and sits outside the active-type cap (#434).
+# - The fixed core (learning: protected) is User, Person and the value types
+#   (extraction: value). It is never merged or retired and sits outside the
+#   active-type cap (#434).
 # - Organization, Location and Event are the generic layer: learned runs may
 #   merge or retire them like any domain type.
-# - Topic and Artifact are the catch-alls (hygm.CATCH_ALL_LABELS). The gate
+# - Topic and Artifact are the catch-alls (learning: catch_all). The gate
 #   (#435) measures how much lands in them, so the flag never moves.
 # - Artifact is global, so a tool or library named in many sessions is one
 #   node; the backend keeps an all-lowercase mention of a global type per
@@ -16,19 +17,25 @@
 #   for want of a relation (#372).
 # - Relation descriptions are documentation: gliner2's joint compiler drops
 #   them, and the name is the only steering surface (#360).
-entity_types:
-  - {label: User, identity: global, description: "the person speaking in the first person -- I, me, my, myself"}
-  - {label: Person, identity: global, description: "another named individual: a family member, friend, colleague, doctor, teacher"}
-  - {label: Duration, identity: span, description: "a length of time: 25:50, 45 minutes, three weeks, 10-12 hours"}
-  - {label: Quantity, identity: span, description: "a count or amount of things: 3, four, 38 subjects, 5 pairs, 220 pages"}
-  - {label: Money, identity: span, description: "an amount of money: $185, $2,500, $400,000"}
-  - {label: Date, identity: span, description: "a calendar date or day: February 14th, Friday, last Thursday, May 6"}
-  - {label: TimeWindow, identity: span, description: "a span of clock time: 8 am - 4 pm, 2 AM, the day shift"}
-  - {label: Organization, identity: global, description: "a company, employer, school, university, team, club or institution"}
-  - {label: Location, identity: global, description: "a place: a city, country, neighbourhood, venue or building"}
-  - {label: Event, identity: chunk, description: "a dated happening: a trip, appointment, meeting, release, race, interview or move"}
-  - {label: Topic, identity: chunk, description: "a subject, idea or skill: a field of work or study, a language, a technique, a concept"}
-  - {label: Artifact, identity: global, description: "a thing made or used: a tool, library, file, document, product or device"}
+#
+# Every profile is spelled out, and they are exactly the ones a version-1 file
+# implies, so this model is still written as version 1 (hygm/docs/contract.md, 4.9).
+version: 2
+profiles:
+  conversation: {speaker: User, other_person: Person}
+node_types:
+  - {label: User, description: "the person speaking in the first person -- I, me, my, myself", profiles: {extraction: {identity: global}, learning: {protected: true}}}
+  - {label: Person, description: "another named individual: a family member, friend, colleague, doctor, teacher", profiles: {extraction: {identity: global}, learning: {protected: true}}}
+  - {label: Duration, description: "a length of time: 25:50, 45 minutes, three weeks, 10-12 hours", profiles: {extraction: {identity: span, value: true}, learning: {protected: true}}}
+  - {label: Quantity, description: "a count or amount of things: 3, four, 38 subjects, 5 pairs, 220 pages", profiles: {extraction: {identity: span, value: true}, learning: {protected: true}}}
+  - {label: Money, description: "an amount of money: $185, $2,500, $400,000", profiles: {extraction: {identity: span, value: true}, learning: {protected: true}}}
+  - {label: Date, description: "a calendar date or day: February 14th, Friday, last Thursday, May 6", profiles: {extraction: {identity: span, value: true}, learning: {protected: true}}}
+  - {label: TimeWindow, description: "a span of clock time: 8 am - 4 pm, 2 AM, the day shift", profiles: {extraction: {identity: span, value: true}, learning: {protected: true}}}
+  - {label: Organization, description: "a company, employer, school, university, team, club or institution", profiles: {extraction: {identity: global}}}
+  - {label: Location, description: "a place: a city, country, neighbourhood, venue or building", profiles: {extraction: {identity: global}}}
+  - {label: Event, description: "a dated happening: a trip, appointment, meeting, release, race, interview or move"}
+  - {label: Topic, description: "a subject, idea or skill: a field of work or study, a language, a technique, a concept", profiles: {learning: {catch_all: true}}}
+  - {label: Artifact, description: "a thing made or used: a tool, library, file, document, product or device", profiles: {extraction: {identity: global}, learning: {catch_all: true}}}
 relation_types:
   - {label: works_for, description: "is employed by or works at", start_labels: [User, Person], end_labels: [Organization]}
   - {label: lives_in, description: "resides in or has moved to", start_labels: [User, Person], end_labels: [Location]}

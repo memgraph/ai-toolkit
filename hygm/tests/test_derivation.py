@@ -253,15 +253,17 @@ def test_value_types_nothing_points_into_are_reported():
     assert derivation.unanchored_values == ("Money",)
 
 
-def test_a_candidate_without_the_core_is_refused():
+def test_the_models_own_profiles_decide_what_is_protected():
+    """Not a fixed list: a type the learning profile protects is never merged away, whatever its label."""
     base = default_model()
-    no_duration = HygmModel(
-        node_types=tuple(t for t in base.node_types if t.label != "Duration"),
-        relation_types=tuple(r for r in base.relation_types if "Duration" not in r.end_labels),
-    )
+    library = NodeType("Library", "a code library", profiles={"learning": {"protected": True}})
+    current = replace(base, node_types=(*base.node_types, library))
+    merge = {"kind": "node", "from": "Library", "into": "Artifact", "reason": ""}
 
-    with pytest.raises(DerivationError, match="core type 'Duration' is missing"):
-        _derive(ScriptedLlm(consolidate={}, prune={}), FixedObserver(), current=no_duration)
+    derivation = _derive(ScriptedLlm(consolidate={"merges": [merge]}, prune={}), FixedObserver(), current=current)
+
+    assert "Library" in derivation.model.node_labels()
+    assert derivation.changelog[0].op == "veto" and "protected" in derivation.changelog[0].reason
 
 
 def test_nothing_to_derive_from_is_refused():

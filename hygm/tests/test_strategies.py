@@ -26,12 +26,14 @@ def test_manual_strategy_parses_identity_and_endpoints(tmp_path):
         """,
     )
     model = ManualStrategy().create_model(path)
+    protected = {"learning": {"protected": True}}
     assert model.node_types == (
-        NodeType("User", "the user", "global"),
-        NodeType("Person", "someone else", "global"),
-        NodeType("Duration", "a length of time", "span"),
-        NodeType("Topic", "a subject", "chunk"),
+        NodeType("User", "the user", "global", profiles=protected),
+        NodeType("Person", "someone else", "global", profiles=protected),
+        NodeType("Duration", "a length of time", "span", profiles={"extraction": {"value": True}, **protected}),
+        NodeType("Topic", "a subject", "chunk", profiles={"learning": {"catch_all": True}}),
     )
+    assert model.profiles == {"conversation": {"speaker": "User", "other_person": "Person"}}
     assert model.relation_types == (
         RelationType("personal_best", "best time", ("User", "Person"), ("Duration",)),
         RelationType("mentions", "anything"),

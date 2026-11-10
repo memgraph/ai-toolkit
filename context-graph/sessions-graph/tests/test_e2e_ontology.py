@@ -117,6 +117,7 @@ def test_sync_adopts_a_file_only_when_its_content_or_mode_changes(graph, schema)
 def test_extend_carries_learned_types_that_do_not_clash(graph, memgraph, schema):
     """Types derivation learned survive a newly supplied schema, unless the schema declares the same label."""
     learned = HygmModel(
+        profiles=default_model().profiles,
         node_types=(
             *default_model().node_types,
             NodeType("Library", "learned: a dependency", "global"),

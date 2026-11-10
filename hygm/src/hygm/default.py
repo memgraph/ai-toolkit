@@ -1,5 +1,6 @@
 """The generic default model learned models start from (#436)."""
 
+from dataclasses import replace
 from importlib.resources import as_file, files
 
 from .labels import CORE_LABELS
@@ -19,5 +20,7 @@ def with_core(model: HygmModel) -> HygmModel:
     A core type `model` already declares is kept as `model` declares it.
     """
     declared = set(model.node_labels())
-    missing = tuple(t for t in default_model().node_types if t.label in CORE_LABELS and t.label not in declared)
-    return HygmModel(node_types=model.node_types + missing, relation_types=model.relation_types)
+    default = default_model()
+    missing = tuple(t for t in default.node_types if t.label in CORE_LABELS and t.label not in declared)
+    # The core brings the default's conversation roles with it, unless `model` names its own.
+    return replace(model, node_types=model.node_types + missing, profiles={**default.profiles, **model.profiles})
