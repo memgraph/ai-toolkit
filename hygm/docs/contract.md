@@ -355,8 +355,8 @@ New property keys, all optional:
 
 - `required: true` is shorthand for `min_count: 1`; a file may use either,
   and they must agree (`count_conflict`). `min_count` ≤ `max_count`.
-- A multi-valued property holds a list of values of its type; `values`,
-  bounds and `default` apply to each element.
+- A multi-valued property holds a list of values of its type. Its `default`
+  and `value` are lists, and `values` and the bounds apply to each element.
 - `default`, `value`, `minimum` and `maximum` must be valid values of the
   type, inside `values` and the bounds (`invalid_value`). JSON has no date,
   so `date` and `datetime` values are ISO 8601 strings.
@@ -375,7 +375,7 @@ meaning. A subtype redeclares the property, and the redeclaration may only
 | `type` | not change |
 | `values` | name a subset of the inherited values |
 | `min_count` / `required` | raise it |
-| `max_count` | lower it, to `0` to forbid the property |
+| `max_count` | lower it, keeping a multi-valued property multi-valued (a subtype's instances carry the parent's label, so a parent's list stays a list), or to `0` to forbid the property |
 | `minimum` / `maximum` | raise / lower it |
 | `value` | set it, to a value the inherited facets allow |
 | `default` | set or change it |
@@ -421,8 +421,8 @@ A node type narrows a relation for its own instances with
 ```
 
 A restriction names a relation the type may start, and may only narrow its
-end labels (to descendants of the inherited ones) and its counts. Anything
-else is `relation_conflict`.
+end labels (to descendants of the inherited ones; never to none) and its
+counts, which are integers. Anything else is `relation_conflict`.
 
 ### 4.17 Individuals
 
@@ -450,8 +450,10 @@ individuals:
 - `properties` must be declared on the type, directly or inherited
   (`undeclared_property`), and their values must satisfy every facet,
   including counts, `values`, bounds and `value` (`invalid_value`). A
-  required property must be present (`missing_value`), and a property
-  whose `max_count` is more than 1 takes a list.
+  required property must be present, or filled by the type's `value` or
+  `default` (`missing_value`), and a property whose `max_count` is more than
+  1 takes a list. Counts include the relationships an inverse or symmetric
+  relation implies.
 - `relations` maps a relation type to target individual ids
   (`unknown_individual`). The relation must admit both ends and its counts
   must hold (`endpoint_not_admitted`, `count_conflict`). Inverse and
@@ -773,7 +775,7 @@ fixture holds exactly one problem.
 | `unknown_profile` | 2 | A profile name that is neither registered nor `x_`-prefixed. |
 | `invalid_profile_value` | 2 | A consumed profile's setting has the wrong type or value. |
 | `profile_rule` | 2 | A consumed profile's own rule fails (such as 5.4's). |
-| `unknown_type` | 3 | A binding names a type the model doesn't declare. |
+| `unknown_type` | 1, 3 | A reference names a type the model doesn't declare: `disjoint_with`, `inverse_of`, a relation restriction, an individual's type or relation (1), or a binding (3). |
 | `unknown_source` | 3 | A binding names a source the mapping doesn't declare. |
 | `duplicate_source` | 3 | Two sources with one name. |
 | `binding_kind` | 3 | A binding doesn't set exactly one of `table`, `graph`, `join`, or sets one its source's kind doesn't allow. |
