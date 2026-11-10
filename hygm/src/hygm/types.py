@@ -1,5 +1,6 @@
 """The structural graph model every strategy produces (docs/contract.md, section 4)."""
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
@@ -25,6 +26,13 @@ PROPERTY_TYPES: tuple[PropertyType, ...] = (
 #: type, kept out of the core (docs/contract.md, section 5).
 Profiles = Mapping[str, Mapping[str, Any]]
 
+#: Display names and translations by BCP 47 language tag (docs/contract.md, 4.13).
+Names = Mapping[str, str]
+
+# BCP 47's shape only (a primary language subtag, then subtags): hygm doesn't
+# carry the IANA registry, so `xx-Fake` passes and `en_US` or `english!` don't.
+_LANGUAGE_TAG = re.compile(r"^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$")
+
 
 def _identifier(value: str, role: str) -> None:
     if not is_valid_identifier(value):
@@ -40,6 +48,17 @@ def _tuple_of_labels(owner: object, attribute: str, what: str) -> None:
     if isinstance(value, str):
         raise TypeError(f"{what}: {attribute} must be a tuple of labels, not a string")
     object.__setattr__(owner, attribute, tuple(value))
+
+
+def _names_and_synonyms(owner: Any, what: str) -> None:
+    _tuple_of_labels(owner, "synonyms", what)
+    names = dict(owner.names)
+    for tag, name in names.items():
+        if not isinstance(tag, str) or not _LANGUAGE_TAG.match(tag) or not isinstance(name, str):
+            raise ModelError(
+                "invalid_format", f"{what}: names must map BCP 47 language tags to strings, got {tag!r}: {name!r}"
+            )
+    object.__setattr__(owner, "names", names)
 
 
 #: The naming styles `Conventions` may ask for (docs/contract.md, 4.11).
@@ -123,6 +142,8 @@ class Property:
         values: The allowed values; only on a string property.
         iri: The property's IRI when it came from, or must round-trip to, RDF/OWL.
         profiles: Profile settings for this property.
+        synonyms: Other names for the same property (4.13).
+        names: Display names and translations by language tag (4.13).
     """
 
     name: str
@@ -132,9 +153,12 @@ class Property:
     values: tuple[str, ...] | None = None
     iri: str | None = None
     profiles: Profiles = field(default_factory=dict, hash=False)
+    synonyms: tuple[str, ...] = ()
+    names: Names = field(default_factory=dict, hash=False)
 
     def __post_init__(self) -> None:
         _identifier(self.name, "property name")
+        _names_and_synonyms(self, f"Property {self.name!r}")
         if self.type not in PROPERTY_TYPES:
             raise ModelError(
                 "unknown_property_type",
@@ -162,6 +186,12 @@ class NodeType:
         key: Property names whose values identify one entity across sources.
         iri: The type's IRI when it came from, or must round-trip to, RDF/OWL.
         profiles: Profile settings for this type, each owned by its consumer.
+        abstract: The type has no direct instances; each belongs to a descendant (4.13).
+        disjoint_with: Types no instance of this one also belongs to, and so
+            none of their descendants either. Declaring it on one side is
+            enough; HygmModel.disjoint() answers it both ways.
+        synonyms: Other names for the same concept (4.13).
+        names: Display names and translations by language tag (4.13).
     """
 
     label: str
@@ -171,12 +201,18 @@ class NodeType:
     key: tuple[str, ...] = ()
     iri: str | None = None
     profiles: Profiles = field(default_factory=dict, hash=False)
+    abstract: bool = False
+    disjoint_with: tuple[str, ...] = ()
+    synonyms: tuple[str, ...] = ()
+    names: Names = field(default_factory=dict, hash=False)
 
     def __post_init__(self) -> None:
         _identifier(self.label, "node label")
         what = f"Node type {self.label!r}"
         _tuple_of_labels(self, "parents", what)
         _tuple_of_labels(self, "key", what)
+        _tuple_of_labels(self, "disjoint_with", what)
+        _names_and_synonyms(self, what)
         object.__setattr__(self, "properties", tuple(self.properties))
 
 
@@ -194,6 +230,8 @@ class RelationType:
         properties: Properties a relationship of this type carries.
         iri: The type's IRI when it came from, or must round-trip to, RDF/OWL.
         profiles: Profile settings for this type.
+        synonyms: Other names for the same relationship (4.13).
+        names: Display names and translations by language tag (4.13).
     """
 
     label: str
@@ -203,12 +241,15 @@ class RelationType:
     properties: tuple[Property, ...] = ()
     iri: str | None = None
     profiles: Profiles = field(default_factory=dict, hash=False)
+    synonyms: tuple[str, ...] = ()
+    names: Names = field(default_factory=dict, hash=False)
 
     def __post_init__(self) -> None:
         _identifier(self.label, "relation type")
         what = f"Relation type {self.label!r}"
         _tuple_of_labels(self, "start_labels", what)
         _tuple_of_labels(self, "end_labels", what)
+        _names_and_synonyms(self, what)
         object.__setattr__(self, "properties", tuple(self.properties))
 
     @property
@@ -287,6 +328,21 @@ class HygmModel:
                     frontier.append(parent)
         return tuple(found)
 
+    def disjoint(self, a: str, b: str) -> bool:
+        """Whether no instance is both an `a` and a `b` (4.13).
+
+        Symmetric, and inherited: if `RedWine` and `WhiteWine` are disjoint,
+        so is every descendant of one with every descendant of the other.
+        """
+        a_side = (a, *self.ancestors(a))
+        b_side = (b, *self.ancestors(b))
+        for x in a_side:
+            for y in b_side:
+                x_node, y_node = self.node_type(x), self.node_type(y)
+                if (x_node and y in x_node.disjoint_with) or (y_node and x in y_node.disjoint_with):
+                    return True
+        return False
+
     def descendants(self, label: str) -> tuple[str, ...]:
         """Every subtype of `label`, in declaration order."""
         return tuple(t.label for t in self.node_types if t.label != label and label in self.ancestors(t.label))
@@ -347,5 +403,14 @@ class HygmModel:
             "key": any(t.key for t in self.node_types),
             "ontology": self.ontology is not None,
             "imports": bool(self.imports),
+            "abstract": any(t.abstract for t in self.node_types),
+            "disjoint_with": any(t.disjoint_with for t in self.node_types),
+            "synonyms": any(t.synonyms for t in self._named()),
+            "names": any(t.names for t in self._named()),
         }
         return tuple(name for name, present in used.items() if present)
+
+    def _named(self) -> tuple[NodeType | RelationType | Property, ...]:
+        """Everything that may carry `synonyms` and `names`: types and their properties."""
+        types = (*self.node_types, *self.relation_types)
+        return (*types, *(p for t in types for p in t.properties))

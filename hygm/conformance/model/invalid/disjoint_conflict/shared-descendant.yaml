@@ -1,0 +1,5 @@
+version: 2
+node_types:
+  - {label: RedWine, description: red, disjoint_with: [WhiteWine]}
+  - {label: WhiteWine, description: white}
+  - {label: Blush, description: both at once, parents: [RedWine, WhiteWine]}

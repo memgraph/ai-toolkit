@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/memgraph/ai-toolkit/hygm/schema/model.v2.schema.json",
   "title": "hygm model, format version 2",
-  "description": "The structure of a version-2 hygm model file. Rules a JSON Schema can't express (unique labels and properties, declared parents and endpoints, no parent cycle, property agreement, keys, profile rules, resolving imports) are defined in hygm/docs/contract.md.",
+  "description": "The structure of a version-2 hygm model file. Rules a JSON Schema can't express (unique labels and properties, declared parents and endpoints, no parent cycle, property agreement, keys, disjointness, synonyms, profile rules, resolving imports) are defined in hygm/docs/contract.md.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -80,6 +80,18 @@
         },
         "profiles": {
           "$ref": "#/$defs/node_profiles"
+        },
+        "abstract": {
+          "type": "boolean"
+        },
+        "disjoint_with": {
+          "$ref": "#/$defs/labels"
+        },
+        "synonyms": {
+          "$ref": "#/$defs/strings"
+        },
+        "names": {
+          "$ref": "#/$defs/names"
         }
       }
     },
@@ -114,6 +126,12 @@
         },
         "profiles": {
           "$ref": "#/$defs/relation_profiles"
+        },
+        "synonyms": {
+          "$ref": "#/$defs/strings"
+        },
+        "names": {
+          "$ref": "#/$defs/names"
         }
       }
     },
@@ -157,6 +175,12 @@
         },
         "profiles": {
           "$ref": "#/$defs/property_profiles"
+        },
+        "synonyms": {
+          "$ref": "#/$defs/strings"
+        },
+        "names": {
+          "$ref": "#/$defs/names"
         }
       },
       "if": {
@@ -440,6 +464,21 @@
           "type": "string",
           "minLength": 1
         }
+      }
+    },
+    "strings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "names": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$"
+      },
+      "additionalProperties": {
+        "type": "string"
       }
     }
   }

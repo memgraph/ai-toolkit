@@ -1,0 +1,2 @@
+entity_types:
+  - {label: Wine, description: a wine, abstract: true}

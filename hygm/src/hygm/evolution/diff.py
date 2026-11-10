@@ -43,8 +43,10 @@ def diff(a: HygmModel, b: HygmModel) -> tuple[Operation, ...]:
 
     Raises:
         ModelError: `unknown_operation` when `a` and `b` differ in a key no
-            operation sets yet (the `ontology` block, `imports`), rather than
-            leave the change out.
+            operation sets yet (the `ontology` block, `imports`, a node type's
+            `abstract`, `disjoint_with`, a type's `synonyms` or `names`),
+            rather than leave the change out. A type added whole, or a
+            property set whole, carries every key.
     """
     _require_expressible(a, b)
     ops: list[Operation] = []
@@ -67,15 +69,27 @@ def diff(a: HygmModel, b: HygmModel) -> tuple[Operation, ...]:
     return tuple(ops)
 
 
+# TODO(#731): operations that set these keys, so diff and apply cover the whole model (contract, section 11).
+_MODEL_KEYS_WITHOUT_OPERATIONS = ("ontology", "imports")
+_NODE_KEYS_WITHOUT_OPERATIONS = ("abstract", "disjoint_with", "synonyms", "names")
+_RELATION_KEYS_WITHOUT_OPERATIONS = ("synonyms", "names")
+
+
 def _unexpressible(key: str, where: str = "") -> ModelError:
     at = f" on {where}" if where else ""
     return ModelError("unknown_operation", f"diff can't express a change to {key!r}{at}: no operation sets it yet")
 
 
 def _require_expressible(a: HygmModel, b: HygmModel) -> None:
-    for key in ("ontology", "imports"):
+    for key in _MODEL_KEYS_WITHOUT_OPERATIONS:
         if getattr(a, key) != getattr(b, key):
             raise _unexpressible(key)
+
+
+def _require_expressible_type(a: NodeType | RelationType, b: NodeType | RelationType, keys: tuple[str, ...]) -> None:
+    for key in keys:
+        if getattr(a, key) != getattr(b, key):
+            raise _unexpressible(key, repr(b.label))
 
 
 def _kept_order(before: Sequence[str], after: Sequence[str]) -> tuple[str, ...]:
@@ -84,6 +98,7 @@ def _kept_order(before: Sequence[str], after: Sequence[str]) -> tuple[str, ...]:
 
 
 def _node_changes(a: NodeType, b: NodeType) -> list[Operation]:
+    _require_expressible_type(a, b, _NODE_KEYS_WITHOUT_OPERATIONS)
     ops: list[Operation] = []
     if a.description != b.description:
         ops.append(SetDescription("node", b.label, b.description))
@@ -99,6 +114,7 @@ def _node_changes(a: NodeType, b: NodeType) -> list[Operation]:
 
 
 def _relation_changes(a: RelationType, b: RelationType) -> list[Operation]:
+    _require_expressible_type(a, b, _RELATION_KEYS_WITHOUT_OPERATIONS)
     ops: list[Operation] = []
     if a.description != b.description:
         ops.append(SetDescription("relation", b.label, b.description))

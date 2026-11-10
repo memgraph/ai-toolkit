@@ -1,0 +1,19 @@
+version: 2
+node_types:
+  - label: RedWine
+    description: A red wine
+    synonyms: [red, vin rouge]
+    names: {en: Red wine, fr: Vin rouge, pt-BR: Vinho tinto}
+    properties:
+      - {name: grape, synonyms: [varietal, cepage], names: {en: Grape, fr: Cépage}}
+      - {name: colour, synonyms: [color]}
+  - label: Winery
+    description: Where wine is made
+    synonyms: [chateau, domaine]
+relation_types:
+  - label: made_by
+    description: The winery that made the wine
+    start_labels: [RedWine]
+    end_labels: [Winery]
+    synonyms: [produced_by, maker]
+    names: {en: made by}

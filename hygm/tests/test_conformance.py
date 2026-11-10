@@ -92,6 +92,9 @@ def test_every_code_in_the_contract_has_a_fixture():
         "invalid_profile_value",
         "import_cycle",
         "unknown_model",
+        "unknown_type",
+        "disjoint_conflict",
+        "duplicate_name",
     }
 
     assert {p.parent.name for p in INVALID} == model_codes

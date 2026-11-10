@@ -85,7 +85,12 @@ def validate_model(model: "HygmModel") -> ValidationResult:
     section 9): labels and property names are unique; `parents` and every
     relation endpoint name declared node types; the parent graph has no
     cycle; redeclared and doubly inherited properties agree; every key names
-    required properties and no type has two keys. A profile's own rules are
+    required properties and no type has two keys; `disjoint_with` names
+    declared node types (`unknown_type`), no type is disjoint with itself or
+    an ancestor, and no two disjoint types share a descendant
+    (`disjoint_conflict`); no synonym equals, ignoring case, another type's
+    label or synonym, nor another property's name or synonym on the same
+    type (`duplicate_name`). A profile's own rules are
     its owner's to check (docs/contract.md, 5.6). Identifier syntax, property
     types and `values` are enforced when the types are constructed, profile
     settings when a model file is read.
@@ -113,8 +118,11 @@ def validate_model(model: "HygmModel") -> ValidationResult:
             )
 
     _check_parents(model, result)
-    if not any(issue.code in {"unknown_parent", "parent_cycle"} for issue in result.issues):
+    _check_disjoint_declared(model, result)
+    if not any(issue.code in {"unknown_parent", "parent_cycle", "unknown_type"} for issue in result.issues):
         _check_inheritance(model, result)
+        _check_disjointness(model, result)
+    _check_synonyms(model, result)
 
     for relation in model.relation_types:
         for side, labels in (("start_labels", relation.start_labels), ("end_labels", relation.end_labels)):
@@ -154,6 +162,80 @@ def _check_parents(model: "HygmModel", result: ValidationResult) -> None:
                 f"Node types {in_cycle} are their own ancestors: parents must not form a cycle",
             )
         )
+
+
+def _check_disjoint_declared(model: "HygmModel", result: ValidationResult) -> None:
+    declared = set(model.node_labels())
+    for node in model.node_types:
+        for other in node.disjoint_with:
+            if other not in declared:
+                result.add_issue(
+                    _critical(
+                        "unknown_type",
+                        ValidationCategory.STRUCTURE,
+                        f"Node type {node.label!r}: disjoint_with names undeclared node type {other!r}",
+                        actual=other,
+                    )
+                )
+
+
+def _check_disjointness(model: "HygmModel", result: ValidationResult) -> None:
+    """Disjoint types share no instance, so neither may be the other's ancestor nor share a descendant."""
+    for node in model.node_types:
+        for other in node.disjoint_with:
+            if model.is_a(node.label, other) or model.is_a(other, node.label):
+                result.add_issue(
+                    _critical(
+                        "disjoint_conflict",
+                        ValidationCategory.CONSISTENCY,
+                        f"Node type {node.label!r} is disjoint with {other!r}, its own ancestor, descendant or self",
+                    )
+                )
+                continue
+            shared = [
+                t.label for t in model.node_types if model.is_a(t.label, node.label) and model.is_a(t.label, other)
+            ]
+            if shared:
+                result.add_issue(
+                    _critical(
+                        "disjoint_conflict",
+                        ValidationCategory.CONSISTENCY,
+                        f"Node types {node.label!r} and {other!r} are disjoint but share the descendant {shared[0]!r}",
+                    )
+                )
+
+
+def _check_synonyms(model: "HygmModel", result: ValidationResult) -> None:
+    """One concept, one name: a synonym can't name another type, or another property of the same type."""
+    _check_names_among("node type", model.node_types, result)
+    _check_names_among("relation type", model.relation_types, result)
+    for owner in model.node_types:
+        _check_names_among(f"property of {owner.label!r}", _distinct(model.properties_of(owner.label)), result)
+    for relation in model.relation_types:
+        _check_names_among(f"property of {relation.label!r}", _distinct(relation.properties), result)
+
+
+def _distinct(properties: "tuple[Property, ...]") -> "tuple[Property, ...]":
+    return tuple({p.name: p for p in properties}.values())
+
+
+def _check_names_among(kind: str, named: Any, result: ValidationResult) -> None:
+    # Two labels differing only in case are not this rule's: it is about synonyms, and older models may have them.
+    owners: dict[str, dict[str, bool]] = {}
+    for item in named:
+        identifier = getattr(item, "label", None) or item.name
+        owners.setdefault(identifier.casefold(), {}).setdefault(identifier, False)
+        for synonym in item.synonyms:
+            owners.setdefault(synonym.casefold(), {})[identifier] = True
+    for name, holders in owners.items():
+        if len(holders) > 1 and any(holders.values()):
+            result.add_issue(
+                _critical(
+                    "duplicate_name",
+                    ValidationCategory.CONSISTENCY,
+                    f"The name {name!r} is the label or a synonym of more than one {kind}: {sorted(holders)}",
+                )
+            )
 
 
 def _reaches(model: "HygmModel", start: str, target: str) -> bool:
