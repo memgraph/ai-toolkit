@@ -3243,6 +3243,7 @@ owl = [
 ]
 test = [
     { name = "jsonschema" },
+    { name = "neo4j" },
     { name = "pytest" },
     { name = "rdflib" },
 ]
@@ -3250,6 +3251,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "jsonschema", marker = "extra == 'test'", specifier = ">=4.0" },
+    { name = "neo4j", marker = "extra == 'test'", specifier = ">=5.28.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rdflib", marker = "extra == 'owl'", specifier = ">=7.0.0" },
