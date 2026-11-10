@@ -16,8 +16,14 @@ Strategies:
 
 - `ManualStrategy`: a hand-authored YAML file (see its docstring for the shape).
 - `OwlImportStrategy`: a standard OWL ontology. `owl:Class` becomes a node type,
-  `owl:ObjectProperty` a relation type, and `rdfs:domain`/`rdfs:range` (one
-  class or an `owl:unionOf`) the start/end labels. Needs `hygm[owl]` (rdflib).
+  `rdfs:subClassOf` a named class its `parents`, `owl:ObjectProperty` a
+  relation type, and `rdfs:domain`/`rdfs:range` (one class or an
+  `owl:unionOf`) the start/end labels. `owl:DatatypeProperty` becomes a
+  property on its domain class(es), typed from its XSD range (unlisted types
+  are `string`; an `owl:oneOf` range gives `values`); `owl:hasKey` the `key`,
+  its properties required; a functional property with an at-least-one
+  cardinality restriction is required; every term keeps its `iri`. Other
+  axioms are ignored. Needs `hygm[owl]` (rdflib).
 - `LlmRecommendationStrategy`: grows a model from a delta of new sessions. One
   `derive()` run takes the current model and returns a candidate
   (`Derivation`) with a changelog, observation counts and a pool of retired
@@ -55,6 +61,11 @@ supplied = with_core(my_model)  # a supplied model with any missing core type ad
 
 `validate_model` is the hard gate every model passes before anything extracts
 against it. `ManualStrategy` runs it on load.
+
+hygm is becoming the general component for graph models shared across
+projects (sql2graph and the rest of the Memgraph ecosystem), with
+language-neutral file formats for the model and its mappings; see
+[docs/contract.md](docs/contract.md) (draft, tracked in #693).
 
 ## The model file
 
@@ -145,7 +156,37 @@ codes; the schema ships as `hygm.mapping_schema()`.
 Other tools keep their own formats. A `Renderer` (`render(model, mapping)`)
 turns a model and mapping into one of them, losslessly, and refuses whatever
 its target can't express rather than dropping it.
+## The Memgraph plan
 
-Named after, but separate from, `agents/sql2graph`'s HyGM, which is untouched.
-Its validation types are lifted here in the same shape, so a later
-consolidation is a type swap.
+`memgraph_plan(model)` derives the constraints, indexes and enums a Memgraph
+needs to hold a model, in declaration order; `apply_plan(plan, run)` creates
+the ones that don't exist yet, so applying it twice is a no-op. `run` is your
+client: a callable that runs one Cypher string and returns its rows, so hygm
+takes no Memgraph dependency.
+
+```python
+from hygm import apply_plan, enum_for, labels_for, memgraph_plan
+
+apply_plan(memgraph_plan(model), lambda q: [r.data() for r in session.run(q)])
+labels_for(model, "VipCustomer")  # ("VipCustomer", "Customer", "Party"): set them all on write
+enum_for(model, "Customer", "tier")  # "Customer_tier": write ToEnum("Customer_tier", "gold")
+```
+
+| Model | Plan |
+|---|---|
+| a type's `key` | uniqueness constraint (composite for several properties) and a label-property index |
+| `required: true` | existence constraint |
+| `type` | `IS TYPED` constraint: `string` STRING, `integer` INTEGER, `float` and `decimal` FLOAT, `boolean` BOOLEAN, `date` DATE, `json` MAP; `datetime` none (Local or Zoned) |
+| `values` | an enum `<Label>_<property>`, and the property `IS TYPED ENUM` |
+| `parents` | no DDL; writers set `labels_for` |
+
+Each fact is constrained once, on the label of the type that declares it: a
+key on `Customer` covers `VipCustomer` nodes, which carry the `Customer`
+label. Memgraph can type a property only as "some enum", not one named enum,
+and has no constraints on relationship properties, so relation types add
+nothing. A property already typed differently, or an enum with other values,
+raises `PlanConflictError` before anything runs.
+
+`agents/sql2graph` has its own HyGM today. It will move onto this package and
+drop its own (#701, #702). The validation types here are lifted from it in the
+same shape, so that move is a type swap.
