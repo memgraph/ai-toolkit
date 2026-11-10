@@ -102,6 +102,8 @@ uv run main --mapping output/mapping.json
 
 When the mapping file does not exist, the agent connects to the source database, analyzes the schema, builds a graph model, writes the mapping JSON, and enters the interactive editor. When the file already exists, it is loaded directly into the editor.
 
+Every time it writes the mapping JSON, the agent also writes the same graph model as [hygm](../../hygm/README.md) files beside it: for `output/mapping.json`, the model `output/mapping.model.yaml`, a mapping of it onto the source tables `output/mapping.mapping.yaml`, and `output/mapping.hygm-gaps.yaml`, which lists whatever in sql2graph's model the hygm files don't carry. Statistics (counts, filling factors, examples) stay in sql2graph.
+
 ### Interactive Mapping Editor
 
 Inside the editor you can use slash commands or natural language:
