@@ -1,0 +1,6 @@
+version: 2
+node_types:
+  - label: Wine
+    description: a wine
+    key: [codes]
+    properties: [{name: codes, required: true, max_count: null}]

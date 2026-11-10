@@ -1,0 +1,4 @@
+version: 2
+node_types:
+  - {label: Wine, description: a wine, properties: [{name: grapes, max_count: null}]}
+  - {label: Varietal, description: v, parents: [Wine], properties: [{name: grapes, max_count: 1}]}

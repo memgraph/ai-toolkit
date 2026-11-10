@@ -1,0 +1,4 @@
+version: 2
+node_types:
+  - {label: Wine, description: a wine, properties: [{name: alcohol, type: float, minimum: 5}]}
+  - {label: LowWine, description: l, parents: [Wine], properties: [{name: alcohol, minimum: 0.5}]}

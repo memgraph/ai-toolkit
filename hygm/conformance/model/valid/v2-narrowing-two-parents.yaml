@@ -1,0 +1,13 @@
+version: 2
+node_types:
+  - label: Tagged
+    description: Carries tags from a list
+    properties:
+      - {name: tags, max_count: null, values: [red, white, sparkling, sweet]}
+  - label: Curated
+    description: Carries at most five tags from a shorter list
+    properties:
+      - {name: tags, max_count: 5, values: [red, white, rare]}
+  - label: Showcase
+    description: Both; its tags are at most five of red and white
+    parents: [Tagged, Curated]

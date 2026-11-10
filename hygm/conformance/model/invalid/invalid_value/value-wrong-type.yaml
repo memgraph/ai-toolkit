@@ -1,0 +1,5 @@
+version: 2
+node_types:
+  - label: Bottle
+    description: a bottle
+    properties: [{name: volume, type: integer, value: "750 ml"}]

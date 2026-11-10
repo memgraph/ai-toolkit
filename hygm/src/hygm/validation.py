@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from .facets import FacetConflictError, merge, narrowing_problem
+
 if TYPE_CHECKING:
     from .types import HygmModel, NodeType, Property
 
@@ -84,16 +86,19 @@ def validate_model(model: "HygmModel") -> ValidationResult:
     Checks, each issue carrying its contract error code (docs/contract.md,
     section 9): labels and property names are unique; `parents` and every
     relation endpoint name declared node types; the parent graph has no
-    cycle; redeclared and doubly inherited properties agree; every key names
-    required properties and no type has two keys; `disjoint_with` names
+    cycle; a redeclared property only narrows what it inherits, and one
+    inherited from several parents leaves some value all of them allow
+    (`property_conflict`, 4.15); every key names required, single-valued
+    properties (`count_conflict` for a list) and no type has two keys; `disjoint_with` names
     declared node types (`unknown_type`), no type is disjoint with itself or
     an ancestor, and no two disjoint types share a descendant
     (`disjoint_conflict`); no synonym equals, ignoring case, another type's
     label or synonym, nor another property's name or synonym on the same
     type (`duplicate_name`). A profile's own rules are
     its owner's to check (docs/contract.md, 5.6). Identifier syntax, property
-    types and `values` are enforced when the types are constructed, profile
-    settings when a model file is read.
+    types, `values` and one property's own facets (`count_conflict`,
+    `invalid_value`, 4.14) are enforced when the types are constructed,
+    profile settings when a model file is read.
 
     Returns:
         A ValidationResult; `success` is False if any issue is CRITICAL.
@@ -274,6 +279,14 @@ def _check_inheritance(model: "HygmModel", result: ValidationResult) -> None:
                         f"Node type {node.label!r}: key property {name!r} must be required",
                     )
                 )
+            elif prop.max_count != 1:
+                result.add_issue(
+                    _critical(
+                        "count_conflict",
+                        ValidationCategory.STRUCTURE,
+                        f"Node type {node.label!r}: key property {name!r} must be single-valued (max_count 1)",
+                    )
+                )
         if _key_holders(model, node.label) > 1 and all(_key_holders(model, p) <= 1 for p in node.parents):
             result.add_issue(
                 _critical(
@@ -289,32 +302,34 @@ def _key_holders(model: "HygmModel", label: str) -> int:
 
 
 def _check_property_agreement(model: "HygmModel", node: "NodeType", result: ValidationResult) -> None:
+    """Facets inherited from several parents must leave some value (merge), and a redeclaration only narrows (4.15)."""
     inherited: dict[str, tuple[str, Property]] = {}
     for parent in node.parents:
         for prop in model.properties_of(parent):
             seen = inherited.get(prop.name)
-            if seen and not _agree(seen[1], prop):
+            if seen is None or seen[1] == prop:
+                inherited.setdefault(prop.name, (parent, prop))
+                continue
+            try:
+                inherited[prop.name] = (seen[0], merge(seen[1], prop))
+            except FacetConflictError as e:
                 result.add_issue(
                     _critical(
                         "property_conflict",
                         ValidationCategory.CONSISTENCY,
                         f"Node type {node.label!r} inherits property {prop.name!r} from {seen[0]!r} and "
-                        f"{parent!r} with different types or values",
+                        f"{parent!r}, and no value satisfies both: {e}",
                     )
                 )
-            inherited.setdefault(prop.name, (parent, prop))
     for prop in node.properties:
         seen = inherited.get(prop.name)
-        if seen and not _agree(seen[1], prop):
+        problem = narrowing_problem(seen[1], prop) if seen else None
+        if seen and problem:
             result.add_issue(
                 _critical(
                     "property_conflict",
                     ValidationCategory.CONSISTENCY,
                     f"Node type {node.label!r} redeclares property {prop.name!r}, inherited from {seen[0]!r}, "
-                    "with a different type or values",
+                    f"and {problem}: a redeclaration may only narrow it",
                 )
             )
-
-
-def _agree(a: "Property", b: "Property") -> bool:
-    return a.type == b.type and a.values == b.values

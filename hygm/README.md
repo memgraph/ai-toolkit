@@ -117,6 +117,26 @@ ancestors. Types, relation types and properties take `synonyms` and `names`
 refused (`duplicate_name`), as are two disjoint types sharing a descendant
 (`disjoint_conflict`).
 
+Properties take facets: `min_count`/`max_count` (`required` is `min_count:
+1`; a `max_count` above 1, or `null`, makes the property a list), `default`,
+a fixed `value`, `minimum`/`maximum` on numbers and dates (ISO 8601 strings),
+and a `unit`. A subtype redeclares an inherited property to narrow it, stating
+only what it narrows; `properties_of` returns the effective facets:
+
+```yaml
+- label: WhiteWine
+  parents: [Wine]
+  properties:
+    - {name: tannin_level, max_count: 0}       # white wines have none
+- label: DessertWine
+  parents: [Wine]
+  properties:
+    - {name: sugar, values: [sweet], value: sweet}
+```
+
+The Memgraph plan types a multi-valued property `LIST`; Memgraph can't check
+its elements' type, the counts or the bounds, so writers do.
+
 ## The Memgraph plan
 
 `memgraph_plan(model)` derives the constraints, indexes and enums a Memgraph
