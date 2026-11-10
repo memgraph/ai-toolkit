@@ -1,0 +1,10 @@
+# A native graph source holding nodes and relationships, one under its own label.
+version: 1
+model: ../models/shop.model.yaml
+sources:
+  - {name: legacy, kind: graph}
+nodes:
+  - {type: Customer, source: legacy, graph: {label: Client}}
+  - {type: Order, source: legacy, graph: {}}
+relations:
+  - {type: placed, source: legacy, graph: {label: PLACED}}
