@@ -1,0 +1,7 @@
+version: 2
+node_types:
+  - label: Food
+    description: Something eaten with a wine
+  - label: Seafood
+    description: Fish and shellfish
+    parents: [Food]

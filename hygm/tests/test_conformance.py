@@ -36,7 +36,9 @@ def _version(raw) -> int:
 def test_a_valid_fixture_loads_and_round_trips(path):
     model = ManualStrategy().create_model(path)
 
-    assert model_from_mapping(model_to_mapping(model), "round trip") == model
+    written = model_to_mapping(model)
+
+    assert model_from_mapping(written, "round trip", resolver=ManualStrategy().resolver(path)) == model
 
 
 @pytest.mark.parametrize("path", VALID, ids=lambda p: p.name)
@@ -88,6 +90,8 @@ def test_every_code_in_the_contract_has_a_fixture():
         "two_keys",
         "unknown_profile",
         "invalid_profile_value",
+        "import_cycle",
+        "unknown_model",
     }
 
     assert {p.parent.name for p in INVALID} == model_codes

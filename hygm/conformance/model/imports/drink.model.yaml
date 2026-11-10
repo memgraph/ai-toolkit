@@ -1,0 +1,13 @@
+version: 2
+imports:
+  - {path: food.model.yaml}
+node_types:
+  - label: Drink
+    description: Something drunk with a meal
+    properties:
+      - {name: name, required: true}
+relation_types:
+  - label: pairs_with
+    description: The drink goes well with the food
+    start_labels: [Drink]
+    end_labels: [Food]

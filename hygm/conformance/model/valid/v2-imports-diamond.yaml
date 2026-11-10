@@ -1,0 +1,8 @@
+version: 2
+imports:
+  - {path: ../imports/food.model.yaml}
+  - {path: ../imports/drink.model.yaml}
+node_types:
+  - label: Dessert
+    description: A sweet course, with Food imported twice
+    parents: [Food]
