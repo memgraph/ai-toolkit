@@ -6,6 +6,7 @@ tests choose), and so is the GLiNER2 checkpoint the re-extraction loads.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -18,7 +19,7 @@ from sessions_graph import derivation
 from sessions_graph.cli import _spawn_due_derivations
 
 from actions_graph import MessageRole, Session
-from hygm import Change, Derivation, default_model
+from hygm import AddNodeType, Change, Derivation, default_model
 from hygm.strategies.llm import CONSOLIDATE_SCHEMA, PROPOSE_SCHEMA, PRUNE_SCHEMA
 from unstructured2graph.gliner2_backend import GLiNER2Backend
 from unstructured2graph.gliner2_observer import Measurement
@@ -137,6 +138,11 @@ async def test_a_passing_candidate_is_adopted_and_the_schedule_moves_on(graph, m
     assert (version.version, version.source) == (1, "derived")
     assert "Library" in version.model.node_labels()
     assert {"op": "add", "kind": "node", "label": "Library", "into": None, "reason": ""} in version.changelog
+    stored = memgraph.query("MATCH (:User {user_id: 'alice'})-[:ADOPTED]->(v) RETURN v.changelog AS changelog")
+    entries = json.loads(stored[0]["changelog"])
+    assert entries and all(list(entry) == ["op", "kind", "label", "into", "reason"] for entry in entries)
+    operations = [op for entry in version.changelog for op in Change(**entry).operations(version.model, version.pool)]
+    assert AddNodeType(next(t for t in version.model.node_types if t.label == "Library")) in operations
     assert version.report["base"] == {"catch_all_share": 0.3, "coverage": 0.5}
     assert version.report["outcome"] == "adopted"
     assert version.counts["nodes"]["Library"] == 9

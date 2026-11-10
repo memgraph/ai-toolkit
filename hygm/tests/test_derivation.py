@@ -15,6 +15,7 @@ from hygm import (
     RelationType,
     default_model,
 )
+from hygm.evolution import AddNodeType, MergeNodeTypes, RemoveNodeType, RemoveRelationType, apply
 from hygm.strategies.llm import CONSOLIDATE_SCHEMA, PROPOSE_SCHEMA, PRUNE_SCHEMA, _batches
 
 
@@ -58,10 +59,14 @@ def _fired(name, *pairs, edges=None):
 
 
 def _derive(llm, observer, current=None, **kwargs):
+    """One run, checked to say in operations exactly what it changed."""
     strategy = LlmRecommendationStrategy(llm, observer, kwargs.pop("limits", None))
-    return strategy.derive(
-        current or default_model(), conversations=["one session", "another"], observe_sample=["s1", "s2"], **kwargs
+    current = current or default_model()
+    derivation = strategy.derive(
+        current, conversations=["one session", "another"], observe_sample=["s1", "s2"], **kwargs
     )
+    assert apply(current, derivation.operations) == derivation.model
+    return derivation
 
 
 LIBRARY = {"label": "Library", "description": "a code library"}
@@ -157,6 +162,7 @@ def test_a_merge_relabels_endpoints_and_sums_counts_into_the_survivor():
     assert builds_with.end_labels == ("Library",)
     assert derivation.counts["nodes"]["Library"] == 5 + 3 + 4
     assert Change("merge", "node", "Framework", "Library", "synonyms") in derivation.changelog
+    assert derivation.operations == (MergeNodeTypes("Framework", "Library"),)
 
 
 @pytest.mark.parametrize(
@@ -190,6 +196,7 @@ def test_a_type_below_the_share_threshold_retires_with_its_relations_and_can_ret
     assert derivation.pool.node_type("Framework") == NodeType("Framework", "a framework", "global")
     assert "builds_with" in derivation.pool.relation_labels()
     assert Change("retire", "relation", "builds_with", reason="an endpoint type retired") in derivation.changelog
+    assert {RemoveNodeType("Framework"), RemoveRelationType("builds_with")} <= set(derivation.operations)
 
     back = ScriptedLlm(consolidate={"entity_types": [{"label": "Framework", "description": "reworded"}]}, prune={})
     restored = _derive(
@@ -201,6 +208,7 @@ def test_a_type_below_the_share_threshold_retires_with_its_relations_and_can_ret
     )
     assert restored.model.node_type("Framework") == NodeType("Framework", "a framework", "global")
     assert Change("restore", "node", "Framework") in restored.changelog
+    assert AddNodeType(NodeType("Framework", "a framework", "global")) in restored.operations
 
 
 def test_the_cap_retires_the_lowest_share_types_but_never_protected_ones():
