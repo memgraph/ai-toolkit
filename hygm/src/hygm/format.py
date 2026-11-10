@@ -98,6 +98,59 @@ def needs_version_2(model: HygmModel) -> bool:
     )
 
 
+def node_type_to_mapping(node: NodeType) -> dict[str, Any]:
+    """One node type as a version-2 `node_types` entry, defaults left out."""
+    return _v2_node(node)
+
+
+def relation_type_to_mapping(relation: RelationType) -> dict[str, Any]:
+    """One relation type as a version-2 `relation_types` entry, defaults left out."""
+    return _v2_relation(relation)
+
+
+def property_to_mapping(prop: Property) -> dict[str, Any]:
+    """One property as a version-2 `properties` entry, defaults left out."""
+    return _v2_property(prop)
+
+
+def node_type_from_mapping(raw: Any, source: str) -> NodeType:
+    """A node type from a version-2 `node_types` entry, read as strictly as in a model file.
+
+    Raises:
+        ModelError: if the entry breaks the format.
+    """
+    return _Reader(source).node(raw, "")
+
+
+def relation_type_from_mapping(raw: Any, source: str) -> RelationType:
+    """A relation type from a version-2 `relation_types` entry, read as strictly as in a model file.
+
+    Raises:
+        ModelError: if the entry breaks the format.
+    """
+    return _Reader(source).relation(raw, "", _V2_RELATION)
+
+
+def property_from_mapping(raw: Any, source: str) -> Property:
+    """A property from a version-2 `properties` entry, read as strictly as in a model file.
+
+    Raises:
+        ModelError: if the entry breaks the format.
+    """
+    return _Reader(source).property(raw, "")
+
+
+def check_profile(profile: str, settings: Any, level: str, source: str) -> None:
+    """Check one profile's settings at `level` ("model", "node", "relation" or "property") as a model file would.
+
+    `settings` None checks only the profile's name.
+
+    Raises:
+        ModelError: unknown_profile, unknown_key, invalid_profile_value or invalid_format.
+    """
+    _Reader(source).profiles({profile: {} if settings is None else settings}, "profiles", level)
+
+
 def _v1_mapping(model: HygmModel) -> dict[str, Any]:
     return {
         "entity_types": [
@@ -261,33 +314,33 @@ class _Reader:
         )
 
     def properties(self, item: dict, where: str) -> tuple[Property, ...]:
-        found = []
-        for index, prop in enumerate(self.listed(item, "properties", where=where)):
-            at = f"{where} properties[{index}]"
-            if not isinstance(prop, dict) or not isinstance(prop.get("name"), str):
-                raise self.fail("invalid_format", at, "must be a mapping with a string 'name'")
-            self.known(prop, _V2_PROPERTY, at)
-            if not isinstance(prop.get("required", False), bool):
-                raise self.fail("invalid_format", at, "required must be true or false")
-            values = prop.get("values")
-            if values is not None and (
-                not isinstance(values, list) or not values or not all(isinstance(v, str) for v in values)
-            ):
-                raise self.fail("invalid_format", at, "values must be a non-empty list of strings")
-            found.append(
-                self.build(
-                    Property,
-                    at,
-                    prop["name"],
-                    type=prop.get("type", "string"),
-                    description=self.optional_string(prop, "description", at) or "",
-                    required=prop.get("required", False),
-                    values=tuple(values) if values is not None else None,
-                    iri=self.optional_string(prop, "iri", at),
-                    profiles=self.profiles(prop.get("profiles", {}), f"{at} profiles", "property"),
-                )
-            )
-        return tuple(found)
+        return tuple(
+            self.property(prop, f"{where} properties[{index}]")
+            for index, prop in enumerate(self.listed(item, "properties", where=where))
+        )
+
+    def property(self, prop: Any, at: str) -> Property:
+        if not isinstance(prop, dict) or not isinstance(prop.get("name"), str):
+            raise self.fail("invalid_format", at, "must be a mapping with a string 'name'")
+        self.known(prop, _V2_PROPERTY, at)
+        if not isinstance(prop.get("required", False), bool):
+            raise self.fail("invalid_format", at, "required must be true or false")
+        values = prop.get("values")
+        if values is not None and (
+            not isinstance(values, list) or not values or not all(isinstance(v, str) for v in values)
+        ):
+            raise self.fail("invalid_format", at, "values must be a non-empty list of strings")
+        return self.build(
+            Property,
+            at,
+            prop["name"],
+            type=prop.get("type", "string"),
+            description=self.optional_string(prop, "description", at) or "",
+            required=prop.get("required", False),
+            values=tuple(values) if values is not None else None,
+            iri=self.optional_string(prop, "iri", at),
+            profiles=self.profiles(prop.get("profiles", {}), f"{at} profiles", "property"),
+        )
 
     def profiles(self, value: Any, where: str, level: str) -> dict[str, dict[str, Any]]:
         if not isinstance(value, dict) or not all(isinstance(v, dict) for v in value.values()):
