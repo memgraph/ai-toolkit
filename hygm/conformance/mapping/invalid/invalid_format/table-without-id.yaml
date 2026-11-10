@@ -1,0 +1,10 @@
+version: 1
+model: ../../models/shop.model.yaml
+sources:
+  - {name: crm, kind: table}
+nodes:
+  - type: Customer
+    source: crm
+    table: {name: customers}
+    properties:
+      - {name: customer_id, column: customer_id}

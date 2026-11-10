@@ -1,0 +1,17 @@
+version: 1
+model: ../../models/shop.model.yaml
+sources:
+  - {name: crm, kind: table}
+  - {name: erp, kind: table}
+nodes:
+  - type: Order
+    source: crm
+    table: {name: orders}
+    id: [order_id]
+  - {type: Product, source: erp, table: {name: products}, id: [sku, region]}
+relations:
+  - type: contains
+    source: crm
+    table: {name: order_lines}
+    from: {type: Order, columns: [order_id]}
+    to: {type: Product, columns: [sku, region]}

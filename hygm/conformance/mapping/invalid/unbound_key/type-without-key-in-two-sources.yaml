@@ -1,0 +1,14 @@
+version: 1
+model: ../../models/shop.model.yaml
+sources:
+  - {name: crm, kind: table}
+  - {name: erp, kind: table}
+nodes:
+  - type: Customer
+    source: crm
+    table: {name: customers}
+    id: [customer_id]
+    properties:
+      - {name: customer_id, column: customer_id}
+  - {type: Product, source: crm, table: {name: products}, id: [sku, region]}
+  - {type: Product, source: erp, table: {name: items}, id: [sku, region]}
