@@ -99,6 +99,12 @@ def test_every_code_in_the_contract_has_a_fixture():
         "invalid_value",
         "inverse_conflict",
         "relation_conflict",
+        "duplicate_individual",
+        "abstract_instance",
+        "missing_value",
+        "unknown_individual",
+        "undeclared_property",
+        "endpoint_not_admitted",
     }
 
     assert {p.parent.name for p in INVALID} == model_codes

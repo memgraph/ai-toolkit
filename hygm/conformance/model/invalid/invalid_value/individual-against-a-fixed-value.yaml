@@ -1,0 +1,5 @@
+version: 2
+node_types:
+  - {label: Bottle, description: a bottle, properties: [{name: ml, type: integer, value: 750}]}
+individuals:
+  - {id: magnum, type: Bottle, properties: {ml: 1500}}

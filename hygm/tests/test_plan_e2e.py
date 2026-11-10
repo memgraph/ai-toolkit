@@ -15,7 +15,20 @@ from dataclasses import dataclass
 
 import pytest
 
-from hygm import HygmModel, NodeType, PlanConflictError, Property, apply_plan, enum_for, labels_for, memgraph_plan
+from hygm import (
+    HygmModel,
+    Individual,
+    NodeType,
+    PlanConflictError,
+    Property,
+    RelationType,
+    apply_plan,
+    apply_seed,
+    enum_for,
+    labels_for,
+    memgraph_plan,
+    seed_statements,
+)
 
 
 @dataclass(frozen=True)
@@ -154,3 +167,68 @@ def test_a_multi_valued_property_is_typed_as_a_list(memgraph_run):
         assert apply_plan(plan, memgraph_run) == ()
     finally:
         _clean(memgraph_run, {wine})
+
+
+def test_seeding_the_individuals_twice_leaves_one_copy_that_the_plan_accepts(memgraph_run):
+    suffix = uuid.uuid4().hex[:8]
+    region, winery, wine, red = (f"{name}{suffix}" for name in ("Region", "Winery", "Wine", "RedWine"))
+    model = HygmModel(
+        node_types=(
+            NodeType(region, key=("name",), properties=(Property("name", required=True),)),
+            NodeType(winery, properties=(Property("name", required=True), Property("founded", type="date"))),
+            NodeType(
+                wine,
+                properties=(
+                    Property("name", required=True),
+                    Property("colour", values=("red", "white")),
+                    Property("grapes", max_count=None, values=("merlot", "cabernet")),
+                    Property("alcohol", type="float"),
+                    Property("tasted_at", type="datetime"),
+                    Property("bottle_ml", type="integer", default=750),
+                ),
+            ),
+            NodeType(red, parents=(wine,), properties=(Property("colour", values=("red",), value="red"),)),
+        ),
+        relation_types=(
+            RelationType("located_in", start_labels=(winery,), end_labels=(region,)),
+            RelationType("maker", start_labels=(wine,), end_labels=(winery,), max_count=1),
+        ),
+        individuals=(
+            Individual("bordeaux", region, properties={"name": "Bordeaux"}),
+            Individual(
+                "margaux",
+                winery,
+                properties={"name": "Château Margaux", "founded": "1590-01-01"},
+                relations={"located_in": ("bordeaux",)},
+            ),
+            Individual(
+                "m2015",
+                red,
+                properties={
+                    "name": "Margaux 2015",
+                    "grapes": ["merlot", "cabernet"],
+                    "alcohol": 13,
+                    "tasted_at": "2024-05-01T12:30:00+02:00",
+                },
+                relations={"maker": ("margaux",)},
+            ),
+        ),
+    )
+    try:
+        apply_plan(memgraph_plan(model), memgraph_run)
+        seed = seed_statements(model)
+
+        apply_seed(seed, lambda cypher, parameters: memgraph_run(cypher, **parameters))
+        apply_seed(seed, lambda cypher, parameters: memgraph_run(cypher, **parameters))
+
+        for label in (region, winery, wine):
+            assert memgraph_run(f"MATCH (n:`{label}`) RETURN count(n) AS n") == [{"n": 1}]
+        (row,) = memgraph_run(
+            f"MATCH (w:`{red}`)-[m:maker]->(:`{winery}`)-[l:located_in]->(:`{region}`) "
+            "RETURN count(m) AS m, count(l) AS l, w.bottle_ml AS ml, w.alcohol AS alcohol, "
+            "size(w.grapes) AS grapes, labels(w) AS labels"
+        )
+        assert (row["m"], row["l"], row["ml"], row["alcohol"], row["grapes"]) == (1, 1, 750, 13.0, 2)
+        assert sorted(row["labels"]) == sorted((red, wine))
+    finally:
+        _clean(memgraph_run, {region, winery, wine, red})

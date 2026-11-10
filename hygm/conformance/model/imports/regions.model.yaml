@@ -1,0 +1,9 @@
+version: 2
+node_types:
+  - label: WineRegion
+    description: Where wine is made
+    key: [name]
+    properties: [{name: name, required: true}]
+individuals:
+  - {id: bordeaux, type: WineRegion, properties: {name: Bordeaux}}
+  - {id: burgundy, type: WineRegion, properties: {name: Burgundy}}

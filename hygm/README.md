@@ -140,6 +140,20 @@ instances with `relation_restrictions` (narrower end labels, tighter counts).
 `model.inverse(label)` and `model.relation_for(label, relation)` answer them,
 restrictions inherited down the hierarchy.
 
+A model may carry `individuals`, instances checked against their types'
+facets and relations (inverse and symmetric relationships are implied, not
+repeated):
+
+```yaml
+individuals:
+  - {id: bordeaux, type: WineRegion, properties: {name: Bordeaux}}
+  - {id: chateau_margaux, type: Winery, properties: {name: Château Margaux}, relations: {located_in: [bordeaux]}}
+```
+
+`seed_statements(model)` turns them into idempotent, parameterized `MERGE`
+statements (keyed by the type's key, else an `id` property), and
+`apply_seed(statements, run)` runs them; the plan never seeds on its own.
+
 The Memgraph plan types a multi-valued property `LIST`; Memgraph can't check
 its elements' type, the counts or the bounds, so writers do.
 

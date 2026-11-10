@@ -1,0 +1,12 @@
+version: 2
+imports:
+  - {path: ../imports/regions.model.yaml}
+node_types:
+  - {label: Winery, description: Makes wine, properties: [{name: name, required: true}]}
+relation_types:
+  - {label: located_in, description: where it is, start_labels: [Winery], end_labels: [WineRegion]}
+individuals:
+  - id: chateau_margaux
+    type: Winery
+    properties: {name: Château Margaux}
+    relations: {located_in: [bordeaux]}

@@ -10,10 +10,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from .facets import FacetConflictError, merge, narrowing_problem
+from .facets import FacetConflictError, merge, narrowing_problem, value_problem
 
 if TYPE_CHECKING:
-    from .types import HygmModel, NodeType, Property, RelationRestriction, RelationType
+    from .types import HygmModel, Individual, NodeType, Property, RelationRestriction, RelationType
 
 
 class ValidationSeverity(Enum):
@@ -100,7 +100,16 @@ def validate_model(model: "HygmModel") -> ValidationResult:
     endpoints (`inverse_conflict`); a relation restriction names a relation
     its type may start, at most once, and only narrows its end labels and
     counts, as do the restrictions a type inherits from several parents
-    (`relation_conflict`). A profile's own rules are
+    (`relation_conflict`); individuals have unique ids
+    (`duplicate_individual`) and declared, non-abstract types (`unknown_type`,
+    `abstract_instance`), set only properties their type has
+    (`undeclared_property`) to values its facets allow (`invalid_value`,
+    `count_conflict` for a list's length or a forbidden property), set every
+    required one their type doesn't fill with a `value` or `default`
+    (`missing_value`), and relate to declared individuals (`unknown_individual`)
+    the relation admits from their type (`endpoint_not_admitted`), within its
+    counts, implied inverse and symmetric relationships included
+    (`count_conflict`). A profile's own rules are
     its owner's to check (docs/contract.md, 5.6). Identifier syntax, property
     types, `values` and one property's own facets (`count_conflict`,
     `invalid_value`, 4.14) are enforced when the types are constructed,
@@ -135,6 +144,7 @@ def validate_model(model: "HygmModel") -> ValidationResult:
         _check_inheritance(model, result)
         _check_disjointness(model, result)
         _check_restrictions(model, result)
+        _check_individuals(model, result)
     _check_synonyms(model, result)
 
     for relation in model.relation_types:
@@ -475,4 +485,108 @@ def _check_property_agreement(model: "HygmModel", node: "NodeType", result: Vali
                     f"Node type {node.label!r} redeclares property {prop.name!r}, inherited from {seen[0]!r}, "
                     f"and {problem}: a redeclaration may only narrow it",
                 )
+            )
+
+
+def _check_individuals(model: "HygmModel", result: ValidationResult) -> None:
+    """Individuals are instances of their types: their values and relationships obey the model (4.17)."""
+
+    def add(code: str, message: str) -> None:
+        result.add_issue(_critical(code, ValidationCategory.DATA_INTEGRITY, message))
+
+    ids = [i.id for i in model.individuals]
+    for duplicate in sorted({i for i in ids if ids.count(i) > 1}):
+        add("duplicate_individual", f"Two individuals have the id {duplicate!r}")
+    typed: dict[str, str] = {}
+    for individual in model.individuals:
+        node = model.node_type(individual.type)
+        where = f"Individual {individual.id!r}"
+        if node is None:
+            add("unknown_type", f"{where} is of undeclared node type {individual.type!r}")
+            continue
+        if node.abstract:
+            add("abstract_instance", f"{where} is of abstract type {individual.type!r}, which has no direct instances")
+        typed.setdefault(individual.id, individual.type)
+        _check_values(model, individual, add)
+    edges = _edges(model, typed, add)
+    for individual in model.individuals:
+        if individual.id in typed:
+            _check_counts(model, individual, edges, add)
+
+
+def _check_values(model: "HygmModel", individual: "Individual", add: Any) -> None:
+    where = f"Individual {individual.id!r}"
+    declared = {p.name: p for p in model.properties_of(individual.type)}
+    for name, value in individual.properties.items():
+        prop = declared.get(name)
+        if prop is None:
+            add(
+                "undeclared_property", f"{where} sets {name!r}, which {individual.type!r} neither declares nor inherits"
+            )
+        elif prop.max_count == 0:
+            add("count_conflict", f"{where} sets {name!r}, which {individual.type!r} forbids (max_count 0)")
+        elif value is None:
+            add("invalid_value", f"{where}: {name} is null; leave a property out rather than set it to null")
+        elif (problem := value_problem(prop, value)) is not None:
+            add(problem[0], f"{where}: {name} {problem[1]}")
+        elif prop.value is not None and _as_list(value) != _as_list(prop.value):
+            add("invalid_value", f"{where}: {name} must be {prop.value!r}, the value every {individual.type} has")
+    for prop in declared.values():
+        filled = prop.value is not None or prop.default is not None
+        if prop.least_count >= 1 and prop.name not in individual.properties and not filled:
+            add("missing_value", f"{where} lacks {prop.name!r}, which {individual.type!r} requires")
+
+
+def _as_list(value: Any) -> Any:
+    return list(value) if isinstance(value, tuple) else value
+
+
+def _edges(model: "HygmModel", typed: dict[str, str], add: Any) -> dict[tuple[str, str], set[str]]:
+    """Each (individual, relation)'s targets, stated or implied by an inverse or a symmetric relation."""
+    edges: dict[tuple[str, str], set[str]] = {}
+    for individual in model.individuals:
+        if individual.id not in typed:
+            continue
+        for name, targets in individual.relations.items():
+            where = f"Individual {individual.id!r}: {name}"
+            relation = model.relation_type(name)
+            if relation is None:
+                add("unknown_type", f"{where} names an undeclared relation type")
+                continue
+            effective = model.relation_for(individual.type, name)
+            if effective is None:
+                add("endpoint_not_admitted", f"{where} starts at a {individual.type}, which {name!r} doesn't admit")
+                continue
+            for target in targets:
+                target_type = typed.get(target)
+                if target_type is None:
+                    add("unknown_individual", f"{where} names {target!r}, which isn't a declared individual")
+                    continue
+                if effective.end_labels and not any(model.is_a(target_type, e) for e in effective.end_labels):
+                    add(
+                        "endpoint_not_admitted",
+                        f"{where} ends at {target!r}, a {target_type}, where a {individual.type}'s {name!r} "
+                        f"may only end at {list(effective.end_labels)}",
+                    )
+                edges.setdefault((individual.id, name), set()).add(target)
+                inverse = model.inverse(name)
+                if inverse is not None:
+                    edges.setdefault((target, inverse), set()).add(individual.id)
+    return edges
+
+
+def _check_counts(
+    model: "HygmModel", individual: "Individual", edges: dict[tuple[str, str], set[str]], add: Any
+) -> None:
+    for relation in model.relation_types:
+        effective = model.relation_for(individual.type, relation.label)
+        if effective is None:
+            continue
+        count = len(edges.get((individual.id, relation.label), ()))
+        if count < effective.min_count or (effective.max_count is not None and count > effective.max_count):
+            most = "any number" if effective.max_count is None else effective.max_count
+            add(
+                "count_conflict",
+                f"Individual {individual.id!r} has {count} {relation.label!r} relationship(s), stated or implied, "
+                f"where a {individual.type} has {effective.min_count} to {most}",
             )

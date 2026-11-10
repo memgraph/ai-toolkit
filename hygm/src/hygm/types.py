@@ -391,6 +391,46 @@ class RelationType:
 
 
 @dataclass(frozen=True)
+class Individual:
+    """An instance the ontology carries: reference data or an example (docs/contract.md, 4.17).
+
+    Attributes:
+        id: Stands for the individual in other individuals' `relations`; a
+            valid identifier, unique among the model's individuals.
+        type: The node type it is an instance of, and so of its ancestors.
+        iri: Its IRI (`owl:NamedIndividual`), if it has one.
+        properties: Values by property name, as JSON values: a list for a
+            multi-valued property, ISO 8601 strings for dates.
+        relations: Target individual ids by relation type. Inverse and
+            symmetric relationships are implied, not repeated.
+
+    Raises:
+        ModelError: `invalid_identifier` for an id, property name or relation
+            type that isn't one.
+    """
+
+    id: str
+    type: str
+    iri: str | None = None
+    properties: Mapping[str, Any] = field(default_factory=dict, hash=False)
+    relations: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
+
+    def __post_init__(self) -> None:
+        _identifier(self.id, "individual id")
+        _identifier(self.type, "node label")
+        for name in self.properties:
+            _identifier(name, "property name")
+        relations = {}
+        for name, targets in self.relations.items():
+            _identifier(name, "relation type")
+            if isinstance(targets, str):
+                raise TypeError(f"Individual {self.id!r}: relation {name!r} must list target ids, not a string")
+            relations[name] = tuple(targets)
+        object.__setattr__(self, "properties", dict(self.properties))
+        object.__setattr__(self, "relations", relations)
+
+
+@dataclass(frozen=True)
 class Import:
     """One model another builds on (docs/contract.md, 4.12).
 
@@ -417,9 +457,11 @@ class HygmModel:
         relation_types: Every relation type, likewise.
         profiles: Model-wide profile settings.
         ontology: What the model is for (4.11), or None.
-        imports: The models this one builds on (4.12). Their types are in
-            `node_types` and `relation_types` too, and `imported_labels()`
-            says which, so a writer writes them back as imports, not inline.
+        imports: The models this one builds on (4.12). Their types and
+            individuals are in `node_types`, `relation_types` and
+            `individuals` too, and `imported_labels()` says which types, so a
+            writer writes them back as imports, not inline.
+        individuals: The instances the ontology carries (4.17), imported ones first.
     """
 
     node_types: tuple[NodeType, ...]
@@ -427,11 +469,16 @@ class HygmModel:
     profiles: Profiles = field(default_factory=dict, hash=False)
     ontology: Ontology | None = None
     imports: tuple[Import, ...] = ()
+    individuals: tuple[Individual, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "node_types", tuple(self.node_types))
         object.__setattr__(self, "relation_types", tuple(self.relation_types))
         object.__setattr__(self, "imports", tuple(self.imports))
+        object.__setattr__(self, "individuals", tuple(self.individuals))
+
+    def individual(self, id: str) -> Individual | None:
+        return next((i for i in self.individuals if i.id == id), None)
 
     def imported_labels(self) -> tuple[frozenset[str], frozenset[str]]:
         """The node labels and the relation types that come from `imports`, transitively."""
@@ -640,6 +687,7 @@ class HygmModel:
             "key": any(t.key for t in self.node_types),
             "ontology": self.ontology is not None,
             "imports": bool(self.imports),
+            "individuals": bool(self.individuals),
             "abstract": any(t.abstract for t in self.node_types),
             "relation_restrictions": any(t.relation_restrictions for t in self.node_types),
             "relation_counts": any(r.min_count or r.max_count is not None for r in self.relation_types),
