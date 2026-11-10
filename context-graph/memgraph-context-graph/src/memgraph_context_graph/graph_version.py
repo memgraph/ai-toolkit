@@ -50,7 +50,12 @@ HUB = "memgraph-context-graph"
 #: The shape every component is at in a graph no migration has touched.
 BASELINE_EPOCH = 1
 #: The epoch of each component's shape this release writes and reads, where it differs from the baseline.
-EPOCHS: dict[str, int] = {}
+#:
+#: sessions-graph 2: a stored ontology version may be in hygm's model format
+#: version 2, which a release before it reads with every hierarchy, property
+#: and profile silently dropped. Raised in a graph on demand, by the first
+#: version-2 ontology sessions-graph stores there (sessions_graph.ontology.adopt).
+EPOCHS: dict[str, int] = {"sessions-graph": 2}
 #: How long a check holds before the graph is asked again.
 CHECK_INTERVAL = timedelta(minutes=10)
 

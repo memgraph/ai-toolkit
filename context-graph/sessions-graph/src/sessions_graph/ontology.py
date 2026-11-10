@@ -40,6 +40,7 @@ from hygm import (
     validate_model,
     with_core,
 )
+from memgraph_context_graph import graph_version
 from memgraph_toolbox.api.memgraph import merge_with_retry
 
 from .models import _utc_now
@@ -50,6 +51,11 @@ if TYPE_CHECKING:
 Derive = Literal["extend", "off"]
 DERIVE_MODES: tuple[Derive, ...] = ("extend", "off")
 DEFAULT_DERIVE: Derive = "extend"
+
+#: The graph_version component whose epoch guards stored ontology versions.
+COMPONENT = "sessions-graph"
+#: The sessions-graph epoch from which a stored version may be in hygm's model format 2.
+MODEL_FORMAT_2_EPOCH = 2
 Source = Literal["default", "supplied", "derived"]
 
 
@@ -221,9 +227,15 @@ _VERSION_PROPERTIES = (
 
 
 def reject(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
-    """Store `version` as a candidate the gate rejected: kept with its numbers, never adopted."""
-    merge_with_retry(
+    """Store `version` as a candidate the gate rejected: kept with its numbers, never adopted.
+
+    Raises:
+        ValueError: as :func:`adopt`, for a format-2 version the installed
+            memgraph-context-graph can't protect.
+    """
+    _store(
         db,
+        version,
         """
         MERGE (u:User {user_id: $user_id})
         CREATE (v:OntologyVersion {status: 'rejected', """
@@ -231,21 +243,44 @@ def reject(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
         + """})
         CREATE (u)-[:REJECTED]->(v)
         """,
-        params=_params(version),
     )
     return version
 
 
-def _params(version: OntologyVersion) -> dict[str, Any]:
-    # Installed clients read stored versions with a reader that ignores unknown
-    # keys, so a version-2 model would lose its hierarchy and properties there
-    # without a word. Storing one waits for a graph epoch that turns those
-    # clients away (#698).
+def _store(db: Memgraph, version: OntologyVersion, query: str) -> None:
+    """Run `query`, which writes `version`, raising the graph's sessions-graph epoch first when it needs format 2.
+
+    A release before MODEL_FORMAT_2_EPOCH reads a stored version with a reader
+    that ignores unknown keys, so it would silently drop a hierarchy,
+    properties and profiles. The epoch turns those clients away (graph_version);
+    raising it in the same query means no graph ever holds a format-2 version
+    that they may still read. Graphs that never store one keep their rules.
+    """
+    params = _params(version)
     if needs_version_2(version.model) or needs_version_2(version.pool):
-        raise ValueError(
-            "sessions-graph can't store an ontology that needs hygm's format version 2 yet "
-            "(parents, properties, key, iri or profiles beyond identity)"
+        if graph_version.known_epoch(COMPONENT) < MODEL_FORMAT_2_EPOCH:
+            raise ValueError(
+                "this ontology needs hygm's model format 2, which the installed memgraph-context-graph "
+                f"can't protect from older clients yet; run {graph_version.UPDATE_COMMAND}"
+            )
+        # Only ever raised: a graph a later release moved further keeps its rule.
+        query = (
+            """
+        MERGE (schema:ContextGraphSchema {component: $component})
+        SET schema.epoch = CASE WHEN coalesce(schema.epoch, 1) < $epoch THEN $epoch ELSE schema.epoch END,
+            schema.min_reader_epoch = CASE WHEN coalesce(schema.min_reader_epoch, 0) < $epoch
+                THEN $epoch ELSE schema.min_reader_epoch END,
+            schema.min_writer_epoch = CASE WHEN coalesce(schema.min_writer_epoch, 0) < $epoch
+                THEN $epoch ELSE schema.min_writer_epoch END
+        WITH 1 AS _
+        """
+            + query
         )
+        params = {**params, "component": COMPONENT, "epoch": MODEL_FORMAT_2_EPOCH}
+    merge_with_retry(db, query, params=params)
+
+
+def _params(version: OntologyVersion) -> dict[str, Any]:
     return {
         "user_id": version.user_id,
         "version": version.version,
@@ -263,11 +298,18 @@ def _params(version: OntologyVersion) -> dict[str, Any]:
 
 
 def adopt(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
-    """Store `version` and make it the user's adopted one."""
+    """Store `version` and make it the user's adopted one.
+
+    Raises:
+        ValueError: if `version` needs hygm's model format 2 and the
+            installed memgraph-context-graph doesn't know the epoch that
+            protects it from older clients (see :func:`_store`).
+    """
     # One query is one transaction: readers see the old ADOPTED edge or the
     # new one, never a user with none or two.
-    merge_with_retry(
+    _store(
         db,
+        version,
         """
         MERGE (u:User {user_id: $user_id})
         WITH u
@@ -282,7 +324,6 @@ def adopt(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
             DELETE adopted
         )
         """,
-        params=_params(version),
     )
     return version
 
