@@ -1,0 +1,9 @@
+version: 2
+node_types:
+  - {label: Wine, description: a wine}
+  - {label: Winery, description: a winery}
+  - {label: FrenchWinery, description: a French winery, parents: [Winery]}
+  - {label: Grape, description: a grape}
+  - {label: FrenchWine, description: f, parents: [Wine], relation_restrictions: [{relation: maker, max_count: 2}]}
+relation_types:
+  - {label: maker, description: who made it, start_labels: [Wine], end_labels: [Winery], min_count: 1, max_count: 1}

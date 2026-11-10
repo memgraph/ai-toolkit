@@ -1,0 +1,8 @@
+version: 2
+node_types:
+  - {label: Wine, description: a wine}
+  - {label: Winery, description: a winery}
+  - {label: FrenchWinery, description: a French winery, parents: [Winery]}
+  - {label: Grape, description: a grape}
+relation_types:
+  - {label: produces, description: p, start_labels: [Winery], end_labels: [Wine], inverse_of: maker}

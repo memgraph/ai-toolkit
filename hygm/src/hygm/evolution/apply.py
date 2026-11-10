@@ -122,6 +122,10 @@ def _relabel_everywhere(model: HygmModel, source: str, target: str) -> HygmModel
             t,
             parents=_relabel(t.parents, source, target, drop=t.label),
             disjoint_with=_relabel(t.disjoint_with, source, target, drop=t.label),
+            relation_restrictions=tuple(
+                replace(r, end_labels=_relabel(r.end_labels, source, target)) if r.end_labels else r
+                for r in t.relation_restrictions
+            ),
         )
         for t in model.node_types
     )
@@ -188,10 +192,26 @@ def _rename_relation_type(model: HygmModel, op: RenameRelationType) -> HygmModel
     if op.to == op.label:
         raise ModelError("invalid_operation", f"renaming {op.label!r} to itself")
     _free(model, "relation", op.to)
-    return replace(
+    model = replace(
         model,
         relation_types=tuple(replace(r, label=op.to) if r.label == op.label else r for r in model.relation_types),
     )
+    return _relation_relabeled(model, op.label, op.to)
+
+
+def _relation_relabeled(model: HygmModel, source: str, target: str) -> HygmModel:
+    """Every `inverse_of` and relation restriction naming relation type `source` names `target`."""
+    relations = tuple(replace(r, inverse_of=target) if r.inverse_of == source else r for r in model.relation_types)
+    nodes = tuple(
+        replace(
+            t,
+            relation_restrictions=tuple(
+                replace(r, relation=target) if r.relation == source else r for r in t.relation_restrictions
+            ),
+        )
+        for t in model.node_types
+    )
+    return replace(model, node_types=nodes, relation_types=relations)
 
 
 def _union(a: tuple[str, ...], b: tuple[str, ...]) -> tuple[str, ...]:
@@ -209,7 +229,7 @@ def _merge_relation_types(model: HygmModel, op: MergeRelationTypes) -> HygmModel
         end_labels=_union(survivor.end_labels, gone.end_labels),
     )
     model = replace(model, relation_types=tuple(r for r in model.relation_types if r.label != op.label))
-    return _with(model, merged)
+    return _relation_relabeled(_with(model, merged), op.label, op.into)
 
 
 def _add_property(model: HygmModel, op: AddProperty) -> HygmModel:

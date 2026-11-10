@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 from .facets import FacetConflictError, merge, narrowing_problem
 
 if TYPE_CHECKING:
-    from .types import HygmModel, NodeType, Property
+    from .types import HygmModel, NodeType, Property, RelationRestriction, RelationType
 
 
 class ValidationSeverity(Enum):
@@ -94,7 +94,13 @@ def validate_model(model: "HygmModel") -> ValidationResult:
     an ancestor, and no two disjoint types share a descendant
     (`disjoint_conflict`); no synonym equals, ignoring case, another type's
     label or synonym, nor another property's name or synonym on the same
-    type (`duplicate_name`). A profile's own rules are
+    type (`duplicate_name`); `inverse_of` and restrictions name declared
+    relation types (`unknown_type`); inverse relations have swapped
+    endpoints, a relation has at most one inverse, and a symmetric one equal
+    endpoints (`inverse_conflict`); a relation restriction names a relation
+    its type may start, at most once, and only narrows its end labels and
+    counts, as do the restrictions a type inherits from several parents
+    (`relation_conflict`). A profile's own rules are
     its owner's to check (docs/contract.md, 5.6). Identifier syntax, property
     types, `values` and one property's own facets (`count_conflict`,
     `invalid_value`, 4.14) are enforced when the types are constructed,
@@ -124,9 +130,11 @@ def validate_model(model: "HygmModel") -> ValidationResult:
 
     _check_parents(model, result)
     _check_disjoint_declared(model, result)
+    _check_inverses(model, result)
     if not any(issue.code in {"unknown_parent", "parent_cycle", "unknown_type"} for issue in result.issues):
         _check_inheritance(model, result)
         _check_disjointness(model, result)
+        _check_restrictions(model, result)
     _check_synonyms(model, result)
 
     for relation in model.relation_types:
@@ -182,6 +190,141 @@ def _check_disjoint_declared(model: "HygmModel", result: ValidationResult) -> No
                         actual=other,
                     )
                 )
+
+
+def _check_inverses(model: "HygmModel", result: ValidationResult) -> None:
+    """Inverse relations swap their endpoints and pair up one to one; a symmetric relation's are equal (4.16)."""
+
+    def conflict(message: str) -> None:
+        result.add_issue(_critical("inverse_conflict", ValidationCategory.CONSISTENCY, message))
+
+    claimed: dict[str, list[str]] = {}
+    for relation in model.relation_types:
+        if relation.symmetric and set(relation.start_labels) != set(relation.end_labels):
+            conflict(f"Relation type {relation.label!r} is symmetric, so its start and end labels must be equal")
+        if relation.inverse_of is None:
+            continue
+        other = model.relation_type(relation.inverse_of)
+        if other is None:
+            result.add_issue(
+                _critical(
+                    "unknown_type",
+                    ValidationCategory.STRUCTURE,
+                    f"Relation type {relation.label!r}: inverse_of names undeclared relation type {relation.inverse_of!r}",
+                )
+            )
+            continue
+        claimed.setdefault(other.label, []).append(relation.label)
+        if set(relation.start_labels) != set(other.end_labels) or set(relation.end_labels) != set(other.start_labels):
+            conflict(
+                f"Relation types {relation.label!r} and {other.label!r} are inverses, so one's start labels "
+                "must be the other's end labels"
+            )
+        if other.inverse_of not in (None, relation.label):
+            conflict(f"Relation type {relation.label!r} is {other.label!r}'s inverse, which names another inverse")
+    for label, claims in claimed.items():
+        if len(claims) > 1:
+            conflict(f"Relation type {label!r} has more than one inverse: {sorted(set(claims))}")
+
+
+def _check_restrictions(model: "HygmModel", result: ValidationResult) -> None:
+    """A type's relation restrictions only narrow what its instances inherit (4.16)."""
+
+    def conflict(message: str) -> None:
+        result.add_issue(_critical("relation_conflict", ValidationCategory.CONSISTENCY, message))
+
+    declared = set(model.node_labels())
+    for node in model.node_types:
+        relations = [r.relation for r in node.relation_restrictions]
+        for name in sorted({name for name in relations if relations.count(name) > 1}):
+            conflict(f"Node type {node.label!r} restricts relation type {name!r} more than once")
+        for restriction in node.relation_restrictions:
+            where = f"Node type {node.label!r}: the restriction of {restriction.relation!r}"
+            relation = model.relation_type(restriction.relation)
+            if relation is None:
+                result.add_issue(
+                    _critical(
+                        "unknown_type", ValidationCategory.STRUCTURE, f"{where} names an undeclared relation type"
+                    )
+                )
+                continue
+            if not model.may_start(node.label, relation):
+                conflict(f"{where} narrows a relation its instances can't start")
+                continue
+            undeclared = [label for label in restriction.end_labels or () if label not in declared]
+            for label in undeclared:
+                result.add_issue(
+                    _critical(
+                        "undeclared_endpoint",
+                        ValidationCategory.STRUCTURE,
+                        f"{where} names undeclared node type {label!r}",
+                    )
+                )
+            if undeclared:
+                continue
+            problem = _restriction_problem(model, node, relation, restriction)
+            if problem:
+                conflict(f"{where} {problem}: a restriction may only narrow")
+    for node in model.node_types:
+        for relation in model.relation_types:
+            problem = _parents_disagree(model, node, relation)
+            if problem:
+                conflict(f"Node type {node.label!r} inherits restrictions of {relation.label!r} {problem}")
+
+
+def _inherited_relation(model: "HygmModel", node: "NodeType", relation: "RelationType") -> "RelationType":
+    inherited = relation
+    for parent in node.parents:
+        from_parent = model.relation_for(parent, relation.label)
+        if from_parent is not None:
+            inherited = model.narrowed(inherited, from_parent.end_labels, from_parent.min_count, from_parent.max_count)
+    return inherited
+
+
+def _restriction_problem(
+    model: "HygmModel", node: "NodeType", relation: "RelationType", restriction: "RelationRestriction"
+) -> str | None:
+    inherited = _inherited_relation(model, node, relation)
+    if restriction.end_labels is not None and inherited.end_labels:
+        wider = [e for e in restriction.end_labels if not any(model.is_a(e, x) for x in inherited.end_labels)]
+        if wider:
+            return f"ends at {wider}, beyond the inherited {list(inherited.end_labels)}"
+    if restriction.end_labels == ():
+        return "has an empty end_labels, which reads as any label"
+    if restriction.min_count is not None and restriction.min_count < inherited.min_count:
+        return f"lowers min_count below {inherited.min_count}"
+    if (
+        restriction.max_count is not None
+        and inherited.max_count is not None
+        and restriction.max_count > inherited.max_count
+    ):
+        return f"raises max_count above {inherited.max_count}"
+    least = max(inherited.min_count, restriction.min_count or 0)
+    limits = [m for m in (inherited.max_count, restriction.max_count) if m is not None]
+    if limits and least > min(limits):
+        return f"leaves no count: at least {least} and at most {min(limits)}"
+    return None
+
+
+def _parents_disagree(model: "HygmModel", node: "NodeType", relation: "RelationType") -> str | None:
+    """Why the restrictions `node` inherits from its parents leave no end label or count, or None."""
+    narrowed = [model.relation_for(parent, relation.label) for parent in node.parents]
+    narrowed = [r for r in narrowed if r is not None and r != relation]
+    if len(narrowed) < 2:
+        return None
+    for i, a in enumerate(narrowed):
+        for b in narrowed[i + 1 :]:
+            if (
+                a.end_labels
+                and b.end_labels
+                and not any(model.is_a(x, y) or model.is_a(y, x) for x in a.end_labels for y in b.end_labels)
+            ):
+                return f"from several parents with no end label in common ({list(a.end_labels)}, {list(b.end_labels)})"
+    least = max(r.min_count for r in narrowed)
+    limits = [r.max_count for r in narrowed if r.max_count is not None]
+    if limits and least > min(limits):
+        return f"from several parents with no count in common: at least {least} and at most {min(limits)}"
+    return None
 
 
 def _check_disjointness(model: "HygmModel", result: ValidationResult) -> None:
