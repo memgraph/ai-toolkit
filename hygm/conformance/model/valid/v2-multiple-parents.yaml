@@ -1,0 +1,12 @@
+version: 2
+node_types:
+  - label: Named
+    description: has a name
+    properties: [{name: name, type: string}]
+  - label: Dated
+    description: has a date
+    properties: [{name: name, type: string, required: true}, {name: held_on, type: date}]
+  - label: Event
+    description: a named, dated happening
+    parents: [Named, Dated]
+    key: [name]

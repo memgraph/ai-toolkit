@@ -1,0 +1,3 @@
+version: 2
+entity_types:
+  - {label: A, description: a}

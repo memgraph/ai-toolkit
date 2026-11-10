@@ -11,6 +11,7 @@ from hygm import (
     HygmModel,
     LlmRecommendationStrategy,
     NodeType,
+    Property,
     RelationType,
     default_model,
 )
@@ -281,3 +282,19 @@ def test_batches_are_whole_sessions_dealt_by_seed_under_the_budget():
     assert {text for batch in batches for text in batch} <= set(sessions)
     assert batches == _batches(sessions, limits, seed=1)
     assert batches != _batches(sessions, limits, seed=2)
+
+
+@pytest.mark.parametrize(
+    ("node", "unsupported"),
+    [
+        (NodeType("Library", parents=("Artifact",)), "parents"),
+        (NodeType("Library", properties=(Property("version"),)), "properties"),
+        (NodeType("Library", key=("name",), properties=(Property("name", required=True),)), "key"),
+    ],
+)
+def test_a_model_using_what_derivation_would_drop_is_refused(node, unsupported):
+    base = default_model()
+    current = replace(base, node_types=(*base.node_types, node))
+
+    with pytest.raises(DerivationError, match=f"does not support.*{unsupported}"):
+        _derive(ScriptedLlm(consolidate={}, prune={}), FixedObserver(), current=current)

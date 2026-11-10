@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/memgraph/ai-toolkit/hygm/schema/model.v2.schema.json",
+  "title": "hygm model, format version 2",
+  "description": "The structure of a version-2 hygm model file. Rules a JSON Schema can't express (unique labels and properties, declared parents and endpoints, no parent cycle, property agreement, keys) are defined in hygm/docs/contract.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "node_types"],
+  "properties": {
+    "version": {"const": 2},
+    "node_types": {"type": "array", "items": {"$ref": "#/$defs/node_type"}},
+    "relation_types": {"type": "array", "items": {"$ref": "#/$defs/relation_type"}},
+    "profiles": {"$ref": "#/$defs/profiles"}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+    "labels": {"type": "array", "items": {"$ref": "#/$defs/identifier"}},
+    "node_type": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "description"],
+      "properties": {
+        "label": {"$ref": "#/$defs/identifier"},
+        "description": {"type": "string"},
+        "parents": {"$ref": "#/$defs/labels"},
+        "properties": {"type": "array", "items": {"$ref": "#/$defs/property"}},
+        "key": {"$ref": "#/$defs/labels"},
+        "iri": {"type": "string"},
+        "profiles": {"$ref": "#/$defs/profiles"}
+      }
+    },
+    "relation_type": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "description"],
+      "properties": {
+        "label": {"$ref": "#/$defs/identifier"},
+        "description": {"type": "string"},
+        "start_labels": {"$ref": "#/$defs/labels"},
+        "end_labels": {"$ref": "#/$defs/labels"},
+        "properties": {"type": "array", "items": {"$ref": "#/$defs/property"}},
+        "iri": {"type": "string"},
+        "profiles": {"$ref": "#/$defs/profiles"}
+      }
+    },
+    "property": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"$ref": "#/$defs/identifier"},
+        "type": {"enum": ["string", "integer", "float", "decimal", "boolean", "date", "datetime", "json"]},
+        "description": {"type": "string"},
+        "required": {"type": "boolean"},
+        "values": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "iri": {"type": "string"},
+        "profiles": {"$ref": "#/$defs/profiles"}
+      },
+      "if": {"required": ["values"]},
+      "then": {"properties": {"type": {"const": "string"}}}
+    },
+    "profiles": {
+      "type": "object",
+      "propertyNames": {"anyOf": [{"enum": ["extraction"]}, {"pattern": "^x_"}]},
+      "additionalProperties": {"type": "object"},
+      "properties": {
+        "extraction": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {"identity": {"enum": ["global", "chunk", "span"]}}
+        }
+      }
+    }
+  }
+}

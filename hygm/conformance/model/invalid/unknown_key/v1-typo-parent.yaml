@@ -1,0 +1,2 @@
+entity_types:
+  - {label: A, description: a, parent: B}

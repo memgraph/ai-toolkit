@@ -212,3 +212,13 @@ def test_load_ontology_rejects_an_endpoint_naming_an_undeclared_type(tmp_path):
     )
     with pytest.raises(ValueError, match="undeclared"):
         load_ontology(path)
+
+
+def test_a_model_with_a_type_hierarchy_is_refused_until_extraction_writes_ancestor_labels():
+    from hygm import HygmModel, NodeType
+    from unstructured2graph.ontology import Ontology
+
+    model = HygmModel(node_types=(NodeType("Party"), NodeType("Customer", parents=("Party",))))
+
+    with pytest.raises(ValueError, match=r"type hierarchies.*\['Customer'\]"):
+        Ontology.from_model(model)

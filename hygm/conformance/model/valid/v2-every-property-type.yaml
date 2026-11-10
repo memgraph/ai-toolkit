@@ -1,0 +1,15 @@
+version: 2
+node_types:
+  - label: Sample
+    description: one of each property type
+    properties:
+      - {name: s, type: string}
+      - {name: i, type: integer}
+      - {name: f, type: float}
+      - {name: d, type: decimal}
+      - {name: b, type: boolean}
+      - {name: dt, type: date}
+      - {name: ts, type: datetime}
+      - {name: j, type: json}
+      - {name: e, values: [a, b]}
+      - {name: x, iri: "https://example.org/x"}

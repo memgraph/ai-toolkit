@@ -1,0 +1,2 @@
+{"entity_types": [{"label": "Thing", "description": "anything", "identity": "global"}],
+ "relation_types": [{"label": "related", "description": "", "start_labels": ["Thing"], "end_labels": []}]}
