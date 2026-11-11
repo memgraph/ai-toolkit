@@ -24,7 +24,7 @@ from .profiles import (
     setting,
     with_version_1_profiles,
 )
-from .types import Conventions, HygmModel, Import, NodeType, Ontology, Property, RelationType
+from .types import Conventions, HygmModel, Import, NodeType, Ontology, Property, RelationRestriction, RelationType
 from .validation import validate_model
 
 #: Resolves one `imports` path, as the importing file wrote it, to the
@@ -53,6 +53,7 @@ _SCOPE = {"includes", "excludes"}
 _CONVENTIONS = {"node_case", "property_case", "relation_case", "number"}
 _IMPORT = {"path"}
 _NAMED = {"synonyms", "names"}
+_RESTRICTION = {"relation", "end_labels", "min_count", "max_count"}
 _V2_NODE = {
     "label",
     "description",
@@ -63,8 +64,12 @@ _V2_NODE = {
     "profiles",
     "abstract",
     "disjoint_with",
+    "relation_restrictions",
 } | _NAMED
-_V2_RELATION = {"label", "description", "start_labels", "end_labels", "properties", "iri", "profiles"} | _NAMED
+_RELATION_FACETS = {"min_count", "max_count", "inverse_of", "symmetric"}
+_V2_RELATION = (
+    {"label", "description", "start_labels", "end_labels", "properties", "iri", "profiles"} | _NAMED | _RELATION_FACETS
+)
 _FACETS = {"min_count", "max_count", "default", "value", "minimum", "maximum", "unit"}
 _V2_PROPERTY = {"name", "type", "description", "required", "values", "iri", "profiles"} | _NAMED | _FACETS
 
@@ -344,7 +349,19 @@ def _v2_node(node: NodeType, model: HygmModel | None = None) -> dict[str, Any]:
         out["abstract"] = True
     if node.disjoint_with:
         out["disjoint_with"] = list(node.disjoint_with)
+    if node.relation_restrictions:
+        out["relation_restrictions"] = [_restriction(r) for r in node.relation_restrictions]
     return _with_names(out, node)
+
+
+def _restriction(restriction: RelationRestriction) -> dict[str, Any]:
+    out: dict[str, Any] = {"relation": restriction.relation}
+    if restriction.end_labels is not None:
+        out["end_labels"] = list(restriction.end_labels)
+    for key in ("min_count", "max_count"):
+        if getattr(restriction, key) is not None:
+            out[key] = getattr(restriction, key)
+    return out
 
 
 def _v2_relation(relation: RelationType) -> dict[str, Any]:
@@ -359,6 +376,14 @@ def _v2_relation(relation: RelationType) -> dict[str, Any]:
         out["iri"] = relation.iri
     if relation.profiles:
         out["profiles"] = _plain(relation.profiles)
+    if relation.min_count:
+        out["min_count"] = relation.min_count
+    if relation.max_count is not None:
+        out["max_count"] = relation.max_count
+    if relation.inverse_of is not None:
+        out["inverse_of"] = relation.inverse_of
+    if relation.symmetric:
+        out["symmetric"] = True
     return _with_names(out, relation)
 
 
@@ -562,7 +587,27 @@ class _Reader:
             disjoint_with=self.labels(item, "disjoint_with", where),
             synonyms=self.strings(item, "synonyms", where),
             names=self.names(item, where),
+            relation_restrictions=self.restrictions(item, where),
         )
+
+    def restrictions(self, item: dict, where: str) -> tuple[RelationRestriction, ...]:
+        found = []
+        for index, raw in enumerate(self.listed(item, "relation_restrictions", where=where)):
+            at = f"{where} relation_restrictions[{index}]"
+            if not isinstance(raw, dict) or not isinstance(raw.get("relation"), str):
+                raise self.fail("invalid_format", at, "must be a mapping with a string 'relation'")
+            self.known(raw, _RESTRICTION, at)
+            found.append(
+                self.build(
+                    RelationRestriction,
+                    at,
+                    raw["relation"],
+                    end_labels=self.labels(raw, "end_labels", at) if "end_labels" in raw else None,
+                    min_count=self.count(raw, "min_count", at, nullable=False),
+                    max_count=self.count(raw, "max_count", at, nullable=False),
+                )
+            )
+        return tuple(found)
 
     def relation(self, item: Any, where: str, allowed: set[str]) -> RelationType:
         label, description = self.labeled(item, where)
@@ -579,6 +624,10 @@ class _Reader:
             profiles=self.profiles(item.get("profiles", {}), f"{where} profiles", "relation"),
             synonyms=self.strings(item, "synonyms", where),
             names=self.names(item, where),
+            min_count=self.count(item, "min_count", where, nullable=False) or 0,
+            max_count=self.count(item, "max_count", where, nullable=True),
+            inverse_of=self.optional_string(item, "inverse_of", where),
+            symmetric=self.boolean(item, "symmetric", where),
         )
 
     def parents_view(self, label: str, parents: tuple[str, ...]) -> tuple[str, HygmModel] | None:

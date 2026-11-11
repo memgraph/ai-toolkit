@@ -1,0 +1,5 @@
+version: 2
+node_types:
+  - {label: Person, description: someone}
+relation_types:
+  - {label: married_to, description: spouse, start_labels: [Person], end_labels: [Person], inverse_of: married_to}

@@ -97,6 +97,8 @@ def test_every_code_in_the_contract_has_a_fixture():
         "duplicate_name",
         "count_conflict",
         "invalid_value",
+        "inverse_conflict",
+        "relation_conflict",
     }
 
     assert {p.parent.name for p in INVALID} == model_codes

@@ -3,7 +3,7 @@
 import re
 from collections.abc import Mapping
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Literal
 
 from .errors import ModelError
@@ -50,6 +50,14 @@ def _tuple_of_labels(owner: object, attribute: str, what: str) -> None:
     if isinstance(value, str):
         raise TypeError(f"{what}: {attribute} must be a tuple of labels, not a string")
     object.__setattr__(owner, attribute, tuple(value))
+
+
+def _count(owner: object, key: str, what: str, *, nullable: bool) -> None:
+    count = getattr(owner, key)
+    if count is None and nullable:
+        return
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        raise ModelError("invalid_format", f"{what}: {key} must be a whole number, got {count!r}")
 
 
 def _names_and_synonyms(owner: Any, what: str) -> None:
@@ -232,6 +240,43 @@ class Property:
 
 
 @dataclass(frozen=True)
+class RelationRestriction:
+    """How a node type narrows a relation for its own instances (docs/contract.md, 4.16).
+
+    Attributes:
+        relation: The relation type narrowed; the node type must be able to start it.
+        end_labels: Where the relation may end from this type's instances,
+            each a descendant of (or one of) the end labels it narrows; None
+            keeps the inherited ones.
+        min_count: The fewest such relationships an instance starts; None keeps the inherited count.
+        max_count: The most; None keeps the inherited count. A restriction
+            only narrows, so it can't lift a limit.
+
+    Raises:
+        ModelError: `invalid_identifier` for a bad relation type or label,
+            `invalid_format` for a negative count, `count_conflict` for
+            `min_count` above `max_count`.
+    """
+
+    relation: str
+    end_labels: tuple[str, ...] | None = None
+    min_count: int | None = None
+    max_count: int | None = None
+
+    def __post_init__(self) -> None:
+        _identifier(self.relation, "relation type")
+        what = f"Restriction of {self.relation!r}"
+        if self.end_labels is not None:
+            _tuple_of_labels(self, "end_labels", what)
+        _count(self, "min_count", what, nullable=True)
+        _count(self, "max_count", what, nullable=True)
+        if self.min_count is not None and self.max_count is not None and self.min_count > self.max_count:
+            raise ModelError(
+                "count_conflict", f"{what}: min_count {self.min_count} is above max_count {self.max_count}"
+            )
+
+
+@dataclass(frozen=True)
 class NodeType:
     """A node label the model declares.
 
@@ -250,6 +295,7 @@ class NodeType:
             enough; HygmModel.disjoint() answers it both ways.
         synonyms: Other names for the same concept (4.13).
         names: Display names and translations by language tag (4.13).
+        relation_restrictions: Relations narrowed for this type's instances (4.16).
     """
 
     label: str
@@ -263,6 +309,7 @@ class NodeType:
     disjoint_with: tuple[str, ...] = ()
     synonyms: tuple[str, ...] = ()
     names: Names = field(default_factory=dict, hash=False)
+    relation_restrictions: tuple[RelationRestriction, ...] = ()
 
     def __post_init__(self) -> None:
         _identifier(self.label, "node label")
@@ -271,6 +318,11 @@ class NodeType:
         _tuple_of_labels(self, "key", what)
         _tuple_of_labels(self, "disjoint_with", what)
         _names_and_synonyms(self, what)
+        object.__setattr__(self, "relation_restrictions", tuple(self.relation_restrictions))
+
+    def restriction(self, relation: str) -> RelationRestriction | None:
+        """This type's own restriction of `relation`, if it declares one."""
+        return next((r for r in self.relation_restrictions if r.relation == relation), None)
         object.__setattr__(self, "properties", tuple(self.properties))
 
 
@@ -290,6 +342,16 @@ class RelationType:
         profiles: Profile settings for this type.
         synonyms: Other names for the same relationship (4.13).
         names: Display names and translations by language tag (4.13).
+        min_count: The fewest relationships of this type a start node has (4.16).
+        max_count: The most; None for no limit. 1 is a single-valued slot.
+        inverse_of: The relation type every one of these implies backwards:
+            `(a)-[:R]->(b)` implies `(b)-[:S]->(a)`. Declared on one side;
+            HygmModel.inverse() answers it from either.
+        symmetric: `(a)-[:R]->(b)` implies `(b)-[:R]->(a)`.
+
+    Raises:
+        ModelError: `invalid_format` for a negative count, `count_conflict`
+            for `min_count` above `max_count`.
     """
 
     label: str
@@ -301,6 +363,10 @@ class RelationType:
     profiles: Profiles = field(default_factory=dict, hash=False)
     synonyms: tuple[str, ...] = ()
     names: Names = field(default_factory=dict, hash=False)
+    min_count: int = 0
+    max_count: int | None = None
+    inverse_of: str | None = None
+    symmetric: bool = False
 
     def __post_init__(self) -> None:
         _identifier(self.label, "relation type")
@@ -308,6 +374,14 @@ class RelationType:
         _tuple_of_labels(self, "start_labels", what)
         _tuple_of_labels(self, "end_labels", what)
         _names_and_synonyms(self, what)
+        _count(self, "min_count", what, nullable=False)
+        _count(self, "max_count", what, nullable=True)
+        if self.max_count is not None and self.min_count > self.max_count:
+            raise ModelError(
+                "count_conflict", f"{what}: min_count {self.min_count} is above max_count {self.max_count}"
+            )
+        if self.inverse_of is not None:
+            _identifier(self.inverse_of, "relation type")
         object.__setattr__(self, "properties", tuple(self.properties))
 
     @property
@@ -373,6 +447,85 @@ class HygmModel:
 
     def node_type(self, label: str) -> NodeType | None:
         return next((t for t in self.node_types if t.label == label), None)
+
+    def relation_type(self, label: str) -> RelationType | None:
+        return next((r for r in self.relation_types if r.label == label), None)
+
+    def inverse(self, label: str) -> str | None:
+        """The relation type `label` implies backwards (4.16), or None.
+
+        That is its `inverse_of`, else the one declaring itself `label`'s
+        inverse, else `label` itself when symmetric.
+        """
+        relation = self.relation_type(label)
+        if relation is None:
+            return None
+        if relation.inverse_of is not None:
+            return relation.inverse_of
+        declaring = next((r.label for r in self.relation_types if r.inverse_of == label), None)
+        return declaring or (label if relation.symmetric else None)
+
+    def relation_for(self, label: str, relation: str) -> RelationType | None:
+        """`relation` as instances of node type `label` have it: narrowed by every restriction they inherit (4.16).
+
+        Restrictions apply from the topmost ancestor down; one from each of
+        two parents combine to what both allow. The result keeps the
+        relation's own start labels. None if `relation` isn't declared or
+        `label`'s instances can't start it.
+        """
+        declared = self.relation_type(relation)
+        if declared is None or self.node_type(label) is None or not self.may_start(label, declared):
+            return None
+        return self._restricted(label, declared, frozenset())
+
+    def may_start(self, label: str, relation: RelationType) -> bool:
+        """Whether a `label` instance may start `relation`: it is one of its start labels, or a descendant."""
+        return not relation.start_labels or any(self.is_a(label, start) for start in relation.start_labels)
+
+    def _restricted(self, label: str, relation: RelationType, visiting: frozenset[str]) -> RelationType:
+        node = self.node_type(label)
+        effective = relation
+        inherited = [
+            self._restricted(parent, relation, visiting | {label})
+            for parent in (node.parents if node else ())
+            if parent not in visiting and parent != label and self.node_type(parent) is not None
+        ]
+        for one in inherited:
+            effective = self.narrowed(effective, one.end_labels, one.min_count, one.max_count)
+        own = node.restriction(relation.label) if node else None
+        if own is not None:
+            effective = self.narrowed(effective, own.end_labels, own.min_count, own.max_count)
+        return effective
+
+    def narrowed(
+        self, relation: RelationType, end_labels: tuple[str, ...] | None, min_count: int | None, max_count: int | None
+    ) -> RelationType:
+        """`relation` narrowed to what it and the given end labels and counts both allow.
+
+        End labels narrow to the labels one side names that the other admits
+        (each named label and its descendants); where nothing both allow, the
+        given ones stand. Counts take the higher minimum and lower maximum,
+        which may cross. validate_model() reports both.
+        """
+        ends = relation.end_labels
+        if end_labels is not None and end_labels != relation.end_labels:
+            if not relation.end_labels:
+                ends = end_labels
+            else:
+                # Empty would read as "any label", so with nothing both allow, the narrower side stands.
+                ends = (
+                    tuple(
+                        dict.fromkeys(
+                            [e for e in end_labels if any(self.is_a(e, x) for x in relation.end_labels)]
+                            + [x for x in relation.end_labels if any(self.is_a(x, e) for e in end_labels)]
+                        )
+                    )
+                    or end_labels
+                )
+        least = max(relation.min_count, min_count or 0)
+        limits = [m for m in (relation.max_count, max_count) if m is not None]
+        most = min(limits) if limits else None
+        return _unchecked(relation, end_labels=ends, min_count=least, max_count=most)
 
     def ancestors(self, label: str) -> tuple[str, ...]:
         """Every supertype of `label`, nearest first. Parents that aren't declared are skipped."""
@@ -488,6 +641,10 @@ class HygmModel:
             "ontology": self.ontology is not None,
             "imports": bool(self.imports),
             "abstract": any(t.abstract for t in self.node_types),
+            "relation_restrictions": any(t.relation_restrictions for t in self.node_types),
+            "relation_counts": any(r.min_count or r.max_count is not None for r in self.relation_types),
+            "inverse_of": any(r.inverse_of for r in self.relation_types),
+            "symmetric": any(r.symmetric for r in self.relation_types),
             "disjoint_with": any(t.disjoint_with for t in self.node_types),
             "synonyms": any(t.synonyms for t in self._named()),
             "names": any(t.names for t in self._named()),
@@ -498,3 +655,15 @@ class HygmModel:
         """Everything that may carry `synonyms` and `names`: types and their properties."""
         types = (*self.node_types, *self.relation_types)
         return (*types, *(p for t in types for p in t.properties))
+
+
+def _unchecked(relation: RelationType, **changes: Any) -> RelationType:
+    """`relation` with `changes`, skipping __post_init__'s checks.
+
+    A narrowed relation's counts may cross; validate_model() reports that,
+    rather than a query raising.
+    """
+    narrowed = object.__new__(RelationType)
+    for spec in fields(RelationType):
+        object.__setattr__(narrowed, spec.name, changes.get(spec.name, getattr(relation, spec.name)))
+    return narrowed

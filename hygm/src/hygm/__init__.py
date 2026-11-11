@@ -89,6 +89,7 @@ from .types import (
     Ontology,
     Property,
     PropertyType,
+    RelationRestriction,
     RelationType,
 )
 from .validation import (
@@ -143,6 +144,7 @@ __all__ = [
     "PropertyBinding",
     "PropertyType",
     "RelationBinding",
+    "RelationRestriction",
     "RelationType",
     "RemoveNodeType",
     "RemoveProperty",

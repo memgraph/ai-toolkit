@@ -134,6 +134,12 @@ only what it narrows; `properties_of` returns the effective facets:
     - {name: sugar, values: [sweet], value: sweet}
 ```
 
+Relation types take counts per start node (`min_count`/`max_count`),
+`inverse_of` and `symmetric`, and a node type narrows a relation for its own
+instances with `relation_restrictions` (narrower end labels, tighter counts).
+`model.inverse(label)` and `model.relation_for(label, relation)` answer them,
+restrictions inherited down the hierarchy.
+
 The Memgraph plan types a multi-valued property `LIST`; Memgraph can't check
 its elements' type, the counts or the bounds, so writers do.
 

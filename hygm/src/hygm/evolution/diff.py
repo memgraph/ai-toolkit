@@ -44,7 +44,9 @@ def diff(a: HygmModel, b: HygmModel) -> tuple[Operation, ...]:
     Raises:
         ModelError: `unknown_operation` when `a` and `b` differ in a key no
             operation sets yet (the `ontology` block, `imports`, a node type's
-            `abstract`, `disjoint_with`, a type's `synonyms` or `names`),
+            `abstract`, `disjoint_with`, `relation_restrictions`, a type's
+            `synonyms` or `names`, a relation type's counts, `inverse_of` or
+            `symmetric`),
             rather than leave the change out. A type added whole, or a
             property set whole, carries every key.
     """
@@ -71,8 +73,8 @@ def diff(a: HygmModel, b: HygmModel) -> tuple[Operation, ...]:
 
 # TODO(#731): operations that set these keys, so diff and apply cover the whole model (contract, section 11).
 _MODEL_KEYS_WITHOUT_OPERATIONS = ("ontology", "imports")
-_NODE_KEYS_WITHOUT_OPERATIONS = ("abstract", "disjoint_with", "synonyms", "names")
-_RELATION_KEYS_WITHOUT_OPERATIONS = ("synonyms", "names")
+_NODE_KEYS_WITHOUT_OPERATIONS = ("abstract", "disjoint_with", "synonyms", "names", "relation_restrictions")
+_RELATION_KEYS_WITHOUT_OPERATIONS = ("synonyms", "names", "min_count", "max_count", "inverse_of", "symmetric")
 
 
 def _unexpressible(key: str, where: str = "") -> ModelError:
