@@ -77,8 +77,8 @@ class OwlImportStrategy:
 
     A key or required property the class only inherits is redeclared on it,
     required. Any other restriction, equivalence, disjointness or axiom is
-    ignored: hygm is a schema, not a reasoner. Every node type gets the default
-    identity; OWL has no counterpart. Needs the `hygm[owl]` extra (rdflib).
+    ignored: hygm is a schema, not a reasoner. No profile is set; OWL has no
+    counterpart. Needs the `hygm[owl]` extra (rdflib).
     """
 
     def create_model(self, path: str | Path, format: str | None = None) -> HygmModel:

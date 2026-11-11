@@ -10,8 +10,10 @@ pytest.importorskip("hygm", reason="hygm not installed")
 
 from sessions_graph import ontology
 from sessions_graph.cli import main
+from sessions_graph.default_model import default_model
+from sessions_graph.learning import CORE_LABELS
 
-from hygm import CORE_LABELS, HygmModel, NodeType, RelationType, default_model
+from hygm import HygmModel, NodeType, RelationType
 
 CODING = """
 entity_types:
@@ -171,8 +173,8 @@ def test_extend_carries_learned_types_that_do_not_clash(graph, memgraph, schema)
         profiles=default_model().profiles,
         node_types=(
             *default_model().node_types,
-            NodeType("Library", "learned: a dependency", "global"),
-            NodeType("Bug", "a defect", "chunk"),
+            NodeType("Library", "learned: a dependency", profiles={"extraction": {"identity": "global"}}),
+            NodeType("Bug", "a defect"),
         ),
         relation_types=(
             *default_model().relation_types,

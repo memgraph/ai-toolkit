@@ -17,10 +17,11 @@ pytest.importorskip("unstructured2graph", reason="unstructured2graph not install
 
 from sessions_graph import derivation
 from sessions_graph.cli import _spawn_due_derivations
+from sessions_graph.default_model import default_model
+from sessions_graph.derive_strategy import CONSOLIDATE_SCHEMA, PROPOSE_SCHEMA, PRUNE_SCHEMA, Change, Derivation
 
 from actions_graph import MessageRole, Session
-from hygm import AddNodeType, Change, Derivation, default_model
-from hygm.strategies.llm import CONSOLIDATE_SCHEMA, PROPOSE_SCHEMA, PRUNE_SCHEMA
+from hygm import AddNodeType
 from unstructured2graph.gliner2_backend import GLiNER2Backend
 from unstructured2graph.gliner2_observer import Measurement
 

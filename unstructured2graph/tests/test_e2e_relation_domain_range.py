@@ -20,10 +20,10 @@ from .gliner2_fakes import FakeEngine
 
 ONTOLOGY = Ontology(
     entity_types=(
-        EntityType("User", "the user", "global"),
-        EntityType("Person", "someone else", "global"),
-        EntityType("Location", "a place", "global"),
-        EntityType("Organization", "an institution", "global"),
+        EntityType("User", "the user", profiles={"extraction": {"identity": "global"}}),
+        EntityType("Person", "someone else", profiles={"extraction": {"identity": "global"}}),
+        EntityType("Location", "a place", profiles={"extraction": {"identity": "global"}}),
+        EntityType("Organization", "an institution", profiles={"extraction": {"identity": "global"}}),
     ),
     relation_types=(
         RelationType("visited", "", ("User", "Person"), ("Location",)),

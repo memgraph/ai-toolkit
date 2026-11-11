@@ -7,6 +7,7 @@ import yaml
 
 from ..errors import ModelError
 from ..format import model_from_mapping, model_to_mapping
+from ..profiles import Version1Profiles
 from ..types import HygmModel
 
 __all__ = ["ManualStrategy", "model_from_mapping", "model_to_mapping"]
@@ -36,6 +37,14 @@ class ManualStrategy:
     `entity_types` instead of `node_types`, and `identity` on the node type.
     """
 
+    def __init__(self, version_1_profiles: Version1Profiles | None = None) -> None:
+        """
+        Args:
+            version_1_profiles: What a version-1 file implies, its owner's rule
+                (docs/contract.md, 4.9); see model_from_mapping().
+        """
+        self.version_1_profiles = version_1_profiles
+
     def create_model(self, path: str | Path) -> HygmModel:
         """Parse and validate the model at `path`.
 
@@ -51,4 +60,4 @@ class ManualStrategy:
         except yaml.YAMLError as e:
             raise ModelError("invalid_format", f"Invalid YAML in ontology file {resolved}: {e}") from e
 
-        return model_from_mapping(raw, f"file {resolved}")
+        return model_from_mapping(raw, f"file {resolved}", version_1_profiles=self.version_1_profiles)

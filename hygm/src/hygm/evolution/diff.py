@@ -94,11 +94,7 @@ def _relation_changes(a: RelationType, b: RelationType) -> list[Operation]:
 
 
 def _node_profiles(node: NodeType) -> dict[str, dict[str, Any]]:
-    """A node type's profiles as a model file holds them: `identity` inside `extraction`."""
-    profiles = {name: dict(settings) for name, settings in node.profiles.items()}
-    if node.identity != "chunk":
-        profiles["extraction"] = {**profiles.get("extraction", {}), "identity": node.identity}
-    return profiles
+    return {name: dict(settings) for name, settings in node.profiles.items()}
 
 
 def _profile_changes(

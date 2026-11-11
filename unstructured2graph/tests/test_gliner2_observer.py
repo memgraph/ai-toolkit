@@ -2,19 +2,20 @@
 
 from typing import Any, cast
 
-from hygm import HygmModel, NodeType, RelationType, with_implied_profiles
+from hygm import HygmModel, NodeType, RelationType
 from unstructured2graph import Document, Segment
 from unstructured2graph.gliner2_observer import GLiNER2Observer
+from unstructured2graph.profile import with_implied_profiles
 
 from .gliner2_fakes import FakeEngine
 
 MODEL = with_implied_profiles(
     HygmModel(
         node_types=(
-            NodeType("User", "the user", "global"),
-            NodeType("Person", "someone else", "global"),
-            NodeType("Location", "a place", "global"),
-            NodeType("Quantity", "a count", "span"),
+            NodeType("User", "the user", profiles={"extraction": {"identity": "global"}}),
+            NodeType("Person", "someone else", profiles={"extraction": {"identity": "global"}}),
+            NodeType("Location", "a place", profiles={"extraction": {"identity": "global"}}),
+            NodeType("Quantity", "a count", profiles={"extraction": {"identity": "span"}}),
         ),
         relation_types=(RelationType("visited"), RelationType("owns_count", end_labels=("Quantity",))),
     )
@@ -83,7 +84,7 @@ def test_the_engine_is_reused_across_candidates():
 
 def test_measure_scores_catch_all_share_and_user_turn_coverage():
     model = HygmModel(
-        node_types=(*MODEL.node_types, NodeType("Topic", "a subject", "chunk")),
+        node_types=(*MODEL.node_types, NodeType("Topic", "a subject")),
         relation_types=MODEL.relation_types,
     )
     engine = FakeEngine(

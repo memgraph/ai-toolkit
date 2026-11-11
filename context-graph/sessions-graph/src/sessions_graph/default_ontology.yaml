@@ -1,6 +1,6 @@
 # The generic default model (#436): what a user's graph is extracted under
 # until derivation has learned from their sessions, and version 0 of every
-# learned model. Load it with hygm.default_model().
+# learned model. Load it with sessions_graph.default_model.default_model().
 #
 # - The fixed core (learning: protected) is User, Person and the value types
 #   (extraction: value). It is never merged or retired and sits outside the

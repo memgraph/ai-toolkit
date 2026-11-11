@@ -16,14 +16,12 @@ def test_invalid_identifiers_raise_naming_the_role(value):
         require_valid_identifier(value, "workspace")
 
 
-def test_node_type_defaults_to_chunk_identity():
-    assert NodeType("Topic").identity == "chunk"
+def test_node_type_defaults_to_no_description_and_no_profiles():
     assert NodeType("Topic").description == ""
+    assert NodeType("Topic").profiles == {}
 
 
-def test_node_type_rejects_unknown_identity_and_bad_label():
-    with pytest.raises(ValueError, match="identity"):
-        NodeType("Topic", identity="session")  # ty: ignore[invalid-argument-type]
+def test_node_type_rejects_a_bad_label():
     with pytest.raises(ValueError, match="identifier"):
         NodeType("Bad Label")
 

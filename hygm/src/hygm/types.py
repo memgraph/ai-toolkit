@@ -7,14 +7,6 @@ from typing import Any, Literal
 from .errors import ModelError
 from .identifiers import is_valid_identifier
 
-Identity = Literal["global", "chunk", "span"]
-
-#: How a node type's mentions become nodes (#346, #361):
-#:   global -- one node per normalized text across every chunk (named things that recur)
-#:   chunk  -- one node per normalized text per chunk (generic nouns)
-#:   span   -- one node per mention (values: every "3" in a session is a different fact)
-IDENTITIES: tuple[Identity, ...] = ("global", "chunk", "span")
-
 PropertyType = Literal["string", "integer", "float", "decimal", "boolean", "date", "datetime", "json"]
 
 #: The contract's logical property types; each reader maps them to its own physical types.
@@ -94,21 +86,17 @@ class NodeType:
 
     Attributes:
         label: The Memgraph label, a valid Cypher identifier.
-        description: What the type covers. Extractors that read descriptions
-            (GLiNER2's entity specs, LightRAG's prompt) steer on it.
-        identity: How mentions of this type are merged into nodes; see
-            IDENTITIES. The `extraction` profile's setting, kept as a field
-            because every extractor reads it.
+        description: What the type covers, for people and for consumers that
+            read descriptions.
         parents: Supertypes: every instance of this type is also one of each.
         properties: Properties declared here; inherited ones are not repeated.
         key: Property names whose values identify one entity across sources.
         iri: The type's IRI when it came from, or must round-trip to, RDF/OWL.
-        profiles: Other profile settings for this type.
+        profiles: Profile settings for this type, each owned by its consumer.
     """
 
     label: str
     description: str = ""
-    identity: Identity = "chunk"
     parents: tuple[str, ...] = ()
     properties: tuple[Property, ...] = ()
     key: tuple[str, ...] = ()
@@ -117,11 +105,6 @@ class NodeType:
 
     def __post_init__(self) -> None:
         _identifier(self.label, "node label")
-        if self.identity not in IDENTITIES:
-            raise ModelError(
-                "invalid_profile_value",
-                f"Node type {self.label!r}: identity must be one of {IDENTITIES}, got {self.identity!r}",
-            )
         what = f"Node type {self.label!r}"
         _tuple_of_labels(self, "parents", what)
         _tuple_of_labels(self, "key", what)
@@ -134,11 +117,9 @@ class RelationType:
 
     Attributes:
         label: The Memgraph relationship type, a valid Cypher identifier.
-        description: Documentation only for GLiNER2, whose joint compiler drops
-            relation descriptions; the label is its only steering surface (#360).
+        description: What the relationship means.
         start_labels: Labels the relationship may start at, each admitting its
-            descendants. Empty means any declared label -- OWL's rdfs:domain,
-            sql2graph's start_node_labels.
+            descendants. Empty means any declared label -- OWL's rdfs:domain.
         end_labels: Labels the relationship may end at, likewise. Empty means
             any declared label -- OWL's rdfs:range.
         properties: Properties a relationship of this type carries.
@@ -241,9 +222,8 @@ class HygmModel:
     def endpoint_labels(self, relation: RelationType, side: Literal["start", "end"]) -> tuple[str, ...]:
         """The labels `relation` may connect at `side`: each named label and its descendants, or every declared label.
 
-        Extractors that cannot express an unconstrained endpoint (GLiNER2's
-        JointSchema rejects an empty head/tail, #345) consume this rather than
-        the raw field. With no `parents` anywhere it is the raw field.
+        For a consumer that can't express an unconstrained endpoint. With no
+        `parents` anywhere it is the raw field.
         """
         labels = relation.start_labels if side == "start" else relation.end_labels
         if not labels:

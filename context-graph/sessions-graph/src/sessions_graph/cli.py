@@ -227,13 +227,15 @@ def _ontology(argv: list[str]) -> int:
 
 
 def _describe(version: OntologyVersion) -> str:
+    from unstructured2graph.profile import identity_of
+
     pinned = set(version.pinned)
     lines = [
         f"{version.user_id}: version {version.version} ({version.source}), derive={version.derive}"
         + (f", adopted {version.created_at}" if version.created_at else ""),
         "node types:",
         *(
-            f"  {t.label}{' (pinned)' if t.label in pinned else ''} [{t.identity}] {t.description}"
+            f"  {t.label}{' (pinned)' if t.label in pinned else ''} [{identity_of(t)}] {t.description}"
             for t in version.model.node_types
         ),
         "relation types:",

@@ -33,18 +33,21 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Protocol
 
-from hygm import DerivationError, LlmRecommendationStrategy, catch_all_labels, require_valid_identifier
+from hygm import require_valid_identifier
 
+from .derive_strategy import DerivationError, LlmRecommendationStrategy
+from .learning import catch_all_labels
 from .models import _utc_now
 from .ontology import OntologyVersion, adopt, adopted, next_version, reject
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from hygm import Derivation, HygmModel, Llm
+    from hygm import HygmModel
     from unstructured2graph import Document
     from unstructured2graph.gliner2_observer import Measurement
 
+    from .derive_strategy import Derivation, Llm
     from .reconciler import Reconciler
 
 #: Run when this many qualifying sessions exist, then every EVERY after the last.
@@ -73,7 +76,7 @@ ORDER BY reconciled_at, session_id
 
 
 class GateObserver(Protocol):
-    """``hygm.Observer`` that can also score a model for the gate, like ``GLiNER2Observer``."""
+    """``derive_strategy.Observer`` that can also score a model for the gate, like ``GLiNER2Observer``."""
 
     def observe(self, model: HygmModel, sample: Sequence[Any]) -> Mapping[str, Any]: ...
 

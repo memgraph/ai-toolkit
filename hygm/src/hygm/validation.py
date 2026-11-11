@@ -13,12 +13,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .types import HygmModel, NodeType, Property
 
-#: The `conversation` profile's labels in a version-1 file: the person a
-#: conversation is with, and what a `User` mention that is a third party is
-#: re-typed to (#358).
-USER_LABEL = "User"
-PERSON_LABEL = "Person"
-
 
 class ValidationSeverity(Enum):
     CRITICAL = "CRITICAL"
@@ -92,8 +86,9 @@ def validate_model(model: "HygmModel") -> ValidationResult:
     relation endpoint name declared node types; the parent graph has no
     cycle; redeclared and doubly inherited properties agree; every key names
     required properties and no type has two keys. A profile's own rules are
-    its consumers' to check (`profiles.validate_for_conversation`). Identifier syntax, property
-    types, `values` and `identity` are enforced when the types are constructed.
+    its owner's to check (docs/contract.md, 5.6). Identifier syntax, property
+    types and `values` are enforced when the types are constructed, profile
+    settings when a model file is read.
 
     Returns:
         A ValidationResult; `success` is False if any issue is CRITICAL.
