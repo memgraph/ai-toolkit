@@ -144,7 +144,8 @@ def _relabel_everywhere(model: HygmModel, source: str, target: str) -> HygmModel
         }
         for name, settings in model.profiles.items()
     }
-    return replace(model, node_types=nodes, relation_types=relations, profiles=profiles)
+    individuals = tuple(replace(i, type=target) if i.type == source else i for i in model.individuals)
+    return replace(model, node_types=nodes, relation_types=relations, profiles=profiles, individuals=individuals)
 
 
 def _add_node_type(model: HygmModel, op: AddNodeType) -> HygmModel:
@@ -200,7 +201,7 @@ def _rename_relation_type(model: HygmModel, op: RenameRelationType) -> HygmModel
 
 
 def _relation_relabeled(model: HygmModel, source: str, target: str) -> HygmModel:
-    """Every `inverse_of` and relation restriction naming relation type `source` names `target`."""
+    """Every `inverse_of`, relation restriction and individual's relationship naming relation type `source` names `target`."""
     relations = tuple(replace(r, inverse_of=target) if r.inverse_of == source else r for r in model.relation_types)
     nodes = tuple(
         replace(
@@ -211,7 +212,13 @@ def _relation_relabeled(model: HygmModel, source: str, target: str) -> HygmModel
         )
         for t in model.node_types
     )
-    return replace(model, node_types=nodes, relation_types=relations)
+    individuals = tuple(
+        replace(i, relations={target if name == source else name: ids for name, ids in i.relations.items()})
+        if source in i.relations
+        else i
+        for i in model.individuals
+    )
+    return replace(model, node_types=nodes, relation_types=relations, individuals=individuals)
 
 
 def _union(a: tuple[str, ...], b: tuple[str, ...]) -> tuple[str, ...]:
@@ -254,11 +261,18 @@ def _rename_property(model: HygmModel, op: RenameProperty) -> HygmModel:
         raise ModelError("duplicate_property", f"{op.label!r} already declares property {op.to!r}")
     if isinstance(owner, RelationType):
         return _with(model, _renamed_property(owner, op.name, op.to))
-    for label in (op.label, *model.descendants(op.label)):
+    renamed_in = (op.label, *model.descendants(op.label))
+    for label in renamed_in:
         node = _node(model, label)
         node = replace(node, key=tuple(op.to if name == op.name else name for name in node.key))
         model = _with(model, _renamed_property(node, op.name, op.to))
-    return model
+    individuals = tuple(
+        replace(i, properties={op.to if k == op.name else k: v for k, v in i.properties.items()})
+        if i.type in renamed_in and op.name in i.properties
+        else i
+        for i in model.individuals
+    )
+    return replace(model, individuals=individuals)
 
 
 def _renamed_property(owner: Owner, name: str, to: str) -> Owner:

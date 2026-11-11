@@ -1,0 +1,8 @@
+version: 2
+node_types:
+  - {label: Wine, description: a wine}
+  - {label: Grape, description: a grape}
+relation_types:
+  - {label: grape, description: made from, start_labels: [Wine], end_labels: [Grape], min_count: 1}
+individuals:
+  - {id: w, type: Wine}

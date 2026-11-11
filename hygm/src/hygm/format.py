@@ -24,7 +24,17 @@ from .profiles import (
     setting,
     with_version_1_profiles,
 )
-from .types import Conventions, HygmModel, Import, NodeType, Ontology, Property, RelationRestriction, RelationType
+from .types import (
+    Conventions,
+    HygmModel,
+    Import,
+    Individual,
+    NodeType,
+    Ontology,
+    Property,
+    RelationRestriction,
+    RelationType,
+)
 from .validation import validate_model
 
 #: Resolves one `imports` path, as the importing file wrote it, to the
@@ -38,7 +48,8 @@ _V1_TOP = {"version", "entity_types", "relation_types"}
 _V1_NODE = {"label", "description", "identity"}
 _V1_RELATION = {"label", "description", "start_labels", "end_labels"}
 
-_V2_TOP = {"version", "node_types", "relation_types", "profiles", "ontology", "imports"}
+_V2_TOP = {"version", "node_types", "relation_types", "profiles", "ontology", "imports", "individuals"}
+_INDIVIDUAL = {"id", "type", "iri", "properties", "relations"}
 _ONTOLOGY = {
     "name",
     "description",
@@ -242,7 +253,7 @@ def _v1_mapping(model: HygmModel) -> dict[str, Any]:
 
 
 def _v2_mapping(model: HygmModel) -> dict[str, Any]:
-    nodes, relations = _own_types(model)
+    nodes, relations, individuals = _own_types(model)
     out: dict[str, Any] = {"version": 2}
     if model.ontology is not None:
         out["ontology"] = _ontology(model.ontology)
@@ -253,37 +264,58 @@ def _v2_mapping(model: HygmModel) -> dict[str, Any]:
         out["relation_types"] = [_v2_relation(r) for r in relations]
     if model.profiles:
         out["profiles"] = _plain(model.profiles)
+    if individuals:
+        out["individuals"] = [_individual(i) for i in individuals]
     return out
 
 
-def _own_types(model: HygmModel) -> tuple[list[NodeType], list[RelationType]]:
-    """The types the importing file itself declares; refuses a model that changed an imported one."""
+def _individual(individual: Individual) -> dict[str, Any]:
+    out: dict[str, Any] = {"id": individual.id, "type": individual.type}
+    if individual.iri:
+        out["iri"] = individual.iri
+    if individual.properties:
+        out["properties"] = {k: list(v) if isinstance(v, tuple) else v for k, v in individual.properties.items()}
+    if individual.relations:
+        out["relations"] = {name: list(targets) for name, targets in individual.relations.items()}
+    return out
+
+
+def _own_types(model: HygmModel) -> tuple[list[NodeType], list[RelationType], list[Individual]]:
+    """What the importing file itself declares; refuses a model that changed something imported."""
     if not model.imports:
-        return list(model.node_types), list(model.relation_types)
-    imported_nodes = _imported(model.imports, "node_types")
-    imported_relations = _imported(model.imports, "relation_types")
-    for kind, imported, declared in (
-        ("node type", imported_nodes, {t.label: t for t in model.node_types}),
-        ("relation type", imported_relations, {r.label: r for r in model.relation_types}),
-    ):
-        for label, original in imported.items():
-            if declared.get(label) != original:
+        return list(model.node_types), list(model.relation_types), list(model.individuals)
+    own = []
+    for attribute in ("node_types", "relation_types", "individuals"):
+        imported = _imported(model.imports, attribute)
+        declared = {_name_of(d): d for d in getattr(model, attribute)}
+        for name, original in imported.items():
+            if declared.get(name) != original:
                 raise ModelError(
-                    "duplicate_label",
-                    f"The model changes or drops the imported {kind} {label!r}; an importing model can't "
-                    "change an imported type, only subtype it",
+                    _DUPLICATE[attribute],
+                    f"The model changes or drops the imported {_KIND[attribute]} {name!r}; an importing model "
+                    "can't change what it imports, only subtype it",
                 )
-    return (
-        [t for t in model.node_types if t.label not in imported_nodes],
-        [r for r in model.relation_types if r.label not in imported_relations],
-    )
+        own.append([d for d in getattr(model, attribute) if _name_of(d) not in imported])
+    return own[0], own[1], own[2]
+
+
+_KIND = {"node_types": "node type", "relation_types": "relation type", "individuals": "individual"}
+_DUPLICATE = {
+    "node_types": "duplicate_label",
+    "relation_types": "duplicate_label",
+    "individuals": "duplicate_individual",
+}
+
+
+def _name_of(declared: NodeType | RelationType | Individual) -> str:
+    return declared.id if isinstance(declared, Individual) else declared.label
 
 
 def _imported(imports: tuple[Import, ...], attribute: str) -> dict[str, Any]:
     found: dict[str, Any] = {}
     for item in imports:
         for declared in getattr(item.model, attribute):
-            found.setdefault(declared.label, declared)
+            found.setdefault(_name_of(declared), declared)
     return found
 
 
@@ -307,26 +339,27 @@ def _ontology(ontology: Ontology) -> dict[str, Any]:
     return out
 
 
-def _merged(imports: tuple[Import, ...], own: tuple[Any, ...], attribute: str, kind: str, where_from: str) -> tuple:
-    """Imported declarations, then `own`; a label both declare must be one declaration (a diamond).
+def _merged(imports: tuple[Import, ...], own: tuple[Any, ...], attribute: str, where_from: str) -> tuple:
+    """Imported declarations, then `own`; a label (or individual id) both declare must be one declaration.
 
-    A label `own` declares twice is left for validate_model() to report.
+    That allows a diamond of imports. A label `own` declares twice is left
+    for validate_model() to report.
     """
+    code, kind = _DUPLICATE[attribute], _KIND[attribute]
     merged: dict[str, Any] = {}
     for declared in (t for i in imports for t in getattr(i.model, attribute)):
-        seen = merged.setdefault(declared.label, declared)
+        seen = merged.setdefault(_name_of(declared), declared)
         if seen != declared:
             raise ModelError(
-                "duplicate_label", f"{where_from}: {kind} {declared.label!r} is declared differently by two imports"
+                code, f"{where_from}: {kind} {_name_of(declared)!r} is declared differently by two imports"
             )
     for declared in own:
-        seen = merged.get(declared.label)
+        seen = merged.get(_name_of(declared))
         if seen is not None and seen != declared:
             raise ModelError(
-                "duplicate_label",
-                f"{where_from}: {kind} {declared.label!r} is declared differently by the model and an import",
+                code, f"{where_from}: {kind} {_name_of(declared)!r} is declared differently by the model and an import"
             )
-    return (*merged.values(), *(t for t in own if merged.get(t.label) != t))
+    return (*merged.values(), *(t for t in own if merged.get(_name_of(t)) != t))
 
 
 def _v2_node(node: NodeType, model: HygmModel | None = None) -> dict[str, Any]:
@@ -479,12 +512,45 @@ class _Reader:
         profiles = self.profiles(raw.get("profiles", {}), "profiles", "model")
         ontology = self.ontology(raw["ontology"]) if "ontology" in raw else None
         return HygmModel(
-            node_types=_merged(imports, tuple(node_types), "node_types", "node label", self.where_from),
-            relation_types=_merged(imports, tuple(relation_types), "relation_types", "relation type", self.where_from),
+            node_types=_merged(imports, tuple(node_types), "node_types", self.where_from),
+            relation_types=_merged(imports, tuple(relation_types), "relation_types", self.where_from),
             profiles=profiles,
             ontology=ontology,
             imports=imports,
+            individuals=_merged(imports, self.individuals(raw), "individuals", self.where_from),
         )
+
+    def individuals(self, raw: dict) -> tuple[Individual, ...]:
+        found = []
+        for index, item in enumerate(self.listed(raw, "individuals")):
+            where = f"individuals[{index}]"
+            if (
+                not isinstance(item, dict)
+                or not isinstance(item.get("id"), str)
+                or not isinstance(item.get("type"), str)
+            ):
+                raise self.fail("invalid_format", where, "must be a mapping with string 'id' and 'type'")
+            self.known(item, _INDIVIDUAL, where)
+            properties = item.get("properties", {})
+            if not isinstance(properties, dict):
+                raise self.fail("invalid_format", where, "properties must map property names to values")
+            relations = item.get("relations", {})
+            if not isinstance(relations, dict) or not all(
+                isinstance(targets, list) and all(isinstance(t, str) for t in targets) for targets in relations.values()
+            ):
+                raise self.fail("invalid_format", where, "relations must map relation types to lists of individual ids")
+            found.append(
+                self.build(
+                    Individual,
+                    where,
+                    item["id"],
+                    item["type"],
+                    iri=self.optional_string(item, "iri", where),
+                    properties=properties,
+                    relations=relations,
+                )
+            )
+        return tuple(found)
 
     def resolve(self, paths: tuple[str, ...]) -> tuple[Import, ...]:
         """Each import with its model (4.12); with no resolver, a model that imports is `unknown_model`."""

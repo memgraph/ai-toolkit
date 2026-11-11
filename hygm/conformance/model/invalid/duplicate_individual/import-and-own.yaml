@@ -1,0 +1,7 @@
+version: 2
+imports:
+  - {path: ../../imports/regions.model.yaml}
+node_types:
+  - {label: Winery, description: Makes wine}
+individuals:
+  - {id: bordeaux, type: WineRegion, properties: {name: Bordeaux, France}}
