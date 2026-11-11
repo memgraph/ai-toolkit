@@ -159,6 +159,9 @@ def test_renames_and_merges_carry_disjointness():
         model, [MergeNodeTypes("Chablis", "WhiteWine"), MergeNodeTypes("WhiteWine", "RedWine")], validate=False
     )
 
-    assert renamed.node_type("RedWine").disjoint_with == ("BlancWine",)
-    assert merged.node_type("RedWine").disjoint_with == ()
-    assert apply(model, [AddNodeType(NodeType("Sherry", abstract=True))]).node_type("Sherry").abstract
+    red_renamed = renamed.node_type("RedWine")
+    red_merged = merged.node_type("RedWine")
+    sherry = apply(model, [AddNodeType(NodeType("Sherry", abstract=True))]).node_type("Sherry")
+    assert red_renamed is not None and red_renamed.disjoint_with == ("BlancWine",)
+    assert red_merged is not None and red_merged.disjoint_with == ()
+    assert sherry is not None and sherry.abstract
