@@ -30,7 +30,7 @@ from .evolution import (
     operation_from_mapping,
     operation_to_mapping,
 )
-from .format import model_schema, needs_version_2
+from .format import ImportResolver, model_schema, needs_version_2
 from .identifiers import CYPHER_IDENTIFIER_PATTERN, is_valid_identifier, require_valid_identifier
 from .mapping import (
     SOURCE_KINDS,
@@ -78,7 +78,19 @@ from .profiles import (
     with_version_1_profiles,
 )
 from .strategies import ManualStrategy, OwlImportStrategy, model_from_mapping, model_to_mapping
-from .types import PROPERTY_TYPES, HygmModel, NodeType, Property, PropertyType, RelationType
+from .types import (
+    CASES,
+    NUMBERS,
+    PROPERTY_TYPES,
+    Conventions,
+    HygmModel,
+    Import,
+    NodeType,
+    Ontology,
+    Property,
+    PropertyType,
+    RelationType,
+)
 from .validation import (
     ValidationCategory,
     ValidationIssue,
@@ -88,9 +100,11 @@ from .validation import (
 )
 
 __all__ = [
+    "CASES",
     "CYPHER_IDENTIFIER_PATTERN",
     "IDENTITIES",
     "MEMGRAPH_TYPES",
+    "NUMBERS",
     "OPERATIONS",
     "OWNERS",
     "PROPERTY_TYPES",
@@ -101,9 +115,12 @@ __all__ = [
     "AddRelationType",
     "BindingKind",
     "ColumnEndpoint",
+    "Conventions",
     "GraphRef",
     "HygmModel",
     "ImpliedProfiles",
+    "Import",
+    "ImportResolver",
     "Join",
     "JoinEndpoint",
     "ManualStrategy",
@@ -114,6 +131,7 @@ __all__ = [
     "ModelError",
     "NodeBinding",
     "NodeType",
+    "Ontology",
     "Operation",
     "OrderNodeTypes",
     "OrderProperties",

@@ -7,6 +7,7 @@ package under `src/hygm/schema/`.
 
 ```
 model/
+  imports/<name>.model.yaml      the models the import fixtures import; not fixtures themselves
   valid/<name>.yaml|.json        must load; read, written and read again, it is the same model
   invalid/<code>/<name>.yaml     must be refused with error code <code> (contract, section 9)
 mapping/
@@ -23,6 +24,13 @@ mapping/
 - YAML fixtures avoid YAML 1.1 booleans (`on`, `yes`, `y`) as plain
   strings, which readers disagree on.
 
+- A model fixture's `imports` paths are relative to the fixture, as the
+  contract says (4.12), and point into `model/imports/`, so the fixture
+  directories hold only fixtures. `import_cycle/self.yaml` imports itself.
+  A reader resolves them from the fixture's own location; a round trip
+  writes the `imports` back and resolves them the same way. A missing
+  import is `unknown_model`; an imported file that is itself invalid is
+  refused with its own code.
 - A mapping fixture's `model` is a path relative to the fixture, into
   `mapping/models/`, so the fixture directories hold only mappings. One
   shared model (`shop.model.yaml`) serves every fixture; `broken.model.yaml`

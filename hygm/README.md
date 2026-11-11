@@ -89,6 +89,27 @@ must agree with. The JSON Schemas ship in the package (`hygm.model_schema(2)`).
 A consumer that can't honor a feature yet refuses a model that uses it rather
 than dropping it silently (contract, section 8).
 
+A model may say what it is for in an `ontology` block (scope, competency
+questions, maintainers, naming conventions), and build on other models with
+`imports`, each a path relative to the importing file:
+
+```yaml
+version: 2
+ontology:
+  name: wine
+  competency_questions: [Does Cabernet Sauvignon go well with seafood?]
+imports:
+  - {path: food.model.yaml}          # its types become parents and endpoints here
+node_types:
+  - {label: Wine, description: a drink made from grapes}
+relation_types:
+  - {label: served_with, description: goes with, start_labels: [Wine], end_labels: [Seafood]}
+```
+
+`ManualStrategy` resolves imports transitively; `model_to_mapping` writes the
+importing file back with its `imports`, never inlining them. Given a model as
+data, `model_from_mapping` needs a `resolver` for its imports.
+
 ## The Memgraph plan
 
 `memgraph_plan(model)` derives the constraints, indexes and enums a Memgraph

@@ -1,0 +1,5 @@
+version: 2
+ontology:
+  competency_questions: Does Cabernet Sauvignon go well with seafood?
+node_types:
+  - {label: Wine, description: A wine}

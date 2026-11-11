@@ -2,12 +2,15 @@
 
 Version 1 is every model written before the contract: `entity_types`, a
 node-level `identity`, no `version` key. Version 2 adds `node_types`,
-properties, `parents`, `key`, `iri` and profiles. A reader refuses any key the version doesn't define, so a
-typo is an error rather than silently dropped meaning.
+properties, `parents`, `key`, `iri` and profiles, and later, additively, the
+`ontology` block and `imports` (4.11, 4.12). A reader refuses any key the
+version doesn't define, so a typo is an error rather than silently dropped
+meaning.
 """
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from importlib.resources import files
 from typing import Any
 
@@ -22,8 +25,13 @@ from .profiles import (
     setting,
     with_version_1_profiles,
 )
-from .types import HygmModel, NodeType, Property, RelationType
+from .types import Conventions, HygmModel, Import, NodeType, Ontology, Property, RelationType
 from .validation import validate_model
+
+#: Resolves one `imports` path, as the importing file wrote it, to the
+#: imported model with its own imports resolved. ManualStrategy supplies one
+#: that reads files relative to the importing file.
+ImportResolver = Callable[[str], HygmModel]
 
 VERSIONS = (1, 2)
 
@@ -31,14 +39,32 @@ _V1_TOP = {"version", "entity_types", "relation_types"}
 _V1_NODE = {"label", "description", "identity"}
 _V1_RELATION = {"label", "description", "start_labels", "end_labels"}
 
-_V2_TOP = {"version", "node_types", "relation_types", "profiles"}
+_V2_TOP = {"version", "node_types", "relation_types", "profiles", "ontology", "imports"}
+_ONTOLOGY = {
+    "name",
+    "description",
+    "iri",
+    "version_info",
+    "scope",
+    "competency_questions",
+    "maintainers",
+    "conventions",
+}
+_SCOPE = {"includes", "excludes"}
+_CONVENTIONS = {"node_case", "property_case", "relation_case", "number"}
+_IMPORT = {"path"}
 _V2_NODE = {"label", "description", "parents", "properties", "key", "iri", "profiles"}
 _V2_RELATION = {"label", "description", "start_labels", "end_labels", "properties", "iri", "profiles"}
 _V2_PROPERTY = {"name", "type", "description", "required", "values", "iri", "profiles"}
 
 
 def model_from_mapping(
-    raw: Any, source: str, *, validate: bool = True, version_1_profiles: Version1Profiles | None = None
+    raw: Any,
+    source: str,
+    *,
+    validate: bool = True,
+    version_1_profiles: Version1Profiles | None = None,
+    resolver: ImportResolver | None = None,
 ) -> HygmModel:
     """A model from the mapping a model file holds, in either format version.
 
@@ -51,10 +77,16 @@ def model_from_mapping(
         version_1_profiles: The profiles a version-1 file implies, its owner's
             rule (docs/contract.md, 4.9). Applied to version-1 files only;
             without it, a version-1 file implies nothing beyond `identity`.
+        resolver: Resolves each `imports` path to its model (4.12). Without
+            one, a model with imports is refused: given a model as data,
+            there is nothing to resolve its paths against.
 
     Raises:
         ModelError: (a ValueError) if the mapping breaks the format, or
-            `validate` and the model fails validate_model()'s hard gate.
+            `validate` and the model fails validate_model()'s hard gate;
+            `unknown_model` for imports and no resolver; `duplicate_label`
+            when an import declares a label differently from the importing
+            model or another import; whatever `resolver` raises.
     """
     where_from = f"Ontology {source}"
     if not isinstance(raw, dict):
@@ -67,6 +99,8 @@ def model_from_mapping(
 
     reader = _Reader(where_from)
     model = reader.v1(raw) if version == 1 else reader.v2(raw)
+    if reader.import_paths:
+        model = _with_imports(model, reader.import_paths, resolver, where_from)
     if version == 1 and version_1_profiles is not None:
         model = with_version_1_profiles(model, version_1_profiles)
     if not validate:
@@ -87,6 +121,14 @@ def model_to_mapping(model: HygmModel, *, version_1_profiles: Version1Profiles |
     `version_1_profiles` says a version-1 file implies, so stored versions
     stay byte-stable. Otherwise writes version 2, leaving out every default.
     Pass the same rule the reader was given.
+
+    A model with imports is written as the importing file: its `imports`
+    paths and its own types, never the imported ones inline.
+
+    Raises:
+        ModelError: `duplicate_label` if the model changed or dropped an
+            imported type, which the importing file can't express: an
+            importing model refines imported types by subtyping them (4.12).
     """
     return _v2_mapping(model) if needs_version_2(model, version_1_profiles) else _v1_mapping(model)
 
@@ -108,7 +150,9 @@ def model_schema(version: int) -> dict[str, Any]:
 def needs_version_2(model: HygmModel, version_1_profiles: Version1Profiles | None = None) -> bool:
     """Whether `model` uses anything format version 1 can't express, given what a version-1 file implies."""
     return bool(
-        not has_version_1_profiles(model, version_1_profiles or no_implied_profiles)
+        model.ontology is not None
+        or model.imports
+        or not has_version_1_profiles(model, version_1_profiles or no_implied_profiles)
         or any(t.parents or t.properties or t.key or t.iri for t in model.node_types)
         or any(r.properties or r.iri or r.profiles for r in model.relation_types)
     )
@@ -185,12 +229,98 @@ def _v1_mapping(model: HygmModel) -> dict[str, Any]:
 
 
 def _v2_mapping(model: HygmModel) -> dict[str, Any]:
-    out: dict[str, Any] = {"version": 2, "node_types": [_v2_node(t) for t in model.node_types]}
-    if model.relation_types:
-        out["relation_types"] = [_v2_relation(r) for r in model.relation_types]
+    nodes, relations = _own_types(model)
+    out: dict[str, Any] = {"version": 2}
+    if model.ontology is not None:
+        out["ontology"] = _ontology(model.ontology)
+    if model.imports:
+        out["imports"] = [{"path": i.path} for i in model.imports]
+    out["node_types"] = [_v2_node(t) for t in nodes]
+    if relations:
+        out["relation_types"] = [_v2_relation(r) for r in relations]
     if model.profiles:
         out["profiles"] = _plain(model.profiles)
     return out
+
+
+def _own_types(model: HygmModel) -> tuple[list[NodeType], list[RelationType]]:
+    """The types the importing file itself declares; refuses a model that changed an imported one."""
+    if not model.imports:
+        return list(model.node_types), list(model.relation_types)
+    imported_nodes = _imported(model.imports, "node_types")
+    imported_relations = _imported(model.imports, "relation_types")
+    for kind, imported, declared in (
+        ("node type", imported_nodes, {t.label: t for t in model.node_types}),
+        ("relation type", imported_relations, {r.label: r for r in model.relation_types}),
+    ):
+        for label, original in imported.items():
+            if declared.get(label) != original:
+                raise ModelError(
+                    "duplicate_label",
+                    f"The model changes or drops the imported {kind} {label!r}; an importing model can't "
+                    "change an imported type, only subtype it",
+                )
+    return (
+        [t for t in model.node_types if t.label not in imported_nodes],
+        [r for r in model.relation_types if r.label not in imported_relations],
+    )
+
+
+def _imported(imports: tuple[Import, ...], attribute: str) -> dict[str, Any]:
+    found: dict[str, Any] = {}
+    for item in imports:
+        for declared in getattr(item.model, attribute):
+            found.setdefault(declared.label, declared)
+    return found
+
+
+def _ontology(ontology: Ontology) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key in ("name", "description", "iri", "version_info"):
+        if getattr(ontology, key) is not None:
+            out[key] = getattr(ontology, key)
+    scope = {key: list(getattr(ontology, key)) for key in ("includes", "excludes") if getattr(ontology, key)}
+    if scope:
+        out["scope"] = scope
+    for key in ("competency_questions", "maintainers"):
+        if getattr(ontology, key):
+            out[key] = list(getattr(ontology, key))
+    if ontology.conventions is not None:
+        out["conventions"] = {
+            key: getattr(ontology.conventions, key)
+            for key in ("node_case", "property_case", "relation_case", "number")
+            if getattr(ontology.conventions, key) is not None
+        }
+    return out
+
+
+def _with_imports(
+    model: HygmModel, paths: tuple[str, ...], resolver: ImportResolver | None, where_from: str
+) -> HygmModel:
+    """`model` with its imports resolved and their types merged in, imported first (4.12)."""
+    if resolver is None:
+        raise ModelError(
+            "unknown_model",
+            f"{where_from} imports {list(paths)}, and nothing resolves them: read it from a file, or pass a resolver",
+        )
+    imports = tuple(Import(path, resolver(path)) for path in paths)
+    nodes = _merged(imports, model.node_types, "node_types", "node label", where_from)
+    relations = _merged(imports, model.relation_types, "relation_types", "relation type", where_from)
+    return replace(model, node_types=nodes, relation_types=relations, imports=imports)
+
+
+def _merged(imports: tuple[Import, ...], own: tuple[Any, ...], attribute: str, kind: str, where_from: str) -> tuple:
+    """Imported declarations, then `own`; one label declared twice must be one declaration (a diamond)."""
+    merged: dict[str, Any] = {}
+    for declared in (*(t for i in imports for t in getattr(i.model, attribute)), *own):
+        seen = merged.get(declared.label)
+        if seen is not None and seen != declared:
+            raise ModelError(
+                "duplicate_label",
+                f"{where_from}: {kind} {declared.label!r} is declared differently by the model and its imports",
+            )
+        merged.setdefault(declared.label, declared)
+    return tuple(merged.values())
 
 
 def _v2_node(node: NodeType) -> dict[str, Any]:
@@ -250,6 +380,7 @@ class _Reader:
 
     def __init__(self, where_from: str) -> None:
         self.where_from = where_from
+        self.import_paths: tuple[str, ...] = ()
 
     def fail(self, code: str, where: str, problem: str) -> ModelError:
         return ModelError(code, f"{self.where_from}: {where} {problem}" if where else f"{self.where_from} {problem}")
@@ -288,7 +419,57 @@ class _Reader:
             self.relation(item, f"relation_types[{index}]", _V2_RELATION) for index, item in enumerate(relations)
         ]
         profiles = self.profiles(raw.get("profiles", {}), "profiles", "model")
-        return HygmModel(node_types=tuple(node_types), relation_types=tuple(relation_types), profiles=profiles)
+        ontology = self.ontology(raw["ontology"]) if "ontology" in raw else None
+        self.import_paths = self.imports(raw)
+        return HygmModel(
+            node_types=tuple(node_types), relation_types=tuple(relation_types), profiles=profiles, ontology=ontology
+        )
+
+    def ontology(self, raw: Any) -> Ontology:
+        where = "ontology"
+        if not isinstance(raw, dict):
+            raise self.fail("invalid_format", where, "must be a mapping")
+        self.known(raw, _ONTOLOGY, where)
+        scope = raw.get("scope", {})
+        if not isinstance(scope, dict):
+            raise self.fail("invalid_format", f"{where} scope", "must be a mapping")
+        self.known(scope, _SCOPE, f"{where} scope")
+        conventions = raw.get("conventions")
+        if conventions is not None:
+            if not isinstance(conventions, dict) or not all(isinstance(v, str) for v in conventions.values()):
+                raise self.fail("invalid_format", f"{where} conventions", "must map convention names to strings")
+            self.known(conventions, _CONVENTIONS, f"{where} conventions")
+        return self.build(
+            Ontology,
+            where,
+            name=self.optional_string(raw, "name", where),
+            description=self.optional_string(raw, "description", where),
+            iri=self.optional_string(raw, "iri", where),
+            version_info=self.optional_string(raw, "version_info", where),
+            includes=self.strings(scope, "includes", f"{where} scope"),
+            excludes=self.strings(scope, "excludes", f"{where} scope"),
+            competency_questions=self.strings(raw, "competency_questions", where),
+            maintainers=self.strings(raw, "maintainers", where),
+            conventions=self.build(Conventions, f"{where} conventions", **conventions)
+            if conventions is not None
+            else None,
+        )
+
+    def imports(self, raw: dict) -> tuple[str, ...]:
+        paths = []
+        for index, item in enumerate(self.listed(raw, "imports")):
+            where = f"imports[{index}]"
+            if not isinstance(item, dict) or not isinstance(item.get("path"), str) or not item["path"]:
+                raise self.fail("invalid_format", where, "must be a mapping with a non-empty string 'path'")
+            self.known(item, _IMPORT, where)
+            paths.append(item["path"])
+        return tuple(paths)
+
+    def strings(self, item: dict, key: str, where: str) -> tuple[str, ...]:
+        value = item.get(key, [])
+        if not isinstance(value, list) or not all(isinstance(entry, str) for entry in value):
+            raise self.fail("invalid_format", where, f"{key} must be a list of strings")
+        return tuple(value)
 
     def node(self, item: Any, where: str) -> NodeType:
         label, description = self.labeled(item, where)

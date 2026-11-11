@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/memgraph/ai-toolkit/hygm/schema/model.v2.schema.json",
   "title": "hygm model, format version 2",
-  "description": "The structure of a version-2 hygm model file. Rules a JSON Schema can't express (unique labels and properties, declared parents and endpoints, no parent cycle, property agreement, keys, profile rules) are defined in hygm/docs/contract.md.",
+  "description": "The structure of a version-2 hygm model file. Rules a JSON Schema can't express (unique labels and properties, declared parents and endpoints, no parent cycle, property agreement, keys, profile rules, resolving imports) are defined in hygm/docs/contract.md.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -27,6 +27,15 @@
     },
     "profiles": {
       "$ref": "#/$defs/model_profiles"
+    },
+    "ontology": {
+      "$ref": "#/$defs/ontology"
+    },
+    "imports": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/import"
+      }
     }
   },
   "$defs": {
@@ -333,6 +342,103 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {}
+        }
+      }
+    },
+    "ontology": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "iri": {
+          "type": "string"
+        },
+        "version_info": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "includes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "excludes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "competency_questions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "maintainers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "conventions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "node_case": {
+              "enum": [
+                "upper_camel",
+                "lower_camel",
+                "snake",
+                "upper_snake"
+              ]
+            },
+            "property_case": {
+              "enum": [
+                "upper_camel",
+                "lower_camel",
+                "snake",
+                "upper_snake"
+              ]
+            },
+            "relation_case": {
+              "enum": [
+                "upper_camel",
+                "lower_camel",
+                "snake",
+                "upper_snake"
+              ]
+            },
+            "number": {
+              "enum": [
+                "singular",
+                "plural"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "import": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
         }
       }
     }

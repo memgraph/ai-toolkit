@@ -3,6 +3,7 @@
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from ..errors import ModelError
 from ..types import HygmModel, NodeType, Property, RelationType
 from .operations import (
     AddNodeType,
@@ -39,7 +40,13 @@ def diff(a: HygmModel, b: HygmModel) -> tuple[Operation, ...]:
     the result: it removes what `b` lacks first, then adds and changes types,
     then fixes the order, and a step in between may name something a later
     step adds.
+
+    Raises:
+        ModelError: `unknown_operation` when `a` and `b` differ in a key no
+            operation sets yet (the `ontology` block, `imports`), rather than
+            leave the change out.
     """
+    _require_expressible(a, b)
     ops: list[Operation] = []
     b_nodes = {t.label: t for t in b.node_types}
     b_relations = {r.label: r for r in b.relation_types}
@@ -58,6 +65,17 @@ def diff(a: HygmModel, b: HygmModel) -> tuple[Operation, ...]:
     if _kept_order(a.relation_labels(), b.relation_labels()) != b.relation_labels():
         ops.append(OrderRelationTypes(b.relation_labels()))
     return tuple(ops)
+
+
+def _unexpressible(key: str, where: str = "") -> ModelError:
+    at = f" on {where}" if where else ""
+    return ModelError("unknown_operation", f"diff can't express a change to {key!r}{at}: no operation sets it yet")
+
+
+def _require_expressible(a: HygmModel, b: HygmModel) -> None:
+    for key in ("ontology", "imports"):
+        if getattr(a, key) != getattr(b, key):
+            raise _unexpressible(key)
 
 
 def _kept_order(before: Sequence[str], after: Sequence[str]) -> tuple[str, ...]:

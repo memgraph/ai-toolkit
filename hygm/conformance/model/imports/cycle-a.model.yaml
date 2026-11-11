@@ -1,0 +1,5 @@
+version: 2
+imports:
+  - {path: cycle-b.model.yaml}
+node_types:
+  - {label: A, description: imports B}

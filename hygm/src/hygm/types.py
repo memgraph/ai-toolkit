@@ -42,6 +42,75 @@ def _tuple_of_labels(owner: object, attribute: str, what: str) -> None:
     object.__setattr__(owner, attribute, tuple(value))
 
 
+#: The naming styles `Conventions` may ask for (docs/contract.md, 4.11).
+CASES: tuple[str, ...] = ("upper_camel", "lower_camel", "snake", "upper_snake")
+
+#: The grammatical numbers `Conventions.number` may ask for.
+NUMBERS: tuple[str, ...] = ("singular", "plural")
+
+
+@dataclass(frozen=True)
+class Conventions:
+    """The naming conventions a model follows, which lint checks (docs/contract.md, 4.11).
+
+    Attributes:
+        node_case: The case of node labels, one of CASES, or None for unstated.
+        property_case: The case of property names, likewise.
+        relation_case: The case of relation types, likewise.
+        number: Whether type labels are `singular` or `plural`, or None.
+
+    Raises:
+        ModelError: invalid_format for a case or number outside CASES or NUMBERS.
+    """
+
+    node_case: str | None = None
+    property_case: str | None = None
+    relation_case: str | None = None
+    number: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("node_case", "property_case", "relation_case"):
+            value = getattr(self, name)
+            if value is not None and value not in CASES:
+                raise ModelError("invalid_format", f"conventions {name} must be one of {CASES}, got {value!r}")
+        if self.number is not None and self.number not in NUMBERS:
+            raise ModelError("invalid_format", f"conventions number must be one of {NUMBERS}, got {self.number!r}")
+
+
+@dataclass(frozen=True)
+class Ontology:
+    """What a model is for: its scope, the questions it answers, who keeps it (docs/contract.md, 4.11).
+
+    Nothing here changes what the model means; it documents it, and lint reads
+    `conventions`.
+
+    Attributes:
+        name: A short name.
+        description: The domain the ontology covers.
+        iri: The ontology's IRI (`owl:Ontology`).
+        version_info: A free-form release name (`owl:versionInfo`), not the format version.
+        includes: What is deliberately in scope (`scope.includes`).
+        excludes: What is deliberately out of scope (`scope.excludes`).
+        competency_questions: The questions the ontology must answer.
+        maintainers: Who maintains it.
+        conventions: The naming conventions, or None when unstated.
+    """
+
+    name: str | None = None
+    description: str | None = None
+    iri: str | None = None
+    version_info: str | None = None
+    includes: tuple[str, ...] = ()
+    excludes: tuple[str, ...] = ()
+    competency_questions: tuple[str, ...] = ()
+    maintainers: tuple[str, ...] = ()
+    conventions: Conventions | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("includes", "excludes", "competency_questions", "maintainers"):
+            _tuple_of_labels(self, name, "Ontology")
+
+
 @dataclass(frozen=True)
 class Property:
     """A property a node or relation type declares.
@@ -149,21 +218,53 @@ class RelationType:
 
 
 @dataclass(frozen=True)
+class Import:
+    """One model another builds on (docs/contract.md, 4.12).
+
+    Attributes:
+        path: The imported file, as the importing file names it: relative to the importing file.
+        model: The imported model, its own imports already resolved. Its node
+            and relation types are part of the importing model.
+    """
+
+    path: str
+    model: "HygmModel"
+
+
+@dataclass(frozen=True)
 class HygmModel:
     """A graph model: node types and the relation types between them.
 
     The hierarchy queries (ancestors, descendants, properties_of, key_of)
     assume a model that passed validate_model(); on a parent cycle they stop
     rather than loop.
+
+    Attributes:
+        node_types: Every node type, imported ones included, imported first.
+        relation_types: Every relation type, likewise.
+        profiles: Model-wide profile settings.
+        ontology: What the model is for (4.11), or None.
+        imports: The models this one builds on (4.12). Their types are in
+            `node_types` and `relation_types` too, and `imported_labels()`
+            says which, so a writer writes them back as imports, not inline.
     """
 
     node_types: tuple[NodeType, ...]
     relation_types: tuple[RelationType, ...] = ()
     profiles: Profiles = field(default_factory=dict, hash=False)
+    ontology: Ontology | None = None
+    imports: tuple[Import, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "node_types", tuple(self.node_types))
         object.__setattr__(self, "relation_types", tuple(self.relation_types))
+        object.__setattr__(self, "imports", tuple(self.imports))
+
+    def imported_labels(self) -> tuple[frozenset[str], frozenset[str]]:
+        """The node labels and the relation types that come from `imports`, transitively."""
+        nodes = frozenset(label for i in self.imports for label in i.model.node_labels())
+        relations = frozenset(label for i in self.imports for label in i.model.relation_labels())
+        return nodes, relations
 
     def node_labels(self) -> tuple[str, ...]:
         return tuple(t.label for t in self.node_types)
@@ -234,10 +335,17 @@ class HygmModel:
         return tuple(expanded)
 
     def uses_hierarchy_or_properties(self) -> tuple[str, ...]:
-        """Which of `parents`, `properties` and `key` any type declares, for readers that refuse them."""
+        """The keys beyond labels, descriptions, endpoints and profiles the model uses.
+
+        For readers that rebuild types from those alone and so must refuse
+        the rest rather than drop it: `parents`, `properties`, `key`, then
+        the keys of docs/contract.md 4.11 onwards.
+        """
         used = {
             "parents": any(t.parents for t in self.node_types),
             "properties": any(t.properties for t in (*self.node_types, *self.relation_types)),
             "key": any(t.key for t in self.node_types),
+            "ontology": self.ontology is not None,
+            "imports": bool(self.imports),
         }
         return tuple(name for name, present in used.items() if present)
