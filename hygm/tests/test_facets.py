@@ -206,7 +206,8 @@ def test_a_file_redeclaration_inherits_an_unstated_type_and_max_count_and_is_wri
 
     model = model_from_mapping(raw, "test")
 
-    assert model.node_type("Sub").properties[0] == Property("tannin", type="integer", max_count=0)
+    sub = model.node_type("Sub")
+    assert sub is not None and sub.properties[0] == Property("tannin", type="integer", max_count=0)
     assert model_to_mapping(model) == raw
 
 

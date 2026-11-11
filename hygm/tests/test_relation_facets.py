@@ -77,6 +77,7 @@ def test_restrictions_from_two_parents_combine_to_what_both_allow():
 
     combined = model.relation_for("CityWine", "from_")
 
+    assert combined is not None
     assert (combined.end_labels, combined.min_count, combined.max_count) == (("City",), 1, 2)
     assert _codes(model) == []
 
@@ -130,10 +131,14 @@ def test_an_inverse_naming_another_inverse_is_a_conflict():
 def test_renames_and_merges_carry_inverses_and_restrictions(wines):
     renamed = apply(wines, [RenameRelationType("maker", "made_by"), RenameNodeType("FrenchWinery", "Domaine")])
 
-    assert renamed.relation_type("produces").inverse_of == "made_by"
-    assert renamed.node_type("FrenchWine").relation_restrictions[0] == RelationRestriction("made_by", ("Domaine",))
+    produces = renamed.relation_type("produces")
+    french_wine = renamed.node_type("FrenchWine")
+    assert produces is not None and produces.inverse_of == "made_by"
+    assert french_wine is not None
+    assert french_wine.relation_restrictions[0] == RelationRestriction("made_by", ("Domaine",))
     merged = apply(wines, [MergeRelationTypes("pairs_with", "grape")], validate=False)
-    assert merged.relation_type("grape").symmetric is False
+    grape = merged.relation_type("grape")
+    assert grape is not None and grape.symmetric is False
 
 
 def test_diff_refuses_a_change_to_a_relation_facet_or_restriction(wines):
