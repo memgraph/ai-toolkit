@@ -51,7 +51,8 @@ def test_inverse_and_symmetric_relationships_count_without_being_repeated():
     model = ManualStrategy().create_model(VALID / "v2-individuals.yaml")
 
     assert _codes(model) == []
-    assert model.individual("margaux_2015").relations == {"pairs_with": ("pavillon_2015",)}
+    margaux = model.individual("margaux_2015")
+    assert margaux is not None and margaux.relations == {"pairs_with": ("pavillon_2015",)}
 
 
 def test_imported_individuals_are_targets_and_are_written_back_as_imports():
@@ -75,9 +76,12 @@ def test_renames_carry_through_individuals():
         ],
     )
 
-    assert renamed.individual("chateau_margaux").type == "Estate"
-    assert "lies_in" in renamed.individual("chateau_margaux").relations
-    assert renamed.individual("margaux_2015").properties["abv"] == 13.5
+    winery = renamed.individual("chateau_margaux")
+    wine = renamed.individual("margaux_2015")
+    assert winery is not None and wine is not None
+    assert winery.type == "Estate"
+    assert "lies_in" in winery.relations
+    assert wine.properties["abv"] == 13.5
 
 
 def test_an_id_and_a_relation_must_be_identifiers():
