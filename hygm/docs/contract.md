@@ -8,6 +8,8 @@
 > (stored and learned ontologies). Planned: `agents/sql2graph` (which will
 > depend on hygm and drop its own HyGM), and other tools in the Memgraph
 > ecosystem, including ones not written in Python
+> Background: the model follows common ontology design practice, as in Noy
+> and McGuinness, [Ontology Development 101](https://protege.stanford.edu/publications/ontology_development/ontology101.pdf)
 
 ---
 
@@ -262,11 +264,10 @@ are exact and case-sensitive.
 
 ### 4.11 The ontology itself: scope and competency questions
 
-An ontology starts from what it is for (Noy and McGuinness, "Ontology
-Development 101", step 1): its domain, what it will be used for, the
-questions it must answer and who maintains it. The optional top-level
-`ontology` block records that, so the model carries its own scope and a
-consumer can test it against its purpose.
+An ontology starts from what it is for: its domain, what it will be used
+for, the questions it must answer and who maintains it. The optional
+top-level `ontology` block records that, so the model carries its own scope
+and a consumer can test it against its purpose.
 
 ```yaml
 ontology:
@@ -290,16 +291,16 @@ ontology:
 | `description` | string | The domain the ontology covers. |
 | `iri` | string | The ontology's IRI (`owl:Ontology`). |
 | `version_info` | string | Free-form release name (`owl:versionInfo`); not the format `version`. |
-| `scope.includes`, `scope.excludes` | lists of strings | What is deliberately in and out (101, 4.7). |
+| `scope.includes`, `scope.excludes` | lists of strings | What is deliberately in and out. |
 | `competency_questions` | list of strings | The questions the ontology must answer; the litmus test of its scope. |
 | `maintainers` | list of strings | Who maintains it. |
-| `conventions` | map | The naming conventions the lint checks (9.1, 101 section 6). Keys: `node_case`, `property_case`, `relation_case` (each `upper_camel`, `lower_camel`, `snake` or `upper_snake`) and `number` (`singular` or `plural`). |
+| `conventions` | map | The naming conventions the lint checks (9.1). Keys: `node_case`, `property_case`, `relation_case` (each `upper_camel`, `lower_camel`, `snake` or `upper_snake`) and `number` (`singular` or `plural`). |
 
 Every key is optional. Nothing in the block changes what the model means.
 
 ### 4.12 Imports: reusing other models
 
-A model may build on others (101, step 2):
+A model may build on others:
 
 ```yaml
 imports:
@@ -326,9 +327,9 @@ New node-type keys:
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `abstract` | boolean | `false` | The type has no direct instances; every instance belongs to a descendant (101, 4.6). An individual (4.17) may not have an abstract type. |
-| `disjoint_with` | list of labels | `[]` | No instance is of both this type and one listed (101, 4.8). Symmetric: declaring it on one side is enough. |
-| `synonyms` | list of strings | `[]` | Other names for the same concept (101, 4.1: synonyms are not separate classes). |
+| `abstract` | boolean | `false` | The type has no direct instances; every instance belongs to a descendant. An individual (4.17) may not have an abstract type. |
+| `disjoint_with` | list of labels | `[]` | No instance is of both this type and one listed. Symmetric: declaring it on one side is enough. |
+| `synonyms` | list of strings | `[]` | Other names for the same concept (synonyms are not separate classes). |
 | `names` | map of language tag → string | `{}` | Display names and translations (`{en: Red wine, fr: Vin rouge}`); the `label` stays the identifier. |
 
 Rules:
@@ -348,8 +349,8 @@ New property keys, all optional:
 |---|---|---|---|
 | `min_count` | integer ≥ 0 | `0`, or `1` when `required` | The fewest values an instance has. |
 | `max_count` | integer ≥ 0 or `null` | `1` | The most values an instance has. `null` means no limit; more than 1 makes the property multi-valued (a list). `0` means the type may not have the property at all, which only makes sense refining an inherited one (4.15). |
-| `default` | a value of the property's type | none | Filled in when an instance is created without one. A convenience, not a constraint (101, 5.2). |
-| `value` | a value of the property's type | none | Every instance has exactly this value (101, 5.2 "slot values"); for refining an inherited property on a subtype. |
+| `default` | a value of the property's type | none | Filled in when an instance is created without one. A convenience, not a constraint. |
+| `value` | a value of the property's type | none | Every instance has exactly this value; for refining an inherited property on a subtype. |
 | `minimum`, `maximum` | a value of the property's type | none | Inclusive bounds; only on `integer`, `float`, `decimal`, `date` and `datetime`. |
 | `unit` | string | none | The unit of a numeric value (`EUR`, `ml`). Documentation; a consumer may use it. |
 
@@ -365,7 +366,7 @@ New property keys, all optional:
 ### 4.15 Refining inherited facets in a subtype
 
 A subtype differs from its parent by having more properties, different
-restrictions on inherited ones, or different relationships (101, 4.4). The
+restrictions on inherited ones, or different relationships. The
 second needs a way to restrict an inherited property without changing its
 meaning. A subtype redeclares the property, and the redeclaration may only
 **narrow** it:
@@ -405,8 +406,8 @@ New relation-type keys:
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `min_count`, `max_count` | as for properties | `0`, `null` | How many relationships of this type a start node has. `max_count: 1` is a single-valued slot such as a wine's `maker` (101, step 6). |
-| `inverse_of` | relation label | none | Every `(a)-[:R]->(b)` implies `(b)-[:S]->(a)` (101, 5.1). Declaring it on one side is enough; the two must have swapped endpoints (`inverse_conflict`). |
+| `min_count`, `max_count` | as for properties | `0`, `null` | How many relationships of this type a start node has. `max_count: 1` is a single-valued slot such as a wine's `maker`. |
+| `inverse_of` | relation label | none | Every `(a)-[:R]->(b)` implies `(b)-[:S]->(a)`. Declaring it on one side is enough; the two must have swapped endpoints (`inverse_conflict`). |
 | `symmetric` | boolean | `false` | `(a)-[:R]->(b)` implies `(b)-[:R]->(a)`: the relation is undirected. Its start and end labels must be equal. |
 
 A node type narrows a relation for its own instances with
@@ -416,7 +417,7 @@ A node type narrows a relation for its own instances with
 - label: FrenchWine
   parents: [Wine]
   relation_restrictions:
-    - {relation: maker, end_labels: [FrenchWinery]}   # a narrower range for this type (101, step 6)
+    - {relation: maker, end_labels: [FrenchWinery]}   # a narrower range for this type
     - {relation: grape, min_count: 1}
 ```
 
@@ -426,9 +427,9 @@ counts, which are integers. Anything else is `relation_conflict`.
 
 ### 4.17 Individuals
 
-An ontology plus individual instances is a knowledge base (101, section 2
-and step 7). A model may carry individuals: reference data the ontology
-needs, such as the wine regions, or examples.
+An ontology plus individual instances is a knowledge base. A model may carry
+individuals: reference data the ontology needs, such as the wine regions, or
+examples.
 
 ```yaml
 individuals:
@@ -460,36 +461,6 @@ individuals:
   symmetric relations are implied, not repeated.
 - Individuals are data, not schema. A consumer may load them (the Memgraph
   plan seeds them on request, 7.1), show them, or ignore them.
-
-### 4.18 Coverage of Ontology Development 101
-
-The format and its tools cover every construct and guideline of Noy and
-McGuinness's guide:
-
-| Ontology 101 | hygm |
-|---|---|
-| Step 1: domain, scope, competency questions | `ontology` (4.11) |
-| Step 2: reuse existing ontologies | `imports` (4.12), OWL import and export (10) |
-| Step 3: enumerate terms | node types, relation types and properties, with `synonyms` |
-| Step 4 and section 4: classes and hierarchy; is-a, transitivity, multiple inheritance, no cycles | node types, `parents` (4.7) |
-| 4.1: classes and their names; synonyms aren't classes | `names`, `synonyms`, `duplicate_name` (4.13) |
-| 4.2: siblings; how many subclasses | lint (9.1) |
-| 4.4, 4.5: when to introduce a class, class or property value | lint (9.1) |
-| 4.6: instance or class; abstract classes | `individuals` (4.17), `abstract` (4.13) |
-| 4.7: limiting the scope | `ontology.scope` (4.11) |
-| 4.8: disjoint subclasses | `disjoint_with` (4.13) |
-| Step 5: slots, intrinsic and extrinsic properties, parts, relationships | properties (4.5) and relation types (4.4) |
-| Slot inheritance; attach at the most general class | `properties_of` (4.7); lint (9.1) |
-| Step 6: facets: value type, allowed values, cardinality, min and max | `type`, `values`, `min_count`/`max_count`, `minimum`/`maximum` (4.14, 4.16) |
-| Instance-type slots: allowed classes, domain and range | relation types, `start_labels`/`end_labels` |
-| Restricting a slot's range for a class | `relation_restrictions` (4.16) |
-| Subclasses overriding facets; slot values | refinement (4.15), `value` |
-| 5.1: inverse slots | `inverse_of` (4.16) |
-| 5.2: default values | `default` (4.14) |
-| Step 7: instances | `individuals` (4.17) |
-| Section 6: naming conventions | `ontology.conventions` (4.11), lint (9.1) |
-| Evolution of a class hierarchy | operations, diff (11) |
-| Ontology analysis (diagnostics) | validation (9) and lint (9.1) |
 
 ## 5. Layer 2: profiles
 
@@ -800,30 +771,29 @@ fixture holds exactly one problem.
 
 ### 9.1 Lint: the design guidelines
 
-Validation (above) is the hard gate: a model that fails it is refused. The
-guidelines of Ontology Development 101 are judgement calls, so hygm checks
-them as **lint**. Lint only reports, and never refuses a model or blocks a
-pipeline. Each finding has a code, a severity (`warning` or `info`), the
+Validation (above) is the hard gate: a model that fails it is refused. Design
+guidelines are judgement calls, so hygm checks them as **lint**. Lint only
+reports, and never refuses a model or blocks a pipeline. Each finding has a code, a severity (`warning` or `info`), the
 element it is about and a suggestion. `hygm lint` prints them, and
 `lint_model(model)` returns them.
 
-| Code | Severity | Guideline (101) | Finding |
-|---|---|---|---|
-| `single_subtype` | warning | 4.2 | A type with exactly one direct subtype: a modeling problem or an incomplete ontology. |
-| `many_subtypes` | info | 4.2 | More than a dozen direct subtypes: intermediate categories may be missing. |
-| `redundant_endpoint` | warning | step 6 | An endpoint list naming a type and one of its descendants; drop the descendant. |
-| `endpoint_covers_all_subtypes` | info | step 6 | An endpoint list naming every subtype of a type but not the type: use the type. |
-| `property_on_every_subtype` | info | step 5 | Every direct subtype declares the same property (same type) and the parent doesn't: attach it to the parent. |
-| `empty_subtype` | info | 4.4 | A subtype that adds no property, refinement or relation. Fine in a terminological hierarchy; worth a look otherwise. |
-| `plural_of_parent` | warning | 4.1, 6.2 | A type whose label is the plural (or singular) of an ancestor's (`Wine` under `Wines`). |
-| `naming_case` | warning | 6.1 | A label that doesn't follow `ontology.conventions`. With no conventions, the majority style of the model is assumed. |
-| `naming_number` | info | 6.2 | A type label that breaks the singular/plural convention. |
-| `meta_word_in_name` | warning | 6.4 | A label containing `Class`, `Type`, `Property`, `Slot`, `Relation` or `Concept` as a word. |
-| `sibling_naming` | info | 6.4 | Siblings where some repeat the parent's name and some don't (`RedWine` beside `White`). |
-| `missing_description` | warning | step 3 | A type, relation type or property with an empty description. |
-| `no_competency_questions` | info | step 1 | No `ontology.competency_questions`. |
-| `unused_type` | info | 4.7 | A node type no relation names, no type inherits from and no individual has. |
-| `inverse_not_declared` | info | 5.1 | Two relation types with swapped endpoints and names like `maker`/`produces` that aren't declared inverse. Heuristic. |
+| Code | Severity | Finding |
+|---|---|---|
+| `single_subtype` | warning | A type with exactly one direct subtype: a modeling problem or an incomplete ontology. |
+| `many_subtypes` | info | More than a dozen direct subtypes: intermediate categories may be missing. |
+| `redundant_endpoint` | warning | An endpoint list naming a type and one of its descendants; drop the descendant. |
+| `endpoint_covers_all_subtypes` | info | An endpoint list naming every subtype of a type but not the type: use the type. |
+| `property_on_every_subtype` | info | Every direct subtype declares the same property (same type) and the parent doesn't: attach it to the parent. |
+| `empty_subtype` | info | A subtype that adds no property, refinement or relation. Fine in a terminological hierarchy; worth a look otherwise. |
+| `plural_of_parent` | warning | A type whose label is the plural (or singular) of an ancestor's (`Wine` under `Wines`). |
+| `naming_case` | warning | A label that doesn't follow `ontology.conventions`. With no conventions, the majority style of the model is assumed. |
+| `naming_number` | info | A type label that breaks the singular/plural convention. |
+| `meta_word_in_name` | warning | A label containing `Class`, `Type`, `Property`, `Slot`, `Relation` or `Concept` as a word. |
+| `sibling_naming` | info | Siblings where some repeat the parent's name and some don't (`RedWine` beside `White`). |
+| `missing_description` | warning | A type, relation type or property with an empty description. |
+| `no_competency_questions` | info | No `ontology.competency_questions`. |
+| `unused_type` | info | A node type no relation names, no type inherits from and no individual has. |
+| `inverse_not_declared` | info | Two relation types with swapped endpoints and names like `maker`/`produces` that aren't declared inverse. Heuristic. |
 
 A consumer that wants a gate on top of lint builds it from the codes. hygm
 never does.
