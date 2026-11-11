@@ -1,0 +1,4 @@
+version: 2
+node_types:
+  - {label: Wine, description: a wine}
+  - {label: RedWine, description: red, parents: [Wine], disjoint_with: [Wine]}

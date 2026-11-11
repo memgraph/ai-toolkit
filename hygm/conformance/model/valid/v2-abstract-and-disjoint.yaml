@@ -1,0 +1,18 @@
+version: 2
+node_types:
+  - label: Wine
+    description: A wine; every wine is of one colour below
+    abstract: true
+  - label: RedWine
+    description: A red wine
+    parents: [Wine]
+    disjoint_with: [WhiteWine]
+  - label: WhiteWine
+    description: A white wine
+    parents: [Wine]
+  - label: Claret
+    description: A red Bordeaux
+    parents: [RedWine]
+  - label: Chablis
+    description: A white Burgundy
+    parents: [WhiteWine]

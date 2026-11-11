@@ -116,8 +116,15 @@ def _relabel(labels: tuple[str, ...], source: str, target: str, *, drop: str | N
 
 
 def _relabel_everywhere(model: HygmModel, source: str, target: str) -> HygmModel:
-    """Every parent, endpoint and label-valued profile setting naming node type `source` names `target`."""
-    nodes = tuple(replace(t, parents=_relabel(t.parents, source, target, drop=t.label)) for t in model.node_types)
+    """Every parent, endpoint, disjoint type and label-valued profile setting naming node type `source` names `target`."""
+    nodes = tuple(
+        replace(
+            t,
+            parents=_relabel(t.parents, source, target, drop=t.label),
+            disjoint_with=_relabel(t.disjoint_with, source, target, drop=t.label),
+        )
+        for t in model.node_types
+    )
     relations = tuple(
         replace(
             r,

@@ -110,6 +110,13 @@ relation_types:
 importing file back with its `imports`, never inlining them. Given a model as
 data, `model_from_mapping` needs a `resolver` for its imports.
 
+Node types may be `abstract` (no direct instances) and `disjoint_with` other
+types; `model.disjoint(a, b)` answers disjointness both ways, through
+ancestors. Types, relation types and properties take `synonyms` and `names`
+(display names by BCP 47 language tag). A synonym naming another type is
+refused (`duplicate_name`), as are two disjoint types sharing a descendant
+(`disjoint_conflict`).
+
 ## The Memgraph plan
 
 `memgraph_plan(model)` derives the constraints, indexes and enums a Memgraph

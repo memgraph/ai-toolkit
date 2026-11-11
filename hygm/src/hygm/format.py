@@ -53,9 +53,20 @@ _ONTOLOGY = {
 _SCOPE = {"includes", "excludes"}
 _CONVENTIONS = {"node_case", "property_case", "relation_case", "number"}
 _IMPORT = {"path"}
-_V2_NODE = {"label", "description", "parents", "properties", "key", "iri", "profiles"}
-_V2_RELATION = {"label", "description", "start_labels", "end_labels", "properties", "iri", "profiles"}
-_V2_PROPERTY = {"name", "type", "description", "required", "values", "iri", "profiles"}
+_NAMED = {"synonyms", "names"}
+_V2_NODE = {
+    "label",
+    "description",
+    "parents",
+    "properties",
+    "key",
+    "iri",
+    "profiles",
+    "abstract",
+    "disjoint_with",
+} | _NAMED
+_V2_RELATION = {"label", "description", "start_labels", "end_labels", "properties", "iri", "profiles"} | _NAMED
+_V2_PROPERTY = {"name", "type", "description", "required", "values", "iri", "profiles"} | _NAMED
 
 
 def model_from_mapping(
@@ -150,8 +161,7 @@ def model_schema(version: int) -> dict[str, Any]:
 def needs_version_2(model: HygmModel, version_1_profiles: Version1Profiles | None = None) -> bool:
     """Whether `model` uses anything format version 1 can't express, given what a version-1 file implies."""
     return bool(
-        model.ontology is not None
-        or model.imports
+        model.uses_hierarchy_or_properties()
         or not has_version_1_profiles(model, version_1_profiles or no_implied_profiles)
         or any(t.parents or t.properties or t.key or t.iri for t in model.node_types)
         or any(r.properties or r.iri or r.profiles for r in model.relation_types)
@@ -336,7 +346,11 @@ def _v2_node(node: NodeType) -> dict[str, Any]:
     profiles = _plain(node.profiles)
     if profiles:
         out["profiles"] = profiles
-    return out
+    if node.abstract:
+        out["abstract"] = True
+    if node.disjoint_with:
+        out["disjoint_with"] = list(node.disjoint_with)
+    return _with_names(out, node)
 
 
 def _v2_relation(relation: RelationType) -> dict[str, Any]:
@@ -351,7 +365,7 @@ def _v2_relation(relation: RelationType) -> dict[str, Any]:
         out["iri"] = relation.iri
     if relation.profiles:
         out["profiles"] = _plain(relation.profiles)
-    return out
+    return _with_names(out, relation)
 
 
 def _v2_property(prop: Property) -> dict[str, Any]:
@@ -368,6 +382,14 @@ def _v2_property(prop: Property) -> dict[str, Any]:
         out["iri"] = prop.iri
     if prop.profiles:
         out["profiles"] = _plain(prop.profiles)
+    return _with_names(out, prop)
+
+
+def _with_names(out: dict[str, Any], named: NodeType | RelationType | Property) -> dict[str, Any]:
+    if named.synonyms:
+        out["synonyms"] = list(named.synonyms)
+    if named.names:
+        out["names"] = dict(named.names)
     return out
 
 
@@ -465,6 +487,18 @@ class _Reader:
             paths.append(item["path"])
         return tuple(paths)
 
+    def boolean(self, item: dict, key: str, where: str) -> bool:
+        value = item.get(key, False)
+        if not isinstance(value, bool):
+            raise self.fail("invalid_format", where, f"{key} must be true or false")
+        return value
+
+    def names(self, item: dict, where: str) -> dict[str, str]:
+        value = item.get("names", {})
+        if not isinstance(value, dict) or not all(isinstance(name, str) for name in value.values()):
+            raise self.fail("invalid_format", where, "names must map language tags to strings")
+        return value
+
     def strings(self, item: dict, key: str, where: str) -> tuple[str, ...]:
         value = item.get(key, [])
         if not isinstance(value, list) or not all(isinstance(entry, str) for entry in value):
@@ -485,6 +519,10 @@ class _Reader:
             key=self.labels(item, "key", where, what="list of property names"),
             iri=self.optional_string(item, "iri", where),
             profiles=profiles,
+            abstract=self.boolean(item, "abstract", where),
+            disjoint_with=self.labels(item, "disjoint_with", where),
+            synonyms=self.strings(item, "synonyms", where),
+            names=self.names(item, where),
         )
 
     def relation(self, item: Any, where: str, allowed: set[str]) -> RelationType:
@@ -500,6 +538,8 @@ class _Reader:
             properties=self.properties(item, where),
             iri=self.optional_string(item, "iri", where),
             profiles=self.profiles(item.get("profiles", {}), f"{where} profiles", "relation"),
+            synonyms=self.strings(item, "synonyms", where),
+            names=self.names(item, where),
         )
 
     def properties(self, item: dict, where: str) -> tuple[Property, ...]:
@@ -529,6 +569,8 @@ class _Reader:
             values=tuple(values) if values is not None else None,
             iri=self.optional_string(prop, "iri", at),
             profiles=self.profiles(prop.get("profiles", {}), f"{at} profiles", "property"),
+            synonyms=self.strings(prop, "synonyms", at),
+            names=self.names(prop, at),
         )
 
     def profiles(self, value: Any, where: str, level: str) -> dict[str, dict[str, Any]]:
