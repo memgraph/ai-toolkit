@@ -2,10 +2,12 @@
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from contextlib import suppress
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from .errors import ModelError
+from .facets import FacetConflictError, check_facets, is_multi_valued, merge, refine
 from .identifiers import is_valid_identifier
 
 PropertyType = Literal["string", "integer", "float", "decimal", "boolean", "date", "datetime", "json"]
@@ -132,7 +134,13 @@ class Ontology:
 
 @dataclass(frozen=True)
 class Property:
-    """A property a node or relation type declares.
+    """A property a node or relation type declares, with its facets (docs/contract.md, 4.5, 4.14).
+
+    `required` is shorthand for `min_count: 1`, and the two are kept in step:
+    a `min_count` of 1 or more makes the property required, and `min_count`
+    is stored only above 1 (None otherwise), so each fact has one spelling.
+    A property is multi-valued, a list, when `max_count` is None or above 1;
+    `values`, the bounds and each list element's type apply per element.
 
     Attributes:
         name: The property key, a valid Cypher identifier.
@@ -144,6 +152,20 @@ class Property:
         profiles: Profile settings for this property.
         synonyms: Other names for the same property (4.13).
         names: Display names and translations by language tag (4.13).
+        min_count: The fewest values an instance has, when above 1; see `least_count`.
+        max_count: The most values an instance has; None for no limit, 0 to
+            forbid the property on a subtype (4.15).
+        default: Filled in when an instance is created without a value; not a constraint.
+        value: The one value every instance has.
+        minimum: The inclusive lower bound, on an ordered type (facets.ORDERED_TYPES).
+        maximum: The inclusive upper bound, likewise.
+        unit: The unit of a numeric value; documentation.
+
+    Raises:
+        ModelError: `count_conflict` for `required` with a `min_count` of 0 or
+            counts the wrong way round; `invalid_value` for a bound, default or
+            value the facets don't allow; `invalid_format` for a negative or
+            non-integer count; and the codes below for the type and values.
     """
 
     name: str
@@ -155,10 +177,28 @@ class Property:
     profiles: Profiles = field(default_factory=dict, hash=False)
     synonyms: tuple[str, ...] = ()
     names: Names = field(default_factory=dict, hash=False)
+    min_count: int | None = None
+    max_count: int | None = 1
+    default: Any = field(default=None, hash=False)
+    value: Any = field(default=None, hash=False)
+    minimum: Any = field(default=None, hash=False)
+    maximum: Any = field(default=None, hash=False)
+    unit: str | None = None
+
+    @property
+    def least_count(self) -> int:
+        """The fewest values an instance has: `min_count`, else 1 if required, else 0."""
+        return self.min_count if self.min_count is not None else int(self.required)
+
+    @property
+    def multi_valued(self) -> bool:
+        """Whether a value is a list: `max_count` is None or above 1."""
+        return is_multi_valued(self.max_count)
 
     def __post_init__(self) -> None:
         _identifier(self.name, "property name")
         _names_and_synonyms(self, f"Property {self.name!r}")
+        self._normalize_counts()
         if self.type not in PROPERTY_TYPES:
             raise ModelError(
                 "unknown_property_type",
@@ -171,6 +211,24 @@ class Property:
                     f"Property {self.name!r}: values are only allowed on a string property, not {self.type!r}",
                 )
             object.__setattr__(self, "values", tuple(self.values))
+        for key in ("default", "value"):
+            if self.multi_valued and isinstance(getattr(self, key), list):
+                object.__setattr__(self, key, tuple(getattr(self, key)))
+        check_facets(self)
+
+    def _normalize_counts(self) -> None:
+        for key in ("min_count", "max_count"):
+            count = getattr(self, key)
+            if count is not None and (isinstance(count, bool) or not isinstance(count, int) or count < 0):
+                raise ModelError(
+                    "invalid_format", f"Property {self.name!r}: {key} must be a whole number, got {count!r}"
+                )
+        if self.min_count is None:
+            return
+        if self.required and self.min_count == 0:
+            raise ModelError("count_conflict", f"Property {self.name!r}: required, but min_count is 0")
+        object.__setattr__(self, "required", self.min_count >= 1)
+        object.__setattr__(self, "min_count", self.min_count if self.min_count > 1 else None)
 
 
 @dataclass(frozen=True)
@@ -352,21 +410,47 @@ class HygmModel:
         return label == other or other in self.ancestors(label)
 
     def properties_of(self, label: str) -> tuple[Property, ...]:
-        """The properties a `label` instance has, inherited ones first.
+        """The properties a `label` instance has, with their effective facets; inherited ones first.
 
-        A redeclared property takes the nearest description and is required if
-        any declaration says so (docs/contract.md, 4.7).
+        A redeclaration narrows what `label` inherits, and takes what it
+        leaves unstated from it (facets.refine(), docs/contract.md 4.15).
+        Where it contradicts the inherited facets, it is as declared, for
+        validate_model() to report. One inherited from several
+        parents has the narrowest facets they all allow; where none exist, the
+        first parent's, for validate_model() to report as `property_conflict`.
         """
-        effective: dict[str, Property] = {}
-        for owner in (*reversed(self.ancestors(label)), label):
-            node = self.node_type(owner)
-            for prop in node.properties if node else ():
-                inherited = effective.get(prop.name)
-                if inherited is None:
-                    effective[prop.name] = prop
-                else:
-                    effective[prop.name] = replace(prop, required=inherited.required or prop.required)
-        return tuple(effective.values())
+        return tuple(self._effective(label, frozenset()).values())
+
+    def inherited(self, label: str, name: str) -> Property | None:
+        """Property `name` as `label`'s parents give it, before `label`'s own redeclaration; None if they don't."""
+        return self._from_parents(label, frozenset()).get(name)
+
+    def _effective(self, label: str, visiting: frozenset[str]) -> dict[str, Property]:
+        effective = self._from_parents(label, visiting)
+        node = self.node_type(label)
+        for prop in node.properties if node else ():
+            inherited = effective.get(prop.name)
+            try:
+                effective[prop.name] = refine(inherited, prop) if inherited else prop
+            except ModelError:
+                effective[prop.name] = prop
+        return effective
+
+    def _from_parents(self, label: str, visiting: frozenset[str]) -> dict[str, Property]:
+        node = self.node_type(label)
+        merged: dict[str, Property] = {}
+        for parent in node.parents if node else ():
+            if parent in visiting or parent == label or self.node_type(parent) is None:
+                continue
+            for prop in self._effective(parent, visiting | {label}).values():
+                seen = merged.get(prop.name)
+                if seen is None or seen == prop:
+                    merged.setdefault(prop.name, prop)
+                    continue
+                # With no facets both allow, the first parent's stand, for validate_model() to report.
+                with suppress(FacetConflictError):
+                    merged[prop.name] = merge(seen, prop)
+        return merged
 
     def key_of(self, label: str) -> tuple[str, ...]:
         """The key identifying a `label` instance: its own, else its nearest ancestor's; () if none."""

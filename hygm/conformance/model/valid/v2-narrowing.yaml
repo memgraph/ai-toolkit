@@ -1,0 +1,32 @@
+version: 2
+node_types:
+  - label: Wine
+    description: A wine
+    properties:
+      - {name: sugar, values: [dry, off_dry, sweet], description: How sweet it tastes}
+      - {name: tannin_level, type: integer, minimum: 0, maximum: 10}
+      - {name: alcohol, type: decimal, minimum: 5, maximum: 22.5, unit: "%"}
+      - {name: grapes, max_count: null}
+      - {name: region}
+  - label: DessertWine
+    description: Every dessert wine is sweet
+    parents: [Wine]
+    properties:
+      - {name: sugar, values: [sweet], value: sweet}
+  - label: WhiteWine
+    description: White wines have no tannin level
+    parents: [Wine]
+    properties:
+      - {name: tannin_level, max_count: 0}
+  - label: FortifiedWine
+    description: Stronger, with a narrower range and a default
+    parents: [Wine]
+    properties:
+      - {name: alcohol, minimum: 15, maximum: 22, default: 19.5, description: Alcohol by volume after fortifying}
+      - {name: grapes, max_count: 3}
+      - {name: region, required: true}
+  - label: Blend
+    description: A wine from at least two grapes
+    parents: [Wine]
+    properties:
+      - {name: grapes, min_count: 2}

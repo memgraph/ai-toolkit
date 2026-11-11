@@ -12,7 +12,9 @@ is enforced on customers through `Party`'s constraint, and repeating it on
 | `required: true` | an existence constraint |
 | a property's `type` | a data type constraint, where Memgraph has a matching type (`MEMGRAPH_TYPES`) |
 | `values` | an enum named `<Label>_<property>`, and the property typed `ENUM` |
+| a multi-valued property (`max_count` above 1 or none) | a `LIST` data type constraint; Memgraph has no per-element type, so the elements' type and enum go unchecked |
 | `parents` | no DDL: writers set every label `labels_for` returns |
+| `min_count` above 1, `max_count`, bounds, `value`, `default` | nothing: Memgraph can't enforce them; consumers that write data check them |
 
 Memgraph can only type a property as `ENUM`, not as one named enum, so the
 enum constraint accepts a value of any enum; writers store
@@ -205,6 +207,9 @@ def _type_statements(model: HygmModel, node: NodeType) -> list[Statement]:
             if not prop.values:
                 raise ModelError("invalid_format", f"{label}.{prop.name}: values must be a non-empty list")
             statements.append(Statement("enum", enum_name(label, prop.name), values=tuple(dict.fromkeys(prop.values))))
+        if prop.multi_valued:
+            statements.append(Statement("typed", label, (prop.name,), data_type="LIST"))
+        elif prop.values is not None:
             statements.append(Statement("typed", label, (prop.name,), data_type="ENUM"))
         elif (data_type := MEMGRAPH_TYPES[prop.type]) is not None:
             statements.append(Statement("typed", label, (prop.name,), data_type=data_type))

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/memgraph/ai-toolkit/hygm/schema/model.v2.schema.json",
   "title": "hygm model, format version 2",
-  "description": "The structure of a version-2 hygm model file. Rules a JSON Schema can't express (unique labels and properties, declared parents and endpoints, no parent cycle, property agreement, keys, disjointness, synonyms, profile rules, resolving imports) are defined in hygm/docs/contract.md.",
+  "description": "The structure of a version-2 hygm model file. Rules a JSON Schema can't express (unique labels and properties, declared parents and endpoints, no parent cycle, property facets and narrowing them, keys, disjointness, synonyms, profile rules, resolving imports) are defined in hygm/docs/contract.md.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -181,6 +181,34 @@
         },
         "names": {
           "$ref": "#/$defs/names"
+        },
+        "min_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "default": {},
+        "value": {},
+        "minimum": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "maximum": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "unit": {
+          "type": "string"
         }
       },
       "if": {

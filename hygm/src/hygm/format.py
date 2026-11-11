@@ -10,7 +10,6 @@ meaning.
 
 import json
 from collections.abc import Callable
-from dataclasses import replace
 from importlib.resources import files
 from typing import Any
 
@@ -66,7 +65,8 @@ _V2_NODE = {
     "disjoint_with",
 } | _NAMED
 _V2_RELATION = {"label", "description", "start_labels", "end_labels", "properties", "iri", "profiles"} | _NAMED
-_V2_PROPERTY = {"name", "type", "description", "required", "values", "iri", "profiles"} | _NAMED
+_FACETS = {"min_count", "max_count", "default", "value", "minimum", "maximum", "unit"}
+_V2_PROPERTY = {"name", "type", "description", "required", "values", "iri", "profiles"} | _NAMED | _FACETS
 
 
 def model_from_mapping(
@@ -108,10 +108,8 @@ def model_from_mapping(
     if version not in VERSIONS:
         raise ModelError("unknown_version", f"{where_from}: unknown format version {version}; known: {VERSIONS}")
 
-    reader = _Reader(where_from)
+    reader = _Reader(where_from, resolver)
     model = reader.v1(raw) if version == 1 else reader.v2(raw)
-    if reader.import_paths:
-        model = _with_imports(model, reader.import_paths, resolver, where_from)
     if version == 1 and version_1_profiles is not None:
         model = with_version_1_profiles(model, version_1_profiles)
     if not validate:
@@ -245,7 +243,7 @@ def _v2_mapping(model: HygmModel) -> dict[str, Any]:
         out["ontology"] = _ontology(model.ontology)
     if model.imports:
         out["imports"] = [{"path": i.path} for i in model.imports]
-    out["node_types"] = [_v2_node(t) for t in nodes]
+    out["node_types"] = [_v2_node(t, model) for t in nodes]
     if relations:
         out["relation_types"] = [_v2_relation(r) for r in relations]
     if model.profiles:
@@ -304,41 +302,37 @@ def _ontology(ontology: Ontology) -> dict[str, Any]:
     return out
 
 
-def _with_imports(
-    model: HygmModel, paths: tuple[str, ...], resolver: ImportResolver | None, where_from: str
-) -> HygmModel:
-    """`model` with its imports resolved and their types merged in, imported first (4.12)."""
-    if resolver is None:
-        raise ModelError(
-            "unknown_model",
-            f"{where_from} imports {list(paths)}, and nothing resolves them: read it from a file, or pass a resolver",
-        )
-    imports = tuple(Import(path, resolver(path)) for path in paths)
-    nodes = _merged(imports, model.node_types, "node_types", "node label", where_from)
-    relations = _merged(imports, model.relation_types, "relation_types", "relation type", where_from)
-    return replace(model, node_types=nodes, relation_types=relations, imports=imports)
-
-
 def _merged(imports: tuple[Import, ...], own: tuple[Any, ...], attribute: str, kind: str, where_from: str) -> tuple:
-    """Imported declarations, then `own`; one label declared twice must be one declaration (a diamond)."""
+    """Imported declarations, then `own`; a label both declare must be one declaration (a diamond).
+
+    A label `own` declares twice is left for validate_model() to report.
+    """
     merged: dict[str, Any] = {}
-    for declared in (*(t for i in imports for t in getattr(i.model, attribute)), *own):
+    for declared in (t for i in imports for t in getattr(i.model, attribute)):
+        seen = merged.setdefault(declared.label, declared)
+        if seen != declared:
+            raise ModelError(
+                "duplicate_label", f"{where_from}: {kind} {declared.label!r} is declared differently by two imports"
+            )
+    for declared in own:
         seen = merged.get(declared.label)
         if seen is not None and seen != declared:
             raise ModelError(
                 "duplicate_label",
-                f"{where_from}: {kind} {declared.label!r} is declared differently by the model and its imports",
+                f"{where_from}: {kind} {declared.label!r} is declared differently by the model and an import",
             )
-        merged.setdefault(declared.label, declared)
-    return tuple(merged.values())
+    return (*merged.values(), *(t for t in own if merged.get(t.label) != t))
 
 
-def _v2_node(node: NodeType) -> dict[str, Any]:
+def _v2_node(node: NodeType, model: HygmModel | None = None) -> dict[str, Any]:
+    """`node` as an entry; within `model`, a redeclared property leaves out what it inherits unchanged."""
     out: dict[str, Any] = {"label": node.label, "description": node.description}
     if node.parents:
         out["parents"] = list(node.parents)
     if node.properties:
-        out["properties"] = [_v2_property(p) for p in node.properties]
+        out["properties"] = [
+            _v2_property(p, model.inherited(node.label, p.name) if model else None) for p in node.properties
+        ]
     if node.key:
         out["key"] = list(node.key)
     if node.iri:
@@ -368,16 +362,29 @@ def _v2_relation(relation: RelationType) -> dict[str, Any]:
     return _with_names(out, relation)
 
 
-def _v2_property(prop: Property) -> dict[str, Any]:
+def _v2_property(prop: Property, inherited: Property | None = None) -> dict[str, Any]:
+    """`prop` as an entry, defaults left out.
+
+    A redeclaration (`inherited` given) also leaves out a `type` and
+    `max_count` equal to the inherited ones, which the reader fills back in.
+    """
     out: dict[str, Any] = {"name": prop.name}
-    if prop.type != "string":
+    if prop.type != (inherited.type if inherited else "string"):
         out["type"] = prop.type
     if prop.description:
         out["description"] = prop.description
-    if prop.required:
+    if prop.min_count is not None:
+        out["min_count"] = prop.min_count
+    elif prop.required:
         out["required"] = True
+    if prop.max_count != (inherited.max_count if inherited else 1):
+        out["max_count"] = prop.max_count
     if prop.values is not None:
         out["values"] = list(prop.values)
+    for key in ("default", "value", "minimum", "maximum", "unit"):
+        value = getattr(prop, key)
+        if value is not None:
+            out[key] = list(value) if isinstance(value, tuple) else value
     if prop.iri:
         out["iri"] = prop.iri
     if prop.profiles:
@@ -400,9 +407,12 @@ def _plain(profiles: Any) -> dict[str, Any]:
 class _Reader:
     """Turns one parsed model mapping into a HygmModel, naming where each problem is."""
 
-    def __init__(self, where_from: str) -> None:
+    def __init__(self, where_from: str, resolver: ImportResolver | None = None) -> None:
         self.where_from = where_from
-        self.import_paths: tuple[str, ...] = ()
+        self.resolver = resolver
+        # The node types read so far, imported ones included, while reading a
+        # model file's node types: what a redeclared property inherits from.
+        self.known_types: tuple[NodeType, ...] | None = None
 
     def fail(self, code: str, where: str, problem: str) -> ModelError:
         return ModelError(code, f"{self.where_from}: {where} {problem}" if where else f"{self.where_from} {problem}")
@@ -436,16 +446,44 @@ class _Reader:
         self.known(raw, _V2_TOP, "", hint="version 2 calls entity_types node_types")
         nodes = self.listed(raw, "node_types", required=True)
         relations = self.listed(raw, "relation_types")
-        node_types = [self.node(item, f"node_types[{index}]") for index, item in enumerate(nodes)]
+        imports = self.resolve(self.imports(raw))
+        node_types = self.nodes(nodes, tuple(_imported(imports, "node_types").values()))
         relation_types = [
             self.relation(item, f"relation_types[{index}]", _V2_RELATION) for index, item in enumerate(relations)
         ]
         profiles = self.profiles(raw.get("profiles", {}), "profiles", "model")
         ontology = self.ontology(raw["ontology"]) if "ontology" in raw else None
-        self.import_paths = self.imports(raw)
         return HygmModel(
-            node_types=tuple(node_types), relation_types=tuple(relation_types), profiles=profiles, ontology=ontology
+            node_types=_merged(imports, tuple(node_types), "node_types", "node label", self.where_from),
+            relation_types=_merged(imports, tuple(relation_types), "relation_types", "relation type", self.where_from),
+            profiles=profiles,
+            ontology=ontology,
+            imports=imports,
         )
+
+    def resolve(self, paths: tuple[str, ...]) -> tuple[Import, ...]:
+        """Each import with its model (4.12); with no resolver, a model that imports is `unknown_model`."""
+        if paths and self.resolver is None:
+            raise ModelError(
+                "unknown_model",
+                f"{self.where_from} imports {list(paths)}, and nothing resolves them: read it from a file, "
+                "or pass a resolver",
+            )
+        return tuple(Import(path, self.resolver(path)) for path in paths) if self.resolver else ()
+
+    def nodes(self, items: list, imported: tuple[NodeType, ...]) -> list[NodeType]:
+        """The node types, read parents first so a redeclared property can fill in what it leaves unstated."""
+        heads = []
+        for index, item in enumerate(items):
+            where = f"node_types[{index}]"
+            label, _ = self.labeled(item, where)
+            heads.append((label, self.labels(item, "parents", where)))
+        built: dict[int, NodeType] = {}
+        for index in _parents_first(heads):
+            self.known_types = (*imported, *built.values())
+            built[index] = self.node(items[index], f"node_types[{index}]")
+        self.known_types = None
+        return [built[index] for index in range(len(items))]
 
     def ontology(self, raw: Any) -> Ontology:
         where = "ontology"
@@ -509,13 +547,14 @@ class _Reader:
         label, description = self.labeled(item, where)
         self.known(item, _V2_NODE, where)
         profiles = _without_default_identity(self.profiles(item.get("profiles", {}), f"{where} profiles", "node"))
+        parents = self.labels(item, "parents", where)
         return self.build(
             NodeType,
             where,
             label,
             description,
-            parents=self.labels(item, "parents", where),
-            properties=self.properties(item, where),
+            parents=parents,
+            properties=self.properties(item, where, self.parents_view(label, parents)),
             key=self.labels(item, "key", where, what="list of property names"),
             iri=self.optional_string(item, "iri", where),
             profiles=profiles,
@@ -542,13 +581,26 @@ class _Reader:
             names=self.names(item, where),
         )
 
-    def properties(self, item: dict, where: str) -> tuple[Property, ...]:
-        return tuple(
-            self.property(prop, f"{where} properties[{index}]")
-            for index, prop in enumerate(self.listed(item, "properties", where=where))
-        )
+    def parents_view(self, label: str, parents: tuple[str, ...]) -> tuple[str, HygmModel] | None:
+        """The model a node type's redeclared properties inherit from, while reading a model file's node types."""
+        if self.known_types is None:
+            return None
+        try:
+            # First, so it shadows an imported or duplicate type of the same label.
+            return label, HygmModel(node_types=(NodeType(label, parents=parents), *self.known_types))
+        except ModelError:
+            return None
 
-    def property(self, prop: Any, at: str) -> Property:
+    def properties(self, item: dict, where: str, owner: tuple[str, HygmModel] | None = None) -> tuple[Property, ...]:
+        props = []
+        for index, prop in enumerate(self.listed(item, "properties", where=where)):
+            name = prop.get("name") if isinstance(prop, dict) else None
+            inherited = owner[1].inherited(owner[0], name) if owner and isinstance(name, str) else None
+            props.append(self.property(prop, f"{where} properties[{index}]", inherited))
+        return tuple(props)
+
+    def property(self, prop: Any, at: str, inherited: Property | None = None) -> Property:
+        """One property; a redeclaration of `inherited` takes its unstated `type` and `max_count` from it (4.15)."""
         if not isinstance(prop, dict) or not isinstance(prop.get("name"), str):
             raise self.fail("invalid_format", at, "must be a mapping with a string 'name'")
         self.known(prop, _V2_PROPERTY, at)
@@ -559,11 +611,17 @@ class _Reader:
             not isinstance(values, list) or not values or not all(isinstance(v, str) for v in values)
         ):
             raise self.fail("invalid_format", at, "values must be a non-empty list of strings")
+        min_count = self.count(prop, "min_count", at, nullable=False)
+        max_count = self.count(prop, "max_count", at, nullable=True)
+        if "required" in prop and min_count is not None and prop["required"] != (min_count >= 1):
+            raise self.fail("count_conflict", at, f"required is {prop['required']} but min_count is {min_count}")
+        if inherited is not None and inherited.required and (prop.get("required") is False or min_count == 0):
+            raise self.fail("property_conflict", at, f"makes {prop['name']!r} optional, which it inherits as required")
         return self.build(
             Property,
             at,
             prop["name"],
-            type=prop.get("type", "string"),
+            type=prop.get("type", inherited.type if inherited else "string"),
             description=self.optional_string(prop, "description", at) or "",
             required=prop.get("required", False),
             values=tuple(values) if values is not None else None,
@@ -571,7 +629,23 @@ class _Reader:
             profiles=self.profiles(prop.get("profiles", {}), f"{at} profiles", "property"),
             synonyms=self.strings(prop, "synonyms", at),
             names=self.names(prop, at),
+            min_count=min_count,
+            max_count=max_count if "max_count" in prop else inherited.max_count if inherited else 1,
+            default=prop.get("default"),
+            value=prop.get("value"),
+            minimum=prop.get("minimum"),
+            maximum=prop.get("maximum"),
+            unit=self.optional_string(prop, "unit", at),
         )
+
+    def count(self, item: dict, key: str, where: str, *, nullable: bool) -> int | None:
+        value = item.get(key)
+        if value is None and (nullable or key not in item):
+            return None
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            more = " or null" if nullable else ""
+            raise self.fail("invalid_format", where, f"{key} must be a whole number{more}, got {value!r}")
+        return value
 
     def profiles(self, value: Any, where: str, level: str) -> dict[str, dict[str, Any]]:
         if not isinstance(value, dict) or not all(isinstance(v, dict) for v in value.values()):
@@ -633,6 +707,28 @@ class _Reader:
         if value is not None and not isinstance(value, str):
             raise self.fail("invalid_format", where, f"{key} must be a string")
         return value
+
+
+def _parents_first(heads: list[tuple[str, tuple[str, ...]]]) -> list[int]:
+    """Indexes of (label, parents) entries, each after the entries for its parents; a cycle is cut anywhere."""
+    index_of: dict[str, int] = {}
+    for index, (label, _) in enumerate(heads):
+        index_of.setdefault(label, index)
+    order: list[int] = []
+    done: set[int] = set()
+
+    def visit(index: int, path: frozenset[int]) -> None:
+        if index in done or index in path:
+            return
+        for parent in heads[index][1]:
+            if parent in index_of:
+                visit(index_of[parent], path | {index})
+        done.add(index)
+        order.append(index)
+
+    for index in range(len(heads)):
+        visit(index, frozenset())
+    return order
 
 
 def _identity(node: NodeType) -> str:

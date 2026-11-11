@@ -139,3 +139,18 @@ def test_a_contradicting_type_constraint_stops_the_plan_before_it_runs_anything(
         apply_plan(memgraph_plan(shop.model), memgraph_run)
 
     assert not [row for row in memgraph_run("SHOW CONSTRAINT INFO") if row["label"] == shop.party]
+
+
+def test_a_multi_valued_property_is_typed_as_a_list(memgraph_run):
+    wine = f"Wine{uuid.uuid4().hex[:8]}"
+    model = HygmModel(node_types=(NodeType(wine, properties=(Property("grapes", max_count=None),)),))
+    try:
+        plan = memgraph_plan(model)
+        apply_plan(plan, memgraph_run)
+
+        memgraph_run(f"CREATE (:`{wine}` {{grapes: $grapes}})", grapes=["merlot", "cabernet"])
+        with pytest.raises(Exception, match="IS TYPED LIST violation"):
+            memgraph_run(f"CREATE (:`{wine}` {{grapes: $grapes}})", grapes="merlot")
+        assert apply_plan(plan, memgraph_run) == ()
+    finally:
+        _clean(memgraph_run, {wine})
