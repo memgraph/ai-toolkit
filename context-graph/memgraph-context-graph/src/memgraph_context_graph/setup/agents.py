@@ -113,7 +113,7 @@ def wire_plugin(agent: Agent, log: Callable[[str], None]) -> str:
         WiringError: the agent's CLI is missing or refused a step.
     """
     binary = _require(agent)
-    moved = _remove_legacy(agent, binary, log)
+    moved = _remove_legacy(agent, binary, log, carry_settings=True)
     if PLUGIN_ID in _plugin_entries(agent):
         _allow_recall(agent)
         return "plugin already installed"
@@ -142,7 +142,7 @@ def unwire_plugin(agent: Agent, log: Callable[[str], None]) -> str:
         removed = True
     if agent.runtime == "codex":
         _codex_memory().disallow_plugin_tools(Path.home(), PLUGIN_ID)
-    removed = _remove_legacy(agent, binary, log) or removed
+    removed = _remove_legacy(agent, binary, log, carry_settings=False) or removed
     return "removed the plugin" if removed else "wasn't installed"
 
 
@@ -151,7 +151,8 @@ def update_plugin(agent: Agent, log: Callable[[str], None]) -> str:
 
     Claude Code updates the plugin in place; a running session needs a restart to load it. Codex has no update
     verb, so the plugin is added again from the refreshed marketplace. An install from
-    :data:`LEGACY_MARKETPLACE` is moved to the Memgraph marketplace instead.
+    :data:`LEGACY_MARKETPLACE` is moved to the Memgraph marketplace instead, and removed when the new one is
+    already installed beside it.
 
     Raises:
         WiringError: the agent's CLI is missing, or refused a step.
@@ -162,6 +163,7 @@ def update_plugin(agent: Agent, log: Callable[[str], None]) -> str:
         return "plugin not installed; nothing to update"
     if plugin_id == LEGACY_PLUGIN_ID:
         return wire_plugin(agent, log)
+    moved = _remove_legacy(agent, binary, log, carry_settings=True)
     if agent.runtime == "claude-code":
         _stream([binary, "plugin", "marketplace", "update", MARKETPLACE], log)
         _stream([binary, "plugin", "update", PLUGIN_ID], log)
@@ -169,17 +171,25 @@ def update_plugin(agent: Agent, log: Callable[[str], None]) -> str:
         _stream([binary, "plugin", "marketplace", "upgrade", MARKETPLACE], log)
         _stream([binary, "plugin", "add", PLUGIN_ID], log)
     _allow_recall(agent)
-    return "plugin updated"
+    return "plugin moved to the Memgraph marketplace" if moved else "plugin updated"
 
 
-def _remove_legacy(agent: Agent, binary: str, log: Callable[[str], None]) -> bool:
-    """Uninstall the plugin from :data:`LEGACY_MARKETPLACE` and remove that marketplace; whether there was any."""
+def _remove_legacy(agent: Agent, binary: str, log: Callable[[str], None], *, carry_settings: bool) -> bool:
+    """Uninstall the plugin from :data:`LEGACY_MARKETPLACE` and remove that marketplace; whether there was any.
+
+    *carry_settings* moves Codex's settings for the old ID to :data:`PLUGIN_ID` (setup and update, which keep
+    the plugin) instead of dropping them (uninstall).
+    """
     removed = False
     if LEGACY_PLUGIN_ID in _plugin_entries(agent):
         _stream([binary, "plugin", _uninstall_verb(agent), LEGACY_PLUGIN_ID], log)
         removed = True
     if agent.runtime == "codex":
-        _codex_memory().disallow_plugin_tools(Path.home(), LEGACY_PLUGIN_ID)
+        codex_memory = _codex_memory()
+        if carry_settings:
+            codex_memory.move_plugin_tools(Path.home(), LEGACY_PLUGIN_ID, PLUGIN_ID)
+        else:
+            codex_memory.disallow_plugin_tools(Path.home(), LEGACY_PLUGIN_ID)
     if _marketplace_registered(binary, LEGACY_MARKETPLACE):
         _stream([binary, "plugin", "marketplace", "remove", LEGACY_MARKETPLACE], log)
         removed = True

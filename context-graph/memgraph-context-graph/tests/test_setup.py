@@ -143,6 +143,38 @@ def test_update_moves_an_install_from_the_previous_marketplace(fake_agents, setu
 
 
 @pytest.mark.parametrize("runtime, binary", [("claude-code", "claude"), ("codex", "codex")])
+def test_update_removes_an_old_install_kept_beside_the_new_one(fake_agents, setup_home, runtime, binary):
+    """With both installed, the new one is what gets updated, and the old one must still go: both run hooks."""
+    agent = BY_RUNTIME[runtime]
+    _install_from_legacy_marketplace(binary)
+    agents.wire_plugin(agent, lambda _: None)
+    _install_from_legacy_marketplace(binary)
+    assert sorted(fake_agents.of(binary)["plugins"]) == sorted([agents.PLUGIN_ID, agents.LEGACY_PLUGIN_ID])
+
+    assert agents.update_plugin(agent, lambda _: None) == "plugin moved to the Memgraph marketplace"
+    assert fake_agents.of(binary)["plugins"] == [agents.PLUGIN_ID]
+    assert fake_agents.of(binary)["marketplaces"] == ["memgraph"]
+
+
+@pytest.mark.parametrize("move", ["setup", "update"])
+def test_moving_a_codex_install_carries_the_approval_mode_the_user_chose(fake_agents, setup_home, move):
+    import tomlkit
+
+    config = setup_home / ".codex" / "config.toml"
+    config.parent.mkdir()
+    config.write_text(
+        f'[plugins."{agents.LEGACY_PLUGIN_ID}".mcp_servers.context-graph]\ndefault_tools_approval_mode = "prompt"\n'
+    )
+    _install_from_legacy_marketplace("codex")
+    codex = BY_RUNTIME["codex"]
+
+    (agents.wire_plugin if move == "setup" else agents.update_plugin)(codex, lambda _: None)
+
+    plugins = tomlkit.parse(config.read_text()).unwrap()["plugins"]
+    assert plugins == {agents.PLUGIN_ID: {"mcp_servers": {"context-graph": {"default_tools_approval_mode": "prompt"}}}}
+
+
+@pytest.mark.parametrize("runtime, binary", [("claude-code", "claude"), ("codex", "codex")])
 def test_uninstall_removes_an_install_from_the_previous_marketplace(fake_agents, setup_home, runtime, binary):
     agent = BY_RUNTIME[runtime]
     _install_from_legacy_marketplace(binary)
