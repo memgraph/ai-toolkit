@@ -275,7 +275,7 @@ def test_two_has_key_axioms_are_refused(tmp_path):
         "owl:minCardinality 1",
         "owl:cardinality 1",
         "owl:qualifiedCardinality 1 ; owl:onDataRange xsd:string",
-        "owl:minQualifiedCardinality 2 ; owl:onDataRange xsd:string",
+        "owl:minQualifiedCardinality 1 ; owl:onDataRange xsd:string",
     ],
 )
 def test_a_functional_property_with_an_at_least_one_restriction_is_required(tmp_path, cardinality):
@@ -291,15 +291,44 @@ def test_a_functional_property_with_an_at_least_one_restriction_is_required(tmp_
     assert _properties(model, "Person")["name"].required is True
 
 
+def test_a_functional_property_restricted_to_at_least_two_values_is_a_count_conflict(tmp_path):
+    with pytest.raises(ModelError) as raised:
+        _import(
+            tmp_path,
+            """
+            :Person a owl:Class ;
+                rdfs:subClassOf [ a owl:Restriction ; owl:onProperty :name ; owl:minCardinality 2 ] .
+            :name a owl:DatatypeProperty , owl:FunctionalProperty ; rdfs:domain :Person .
+            """,
+        )
+    assert raised.value.codes == ("count_conflict",)
+
+
+def test_an_at_least_one_restriction_makes_a_property_required_functional_or_not(tmp_path):
+    model = _import(
+        tmp_path,
+        """
+        :Person a owl:Class ;
+            rdfs:subClassOf [ a owl:Restriction ; owl:onProperty :name ; owl:minCardinality 1 ] ,
+                [ a owl:Restriction ; owl:onProperty :nick ; owl:minCardinality 3 ; owl:maxCardinality 5 ] .
+        :name a owl:DatatypeProperty ; rdfs:domain :Person .
+        :nick a owl:DatatypeProperty ; rdfs:domain :Person .
+        """,
+    )
+
+    name, nick = _properties(model, "Person")["name"], _properties(model, "Person")["nick"]
+    assert (name.required, name.max_count) == (True, 1)
+    assert (nick.least_count, nick.max_count) == (3, 5)
+
+
 @pytest.mark.parametrize(
     ("types", "cardinality"),
     [
-        ("owl:DatatypeProperty", "owl:minCardinality 1"),  # not functional
         ("owl:DatatypeProperty , owl:FunctionalProperty", "owl:minCardinality 0"),
         ("owl:DatatypeProperty , owl:FunctionalProperty", "owl:maxCardinality 1"),
     ],
 )
-def test_without_both_functional_and_at_least_one_a_property_is_optional(tmp_path, types, cardinality):
+def test_without_an_at_least_one_restriction_a_property_is_optional(tmp_path, types, cardinality):
     model = _import(
         tmp_path,
         f"""
@@ -365,7 +394,7 @@ def test_a_property_name_that_is_not_an_identifier_is_rejected(tmp_path):
     assert e.value.code == "invalid_identifier"
 
 
-def test_equivalence_and_disjointness_are_ignored(tmp_path):
+def test_equivalence_is_ignored_and_disjointness_read(tmp_path):
     model = _import(
         tmp_path,
         """
@@ -375,6 +404,7 @@ def test_equivalence_and_disjointness_are_ignored(tmp_path):
     )
 
     assert model.node_labels() == ("Person", "Robot")
+    assert model.disjoint("Robot", "Person")
 
 
 def test_an_owl_thing_range_or_domain_leaves_the_relation_unconstrained_there(tmp_path):

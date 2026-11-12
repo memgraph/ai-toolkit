@@ -23,10 +23,22 @@ Strategies:
   relation type, and `rdfs:domain`/`rdfs:range` (one class or an
   `owl:unionOf`) the start/end labels. `owl:DatatypeProperty` becomes a
   property on its domain class(es), typed from its XSD range (unlisted types
-  are `string`; an `owl:oneOf` range gives `values`); `owl:hasKey` the `key`,
-  its properties required; a functional property with an at-least-one
-  cardinality restriction is required; every term keeps its `iri`. Other
-  axioms are ignored. Needs `hygm[owl]` (rdflib).
+  are `string`; an `owl:oneOf` range gives `values`, `xsd:minInclusive` and
+  `xsd:maxInclusive` the bounds); `owl:hasKey` the `key`, its properties
+  required. Cardinality and `owl:hasValue` restrictions set counts and
+  `value`, on an object property per type (`relation_restrictions`, with
+  `owl:allValuesFrom`); disjointness, inverses, symmetric and functional
+  properties, language-tagged labels and `skos:altLabel`, named individuals,
+  the `owl:Ontology` header and its `owl:imports` of local files come across
+  too; every term keeps its `iri`. Equivalence and other axioms are ignored.
+  `model_from_owl` reads a document held in memory. Needs `hygm[owl]` (rdflib).
+
+`model_to_owl(model, format="turtle")` writes a model as OWL, the same table
+backwards; what OWL has no construct for (`abstract`, `default`, `unit`,
+profiles, relation counts and properties) goes in `hygm:` annotations. Read
+back, it is the same model up to order, which OWL doesn't keep. Types,
+properties and individuals without an IRI get one under `base`
+(`urn:hygm:model#` by default), and the import leaves those out again.
 
 `validate_model` is the hard gate every model passes before anything uses it.
 `ManualStrategy` runs it on load.

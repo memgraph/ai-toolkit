@@ -802,7 +802,7 @@ element it is about and a suggestion. `hygm lint` prints them, and
 A consumer that wants a gate on top of lint builds it from the codes. hygm
 never does.
 
-## 10. OWL import
+## 10. OWL import and export
 
 `OwlImportStrategy` extends its mechanical mapping:
 
@@ -815,7 +815,6 @@ never does.
 | its `rdfs:range` | `type`, by 4.6 |
 | an `owl:oneOf` of literals as range | `values` |
 | `owl:hasKey` | `key`, each key property marked `required` |
-| `owl:FunctionalProperty` with an `owl:minCardinality 1` restriction | `required: true` |
 | each IRI | `iri` |
 | `owl:Ontology` with `rdfs:comment`, `owl:versionInfo` | `ontology` (4.11) |
 | `owl:imports` | `imports`, the imported ontology converted too |
@@ -824,19 +823,49 @@ never does.
 | `skos:altLabel` | `synonyms` |
 | `owl:inverseOf` | `inverse_of` |
 | `owl:SymmetricProperty` | `symmetric` |
-| `owl:FunctionalProperty` | `max_count: 1` |
-| a cardinality restriction (`min`/`max`/exact, qualified or not) on a class | `min_count`/`max_count` on the property or relation restriction |
-| `owl:hasValue` restriction | `value` |
-| `owl:allValuesFrom` restriction on an object property | `relation_restrictions` end labels |
+| `owl:FunctionalProperty` | `max_count: 1`; a datatype property without it, or any other count, is still single-valued (hygm's default) |
+| a cardinality restriction (`min`/`max`/exact, qualified or not, the class of a qualified one ignored) on a class | `min_count`/`max_count` on its own property; on an inherited property, a redeclaration narrowing it (4.15); on an object property, a relation restriction |
+| `owl:hasValue` restriction | `value`, likewise |
+| `owl:allValuesFrom` restriction | on an object property, `relation_restrictions` end labels; on an inherited datatype property, its `values` or bounds narrowed |
 | `xsd:minInclusive`/`maxInclusive` datatype restriction | `minimum`/`maximum` |
 | `owl:NamedIndividual` with its assertions | `individuals` |
 
-**OWL export** writes the same table backwards, so a model round-trips
-through OWL. `abstract` has no OWL counterpart and is written as an
-annotation (`hygm:abstract`); `default`, `unit` and the profiles likewise.
+An `owl:imports` of a web IRI is left out: hygm reads files, not the web.
+The classes the importing ontology names are declared from their use, as
+when no import is resolved.
 
-Restrictions, equivalence, disjointness and other axioms stay out. hygm is
-a schema, not a reasoner.
+**OWL export** (`model_to_owl`) writes the same table backwards, so a model
+round-trips through OWL. What OWL has no construct for is written as an
+annotation in the `hygm:` namespace (`https://memgraph.com/ns/hygm#`):
+
+| hygm | annotation |
+|---|---|
+| `abstract` | `hygm:abstract` |
+| `default`, `unit` | `hygm:default` (JSON), `hygm:unit` |
+| a multi-valued property without a limit | `hygm:multiValued` |
+| a relation type's `min_count`, and its `max_count` above 1 | `hygm:minCount`, `hygm:maxCount` |
+| a relation type's properties | `hygm:properties` (JSON, as in the model file) |
+| profiles | `hygm:profiles` (JSON) |
+| the `ontology` block's scope, competency questions, maintainers and conventions | `hygm:includes`, `hygm:excludes`, `hygm:competencyQuestion`, `hygm:maintainer`, `hygm:conventions` |
+| a name that isn't its IRI's local name | `hygm:name` |
+| an individual's empty list | `hygm:noValues` |
+
+- **IRIs.** A type, property or individual without an `iri` gets one under
+  a base the caller chooses (`urn:hygm:model#` by default), recorded on the
+  ontology as `hygm:base`. The import leaves an IRI under it out, so the
+  model reads back without one.
+- **Properties.** hygm names properties per type; OWL names a datatype
+  property once. Each property gets its own datatype property, named back by
+  `hygm:name`. A redeclaration (4.15) is an `rdfs:subPropertyOf` what it
+  redeclares; one that keeps that property's IRI and narrows only counts,
+  `value`, `values` or bounds is written as restrictions on its type
+  instead, as an OWL ontology says it.
+- **Order.** OWL keeps none, so a model reads back with its types,
+  properties and individuals in IRI order and a multi-valued annotation's
+  values sorted. Up to that order, every valid conformance fixture reads
+  back as itself.
+
+Equivalence and other axioms stay out. hygm is a schema, not a reasoner.
 
 ## 11. Layer 6: evolution
 

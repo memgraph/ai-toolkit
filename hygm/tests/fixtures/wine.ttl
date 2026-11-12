@@ -1,0 +1,101 @@
+# A wine ontology in the shape of the one Noy and McGuinness build in
+# "Ontology Development 101", written as any OWL tool would: no hygm
+# annotations, only standard OWL, RDFS and SKOS.
+@prefix : <https://example.org/wine#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<https://example.org/wine> a owl:Ontology ;
+    rdfs:label "wine" ;
+    rdfs:comment "Wines, the wineries that make them and the regions they come from" ;
+    owl:versionInfo "1.0" .
+
+:Winery a owl:Class ;
+    rdfs:comment "A producer of wine" ;
+    rdfs:label "Winery"@en , "Domaine"@fr ;
+    skos:altLabel "chateau" , "estate" ;
+    owl:hasKey ( :wineryName ) .
+
+:Region a owl:Class ; rdfs:comment "A wine-growing region" .
+
+:Grape a owl:Class ; rdfs:comment "A grape variety" .
+
+:Wine a owl:Class ;
+    rdfs:comment "A drinkable fermented grape juice" ;
+    rdfs:label "Wine"@en , "Vin"@fr ;
+    rdfs:subClassOf
+        [ a owl:Restriction ; owl:onProperty :hasMaker ; owl:cardinality 1 ] ,
+        [ a owl:Restriction ; owl:onProperty :madeFromGrape ; owl:minCardinality 1 ] ,
+        [ a owl:Restriction ; owl:onProperty :wineName ; owl:minCardinality 1 ] .
+
+:RedWine a owl:Class ;
+    rdfs:comment "A red wine" ;
+    rdfs:subClassOf :Wine ,
+        [ a owl:Restriction ; owl:onProperty :hasColor ; owl:hasValue "red" ] ;
+    owl:disjointWith :WhiteWine .
+
+:WhiteWine a owl:Class ;
+    rdfs:comment "A white wine" ;
+    rdfs:subClassOf :Wine ,
+        [ a owl:Restriction ; owl:onProperty :hasColor ; owl:hasValue "white" ] .
+
+:RoseWine a owl:Class ; rdfs:comment "A rose wine" ; rdfs:subClassOf :Wine .
+
+[] a owl:AllDisjointClasses ; owl:members ( :RedWine :RoseWine :WhiteWine ) .
+
+:FrenchWinery a owl:Class ; rdfs:comment "A winery in France" ; rdfs:subClassOf :Winery .
+
+:Bordeaux a owl:Class ;
+    rdfs:comment "A red wine from Bordeaux, made by a French winery from two to five grapes" ;
+    rdfs:subClassOf :RedWine ,
+        [ a owl:Restriction ; owl:onProperty :hasMaker ; owl:allValuesFrom :FrenchWinery ] ,
+        [ a owl:Restriction ; owl:onProperty :madeFromGrape ; owl:minQualifiedCardinality 2 ; owl:onClass :Grape ] ,
+        [ a owl:Restriction ; owl:onProperty :madeFromGrape ; owl:maxCardinality 5 ] .
+
+:hasMaker a owl:ObjectProperty , owl:FunctionalProperty ;
+    rdfs:comment "The winery that made the wine" ;
+    rdfs:domain :Wine ; rdfs:range :Winery ;
+    owl:inverseOf :produces .
+
+:produces a owl:ObjectProperty ; rdfs:comment "The wines a winery made" ; rdfs:domain :Winery ; rdfs:range :Wine .
+
+:madeFromGrape a owl:ObjectProperty ; rdfs:comment "A grape the wine is made from" ; rdfs:domain :Wine ; rdfs:range :Grape .
+
+:locatedIn a owl:ObjectProperty , owl:FunctionalProperty ;
+    rdfs:comment "Where a winery is" ;
+    rdfs:domain :Winery ; rdfs:range :Region .
+
+:pairsWith a owl:ObjectProperty , owl:SymmetricProperty ;
+    rdfs:comment "Wines that go well together" ;
+    rdfs:domain :Wine ; rdfs:range :Wine .
+
+:wineName a owl:DatatypeProperty , owl:FunctionalProperty ; rdfs:comment "The wine's name" ; rdfs:domain :Wine ; rdfs:range xsd:string .
+
+:hasColor a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:comment "The wine's colour" ;
+    rdfs:domain :Wine ;
+    rdfs:range [ a rdfs:Datatype ; owl:oneOf ( "red" "white" "rose" ) ] .
+
+:hasSugar a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:comment "How sweet it tastes" ;
+    rdfs:domain :Wine ;
+    rdfs:range [ a rdfs:Datatype ; owl:oneOf ( "dry" "offdry" "sweet" ) ] .
+
+:vintage a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:comment "The year the grapes were harvested" ;
+    rdfs:domain :Wine ;
+    rdfs:range [ a rdfs:Datatype ; owl:onDatatype xsd:integer ;
+                 owl:withRestrictions ( [ xsd:minInclusive 1900 ] [ xsd:maxInclusive 2100 ] ) ] .
+
+:wineryName a owl:DatatypeProperty , owl:FunctionalProperty ; rdfs:comment "The winery's name" ; rdfs:domain :Winery .
+
+:regionName a owl:DatatypeProperty , owl:FunctionalProperty ; rdfs:comment "The region's name" ; rdfs:domain :Region .
+
+:Pauillac a owl:NamedIndividual , :Region ; :regionName "Pauillac" .
+
+:ChateauLatour a owl:NamedIndividual , :FrenchWinery ;
+    :wineryName "Chateau Latour" ;
+    :locatedIn :Pauillac .
