@@ -7,15 +7,26 @@ import pytest
 
 from hygm import (
     HygmModel,
+    Join,
+    JoinEndpoint,
     ManualStrategy,
+    Mapping,
     MergeRelationTypes,
     ModelError,
     NodeType,
+    Property,
+    RelationBinding,
     RelationRestriction,
     RelationType,
     RenameNodeType,
     RenameRelationType,
+    SetInverse,
+    SetRelationCounts,
+    SetRelationRestrictions,
+    SetSymmetric,
+    SetSynonyms,
     apply,
+    check_mapping,
     diff,
     model_from_mapping,
     model_to_mapping,
@@ -141,19 +152,52 @@ def test_renames_and_merges_carry_inverses_and_restrictions(wines):
     assert grape is not None and grape.symmetric is False
 
 
-def test_diff_refuses_a_change_to_a_relation_facet_or_restriction(wines):
-    no_inverse = replace(
+def test_diff_sets_a_changed_relation_facet_or_restriction(wines):
+    changed = replace(
         wines,
-        relation_types=tuple(replace(r, inverse_of=None) if r.label == "produces" else r for r in wines.relation_types),
-    )
-    no_restriction = replace(
-        wines,
+        relation_types=tuple(
+            replace(r, inverse_of=None, min_count=1, max_count=5, symmetric=True, synonyms=("makes",))
+            if r.label == "produces"
+            else r
+            for r in wines.relation_types
+        ),
         node_types=tuple(
             replace(t, relation_restrictions=()) if t.label == "Bordeaux" else t for t in wines.node_types
         ),
     )
 
-    for changed, key in ((no_inverse, "inverse_of"), (no_restriction, "relation_restrictions")):
-        with pytest.raises(ModelError, match=key) as raised:
-            diff(wines, changed)
-        assert raised.value.codes == ("unknown_operation",)
+    operations = diff(wines, changed)
+
+    assert operations == (
+        SetRelationRestrictions("Bordeaux", ()),
+        SetRelationCounts("produces", 1, 5),
+        SetInverse("produces", None),
+        SetSymmetric("produces", True),
+        SetSynonyms("relation", "produces", ("makes",)),
+    )
+    assert apply(wines, operations, validate=False) == changed
+
+
+def _join(model: HygmModel, start: str, end: str) -> None:
+    mapping = Mapping(
+        model="wines.model.yaml",
+        sources=(),
+        relations=(RelationBinding(type="maker", join=Join(JoinEndpoint(start, "name"), JoinEndpoint(end, "name"))),),
+    )
+    check_mapping(mapping, model)
+
+
+def test_a_join_is_checked_against_the_start_types_restriction(wines):
+    named = {"Wine", "Winery"}
+    model = replace(
+        wines,
+        node_types=tuple(
+            replace(t, properties=(Property("name"),)) if t.label in named else t for t in wines.node_types
+        ),
+    )
+
+    _join(model, "Wine", "Winery")
+    _join(model, "Bordeaux", "FrenchWinery")
+    with pytest.raises(ModelError, match="for its start type") as raised:
+        _join(model, "Bordeaux", "Winery")
+    assert raised.value.codes == ("endpoint_not_admitted",)

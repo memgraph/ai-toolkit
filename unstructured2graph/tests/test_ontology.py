@@ -228,6 +228,16 @@ def test_a_model_with_a_type_hierarchy_is_refused_until_extraction_writes_ancest
         Ontology.from_model(model)
 
 
+def test_a_model_with_an_abstract_type_is_refused_since_no_mention_could_have_it():
+    from hygm import HygmModel, NodeType
+    from unstructured2graph.ontology import Ontology
+
+    model = HygmModel(node_types=(NodeType("Party", abstract=True), NodeType("Person")))
+
+    with pytest.raises(ValueError, match=r"\['Party'\] are abstract"):
+        Ontology.from_model(model)
+
+
 def test_a_vocabulary_built_in_code_with_identities_still_means_what_version_1_implies():
     """Identity was a field before it was a profile; setting it must not drop the value types or the speaker."""
     from unstructured2graph.profile import conversation, value_labels

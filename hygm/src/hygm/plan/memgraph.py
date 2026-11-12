@@ -14,7 +14,9 @@ is enforced on customers through `Party`'s constraint, and repeating it on
 | `values` | an enum named `<Label>_<property>`, and the property typed `ENUM` |
 | a multi-valued property (`max_count` above 1 or none) | a `LIST` data type constraint; Memgraph has no per-element type, so the elements' type and enum go unchecked |
 | `parents` | no DDL: writers set every label `labels_for` returns |
+| a subtype refining an inherited property (4.15) | what the refinement adds, on the subtype's label: an existence constraint when it makes the property required; the type, enum and list constraint stay on the declaring ancestor's label, which the subtype's nodes carry |
 | `min_count` above 1, `max_count`, bounds, `value`, `default` | nothing: Memgraph can't enforce them; consumers that write data check them |
+| `abstract`, `disjoint_with`, relation counts, `inverse_of`, `symmetric`, relation restrictions | nothing: Memgraph has no constraint for them; consumers that write data check them |
 
 Memgraph can only type a property as `ENUM`, not as one named enum, so the
 enum constraint accepts a value of any enum; writers store

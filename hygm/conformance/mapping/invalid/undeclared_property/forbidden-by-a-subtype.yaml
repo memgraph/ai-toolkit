@@ -1,0 +1,13 @@
+# WhiteWine refines the tannin it inherits to max_count 0: it may not have one.
+version: 1
+model: ../../models/cellar.model.yaml
+sources:
+  - {name: cellar, kind: table}
+nodes:
+  - type: WhiteWine
+    source: cellar
+    table: {name: white_wines}
+    id: [name]
+    properties:
+      - {name: name, column: name}
+      - {name: tannin, column: tannin}

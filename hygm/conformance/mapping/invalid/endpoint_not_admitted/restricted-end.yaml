@@ -1,0 +1,14 @@
+# maker ends at any Winery, but FrenchWine restricts it to FrenchWinery.
+version: 1
+model: ../../models/cellar.model.yaml
+sources:
+  - {name: cellar, kind: table}
+nodes:
+  - {type: FrenchWine, source: cellar, table: {name: french_wines}, id: [name]}
+  - {type: Winery, source: cellar, table: {name: wineries}, id: [name]}
+relations:
+  - type: maker
+    source: cellar
+    table: {name: french_wines}
+    from: {type: FrenchWine, columns: [name]}
+    to: {type: Winery, columns: [winery]}

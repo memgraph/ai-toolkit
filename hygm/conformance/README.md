@@ -32,9 +32,10 @@ mapping/
   import is `unknown_model`; an imported file that is itself invalid is
   refused with its own code.
 - A mapping fixture's `model` is a path relative to the fixture, into
-  `mapping/models/`, so the fixture directories hold only mappings. One
-  shared model (`shop.model.yaml`) serves every fixture; `broken.model.yaml`
-  exists only to be refused (`unknown_model`).
+  `mapping/models/`, so the fixture directories hold only mappings.
+  `shop.model.yaml` serves most fixtures, and `cellar.model.yaml` those
+  that bind against refined facets and relation restrictions (contract,
+  4.14–4.16); `broken.model.yaml` exists only to be refused (`unknown_model`).
 - A mapping reader reports exactly the fixture's code for every invalid
   mapping fixture, never another beside it.
 - Two mapping codes are not yet in the contract's table, proposed with this

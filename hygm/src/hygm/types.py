@@ -62,6 +62,10 @@ def _count(owner: object, key: str, what: str, *, nullable: bool) -> None:
 
 def _names_and_synonyms(owner: Any, what: str) -> None:
     _tuple_of_labels(owner, "synonyms", what)
+    _names(owner, what)
+
+
+def _names(owner: Any, what: str) -> None:
     names = dict(owner.names)
     for tag, name in names.items():
         if not isinstance(tag, str) or not _LANGUAGE_TAG.match(tag) or not isinstance(name, str):
