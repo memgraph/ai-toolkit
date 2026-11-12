@@ -21,7 +21,7 @@ BASE = "memgraph-context-graph[mcp]>=0.13.1"
 VIEWER = ("context-graph-viewer", "context-graph-viewer>=0.1.1")
 SPACES = ("context-graph-spaces", "context-graph-spaces>=0.1.6")
 #: sessions-graph's local extraction, which setup doesn't install itself; ``unstructured2graph`` tells it is there.
-RECONCILIATION = ("unstructured2graph", "sessions-graph[memgraph-context-graph,reconciliation]>=0.12.4")
+RECONCILIATION = ("unstructured2graph", "sessions-graph[memgraph-context-graph,reconciliation]>=0.13.0")
 #: Connectors whose own command people run: ``sessions-graph reconcile``, ``resources-graph sweep``.
 EXECUTABLES = ("sessions-graph", "resources-graph")
 TOOL = "memgraph-context-graph"
