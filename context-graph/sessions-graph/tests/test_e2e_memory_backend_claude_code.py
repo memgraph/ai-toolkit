@@ -311,7 +311,7 @@ def claude_with_plugin(tmp_path, monkeypatch):
     claude = bin_dir / "claude"
     claude.write_text(
         "#!/bin/sh\n"
-        'if [ "$*" = "plugin list --json" ]; then echo \'[{"id": "context-graph@context-graph-plugins"}]\'; exit 0; fi\n'
+        'if [ "$*" = "plugin list --json" ]; then echo \'[{"id": "context-graph@memgraph"}]\'; exit 0; fi\n'
         'if [ "$*" = "plugin marketplace list --json" ]; then echo "[]"; exit 0; fi\n'
         'if [ "$1 $2" = "plugin uninstall" ]; then exit 0; fi\n'
         "exit 1\n"

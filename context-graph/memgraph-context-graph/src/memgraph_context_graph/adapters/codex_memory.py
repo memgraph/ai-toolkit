@@ -225,14 +225,44 @@ def disallow_plugin_tools(home: Path, plugin_id: str) -> list[str]:
     if server is None or server.get("default_tools_approval_mode") != "approve":
         return []
     del server["default_tools_approval_mode"]
+    _drop_empty_server(config, plugin_id)
+    return _write(path, config)
+
+
+def move_plugin_tools(home: Path, from_id: str, to_id: str) -> list[str]:
+    """Carry the settings the user gave the plugin's MCP server under *from_id* over to *to_id*.
+
+    A setting *to_id* already has is kept. Run before :func:`allow_plugin_tools`, so a mode the user chose
+    (``prompt``, say) isn't replaced by its default when the plugin's ID changes.
+
+    Raises:
+        MemoryBackendError: the config file isn't valid TOML.
+    """
+    path = _config_path(home)
+    if not path.exists():
+        return []
+    config = _read(path)
+    old = _plugin_server(config, from_id, create=False)
+    if old is None:
+        return []
+    new = _plugin_server(config, to_id, create=True)
+    for key in list(old):
+        if key not in new:
+            new[key] = old[key]
+        del old[key]
+    _drop_empty_server(config, from_id)
+    return _write(path, config)
+
+
+def _drop_empty_server(config: Any, plugin_id: str) -> None:
+    """Remove the plugin's server table, and the tables above it, once they hold nothing."""
     plugin = config["plugins"][plugin_id]
-    if not server:
+    if not plugin["mcp_servers"][_SERVER]:
         del plugin["mcp_servers"][_SERVER]
     if not plugin["mcp_servers"]:
         del plugin["mcp_servers"]
     if not plugin:
         del config["plugins"][plugin_id]
-    return _write(path, config)
 
 
 def _plugin_server(config: Any, plugin_id: str, *, create: bool) -> Any:

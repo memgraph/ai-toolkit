@@ -1,7 +1,7 @@
 """The agents setup knows how to wire, how to find them, and how to wire and unwire each.
 
-Claude Code and Codex are wired once per user, by installing the Context Graph plugin from this repo's
-marketplace with the agent's own CLI. The other five are wired per project, by the hook file ``hook init``
+Claude Code and Codex are wired once per user, by installing the Context Graph plugin from the Memgraph
+marketplace (memgraph/marketplace) with the agent's own CLI. The other five are wired per project, by the hook file ``hook init``
 writes (#533), and get the ``context-graph`` MCP server once per user in their own MCP config
 (:mod:`memgraph_context_graph.adapters.agent_mcp`), since the plugin that brings it to the first two
 doesn't exist for them.
@@ -24,9 +24,13 @@ if TYPE_CHECKING:
 
     from memgraph_context_graph.adapters._spec import RuntimeSpec, SpecPlugin
 
-MARKETPLACE = "context-graph-plugins"
+MARKETPLACE = "memgraph"
 PLUGIN_ID = f"context-graph@{MARKETPLACE}"
-MARKETPLACE_SOURCE = "memgraph/ai-toolkit"
+MARKETPLACE_SOURCE = "memgraph/marketplace"
+#: Where the plugin came from before the Memgraph marketplace: this repo's own marketplace, now removed. Setup
+#: and update move an install from there, so an agent never runs two copies of the plugin's hooks.
+LEGACY_MARKETPLACE = "context-graph-plugins"
+LEGACY_PLUGIN_ID = f"context-graph@{LEGACY_MARKETPLACE}"
 
 
 class WiringError(Exception):
@@ -41,8 +45,6 @@ class Agent:
     label: str
     binaries: tuple[str, ...]
     wiring: Literal["plugin", "project"]
-    #: For plugin agents: the marketplace's sparse path in this repo.
-    sparse: str = ""
 
     def binary(self) -> str | None:
         """The agent's CLI on PATH, if it is installed."""
@@ -53,8 +55,8 @@ class Agent:
 
 
 AGENTS: tuple[Agent, ...] = (
-    Agent("claude-code", "Claude Code", ("claude",), "plugin", sparse=".claude-plugin"),
-    Agent("codex", "Codex", ("codex",), "plugin", sparse=".agents/plugins"),
+    Agent("claude-code", "Claude Code", ("claude",), "plugin"),
+    Agent("codex", "Codex", ("codex",), "plugin"),
     Agent("copilot-cli", "GitHub Copilot CLI", ("copilot",), "project"),
     Agent("cursor", "Cursor", ("cursor", "cursor-agent"), "project"),
     Agent("opencode", "OpenCode", ("opencode",), "project"),
@@ -73,79 +75,95 @@ def detected() -> list[Agent]:
 
 
 def plugin_wired(agent: Agent) -> bool:
-    """Whether the agent's CLI lists the Context Graph plugin as installed."""
-    return _plugin_entry(agent) is not None
+    """Whether the agent's CLI lists the Context Graph plugin as installed, from either marketplace."""
+    return installed_plugin_id(agent) is not None
 
 
 def plugin_enabled(agent: Agent) -> bool:
     """Whether the plugin is installed and not switched off; a listing that doesn't say counts as on."""
-    entry = _plugin_entry(agent)
+    entries = _plugin_entries(agent)
+    entry = next((entries[plugin_id] for plugin_id in (PLUGIN_ID, LEGACY_PLUGIN_ID) if plugin_id in entries), None)
     return entry is not None and entry.get("enabled", True) is not False
 
 
-def _plugin_entry(agent: Agent) -> dict | None:
+def installed_plugin_id(agent: Agent) -> str | None:
+    """The installed plugin's ID: :data:`PLUGIN_ID`, :data:`LEGACY_PLUGIN_ID` until setup or update moves it, or None."""
+    entries = _plugin_entries(agent)
+    return next((plugin_id for plugin_id in (PLUGIN_ID, LEGACY_PLUGIN_ID) if plugin_id in entries), None)
+
+
+def _plugin_entries(agent: Agent) -> dict[str, dict]:
+    """The agent's installed plugins by ID, from one listing."""
     binary = agent.binary()
     if binary is None:
-        return None
+        return {}
     listing = _json([binary, "plugin", "list", "--json"])
     if agent.runtime == "claude-code":
-        return next((entry for entry in listing or [] if entry.get("id") == PLUGIN_ID), None)
+        return {entry.get("id"): entry for entry in listing or []}
     installed = (listing or {}).get("installed", []) if isinstance(listing, dict) else []
-    return next((entry for entry in installed if entry.get("pluginId") == PLUGIN_ID), None)
+    return {entry.get("pluginId"): entry for entry in installed}
 
 
 def wire_plugin(agent: Agent, log: Callable[[str], None]) -> str:
     """Register the marketplace and install the plugin; a no-op for what is already there.
 
+    An install from :data:`LEGACY_MARKETPLACE` is removed first, with that marketplace.
+
     Raises:
         WiringError: the agent's CLI is missing or refused a step.
     """
     binary = _require(agent)
-    if plugin_wired(agent):
+    moved = _remove_legacy(agent, binary, log, carry_settings=True)
+    if PLUGIN_ID in _plugin_entries(agent):
         _allow_recall(agent)
         return "plugin already installed"
-    if not _marketplace_registered(agent, binary):
-        _stream([binary, "plugin", "marketplace", "add", MARKETPLACE_SOURCE, "--sparse", agent.sparse], log)
+    if not _marketplace_registered(binary, MARKETPLACE):
+        _stream([binary, "plugin", "marketplace", "add", MARKETPLACE_SOURCE], log)
     if agent.runtime == "claude-code":
         _stream([binary, "plugin", "install", PLUGIN_ID, "-y"], log)
     else:
         _stream([binary, "plugin", "add", PLUGIN_ID], log)
     _allow_recall(agent)
-    return "plugin installed"
+    return "plugin moved to the Memgraph marketplace" if moved else "plugin installed"
 
 
 def unwire_plugin(agent: Agent, log: Callable[[str], None]) -> str:
-    """Uninstall the plugin and remove the marketplace.
+    """Uninstall the plugin, and an install from :data:`LEGACY_MARKETPLACE` with that marketplace.
+
+    The Memgraph marketplace stays registered: it also serves the ``memgraph`` plugin.
 
     Raises:
         WiringError: the agent's CLI is missing or refused a step.
     """
     binary = _require(agent)
-    removed = []
-    if plugin_wired(agent):
-        verb = "uninstall" if agent.runtime == "claude-code" else "remove"
-        _stream([binary, "plugin", verb, PLUGIN_ID], log)
-        removed.append("plugin")
+    removed = False
+    if PLUGIN_ID in _plugin_entries(agent):
+        _stream([binary, "plugin", _uninstall_verb(agent), PLUGIN_ID], log)
+        removed = True
     if agent.runtime == "codex":
         _codex_memory().disallow_plugin_tools(Path.home(), PLUGIN_ID)
-    if _marketplace_registered(agent, binary):
-        _stream([binary, "plugin", "marketplace", "remove", MARKETPLACE], log)
-        removed.append("marketplace")
-    return f"removed the {' and '.join(removed)}" if removed else "wasn't installed"
+    removed = _remove_legacy(agent, binary, log, carry_settings=False) or removed
+    return "removed the plugin" if removed else "wasn't installed"
 
 
 def update_plugin(agent: Agent, log: Callable[[str], None]) -> str:
     """Refresh the marketplace and bring the installed plugin (its hooks and MCP entry) to the latest release.
 
     Claude Code updates the plugin in place; a running session needs a restart to load it. Codex has no update
-    verb, so the plugin is added again from the refreshed marketplace.
+    verb, so the plugin is added again from the refreshed marketplace. An install from
+    :data:`LEGACY_MARKETPLACE` is moved to the Memgraph marketplace instead, and removed when the new one is
+    already installed beside it.
 
     Raises:
         WiringError: the agent's CLI is missing, or refused a step.
     """
     binary = _require(agent)
-    if not plugin_wired(agent):
+    plugin_id = installed_plugin_id(agent)
+    if plugin_id is None:
         return "plugin not installed; nothing to update"
+    if plugin_id == LEGACY_PLUGIN_ID:
+        return wire_plugin(agent, log)
+    moved = _remove_legacy(agent, binary, log, carry_settings=True)
     if agent.runtime == "claude-code":
         _stream([binary, "plugin", "marketplace", "update", MARKETPLACE], log)
         _stream([binary, "plugin", "update", PLUGIN_ID], log)
@@ -153,7 +171,33 @@ def update_plugin(agent: Agent, log: Callable[[str], None]) -> str:
         _stream([binary, "plugin", "marketplace", "upgrade", MARKETPLACE], log)
         _stream([binary, "plugin", "add", PLUGIN_ID], log)
     _allow_recall(agent)
-    return "plugin updated"
+    return "plugin moved to the Memgraph marketplace" if moved else "plugin updated"
+
+
+def _remove_legacy(agent: Agent, binary: str, log: Callable[[str], None], *, carry_settings: bool) -> bool:
+    """Uninstall the plugin from :data:`LEGACY_MARKETPLACE` and remove that marketplace; whether there was any.
+
+    *carry_settings* moves Codex's settings for the old ID to :data:`PLUGIN_ID` (setup and update, which keep
+    the plugin) instead of dropping them (uninstall).
+    """
+    removed = False
+    if LEGACY_PLUGIN_ID in _plugin_entries(agent):
+        _stream([binary, "plugin", _uninstall_verb(agent), LEGACY_PLUGIN_ID], log)
+        removed = True
+    if agent.runtime == "codex":
+        codex_memory = _codex_memory()
+        if carry_settings:
+            codex_memory.move_plugin_tools(Path.home(), LEGACY_PLUGIN_ID, PLUGIN_ID)
+        else:
+            codex_memory.disallow_plugin_tools(Path.home(), LEGACY_PLUGIN_ID)
+    if _marketplace_registered(binary, LEGACY_MARKETPLACE):
+        _stream([binary, "plugin", "marketplace", "remove", LEGACY_MARKETPLACE], log)
+        removed = True
+    return removed
+
+
+def _uninstall_verb(agent: Agent) -> str:
+    return "uninstall" if agent.runtime == "claude-code" else "remove"
 
 
 def _allow_recall(agent: Agent) -> None:
@@ -168,10 +212,10 @@ def _codex_memory():
     return codex_memory
 
 
-def _marketplace_registered(agent: Agent, binary: str) -> bool:
+def _marketplace_registered(binary: str, name: str) -> bool:
     listing = _json([binary, "plugin", "marketplace", "list", "--json"])
     entries = listing.get("marketplaces", []) if isinstance(listing, dict) else listing or []
-    return any(entry.get("name") == MARKETPLACE for entry in entries)
+    return any(entry.get("name") == name for entry in entries)
 
 
 # --- project agents -----------------------------------------------------------

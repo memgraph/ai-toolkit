@@ -112,10 +112,19 @@ def test_claude_options_turn_the_claude_code_plugin_off_and_keep_the_apps_settin
     settings_file.write_text('{"enabledPlugins": {"other@market": true}}')
     from_file = json.loads(cast("str", claude.options(settings=str(settings_file)).settings))
 
-    assert default == {"enabledPlugins": {"context-graph@context-graph-plugins": False}}
+    assert default == {
+        "enabledPlugins": {"context-graph@memgraph": False, "context-graph@context-graph-plugins": False}
+    }
     assert from_string["model"] == "haiku"
-    assert from_string["enabledPlugins"] == {"context-graph@context-graph-plugins": False}
-    assert from_file["enabledPlugins"] == {"other@market": True, "context-graph@context-graph-plugins": False}
+    assert from_string["enabledPlugins"] == {
+        "context-graph@memgraph": False,
+        "context-graph@context-graph-plugins": False,
+    }
+    assert from_file["enabledPlugins"] == {
+        "other@market": True,
+        "context-graph@memgraph": False,
+        "context-graph@context-graph-plugins": False,
+    }
 
 
 def _message(text):

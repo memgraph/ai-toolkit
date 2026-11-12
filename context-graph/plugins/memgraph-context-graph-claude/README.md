@@ -16,13 +16,13 @@ Setup connects to your configured Memgraph or starts its own Docker container, i
 ## Install through the marketplace
 
 ```bash
-claude plugin marketplace add memgraph/ai-toolkit --sparse .claude-plugin
-claude plugin install context-graph@context-graph-plugins -y
+claude plugin marketplace add memgraph/marketplace
+claude plugin install context-graph@memgraph -y
 ```
 
 The plugin supplies wiring; it also needs the Python CLI and connectors. From this plugin's directory, run `./scripts/bootstrap.sh` to install those and run setup, or use the [family installer](../../README.md#getting-started).
 
-Inside Claude Code, you can also install with `/plugin marketplace add memgraph/ai-toolkit` followed by `/plugin install context-graph@context-graph-plugins`. The bundled setup skill is `/context-graph:setup`.
+Inside Claude Code, you can also install with `/plugin marketplace add memgraph/marketplace` followed by `/plugin install context-graph@memgraph`. The bundled setup skill is `/context-graph:setup`.
 
 ## Enable curated memory
 

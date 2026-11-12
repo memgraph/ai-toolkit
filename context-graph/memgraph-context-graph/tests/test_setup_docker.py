@@ -187,7 +187,7 @@ def test_setup_then_uninstall_end_to_end(names, stranger, fake_agents, setup_hom
     assert f"OK    Cursor: memory tools registered; wired {project.resolve()}" in out
     assert "OK    Check memgraph:" in out
     assert "OK    Check config:" in out
-    assert fake_agents.of("claude")["plugins"] == ["context-graph@context-graph-plugins"]
+    assert fake_agents.of("claude")["plugins"] == ["context-graph@memgraph"]
 
     main(argv)
     out = capsys.readouterr().out
@@ -198,7 +198,7 @@ def test_setup_then_uninstall_end_to_end(names, stranger, fake_agents, setup_hom
 
     assert main(["uninstall", "--project-dir", str(project)]) == 0
     out = capsys.readouterr().out
-    assert "OK    Claude Code: removed the plugin and marketplace" in out
+    assert "OK    Claude Code: removed the plugin" in out
     assert f"OK    Cursor: unwired {project.resolve()}, the memory tools" in out
     assert not (project / ".cursor" / "hooks.json").exists()
     assert _docker("inspect", names["own"]).returncode == 0  # the graph stays

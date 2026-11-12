@@ -763,14 +763,22 @@ def _check_plugin(runtime: str) -> _CheckResult | None:
         return {"name": name, "ok": False, "detail": f"{' or '.join(agent.binaries)} isn't on PATH"}
     if not agents.plugin_wired(agent):
         return {"name": name, "ok": False, "detail": f"not installed, so {agent.label} records nothing — {fix}"}
+    plugin_id = agents.installed_plugin_id(agent)
     if not agents.plugin_enabled(agent):
         return {
             "name": name,
             "ok": False,
             "detail": f"installed but disabled, so {agent.label} records nothing — "
-            f"run: {agent.binaries[0]} plugin enable {agents.PLUGIN_ID}",
+            f"run: {agent.binaries[0]} plugin enable {plugin_id}",
         }
-    return {"name": name, "ok": True, "detail": f"{agents.PLUGIN_ID} installed and enabled"}
+    if plugin_id == agents.LEGACY_PLUGIN_ID:
+        return {
+            "name": name,
+            "ok": True,
+            "detail": f"{plugin_id} installed and enabled, from the previous marketplace — "
+            f"run: memgraph-context-graph update {runtime} to move it to the Memgraph marketplace",
+        }
+    return {"name": name, "ok": True, "detail": f"{plugin_id} installed and enabled"}
 
 
 def _check_runtime(runtime: str, connectors: list[str]) -> _CheckResult:
