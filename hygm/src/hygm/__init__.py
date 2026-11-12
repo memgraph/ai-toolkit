@@ -95,7 +95,14 @@ from .profiles import (
     setting,
     with_version_1_profiles,
 )
-from .strategies import ManualStrategy, OwlImportStrategy, model_from_mapping, model_to_mapping
+from .strategies import (
+    ManualStrategy,
+    OwlImportStrategy,
+    model_from_mapping,
+    model_from_owl,
+    model_to_mapping,
+    model_to_owl,
+)
 from .types import (
     CASES,
     NUMBERS,
@@ -222,8 +229,10 @@ __all__ = [
     "memgraph_plan",
     "merge_profiles",
     "model_from_mapping",
+    "model_from_owl",
     "model_schema",
     "model_to_mapping",
+    "model_to_owl",
     "needs_version_2",
     "no_implied_profiles",
     "operation_from_mapping",
