@@ -1,0 +1,5 @@
+version: 2
+node_types:
+  - label: Wine
+    description: a wine
+    properties: [{name: bottled_on, type: date, default: 30/06/2020}]

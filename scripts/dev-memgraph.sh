@@ -466,7 +466,7 @@ cmd_test() {
           pytest context-graph/resources-graph/tests/ -v) || failed+=("$pkg")
         ;;
       hygm)
-        (cd "$REPO_ROOT" && uv run --package hygm --extra test pytest hygm/tests/ -v) || failed+=("$pkg")
+        (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package hygm --extra test pytest hygm/tests/ -v) || failed+=("$pkg")
         ;;
       context-graph-eval)
         (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package context-graph-eval --extra test --extra pipeline \

@@ -1,0 +1,10 @@
+version: 2
+profiles:
+  conversation: {speaker: Caller, other_person: Contact}
+node_types:
+  - {label: Caller, description: the person on the line, profiles: {extraction: {identity: global}, learning: {protected: true}}}
+  - {label: Contact, description: anyone else mentioned, profiles: {extraction: {identity: global}}}
+  - {label: Amount, description: an amount of money, profiles: {extraction: {identity: span, value: true}}}
+  - {label: Subject, description: what the call is about, profiles: {learning: {catch_all: true}}}
+relation_types:
+  - {label: owes, description: owes money, start_labels: [Caller, Contact], end_labels: [Amount]}

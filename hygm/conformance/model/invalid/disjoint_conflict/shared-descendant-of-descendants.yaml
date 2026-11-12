@@ -1,0 +1,7 @@
+version: 2
+node_types:
+  - {label: RedWine, description: red, disjoint_with: [WhiteWine]}
+  - {label: WhiteWine, description: white}
+  - {label: Claret, description: a red, parents: [RedWine]}
+  - {label: Chablis, description: a white, parents: [WhiteWine]}
+  - {label: Oddity, description: a Claret and a Chablis, parents: [Claret, Chablis]}

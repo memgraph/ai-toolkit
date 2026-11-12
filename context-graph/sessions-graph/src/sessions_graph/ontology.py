@@ -3,7 +3,7 @@
 Each version is one ``(:OntologyVersion {user_id, version})`` node holding
 its model as JSON (#434). ``(:User)-[:ADOPTED]->`` points at the current
 one and ``NEXT`` chains them, oldest first. A user with no version is on
-version 0, ``hygm.default_model()``, which is never stored.
+version 0, ``default_model.default_model()``, which is never stored.
 
 A version comes from one of two places:
 
@@ -25,21 +25,24 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from hygm import (
     HygmModel,
     ManualStrategy,
-    default_model,
     model_from_mapping,
     model_to_mapping,
+    needs_version_2,
     validate_model,
-    with_core,
 )
+from memgraph_context_graph import graph_version
 from memgraph_toolbox.api.memgraph import merge_with_retry
+from unstructured2graph.profile import validate_for_conversation
 
+from .default_model import default_model, with_core
+from .learning import VERSION_1
 from .models import _utc_now
 
 if TYPE_CHECKING:
@@ -48,6 +51,11 @@ if TYPE_CHECKING:
 Derive = Literal["extend", "off"]
 DERIVE_MODES: tuple[Derive, ...] = ("extend", "off")
 DEFAULT_DERIVE: Derive = "extend"
+
+#: The graph_version component whose epoch guards stored ontology versions.
+COMPONENT = "sessions-graph"
+#: The sessions-graph epoch from which a stored version may be in hygm's model format 2.
+MODEL_FORMAT_2_EPOCH = 2
 Source = Literal["default", "supplied", "derived"]
 
 
@@ -118,9 +126,9 @@ def supply(
     pinned = model.node_labels() + model.relation_labels()
     if derive == "extend":
         model = _carry_learned(with_core(model), current)
-    result = validate_model(model)
-    if not result.success:
-        raise ValueError("; ".join(issue.message for issue in result.critical_issues))
+    problems = validate_model(model).critical_issues + validate_for_conversation(model).critical_issues
+    if problems:
+        raise ValueError("; ".join(issue.message for issue in problems))
     return adopt(
         db,
         OntologyVersion(
@@ -142,7 +150,7 @@ def supply_file(db: Memgraph, user_id: str, path: str | Path, *, derive: Derive 
     Raises:
         ValueError: if the file can't be read or parsed, or the model fails validation.
     """
-    model = ManualStrategy().create_model(path)
+    model = ManualStrategy(version_1_profiles=VERSION_1).create_model(path)
     return supply(db, user_id, model, derive=derive, source_hash=file_hash(path))
 
 
@@ -197,7 +205,7 @@ def _carry_learned(model: HygmModel, current: OntologyVersion) -> HygmModel:
         and r.label not in model.relation_labels()
         and set(r.start_labels) | set(r.end_labels) <= declared
     )
-    return HygmModel(node_types=nodes, relation_types=relations)
+    return replace(model, node_types=nodes, relation_types=relations)
 
 
 def next_version(db: Memgraph, user_id: str) -> int:
@@ -219,9 +227,15 @@ _VERSION_PROPERTIES = (
 
 
 def reject(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
-    """Store `version` as a candidate the gate rejected: kept with its numbers, never adopted."""
-    merge_with_retry(
+    """Store `version` as a candidate the gate rejected: kept with its numbers, never adopted.
+
+    Raises:
+        ValueError: as :func:`adopt`, for a format-2 version the installed
+            memgraph-context-graph can't protect.
+    """
+    _store(
         db,
+        version,
         """
         MERGE (u:User {user_id: $user_id})
         CREATE (v:OntologyVersion {status: 'rejected', """
@@ -229,9 +243,41 @@ def reject(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
         + """})
         CREATE (u)-[:REJECTED]->(v)
         """,
-        params=_params(version),
     )
     return version
+
+
+def _store(db: Memgraph, version: OntologyVersion, query: str) -> None:
+    """Run `query`, which writes `version`, raising the graph's sessions-graph epoch first when it needs format 2.
+
+    A release before MODEL_FORMAT_2_EPOCH reads a stored version with a reader
+    that ignores unknown keys, so it would silently drop a hierarchy,
+    properties and profiles. The epoch turns those clients away (graph_version);
+    raising it in the same query means no graph ever holds a format-2 version
+    that they may still read. Graphs that never store one keep their rules.
+    """
+    params = _params(version)
+    if needs_version_2(version.model, VERSION_1) or needs_version_2(version.pool, VERSION_1):
+        if graph_version.known_epoch(COMPONENT) < MODEL_FORMAT_2_EPOCH:
+            raise ValueError(
+                "this ontology needs hygm's model format 2, which the installed memgraph-context-graph "
+                f"can't protect from older clients yet; run {graph_version.UPDATE_COMMAND}"
+            )
+        # Only ever raised: a graph a later release moved further keeps its rule.
+        query = (
+            """
+        MERGE (schema:ContextGraphSchema {component: $component})
+        SET schema.epoch = CASE WHEN coalesce(schema.epoch, 1) < $epoch THEN $epoch ELSE schema.epoch END,
+            schema.min_reader_epoch = CASE WHEN coalesce(schema.min_reader_epoch, 0) < $epoch
+                THEN $epoch ELSE schema.min_reader_epoch END,
+            schema.min_writer_epoch = CASE WHEN coalesce(schema.min_writer_epoch, 0) < $epoch
+                THEN $epoch ELSE schema.min_writer_epoch END
+        WITH 1 AS _
+        """
+            + query
+        )
+        params = {**params, "component": COMPONENT, "epoch": MODEL_FORMAT_2_EPOCH}
+    merge_with_retry(db, query, params=params)
 
 
 def _params(version: OntologyVersion) -> dict[str, Any]:
@@ -241,22 +287,29 @@ def _params(version: OntologyVersion) -> dict[str, Any]:
         "created_at": version.created_at,
         "source": version.source,
         "derive": version.derive,
-        "model": json.dumps(model_to_mapping(version.model)),
+        "model": json.dumps(model_to_mapping(version.model, version_1_profiles=VERSION_1)),
         "pinned": list(version.pinned),
         "source_hash": version.source_hash,
         "counts": json.dumps(version.counts),
-        "pool": json.dumps(model_to_mapping(version.pool)),
+        "pool": json.dumps(model_to_mapping(version.pool, version_1_profiles=VERSION_1)),
         "changelog": json.dumps(list(version.changelog)),
         "report": json.dumps(version.report),
     }
 
 
 def adopt(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
-    """Store `version` and make it the user's adopted one."""
+    """Store `version` and make it the user's adopted one.
+
+    Raises:
+        ValueError: if `version` needs hygm's model format 2 and the
+            installed memgraph-context-graph doesn't know the epoch that
+            protects it from older clients (see :func:`_store`).
+    """
     # One query is one transaction: readers see the old ADOPTED edge or the
     # new one, never a user with none or two.
-    merge_with_retry(
+    _store(
         db,
+        version,
         """
         MERGE (u:User {user_id: $user_id})
         WITH u
@@ -271,7 +324,6 @@ def adopt(db: Memgraph, version: OntologyVersion) -> OntologyVersion:
             DELETE adopted
         )
         """,
-        params=_params(version),
     )
     return version
 
@@ -281,7 +333,7 @@ def _from_properties(properties: dict[str, Any]) -> OntologyVersion:
     return OntologyVersion(
         user_id=properties["user_id"],
         version=version,
-        model=model_from_mapping(json.loads(properties["model"]), f"version {version}"),
+        model=model_from_mapping(json.loads(properties["model"]), f"version {version}", version_1_profiles=VERSION_1),
         source=properties["source"],
         derive=properties["derive"],
         pinned=tuple(properties.get("pinned") or ()),
@@ -289,7 +341,9 @@ def _from_properties(properties: dict[str, Any]) -> OntologyVersion:
         created_at=properties.get("created_at"),
         counts=json.loads(properties.get("counts") or "{}"),
         # A pool's relations may name types it doesn't hold: it is a store, never extracted against.
-        pool=model_from_mapping(json.loads(properties["pool"]), f"version {version} pool", validate=False)
+        pool=model_from_mapping(
+            json.loads(properties["pool"]), f"version {version} pool", validate=False, version_1_profiles=VERSION_1
+        )
         if properties.get("pool")
         else HygmModel(node_types=()),
         changelog=tuple(json.loads(properties.get("changelog") or "[]")),

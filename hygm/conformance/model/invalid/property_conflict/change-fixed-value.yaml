@@ -1,0 +1,4 @@
+version: 2
+node_types:
+  - {label: Bottle, description: b, properties: [{name: volume, type: integer, value: 750}]}
+  - {label: Magnum, description: m, parents: [Bottle], properties: [{name: volume, value: 1500}]}

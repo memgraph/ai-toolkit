@@ -1,0 +1,5 @@
+version: 2
+node_types:
+  - label: Wine
+    description: a wine
+    properties: [{name: grapes, max_count: null, values: [merlot, syrah], default: [merlot, riesling]}]

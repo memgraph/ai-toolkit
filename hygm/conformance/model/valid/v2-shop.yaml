@@ -1,0 +1,29 @@
+version: 2
+node_types:
+  - label: Party
+    description: Any person or organization the shop deals with
+    properties:
+      - {name: name, type: string, description: Display name}
+  - label: Customer
+    description: A party that has placed at least one order
+    parents: [Party]
+    key: [customer_id]
+    iri: https://example.org/shop#Customer
+    properties:
+      - {name: customer_id, type: string, required: true, description: "Customer id, stable across systems"}
+      - {name: tier, type: string, values: [standard, gold, platinum]}
+      - {name: loyalty_points, type: integer}
+  - label: Order
+    description: A purchase a customer made
+    key: [order_id]
+    properties:
+      - {name: order_id, type: string, required: true}
+      - {name: customer_ref, type: string}
+      - {name: total, type: decimal}
+relation_types:
+  - label: placed
+    description: The customer placed the order
+    start_labels: [Customer]
+    end_labels: [Order]
+    properties:
+      - {name: at, type: datetime}

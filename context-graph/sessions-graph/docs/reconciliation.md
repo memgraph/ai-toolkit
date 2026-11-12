@@ -115,7 +115,7 @@ Content is deduplicated by hash before extraction, and each reconcilable unit
 
 Reconciliation extracts each session under its user's **adopted ontology
 version**, and records which one on the Session as `ontology_version`. A user
-with none is on version 0, `hygm.default_model()`: the fixed core (User,
+with none is on version 0, `sessions_graph.default_model.default_model()`: the fixed core (User,
 Person and the value types), Organization/Location/Event, and the catch-alls
 Topic and Artifact.
 
@@ -168,7 +168,7 @@ One run:
 
 1. Takes an expiring claim on the user, so only one run at a time.
 2. Reads the sessions since the last adopted run, sampled down to 64.
-3. Derives up to three candidates (`hygm.LlmRecommendationStrategy`, observed
+3. Derives up to three candidates (`sessions_graph.derive_strategy.LlmRecommendationStrategy`, observed
    with local GLiNER2).
 4. Gates each candidate against the current model. When the sampled delta
    contains at least 8 sessions, the gate holds out a quarter (at most 8 sessions); smaller

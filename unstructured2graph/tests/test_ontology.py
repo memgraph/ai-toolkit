@@ -3,6 +3,7 @@
 import pytest
 
 from unstructured2graph.ontology import DEFAULT_ONTOLOGY, DEFAULT_ONTOLOGY_PATH, EntityType, Ontology, load_ontology
+from unstructured2graph.profile import identity_of
 
 
 def test_entity_types_guidance_lists_every_type_with_its_description():
@@ -198,7 +199,10 @@ def test_load_ontology_parses_identity_and_relation_endpoints(tmp_path):
         encoding="utf-8",
     )
     ontology = load_ontology(path)
-    assert [(t.label, t.identity) for t in ontology.entity_types] == [("Person", "global"), ("Organization", "chunk")]
+    assert [(t.label, identity_of(t)) for t in ontology.entity_types] == [
+        ("Person", "global"),
+        ("Organization", "chunk"),
+    ]
     assert ontology.relation_types[0].start_labels == ("Person",)
     assert ontology.relation_types[0].end_labels == ("Organization",)
 
@@ -212,3 +216,41 @@ def test_load_ontology_rejects_an_endpoint_naming_an_undeclared_type(tmp_path):
     )
     with pytest.raises(ValueError, match="undeclared"):
         load_ontology(path)
+
+
+def test_a_model_with_a_type_hierarchy_is_refused_until_extraction_writes_ancestor_labels():
+    from hygm import HygmModel, NodeType
+    from unstructured2graph.ontology import Ontology
+
+    model = HygmModel(node_types=(NodeType("Party"), NodeType("Customer", parents=("Party",))))
+
+    with pytest.raises(ValueError, match=r"type hierarchies.*\['Customer'\]"):
+        Ontology.from_model(model)
+
+
+def test_a_vocabulary_built_in_code_with_identities_still_means_what_version_1_implies():
+    """Identity was a field before it was a profile; setting it must not drop the value types or the speaker."""
+    from unstructured2graph.profile import conversation, value_labels
+
+    ontology = Ontology(
+        entity_types=(
+            EntityType("User", "the user", profiles={"extraction": {"identity": "global"}}),
+            EntityType("Person", "someone else", profiles={"extraction": {"identity": "global"}}),
+            EntityType("Quantity", "a count", profiles={"extraction": {"identity": "span"}}),
+        )
+    )
+
+    assert value_labels(ontology.model) == ("Quantity",)
+    assert conversation(ontology.model) == ("User", "Person")
+    assert identity_of(ontology.entity_types[2]) == "span"
+
+
+def test_a_vocabulary_built_in_code_with_its_own_profiles_is_taken_as_given():
+    from unstructured2graph.profile import conversation, value_labels
+
+    ontology = Ontology(
+        entity_types=(EntityType("User"), EntityType("Quantity", profiles={"learning": {"protected": True}})),
+    )
+
+    assert value_labels(ontology.model) == ()
+    assert conversation(ontology.model) is None

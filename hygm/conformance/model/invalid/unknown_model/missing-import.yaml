@@ -1,0 +1,5 @@
+version: 2
+imports:
+  - {path: ../../imports/no-such.model.yaml}
+node_types:
+  - {label: Wine, description: A wine}

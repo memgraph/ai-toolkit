@@ -3231,7 +3231,7 @@ wheels = [
 
 [[package]]
 name = "hygm"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "hygm" }
 dependencies = [
     { name = "pyyaml" },
@@ -3242,12 +3242,16 @@ owl = [
     { name = "rdflib" },
 ]
 test = [
+    { name = "jsonschema" },
+    { name = "neo4j" },
     { name = "pytest" },
     { name = "rdflib" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "jsonschema", marker = "extra == 'test'", specifier = ">=4.0" },
+    { name = "neo4j", marker = "extra == 'test'", specifier = ">=5.28.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rdflib", marker = "extra == 'owl'", specifier = ">=7.0.0" },
@@ -10254,6 +10258,7 @@ version = "0.3.0"
 source = { editable = "agents/sql2graph" }
 dependencies = [
     { name = "anthropic" },
+    { name = "hygm" },
     { name = "langchain" },
     { name = "langchain-anthropic" },
     { name = "langchain-core" },
@@ -10268,6 +10273,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pymysql" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
     { name = "sqlalchemy" },
 ]
 
@@ -10279,6 +10285,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.40.0" },
+    { name = "hygm", editable = "hygm" },
     { name = "langchain", specifier = ">=1.0.0" },
     { name = "langchain-anthropic", specifier = ">=0.3.0" },
     { name = "langchain-core", specifier = ">=1.2.28" },
@@ -10293,6 +10300,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pymysql", specifier = ">=1.1.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
 ]
 

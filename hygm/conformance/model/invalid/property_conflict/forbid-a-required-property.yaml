@@ -1,0 +1,4 @@
+version: 2
+node_types:
+  - {label: Wine, description: a wine, properties: [{name: tannin_level, type: integer, required: true}]}
+  - {label: WhiteWine, description: w, parents: [Wine], properties: [{name: tannin_level, max_count: 0}]}

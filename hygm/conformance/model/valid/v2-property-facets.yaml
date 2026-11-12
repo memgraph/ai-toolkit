@@ -1,0 +1,15 @@
+version: 2
+node_types:
+  - label: Wine
+    description: A wine
+    properties:
+      - {name: name, required: true}
+      - {name: grapes, min_count: 1, max_count: null, values: [merlot, cabernet, pinot_noir, chardonnay], default: [merlot]}
+      - {name: awards, max_count: 5, description: At most five medals}
+      - {name: alcohol, type: decimal, minimum: 5, maximum: 22.5, unit: "%", default: 13.5}
+      - {name: vintage, type: integer, minimum: 1900, maximum: 2100}
+      - {name: bottled_on, type: date, minimum: "1900-01-01", default: "2020-06-30"}
+      - {name: tasted_at, type: datetime, maximum: "2100-01-01T00:00:00Z"}
+      - {name: volume, type: integer, value: 750, unit: ml}
+      - {name: organic, type: boolean, default: false}
+      - {name: notes, type: json, default: {nose: [cherry, oak]}}

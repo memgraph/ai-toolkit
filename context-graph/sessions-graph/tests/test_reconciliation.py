@@ -196,11 +196,12 @@ async def test_reconcile_session_success_marks_completed_and_links_chunks(graph,
 
 
 @pytest.mark.asyncio
-async def test_reconcile_session_defaults_to_gliner2_over_hygms_default_model(graph, actions_graph):
-    """Without an override, extraction runs on GLiNER2 over hygm.default_model(),
+async def test_reconcile_session_defaults_to_gliner2_over_the_default_model(graph, actions_graph):
+    """Without an override, extraction runs on GLiNER2 over sessions-graph's default model,
     and that same vocabulary is what enforce_ontology gates on."""
+    from sessions_graph.default_model import default_model
+
     from actions_graph import Session
-    from hygm import default_model
     from unstructured2graph import Ontology
     from unstructured2graph.gliner2_backend import GLiNER2Backend
 

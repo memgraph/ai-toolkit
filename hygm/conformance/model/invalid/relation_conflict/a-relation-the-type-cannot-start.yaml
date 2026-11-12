@@ -1,0 +1,9 @@
+version: 2
+node_types:
+  - {label: Wine, description: a wine}
+  - {label: Winery, description: a winery}
+  - {label: FrenchWinery, description: a French winery, parents: [Winery]}
+  - {label: Grape, description: a grape}
+  - {label: Muscat, description: m, parents: [Grape], relation_restrictions: [{relation: grape, max_count: 1}]}
+relation_types:
+  - {label: grape, description: made from, start_labels: [Wine], end_labels: [Grape]}

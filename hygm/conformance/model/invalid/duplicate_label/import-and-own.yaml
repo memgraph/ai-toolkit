@@ -1,0 +1,6 @@
+version: 2
+imports:
+  - {path: ../../imports/food.model.yaml}
+node_types:
+  - label: Food
+    description: Declared again here, differently from the import

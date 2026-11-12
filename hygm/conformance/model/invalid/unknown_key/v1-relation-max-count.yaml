@@ -1,0 +1,4 @@
+entity_types:
+  - {label: Wine, description: a wine}
+relation_types:
+  - {label: maker, description: m, max_count: 1}

@@ -1,0 +1,359 @@
+"""One derivation run, with the LLM and the observer stood in for."""
+
+from dataclasses import replace
+from typing import Any
+
+import pytest
+from sessions_graph.default_model import default_model
+from sessions_graph.derive_strategy import (
+    CONSOLIDATE_SCHEMA,
+    PROPOSE_SCHEMA,
+    PRUNE_SCHEMA,
+    Change,
+    DerivationError,
+    DerivationLimits,
+    LlmRecommendationStrategy,
+    _batches,
+)
+
+from hygm import HygmModel, ModelError, NodeType, Property, RelationType
+from hygm.evolution import (
+    AddNodeType,
+    MergeNodeTypes,
+    MergeRelationTypes,
+    RemoveNodeType,
+    RemoveRelationType,
+    apply,
+)
+
+
+class ScriptedLlm:
+    """Answers each stage from a script, keyed by the stage's schema, and records the prompts."""
+
+    def __init__(self, *, consolidate, prune, propose=None):
+        self.replies = {
+            id(PROPOSE_SCHEMA): propose or {"entity_types": [], "relations": []},
+            id(CONSOLIDATE_SCHEMA): {"entity_types": [], "relations": [], "merges": [], **consolidate},
+            id(PRUNE_SCHEMA): {"entity_types": [], "relations": [], **prune},
+        }
+        self.prompts = []
+
+    def __call__(self, system, prompt, schema):
+        self.prompts.append(prompt)
+        return self.replies[id(schema)]
+
+
+class FixedObserver:
+    def __init__(self, types=None, relations=None):
+        self.tables = {"types": types or {}, "relations": relations or {}}
+        self.models = []
+
+    def observe(self, model, sample):
+        self.models.append(model)
+        return self.tables
+
+
+def _observed(**mentions):
+    return {label: {"mentions": n} for label, n in mentions.items()}
+
+
+def _fired(name, *pairs, edges=None):
+    return {
+        name: {
+            "edges": edges or sum(n for _, _, n in pairs),
+            "pairs": [{"head": h, "tail": t, "count": n} for h, t, n in pairs],
+        }
+    }
+
+
+def _derive(llm, observer, current=None, **kwargs):
+    """One run, checked to say in operations exactly what it changed."""
+    strategy = LlmRecommendationStrategy(llm, observer, kwargs.pop("limits", None))
+    current = current or default_model()
+    derivation = strategy.derive(
+        current, conversations=["one session", "another"], observe_sample=["s1", "s2"], **kwargs
+    )
+    assert apply(current, derivation.operations) == derivation.model
+    return derivation
+
+
+LIBRARY = {"label": "Library", "description": "a code library"}
+MAINTAINS = {
+    "name": "maintains",
+    "description": "is responsible for a code library",
+    "intended_head": ["User"],
+    "intended_tail": ["Library"],
+}
+
+
+def test_an_observed_addition_joins_the_model_with_its_observed_endpoints():
+    llm = ScriptedLlm(
+        consolidate={"entity_types": [LIBRARY, {"label": "lowercase", "description": "x"}], "relations": [MAINTAINS]},
+        prune={
+            "entity_types": [{"label": "Library", "identity": "global", "reason": ""}],
+            "relations": [{"name": "maintains", "head": ["User"], "tail": ["Library"], "reason": "the user's code"}],
+        },
+    )
+    observer = FixedObserver(types=_observed(Library=12), relations=_fired("maintains", ("User", "Library", 5)))
+
+    derivation = _derive(llm, observer)
+
+    assert derivation.model.node_type("Library") == NodeType(
+        "Library", "a code library", profiles={"extraction": {"identity": "global"}}
+    )
+    maintains = next(r for r in derivation.model.relation_types if r.label == "maintains")
+    assert (maintains.start_labels, maintains.end_labels) == (("User", "Person"), ("Library",))
+    assert maintains.description == "is responsible for a code library"  # what recall ranks it by, not prune's reason
+    assert derivation.changelog == (Change("add", "node", "Library"), Change("add", "relation", "maintains"))
+    assert derivation.counts["nodes"]["Library"] == 12
+    assert derivation.llm_calls == 2 + 2  # two sessions make two propose batches, then consolidate and prune
+
+
+def test_the_observer_sees_additions_unconstrained_but_value_tails_and_n_as_it_is():
+    """Prune sets an addition's endpoints from what it fires on; one into a value must keep that tail (#386)."""
+    best = {"name": "personal_best", "intended_head": ["User"], "intended_tail": ["Duration"]}
+    llm = ScriptedLlm(consolidate={"relations": [MAINTAINS, best]}, prune={})
+    observer = FixedObserver()
+
+    _derive(llm, observer)
+
+    seen = {r.label: r for r in observer.models[0].relation_types}
+    assert observer.models[0].node_labels() == default_model().node_labels()
+    assert (seen["maintains"].start_labels, seen["maintains"].end_labels) == ((), ())
+    assert (seen["personal_best"].start_labels, seen["personal_best"].end_labels) == ((), ("Duration",))
+    assert {r.label: r for r in default_model().relation_types}["works_for"] == seen["works_for"]
+
+
+def test_additions_without_real_instances_are_dropped():
+    llm = ScriptedLlm(
+        consolidate={"entity_types": [LIBRARY], "relations": [MAINTAINS]},
+        prune={
+            "entity_types": [{"label": "Library", "identity": "global", "reason": ""}],
+            "relations": [{"name": "maintains", "head": ["User"], "tail": ["Library"], "reason": ""}],
+        },
+    )
+    observer = FixedObserver(types=_observed(Library=0), relations=_fired("maintains", ("User", "Artifact", 4)))
+
+    derivation = _derive(llm, observer)
+
+    assert "Library" not in derivation.model.node_labels()
+    assert "maintains" not in derivation.model.relation_labels()
+    assert derivation.changelog == ()
+
+
+def _with_frameworks():
+    base = default_model()
+    return HygmModel(
+        node_types=(
+            *base.node_types,
+            NodeType("Framework", "a framework", profiles={"extraction": {"identity": "global"}}),
+            NodeType("Library", "a library", profiles={"extraction": {"identity": "global"}}),
+        ),
+        relation_types=(
+            *base.relation_types,
+            RelationType("builds_with", "", ("User", "Person"), ("Framework",)),
+        ),
+    )
+
+
+def test_a_merge_relabels_endpoints_and_sums_counts_into_the_survivor():
+    llm = ScriptedLlm(
+        consolidate={"merges": [{"kind": "node", "from": "Framework", "into": "Library", "reason": "synonyms"}]},
+        prune={},
+    )
+    observer = FixedObserver(types=_observed(Library=4))
+
+    derivation = _derive(
+        llm, observer, current=_with_frameworks(), counts={"nodes": {"Framework": 5, "Library": 3}, "relations": {}}
+    )
+
+    assert "Framework" not in derivation.model.node_labels()
+    builds_with = next(r for r in derivation.model.relation_types if r.label == "builds_with")
+    assert builds_with.end_labels == ("Library",)
+    assert derivation.counts["nodes"]["Library"] == 5 + 3 + 4
+    assert Change("merge", "node", "Framework", "Library", "synonyms") in derivation.changelog
+    assert derivation.operations == (MergeNodeTypes("Framework", "Library"),)
+
+
+@pytest.mark.parametrize(
+    ("merge", "why"),
+    [
+        ({"kind": "node", "from": "Person", "into": "Library"}, "protected"),
+        ({"kind": "node", "from": "Framework", "into": "Topic"}, "catch-all"),
+        ({"kind": "node", "from": "Framework", "into": "Duration"}, "identities differ"),
+        ({"kind": "relation", "from": "builds_with", "into": "lives_in"}, "incompatible end labels"),
+    ],
+)
+def test_a_merge_that_breaks_a_rule_is_vetoed_and_logged(merge, why):
+    llm = ScriptedLlm(consolidate={"merges": [{**merge, "reason": ""}]}, prune={})
+
+    derivation = _derive(llm, FixedObserver(), current=_with_frameworks())
+
+    assert merge["from"] in derivation.model.node_labels() + derivation.model.relation_labels()
+    (veto,) = derivation.changelog
+    assert veto.op == "veto" and why in veto.reason
+
+
+def test_a_type_below_the_share_threshold_retires_with_its_relations_and_can_return():
+    llm = ScriptedLlm(consolidate={}, prune={})
+    counts = {"nodes": {"User": 1000, "Framework": 1, "Library": 300}, "relations": {"builds_with": 1}}
+
+    derivation = _derive(
+        llm, FixedObserver(), current=_with_frameworks(), counts=counts, limits=DerivationLimits(retire_min_total=1000)
+    )
+
+    assert "Framework" not in derivation.model.node_labels()
+    assert derivation.pool.node_type("Framework") == NodeType(
+        "Framework", "a framework", profiles={"extraction": {"identity": "global"}}
+    )
+    assert "builds_with" in derivation.pool.relation_labels()
+    assert Change("retire", "relation", "builds_with", reason="an endpoint type retired") in derivation.changelog
+    assert {RemoveNodeType("Framework"), RemoveRelationType("builds_with")} <= set(derivation.operations)
+
+    back = ScriptedLlm(consolidate={"entity_types": [{"label": "Framework", "description": "reworded"}]}, prune={})
+    restored = _derive(
+        back,
+        FixedObserver(types=_observed(Framework=50)),
+        pool=derivation.pool,
+        counts=derivation.counts,
+        limits=DerivationLimits(retire_min_total=1000),
+    )
+    assert restored.model.node_type("Framework") == NodeType(
+        "Framework", "a framework", profiles={"extraction": {"identity": "global"}}
+    )
+    assert Change("restore", "node", "Framework") in restored.changelog
+    assert (
+        AddNodeType(NodeType("Framework", "a framework", profiles={"extraction": {"identity": "global"}}))
+        in restored.operations
+    )
+
+
+def test_the_cap_retires_the_lowest_share_types_but_never_protected_ones():
+    llm = ScriptedLlm(consolidate={}, prune={})
+    counts = {
+        "nodes": {"Framework": 40, "Library": 60, "Organization": 50, "Location": 50, "Event": 50},
+        "relations": {},
+    }
+
+    derivation = _derive(
+        llm,
+        FixedObserver(),
+        current=_with_frameworks(),
+        counts=counts,
+        pinned=["Event"],
+        limits=DerivationLimits(max_node_types=3, retire_share=0),
+    )
+
+    active = set(derivation.model.node_labels())
+    assert {"Library", "Organization", "Location"} <= active and "Framework" not in active
+    assert {"User", "Topic", "Artifact", "Event"} <= active  # core, catch-alls and pinned sit outside the cap
+
+
+def test_an_addition_is_exempt_from_the_share_threshold():
+    llm = ScriptedLlm(
+        consolidate={"entity_types": [LIBRARY]},
+        prune={"entity_types": [{"label": "Library", "identity": "global", "reason": ""}]},
+    )
+    observer = FixedObserver(types=_observed(Library=1))
+
+    derivation = _derive(llm, observer, counts={"nodes": {"User": 100_000}, "relations": {}})
+
+    assert "Library" in derivation.model.node_labels()
+
+
+def test_shares_wait_for_enough_evidence_before_retiring_anything():
+    """Two sessions about code mention no place; that is no reason to drop Location."""
+    derivation = _derive(ScriptedLlm(consolidate={}, prune={}), FixedObserver(types=_observed(User=40, Artifact=30)))
+
+    assert derivation.model == default_model()
+    assert derivation.changelog == ()
+
+
+def test_value_types_nothing_points_into_are_reported():
+    base = default_model()
+    no_money = replace(base, relation_types=tuple(r for r in base.relation_types if "Money" not in r.end_labels))
+
+    derivation = _derive(ScriptedLlm(consolidate={}, prune={}), FixedObserver(), current=no_money)
+
+    assert derivation.unanchored_values == ("Money",)
+
+
+def test_the_models_own_profiles_decide_what_is_protected():
+    """Not a fixed list: a type the learning profile protects is never merged away, whatever its label."""
+    base = default_model()
+    library = NodeType("Library", "a code library", profiles={"learning": {"protected": True}})
+    current = replace(base, node_types=(*base.node_types, library))
+    merge = {"kind": "node", "from": "Library", "into": "Artifact", "reason": ""}
+
+    derivation = _derive(ScriptedLlm(consolidate={"merges": [merge]}, prune={}), FixedObserver(), current=current)
+
+    assert "Library" in derivation.model.node_labels()
+    assert derivation.changelog[0].op == "veto" and "protected" in derivation.changelog[0].reason
+
+
+def test_nothing_to_derive_from_is_refused():
+    strategy = LlmRecommendationStrategy(ScriptedLlm(consolidate={}, prune={}), FixedObserver())
+
+    with pytest.raises(DerivationError, match="no conversations"):
+        strategy.derive(default_model(), conversations=[], observe_sample=[])
+
+
+def test_batches_are_whole_sessions_dealt_by_seed_under_the_budget():
+    sessions = [f"session {i} " + "x" * (10 * i) for i in range(6)]
+    limits = DerivationLimits(batches=2, batch_chars=80)
+
+    batches = _batches(sessions, limits, seed=1)
+
+    assert len(batches) == 2
+    assert all(sum(map(len, batch)) <= 80 or len(batch) == 1 for batch in batches)
+    assert {text for batch in batches for text in batch} <= set(sessions)
+    assert batches == _batches(sessions, limits, seed=1)
+    assert batches != _batches(sessions, limits, seed=2)
+
+
+@pytest.mark.parametrize(
+    ("node", "unsupported"),
+    [
+        (NodeType("Library", parents=("Artifact",)), "parents"),
+        (NodeType("Library", properties=(Property("version"),)), "properties"),
+        (NodeType("Library", key=("name",), properties=(Property("name", required=True),)), "key"),
+    ],
+)
+def test_a_model_using_what_derivation_would_drop_is_refused(node, unsupported):
+    base = default_model()
+    current = replace(base, node_types=(*base.node_types, node))
+
+    with pytest.raises(DerivationError, match=f"does not support.*{unsupported}"):
+        _derive(ScriptedLlm(consolidate={}, prune={}), FixedObserver(), current=current)
+
+
+def test_a_stored_changelog_entry_reads_as_operations():
+    """sessions-graph stores each Change as its fields; that dict reads back and says what it did."""
+    model = default_model()
+    topic = model.node_type("Topic")
+    assert topic is not None
+    pool = HygmModel(node_types=(NodeType("Library", "a code library"),))
+    stored: list[dict[str, Any]] = [
+        {"op": "add", "kind": "node", "label": "Topic", "into": None, "reason": ""},
+        {"op": "restore", "kind": "node", "label": "Library", "into": None, "reason": ""},
+        {"op": "merge", "kind": "node", "label": "Framework", "into": "Library", "reason": "synonyms"},
+        {"op": "merge", "kind": "relation", "label": "built_with", "into": "uses", "reason": ""},
+        {"op": "retire", "kind": "relation", "label": "uses", "into": None, "reason": "share 0.0001"},
+        {"op": "retire", "kind": "node", "label": "Library", "into": None, "reason": "share 0.0001"},
+        {"op": "veto", "kind": "node", "label": "User", "into": "Person", "reason": "User is protected"},
+    ]
+
+    operations = [Change(**entry).operations(model, pool) for entry in stored]
+
+    assert operations == [
+        (AddNodeType(topic),),
+        (AddNodeType(pool.node_types[0]),),
+        (MergeNodeTypes("Framework", "Library"),),
+        (MergeRelationTypes("built_with", "uses"),),
+        (RemoveRelationType("uses"),),
+        (RemoveNodeType("Library"),),
+        (),
+    ]
+    with pytest.raises(ModelError) as missing:
+        Change("add", "node", "Planet").operations(model, pool)
+    assert missing.value.code == "unknown_type"

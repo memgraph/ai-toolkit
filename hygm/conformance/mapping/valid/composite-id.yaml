@@ -1,0 +1,25 @@
+# A two-column id, referenced by a relation table's two columns in the same source.
+version: 1
+model: ../models/shop.model.yaml
+sources:
+  - {name: erp, kind: table}
+nodes:
+  - type: Order
+    source: erp
+    table: {name: orders}
+    id: [order_id]
+  - type: Product
+    source: erp
+    table: {schema: catalog, name: products}
+    id: [sku, region]
+    properties:
+      - {name: sku, column: sku}
+      - {name: region, column: region_code}
+relations:
+  - type: contains
+    source: erp
+    table: {name: order_lines}
+    from: {type: Order, columns: [order_id]}
+    to: {type: Product, columns: [product_sku, product_region]}
+    properties:
+      - {name: quantity, column: qty}

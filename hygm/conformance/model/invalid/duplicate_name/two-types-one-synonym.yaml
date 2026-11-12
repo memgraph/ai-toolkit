@@ -1,0 +1,4 @@
+version: 2
+node_types:
+  - {label: Winery, description: a winery, synonyms: [Chateau]}
+  - {label: Castle, description: a castle, synonyms: [chateau]}

@@ -1,0 +1,4 @@
+version: 1
+entity_types:
+  - {label: Thing, description: anything}
+relation_types: []

@@ -1,0 +1,9 @@
+entity_types:
+  - {label: Author, description: a person who writes, identity: global}
+  - {label: Book, description: a written work, identity: global}
+  - {label: Year, description: a calendar year, identity: span}
+  - {label: Topic, description: a subject}
+relation_types:
+  - {label: wrote, description: is the author of, start_labels: [Author], end_labels: [Book]}
+  - {label: published_in, description: came out in, start_labels: [Book], end_labels: [Year]}
+  - {label: mentions, description: anything}
