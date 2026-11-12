@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Collection
 
 #: Kept in step with the plugins' bootstrap scripts and install.sh, which install the default connectors first.
-BASE = "memgraph-context-graph[mcp]>=0.13.0"
+BASE = "memgraph-context-graph[mcp]>=0.13.1"
 VIEWER = ("context-graph-viewer", "context-graph-viewer>=0.1.1")
 SPACES = ("context-graph-spaces", "context-graph-spaces>=0.1.6")
 #: sessions-graph's local extraction, which setup doesn't install itself; ``unstructured2graph`` tells it is there.
