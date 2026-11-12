@@ -380,6 +380,27 @@ def test_writes_while_a_profile_applies_go_to_it_and_keep_the_rest(profiled):
     assert team.agents == {"codex": "team"}
 
 
+def _profile_the_mcp_server_serves(monkeypatch, *argv):
+    from memgraph_context_graph import cli, mcp_server
+
+    served = []
+    monkeypatch.setattr(mcp_server, "serve", lambda **_: served.append(_identity.load_config().profile) or 0)
+    assert cli.main(["mcp", *argv]) == 0
+    return served[0]
+
+
+def test_the_mcp_server_takes_its_agent_from_the_environment(profiled, monkeypatch):
+    monkeypatch.setenv(_identity.AGENT_ENV, "codex")
+
+    assert _profile_the_mcp_server_serves(monkeypatch) == "team"
+
+
+def test_the_mcp_servers_agent_flag_wins_over_the_environment(profiled, monkeypatch):
+    monkeypatch.setenv(_identity.AGENT_ENV, "codex")
+
+    assert _profile_the_mcp_server_serves(monkeypatch, "--agent", "claude-code") is None
+
+
 def test_a_rewrite_keeps_profiles_and_agents_as_written(profiled):
     _identity.write_config(auto_reconcile=True)
 

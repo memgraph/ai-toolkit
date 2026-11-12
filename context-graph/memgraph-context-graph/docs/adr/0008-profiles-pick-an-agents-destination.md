@@ -16,7 +16,7 @@ The config file decided where every agent on a machine captured, recalled and wr
   2. `CONTEXT_GRAPH_PROFILE`;
   3. the `[agents]` mapping for the agent the process runs for.
 
-  Hooks know their agent from `hook run <runtime>`. The MCP server knows it from `mcp --agent <runtime>`, which setup writes into each agent's MCP config. `doctor --runtime` and `setup <runtime>` use the agent they name.
+  Hooks know their agent from `hook run <runtime>`. The MCP server knows it from `mcp --agent <runtime>`, which setup writes into each agent's MCP config, or from `CONTEXT_GRAPH_AGENT`, which the plugins set. `doctor --runtime` and `setup <runtime>` use the agent they name.
 - **Spawned processes inherit the profile like the path.** `spawn_env()` sets `CONTEXT_GRAPH_PROFILE` to the profile the hook resolved. For the top level it sets the reserved name `default`, so an ambient value can't redirect the child. Like `CONTEXT_GRAPH_CONFIG`, this variable selects *which* values apply, never what they are, so ADR 0002's guarantee holds.
 - **Writes follow reads.** While a profile applies, `write_config` and `config set` write the destination keys into that profile, creating it if it is new, and everything else to the top level. So `setup codex --memory-backend context-graph` and `join --agent codex` change only Codex's destination.
 
@@ -30,4 +30,4 @@ The config file decided where every agent on a machine captured, recalled and wr
 - A file without `[profiles.*]` and `[agents]` resolves exactly as before. No migration.
 - Agents on different profiles don't share memory. `setup` names the profile it acts on, and `doctor --runtime` shows each agent's profile.
 - `setup` with agents on different profiles refuses and asks for one run per profile, since every step after it reads and writes a single destination.
-- The Claude Code and Codex plugins start their MCP server from a fixed `.mcp.json`. They pass `--agent` only once the plugin requires a release that understands it, because an older installed CLI would refuse the flag.
+- The Claude Code and Codex plugins start their MCP server from a fixed `.mcp.json`, and a plugin update doesn't upgrade the installed CLI. An older CLI would refuse `--agent` and the server wouldn't start, so the plugins name their agent in `CONTEXT_GRAPH_AGENT` instead. An older CLI ignores it and serves the top level, as it did before profiles. Like `CONTEXT_GRAPH_PROFILE`, it selects which values apply, never what they are.

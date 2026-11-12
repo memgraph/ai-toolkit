@@ -285,7 +285,8 @@ session on the machine. Config *values* stay file-only.
 
 `CONTEXT_GRAPH_PROFILE` is the same kind of selector, one level down. It picks which
 `[profiles.<name>]` of that file applies (ADR 0008). Hooks (`hook run <runtime>`) and the
-MCP server (`mcp --agent <runtime>`) pick their agent's profile from `[agents]` the same way.
+MCP server (`mcp --agent <runtime>`, or `CONTEXT_GRAPH_AGENT`, which the plugins set because an
+older installed CLI would refuse the flag) pick their agent's profile from `[agents]` the same way.
 A profile holds only the destination (`edition`, `[memgraph]`, `[memory]`); keep privacy
 settings out of it.
 

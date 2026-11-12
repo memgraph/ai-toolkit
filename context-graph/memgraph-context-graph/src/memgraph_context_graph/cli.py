@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from importlib import metadata
@@ -269,13 +270,14 @@ def _mcp(argv: list[str]) -> int:
     parser.add_argument(
         "--agent",
         metavar="RUNTIME",
-        help="the agent that started the server: its tools use the profile [agents] maps it to",
+        help="the agent that started the server: its tools use the profile [agents] maps it to "
+        "(default: $CONTEXT_GRAPH_AGENT)",
     )
     args = parser.parse_args(argv)
-    if args.agent:
-        from memgraph_context_graph.adapters._identity import select_agent
+    from memgraph_context_graph.adapters._identity import AGENT_ENV, select_agent
 
-        select_agent(args.agent)
+    if agent := args.agent or os.environ.get(AGENT_ENV):
+        select_agent(agent)
     try:
         from memgraph_context_graph.mcp_server import serve
     except ImportError as exc:
