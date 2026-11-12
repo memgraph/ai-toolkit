@@ -1,7 +1,16 @@
 from sessions_graph.default_model import default_model, with_core
 from sessions_graph.learning import CATCH_ALL_LABELS, CORE_LABELS, VERSION_1
 
-from hygm import HygmModel, NodeType, RelationType, model_to_mapping, needs_version_2, validate_model
+from hygm import (
+    LINT_CODES,
+    HygmModel,
+    NodeType,
+    RelationType,
+    lint_model,
+    model_to_mapping,
+    needs_version_2,
+    validate_model,
+)
 from unstructured2graph.profile import VALUE_LABELS, identity_of
 
 
@@ -57,3 +66,9 @@ def test_the_default_is_written_as_version_1_under_the_version_1_rule():
 
     assert not needs_version_2(model, VERSION_1)
     assert "entity_types" in model_to_mapping(model, version_1_profiles=VERSION_1)
+
+
+def test_the_default_lints_without_a_crash():
+    findings = lint_model(default_model())
+
+    assert {f.code for f in findings} <= set(LINT_CODES)

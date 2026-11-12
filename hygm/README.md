@@ -43,6 +43,22 @@ properties and individuals without an IRI get one under `base`
 `validate_model` is the hard gate every model passes before anything uses it.
 `ManualStrategy` runs it on load.
 
+## Lint and the command line
+
+`validate_model` is the gate; `lint_model(model)` reports where a model departs
+from common ontology design practice (contract 9.1): a type with a single
+subtype, a label that is the plural of its parent's, siblings named
+inconsistently, missing descriptions and the like. Each `Finding` has a code,
+a severity (`warning` or `info`), the element, a message and a suggestion.
+Lint never raises and never refuses a model.
+
+```bash
+hygm validate wine.yaml          # exit 1 if the model is invalid
+hygm lint wine.ttl [--json]      # findings; always exit 0
+hygm convert wine.ttl wine.yaml  # model file or OWL, chosen by suffix
+hygm diff before.yaml after.yaml # the operations between them, as JSON
+```
+
 ## Profiles
 
 A profile carries what one kind of consumer needs from a model: settings on
