@@ -30,7 +30,7 @@ echo "Installing memgraph-context-graph with skills-graph, actions-graph and ses
 uv tool install --quiet --python 3.12 "memgraph-context-graph[mcp]>=0.13.1" \
   --with "skills-graph[memgraph-context-graph]>=0.4.0" \
   --with "actions-graph[memgraph-context-graph]>=0.7.1" \
-  --with "sessions-graph[memgraph-context-graph]>=0.12.4" \
+  --with "sessions-graph[memgraph-context-graph]>=0.13.0" \
   --upgrade
 
 # uv's tool shims live in `uv tool dir --bin` (usually ~/.local/bin), which may not be on PATH yet.

@@ -19,7 +19,7 @@ fi
 uv tool install --python 3.12 "memgraph-context-graph[mcp]>=0.13.1" \
   --with "skills-graph[memgraph-context-graph]>=0.4.0" \
   --with "actions-graph[memgraph-context-graph]>=0.7.1" \
-  --with "sessions-graph[memgraph-context-graph]>=0.12.4" \
+  --with "sessions-graph[memgraph-context-graph]>=0.13.0" \
   --upgrade \
   --refresh-package memgraph-context-graph \
   --refresh-package skills-graph \
