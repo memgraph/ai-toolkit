@@ -5,32 +5,47 @@ from dataclasses import replace
 from typing import Any
 
 from ..errors import ModelError
+from ..format import check_imports
 from ..profiles import label_settings
-from ..types import HygmModel, NodeType, Property, RelationType
+from ..types import HygmModel, Individual, NodeType, Property, RelationType
 from ..validation import validate_model
 from .operations import (
+    AddIndividual,
     AddNodeType,
     AddProperty,
     AddRelationType,
     MergeNodeTypes,
     MergeRelationTypes,
     Operation,
+    OrderIndividuals,
     OrderNodeTypes,
     OrderProperties,
     OrderRelationTypes,
+    RemoveIndividual,
     RemoveNodeType,
     RemoveProperty,
     RemoveRelationType,
     RenameNodeType,
     RenameProperty,
     RenameRelationType,
+    SetAbstract,
     SetDescription,
+    SetDisjointWith,
     SetEndpoints,
+    SetImports,
+    SetIndividual,
+    SetInverse,
     SetIri,
     SetKey,
+    SetNames,
+    SetOntology,
     SetParents,
     SetProfile,
     SetProperty,
+    SetRelationCounts,
+    SetRelationRestrictions,
+    SetSymmetric,
+    SetSynonyms,
 )
 
 Owner = NodeType | RelationType
@@ -52,9 +67,12 @@ def apply(model: HygmModel, operations: Iterable[Operation], *, validate: bool =
 
     Raises:
         ModelError: unknown_type, undeclared_property, duplicate_label,
-            duplicate_property or invalid_operation when an operation doesn't
-            apply to the model it meets, naming which one; or the codes of
-            validate_model() when the result fails it.
+            duplicate_property, unknown_individual, duplicate_individual or
+            invalid_operation when an operation doesn't apply to the model it
+            meets, naming which one; the codes of validate_model() when the
+            result fails it; or duplicate_label or duplicate_individual when
+            the result lacks or changes a type or individual one of its
+            imports declares.
     """
     for index, operation in enumerate(operations):
         try:
@@ -67,6 +85,7 @@ def apply(model: HygmModel, operations: Iterable[Operation], *, validate: bool =
             problems = "; ".join(issue.message for issue in result.critical_issues)
             codes = [issue.code or "invalid_format" for issue in result.critical_issues]
             raise ModelError(codes, f"The operations leave an invalid model: {problems}")
+        check_imports(model)
     return model
 
 
@@ -329,6 +348,70 @@ def _set_profile(model: HygmModel, op: SetProfile) -> HygmModel:
     return _with(model, replace(owner, profiles=_profiles_with(owner.profiles, op.profile, op.settings)))
 
 
+def _set_ontology(model: HygmModel, op: SetOntology) -> HygmModel:
+    return replace(model, ontology=op.ontology)
+
+
+def _set_imports(model: HygmModel, op: SetImports) -> HygmModel:
+    return replace(model, imports=op.imports)
+
+
+def _set_abstract(model: HygmModel, op: SetAbstract) -> HygmModel:
+    return _with(model, replace(_node(model, op.label), abstract=op.abstract))
+
+
+def _set_disjoint_with(model: HygmModel, op: SetDisjointWith) -> HygmModel:
+    return _with(model, replace(_node(model, op.label), disjoint_with=op.disjoint_with))
+
+
+def _set_synonyms(model: HygmModel, op: SetSynonyms) -> HygmModel:
+    return _with(model, replace(_owner(model, op.kind, op.label), synonyms=op.synonyms))
+
+
+def _set_names(model: HygmModel, op: SetNames) -> HygmModel:
+    return _with(model, replace(_owner(model, op.kind, op.label), names=op.names))
+
+
+def _set_relation_restrictions(model: HygmModel, op: SetRelationRestrictions) -> HygmModel:
+    return _with(model, replace(_node(model, op.label), relation_restrictions=op.relation_restrictions))
+
+
+def _set_relation_counts(model: HygmModel, op: SetRelationCounts) -> HygmModel:
+    return _with(model, replace(_relation(model, op.label), min_count=op.min_count, max_count=op.max_count))
+
+
+def _set_inverse(model: HygmModel, op: SetInverse) -> HygmModel:
+    return _with(model, replace(_relation(model, op.label), inverse_of=op.inverse_of))
+
+
+def _set_symmetric(model: HygmModel, op: SetSymmetric) -> HygmModel:
+    return _with(model, replace(_relation(model, op.label), symmetric=op.symmetric))
+
+
+def _individual(model: HygmModel, id: str) -> Individual:
+    individual = model.individual(id)
+    if individual is None:
+        raise ModelError("unknown_individual", f"no individual {id!r}")
+    return individual
+
+
+def _add_individual(model: HygmModel, op: AddIndividual) -> HygmModel:
+    if model.individual(op.individual.id) is not None:
+        raise ModelError("duplicate_individual", f"individual {op.individual.id!r} already exists")
+    return replace(model, individuals=(*model.individuals, op.individual))
+
+
+def _remove_individual(model: HygmModel, op: RemoveIndividual) -> HygmModel:
+    _individual(model, op.id)
+    return replace(model, individuals=tuple(i for i in model.individuals if i.id != op.id))
+
+
+def _set_individual(model: HygmModel, op: SetIndividual) -> HygmModel:
+    _individual(model, op.individual.id)
+    individuals = tuple(op.individual if i.id == op.individual.id else i for i in model.individuals)
+    return replace(model, individuals=individuals)
+
+
 def _ordered(current: tuple[str, ...], wanted: tuple[str, ...], what: str) -> None:
     if sorted(current) != sorted(wanted):
         raise ModelError("invalid_operation", f"{what} order must name each of {list(current)} once")
@@ -353,6 +436,12 @@ def _order_properties(model: HygmModel, op: OrderProperties) -> HygmModel:
     return _with(model, replace(owner, properties=tuple(properties[name] for name in op.names)))
 
 
+def _order_individuals(model: HygmModel, op: OrderIndividuals) -> HygmModel:
+    _ordered(tuple(i.id for i in model.individuals), op.ids, "individual")
+    individuals = {i.id: i for i in model.individuals}
+    return replace(model, individuals=tuple(individuals[id] for id in op.ids))
+
+
 _APPLY: dict[type, Callable[[HygmModel, Any], HygmModel]] = {
     AddNodeType: _add_node_type,
     RemoveNodeType: _remove_node_type,
@@ -375,4 +464,18 @@ _APPLY: dict[type, Callable[[HygmModel, Any], HygmModel]] = {
     OrderNodeTypes: _order_node_types,
     OrderRelationTypes: _order_relation_types,
     OrderProperties: _order_properties,
+    SetOntology: _set_ontology,
+    SetImports: _set_imports,
+    SetAbstract: _set_abstract,
+    SetDisjointWith: _set_disjoint_with,
+    SetSynonyms: _set_synonyms,
+    SetNames: _set_names,
+    SetRelationRestrictions: _set_relation_restrictions,
+    SetRelationCounts: _set_relation_counts,
+    SetInverse: _set_inverse,
+    SetSymmetric: _set_symmetric,
+    AddIndividual: _add_individual,
+    RemoveIndividual: _remove_individual,
+    SetIndividual: _set_individual,
+    OrderIndividuals: _order_individuals,
 }

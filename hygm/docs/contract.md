@@ -628,7 +628,9 @@ relations:
   `graph` binding reads the source's nodes of that label. `properties`
   binds model properties to columns, optionally with a JSON `path` into a
   `json` column. Only declared properties may be bound, with a compatible
-  type (4.6).
+  type (4.6). A property the bound type forbids (`max_count: 0`, 4.15)
+  counts as undeclared; a multi-valued one is bound to a column holding
+  the list.
 - **One type, several sources.** A type bound in more than one source must
   have a `key`; nodes with equal key values are one entity, as a
   migration's `MERGE` would make them.
@@ -641,7 +643,8 @@ relations:
 - **Labels follow the model.** A mapping never declares labels. A bound
   node carries its type and its ancestors' labels (4.7).
 - **Endpoints conform.** Every binding's endpoint types are admitted by the
-  relation type's `start_labels` and `end_labels`.
+  relation type's `start_labels` and `end_labels`, and the end type by the
+  start type's relation restrictions too (4.16).
 
 ### 6.3 Text is not mapped
 
@@ -677,8 +680,9 @@ idempotent. hygm computes it; it is not a file format.
 | a property's `type` | a data type constraint (`IS TYPED`) |
 | `values` | an enum, and the property typed with it |
 | `parents` | the ancestor labels every write sets |
-| a multi-valued property | a `LIST` type constraint where Memgraph has one; no per-element type |
-| `minimum`/`maximum`, `max_count`, `disjoint_with`, `value` | nothing: Memgraph can't enforce them; consumers that write data check them |
+| a multi-valued property | a `LIST` type constraint where Memgraph has one; no per-element type, so the elements' type and `values` go unchecked |
+| a subtype refining an inherited property (4.15) | what the refinement adds, on the subtype's label: an existence constraint when it makes the property required. Type, enum and list constraints stay on the declaring type's label, which the subtype's nodes carry |
+| `minimum`/`maximum`, `max_count`, `value`, `abstract`, `disjoint_with`, relation facets and restrictions | nothing: Memgraph can't enforce them; consumers that write data check them |
 | `individuals` | `MERGE` statements seeding them, only when the caller asks |
 | a mapping's `join` relation | an index on each endpoint's join property |
 
@@ -721,7 +725,7 @@ Every reader of a model checks, as critical errors:
 A mapping reader also checks section 6.2. A profile's consumer also checks
 that profile's rules.
 
-Each error has a **code** from the table below and a message for people. Applying an operation (layer 6) to a model it doesn't fit reuses the layer-1 codes (`unknown_type`, `undeclared_property`, `duplicate_label`, `duplicate_property`).
+Each error has a **code** from the table below and a message for people. Applying an operation (layer 6) to a model it doesn't fit reuses the layer-1 codes (`unknown_type`, `undeclared_property`, `duplicate_label`, `duplicate_property`, `unknown_individual`, `duplicate_individual`).
 Readers emit the same codes; their messages are their own. A file with
 several problems may report any non-empty subset of them, so a conformance
 fixture holds exactly one problem.
@@ -792,13 +796,19 @@ element it is about and a suggestion. `hygm lint` prints them, and
 | `sibling_naming` | info | Siblings where some repeat the parent's name and some don't (`RedWine` beside `White`). |
 | `missing_description` | warning | A type, relation type or property with an empty description. |
 | `no_competency_questions` | info | No `ontology.competency_questions`. |
-| `unused_type` | info | A node type no relation names, no type inherits from and no individual has. |
+| `unused_type` | info | A node type no relation names (directly or through an ancestor), no type inherits from, no profile setting names and no individual has. |
 | `inverse_not_declared` | info | Two relation types with swapped endpoints and names like `maker`/`produces` that aren't declared inverse. Heuristic. |
 
 A consumer that wants a gate on top of lint builds it from the codes. hygm
-never does.
+never does. The naming checks are English heuristics: `plural_of_parent`
+and `naming_number` read a label's last word by simple plural rules.
 
-## 10. OWL import
+The `hygm` command line wraps the layers for files: `hygm validate <file>`,
+`hygm lint <file>`, `hygm convert <in> <out>` (model file or OWL, by suffix)
+and `hygm diff <a> <b>` (the operations, as JSON). It exits 1 only when a
+model fails validation; lint findings never fail it.
+
+## 10. OWL import and export
 
 `OwlImportStrategy` extends its mechanical mapping:
 
@@ -811,7 +821,6 @@ never does.
 | its `rdfs:range` | `type`, by 4.6 |
 | an `owl:oneOf` of literals as range | `values` |
 | `owl:hasKey` | `key`, each key property marked `required` |
-| `owl:FunctionalProperty` with an `owl:minCardinality 1` restriction | `required: true` |
 | each IRI | `iri` |
 | `owl:Ontology` with `rdfs:comment`, `owl:versionInfo` | `ontology` (4.11) |
 | `owl:imports` | `imports`, the imported ontology converted too |
@@ -820,19 +829,49 @@ never does.
 | `skos:altLabel` | `synonyms` |
 | `owl:inverseOf` | `inverse_of` |
 | `owl:SymmetricProperty` | `symmetric` |
-| `owl:FunctionalProperty` | `max_count: 1` |
-| a cardinality restriction (`min`/`max`/exact, qualified or not) on a class | `min_count`/`max_count` on the property or relation restriction |
-| `owl:hasValue` restriction | `value` |
-| `owl:allValuesFrom` restriction on an object property | `relation_restrictions` end labels |
+| `owl:FunctionalProperty` | `max_count: 1`; a datatype property without it, or any other count, is still single-valued (hygm's default) |
+| a cardinality restriction (`min`/`max`/exact, qualified or not, the class of a qualified one ignored) on a class | `min_count`/`max_count` on its own property; on an inherited property, a redeclaration narrowing it (4.15); on an object property, a relation restriction |
+| `owl:hasValue` restriction | `value`, likewise |
+| `owl:allValuesFrom` restriction | on an object property, `relation_restrictions` end labels; on an inherited datatype property, its `values` or bounds narrowed |
 | `xsd:minInclusive`/`maxInclusive` datatype restriction | `minimum`/`maximum` |
 | `owl:NamedIndividual` with its assertions | `individuals` |
 
-**OWL export** writes the same table backwards, so a model round-trips
-through OWL. `abstract` has no OWL counterpart and is written as an
-annotation (`hygm:abstract`); `default`, `unit` and the profiles likewise.
+An `owl:imports` of a web IRI is left out: hygm reads files, not the web.
+The classes the importing ontology names are declared from their use, as
+when no import is resolved.
 
-Restrictions, equivalence, disjointness and other axioms stay out. hygm is
-a schema, not a reasoner.
+**OWL export** (`model_to_owl`) writes the same table backwards, so a model
+round-trips through OWL. What OWL has no construct for is written as an
+annotation in the `hygm:` namespace (`https://memgraph.com/ns/hygm#`):
+
+| hygm | annotation |
+|---|---|
+| `abstract` | `hygm:abstract` |
+| `default`, `unit` | `hygm:default` (JSON), `hygm:unit` |
+| a multi-valued property without a limit | `hygm:multiValued` |
+| a relation type's `min_count`, and its `max_count` above 1 | `hygm:minCount`, `hygm:maxCount` |
+| a relation type's properties | `hygm:properties` (JSON, as in the model file) |
+| profiles | `hygm:profiles` (JSON) |
+| the `ontology` block's scope, competency questions, maintainers and conventions | `hygm:includes`, `hygm:excludes`, `hygm:competencyQuestion`, `hygm:maintainer`, `hygm:conventions` |
+| a name that isn't its IRI's local name | `hygm:name` |
+| an individual's empty list | `hygm:noValues` |
+
+- **IRIs.** A type, property or individual without an `iri` gets one under
+  a base the caller chooses (`urn:hygm:model#` by default), recorded on the
+  ontology as `hygm:base`. The import leaves an IRI under it out, so the
+  model reads back without one.
+- **Properties.** hygm names properties per type; OWL names a datatype
+  property once. Each property gets its own datatype property, named back by
+  `hygm:name`. A redeclaration (4.15) is an `rdfs:subPropertyOf` what it
+  redeclares; one that keeps that property's IRI and narrows only counts,
+  `value`, `values` or bounds is written as restrictions on its type
+  instead, as an OWL ontology says it.
+- **Order.** OWL keeps none, so a model reads back with its types,
+  properties and individuals in IRI order and a multi-valued annotation's
+  values sorted. Up to that order, every valid conformance fixture reads
+  back as itself.
+
+Equivalence and other axioms stay out. hygm is a schema, not a reasoner.
 
 ## 11. Layer 6: evolution
 
@@ -851,10 +890,24 @@ schema grows a column. Today sessions-graph's `Change` and sql2graph's
   of versions.
 - **Data migration is the consumer's.** hygm says what changed; moving the
   data is sessions-graph's or sql2graph's job.
-- **Every key has an operation.** The keys of 4.11–4.17 (the `ontology`
-  block, imports, `abstract`, `disjoint_with`, names, facets, relation facets
-  and restrictions, individuals) each get a `set_*` or add/remove operation,
-  so `diff` and `apply` cover the whole model.
+- **Every key has an operation.** The keys of 4.11–4.17 each have one, so
+  `diff` and `apply` cover the whole model:
+
+  | Key | Operation |
+  |---|---|
+  | `ontology` | `set_ontology` (null clears it) |
+  | `imports` | `set_imports`, written as their paths |
+  | `abstract`, `disjoint_with`, `relation_restrictions` | `set_abstract`, `set_disjoint_with`, `set_relation_restrictions` |
+  | `synonyms`, `names` of a node or relation type | `set_synonyms`, `set_names` |
+  | a relation type's `min_count` and `max_count` | `set_relation_counts`, both at once |
+  | `inverse_of`, `symmetric` | `set_inverse`, `set_symmetric` |
+  | property facets, synonyms and names | `set_property`, which sets the whole property |
+  | `individuals` | `add_individual`, `remove_individual`, `set_individual`, `order_individuals` |
+
+  `set_imports` changes only which models are imported. The types and
+  individuals an import declares come and go through their own operations,
+  and a result that lacks or changes one is refused (`duplicate_label`,
+  `duplicate_individual`), as when writing it (4.12).
 
 Storing a version-2 model in a user's graph is a change older
 sessions-graph clients would misread, since today they ignore unknown keys.

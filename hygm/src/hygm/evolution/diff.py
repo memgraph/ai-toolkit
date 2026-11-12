@@ -3,28 +3,41 @@
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from ..errors import ModelError
 from ..types import HygmModel, NodeType, Property, RelationType
 from .operations import (
+    AddIndividual,
     AddNodeType,
     AddProperty,
     AddRelationType,
     Kind,
     Operation,
+    OrderIndividuals,
     OrderNodeTypes,
     OrderProperties,
     OrderRelationTypes,
     ProfileLevel,
+    RemoveIndividual,
     RemoveNodeType,
     RemoveProperty,
     RemoveRelationType,
+    SetAbstract,
     SetDescription,
+    SetDisjointWith,
     SetEndpoints,
+    SetImports,
+    SetIndividual,
+    SetInverse,
     SetIri,
     SetKey,
+    SetNames,
+    SetOntology,
     SetParents,
     SetProfile,
     SetProperty,
+    SetRelationCounts,
+    SetRelationRestrictions,
+    SetSymmetric,
+    SetSynonyms,
 )
 
 
@@ -32,66 +45,50 @@ def diff(a: HygmModel, b: HygmModel) -> tuple[Operation, ...]:
     """The operations that turn `a` into `b`: ``apply(a, diff(a, b)) == b``.
 
     A rename can't be told from a removal and an addition with the same
-    definition, so diff never emits one: a renamed type or property comes
-    out as remove plus add. A caller that knows better (a user's edit,
-    derivation's merges) records its own operations instead.
+    definition, so diff never emits one: a renamed type, property or
+    individual comes out as remove plus add. A caller that knows better (a
+    user's edit, derivation's merges) records its own operations instead.
 
     The list is meant to be applied whole, as apply() does, validating only
-    the result: it removes what `b` lacks first, then adds and changes types,
-    then fixes the order, and a step in between may name something a later
-    step adds.
-
-    Raises:
-        ModelError: `unknown_operation` when `a` and `b` differ in a key no
-            operation sets yet (the `ontology` block, `imports`, `individuals`, a node type's
-            `abstract`, `disjoint_with`, `relation_restrictions`, a type's
-            `synonyms` or `names`, a relation type's counts, `inverse_of` or
-            `symmetric`),
-            rather than leave the change out. A type added whole, or a
-            property set whole, carries every key.
+    the result: it removes what `b` lacks first, then adds and changes types
+    and individuals, then fixes the order, and a step in between may name
+    something a later step adds. A type added whole, or a property or
+    individual set whole, carries every key.
     """
-    _require_expressible(a, b)
     ops: list[Operation] = []
     b_nodes = {t.label: t for t in b.node_types}
     b_relations = {r.label: r for r in b.relation_types}
+    b_individuals = {i.id: i for i in b.individuals}
     a_nodes = {t.label: t for t in a.node_types}
     a_relations = {r.label: r for r in a.relation_types}
+    a_individuals = {i.id: i for i in a.individuals}
     ops += [RemoveNodeType(t.label) for t in a.node_types if t.label not in b_nodes]
     ops += [RemoveRelationType(r.label) for r in a.relation_types if r.label not in b_relations]
+    ops += [RemoveIndividual(i.id) for i in a.individuals if i.id not in b_individuals]
     for node in b.node_types:
         ops += _node_changes(a_nodes[node.label], node) if node.label in a_nodes else [AddNodeType(node)]
     for relation in b.relation_types:
         before = a_relations.get(relation.label)
         ops += _relation_changes(before, relation) if before else [AddRelationType(relation)]
     ops += _profile_changes(a.profiles, b.profiles, "model", None)
+    if a.ontology != b.ontology:
+        ops.append(SetOntology(b.ontology))
+    if a.imports != b.imports:
+        ops.append(SetImports(b.imports))
+    for individual in b.individuals:
+        before = a_individuals.get(individual.id)
+        if before is None:
+            ops.append(AddIndividual(individual))
+        elif before != individual:
+            ops.append(SetIndividual(individual))
     if _kept_order(a.node_labels(), b.node_labels()) != b.node_labels():
         ops.append(OrderNodeTypes(b.node_labels()))
     if _kept_order(a.relation_labels(), b.relation_labels()) != b.relation_labels():
         ops.append(OrderRelationTypes(b.relation_labels()))
+    b_ids = tuple(b_individuals)
+    if _kept_order(tuple(a_individuals), b_ids) != b_ids:
+        ops.append(OrderIndividuals(b_ids))
     return tuple(ops)
-
-
-# TODO(#731): operations that set these keys, so diff and apply cover the whole model (contract, section 11).
-_MODEL_KEYS_WITHOUT_OPERATIONS = ("ontology", "imports", "individuals")
-_NODE_KEYS_WITHOUT_OPERATIONS = ("abstract", "disjoint_with", "synonyms", "names", "relation_restrictions")
-_RELATION_KEYS_WITHOUT_OPERATIONS = ("synonyms", "names", "min_count", "max_count", "inverse_of", "symmetric")
-
-
-def _unexpressible(key: str, where: str = "") -> ModelError:
-    at = f" on {where}" if where else ""
-    return ModelError("unknown_operation", f"diff can't express a change to {key!r}{at}: no operation sets it yet")
-
-
-def _require_expressible(a: HygmModel, b: HygmModel) -> None:
-    for key in _MODEL_KEYS_WITHOUT_OPERATIONS:
-        if getattr(a, key) != getattr(b, key):
-            raise _unexpressible(key)
-
-
-def _require_expressible_type(a: NodeType | RelationType, b: NodeType | RelationType, keys: tuple[str, ...]) -> None:
-    for key in keys:
-        if getattr(a, key) != getattr(b, key):
-            raise _unexpressible(key, repr(b.label))
 
 
 def _kept_order(before: Sequence[str], after: Sequence[str]) -> tuple[str, ...]:
@@ -100,7 +97,6 @@ def _kept_order(before: Sequence[str], after: Sequence[str]) -> tuple[str, ...]:
 
 
 def _node_changes(a: NodeType, b: NodeType) -> list[Operation]:
-    _require_expressible_type(a, b, _NODE_KEYS_WITHOUT_OPERATIONS)
     ops: list[Operation] = []
     if a.description != b.description:
         ops.append(SetDescription("node", b.label, b.description))
@@ -110,13 +106,19 @@ def _node_changes(a: NodeType, b: NodeType) -> list[Operation]:
         ops.append(SetParents(b.label, b.parents))
     if a.key != b.key:
         ops.append(SetKey(b.label, b.key))
+    if a.abstract != b.abstract:
+        ops.append(SetAbstract(b.label, b.abstract))
+    if a.disjoint_with != b.disjoint_with:
+        ops.append(SetDisjointWith(b.label, b.disjoint_with))
+    if a.relation_restrictions != b.relation_restrictions:
+        ops.append(SetRelationRestrictions(b.label, b.relation_restrictions))
+    ops += _name_changes("node", a, b)
     ops += _profile_changes(_node_profiles(a), _node_profiles(b), "node", b.label)
     ops += _property_changes("node", b.label, a.properties, b.properties)
     return ops
 
 
 def _relation_changes(a: RelationType, b: RelationType) -> list[Operation]:
-    _require_expressible_type(a, b, _RELATION_KEYS_WITHOUT_OPERATIONS)
     ops: list[Operation] = []
     if a.description != b.description:
         ops.append(SetDescription("relation", b.label, b.description))
@@ -124,8 +126,24 @@ def _relation_changes(a: RelationType, b: RelationType) -> list[Operation]:
         ops.append(SetIri("relation", b.label, b.iri))
     if (a.start_labels, a.end_labels) != (b.start_labels, b.end_labels):
         ops.append(SetEndpoints(b.label, b.start_labels, b.end_labels))
+    if (a.min_count, a.max_count) != (b.min_count, b.max_count):
+        ops.append(SetRelationCounts(b.label, b.min_count, b.max_count))
+    if a.inverse_of != b.inverse_of:
+        ops.append(SetInverse(b.label, b.inverse_of))
+    if a.symmetric != b.symmetric:
+        ops.append(SetSymmetric(b.label, b.symmetric))
+    ops += _name_changes("relation", a, b)
     ops += _profile_changes(a.profiles, b.profiles, "relation", b.label)
     ops += _property_changes("relation", b.label, a.properties, b.properties)
+    return ops
+
+
+def _name_changes(kind: Kind, a: NodeType | RelationType, b: NodeType | RelationType) -> list[Operation]:
+    ops: list[Operation] = []
+    if a.synonyms != b.synonyms:
+        ops.append(SetSynonyms(kind, b.label, b.synonyms))
+    if a.names != b.names:
+        ops.append(SetNames(kind, b.label, b.names))
     return ops
 
 

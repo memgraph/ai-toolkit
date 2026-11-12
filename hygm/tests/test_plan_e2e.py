@@ -169,6 +169,35 @@ def test_a_multi_valued_property_is_typed_as_a_list(memgraph_run):
         _clean(memgraph_run, {wine})
 
 
+def test_refined_facets_are_enforced_through_the_labels_a_subtypes_nodes_carry(memgraph_run):
+    suffix = uuid.uuid4().hex[:8]
+    wine, red = f"Wine{suffix}", f"RedWine{suffix}"
+    model = HygmModel(
+        node_types=(
+            NodeType(wine, properties=(Property("tannin", type="integer"), Property("grapes", max_count=None))),
+            NodeType(
+                red,
+                parents=(wine,),
+                properties=(Property("tannin", type="integer", required=True), Property("grapes", max_count=3)),
+            ),
+        )
+    )
+    red_labels = ":".join(f"`{label}`" for label in labels_for(model, red))
+    try:
+        apply_plan(memgraph_plan(model), memgraph_run)
+
+        memgraph_run(f"CREATE (:`{wine}`)")
+        memgraph_run(f"CREATE (:{red_labels} {{tannin: 4, grapes: $grapes}})", grapes=["merlot"])
+        with pytest.raises(Exception, match="existence constraint violation"):
+            memgraph_run(f"CREATE (:{red_labels})")
+        with pytest.raises(Exception, match="IS TYPED INTEGER violation"):
+            memgraph_run(f"CREATE (:{red_labels} {{tannin: 'high'}})")
+        with pytest.raises(Exception, match="IS TYPED LIST violation"):
+            memgraph_run(f"CREATE (:{red_labels} {{tannin: 4, grapes: 'merlot'}})")
+    finally:
+        _clean(memgraph_run, {wine, red})
+
+
 def test_seeding_the_individuals_twice_leaves_one_copy_that_the_plan_accepts(memgraph_run):
     suffix = uuid.uuid4().hex[:8]
     region, winery, wine, red = (f"{name}{suffix}" for name in ("Region", "Winery", "Wine", "RedWine"))

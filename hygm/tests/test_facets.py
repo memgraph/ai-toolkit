@@ -6,6 +6,8 @@ import pytest
 
 from hygm import (
     HygmModel,
+    Join,
+    JoinEndpoint,
     ManualStrategy,
     Mapping,
     ModelError,
@@ -13,6 +15,8 @@ from hygm import (
     NodeType,
     Property,
     PropertyBinding,
+    RelationBinding,
+    RelationType,
     Source,
     Statement,
     TableRef,
@@ -275,3 +279,40 @@ def test_a_mapping_may_bind_a_multi_valued_property():
     )
 
     check_mapping(mapping, model)
+
+
+def test_a_mapping_may_not_bind_or_join_on_a_property_the_type_forbids():
+    model = HygmModel(
+        node_types=(
+            NodeType("Wine", properties=(Property("tannin", type="integer"),)),
+            NodeType("WhiteWine", parents=("Wine",), properties=(Property("tannin", max_count=0),)),
+        ),
+        relation_types=(RelationType("pairs_with"),),
+    )
+    bound = Mapping(
+        model="wine.model.yaml",
+        sources=(Source("cellar", "table"),),
+        nodes=(
+            NodeBinding(
+                type="WhiteWine",
+                source="cellar",
+                table=TableRef("wines"),
+                id=("id",),
+                properties=(PropertyBinding("tannin", "tannin"),),
+            ),
+        ),
+    )
+    joined = Mapping(
+        model="wine.model.yaml",
+        sources=(),
+        relations=(
+            RelationBinding(
+                type="pairs_with", join=Join(JoinEndpoint("Wine", "tannin"), JoinEndpoint("WhiteWine", "tannin"))
+            ),
+        ),
+    )
+
+    for mapping in (bound, joined):
+        with pytest.raises(ModelError, match="forbids") as raised:
+            check_mapping(mapping, model)
+        assert raised.value.codes == ("undeclared_property",)

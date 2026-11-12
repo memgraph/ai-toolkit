@@ -14,11 +14,15 @@ from hygm import (
     ModelError,
     NodeType,
     Ontology,
+    SetImports,
+    SetOntology,
     apply,
     diff,
     model_from_mapping,
     model_to_mapping,
     needs_version_2,
+    operation_from_mapping,
+    operation_to_mapping,
 )
 
 VALID = Path(__file__).parent.parent / "conformance" / "model" / "valid"
@@ -142,16 +146,39 @@ def test_operations_on_an_importing_model_keep_its_imports():
     assert diff(model, changed) == (AddNodeType(NodeType("Rose", "a pink wine", parents=("Wine",))),)
 
 
-@pytest.mark.parametrize("key", ["ontology", "imports"])
-def test_diff_refuses_a_change_no_operation_expresses_yet(key):
-    b = ManualStrategy().create_model(VALID / "v2-imports-same-declaration.yaml")
-    b = replace(b, ontology=Ontology(name="food"))
-    a = replace(b, **{key: None if key == "ontology" else ()})
+def _food() -> HygmModel:
+    model = ManualStrategy().create_model(VALID / "v2-imports-same-declaration.yaml")
+    return replace(model, ontology=Ontology(name="food"))
 
-    with pytest.raises(ModelError, match=key) as raised:
-        diff(a, b)
 
-    assert raised.value.codes == ("unknown_operation",)
+def test_diff_sets_the_ontology_block_and_the_imports():
+    b = _food()
+    inline = replace(b, ontology=None, imports=())
+    empty = HygmModel(node_types=())
+
+    assert diff(inline, b) == (SetOntology(Ontology(name="food")), SetImports(b.imports))
+    assert apply(inline, diff(inline, b)) == b
+    assert apply(empty, diff(empty, b)) == b
+    assert apply(b, diff(b, empty)) == empty
+
+
+def test_setting_imports_without_the_types_they_declare_is_refused():
+    with pytest.raises(ModelError) as raised:
+        apply(HygmModel(node_types=()), [SetImports(_food().imports)])
+
+    assert raised.value.codes == ("duplicate_label",)
+
+
+def test_set_imports_reads_back_only_through_a_resolver():
+    imports = _food().imports
+    raw = operation_to_mapping(SetImports(imports))
+    models = {i.path: i.model for i in imports}
+
+    assert raw == {"op": "set_imports", "imports": [{"path": i.path} for i in imports]}
+    assert operation_from_mapping(raw, resolver=models.__getitem__) == SetImports(imports)
+    with pytest.raises(ModelError) as raised:
+        operation_from_mapping(raw)
+    assert raised.value.codes == ("unknown_model",)
 
 
 def test_the_ontology_block_round_trips_and_needs_version_2():

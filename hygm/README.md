@@ -23,13 +23,41 @@ Strategies:
   relation type, and `rdfs:domain`/`rdfs:range` (one class or an
   `owl:unionOf`) the start/end labels. `owl:DatatypeProperty` becomes a
   property on its domain class(es), typed from its XSD range (unlisted types
-  are `string`; an `owl:oneOf` range gives `values`); `owl:hasKey` the `key`,
-  its properties required; a functional property with an at-least-one
-  cardinality restriction is required; every term keeps its `iri`. Other
-  axioms are ignored. Needs `hygm[owl]` (rdflib).
+  are `string`; an `owl:oneOf` range gives `values`, `xsd:minInclusive` and
+  `xsd:maxInclusive` the bounds); `owl:hasKey` the `key`, its properties
+  required. Cardinality and `owl:hasValue` restrictions set counts and
+  `value`, on an object property per type (`relation_restrictions`, with
+  `owl:allValuesFrom`); disjointness, inverses, symmetric and functional
+  properties, language-tagged labels and `skos:altLabel`, named individuals,
+  the `owl:Ontology` header and its `owl:imports` of local files come across
+  too; every term keeps its `iri`. Equivalence and other axioms are ignored.
+  `model_from_owl` reads a document held in memory. Needs `hygm[owl]` (rdflib).
+
+`model_to_owl(model, format="turtle")` writes a model as OWL, the same table
+backwards; what OWL has no construct for (`abstract`, `default`, `unit`,
+profiles, relation counts and properties) goes in `hygm:` annotations. Read
+back, it is the same model up to order, which OWL doesn't keep. Types,
+properties and individuals without an IRI get one under `base`
+(`urn:hygm:model#` by default), and the import leaves those out again.
 
 `validate_model` is the hard gate every model passes before anything uses it.
 `ManualStrategy` runs it on load.
+
+## Lint and the command line
+
+`validate_model` is the gate; `lint_model(model)` reports where a model departs
+from common ontology design practice (contract 9.1): a type with a single
+subtype, a label that is the plural of its parent's, siblings named
+inconsistently, missing descriptions and the like. Each `Finding` has a code,
+a severity (`warning` or `info`), the element, a message and a suggestion.
+Lint never raises and never refuses a model.
+
+```bash
+hygm validate wine.yaml          # exit 1 if the model is invalid
+hygm lint wine.ttl [--json]      # findings; always exit 0
+hygm convert wine.ttl wine.yaml  # model file or OWL, chosen by suffix
+hygm diff before.yaml after.yaml # the operations between them, as JSON
+```
 
 ## Profiles
 
@@ -267,14 +295,26 @@ assert apply(model, diff(model, changed)) == changed
 - **Settings:** `SetDescription`, `SetIri`, `SetParents`, `SetKey`,
   `SetEndpoints`, `SetProfile` (one profile's settings at the top level, on a
   type or on a property).
-- **Order:** `OrderNodeTypes`, `OrderRelationTypes`, `OrderProperties`.
+- **Ontology keys** (contract 4.11–4.16): `SetOntology`, `SetImports`,
+  `SetAbstract`, `SetDisjointWith`, `SetSynonyms`, `SetNames`,
+  `SetRelationRestrictions`, `SetRelationCounts`, `SetInverse`,
+  `SetSymmetric`. Property facets change through `SetProperty`.
+- **Individuals:** `AddIndividual`, `RemoveIndividual`, `SetIndividual`.
+- **Order:** `OrderNodeTypes`, `OrderRelationTypes`, `OrderProperties`,
+  `OrderIndividuals`.
 
 `apply` validates only the result, so a list may pass through invalid models:
 removing a type leaves what names it for a later operation to change. Renames
 and merges carry through to parents, endpoints, keys and label-valued profile
 settings. An operation that doesn't apply raises `ModelError` with
-`unknown_type`, `undeclared_property`, `duplicate_label`, `duplicate_property`
-or `invalid_operation`; reading an unknown `op` raises `unknown_operation`.
+`unknown_type`, `undeclared_property`, `duplicate_label`, `duplicate_property`,
+`unknown_individual`, `duplicate_individual` or `invalid_operation`; reading an
+unknown `op` raises `unknown_operation`.
+
+`SetImports` changes only which models are imported; the types and
+individuals they declare are added and removed by their own operations, and a
+result missing or changing one is refused. Reading a `set_imports` back from
+JSON takes a `resolver`, as reading a model file with imports does.
 
 `diff(a, b)` can't tell a rename from a removal and an addition, so it emits
 those; a caller that knows better records its own operations. Moving the data

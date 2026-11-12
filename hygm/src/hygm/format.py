@@ -224,6 +224,73 @@ def property_from_mapping(raw: Any, source: str) -> Property:
     return _Reader(source).property(raw, "")
 
 
+def ontology_to_mapping(ontology: Ontology) -> dict[str, Any]:
+    """The `ontology` block of a version-2 model file, empty keys left out."""
+    return _ontology(ontology)
+
+
+def ontology_from_mapping(raw: Any, source: str) -> Ontology:
+    """An `ontology` block, read as strictly as in a model file.
+
+    Raises:
+        ModelError: if the block breaks the format.
+    """
+    return _Reader(source).ontology(raw)
+
+
+def restriction_to_mapping(restriction: RelationRestriction) -> dict[str, Any]:
+    """One `relation_restrictions` entry, unset keys left out."""
+    return _restriction(restriction)
+
+
+def restriction_from_mapping(raw: Any, source: str) -> RelationRestriction:
+    """A `relation_restrictions` entry, read as strictly as in a model file.
+
+    Raises:
+        ModelError: if the entry breaks the format.
+    """
+    return _Reader(source).restriction(raw, "")
+
+
+def individual_to_mapping(individual: Individual) -> dict[str, Any]:
+    """One `individuals` entry, empty keys left out."""
+    return _individual(individual)
+
+
+def individual_from_mapping(raw: Any, source: str) -> Individual:
+    """An `individuals` entry, read as strictly as in a model file.
+
+    Raises:
+        ModelError: if the entry breaks the format.
+    """
+    return _Reader(source).individual(raw, "")
+
+
+def imports_to_mapping(imports: tuple[Import, ...]) -> list[dict[str, Any]]:
+    """An `imports` list: each import's path, as the importing file names it."""
+    return [{"path": i.path} for i in imports]
+
+
+def imports_from_mapping(raw: Any, source: str, resolver: ImportResolver | None) -> tuple[Import, ...]:
+    """An `imports` list read as strictly as in a model file, each path resolved by `resolver`.
+
+    Raises:
+        ModelError: if the list breaks the format; `unknown_model` if it names
+            a path and `resolver` is None; whatever `resolver` raises.
+    """
+    reader = _Reader(source, resolver)
+    return reader.resolve(reader.imports({"imports": raw}))
+
+
+def check_imports(model: HygmModel) -> None:
+    """Refuse `model` unless every type and individual its imports declare is in it, unchanged (4.12).
+
+    Raises:
+        ModelError: `duplicate_label` or `duplicate_individual`, naming what changed or is missing.
+    """
+    _own_types(model)
+
+
 def check_profile(profile: str, settings: Any, level: str, source: str) -> None:
     """Check one profile's settings at `level` ("model", "node", "relation" or "property") as a model file would.
 
@@ -258,7 +325,7 @@ def _v2_mapping(model: HygmModel) -> dict[str, Any]:
     if model.ontology is not None:
         out["ontology"] = _ontology(model.ontology)
     if model.imports:
-        out["imports"] = [{"path": i.path} for i in model.imports]
+        out["imports"] = imports_to_mapping(model.imports)
     out["node_types"] = [_v2_node(t, model) for t in nodes]
     if relations:
         out["relation_types"] = [_v2_relation(r) for r in relations]
@@ -521,36 +588,31 @@ class _Reader:
         )
 
     def individuals(self, raw: dict) -> tuple[Individual, ...]:
-        found = []
-        for index, item in enumerate(self.listed(raw, "individuals")):
-            where = f"individuals[{index}]"
-            if (
-                not isinstance(item, dict)
-                or not isinstance(item.get("id"), str)
-                or not isinstance(item.get("type"), str)
-            ):
-                raise self.fail("invalid_format", where, "must be a mapping with string 'id' and 'type'")
-            self.known(item, _INDIVIDUAL, where)
-            properties = item.get("properties", {})
-            if not isinstance(properties, dict):
-                raise self.fail("invalid_format", where, "properties must map property names to values")
-            relations = item.get("relations", {})
-            if not isinstance(relations, dict) or not all(
-                isinstance(targets, list) and all(isinstance(t, str) for t in targets) for targets in relations.values()
-            ):
-                raise self.fail("invalid_format", where, "relations must map relation types to lists of individual ids")
-            found.append(
-                self.build(
-                    Individual,
-                    where,
-                    item["id"],
-                    item["type"],
-                    iri=self.optional_string(item, "iri", where),
-                    properties=properties,
-                    relations=relations,
-                )
-            )
-        return tuple(found)
+        return tuple(
+            self.individual(item, f"individuals[{index}]") for index, item in enumerate(self.listed(raw, "individuals"))
+        )
+
+    def individual(self, item: Any, where: str) -> Individual:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not isinstance(item.get("type"), str):
+            raise self.fail("invalid_format", where, "must be a mapping with string 'id' and 'type'")
+        self.known(item, _INDIVIDUAL, where)
+        properties = item.get("properties", {})
+        if not isinstance(properties, dict):
+            raise self.fail("invalid_format", where, "properties must map property names to values")
+        relations = item.get("relations", {})
+        if not isinstance(relations, dict) or not all(
+            isinstance(targets, list) and all(isinstance(t, str) for t in targets) for targets in relations.values()
+        ):
+            raise self.fail("invalid_format", where, "relations must map relation types to lists of individual ids")
+        return self.build(
+            Individual,
+            where,
+            item["id"],
+            item["type"],
+            iri=self.optional_string(item, "iri", where),
+            properties=properties,
+            relations=relations,
+        )
 
     def resolve(self, paths: tuple[str, ...]) -> tuple[Import, ...]:
         """Each import with its model (4.12); with no resolver, a model that imports is `unknown_model`."""
@@ -657,23 +719,23 @@ class _Reader:
         )
 
     def restrictions(self, item: dict, where: str) -> tuple[RelationRestriction, ...]:
-        found = []
-        for index, raw in enumerate(self.listed(item, "relation_restrictions", where=where)):
-            at = f"{where} relation_restrictions[{index}]"
-            if not isinstance(raw, dict) or not isinstance(raw.get("relation"), str):
-                raise self.fail("invalid_format", at, "must be a mapping with a string 'relation'")
-            self.known(raw, _RESTRICTION, at)
-            found.append(
-                self.build(
-                    RelationRestriction,
-                    at,
-                    raw["relation"],
-                    end_labels=self.labels(raw, "end_labels", at) if "end_labels" in raw else None,
-                    min_count=self.count(raw, "min_count", at, nullable=False),
-                    max_count=self.count(raw, "max_count", at, nullable=False),
-                )
-            )
-        return tuple(found)
+        return tuple(
+            self.restriction(raw, f"{where} relation_restrictions[{index}]")
+            for index, raw in enumerate(self.listed(item, "relation_restrictions", where=where))
+        )
+
+    def restriction(self, raw: Any, at: str) -> RelationRestriction:
+        if not isinstance(raw, dict) or not isinstance(raw.get("relation"), str):
+            raise self.fail("invalid_format", at, "must be a mapping with a string 'relation'")
+        self.known(raw, _RESTRICTION, at)
+        return self.build(
+            RelationRestriction,
+            at,
+            raw["relation"],
+            end_labels=self.labels(raw, "end_labels", at) if "end_labels" in raw else None,
+            min_count=self.count(raw, "min_count", at, nullable=False),
+            max_count=self.count(raw, "max_count", at, nullable=False),
+        )
 
     def relation(self, item: Any, where: str, allowed: set[str]) -> RelationType:
         label, description = self.labeled(item, where)
