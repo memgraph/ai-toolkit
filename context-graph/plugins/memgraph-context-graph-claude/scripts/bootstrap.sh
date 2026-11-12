@@ -16,7 +16,7 @@ EOF
 fi
 
 # --python: uv otherwise takes the first Python it finds, often Apple's 3.9, which the packages refuse.
-uv tool install --python 3.12 "memgraph-context-graph[mcp]>=0.13.0" \
+uv tool install --python 3.12 "memgraph-context-graph[mcp]>=0.13.1" \
   --with "skills-graph[memgraph-context-graph]>=0.4.0" \
   --with "actions-graph[memgraph-context-graph]>=0.7.1" \
   --with "sessions-graph[memgraph-context-graph]>=0.12.4" \
