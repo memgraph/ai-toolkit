@@ -13,6 +13,10 @@ from hygm import (
     Property,
     RelationType,
     RenameNodeType,
+    SetAbstract,
+    SetDisjointWith,
+    SetNames,
+    SetSynonyms,
     apply,
     diff,
     model_from_mapping,
@@ -139,15 +143,22 @@ def test_the_new_keys_round_trip_and_need_version_2():
         assert needs_version_2(HygmModel(node_types=(minimal,)))
 
 
-def test_diff_refuses_a_changed_axiom_but_an_added_type_carries_its_axioms():
+def test_diff_sets_a_changed_axiom_and_an_added_type_carries_its_axioms():
     a = _wines()
-    b = replace(a, node_types=tuple(replace(t, abstract=False) if t.label == "Wine" else t for t in a.node_types))
+    changed = {
+        "Wine": {"abstract": False, "synonyms": ("vino",), "names": {"fr": "Vin"}},
+        "RedWine": {"disjoint_with": ()},
+    }
+    b = replace(a, node_types=tuple(replace(t, **changed.get(t.label, {})) for t in a.node_types))
     c = replace(a, node_types=(*a.node_types, NodeType("Tawny", parents=("Port",), synonyms=("aged_port",))))
 
-    with pytest.raises(ModelError, match="abstract") as raised:
-        diff(a, b)
-
-    assert raised.value.codes == ("unknown_operation",)
+    assert diff(a, b) == (
+        SetAbstract("Wine", False),
+        SetSynonyms("node", "Wine", ("vino",)),
+        SetNames("node", "Wine", {"fr": "Vin"}),
+        SetDisjointWith("RedWine", ()),
+    )
+    assert apply(a, diff(a, b)) == b
     assert apply(a, diff(a, c)) == c
 
 

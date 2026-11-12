@@ -628,7 +628,9 @@ relations:
   `graph` binding reads the source's nodes of that label. `properties`
   binds model properties to columns, optionally with a JSON `path` into a
   `json` column. Only declared properties may be bound, with a compatible
-  type (4.6).
+  type (4.6). A property the bound type forbids (`max_count: 0`, 4.15)
+  counts as undeclared; a multi-valued one is bound to a column holding
+  the list.
 - **One type, several sources.** A type bound in more than one source must
   have a `key`; nodes with equal key values are one entity, as a
   migration's `MERGE` would make them.
@@ -641,7 +643,8 @@ relations:
 - **Labels follow the model.** A mapping never declares labels. A bound
   node carries its type and its ancestors' labels (4.7).
 - **Endpoints conform.** Every binding's endpoint types are admitted by the
-  relation type's `start_labels` and `end_labels`.
+  relation type's `start_labels` and `end_labels`, and the end type by the
+  start type's relation restrictions too (4.16).
 
 ### 6.3 Text is not mapped
 
@@ -677,8 +680,9 @@ idempotent. hygm computes it; it is not a file format.
 | a property's `type` | a data type constraint (`IS TYPED`) |
 | `values` | an enum, and the property typed with it |
 | `parents` | the ancestor labels every write sets |
-| a multi-valued property | a `LIST` type constraint where Memgraph has one; no per-element type |
-| `minimum`/`maximum`, `max_count`, `disjoint_with`, `value` | nothing: Memgraph can't enforce them; consumers that write data check them |
+| a multi-valued property | a `LIST` type constraint where Memgraph has one; no per-element type, so the elements' type and `values` go unchecked |
+| a subtype refining an inherited property (4.15) | what the refinement adds, on the subtype's label: an existence constraint when it makes the property required. Type, enum and list constraints stay on the declaring type's label, which the subtype's nodes carry |
+| `minimum`/`maximum`, `max_count`, `value`, `abstract`, `disjoint_with`, relation facets and restrictions | nothing: Memgraph can't enforce them; consumers that write data check them |
 | `individuals` | `MERGE` statements seeding them, only when the caller asks |
 | a mapping's `join` relation | an index on each endpoint's join property |
 
@@ -721,7 +725,7 @@ Every reader of a model checks, as critical errors:
 A mapping reader also checks section 6.2. A profile's consumer also checks
 that profile's rules.
 
-Each error has a **code** from the table below and a message for people. Applying an operation (layer 6) to a model it doesn't fit reuses the layer-1 codes (`unknown_type`, `undeclared_property`, `duplicate_label`, `duplicate_property`).
+Each error has a **code** from the table below and a message for people. Applying an operation (layer 6) to a model it doesn't fit reuses the layer-1 codes (`unknown_type`, `undeclared_property`, `duplicate_label`, `duplicate_property`, `unknown_individual`, `duplicate_individual`).
 Readers emit the same codes; their messages are their own. A file with
 several problems may report any non-empty subset of them, so a conformance
 fixture holds exactly one problem.
@@ -851,10 +855,24 @@ schema grows a column. Today sessions-graph's `Change` and sql2graph's
   of versions.
 - **Data migration is the consumer's.** hygm says what changed; moving the
   data is sessions-graph's or sql2graph's job.
-- **Every key has an operation.** The keys of 4.11–4.17 (the `ontology`
-  block, imports, `abstract`, `disjoint_with`, names, facets, relation facets
-  and restrictions, individuals) each get a `set_*` or add/remove operation,
-  so `diff` and `apply` cover the whole model.
+- **Every key has an operation.** The keys of 4.11–4.17 each have one, so
+  `diff` and `apply` cover the whole model:
+
+  | Key | Operation |
+  |---|---|
+  | `ontology` | `set_ontology` (null clears it) |
+  | `imports` | `set_imports`, written as their paths |
+  | `abstract`, `disjoint_with`, `relation_restrictions` | `set_abstract`, `set_disjoint_with`, `set_relation_restrictions` |
+  | `synonyms`, `names` of a node or relation type | `set_synonyms`, `set_names` |
+  | a relation type's `min_count` and `max_count` | `set_relation_counts`, both at once |
+  | `inverse_of`, `symmetric` | `set_inverse`, `set_symmetric` |
+  | property facets, synonyms and names | `set_property`, which sets the whole property |
+  | `individuals` | `add_individual`, `remove_individual`, `set_individual`, `order_individuals` |
+
+  `set_imports` changes only which models are imported. The types and
+  individuals an import declares come and go through their own operations,
+  and a result that lacks or changes one is refused (`duplicate_label`,
+  `duplicate_individual`), as when writing it (4.12).
 
 Storing a version-2 model in a user's graph is a change older
 sessions-graph clients would misread, since today they ignore unknown keys.

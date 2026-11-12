@@ -6,21 +6,42 @@ field, embedded types written as version-2 model entries. Reading is as
 strict as reading a model file: an unknown ``op`` or key is refused.
 """
 
-from collections.abc import Mapping
-from dataclasses import MISSING, dataclass, field, fields
-from typing import Any, ClassVar, Literal
+from collections.abc import Callable, Mapping
+from dataclasses import MISSING, Field, dataclass, field, fields
+from types import UnionType
+from typing import Any, ClassVar, Literal, get_args, get_origin
 
 from ..errors import ModelError
 from ..format import (
+    ImportResolver,
     check_profile,
+    imports_from_mapping,
+    imports_to_mapping,
+    individual_from_mapping,
+    individual_to_mapping,
     node_type_from_mapping,
     node_type_to_mapping,
+    ontology_from_mapping,
+    ontology_to_mapping,
     property_from_mapping,
     property_to_mapping,
     relation_type_from_mapping,
     relation_type_to_mapping,
+    restriction_from_mapping,
+    restriction_to_mapping,
 )
-from ..types import NodeType, Property, RelationType, _identifier
+from ..types import (
+    Import,
+    Individual,
+    NodeType,
+    Ontology,
+    Property,
+    RelationRestriction,
+    RelationType,
+    _count,
+    _identifier,
+    _names,
+)
 
 Kind = Literal["node", "relation"]
 ProfileLevel = Literal["model", "node", "relation"]
@@ -28,11 +49,16 @@ ProfileLevel = Literal["model", "node", "relation"]
 _KINDS: tuple[str, ...] = ("node", "relation")
 
 
-def _labels(owner: object, attribute: str) -> None:
+def _tuple(owner: object, attribute: str) -> None:
     value = getattr(owner, attribute)
     if isinstance(value, str):
         raise TypeError(f"{type(owner).__name__}: {attribute} must be a tuple, not a string")
     object.__setattr__(owner, attribute, tuple(value))
+
+
+def _boolean(owner: object, attribute: str) -> None:
+    if not isinstance(getattr(owner, attribute), bool):
+        raise ModelError("invalid_format", f"{type(owner).__name__}: {attribute} must be true or false")
 
 
 def _kind(kind: str, allowed: tuple[str, ...] = _KINDS) -> None:
@@ -238,7 +264,7 @@ class SetParents:
 
     def __post_init__(self) -> None:
         _identifier(self.label, "node label")
-        _labels(self, "parents")
+        _tuple(self, "parents")
 
 
 @dataclass(frozen=True)
@@ -251,7 +277,7 @@ class SetKey:
 
     def __post_init__(self) -> None:
         _identifier(self.label, "node label")
-        _labels(self, "key")
+        _tuple(self, "key")
 
 
 @dataclass(frozen=True)
@@ -265,8 +291,8 @@ class SetEndpoints:
 
     def __post_init__(self) -> None:
         _identifier(self.label, "relation type")
-        _labels(self, "start_labels")
-        _labels(self, "end_labels")
+        _tuple(self, "start_labels")
+        _tuple(self, "end_labels")
 
 
 @dataclass(frozen=True)
@@ -314,7 +340,7 @@ class OrderNodeTypes:
     labels: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        _labels(self, "labels")
+        _tuple(self, "labels")
 
 
 @dataclass(frozen=True)
@@ -325,7 +351,7 @@ class OrderRelationTypes:
     labels: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        _labels(self, "labels")
+        _tuple(self, "labels")
 
 
 @dataclass(frozen=True)
@@ -340,7 +366,187 @@ class OrderProperties:
     def __post_init__(self) -> None:
         _kind(self.kind)
         _identifier(self.label, f"{self.kind} label")
-        _labels(self, "names")
+        _tuple(self, "names")
+
+
+@dataclass(frozen=True)
+class SetOntology:
+    """Set, or with None clear, the model's `ontology` block (4.11)."""
+
+    op: ClassVar[str] = "set_ontology"
+    ontology: Ontology | None
+
+
+@dataclass(frozen=True)
+class SetImports:
+    """Set the models this one builds on (4.12).
+
+    Only the record changes. The types and individuals an import declares
+    come and go through their own operations, and apply() refuses a result
+    that lacks or changes one an import declares.
+    """
+
+    op: ClassVar[str] = "set_imports"
+    imports: tuple[Import, ...]
+
+    def __post_init__(self) -> None:
+        _tuple(self, "imports")
+
+
+@dataclass(frozen=True)
+class SetAbstract:
+    """Set whether node type `label` is abstract (4.13)."""
+
+    op: ClassVar[str] = "set_abstract"
+    label: str
+    abstract: bool
+
+    def __post_init__(self) -> None:
+        _identifier(self.label, "node label")
+        _boolean(self, "abstract")
+
+
+@dataclass(frozen=True)
+class SetDisjointWith:
+    """Set the types node type `label` is declared disjoint with (4.13)."""
+
+    op: ClassVar[str] = "set_disjoint_with"
+    label: str
+    disjoint_with: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _identifier(self.label, "node label")
+        _tuple(self, "disjoint_with")
+
+
+@dataclass(frozen=True)
+class SetSynonyms:
+    """Set the synonyms of the `kind` type `label` (4.13)."""
+
+    op: ClassVar[str] = "set_synonyms"
+    kind: Kind
+    label: str
+    synonyms: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _kind(self.kind)
+        _identifier(self.label, f"{self.kind} label")
+        _tuple(self, "synonyms")
+
+
+@dataclass(frozen=True)
+class SetNames:
+    """Set the display names, by language tag, of the `kind` type `label` (4.13)."""
+
+    op: ClassVar[str] = "set_names"
+    kind: Kind
+    label: str
+    names: Mapping[str, str] = field(hash=False)
+
+    def __post_init__(self) -> None:
+        _kind(self.kind)
+        _identifier(self.label, f"{self.kind} label")
+        _names(self, f"Operation {self.op}")
+
+
+@dataclass(frozen=True)
+class SetRelationRestrictions:
+    """Set how node type `label` narrows the relations it starts (4.16)."""
+
+    op: ClassVar[str] = "set_relation_restrictions"
+    label: str
+    relation_restrictions: tuple[RelationRestriction, ...]
+
+    def __post_init__(self) -> None:
+        _identifier(self.label, "node label")
+        _tuple(self, "relation_restrictions")
+
+
+@dataclass(frozen=True)
+class SetRelationCounts:
+    """Set how many relationships of type `label` a start node has (4.16); `max_count` None is no limit.
+
+    Both counts at once, so the pair is never seen half-changed and out of order.
+    """
+
+    op: ClassVar[str] = "set_relation_counts"
+    label: str
+    min_count: int
+    max_count: int | None
+
+    def __post_init__(self) -> None:
+        _identifier(self.label, "relation type")
+        _count(self, "min_count", f"Operation {self.op}", nullable=False)
+        _count(self, "max_count", f"Operation {self.op}", nullable=True)
+        if self.max_count is not None and self.min_count > self.max_count:
+            raise ModelError(
+                "count_conflict", f"Operation {self.op}: min_count {self.min_count} is above max_count {self.max_count}"
+            )
+
+
+@dataclass(frozen=True)
+class SetInverse:
+    """Set, or with None clear, the relation type `label` is the inverse of (4.16)."""
+
+    op: ClassVar[str] = "set_inverse"
+    label: str
+    inverse_of: str | None
+
+    def __post_init__(self) -> None:
+        _identifier(self.label, "relation type")
+        if self.inverse_of is not None:
+            _identifier(self.inverse_of, "relation type")
+
+
+@dataclass(frozen=True)
+class SetSymmetric:
+    """Set whether relation type `label` is symmetric (4.16)."""
+
+    op: ClassVar[str] = "set_symmetric"
+    label: str
+    symmetric: bool
+
+    def __post_init__(self) -> None:
+        _identifier(self.label, "relation type")
+        _boolean(self, "symmetric")
+
+
+@dataclass(frozen=True)
+class AddIndividual:
+    """Add `individual` (4.17). Refused if its id is taken."""
+
+    op: ClassVar[str] = "add_individual"
+    individual: Individual
+
+
+@dataclass(frozen=True)
+class RemoveIndividual:
+    """Drop the individual `id`. Relations naming it are left for validation."""
+
+    op: ClassVar[str] = "remove_individual"
+    id: str
+
+    def __post_init__(self) -> None:
+        _identifier(self.id, "individual id")
+
+
+@dataclass(frozen=True)
+class SetIndividual:
+    """Replace the individual with `individual.id`, in place."""
+
+    op: ClassVar[str] = "set_individual"
+    individual: Individual
+
+
+@dataclass(frozen=True)
+class OrderIndividuals:
+    """Put the individuals in `ids` order; `ids` must name each individual once."""
+
+    op: ClassVar[str] = "order_individuals"
+    ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _tuple(self, "ids")
 
 
 Operation = (
@@ -365,6 +571,20 @@ Operation = (
     | OrderNodeTypes
     | OrderRelationTypes
     | OrderProperties
+    | SetOntology
+    | SetImports
+    | SetAbstract
+    | SetDisjointWith
+    | SetSynonyms
+    | SetNames
+    | SetRelationRestrictions
+    | SetRelationCounts
+    | SetInverse
+    | SetSymmetric
+    | AddIndividual
+    | RemoveIndividual
+    | SetIndividual
+    | OrderIndividuals
 )
 
 OPERATIONS: dict[str, type[Operation]] = {
@@ -391,21 +611,38 @@ OPERATIONS: dict[str, type[Operation]] = {
         OrderNodeTypes,
         OrderRelationTypes,
         OrderProperties,
+        SetOntology,
+        SetImports,
+        SetAbstract,
+        SetDisjointWith,
+        SetSynonyms,
+        SetNames,
+        SetRelationRestrictions,
+        SetRelationCounts,
+        SetInverse,
+        SetSymmetric,
+        AddIndividual,
+        RemoveIndividual,
+        SetIndividual,
+        OrderIndividuals,
     )
 }
 
-_EMBEDDED = {
+#: Fields holding a model file entry, written and read as one: (to_mapping, from_mapping).
+_EMBEDDED: dict[str, tuple[Callable[[Any], Any], Callable[[Any, str], Any]]] = {
     "node_type": (node_type_to_mapping, node_type_from_mapping),
     "relation_type": (relation_type_to_mapping, relation_type_from_mapping),
     "property": (property_to_mapping, property_from_mapping),
+    "individual": (individual_to_mapping, individual_from_mapping),
+    "ontology": (ontology_to_mapping, ontology_from_mapping),
 }
-_LISTS = {"parents", "key", "start_labels", "end_labels", "labels", "names"}
 
 
 def operation_to_mapping(operation: Operation) -> dict[str, Any]:
     """`operation` as the JSON-safe mapping operation_from_mapping() reads back.
 
-    Every field is written, except an optional one left at None.
+    Every field is written, except an optional one left at None. Imports
+    are written as their paths, as in a model file.
     """
     out: dict[str, Any] = {"op": operation.op}
     for spec in fields(operation):
@@ -416,27 +653,35 @@ def operation_to_mapping(operation: Operation) -> dict[str, Any]:
             continue
         if spec.name in _EMBEDDED:
             out[spec.name] = _EMBEDDED[spec.name][0](value)
-        elif spec.name in _LISTS:
+        elif spec.name == "relation_restrictions":
+            out[spec.name] = [restriction_to_mapping(r) for r in value]
+        elif spec.name == "imports":
+            out[spec.name] = imports_to_mapping(value)
+        elif isinstance(value, tuple):
             out[spec.name] = list(value)
-        elif spec.name == "settings":
+        elif isinstance(value, Mapping):
             out[spec.name] = dict(value)
         else:
             out[spec.name] = value
     return out
 
 
-def operation_from_mapping(raw: Any, source: str = "operation") -> Operation:
+def operation_from_mapping(raw: Any, source: str = "operation", resolver: ImportResolver | None = None) -> Operation:
     """An operation from its JSON form.
 
     Args:
         raw: The parsed mapping.
         source: What it was read from, for error messages.
+        resolver: Resolves each path of a `set_imports` operation to its
+            model, as a model file reader's does (4.12).
 
     Raises:
         ModelError: invalid_format for a missing key or a value of the wrong
             JSON type, unknown_operation for an ``op`` hygm doesn't define,
-            unknown_key for a key the operation doesn't define, or the code of
-            an embedded type, property or profile that breaks the format.
+            unknown_key for a key the operation doesn't define,
+            unknown_model for imports and no resolver, or the code of an
+            embedded type, property, restriction, individual, ontology block
+            or profile that breaks the format.
     """
     where = f"Operation {source}"
     if not isinstance(raw, dict) or not isinstance(raw.get("op"), str):
@@ -454,27 +699,43 @@ def operation_from_mapping(raw: Any, source: str = "operation") -> Operation:
             if spec.default is not MISSING:
                 continue
             raise ModelError("invalid_format", f"{where}: {raw['op']} needs {name!r}")
-        values[name] = _field(
-            raw[name], name, nullable=spec.default is None or name in {"iri", "settings"}, where=where
-        )
+        values[name] = _field(raw[name], spec, where, resolver)
     try:
         return kind(**values)
     except ModelError as e:
         raise ModelError(e.codes, f"{where}: {e}") from e
 
 
-def _field(value: Any, name: str, *, nullable: bool, where: str) -> Any:
+def _field(value: Any, spec: Field, where: str, resolver: ImportResolver | None) -> Any:
+    """One field's value from its JSON form, checked against the field's annotation."""
+    name, annotation = spec.name, spec.type
+    nullable = isinstance(annotation, UnionType) and type(None) in get_args(annotation)
     if value is None and nullable:
         return None
     if name in _EMBEDDED:
         return _EMBEDDED[name][1](value, f"{where} {name}")
-    if name in _LISTS:
+    if name == "relation_restrictions":
+        if not isinstance(value, list):
+            raise ModelError("invalid_format", f"{where}: {name} must be a list")
+        return tuple(restriction_from_mapping(item, f"{where} {name}[{i}]") for i, item in enumerate(value))
+    if name == "imports":
+        return imports_from_mapping(value, where, resolver)
+    expected = next(a for a in get_args(annotation) if a is not type(None)) if nullable else annotation
+    if expected == tuple[str, ...]:
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
             raise ModelError("invalid_format", f"{where}: {name} must be a list of strings")
         return tuple(value)
-    if name == "settings":
+    if expected is bool:
+        if not isinstance(value, bool):
+            raise ModelError("invalid_format", f"{where}: {name} must be true or false")
+        return value
+    if expected is int:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ModelError("invalid_format", f"{where}: {name} must be a whole number")
+        return value
+    if get_origin(expected) is Mapping:
         if not isinstance(value, dict):
-            raise ModelError("invalid_format", f"{where}: settings must be a mapping or null")
+            raise ModelError("invalid_format", f"{where}: {name} must be a mapping")
         return value
     if not isinstance(value, str):
         raise ModelError("invalid_format", f"{where}: {name} must be a string")

@@ -267,14 +267,26 @@ assert apply(model, diff(model, changed)) == changed
 - **Settings:** `SetDescription`, `SetIri`, `SetParents`, `SetKey`,
   `SetEndpoints`, `SetProfile` (one profile's settings at the top level, on a
   type or on a property).
-- **Order:** `OrderNodeTypes`, `OrderRelationTypes`, `OrderProperties`.
+- **Ontology keys** (contract 4.11–4.16): `SetOntology`, `SetImports`,
+  `SetAbstract`, `SetDisjointWith`, `SetSynonyms`, `SetNames`,
+  `SetRelationRestrictions`, `SetRelationCounts`, `SetInverse`,
+  `SetSymmetric`. Property facets change through `SetProperty`.
+- **Individuals:** `AddIndividual`, `RemoveIndividual`, `SetIndividual`.
+- **Order:** `OrderNodeTypes`, `OrderRelationTypes`, `OrderProperties`,
+  `OrderIndividuals`.
 
 `apply` validates only the result, so a list may pass through invalid models:
 removing a type leaves what names it for a later operation to change. Renames
 and merges carry through to parents, endpoints, keys and label-valued profile
 settings. An operation that doesn't apply raises `ModelError` with
-`unknown_type`, `undeclared_property`, `duplicate_label`, `duplicate_property`
-or `invalid_operation`; reading an unknown `op` raises `unknown_operation`.
+`unknown_type`, `undeclared_property`, `duplicate_label`, `duplicate_property`,
+`unknown_individual`, `duplicate_individual` or `invalid_operation`; reading an
+unknown `op` raises `unknown_operation`.
+
+`SetImports` changes only which models are imported; the types and
+individuals they declare are added and removed by their own operations, and a
+result missing or changing one is refused. Reading a `set_imports` back from
+JSON takes a `resolver`, as reading a model file with imports does.
 
 `diff(a, b)` can't tell a rename from a removal and an addition, so it emits
 those; a caller that knows better records its own operations. Moving the data

@@ -67,15 +67,20 @@ class Ontology:
                 means writing every ancestor label on each extracted node,
                 which extraction doesn't do yet; refusing beats silently
                 dropping the hierarchy (docs/contract.md, section 8). Also
-                if `model` breaks its `conversation` profile's rule, since
-                the mention resolver re-types a speaker mention that is
-                someone else.
+                if `model` declares an abstract type, which has no direct
+                instances: without a hierarchy no mention could be typed
+                with it. Also if `model` breaks its `conversation`
+                profile's rule, since the mention resolver re-types a
+                speaker mention that is someone else.
         """
         with_parents = [t.label for t in model.node_types if t.parents]
         if with_parents:
             raise ValueError(
                 f"unstructured2graph does not support type hierarchies yet: {with_parents} declare parents"
             )
+        abstract = [t.label for t in model.node_types if t.abstract]
+        if abstract:
+            raise ValueError(f"{abstract} are abstract: extraction types each mention as one type, so never as these")
         problems = validate_for_conversation(model).critical_issues
         if problems:
             raise ValueError("; ".join(issue.message for issue in problems))

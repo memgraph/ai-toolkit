@@ -7,30 +7,56 @@ from pathlib import Path
 
 import pytest
 
-from hygm import HygmModel, ManualStrategy, ModelError, NodeType, Property, RelationType, setting, validate_model
+from hygm import (
+    HygmModel,
+    Individual,
+    ManualStrategy,
+    ModelError,
+    NodeType,
+    Ontology,
+    Property,
+    RelationRestriction,
+    RelationType,
+    setting,
+    validate_model,
+)
 from hygm.evolution import (
     OPERATIONS,
+    AddIndividual,
     AddNodeType,
     AddProperty,
     AddRelationType,
     MergeNodeTypes,
     MergeRelationTypes,
+    OrderIndividuals,
     OrderNodeTypes,
     OrderProperties,
     OrderRelationTypes,
+    RemoveIndividual,
     RemoveNodeType,
     RemoveProperty,
     RemoveRelationType,
     RenameNodeType,
     RenameProperty,
     RenameRelationType,
+    SetAbstract,
     SetDescription,
+    SetDisjointWith,
     SetEndpoints,
+    SetImports,
+    SetIndividual,
+    SetInverse,
     SetIri,
     SetKey,
+    SetNames,
+    SetOntology,
     SetParents,
     SetProfile,
     SetProperty,
+    SetRelationCounts,
+    SetRelationRestrictions,
+    SetSymmetric,
+    SetSynonyms,
     apply,
     diff,
     operation_from_mapping,
@@ -87,6 +113,11 @@ def _node(rng: random.Random, label: str, earlier: list[str]) -> NodeType:
         key=(rng.choice(required),) if required and rng.random() < 0.5 else (),
         iri=rng.choice([None, f"http://example.org/{label}"]),
         profiles=profiles,
+        abstract=rng.random() < 0.15,
+        disjoint_with=(rng.choice(earlier),) if earlier and rng.random() < 0.15 else (),
+        synonyms=rng.choice([(), (f"{label.lower()}_alias",)]),
+        names=rng.choice([{}, {"fr": label.upper()}]),
+        relation_restrictions=(RelationRestriction(rng.choice(RELATIONS), min_count=1),) if rng.random() < 0.1 else (),
     )
 
 
@@ -100,14 +131,22 @@ def _relation(rng: random.Random, label: str, nodes: list[str]) -> RelationType:
     def side() -> tuple[str, ...]:
         return tuple(rng.sample(nodes, rng.randint(0, min(2, len(nodes)))))
 
+    start, end = side(), side()
+    symmetric = rng.random() < 0.1
     return RelationType(
         label,
         description=rng.choice(["", f"{label} fact"]),
-        start_labels=side(),
-        end_labels=side(),
+        start_labels=start,
+        end_labels=start if symmetric else end,
         properties=tuple(_property(rng, name) for name in rng.sample(PROPERTIES, rng.randint(0, 2))),
         iri=rng.choice([None, f"http://example.org/{label}"]),
         profiles=rng.choice([{}, {"x_weight": {"w": 1}}]),
+        synonyms=rng.choice([(), (f"{label}_alias",)]),
+        names=rng.choice([{}, {"en": label.replace("_", " ")}]),
+        min_count=rng.choice([0, 0, 1]),
+        max_count=rng.choice([None, None, 1, 3]),
+        inverse_of=rng.choice(RELATIONS) if not symmetric and rng.random() < 0.1 else None,
+        symmetric=symmetric,
     )
 
 
@@ -120,7 +159,18 @@ def _model(rng: random.Random) -> HygmModel:
         profiles = {}
         if len(labels) >= 2 and rng.random() < 0.5:
             profiles["conversation"] = {"speaker": labels[0], "other_person": labels[1]}
-        model = HygmModel(node_types=tuple(nodes), relation_types=tuple(relations), profiles=profiles)
+        concrete = [node.label for node in nodes if not node.abstract and not node.relation_restrictions]
+        individuals = [
+            Individual(f"i{index}", rng.choice(concrete), iri=rng.choice([None, f"http://example.org/i{index}"]))
+            for index in range(rng.randint(0, 3) if concrete else 0)
+        ]
+        model = HygmModel(
+            node_types=tuple(nodes),
+            relation_types=tuple(relations),
+            profiles=profiles,
+            ontology=rng.choice([None, Ontology(name="random", competency_questions=("Who works where?",))]),
+            individuals=tuple(individuals),
+        )
         if validate_model(model).success:
             return model
 
@@ -133,6 +183,10 @@ def _perturbed(rng: random.Random, model: HygmModel) -> HygmModel:
         lambda m: replace(m, node_types=m.node_types[1:]),
         lambda m: replace(m, relation_types=m.relation_types[:-1]),
         lambda m: replace(m, profiles={}),
+        lambda m: replace(m, ontology=None if m.ontology else Ontology(name="changed")),
+        lambda m: replace(m, individuals=m.individuals[1:]),
+        lambda m: replace(m, individuals=tuple(reversed(m.individuals))),
+        lambda m: replace(m, individuals=tuple(replace(i, iri="http://example.org/moved") for i in m.individuals)),
     ]
 
     def edit_node(m: HygmModel) -> HygmModel:
@@ -150,6 +204,10 @@ def _perturbed(rng: random.Random, model: HygmModel) -> HygmModel:
                 replace(node, profiles={"learning": {"catch_all": True}}),
                 replace(node, iri=None),
                 replace(node, parents=()),
+                replace(node, abstract=not node.abstract),
+                replace(node, disjoint_with=()),
+                replace(node, synonyms=(), names={"de": node.label}),
+                replace(node, relation_restrictions=()),
             ]
         )
         return replace(m, node_types=(*m.node_types[:index], node, *m.node_types[index + 1 :]))
@@ -163,6 +221,8 @@ def _perturbed(rng: random.Random, model: HygmModel) -> HygmModel:
                 replace(relation, start_labels=(), end_labels=relation.start_labels),
                 replace(relation, description="changed", profiles={}),
                 replace(relation, properties=tuple(rng.sample(relation.properties, len(relation.properties)))),
+                replace(relation, min_count=0, max_count=None, inverse_of=None),
+                replace(relation, symmetric=False, synonyms=(), names={}),
             ]
         )
         return replace(m, relation_types=tuple(changed if r is relation else r for r in m.relation_types))
@@ -178,12 +238,17 @@ def _perturbed(rng: random.Random, model: HygmModel) -> HygmModel:
 def _pairs() -> list[tuple[HygmModel, HygmModel]]:
     rng = random.Random(704)
     conversational, shop = _fixture("v2-conversation-profiles.yaml"), _fixture("v2-shop.yaml")
+    importing, individuals = _fixture("v2-imports-diamond.yaml"), _fixture("v2-individuals-imported.yaml")
     pairs = [
         (HygmModel(node_types=()), conversational),
         (conversational, HygmModel(node_types=())),
         (conversational, conversational),
         (conversational, shop),
         (_fixture("v1-identity-and-endpoints.yaml"), conversational),
+        (shop, importing),
+        (importing, individuals),
+        (individuals, HygmModel(node_types=())),
+        (_fixture("v2-relation-facets.yaml"), _fixture("v2-narrowing.yaml")),
     ]
     for _ in range(150):
         a = _model(rng)
@@ -195,9 +260,13 @@ def _pairs() -> list[tuple[HygmModel, HygmModel]]:
 @pytest.mark.parametrize("a, b", _pairs())
 def test_applying_the_diff_of_two_models_gives_the_second(a, b):
     operations = diff(a, b)
+    imported = {i.path: i.model for i in (*a.imports, *b.imports)}
 
     assert apply(a, operations) == b
-    assert all(operation_from_mapping(json.loads(json.dumps(operation_to_mapping(op)))) == op for op in operations)
+    assert all(
+        operation_from_mapping(json.loads(json.dumps(operation_to_mapping(op))), resolver=imported.__getitem__) == op
+        for op in operations
+    )
 
 
 def test_a_model_diffed_against_itself_is_no_operations():
@@ -240,6 +309,22 @@ EVERY_OPERATION = (
     OrderNodeTypes(("Person", "Org")),
     OrderRelationTypes(("works_at",)),
     OrderProperties("node", "Org", ("name", "founded")),
+    SetOntology(Ontology(name="shop", includes=("orders",), competency_questions=("Who ordered what?",))),
+    SetOntology(None),
+    SetImports(()),
+    SetAbstract("Org", True),
+    SetDisjointWith("Org", ("Person",)),
+    SetSynonyms("relation", "works_at", ("employed_at",)),
+    SetNames("node", "Org", {"en": "Organization", "fr": "Organisation"}),
+    SetRelationRestrictions("Org", (RelationRestriction("works_at", ("Team",), 1, 2),)),
+    SetRelationCounts("works_at", 0, None),
+    SetInverse("works_at", "employs"),
+    SetInverse("works_at", None),
+    SetSymmetric("knows", True),
+    AddIndividual(Individual("acme", "Org", properties={"name": "Acme"}, relations={"owns": ("x",)})),
+    RemoveIndividual("acme"),
+    SetIndividual(Individual("acme", "Org", iri="http://example.org/acme")),
+    OrderIndividuals(("acme", "globex")),
 )
 
 
@@ -306,6 +391,20 @@ def test_the_json_form_is_flat_and_embeds_model_file_entries():
         ),
         ({"op": "set_profile", "profile": "learning", "settings": {}, "kind": "node"}, "invalid_format"),
         ({"op": "set_profile", "profile": "conversation", "settings": {}, "label": "Org"}, "invalid_format"),
+        ({"op": "set_abstract", "label": "Org", "abstract": "yes"}, "invalid_format"),
+        ({"op": "set_relation_counts", "label": "r", "min_count": 2, "max_count": 1}, "count_conflict"),
+        ({"op": "set_relation_counts", "label": "r", "min_count": True, "max_count": None}, "invalid_format"),
+        ({"op": "set_relation_counts", "label": "r", "min_count": -1, "max_count": None}, "invalid_format"),
+        ({"op": "set_names", "kind": "node", "label": "Org", "names": {"en_US": "Org"}}, "invalid_format"),
+        ({"op": "set_names", "kind": "node", "label": "Org", "names": ["Org"]}, "invalid_format"),
+        ({"op": "set_inverse", "label": "r", "inverse_of": "9r"}, "invalid_identifier"),
+        ({"op": "set_ontology", "ontology": {"name": "x", "owner": "me"}}, "unknown_key"),
+        (
+            {"op": "set_relation_restrictions", "label": "Org", "relation_restrictions": [{"end_labels": []}]},
+            "invalid_format",
+        ),
+        ({"op": "add_individual", "individual": {"id": "acme"}}, "invalid_format"),
+        ({"op": "set_imports", "imports": [{"path": "a.yaml", "as": "a"}]}, "unknown_key"),
     ],
 )
 def test_a_malformed_operation_is_refused_with_its_code(raw, code):
@@ -351,6 +450,12 @@ BASE = HygmModel(
         (SetProfile("x_note", {}, "node", "Org", "colour"), "undeclared_property"),
         (OrderNodeTypes(("User", "Person", "Org")), "invalid_operation"),
         (OrderProperties("node", "Org", ("size", "size")), "invalid_operation"),
+        (SetAbstract("Planet", True), "unknown_type"),
+        (SetRelationCounts("likes", 0, 1), "unknown_type"),
+        (SetSynonyms("relation", "likes", ()), "unknown_type"),
+        (RemoveIndividual("acme"), "unknown_individual"),
+        (SetIndividual(Individual("acme", "Org")), "unknown_individual"),
+        (OrderIndividuals(("acme",)), "invalid_operation"),
     ],
 )
 def test_an_operation_that_does_not_apply_is_refused_with_its_code(op, code):
@@ -358,6 +463,13 @@ def test_an_operation_that_does_not_apply_is_refused_with_its_code(op, code):
         apply(BASE, [op])
     assert refused.value.code == code
     assert f"({op.op})" in str(refused.value)
+
+
+def test_an_individual_id_is_added_once():
+    add = AddIndividual(Individual("ada", "Person"))
+    with pytest.raises(ModelError) as refused:
+        apply(BASE, [add, add])
+    assert refused.value.code == "duplicate_individual"
 
 
 def test_the_result_is_validated_once_after_every_operation():
