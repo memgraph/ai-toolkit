@@ -796,11 +796,17 @@ element it is about and a suggestion. `hygm lint` prints them, and
 | `sibling_naming` | info | Siblings where some repeat the parent's name and some don't (`RedWine` beside `White`). |
 | `missing_description` | warning | A type, relation type or property with an empty description. |
 | `no_competency_questions` | info | No `ontology.competency_questions`. |
-| `unused_type` | info | A node type no relation names, no type inherits from and no individual has. |
+| `unused_type` | info | A node type no relation names (directly or through an ancestor), no type inherits from, no profile setting names and no individual has. |
 | `inverse_not_declared` | info | Two relation types with swapped endpoints and names like `maker`/`produces` that aren't declared inverse. Heuristic. |
 
 A consumer that wants a gate on top of lint builds it from the codes. hygm
-never does.
+never does. The naming checks are English heuristics: `plural_of_parent`
+and `naming_number` read a label's last word by simple plural rules.
+
+The `hygm` command line wraps the layers for files: `hygm validate <file>`,
+`hygm lint <file>`, `hygm convert <in> <out>` (model file or OWL, by suffix)
+and `hygm diff <a> <b>` (the operations, as JSON). It exits 1 only when a
+model fails validation; lint findings never fail it.
 
 ## 10. OWL import and export
 

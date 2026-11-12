@@ -46,6 +46,7 @@ from .evolution import (
 )
 from .format import ImportResolver, model_schema, needs_version_2
 from .identifiers import CYPHER_IDENTIFIER_PATTERN, is_valid_identifier, require_valid_identifier
+from .lint import LINT_CODES, Finding, lint_model
 from .mapping import (
     SOURCE_KINDS,
     BindingKind,
@@ -130,6 +131,7 @@ __all__ = [
     "CASES",
     "CYPHER_IDENTIFIER_PATTERN",
     "IDENTITIES",
+    "LINT_CODES",
     "MEMGRAPH_TYPES",
     "NUMBERS",
     "OPERATIONS",
@@ -144,6 +146,7 @@ __all__ = [
     "BindingKind",
     "ColumnEndpoint",
     "Conventions",
+    "Finding",
     "GraphRef",
     "HygmModel",
     "ImpliedProfiles",
@@ -222,6 +225,7 @@ __all__ = [
     "has_version_1_profiles",
     "is_valid_identifier",
     "labels_for",
+    "lint_model",
     "load_mapping",
     "mapping_from_mapping",
     "mapping_schema",
