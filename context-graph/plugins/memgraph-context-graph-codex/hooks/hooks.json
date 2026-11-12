@@ -6,8 +6,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run codex",
-            "timeout": 30
+            "command": "if command -v memgraph-context-graph >/dev/null 2>&1; then memgraph-context-graph hook run codex; else echo 'AI Memory (the context-graph plugin) is installed, but the memgraph-context-graph tool its hooks call is not, so this session is not recorded and past sessions cannot be recalled. Tell the user, and offer to set it up with the setup skill that comes with the plugin.'; fi",
+            "timeout": 30,
+            "commandWindows": "memgraph-context-graph hook run codex"
           }
         ]
       }
@@ -17,8 +18,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run codex",
-            "timeout": 30
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run codex",
+            "timeout": 30,
+            "commandWindows": "memgraph-context-graph hook run codex"
           }
         ]
       }
@@ -29,8 +31,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run codex",
-            "timeout": 30
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run codex",
+            "timeout": 30,
+            "commandWindows": "memgraph-context-graph hook run codex"
           }
         ]
       }
@@ -41,8 +44,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run codex",
-            "timeout": 30
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run codex",
+            "timeout": 30,
+            "commandWindows": "memgraph-context-graph hook run codex"
           }
         ]
       }
@@ -52,8 +56,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run codex",
-            "timeout": 30
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run codex",
+            "timeout": 30,
+            "commandWindows": "memgraph-context-graph hook run codex"
           }
         ]
       }
@@ -63,8 +68,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run codex",
-            "timeout": 30
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run codex",
+            "timeout": 30,
+            "commandWindows": "memgraph-context-graph hook run codex"
           }
         ]
       }
@@ -74,8 +80,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run codex --deadline 1.5",
-            "timeout": 3
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run codex --deadline 1.5",
+            "timeout": 3,
+            "commandWindows": "memgraph-context-graph hook run codex --deadline 1.5"
           }
         ]
       }

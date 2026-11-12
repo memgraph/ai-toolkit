@@ -15,10 +15,10 @@ The plugin only installs runtime hook wiring. It must not assign graph meaning. 
 
 ## Checks
 
-For first-time setup, run the plugin bootstrap once. It installs the CLI and runs `memgraph-context-graph setup claude-code --no-tui`, which finds or starts Memgraph, sets the user's identity and checks the hooks:
+For first-time setup, for example when the session started with a note that the `memgraph-context-graph` tool isn't installed, run the plugin bootstrap once. It installs the CLI with uv and runs `memgraph-context-graph setup claude-code --no-tui`, which finds or starts Memgraph (in Docker by default), sets the user's identity and checks the hooks. Ask the user first: it installs software and may start a container. The script is `scripts/bootstrap.sh` in this plugin's folder, two levels above this skill's folder:
 
 ```bash
-./scripts/bootstrap.sh
+bash <this plugin's folder>/scripts/bootstrap.sh
 ```
 
 If setup reports a failure, show the user its "To fix" line; it is the exact command to run next.

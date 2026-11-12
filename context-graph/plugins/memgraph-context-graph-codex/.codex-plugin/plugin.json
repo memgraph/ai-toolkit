@@ -14,7 +14,7 @@
   "interface": {
     "displayName": "Context Graph",
     "shortDescription": "Send Codex lifecycle events to Memgraph Context Graph and recall past sessions.",
-    "longDescription": "Installs Codex lifecycle hooks that call the Memgraph Context Graph hook CLI, allowing graph connectors such as Skills Graph to persist useful runtime context in Memgraph.",
+    "longDescription": "Installs Codex lifecycle hooks that call the Memgraph Context Graph hook CLI, allowing graph connectors such as Skills Graph to persist useful runtime context in Memgraph. Needs the memgraph-context-graph tool: run the AI Memory setup (https://memgraph.com/docs/ai-ecosystem/ai-memory/get-started) or the plugin's setup skill.",
     "developerName": "Memgraph",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
