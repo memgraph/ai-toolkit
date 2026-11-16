@@ -9,13 +9,13 @@ authors = [
   { name = "antejavor", email = "ante.javor@memgraph.io" }
 ]
 
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 
 keywords = ["memgraph", "mcp", "graph", "integration", "toolkit"]
 
 classifiers = [
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: Apache Software License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.13",
 ]

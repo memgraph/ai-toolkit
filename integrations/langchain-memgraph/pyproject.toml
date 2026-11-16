@@ -4,7 +4,7 @@ version = "0.1.17"
 description = "An integration package connecting Memgraph and LangChain"
 authors = [{ name = "Ante Javor", email = "ante.javor@memgraph.com" }]
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 keywords = ["memgraph", "langchain", "integration", "ai"]
 

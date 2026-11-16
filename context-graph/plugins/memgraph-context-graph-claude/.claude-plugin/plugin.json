@@ -7,7 +7,7 @@
   },
   "homepage": "https://github.com/memgraph/ai-toolkit",
   "repository": "https://github.com/memgraph/ai-toolkit",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": ["claude-code", "context-graph", "memgraph-context-graph", "memgraph"],
   "skills": "./skills/"
 }

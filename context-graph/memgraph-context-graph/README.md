@@ -120,4 +120,4 @@ Adapters translate runtime-specific activity. Connectors decide what to persist 
 
 ## License
 
-MIT
+Apache-2.0

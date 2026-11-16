@@ -6,7 +6,7 @@
     "name": "Memgraph"
   },
   "repository": "https://github.com/memgraph/ai-toolkit",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": ["codex", "context-graph", "memgraph-context-graph", "memgraph"],
   "skills": "./skills/",
   "hooks": "./hooks/hooks.json",
