@@ -1,0 +1,172 @@
+{
+  "format": "hygm-resolved",
+  "version": 1,
+  "model_version": 2,
+  "node_types": [
+    {
+      "label": "Wine",
+      "description": "a wine"
+    },
+    {
+      "label": "Winery",
+      "description": "a winery"
+    },
+    {
+      "label": "FrenchWinery",
+      "description": "a French winery",
+      "parents": [
+        "Winery"
+      ],
+      "ancestors": [
+        "Winery"
+      ]
+    },
+    {
+      "label": "Grape",
+      "description": "a grape"
+    },
+    {
+      "label": "FrenchWine",
+      "description": "A wine from France, made by a French winery from at least one grape",
+      "parents": [
+        "Wine"
+      ],
+      "ancestors": [
+        "Wine"
+      ],
+      "relation_restrictions": [
+        {
+          "relation": "maker",
+          "end_labels": [
+            "FrenchWinery"
+          ],
+          "end_types": [
+            "FrenchWinery"
+          ],
+          "declared_by": "FrenchWine"
+        },
+        {
+          "relation": "grape",
+          "min_count": 1,
+          "declared_by": "FrenchWine"
+        }
+      ]
+    },
+    {
+      "label": "Bordeaux",
+      "description": "A blend of at most three grapes",
+      "parents": [
+        "FrenchWine"
+      ],
+      "ancestors": [
+        "FrenchWine",
+        "Wine"
+      ],
+      "relation_restrictions": [
+        {
+          "relation": "maker",
+          "end_labels": [
+            "FrenchWinery"
+          ],
+          "end_types": [
+            "FrenchWinery"
+          ],
+          "declared_by": "FrenchWine"
+        },
+        {
+          "relation": "grape",
+          "min_count": 1,
+          "declared_by": "FrenchWine"
+        },
+        {
+          "relation": "grape",
+          "min_count": 2,
+          "max_count": 3,
+          "declared_by": "Bordeaux"
+        }
+      ]
+    }
+  ],
+  "relation_types": [
+    {
+      "label": "maker",
+      "description": "who made it",
+      "start_labels": [
+        "Wine"
+      ],
+      "end_labels": [
+        "Winery"
+      ],
+      "start_types": [
+        "Wine",
+        "FrenchWine",
+        "Bordeaux"
+      ],
+      "end_types": [
+        "Winery",
+        "FrenchWinery"
+      ],
+      "min_count": 1,
+      "max_count": 1
+    },
+    {
+      "label": "produces",
+      "description": "what it made",
+      "start_labels": [
+        "Winery"
+      ],
+      "end_labels": [
+        "Wine"
+      ],
+      "start_types": [
+        "Winery",
+        "FrenchWinery"
+      ],
+      "end_types": [
+        "Wine",
+        "FrenchWine",
+        "Bordeaux"
+      ],
+      "inverse_of": "maker"
+    },
+    {
+      "label": "grape",
+      "description": "made from",
+      "start_labels": [
+        "Wine"
+      ],
+      "end_labels": [
+        "Grape"
+      ],
+      "start_types": [
+        "Wine",
+        "FrenchWine",
+        "Bordeaux"
+      ],
+      "end_types": [
+        "Grape"
+      ]
+    },
+    {
+      "label": "pairs_with",
+      "description": "goes well with",
+      "start_labels": [
+        "Wine"
+      ],
+      "end_labels": [
+        "Wine"
+      ],
+      "start_types": [
+        "Wine",
+        "FrenchWine",
+        "Bordeaux"
+      ],
+      "end_types": [
+        "Wine",
+        "FrenchWine",
+        "Bordeaux"
+      ],
+      "symmetric": true
+    }
+  ]
+}

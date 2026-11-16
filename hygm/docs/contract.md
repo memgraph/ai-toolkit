@@ -462,6 +462,78 @@ individuals:
 - Individuals are data, not schema. A consumer may load them (the Memgraph
   plan seeds them on request, 7.1), show them, or ignore them.
 
+### 4.18 The resolved form
+
+A reader in another language that wants a model has to resolve imports,
+inheritance with refinement (4.15), relation restrictions (4.16) and run
+section 9 before it can trust a file. That is a second validator to keep in
+step with hygm's. The **resolved form** moves the work to hygm: hygm
+validates a model once and writes one JSON file in which nothing needs
+working out. It is derived from a valid model, never authored, and its
+readers only parse it. `resolve_model(model)` returns it and `hygm resolve
+<model> [-o <out>]` writes it; neither produces anything for an invalid
+model.
+
+```jsonc
+{
+  "format": "hygm-resolved",  // anything else is refused
+  "version": 1,               // the resolved form's version
+  "model_version": 2,         // the model format whose meaning it carries
+  "ontology": { … },          // optional, as in 4.11
+  "node_types": [ … ],
+  "relation_types": [ … ],
+  "individuals": [ … ],       // optional, as in 4.17
+  "profiles": { … }           // optional, as written
+}
+```
+
+- **Header.** A reader refuses a file whose `format` isn't `hygm-resolved`
+  (`invalid_format`) and a `version` or `model_version` it doesn't know
+  (`unknown_version`), before reading further. A file with `node_types` and
+  no `format` is a model file: a reader refuses it and suggests `hygm
+  resolve`. `version` and `model_version` change independently. A version-1
+  model file reads into the same model as its version-2 equivalent, so its
+  resolved form says `model_version: 2` too.
+- **Imports** are inlined: `node_types`, `relation_types` and `individuals`
+  hold the imported ones first, as `HygmModel` does.
+- **A node type** has, in this order: `label`, `description`, `parents` (as
+  declared), `ancestors` (every supertype, nearest first), `abstract`, `key`
+  (its own or inherited), `properties`, `iri`, `disjoint_with` (as
+  declared), `synonyms`, `names`, `relation_restrictions` and `profiles`.
+- **`properties`** are the type's effective ones, inherited first, with
+  refinements applied (4.15) and a forbidden one kept with `max_count: 0`.
+  Each carries `declared_by`: the type that introduces it, the farthest of
+  the type and its ancestors to declare it, since a redeclaration only
+  narrows. A relation type's properties name the relation type.
+- **`relation_restrictions`** are the type's own and every ancestor's,
+  farthest ancestor first, each with `declared_by` and, beside its
+  `end_labels`, `end_types`: those labels and their descendants. A type's
+  instances meet all of them at once: ends in every list's `end_types`,
+  counts within every one's bounds.
+- **A relation type** carries `start_types` and `end_types` beside the
+  declared `start_labels`/`end_labels`: each named type and its
+  descendants, or every declared node type where the declared list is
+  empty. Both are always written.
+- **Property facets** follow 4.14, with `type` always written and
+  `max_count` written as `null` when unbounded: absent means its default, 1.
+  Relation `min_count` and `max_count` keep their 4.16 defaults, `0` and
+  unbounded, when absent.
+- Everything else (descriptions, names, synonyms, IRIs, facets, profiles,
+  individuals, the `ontology` block) is carried as written. Key and list
+  order are fixed, so one model resolves to the same bytes every time.
+
+The JSON Schema is `resolved.v1.schema.json`; it refuses unknown keys at
+every level. A reader that doesn't run section 9 still checks what it
+depends on, so a hand-edited file fails at load rather than at query time:
+
+| Check | Code |
+|---|---|
+| no node type or relation type listed twice | `duplicate_label` |
+| no property listed twice within a type | `duplicate_property` |
+| every `parents` and `ancestors` entry is a declared node type | `unknown_parent` |
+| every `start_types`, `end_types` and restriction `end_types` entry is a declared node type | `undeclared_endpoint` |
+| every `key` entry is one of the type's properties | `unknown_key_property` |
+
 ## 5. Layer 2: profiles
 
 A profile carries what one kind of consumer needs from the model, without
@@ -804,9 +876,10 @@ never does. The naming checks are English heuristics: `plural_of_parent`
 and `naming_number` read a label's last word by simple plural rules.
 
 The `hygm` command line wraps the layers for files: `hygm validate <file>`,
-`hygm lint <file>`, `hygm convert <in> <out>` (model file or OWL, by suffix)
-and `hygm diff <a> <b>` (the operations, as JSON). It exits 1 only when a
-model fails validation; lint findings never fail it.
+`hygm lint <file>`, `hygm convert <in> <out>` (model file or OWL, by suffix),
+`hygm diff <a> <b>` (the operations, as JSON) and `hygm resolve <model>
+[-o <out>]` (the resolved form, 4.18). It exits 1 only when a model fails
+validation; lint findings never fail it.
 
 ## 10. OWL import and export
 
@@ -955,11 +1028,14 @@ language every reader implements.
 
 - **JSON Schemas** in `hygm/src/hygm/schema/`, shipped in the wheel:
   `model.v1.schema.json`, `model.v2.schema.json`, `mapping.v1.schema.json`,
-  and one per registered profile. Rules a JSON Schema can't express are
+  `resolved.v1.schema.json`, and one per registered profile. Rules a JSON Schema can't express are
   defined by this document.
 - **Conformance fixtures** in `hygm/conformance/{model,mapping}/`: every
   file under `valid/` must load, and every file under `invalid/<code>/`
-  must be refused with that error code. Each invalid fixture holds exactly
+  must be refused with that error code.
+- **The resolved form** (4.18), with its fixtures in
+  `hygm/conformance/resolved/`: each valid model fixture's expected output,
+  byte for byte, and resolved files a reader refuses by code. Each invalid fixture holds exactly
   one problem. hygm's tests run all of them, and a reader in another
   language runs the same files, so a change on one side fails the other
   side's CI.

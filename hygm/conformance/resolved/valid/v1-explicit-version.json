@@ -1,0 +1,12 @@
+{
+  "format": "hygm-resolved",
+  "version": 1,
+  "model_version": 2,
+  "node_types": [
+    {
+      "label": "Thing",
+      "description": "anything"
+    }
+  ],
+  "relation_types": []
+}

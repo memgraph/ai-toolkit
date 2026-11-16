@@ -1,0 +1,80 @@
+{
+  "format": "hygm-resolved",
+  "version": 1,
+  "model_version": 2,
+  "node_types": [
+    {
+      "label": "WineRegion",
+      "description": "Where wine is made",
+      "key": [
+        "name"
+      ],
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "declared_by": "WineRegion"
+        }
+      ]
+    },
+    {
+      "label": "Winery",
+      "description": "Makes wine",
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "declared_by": "Winery"
+        }
+      ]
+    }
+  ],
+  "relation_types": [
+    {
+      "label": "located_in",
+      "description": "where it is",
+      "start_labels": [
+        "Winery"
+      ],
+      "end_labels": [
+        "WineRegion"
+      ],
+      "start_types": [
+        "Winery"
+      ],
+      "end_types": [
+        "WineRegion"
+      ]
+    }
+  ],
+  "individuals": [
+    {
+      "id": "bordeaux",
+      "type": "WineRegion",
+      "properties": {
+        "name": "Bordeaux"
+      }
+    },
+    {
+      "id": "burgundy",
+      "type": "WineRegion",
+      "properties": {
+        "name": "Burgundy"
+      }
+    },
+    {
+      "id": "chateau_margaux",
+      "type": "Winery",
+      "properties": {
+        "name": "Château Margaux"
+      },
+      "relations": {
+        "located_in": [
+          "bordeaux"
+        ]
+      }
+    }
+  ]
+}

@@ -96,6 +96,14 @@ from .profiles import (
     setting,
     with_version_1_profiles,
 )
+from .resolved import (
+    RESOLVED_FORMAT,
+    RESOLVED_MODEL_VERSION,
+    RESOLVED_VERSION,
+    resolve_model,
+    resolved_schema,
+    resolved_to_json,
+)
 from .strategies import (
     ManualStrategy,
     OwlImportStrategy,
@@ -138,6 +146,9 @@ __all__ = [
     "OWNERS",
     "PROPERTY_TYPES",
     "REGISTERED_PROFILES",
+    "RESOLVED_FORMAT",
+    "RESOLVED_MODEL_VERSION",
+    "RESOLVED_VERSION",
     "SOURCE_KINDS",
     "AddIndividual",
     "AddNodeType",
@@ -242,6 +253,9 @@ __all__ = [
     "operation_from_mapping",
     "operation_to_mapping",
     "require_valid_identifier",
+    "resolve_model",
+    "resolved_schema",
+    "resolved_to_json",
     "seed_statements",
     "setting",
     "validate_model",
