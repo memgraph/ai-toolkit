@@ -57,7 +57,7 @@ hygm validate wine.yaml          # exit 1 if the model is invalid
 hygm lint wine.ttl [--json]      # findings; always exit 0
 hygm convert wine.ttl wine.yaml  # model file or OWL, chosen by suffix
 hygm diff before.yaml after.yaml # the operations between them, as JSON
-hygm resolve wine.yaml [-o wine.resolved.json]  # the resolved form; exit 1 if invalid
+hygm resolve wine.yaml [-o wine.resolved.json] [--check]  # the resolved form; exit 1 if invalid or stale
 ```
 
 ## The resolved form

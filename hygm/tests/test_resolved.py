@@ -32,34 +32,35 @@ def _expected(model_fixture: Path) -> Path:
 def _refusals(raw) -> set[str]:
     """What a reader that doesn't run hygm's validation refuses a resolved file for: the contract's 4.18 checks."""
     if not isinstance(raw, dict) or raw.get("format") != "hygm-resolved":
-        return {"invalid_format"}
+        return {"unknown_model"}
     if raw.get("version") != 1 or raw.get("model_version") != 2:
         return {"unknown_version"}
     errors = list(jsonschema.Draft202012Validator(resolved_schema()).iter_errors(raw))
     if errors:
-        return {"unknown_key" if e.validator == "additionalProperties" else "invalid_format" for e in errors}
+        return {"unknown_key" if e.validator == "additionalProperties" else "unknown_model" for e in errors}
     codes = set()
     nodes = [n["label"] for n in raw["node_types"]]
+    relations = [r["label"] for r in raw["relation_types"]]
     declared = set(nodes)
-    if len(declared) < len(nodes) or len({r["label"] for r in raw["relation_types"]}) < len(raw["relation_types"]):
-        codes.add("duplicate_label")
-    for node in raw["node_types"]:
-        names = [p["name"] for p in node.get("properties", [])]
-        if len(set(names)) < len(names):
-            codes.add("duplicate_property")
-        if not declared.issuperset(node.get("parents", []) + node.get("ancestors", [])):
-            codes.add("unknown_parent")
-        if not set(names).issuperset(node.get("key", [])):
-            codes.add("unknown_key_property")
-        for restriction in node.get("relation_restrictions", []):
-            if not declared.issuperset(restriction.get("end_types", [])):
-                codes.add("undeclared_endpoint")
-    for relation in raw["relation_types"]:
-        names = [p["name"] for p in relation.get("properties", [])]
-        if len(set(names)) < len(names):
-            codes.add("duplicate_property")
-        if not declared.issuperset(relation["start_types"] + relation["end_types"]):
-            codes.add("undeclared_endpoint")
+    if len(declared) < len(nodes) or len(set(relations)) < len(relations):
+        codes.add("unknown_model")
+    for owner in (*raw["node_types"], *raw["relation_types"]):
+        names = [p["name"] for p in owner.get("properties", [])]
+        if len(set(names)) < len(names) or not set(names).issuperset(owner.get("key", [])):
+            codes.add("unknown_model")
+    named = [
+        *(label for n in raw["node_types"] for label in n.get("parents", []) + n.get("ancestors", [])),
+        *(label for r in raw["relation_types"] for label in r["start_types"] + r["end_types"]),
+        *(
+            label
+            for n in raw["node_types"]
+            for restriction in n.get("relation_restrictions", [])
+            for label in restriction.get("end_types", [])
+        ),
+    ]
+    restricted = [r["relation"] for n in raw["node_types"] for r in n.get("relation_restrictions", [])]
+    if not declared.issuperset(named) or not set(relations).issuperset(restricted):
+        codes.add("unknown_type")
     return codes
 
 
@@ -169,3 +170,28 @@ def test_resolve_writes_nothing_and_exits_1_for_an_invalid_model(tmp_path, capsy
 
     assert not out.exists()
     assert "parent_cycle" in capsys.readouterr().err
+
+
+def test_resolve_check_passes_on_a_current_file():
+    shop = CONFORMANCE / "model" / "valid" / "v2-shop.yaml"
+
+    assert main(["resolve", str(shop), "-o", str(_expected(shop)), "--check"]) == 0
+
+
+@pytest.mark.parametrize("written", [None, "{}\n"], ids=["missing", "different"])
+def test_resolve_check_exits_1_for_a_stale_file_and_leaves_it(tmp_path, capsys, written):
+    shop = CONFORMANCE / "model" / "valid" / "v2-shop.yaml"
+    out = tmp_path / "shop.resolved.json"
+    if written is not None:
+        out.write_text(written, encoding="utf-8")
+
+    assert main(["resolve", str(shop), "-o", str(out), "--check"]) == 1
+
+    assert "stale" in capsys.readouterr().err
+    assert (out.read_text(encoding="utf-8") if out.exists() else None) == written
+
+
+def test_resolve_check_without_an_output_file_is_a_usage_error():
+    shop = CONFORMANCE / "model" / "valid" / "v2-shop.yaml"
+
+    assert main(["resolve", str(shop), "--check"]) == 2

@@ -53,10 +53,11 @@ resolved/
   4.18). After a change to a model fixture or the resolver, rewrite it with
   `hygm resolve model/valid/<name>.yaml -o resolved/valid/<name>.json`, and
   review the diff: it is the change every resolved-form reader sees.
-- A resolved invalid fixture is the resolved `v2-shop` with one problem.
-  A reader refuses `invalid_format` (not a resolved file, or a required key
-  missing), `unknown_version` and `unknown_key` from the header and the
-  JSON Schema, and the rest with the checks in the contract's 4.18 table.
+- A resolved invalid fixture is the resolved `v2-shop` (or, for a relation
+  restriction, `v2-relation-facets`) with one problem, refused with one of
+  the four codes in the contract's 4.18 table: `unknown_model`,
+  `unknown_version`, `unknown_key`, `unknown_type`. `hygm resolve ... --check`
+  keeps the valid outputs current in CI.
 
 hygm runs them in `tests/test_conformance.py` (models),
 `tests/test_mapping_conformance.py` (mappings) and `tests/test_resolved.py`

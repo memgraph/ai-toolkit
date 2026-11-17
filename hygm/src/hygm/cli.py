@@ -2,8 +2,9 @@
 
 A model file is read by its suffix: `.yaml`, `.yml` and `.json` as hygm model
 files, anything else as OWL in a serialization rdflib reads. The exit code is
-1 only when a model fails validation; lint findings never fail a run, and a
-usage problem (a missing file, an unknown suffix to write) exits 2.
+1 when a model fails validation or `resolve --check` finds its output stale;
+lint findings never fail a run, and a usage problem (a missing file, an
+unknown suffix to write) exits 2.
 """
 
 import argparse
@@ -73,6 +74,9 @@ def _parser() -> argparse.ArgumentParser:
     resolve = commands.add_parser("resolve", help="write a valid model in the resolved form, as JSON")
     resolve.add_argument("file", type=Path)
     resolve.add_argument("-o", "--output", type=Path, help="the file to write (default: standard output)")
+    resolve.add_argument(
+        "--check", action="store_true", help="write nothing; exit 1 if the output file isn't what resolving writes"
+    )
     resolve.set_defaults(run=_resolve)
     return parser
 
@@ -124,7 +128,15 @@ def _diff(args: argparse.Namespace) -> int:
 
 
 def _resolve(args: argparse.Namespace) -> int:
+    if args.check and args.output is None:
+        raise _UsageError("--check needs the resolved file to compare against: -o <file>")
     text = resolved_to_json(_load(args.file))
+    if args.check:
+        written = args.output.read_text(encoding="utf-8") if args.output.is_file() else None
+        if written != text:
+            print(f"stale: {args.output} isn't {args.file} resolved; run hygm resolve without --check", file=sys.stderr)
+            return _INVALID
+        return 0
     if args.output is None:
         sys.stdout.write(text)
     else:
