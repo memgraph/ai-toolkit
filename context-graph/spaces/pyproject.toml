@@ -3,7 +3,7 @@ name = "context-graph-spaces"
 version = "0.1.6"
 description = "The Enterprise edition of Context Graph: personal and shared memory spaces for many users on one Memgraph"
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 classifiers = [
   "Programming Language :: Python :: 3.10",

@@ -3,7 +3,7 @@ name = "sessions-graph"
 version = "0.13.0"
 description = "Cross-session memory store for agents, backed by Memgraph"
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 classifiers = [
   "Programming Language :: Python :: 3.10",
