@@ -793,6 +793,7 @@ element it is about and a suggestion. `hygm lint` prints them, and
 | `naming_case` | warning | A label that doesn't follow `ontology.conventions`. With no conventions, the majority style of the model is assumed. |
 | `naming_number` | info | A type label that breaks the singular/plural convention. |
 | `meta_word_in_name` | warning | A label containing `Class`, `Type`, `Property`, `Slot`, `Relation` or `Concept` as a word. |
+| `reserved_word` | warning | A label, relation type or property name that is a GQL reserved or prereserved word in any case (ISO/IEC 39075, 21.3), such as `Order` or `year`: every GQL query must quote it. Cypher takes keywords as names, so it has no list. |
 | `sibling_naming` | info | Siblings where some repeat the parent's name and some don't (`RedWine` beside `White`). |
 | `missing_description` | warning | A type, relation type or property with an empty description. |
 | `no_competency_questions` | info | No `ontology.competency_questions`. |
