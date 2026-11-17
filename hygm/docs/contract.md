@@ -462,6 +462,85 @@ individuals:
 - Individuals are data, not schema. A consumer may load them (the Memgraph
   plan seeds them on request, 7.1), show them, or ignore them.
 
+### 4.18 The resolved form
+
+A reader in another language that wants a model has to resolve imports,
+inheritance with refinement (4.15), relation restrictions (4.16) and run
+section 9 before it can trust a file. That is a second validator to keep in
+step with hygm's. The **resolved form** moves the work to hygm: hygm
+validates a model once and writes one JSON file in which nothing needs
+working out. It is derived from a valid model, never authored, and its
+readers only parse it. `resolve_model(model)` returns it and `hygm resolve
+<model> [-o <out>]` writes it; neither produces anything for an invalid
+model.
+
+```jsonc
+{
+  "format": "hygm-resolved",  // anything else is refused
+  "version": 1,               // the resolved form's version
+  "model_version": 2,         // the model format whose meaning it carries
+  "ontology": { … },          // optional, as in 4.11
+  "node_types": [ … ],
+  "relation_types": [ … ],
+  "individuals": [ … ],       // optional, as in 4.17
+  "profiles": { … }           // optional, as written
+}
+```
+
+- **Header.** A reader refuses a file whose `format` isn't `hygm-resolved`
+  (`unknown_model`) and a `version` or `model_version` it doesn't know
+  (`unknown_version`), before reading further. A file with `node_types` and
+  no `format` is a model file: a reader refuses it and suggests `hygm
+  resolve`. `version` and `model_version` change independently. A version-1
+  model file reads into the same model as its version-2 equivalent, so its
+  resolved form says `model_version: 2` too.
+- **Imports** are inlined: `node_types`, `relation_types` and `individuals`
+  hold the imported ones first, as `HygmModel` does.
+- **A node type** has, in this order: `label`, `description`, `parents` (as
+  declared), `ancestors` (every supertype, nearest first), `abstract`, `key`
+  (its own or inherited), `properties`, `iri`, `disjoint_with` (as
+  declared), `synonyms`, `names`, `relation_restrictions` and `profiles`.
+- **`properties`** are the type's effective ones, inherited first, with
+  refinements applied (4.15) and a forbidden one kept with `max_count: 0`.
+  Each carries `declared_by`: the type that introduces it, the farthest of
+  the type and its ancestors to declare it, since a redeclaration only
+  narrows. A relation type's properties name the relation type.
+- **`relation_restrictions`** are the type's own and every ancestor's,
+  farthest ancestor first, each with `declared_by` and, beside its
+  `end_labels`, `end_types`: those labels and their descendants. A type's
+  instances meet all of them at once: ends in every list's `end_types`,
+  counts within every one's bounds.
+- **A relation type** carries `start_types` and `end_types` beside the
+  declared `start_labels`/`end_labels`: each named type and its
+  descendants, or every declared node type where the declared list is
+  empty. Both are always written.
+- **Property facets** follow 4.14, with `type` always written and
+  `max_count` written as `null` when unbounded: absent means its default, 1.
+  Relation `min_count` and `max_count` keep their 4.16 defaults, `0` and
+  unbounded, when absent.
+- Everything else (descriptions, names, synonyms, IRIs, facets, profiles,
+  individuals, the `ontology` block) is carried as written. Key and list
+  order are fixed, so one model resolves to the same bytes every time.
+
+The JSON Schema is `resolved.v1.schema.json`; it refuses unknown keys at
+every level. A reader that doesn't run section 9 still checks what it
+depends on, so a hand-edited file fails at load rather than at query time.
+It needs only four codes, because a resolved file is either hygm's output
+or broken:
+
+| Check | Code |
+|---|---|
+| not a resolved file, a required key missing, a value of the wrong JSON type | `unknown_model` |
+| a node type, relation type, or property within a type listed twice | `unknown_model` |
+| a `key` entry that isn't one of the type's properties | `unknown_model` |
+| a `version` or `model_version` the reader doesn't know | `unknown_version` |
+| a key the resolved form doesn't define | `unknown_key` |
+| a `parents`, `ancestors`, `start_types`, `end_types` or restriction `end_types` entry that isn't a declared node type, or a restriction of an undeclared relation type | `unknown_type` |
+
+A resolved file committed beside its model falls behind when the model
+changes. `hygm resolve <model> -o <file> --check` writes nothing and exits 1
+when `<file>` isn't what resolving the model writes, so CI catches it.
+
 ## 5. Layer 2: profiles
 
 A profile carries what one kind of consumer needs from the model, without
@@ -758,7 +837,7 @@ fixture holds exactly one problem.
 | `unbound_key` | 3 | A type bound in more than one source has no `key`. |
 | `endpoint_not_admitted` | 3 | A relation binding's endpoint types aren't admitted by its relation type. |
 | `endpoint_columns` | 3 | A table relation's `from` or `to` columns don't match what they point at: the endpoint binding's `id` in the same source, else the endpoint type's `key`. |
-| `unknown_model` | 3 | The mapping's `model` can't be read. |
+| `unknown_model` | 1, 3, 4.18 | An import (1) or the mapping's `model` (3) can't be read, or a resolved file is malformed (4.18). |
 | `import_cycle` | 1 | Imports form a cycle (4.12). |
 | `disjoint_conflict` | 1 | Two disjoint types share a descendant, or a type is disjoint with an ancestor (4.13). |
 | `duplicate_name` | 1 | A synonym equals another type's label or synonym (4.13). |
@@ -804,9 +883,11 @@ never does. The naming checks are English heuristics: `plural_of_parent`
 and `naming_number` read a label's last word by simple plural rules.
 
 The `hygm` command line wraps the layers for files: `hygm validate <file>`,
-`hygm lint <file>`, `hygm convert <in> <out>` (model file or OWL, by suffix)
-and `hygm diff <a> <b>` (the operations, as JSON). It exits 1 only when a
-model fails validation; lint findings never fail it.
+`hygm lint <file>`, `hygm convert <in> <out>` (model file or OWL, by suffix),
+`hygm diff <a> <b>` (the operations, as JSON) and `hygm resolve <model>
+[-o <out>] [--check]` (the resolved form, 4.18). It exits 1 only when a
+model fails validation or `--check` finds a stale resolved file; lint
+findings never fail it.
 
 ## 10. OWL import and export
 
@@ -955,11 +1036,14 @@ language every reader implements.
 
 - **JSON Schemas** in `hygm/src/hygm/schema/`, shipped in the wheel:
   `model.v1.schema.json`, `model.v2.schema.json`, `mapping.v1.schema.json`,
-  and one per registered profile. Rules a JSON Schema can't express are
+  `resolved.v1.schema.json`, and one per registered profile. Rules a JSON Schema can't express are
   defined by this document.
 - **Conformance fixtures** in `hygm/conformance/{model,mapping}/`: every
   file under `valid/` must load, and every file under `invalid/<code>/`
-  must be refused with that error code. Each invalid fixture holds exactly
+  must be refused with that error code.
+- **The resolved form** (4.18), with its fixtures in
+  `hygm/conformance/resolved/`: each valid model fixture's expected output,
+  byte for byte, and resolved files a reader refuses by code. Each invalid fixture holds exactly
   one problem. hygm's tests run all of them, and a reader in another
   language runs the same files, so a change on one side fails the other
   side's CI.

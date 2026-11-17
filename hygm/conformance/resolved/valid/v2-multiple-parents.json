@@ -1,0 +1,64 @@
+{
+  "format": "hygm-resolved",
+  "version": 1,
+  "model_version": 2,
+  "node_types": [
+    {
+      "label": "Named",
+      "description": "has a name",
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "declared_by": "Named"
+        }
+      ]
+    },
+    {
+      "label": "Dated",
+      "description": "has a date",
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "declared_by": "Dated"
+        },
+        {
+          "name": "held_on",
+          "type": "date",
+          "declared_by": "Dated"
+        }
+      ]
+    },
+    {
+      "label": "Event",
+      "description": "a named, dated happening",
+      "parents": [
+        "Named",
+        "Dated"
+      ],
+      "ancestors": [
+        "Named",
+        "Dated"
+      ],
+      "key": [
+        "name"
+      ],
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "declared_by": "Dated"
+        },
+        {
+          "name": "held_on",
+          "type": "date",
+          "declared_by": "Dated"
+        }
+      ]
+    }
+  ],
+  "relation_types": []
+}

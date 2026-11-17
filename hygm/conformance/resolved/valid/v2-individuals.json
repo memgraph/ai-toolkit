@@ -1,0 +1,269 @@
+{
+  "format": "hygm-resolved",
+  "version": 1,
+  "model_version": 2,
+  "node_types": [
+    {
+      "label": "WineRegion",
+      "description": "Where wine is made",
+      "key": [
+        "name"
+      ],
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "declared_by": "WineRegion"
+        }
+      ]
+    },
+    {
+      "label": "Winery",
+      "description": "Makes wine",
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "declared_by": "Winery"
+        },
+        {
+          "name": "founded",
+          "type": "date",
+          "declared_by": "Winery"
+        }
+      ]
+    },
+    {
+      "label": "Wine",
+      "description": "A wine",
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "colour",
+          "type": "string",
+          "values": [
+            "red",
+            "white",
+            "rose"
+          ],
+          "declared_by": "Wine"
+        },
+        {
+          "name": "grapes",
+          "type": "string",
+          "values": [
+            "cabernet_sauvignon",
+            "merlot",
+            "petit_verdot"
+          ],
+          "max_count": null,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "alcohol",
+          "type": "float",
+          "minimum": 5,
+          "maximum": 22,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "bottle_ml",
+          "type": "integer",
+          "default": 750,
+          "declared_by": "Wine"
+        }
+      ]
+    },
+    {
+      "label": "RedWine",
+      "description": "A red wine",
+      "parents": [
+        "Wine"
+      ],
+      "ancestors": [
+        "Wine"
+      ],
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "colour",
+          "type": "string",
+          "values": [
+            "red"
+          ],
+          "value": "red",
+          "declared_by": "Wine"
+        },
+        {
+          "name": "grapes",
+          "type": "string",
+          "values": [
+            "cabernet_sauvignon",
+            "merlot",
+            "petit_verdot"
+          ],
+          "max_count": null,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "alcohol",
+          "type": "float",
+          "minimum": 5,
+          "maximum": 22,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "bottle_ml",
+          "type": "integer",
+          "default": 750,
+          "declared_by": "Wine"
+        }
+      ]
+    }
+  ],
+  "relation_types": [
+    {
+      "label": "located_in",
+      "description": "where it is",
+      "start_labels": [
+        "Winery"
+      ],
+      "end_labels": [
+        "WineRegion"
+      ],
+      "start_types": [
+        "Winery"
+      ],
+      "end_types": [
+        "WineRegion"
+      ],
+      "min_count": 1,
+      "max_count": 1
+    },
+    {
+      "label": "maker",
+      "description": "who made it",
+      "start_labels": [
+        "Wine"
+      ],
+      "end_labels": [
+        "Winery"
+      ],
+      "start_types": [
+        "Wine",
+        "RedWine"
+      ],
+      "end_types": [
+        "Winery"
+      ],
+      "min_count": 1,
+      "max_count": 1
+    },
+    {
+      "label": "produces",
+      "description": "what it made",
+      "start_labels": [
+        "Winery"
+      ],
+      "end_labels": [
+        "Wine"
+      ],
+      "start_types": [
+        "Winery"
+      ],
+      "end_types": [
+        "Wine",
+        "RedWine"
+      ],
+      "inverse_of": "maker"
+    },
+    {
+      "label": "pairs_with",
+      "description": "goes well with",
+      "start_labels": [
+        "Wine"
+      ],
+      "end_labels": [
+        "Wine"
+      ],
+      "start_types": [
+        "Wine",
+        "RedWine"
+      ],
+      "end_types": [
+        "Wine",
+        "RedWine"
+      ],
+      "symmetric": true
+    }
+  ],
+  "individuals": [
+    {
+      "id": "bordeaux",
+      "type": "WineRegion",
+      "iri": "https://example.org/wine#Bordeaux",
+      "properties": {
+        "name": "Bordeaux"
+      }
+    },
+    {
+      "id": "chateau_margaux",
+      "type": "Winery",
+      "properties": {
+        "name": "Château Margaux",
+        "founded": "1590-01-01"
+      },
+      "relations": {
+        "located_in": [
+          "bordeaux"
+        ],
+        "produces": [
+          "margaux_2015"
+        ]
+      }
+    },
+    {
+      "id": "margaux_2015",
+      "type": "RedWine",
+      "properties": {
+        "name": "Château Margaux 2015",
+        "grapes": [
+          "cabernet_sauvignon",
+          "merlot"
+        ],
+        "alcohol": 13.5
+      },
+      "relations": {
+        "pairs_with": [
+          "pavillon_2015"
+        ]
+      }
+    },
+    {
+      "id": "pavillon_2015",
+      "type": "RedWine",
+      "properties": {
+        "name": "Pavillon Rouge 2015",
+        "grapes": [],
+        "alcohol": 13
+      },
+      "relations": {
+        "maker": [
+          "chateau_margaux"
+        ]
+      }
+    }
+  ]
+}

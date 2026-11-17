@@ -1,0 +1,31 @@
+{
+  "format": "hygm-resolved",
+  "version": 1,
+  "model_version": 2,
+  "node_types": [
+    {
+      "label": "Thing",
+      "description": "anything",
+      "profiles": {
+        "extraction": {
+          "identity": "global"
+        }
+      }
+    }
+  ],
+  "relation_types": [
+    {
+      "label": "related",
+      "description": "",
+      "start_labels": [
+        "Thing"
+      ],
+      "start_types": [
+        "Thing"
+      ],
+      "end_types": [
+        "Thing"
+      ]
+    }
+  ]
+}

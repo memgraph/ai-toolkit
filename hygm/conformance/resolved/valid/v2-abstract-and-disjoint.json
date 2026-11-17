@@ -1,0 +1,58 @@
+{
+  "format": "hygm-resolved",
+  "version": 1,
+  "model_version": 2,
+  "node_types": [
+    {
+      "label": "Wine",
+      "description": "A wine; every wine is of one colour below",
+      "abstract": true
+    },
+    {
+      "label": "RedWine",
+      "description": "A red wine",
+      "parents": [
+        "Wine"
+      ],
+      "ancestors": [
+        "Wine"
+      ],
+      "disjoint_with": [
+        "WhiteWine"
+      ]
+    },
+    {
+      "label": "WhiteWine",
+      "description": "A white wine",
+      "parents": [
+        "Wine"
+      ],
+      "ancestors": [
+        "Wine"
+      ]
+    },
+    {
+      "label": "Claret",
+      "description": "A red Bordeaux",
+      "parents": [
+        "RedWine"
+      ],
+      "ancestors": [
+        "RedWine",
+        "Wine"
+      ]
+    },
+    {
+      "label": "Chablis",
+      "description": "A white Burgundy",
+      "parents": [
+        "WhiteWine"
+      ],
+      "ancestors": [
+        "WhiteWine",
+        "Wine"
+      ]
+    }
+  ],
+  "relation_types": []
+}

@@ -1,0 +1,88 @@
+{
+  "format": "hygm-resolved",
+  "version": 1,
+  "model_version": 2,
+  "node_types": [
+    {
+      "label": "Author",
+      "description": "a person who writes",
+      "profiles": {
+        "extraction": {
+          "identity": "global"
+        }
+      }
+    },
+    {
+      "label": "Book",
+      "description": "a written work",
+      "profiles": {
+        "extraction": {
+          "identity": "global"
+        }
+      }
+    },
+    {
+      "label": "Year",
+      "description": "a calendar year",
+      "profiles": {
+        "extraction": {
+          "identity": "span"
+        }
+      }
+    },
+    {
+      "label": "Topic",
+      "description": "a subject"
+    }
+  ],
+  "relation_types": [
+    {
+      "label": "wrote",
+      "description": "is the author of",
+      "start_labels": [
+        "Author"
+      ],
+      "end_labels": [
+        "Book"
+      ],
+      "start_types": [
+        "Author"
+      ],
+      "end_types": [
+        "Book"
+      ]
+    },
+    {
+      "label": "published_in",
+      "description": "came out in",
+      "start_labels": [
+        "Book"
+      ],
+      "end_labels": [
+        "Year"
+      ],
+      "start_types": [
+        "Book"
+      ],
+      "end_types": [
+        "Year"
+      ]
+    },
+    {
+      "label": "mentions",
+      "description": "anything",
+      "start_types": [
+        "Author",
+        "Book",
+        "Year",
+        "Topic"
+      ],
+      "end_types": [
+        "Author",
+        "Book",
+        "Year",
+        "Topic"
+      ]
+    }
+  ]
+}
