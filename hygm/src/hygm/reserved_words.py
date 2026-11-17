@@ -2,9 +2,10 @@
 
 ISO/IEC 39075:2024 (GQL), 21.3: its 218 reserved and 39 prereserved words,
 as the OpenGQL ANTLR grammar (opengql/grammar, version 1.9.0), generated
-from the standard's BNF, lists them. GQL keywords are case-insensitive, so a type labelled `Order` must be written
-`` :`Order` ``. Cypher needs no list: its grammar takes any keyword as a
-label, relationship type or property key (openCypher's `SchemaName`).
+from the standard's BNF, lists them. GQL keywords are case-insensitive, so
+a type labelled `Order` must be written `` :`Order` ``. Cypher needs no
+list: its grammar takes any keyword as a label, relationship type or
+property key (openCypher's `SchemaName`).
 """
 
 _WORDS = """
