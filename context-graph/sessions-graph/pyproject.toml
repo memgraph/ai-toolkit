@@ -1,6 +1,6 @@
 [project]
 name = "sessions-graph"
-version = "0.13.0"
+version = "0.13.1"
 description = "Cross-session memory store for agents, backed by Memgraph"
 readme = "README.md"
 license = { text = "Apache-2.0" }

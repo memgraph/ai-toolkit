@@ -1,6 +1,6 @@
 [project]
 name = "context-graph-spaces"
-version = "0.1.6"
+version = "0.1.7"
 description = "The Enterprise edition of Context Graph: personal and shared memory spaces for many users on one Memgraph"
 readme = "README.md"
 license = { text = "Apache-2.0" }
