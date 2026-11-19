@@ -1,6 +1,6 @@
 [project]
 name = "context-graph-viewer"
-version = "0.1.2"
+version = "0.1.3"
 description = "Read-only terminal viewer for a Context Graph: capture health, pipeline state, session anatomy and the knowledge graph"
 readme = "README.md"
 license = { text = "Apache-2.0" }

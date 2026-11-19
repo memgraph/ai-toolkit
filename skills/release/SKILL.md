@@ -17,6 +17,7 @@ All release workflows are triggered via **`workflow_dispatch`** (manual) from th
 | `release-lightrag-memgraph.yaml`  | lightrag-memgraph  | Build & publish to PyPI              | `PYPI_TOKEN`                                          |
 | `release-unstructured2graph.yaml` | unstructured2graph | Build & publish to PyPI              | `PYPI_TOKEN`                                          |
 | `release-hygm.yaml`               | hygm               | Build & publish to PyPI              | `PYPI_TOKEN`                                          |
+| `release-structured2graph.yaml`   | structured2graph   | Build & publish to PyPI              | `PYPI_TOKEN`                                          |
 | `release-memgraph-context-graph.yaml` | memgraph-context-graph | Build & publish to PyPI             | `PYPI_TOKEN`                                          |
 | `release-actions-graph.yaml`      | actions-graph      | Build & publish to PyPI              | `PYPI_TOKEN`                                          |
 | `release-skills-graph.yaml`       | skills-graph       | Build & publish to PyPI              | `PYPI_TOKEN`                                          |
@@ -35,6 +36,7 @@ All release workflows are triggered via **`workflow_dispatch`** (manual) from th
 | lightrag-memgraph  | `integrations/lightrag-memgraph`  | `[project] version`          |
 | unstructured2graph | `unstructured2graph`              | `[project] version`          |
 | hygm               | `hygm`                            | `[project] version`          |
+| structured2graph   | `agents/structured2graph`         | `[project] version`          |
 | memgraph-context-graph | `context-graph/memgraph-context-graph` | `[project] version`        |
 | actions-graph      | `context-graph/actions-graph`     | `[project] version`          |
 | skills-graph       | `context-graph/skills-graph`      | `[project] version`          |
@@ -53,8 +55,8 @@ All release workflows are triggered via **`workflow_dispatch`** (manual) from th
 
 ## Notes
 
-- **Publish dependencies first.** PyPI resolves the published floor of every dependency, so release in dependency order: `memgraph-toolbox` → `hygm` → `unstructured2graph`; `memgraph-context-graph` → `actions-graph` / `skills-graph` → `sessions-graph` → `context-graph-spaces`. Publish `memgraph-toolbox` and `memgraph-context-graph` before `resources-graph` (its optional harness integration) and `context-graph-viewer`.
+- **Publish dependencies first.** PyPI resolves the published floor of every dependency, so release in dependency order: `memgraph-toolbox` → `hygm` → `unstructured2graph` / `structured2graph`; `memgraph-context-graph` → `actions-graph` / `skills-graph` → `sessions-graph` → `context-graph-spaces`. Publish `memgraph-toolbox` and `memgraph-context-graph` before `resources-graph` (its optional harness integration) and `context-graph-viewer`.
 - **Context Graph plugins** install from PyPI in `context-graph/plugins/*/scripts/bootstrap.sh`. When a release is one the plugins need, raise the floors there and bump both plugin manifests (`.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`), and merge that only once the packages are on PyPI: the plugins install from `main`, through the Memgraph marketplace (memgraph/marketplace), which reads the version from the manifests.
-- **lightrag-memgraph**, **unstructured2graph** and **hygm** use `uv build --out-dir dist` to work around a uv artifact path issue.
+- **lightrag-memgraph**, **unstructured2graph**, **hygm** and **structured2graph** use `uv build --out-dir dist` to work around a uv artifact path issue.
 - The **mcp-memgraph** Docker image is built from the repo root (the Dockerfile copies both `memgraph-toolbox/` and `integrations/mcp-memgraph/`).
 - The mcp-memgraph workflow tags the Docker image with both the version and `latest`.

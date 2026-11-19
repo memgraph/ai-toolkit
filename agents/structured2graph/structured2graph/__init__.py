@@ -31,12 +31,19 @@ result = agent.migrate(source_db_config, memgraph_config)
 ```
 """
 
+from importlib import metadata
+
 # Main exports
 from .core import HyGM, SQLToMemgraphAgent
 from .database import DatabaseAnalyzerFactory
 from .query_generation import CypherGenerator, SchemaUtilities
 
-__version__ = "0.1.0"
+try:
+    __version__ = metadata.version(__package__ or __name__)
+except metadata.PackageNotFoundError:
+    # Imported from a source tree that was never installed.
+    __version__ = ""
+del metadata
 
 __all__ = [
     "CypherGenerator",

@@ -219,7 +219,7 @@ wheels = [
 
 [[package]]
 name = "actions-graph"
-version = "0.7.2"
+version = "0.7.3"
 source = { editable = "context-graph/actions-graph" }
 dependencies = [
     { name = "memgraph-context-graph" },
@@ -1360,7 +1360,7 @@ provides-extras = ["pipeline", "test"]
 
 [[package]]
 name = "context-graph-spaces"
-version = "0.1.6"
+version = "0.1.7"
 source = { editable = "context-graph/spaces" }
 dependencies = [
     { name = "memgraph-context-graph" },
@@ -1392,7 +1392,7 @@ provides-extras = ["test"]
 
 [[package]]
 name = "context-graph-viewer"
-version = "0.1.2"
+version = "0.1.3"
 source = { editable = "context-graph/viewer" }
 dependencies = [
     { name = "memgraph-context-graph" },
@@ -3231,7 +3231,7 @@ wheels = [
 
 [[package]]
 name = "hygm"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "hygm" }
 dependencies = [
     { name = "pyyaml" },
@@ -3807,7 +3807,7 @@ wheels = [
 
 [[package]]
 name = "langchain-memgraph"
-version = "0.1.17"
+version = "0.1.18"
 source = { editable = "integrations/langchain-memgraph" }
 dependencies = [
     { name = "langchain" },
@@ -4046,7 +4046,7 @@ wheels = [
 
 [[package]]
 name = "lightrag-memgraph"
-version = "0.3.3"
+version = "0.3.4"
 source = { editable = "integrations/lightrag-memgraph" }
 dependencies = [
     { name = "anthropic" },
@@ -4701,7 +4701,7 @@ cli = [
 
 [[package]]
 name = "mcp-memgraph"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "integrations/mcp-memgraph" }
 dependencies = [
     { name = "fastmcp" },
@@ -4781,7 +4781,7 @@ requires-dist = [
 
 [[package]]
 name = "memgraph-context-graph"
-version = "0.13.1"
+version = "0.13.2"
 source = { editable = "context-graph/memgraph-context-graph" }
 dependencies = [
     { name = "memgraph-toolbox" },
@@ -4819,7 +4819,7 @@ provides-extras = ["claude", "mcp", "openai", "test"]
 
 [[package]]
 name = "memgraph-toolbox"
-version = "0.2.3"
+version = "0.2.4"
 source = { editable = "memgraph-toolbox" }
 dependencies = [
     { name = "neo4j" },
@@ -9297,7 +9297,7 @@ wheels = [
 
 [[package]]
 name = "resources-graph"
-version = "0.3.1"
+version = "0.3.2"
 source = { editable = "context-graph/resources-graph" }
 dependencies = [
     { name = "memgraph-context-graph" },
@@ -9840,7 +9840,7 @@ wheels = [
 
 [[package]]
 name = "sessions-graph"
-version = "0.13.0"
+version = "0.13.1"
 source = { editable = "context-graph/sessions-graph" }
 dependencies = [
     { name = "memgraph-context-graph" },
@@ -9920,7 +9920,7 @@ wheels = [
 
 [[package]]
 name = "skills-graph"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "context-graph/skills-graph" }
 dependencies = [
     { name = "memgraph-context-graph" },
@@ -11547,7 +11547,7 @@ wheels = [
 
 [[package]]
 name = "unstructured2graph"
-version = "0.8.0"
+version = "0.8.1"
 source = { editable = "unstructured2graph" }
 dependencies = [
     { name = "gliner2" },
