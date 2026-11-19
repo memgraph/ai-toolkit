@@ -101,4 +101,4 @@ From the repository root:
 
 ## License
 
-MIT
+Apache-2.0

@@ -3,7 +3,7 @@ name = "context-graph-eval"
 version = "0.1.0"
 description = "Evaluation loop for the Context Graph family: official benchmark runs, dev workloads, and comparisons"
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 classifiers = [
   "Programming Language :: Python :: 3.10",

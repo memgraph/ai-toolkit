@@ -1,0 +1,63 @@
+{
+  "format": "hygm-resolved",
+  "version": 1,
+  "model_version": 2,
+  "node_types": [
+    {
+      "label": "Food",
+      "description": "Something eaten with a wine"
+    },
+    {
+      "label": "Seafood",
+      "description": "Fish and shellfish",
+      "parents": [
+        "Food"
+      ],
+      "ancestors": [
+        "Food"
+      ]
+    },
+    {
+      "label": "Drink",
+      "description": "Something drunk with a meal",
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "declared_by": "Drink"
+        }
+      ]
+    },
+    {
+      "label": "Dessert",
+      "description": "A sweet course, with Food imported twice",
+      "parents": [
+        "Food"
+      ],
+      "ancestors": [
+        "Food"
+      ]
+    }
+  ],
+  "relation_types": [
+    {
+      "label": "pairs_with",
+      "description": "The drink goes well with the food",
+      "start_labels": [
+        "Drink"
+      ],
+      "end_labels": [
+        "Food"
+      ],
+      "start_types": [
+        "Drink"
+      ],
+      "end_types": [
+        "Food",
+        "Seafood",
+        "Dessert"
+      ]
+    }
+  ]
+}

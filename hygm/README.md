@@ -57,7 +57,20 @@ hygm validate wine.yaml          # exit 1 if the model is invalid
 hygm lint wine.ttl [--json]      # findings; always exit 0
 hygm convert wine.ttl wine.yaml  # model file or OWL, chosen by suffix
 hygm diff before.yaml after.yaml # the operations between them, as JSON
+hygm resolve wine.yaml [-o wine.resolved.json] [--check]  # the resolved form; exit 1 if invalid or stale
 ```
+
+## The resolved form
+
+A reader in another language that wants a model, without reimplementing
+imports, inheritance, facet refinement and validation, reads the **resolved
+form** instead (contract 4.18). `resolve_model(model)` validates the model and
+returns a JSON-safe dict; `hygm resolve` writes it. Imports are inlined, and
+each node type lists its `ancestors`, its effective `properties` (inherited and
+refined, each with `declared_by`), its effective `key` and every relation
+restriction it inherits; each relation type lists `start_types`/`end_types`,
+its endpoints expanded to descendants. The JSON Schema ships as
+`resolved_schema()`. hygm doesn't read the resolved form back.
 
 ## Profiles
 

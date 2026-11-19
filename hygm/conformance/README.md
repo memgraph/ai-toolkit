@@ -14,6 +14,9 @@ mapping/
   models/<name>.model.yaml       the models the mapping fixtures name; not fixtures themselves
   valid/<name>.yaml|.json        must load with its model; read, written and read again, it is the same mapping
   invalid/<code>/<name>.yaml     must be refused with error code <code>
+resolved/
+  valid/<name>.json              `hygm resolve` of model/valid/<name>.*, byte for byte
+  invalid/<code>/<name>.json     a resolved file a reader refuses with error code <code>
 ```
 
 - Each invalid fixture holds exactly one problem, so its directory names the
@@ -45,5 +48,17 @@ mapping/
   the endpoint type's `key` when it has none there). `duplicate_property`
   also covers one property bound twice in one binding.
 
-hygm runs them in `tests/test_conformance.py` (models) and
-`tests/test_mapping_conformance.py` (mappings).
+- Every model fixture under `model/valid/` has its resolved form under
+  `resolved/valid/`, with the same name and a `.json` suffix (contract,
+  4.18). After a change to a model fixture or the resolver, rewrite it with
+  `hygm resolve model/valid/<name>.yaml -o resolved/valid/<name>.json`, and
+  review the diff: it is the change every resolved-form reader sees.
+- A resolved invalid fixture is the resolved `v2-shop` (or, for a relation
+  restriction, `v2-relation-facets`) with one problem, refused with one of
+  the four codes in the contract's 4.18 table: `unknown_model`,
+  `unknown_version`, `unknown_key`, `unknown_type`. `hygm resolve ... --check`
+  keeps the valid outputs current in CI.
+
+hygm runs them in `tests/test_conformance.py` (models),
+`tests/test_mapping_conformance.py` (mappings) and `tests/test_resolved.py`
+(the resolved form).

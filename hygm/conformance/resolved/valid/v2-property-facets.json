@@ -1,0 +1,96 @@
+{
+  "format": "hygm-resolved",
+  "version": 1,
+  "model_version": 2,
+  "node_types": [
+    {
+      "label": "Wine",
+      "description": "A wine",
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "grapes",
+          "type": "string",
+          "required": true,
+          "values": [
+            "merlot",
+            "cabernet",
+            "pinot_noir",
+            "chardonnay"
+          ],
+          "max_count": null,
+          "default": [
+            "merlot"
+          ],
+          "declared_by": "Wine"
+        },
+        {
+          "name": "awards",
+          "type": "string",
+          "description": "At most five medals",
+          "max_count": 5,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "alcohol",
+          "type": "decimal",
+          "default": 13.5,
+          "minimum": 5,
+          "maximum": 22.5,
+          "unit": "%",
+          "declared_by": "Wine"
+        },
+        {
+          "name": "vintage",
+          "type": "integer",
+          "minimum": 1900,
+          "maximum": 2100,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "bottled_on",
+          "type": "date",
+          "default": "2020-06-30",
+          "minimum": "1900-01-01",
+          "declared_by": "Wine"
+        },
+        {
+          "name": "tasted_at",
+          "type": "datetime",
+          "maximum": "2100-01-01T00:00:00Z",
+          "declared_by": "Wine"
+        },
+        {
+          "name": "volume",
+          "type": "integer",
+          "value": 750,
+          "unit": "ml",
+          "declared_by": "Wine"
+        },
+        {
+          "name": "organic",
+          "type": "boolean",
+          "default": false,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "notes",
+          "type": "json",
+          "default": {
+            "nose": [
+              "cherry",
+              "oak"
+            ]
+          },
+          "declared_by": "Wine"
+        }
+      ]
+    }
+  ],
+  "relation_types": []
+}

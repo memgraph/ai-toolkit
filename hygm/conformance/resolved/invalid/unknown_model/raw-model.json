@@ -1,0 +1,83 @@
+{
+  "version": 2,
+  "node_types": [
+    {
+      "label": "Party",
+      "description": "Any person or organization the shop deals with",
+      "properties": [
+        {
+          "name": "name",
+          "description": "Display name"
+        }
+      ]
+    },
+    {
+      "label": "Customer",
+      "description": "A party that has placed at least one order",
+      "parents": [
+        "Party"
+      ],
+      "properties": [
+        {
+          "name": "customer_id",
+          "description": "Customer id, stable across systems",
+          "required": true
+        },
+        {
+          "name": "tier",
+          "values": [
+            "standard",
+            "gold",
+            "platinum"
+          ]
+        },
+        {
+          "name": "loyalty_points",
+          "type": "integer"
+        }
+      ],
+      "key": [
+        "customer_id"
+      ],
+      "iri": "https://example.org/shop#Customer"
+    },
+    {
+      "label": "Order",
+      "description": "A purchase a customer made",
+      "properties": [
+        {
+          "name": "order_id",
+          "required": true
+        },
+        {
+          "name": "customer_ref"
+        },
+        {
+          "name": "total",
+          "type": "decimal"
+        }
+      ],
+      "key": [
+        "order_id"
+      ]
+    }
+  ],
+  "relation_types": [
+    {
+      "label": "placed",
+      "description": "The customer placed the order",
+      "start_labels": [
+        "Customer"
+      ],
+      "end_labels": [
+        "Order"
+      ],
+      "properties": [
+        {
+          "name": "at",
+          "type": "datetime"
+        }
+      ]
+    }
+  ]
+}
