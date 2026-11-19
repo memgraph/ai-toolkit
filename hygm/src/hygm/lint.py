@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Literal
 
+from .reserved_words import GQL_RESERVED_WORDS
 from .types import CASES, HygmModel, Property, RelationType
 
 Severity = Literal["warning", "info"]
@@ -328,6 +329,21 @@ def _meta_word_in_name(m: _Model) -> Iterator[Finding]:
             )
 
 
+def _reserved_word(m: _Model) -> Iterator[Finding]:
+    named = [(t.label, _node(t.label)) for t in m.model.node_types]
+    named += [(r.label, f"relation:{r.label}") for r in m.model.relation_types]
+    named += [(name, element) for name, element, _ in _properties(m)]
+    for name, element in named:
+        if name.upper() in GQL_RESERVED_WORDS:
+            yield Finding(
+                "reserved_word",
+                "warning",
+                element,
+                f"{name!r} is a GQL reserved word, so every GQL query must quote it (`{name}`)",
+                "rename it, for example with a qualifying word, or accept quoting it in GQL",
+            )
+
+
 def _sibling_naming(m: _Model) -> Iterator[Finding]:
     for parent, subtypes in m.subtypes.items():
         parent_words = _words(parent)
@@ -411,6 +427,7 @@ _CHECKS: tuple[Callable[[_Model], Iterator[Finding]], ...] = (
     _naming_case,
     _naming_number,
     _meta_word_in_name,
+    _reserved_word,
     _sibling_naming,
     _missing_description,
     _no_competency_questions,

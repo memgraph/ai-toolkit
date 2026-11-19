@@ -123,6 +123,24 @@ def test_meta_word_in_name():
     ]
 
 
+def test_reserved_word_in_any_case_but_not_a_word_gql_leaves_unreserved():
+    model = HygmModel(
+        node_types=(
+            _type("Order", properties=(Property("year", description="when"), Property("type", description="kind"))),
+            _type("Match"),
+            _type("Customer"),
+        ),
+        relation_types=(RelationType("return", "sent back", ("Order",), ("Customer",)),),
+    )
+
+    assert _found("reserved_word", model) == [
+        "node:Order",
+        "node:Match",
+        "relation:return",
+        "property:Order.year",
+    ]
+
+
 def test_sibling_naming():
     model = HygmModel(node_types=(_type("Wine"), _type("RedWine", "Wine"), _type("White", "Wine")))
 

@@ -96,6 +96,7 @@ from .profiles import (
     setting,
     with_version_1_profiles,
 )
+from .reserved_words import GQL_RESERVED_WORDS
 from .resolved import (
     RESOLVED_FORMAT,
     RESOLVED_MODEL_VERSION,
@@ -138,6 +139,7 @@ from .validation import (
 __all__ = [
     "CASES",
     "CYPHER_IDENTIFIER_PATTERN",
+    "GQL_RESERVED_WORDS",
     "IDENTITIES",
     "LINT_CODES",
     "MEMGRAPH_TYPES",
