@@ -7,7 +7,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.hygm.models.graph_models import (
+from structured2graph.core.hygm.models.graph_models import (
     GraphConstraint,
     GraphEnum,
     GraphIndex,
@@ -16,7 +16,7 @@ from core.hygm.models.graph_models import (
     GraphProperty,
     GraphRelationship,
 )
-from core.hygm.models.sources import (
+from structured2graph.core.hygm.models.sources import (
     ConstraintSource,
     EnumSource,
     IndexSource,
@@ -24,10 +24,10 @@ from core.hygm.models.sources import (
     PropertySource,
     RelationshipSource,
 )
-from core.hygm.strategies.deterministic import DeterministicStrategy
-from core.hygm_export import Gap, graph_model_to_hygm, write_hygm_files
-from database.analyzer import DatabaseAnalyzer
-from database.models import ColumnInfo, ForeignKeyInfo
+from structured2graph.core.hygm.strategies.deterministic import DeterministicStrategy
+from structured2graph.core.hygm_export import Gap, graph_model_to_hygm, write_hygm_files
+from structured2graph.database.analyzer import DatabaseAnalyzer
+from structured2graph.database.models import ColumnInfo, ForeignKeyInfo
 
 from hygm import (
     ColumnEndpoint,

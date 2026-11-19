@@ -15,9 +15,9 @@ from dotenv import load_dotenv
 # Add the parent directory to the path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.hygm import HyGM
 from langchain_openai import ChatOpenAI
-from utils.environment import (
+from structured2graph.core.hygm import HyGM
+from structured2graph.utils.environment import (
     probe_memgraph_connection,
     probe_source_connection,
     setup_and_validate_environment,
@@ -40,7 +40,7 @@ def test_comprehensive_sql_to_graph_conversion():
         llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
 
         # Create graph modeler with deterministic strategy for predictable testing
-        from core.hygm import GraphModelingStrategy
+        from structured2graph.core.hygm import GraphModelingStrategy
 
         modeler = HyGM(llm=llm, strategy=GraphModelingStrategy.DETERMINISTIC)
 
@@ -1039,8 +1039,8 @@ def test_full_migration_workflow_simulation():
 
     try:
         # Initialize components
-        from core.hygm import GraphModelingStrategy, ModelingMode
-        from core.migration_agent import SQLToMemgraphAgent
+        from structured2graph.core.hygm import GraphModelingStrategy, ModelingMode
+        from structured2graph.core.migration_agent import SQLToMemgraphAgent
 
         # Create migration agent with deterministic strategy
         agent = SQLToMemgraphAgent(
@@ -1351,7 +1351,7 @@ def test_full_migration_workflow_simulation():
 
         # Test graph modeling step (using HyGM directly)
         logger.info("Testing graph modeling step...")
-        from core.hygm import HyGM
+        from structured2graph.core.hygm import HyGM
 
         modeler = HyGM(llm=agent.llm, strategy=GraphModelingStrategy.DETERMINISTIC)
         graph_model = modeler.create_graph_model(sample_structure)

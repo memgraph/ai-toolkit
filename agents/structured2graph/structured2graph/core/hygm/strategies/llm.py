@@ -11,13 +11,13 @@ from typing import TYPE_CHECKING, Any, cast
 from langchain_core.language_models import BaseChatModel
 
 if TYPE_CHECKING:
-    from core.hygm.models.graph_models import GraphModel
-    from core.hygm.models.llm_models import LLMGraphModel
+    from structured2graph.core.hygm.models.graph_models import GraphModel
+    from structured2graph.core.hygm.models.llm_models import LLMGraphModel
 
 try:
     from .base import BaseModelingStrategy
 except ImportError:
-    from core.hygm.strategies.base import BaseModelingStrategy
+    from structured2graph.core.hygm.strategies.base import BaseModelingStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ class LLMStrategy(BaseModelingStrategy):
 
         try:
             # Import the structured output model
-            from core.hygm.models.llm_models import LLMGraphModel
+            from structured2graph.core.hygm.models.llm_models import LLMGraphModel
 
             # Prepare the prompt
             prompt = self._build_modeling_prompt(database_structure, domain_context, user_operation_context)
@@ -216,7 +216,7 @@ class LLMStrategy(BaseModelingStrategy):
         # Store the LLM model for use in relationship mapping
         self._current_llm_model = llm_model
 
-        from core.hygm.models.graph_models import (
+        from structured2graph.core.hygm.models.graph_models import (
             GraphConstraint,
             GraphIndex,
             GraphModel,
@@ -224,7 +224,7 @@ class LLMStrategy(BaseModelingStrategy):
             GraphProperty,
             GraphRelationship,
         )
-        from core.hygm.models.sources import (
+        from structured2graph.core.hygm.models.sources import (
             ConstraintSource,
             IndexSource,
             NodeSource,

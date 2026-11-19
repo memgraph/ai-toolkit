@@ -21,9 +21,9 @@ Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable Memgraph graph.
 | `integrations/langchain-memgraph/` | LangChain graph store, QA chain, toolkit. |
 | `integrations/mcp-memgraph/` | MCP server exposing Memgraph to LLMs. |
 | `integrations/lightrag-memgraph/` | LightRAG storage backends (KV/vector/doc-status/graph) on Memgraph. |
-| `hygm/` | The general graph model (ontology) component, domain-free: node types with a hierarchy, properties and keys, relation types with `start_labels`/`end_labels`, its validation gate, the model file (format versions 1 and 2, JSON Schemas, conformance fixtures), profiles as a mechanism (a registry and the shape of each profile's settings; their meaning lives with their owners), mapping files binding a model's types to sources, the operations a model evolves by, OWL import and export, lint for the design guidelines, a `hygm` command line, and the Memgraph plan a model implies (`memgraph_plan`/`apply_plan`; the caller supplies the client). Knows no consumer: nothing in it mentions conversations, sessions or an extractor (`docs/contract.md`, 5.6). Not the same package as `agents/sql2graph`'s HyGM. |
+| `hygm/` | The general graph model (ontology) component, domain-free: node types with a hierarchy, properties and keys, relation types with `start_labels`/`end_labels`, its validation gate, the model file (format versions 1 and 2, JSON Schemas, conformance fixtures), profiles as a mechanism (a registry and the shape of each profile's settings; their meaning lives with their owners), mapping files binding a model's types to sources, the operations a model evolves by, OWL import and export, lint for the design guidelines, a `hygm` command line, and the Memgraph plan a model implies (`memgraph_plan`/`apply_plan`; the caller supplies the client). Knows no consumer: nothing in it mentions conversations, sessions or an extractor (`docs/contract.md`, 5.6). Not the same package as `agents/structured2graph`'s HyGM. |
 | `unstructured2graph/` | Chunks unstructured input (files/URLs/text) and runs entity/relation extraction through a pluggable `ExtractionBackend` (`GLiNER2Backend` by default -- local and LLM-free; `LightRAGBackend` retained -- LLM-based). Outside the Context Graph family but shares its testing conventions. Owns hygm's `extraction` and `conversation` profiles (`unstructured2graph.profile`: mention identity, value types, the speaker rule). |
-| `agents/sql2graph/` | MySQL/Postgres → Memgraph migration agent. Has its own `.python-version` but resolves from the root `uv.lock`; run it with `cd agents/sql2graph && uv run main.py`. |
+| `agents/structured2graph/` | MySQL/Postgres → Memgraph migration agent, published as `structured2graph`. Has its own `.python-version` but resolves from the root `uv.lock`; run it with `cd agents/structured2graph && uv run structured2graph`. |
 | `context-graph/` | The Context Graph family — see below. |
 | `scripts/dev-memgraph.sh` | Local dev lifecycle: exploration Memgraph + isolated test Memgraph for the context-graph family and unstructured2graph. |
 | `skills/release/SKILL.md` | Release process for every PyPI/Docker-published package. |
@@ -176,8 +176,8 @@ same PR when the change is intended. See the eval README's `kg` section.
 - Every `noqa`, `type: ignore`, and `pragma: no cover` suppression must be
   narrow and include a specific reason. Prefer fixing the underlying issue or
   narrowing the suppression over adding a broad file-level exemption. The
-  standalone `agents/sql2graph` entry points are a documented legacy exception
-  while that package's import layout is migrated.
+  `agents/structured2graph` entry points (`main.py`, `core/migration_agent.py`)
+  are a documented legacy exception until they are made lint-clean.
 - Comments around Cypher/SQL must document security boundaries, parameterization
   decisions, transaction semantics, or graph-model invariants when those facts
   are not clear from the code. Never interpolate untrusted values into queries.

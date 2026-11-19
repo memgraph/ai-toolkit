@@ -14,8 +14,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import after path setup
-from core import SQLToMemgraphAgent
-from utils import setup_and_validate_environment
+from structured2graph.core import SQLToMemgraphAgent
+from structured2graph.utils import setup_and_validate_environment
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")

@@ -5,7 +5,7 @@
 > their mappings onto sources, and what follows from them, shared by every
 > project that models a graph, in this repo and outside it
 > Consumers today: `unstructured2graph` (text extraction), `sessions-graph`
-> (stored and learned ontologies). Planned: `agents/sql2graph` (which will
+> (stored and learned ontologies). Planned: `agents/structured2graph` (which will
 > depend on hygm and drop its own HyGM), and other tools in the Memgraph
 > ecosystem, including ones not written in Python
 > Background: the model follows common ontology design practice, as in Noy
@@ -22,7 +22,7 @@ Each has built its own:
 | Project | Has today | Missing |
 |---|---|---|
 | `hygm` | node and relation types, endpoints, mention identity; manual, OWL and LLM-from-text producers | properties, hierarchy, mappings, physical plan |
-| `agents/sql2graph` (`core/hygm`, ~6.7k lines) | properties, sources (table/column per element), indexes, constraints, enums, edit operations | a format anyone else reads, hierarchy, descriptions as a contract |
+| `agents/structured2graph` (`core/hygm`, ~6.7k lines) | properties, sources (table/column per element), indexes, constraints, enums, edit operations | a format anyone else reads, hierarchy, descriptions as a contract |
 | `sessions-graph` | versioned models stored in users' graphs, learned changes (add, merge, retire, restore) | a change vocabulary shared with anyone else |
 | other Memgraph ecosystem tools | their own mappings of labels onto sources | a vocabulary shared between graphs, a type hierarchy, descriptions for agents, OWL import |
 
@@ -1091,7 +1091,7 @@ then move.
 4. **sql2graph onto hygm,** in steps: it emits a hygm model and mapping
    beside its current output; `CatalogStrategy` and `LlmSchemaStrategy`
    move into hygm; its operations become hygm operations; then
-   `agents/sql2graph/core/hygm` is deleted. Its per-element statistics
+   `agents/structured2graph/structured2graph/core/hygm` is deleted. Its per-element statistics
    (`count`, `filling_factor`, `examples`) describe a dataset, not a model,
    and stay in sql2graph.
 5. **OWL import** extension (section 10).

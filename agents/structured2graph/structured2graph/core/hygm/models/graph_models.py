@@ -23,7 +23,7 @@ except ImportError:
     # Fallback for when imported from different contexts (matches the
     # core.hygm.models.X fallback style used by every other dual-context
     # import in this package; a bare `sources` is never on sys.path).
-    from core.hygm.models.sources import (
+    from structured2graph.core.hygm.models.sources import (
         ConstraintSource,
         EnumSource,
         IndexSource,

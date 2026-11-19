@@ -1,6 +1,6 @@
 """Validation issues and the model's own hard gate.
 
-The issue types are lifted from agents/sql2graph's HyGM
+The issue types are lifted from agents/structured2graph's HyGM
 (core/hygm/validation/base.py) in the same shape, so a later consolidation
 there is a type swap rather than a rewrite. Its SQL-coverage metrics are left
 behind.

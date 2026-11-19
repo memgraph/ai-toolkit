@@ -15,5 +15,5 @@ docker run -d --rm --net memgql-net --name structured2graph-dev --env-file .env 
 
 Exec into it:
 ```bash
-docker exec -it structured2graph-dev uv run main.py --mapping /output/mapping.json
+docker exec -it structured2graph-dev uv run structured2graph --mapping /output/mapping.json
 ```

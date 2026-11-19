@@ -5,7 +5,7 @@ hierarchy, properties and keys, relation types with the node labels they may
 connect (`start_labels`/`end_labels`, OWL's `rdfs:domain`/`rdfs:range`), and
 the files, checks and tools around them. hygm knows no consumer, domain or
 application; the projects that model graphs with it (unstructured2graph,
-sessions-graph, sql2graph and other tools in the Memgraph ecosystem) depend on
+sessions-graph, structured2graph and other tools in the Memgraph ecosystem) depend on
 it, never the other way round. The contract is
 [docs/contract.md](docs/contract.md) (draft, tracked in #693 and #721).
 
@@ -333,5 +333,5 @@ JSON takes a `resolver`, as reading a model file with imports does.
 those; a caller that knows better records its own operations. Moving the data
 a change implies is each consumer's job.
 
-`agents/sql2graph` has its own HyGM today. It will move onto this package and
-drop its own (#701, #702).
+`agents/structured2graph` keeps its own HyGM, separate from this package, and
+writes the model it decides in this package's model and mapping files.

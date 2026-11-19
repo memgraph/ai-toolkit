@@ -22,13 +22,13 @@ the switch still open in the editor.
 import logging
 from typing import Any
 
-from core.hygm.models.graph_models import (
+from structured2graph.core.hygm.models.graph_models import (
     GraphModel,
     GraphNode,
     GraphProperty,
     GraphRelationship,
 )
-from core.hygm.models.sources import NodeSource, PropertySource, RelationshipSource
+from structured2graph.core.hygm.models.sources import NodeSource, PropertySource, RelationshipSource
 
 logger = logging.getLogger(__name__)
 

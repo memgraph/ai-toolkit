@@ -15,7 +15,7 @@ Use the packages independently, or combine them to bring documents, databases, a
 | Query Memgraph in natural language or build a LangChain agent | [langchain-memgraph](integrations/langchain-memgraph/) |
 | Connect an MCP client to Memgraph | [mcp-memgraph](integrations/mcp-memgraph/) |
 | Use Memgraph as LightRAG storage | [lightrag-memgraph](integrations/lightrag-memgraph/) |
-| Migrate a MySQL or PostgreSQL database into a graph | [sql2graph](agents/sql2graph/) |
+| Migrate a MySQL or PostgreSQL database into a graph | [structured2graph](agents/structured2graph/) |
 | Work directly with Memgraph from Python | [memgraph-toolbox](memgraph-toolbox/) |
 | Define and validate a graph's entity and relation types | [hygm](hygm/) |
 

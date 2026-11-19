@@ -2,14 +2,14 @@
 
 ## TL;DR
 
-You are working inside the `agents/sql2graph` package, a UV-managed Python project that turns relational schemas (MySQL/PostgreSQL) into graph schemas and data. The primary entry point is `main.py`, which wires configuration, environment validation, database analyzers, and the HyGM graph-modeling subsystem. Changes usually touch:
+You are working inside the `agents/structured2graph` package, a UV-managed Python project that turns relational schemas (MySQL/PostgreSQL) into graph schemas and data. The primary entry point is `main.py`, which wires configuration, environment validation, database analyzers, and the HyGM graph-modeling subsystem. Changes usually touch:
 
 - `core/` — Orchestrates the migration workflow (`migration_agent.py`) and HyGM graph modeling (`hygm/`).
 - `database/` — Connectors and analyzers for the source RDBMSs.
 - `query_generation/` — Cypher generation helpers.
 - `utils/` — Environment setup, connection probes, and CLI helpers.
 
-Always maintain the CLI experience (`main.py`) and respect the line-length < 79 char lint rule.
+Always maintain the CLI experience (`structured2graph/main.py`) and respect the line-length < 79 char lint rule.
 
 ## Tech Stack & Tooling
 
@@ -36,7 +36,7 @@ Always maintain the CLI experience (`main.py`) and respect the line-length < 79 
 
 ## Entry Points & CLI Flow
 
-- Run with `uv run main.py` (banner, env checks, connection probes, then the migration workflow).
+- Run with `uv run structured2graph` (banner, env checks, connection probes, then the migration workflow).
 - CLI prompts include:
   - Graph modeling mode (automatic / incremental with interactive refinement).
   - Modeling strategy (deterministic / AI-powered).
@@ -76,7 +76,7 @@ Always maintain the CLI experience (`main.py`) and respect the line-length < 79 
 uv sync
 
 # Run the CLI
-uv run main.py
+uv run structured2graph
 
 # Run tests
 uv run python -m pytest tests -v

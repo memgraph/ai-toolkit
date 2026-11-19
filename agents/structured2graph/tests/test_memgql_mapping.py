@@ -5,18 +5,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.hygm.models.graph_models import (
+from structured2graph.core.hygm.models.graph_models import (
     GraphModel,
     GraphNode,
     GraphProperty,
     GraphRelationship,
 )
-from core.hygm.models.sources import (
+from structured2graph.core.hygm.models.sources import (
     NodeSource,
     PropertySource,
     RelationshipSource,
 )
-from core.memgql_mapping import (
+from structured2graph.core.memgql_mapping import (
     graph_model_to_mapping,
     mapping_connector,
     mapping_to_graph_model,

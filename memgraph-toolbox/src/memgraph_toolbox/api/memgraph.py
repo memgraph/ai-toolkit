@@ -153,7 +153,7 @@ class Memgraph:
             password: Password for authentication
             database: The database name to connect to (default: "memgraph"); "" for the login's main database
             driver_config: Additional Neo4j driver configuration
-            user_agent: Client name sent to the server (e.g. "mcp-memgraph", "langchain-memgraph", "sql2graph", etc.)
+            user_agent: Client name sent to the server (e.g. "mcp-memgraph", "langchain-memgraph", "structured2graph", etc.)
         """
 
         # Load from the shared Memgraph environment contract with fallbacks.
@@ -263,7 +263,7 @@ class AsyncMemgraph:
             password: Password for authentication
             database: The database name to connect to (default: "memgraph"); "" for the login's main database
             driver_config: Additional Neo4j driver configuration
-            user_agent: Client name sent to the server (e.g. "mcp-memgraph", "langchain-memgraph", "sql2graph", etc.)
+            user_agent: Client name sent to the server (e.g. "mcp-memgraph", "langchain-memgraph", "structured2graph", etc.)
         """
 
         # Resolve config through the same single source of truth as the sync client.

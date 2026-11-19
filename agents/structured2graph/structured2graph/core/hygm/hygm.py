@@ -23,12 +23,12 @@ try:
     )
     from .validation import GraphSchemaValidator
 except ImportError:
-    from core.hygm.strategies import (
+    from structured2graph.core.hygm.strategies import (
         BaseModelingStrategy,
         DeterministicStrategy,
         LLMStrategy,
     )
-    from core.hygm.validation import GraphSchemaValidator
+    from structured2graph.core.hygm.validation import GraphSchemaValidator
 
 try:
     from ..utils.meta_graph import (
@@ -38,7 +38,7 @@ try:
         summarize_relationship as meta_summarize_relationship,
     )
 except ImportError:
-    from core.utils.meta_graph import (
+    from structured2graph.core.utils.meta_graph import (
         node_key as meta_node_key,
         summarize_node as meta_summarize_node,
         relationship_key as meta_relationship_key,
@@ -48,7 +48,7 @@ except ImportError:
 try:
     from .models.user_operations import UserOperationHistory
 except ImportError:
-    from core.hygm.models.user_operations import UserOperationHistory
+    from structured2graph.core.hygm.models.user_operations import UserOperationHistory
 
 logger = logging.getLogger(__name__)
 
@@ -997,7 +997,7 @@ class HyGM:
             try:
                 from .models.operations import ModelModifications
             except ImportError:
-                from core.hygm.models.operations import ModelModifications
+                from structured2graph.core.hygm.models.operations import ModelModifications
 
             parser = PydanticOutputParser(pydantic_object=ModelModifications)
 
@@ -1195,7 +1195,7 @@ class HyGM:
         try:
             from .models.operations import ModelModifications
         except ImportError:
-            from core.hygm.models.operations import ModelModifications
+            from structured2graph.core.hygm.models.operations import ModelModifications
 
         dummy_operations = ModelModifications(
             operations=[],
