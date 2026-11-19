@@ -1,0 +1,4 @@
+version: 2
+node_types:
+  - {label: A, description: a, parents: [B]}
+  - {label: B, description: b, parents: [A]}

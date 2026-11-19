@@ -1,8 +1,11 @@
 """Claude Code's auto memory, as Context Graph switches away from and imports it.
 
 Auto memory is Markdown files in ``~/.claude/projects/<project>/memory/``, one
-folder per project. ``<project>`` is the project's absolute path with every
-character other than a letter or digit replaced by ``-``. ``MEMORY.md`` there
+folder per git repository, shared by its worktrees and subdirectories (outside
+a repository, per project folder). ``<project>`` is that folder's absolute path
+with every character other than a letter or digit replaced by ``-``; the other
+``~/.claude/projects/`` folders, one per directory a session started in, hold
+transcripts and are never read for memory. ``MEMORY.md`` there
 is the index Claude Code loads at session start; the other files are
 memories, each with frontmatter naming its ``type``. The ``autoMemoryEnabled``
 setting turns it off; a plugin can't set it, so this edits the user's own
@@ -16,14 +19,17 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import subprocess
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from memgraph_context_graph.adapters._text_file import write_text_keeping_newlines
 from memgraph_context_graph.memory_backend import ExportReport, ImportReport, MemoryBackendError
 
 if TYPE_CHECKING:
-    from memgraph_context_graph.memory_backend import MemoryFiles, MemorySource, StoredMemory
+    from memgraph_context_graph.memory_backend import MemoryFiles, MemorySource
 
 _SETTING = "autoMemoryEnabled"
 _INDEX_FILE = "MEMORY.md"
@@ -83,11 +89,21 @@ class ClaudeCodeMemory:
         ``user``/``feedback`` memories go under ``/memories/<type>/``, since they
         apply everywhere; ``project``/``reference`` (and untyped) ones under
         that project's ``/memories/projects/<key>/``, keyed as the session-start
-        index keys the checkout. ``MEMORY.md`` is skipped: the index is
-        generated now. The original files are left as they are.
+        index keys the checkout. A ``user``/``feedback`` memory whose name the
+        graph already holds with other text, so another project's own version,
+        goes under its project's folder under its own filename instead, where
+        handing memory back finds it again. ``MEMORY.md`` is skipped: the index
+        is generated now. The original files are left as they are.
+
+        Each file is marked with the project it came from and when it last
+        changed there, which the session-start index ranks by. A file already
+        in the graph with the same text is marked too, so re-running the import
+        fills that in for an earlier one.
         """
         from sessions_graph.memory_index import project_key_for
 
+        # An older sessions-graph can't record where a file came from; the import still works without it.
+        mark = getattr(files, "mark_imported", None)
         report = ImportReport()
         for memory_dir in sorted((home / ".claude" / "projects").glob("*/memory")):
             checkout = _checkout_for(memory_dir.parent.name)
@@ -99,62 +115,107 @@ class ClaudeCodeMemory:
                 if not text.strip():
                     continue
                 target = _target_path(source.name, text, project)
-                if _exists(files, target):
+                lineage = _lineage(files, target)
+                if lineage and text not in lineage and not target.startswith("/memories/projects/"):
+                    target = f"/memories/projects/{project}/{source.name}"
+                    lineage = _lineage(files, target)
+                if lineage:
                     report.skipped.append(target)
-                    continue
-                try:
-                    files.create(target, text)
-                except Exception:  # Too large, or the path is taken by a directory: keep going.
-                    report.skipped.append(target)
-                    continue
-                report.imported.append(target)
+                else:
+                    try:
+                        files.create(target, text)
+                    except Exception:  # Too large, or the path is taken by a directory: keep going.
+                        report.skipped.append(target)
+                        continue
+                    report.imported.append(target)
+                if mark is not None and (not lineage or text in lineage):
+                    mark(target, project, text=text, modified=_modified(source))
         return report
 
     def export_from(self, source: MemorySource, home: Path) -> ExportReport:
         """Write the graph's memories back into auto memory, the reverse of :meth:`import_into`.
 
-        A project's files go to every Claude Code project folder whose checkout has that key, and
-        ``user``/``feedback`` ones, which apply everywhere, to every folder that ends up with auto memory.
-        The graph's copy wins over an older one here, and each folder's ``MEMORY.md`` is rebuilt. Files
-        Claude Code has no folder for (a project it never opened, nested paths, other agents' files) stay
-        in the graph only.
+        A project's files go to its repository's memory folder. A ``user``/``feedback`` file goes back
+        to the folders it was imported from, which still hold it; one first written in the graph goes
+        to the repositories of the sessions that wrote it. A file there is overwritten only when it is
+        an earlier text of the graph's file, so a newer or unrelated native file is kept and reported.
+        Each folder written to gets its ``MEMORY.md`` rebuilt. Files with no folder to go to (a project
+        Claude Code never opened, nested paths, other agents' files) stay in the graph only.
         """
         folders = _memory_folders(home)
+        every_folder = sorted({folder for found in folders.values() for folder in found})
         report = ExportReport()
-        user_wide: list[tuple[str, StoredMemory]] = []
+        written: set[Path] = set()
         for memory in source.files():
             parts = memory.path.removeprefix("/memories/").split("/")
             if len(parts) == 2 and parts[0] in _USER_WIDE_TYPES:
-                user_wide.append((_native_name(parts[1], memory.content, parts[0]), memory))
-            elif len(parts) == 3 and parts[0] == "projects" and parts[1] in folders:
-                for folder in folders[parts[1]]:
-                    _write_memory(folder, _native_name(parts[2], memory.content, "project"), memory.content)
-                report.exported.append(memory.path)
+                name = _native_name(parts[1], memory.content, parts[0])
+                targets = [folder for folder in every_folder if (folder / name).is_file()] or [
+                    folder for key in source.written_in(memory.path) for folder in folders.get(key, [])
+                ]
+            elif len(parts) == 3 and parts[0] == "projects":
+                name = _native_name(parts[2], memory.content, "project")
+                targets = folders.get(parts[1], [])
             else:
+                targets = []
+            if not targets:
                 report.skipped.append(memory.path)
-        targets = sorted({folder for found in folders.values() for folder in found if folder.is_dir()})
-        for name, memory in user_wide:
+                continue
+            lineage = {memory.content} | {version.content for version in source.versions(memory.path)}
+            kept = []
             for folder in targets:
-                _write_memory(folder, name, memory.content)
-            (report.exported if targets else report.skipped).append(memory.path)
-        for folder in targets:
+                if _write_memory(folder, name, memory.content, lineage):
+                    written.add(folder)
+                elif (folder / name).read_text(encoding="utf-8") != memory.content:
+                    kept.append(str(folder / name))
+            report.kept += kept
+            if len(kept) < len(targets):
+                report.exported.append(memory.path)
+        for folder in sorted(written):
             _write_index(folder)
         return report
 
 
 def _memory_folders(home: Path) -> dict[str, list[Path]]:
-    """Each project key's auto-memory folders: every project Claude Code has opened, keyed as the import keys it."""
+    """Each project key's auto-memory folders, keyed as the import keys them: one per repository Claude Code opened.
+
+    Every ``~/.claude/projects/`` folder whose checkout is in a repository leads to the one folder named after
+    that repository's main checkout, the only one Claude Code reads memory from; a folder whose checkout is
+    gone counts only when it already holds memory.
+    """
     from sessions_graph.memory_index import project_key_for
 
     projects = home / ".claude" / "projects"
-    folders: dict[str, list[Path]] = {}
+    folders: dict[str, set[Path]] = {}
     for project in sorted(projects.iterdir() if projects.is_dir() else []):
         if not project.is_dir():
             continue
         checkout = _checkout_for(project.name)
-        key = (project_key_for(checkout) if checkout else None) or _fallback_key(project.name)
-        folders.setdefault(key, []).append(project / "memory")
-    return folders
+        if checkout is None:
+            if (project / "memory").is_dir():
+                folders.setdefault(_fallback_key(project.name), set()).add(project / "memory")
+            continue
+        root = _repository_root(checkout) or checkout
+        folder = projects / _SLUG_RE.sub("-", str(root)) / "memory"
+        key = project_key_for(checkout) or _fallback_key(folder.parent.name)
+        folders.setdefault(key, set()).add(folder)
+    return {key: sorted(found) for key, found in folders.items()}
+
+
+def _repository_root(checkout: Path) -> Path | None:
+    """The main checkout of the repository *checkout* is in, which its worktrees share; None outside git."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(checkout), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    common = Path(result.stdout.strip())
+    return common.parent if result.returncode == 0 and common.name == ".git" else None
 
 
 def _native_name(name: str, text: str, default_type: str) -> str:
@@ -164,12 +225,20 @@ def _native_name(name: str, text: str, default_type: str) -> str:
     return name if _PREFIX_RE.match(name) else f"{memory_type}_{name}"
 
 
-def _write_memory(folder: Path, name: str, text: str) -> None:
+def _write_memory(folder: Path, name: str, text: str, lineage: set[str]) -> bool:
+    """Write *text* to *folder*/*name* unless a file there holds text outside *lineage*; returns whether it wrote.
+
+    *lineage* is the graph file's current and earlier texts. A native file among them is one the graph's copy
+    descends from, so writing over it loses nothing; any other was written beside the graph and is kept.
+    """
     path = folder / name
-    if path.is_file() and path.read_text(encoding="utf-8") == text:
-        return
+    if path.is_file():
+        current = path.read_text(encoding="utf-8")
+        if current == text or current not in lineage:
+            return False
     folder.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    write_text_keeping_newlines(path, text)
+    return True
 
 
 def _write_index(folder: Path) -> None:
@@ -182,7 +251,7 @@ def _write_index(folder: Path) -> None:
         title = match["value"].strip("\"'") if (match := _NAME_RE.search(frontmatter)) else path.stem
         hook = match["value"].strip("\"'") if (match := _DESCRIPTION_RE.search(frontmatter)) else ""
         lines.append(f"- [{title}]({path.name})" + (f" — {hook}" if hook else ""))
-    (folder / _INDEX_FILE).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_text_keeping_newlines(folder / _INDEX_FILE, "\n".join(lines) + "\n")
 
 
 def _frontmatter(text: str) -> str:
@@ -198,23 +267,39 @@ def _target_path(filename: str, text: str, project: str) -> str:
     return f"/memories/projects/{project}/{name}"
 
 
-def _exists(files: MemoryFiles, path: str) -> bool:
-    try:
-        files.view(path)
-    except Exception:
-        return False
-    return True
+def _lineage(files: MemoryFiles, path: str) -> set[str]:
+    """The graph file at *path*'s current and earlier texts; empty when there is no such file."""
+    current = files.read(path)
+    if current is None:
+        return set()
+    return {current} | {version.content for version in files.versions(path)}
 
 
 def _checkout_for(slug: str) -> Path | None:
-    """The directory Claude Code named *slug*, found by walking the filesystem from ``/``.
+    """The directory Claude Code named *slug*, found by walking the filesystem from its root.
 
     The slug is lossy: ``/repos/ai-toolkit`` and ``/repos/ai/toolkit`` give
     the same one. So each step matches the directory's real entries by their
     own slugs, preferring the longest, and backtracks when a path dead-ends.
     """
-    tokens = slug.lstrip("-").split("-")
-    return _walk(Path("/"), tokens) if tokens and tokens[0] else None
+    start = _slug_root(slug)
+    return _walk(*start) if start else None
+
+
+def _slug_root(slug: str) -> tuple[Path, list[str]] | None:
+    """The filesystem root *slug* starts from, and the tokens left to walk below it.
+
+    A POSIX slug starts with the ``-`` of ``/``. A Windows one starts with the
+    drive letter, and the drive's ``:\\`` makes a double dash: ``C:\\source\\x`` is
+    ``C--source-x``.
+    """
+    if slug.startswith("-"):
+        tokens = slug[1:].split("-")
+        return (Path("/"), tokens) if tokens[0] else None
+    drive, double_dash, rest = slug.partition("--")
+    if len(drive) == 1 and drive.isalpha() and double_dash and rest:
+        return Path(f"{drive}:/"), rest.split("-")
+    return None
 
 
 def _walk(directory: Path, tokens: list[str]) -> Path | None:
@@ -232,6 +317,11 @@ def _walk(directory: Path, tokens: list[str]) -> Path | None:
         if entry is not None and (found := _walk(entry, tokens[width:])) is not None:
             return found
     return None
+
+
+def _modified(source: Path) -> str:
+    """When *source* last changed, in the ISO 8601 UTC form the graph's ``updated_at`` uses."""
+    return datetime.fromtimestamp(source.stat().st_mtime, timezone.utc).isoformat()
 
 
 def _fallback_key(slug: str) -> str:
@@ -270,7 +360,7 @@ def _set(path: Path, value: bool | None) -> list[str]:
     if path.exists() and not backup.exists():
         shutil.copy2(path, backup)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    write_text_keeping_newlines(path, json.dumps(settings, indent=2) + "\n")
     state = "removed" if value is None else json.dumps(value)
     return [f"Wrote {path} ({_SETTING} {state})"]
 

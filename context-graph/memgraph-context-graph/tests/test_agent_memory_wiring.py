@@ -20,7 +20,7 @@ from memgraph_context_graph.setup.agents import BY_RUNTIME
 
 
 class Files:
-    """An in-memory ``/memories`` tree with the two calls an import makes."""
+    """An in-memory ``/memories`` tree with the calls an import makes."""
 
     def __init__(self, existing=()):
         self.files: dict[str, str] = dict.fromkeys(existing, "")
@@ -29,6 +29,12 @@ class Files:
         if path not in self.files:
             raise FileNotFoundError(path)
         return self.files[path]
+
+    def read(self, path):
+        return self.files.get(path)
+
+    def versions(self, path):
+        return []
 
     def create(self, path, file_text):
         self.files[path] = file_text
@@ -69,7 +75,8 @@ def test_json_agents_register_the_server_beside_the_users_own(tmp_path, runtime,
     assert document["other"] == 1
     assert document["mcpServers"]["mine"] == {"command": "x"}
     entry = document["mcpServers"][SERVER]
-    assert [entry["command"], *entry["args"]] == server_argv()
+    assert [entry["command"], *entry["args"]] == server_argv(runtime)
+    assert entry["args"][-2:] == ["--agent", runtime]
     assert wiring.registered(tmp_path)
     if allow_file:
         assert _json(tmp_path / allow_file) == {"permissions": {"allow": ["shell(ls)", rule]}, "theme": "dark"}
@@ -101,7 +108,7 @@ def test_grok_gets_a_server_that_sends_the_session_text_and_an_allow_rule(tmp_pa
 
     config = tomlkit.parse(path.read_text())
     server = config["mcp_servers"][SERVER]
-    assert server["args"][-2:] == ["mcp", "--session-context"]
+    assert server["args"][-4:] == ["mcp", "--agent", "grok", "--session-context"]
     assert config["mcp_servers"]["mine"]["command"] == "x"
     assert list(config["permission"]["allow"]) == ["MCPTool(context-graph__*)"]
 
@@ -199,7 +206,7 @@ def test_opencode_gets_its_v2_server_shape_with_tools_of_their_own(tmp_path):
 
     document = _json(path)
     entry = document["mcp"]["servers"][SERVER]
-    assert entry["command"] == server_argv()
+    assert entry["command"] == server_argv("opencode")
     assert entry["codemode"] is False
     assert document["permissions"] == [
         {"action": "*", "effect": "ask"},

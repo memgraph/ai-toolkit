@@ -1,0 +1,2 @@
+entity_types:
+  - {label: Thing, description: anything}

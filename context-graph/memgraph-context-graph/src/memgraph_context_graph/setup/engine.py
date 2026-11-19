@@ -61,6 +61,9 @@ class Environment:
     #: Found agents that already capture: their plugin is installed, or the current project is wired.
     wired_agents: tuple[str, ...] = ()
     configured_memory_backend: str | None = None
+    #: The profile the config resolves through for this run (``setup <runtime> --profile``, or the
+    #: one the named agents are mapped to); None for the top level.
+    profile: str | None = None
 
 
 def look_around(cwd: Path | None = None) -> Environment:
@@ -77,6 +80,7 @@ def look_around(cwd: Path | None = None) -> Environment:
         found_agents=tuple(agent.runtime for agent in found),
         wired_agents=tuple(agent.runtime for agent in found if _wired(agent, cwd)),
         configured_memory_backend=config.memory_backend,
+        profile=config.profile,
     )
 
 
@@ -128,6 +132,8 @@ def default_user_id() -> str:
 def plan(choices: Choices, env: Environment) -> list[str]:
     """What :func:`run` will do with *choices*, one line per step, without doing any of it."""
     lines = []
+    if env.profile:
+        lines.append(f"Profile: {env.profile}, its own Memgraph and memory; agents on other profiles are unaffected")
     if env.edition == "enterprise":
         lines.append("Memgraph and identity: from your Enterprise login (edition = enterprise); unchanged")
     else:
@@ -201,9 +207,12 @@ def run(
     for runtime in choices.runtimes:
         done(_agent(agents_mod.BY_RUNTIME[runtime], choices, log))
     if choices.memory_backend:
-        for runtime in choices.runtimes:
-            if (outcome := _memory(runtime, choices.memory_backend)) is not None:
-                done(outcome)
+        switchable = [runtime for runtime in choices.runtimes if has_native_memory(runtime)]
+        for runtime in switchable:
+            outcome = done(_memory(runtime, choices.memory_backend, last=runtime == switchable[-1]))
+            # Later hand-backs must still see the graph as the backend when this one is retried.
+            if outcome.status == "fail" and choices.memory_backend == "native":
+                break
     for outcome in verify(choices.runtimes):
         done(outcome)
     return outcomes
@@ -391,8 +400,11 @@ def next_steps(choices: Choices, env: Environment, memgraph_url: str, config: Pa
     remembering = [agents_mod.BY_RUNTIME[r].label for r in choices.runtimes if has_native_memory(r)]
     user = env.configured_user if env.edition == "enterprise" and env.configured_user else choices.user_id
     setup = [("Memgraph", memgraph_url), ("You", user), ("Agents", _agents_set_up(choices))]
+    if env.profile:
+        setup.insert(0, ("Profile", env.profile))
+    shared_by = f"every agent on profile {env.profile}" if env.profile else "every agent"
     if remembering:
-        setup.append(("Memory", "the graph, shared by every agent" if graph_memory else "each agent's own"))
+        setup.append(("Memory", f"the graph, shared by {shared_by}" if graph_memory else "each agent's own"))
     setup.append(("Config", _home_relative(config)))
 
     tips = ['Finish a session, start another, and ask\n"what did we do last time?"']
@@ -400,10 +412,12 @@ def next_steps(choices: Choices, env: Environment, memgraph_url: str, config: Pa
         tips.append('Say "remember that ..." and every agent can recall it')
     tips += [f"To start recording {_FIRST_RUN[r]}" for r in choices.runtimes if r in _FIRST_RUN]
 
+    # Bare doctor checks Claude Code's destination; on a profile, check an agent that uses it.
+    doctor = f"doctor --runtime {choices.runtimes[0]}" if env.profile and choices.runtimes else "doctor"
     commands = [("ui", "watch your graph grow")] if choices.viewer else []
     commands += [
         ("recall <question>", "search your past sessions"),
-        ("doctor", "check that capture works"),
+        (doctor, "check that capture works"),
         ("setup", "change anything, any time"),
         ("uninstall", "undo the wiring; your graph stays"),
     ]
@@ -427,21 +441,29 @@ def _home_relative(path: Path) -> str:
         return str(path)
 
 
-def _memory(runtime: str, backend: str) -> Outcome | None:
+def _memory(runtime: str, backend: str, *, last: bool) -> Outcome:
+    """Switch *runtime*'s memory to *backend*.
+
+    Handing back to native copies from the graph only while ``memory.backend`` is still the graph's, and
+    that value is shared, so every runtime but the *last* is handed back without changing it.
+    """
     from memgraph_context_graph.adapters._identity import MEMORY_BACKEND_GRAPH
     from memgraph_context_graph.hooks.runtime_plugin import get_runtime_plugin
     from memgraph_context_graph.memory_backend import (
         MemoryBackendError,
-        native_memory_of,
+        hand_back_memory,
         use_graph_memory,
         use_native_memory,
     )
 
     plugin = get_runtime_plugin(runtime)
-    if native_memory_of(plugin) is None:
-        return None
     label = f"{agents_mod.BY_RUNTIME[runtime].label} memory"
-    switch = use_graph_memory if backend == MEMORY_BACKEND_GRAPH else use_native_memory
+    if backend == MEMORY_BACKEND_GRAPH:
+        switch = use_graph_memory
+    elif last:
+        switch = use_native_memory
+    else:
+        switch = hand_back_memory
     try:
         lines = switch(plugin)
     except MemoryBackendError as exc:

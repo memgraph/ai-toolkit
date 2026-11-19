@@ -64,6 +64,24 @@ def test_viewing_the_spaces_folder_lists_mine(as_login):
     assert "No shared spaces" in as_login("carol")({"command": "view", "path": "/memories/spaces"})
 
 
+def test_viewing_the_root_shows_my_shared_spaces_beside_my_own_files(as_login):
+    alice, bob, carol = as_login("alice"), as_login("bob"), as_login("carol")
+    assert "0B\t/memories/spaces/payments/" in bob({"command": "view", "path": "/memories"})
+
+    alice({"command": "create", "path": "/memories/private.md", "file_text": "Only mine."})
+    alice({"command": "create", "path": DOC, "file_text": "Payments moves to Postgres 16."})
+    bob({"command": "create", "path": "/memories/notes.md", "file_text": "Bob's."})
+
+    listing = bob({"command": "view", "path": "/memories/"}).splitlines()[1:]
+    assert listing == [
+        "36B\t/memories",
+        "6B\t/memories/notes.md",
+        "30B\t/memories/spaces/",
+        "30B\t/memories/spaces/payments/",
+    ]
+    assert "/memories/spaces" not in carol({"command": "view", "path": "/memories"})
+
+
 def test_rename_promotes_a_personal_file_into_a_space_and_back(as_login, admin):
     alice, bob = as_login("alice"), as_login("bob")
     alice({"command": "create", "path": "/memories/runbook.md", "file_text": "Restart with make deploy."})
@@ -130,3 +148,27 @@ def test_leaving_a_space_refuses_writes_once_the_connection_ages_out(enterprise_
         tool.call({"command": "create", "path": DOC, "file_text": "after"}, _identity.load_config())
     with pytest.raises(ToolError, match="aren't a member"):
         tool.call({"command": "view", "path": DOC}, _identity.load_config())
+
+
+def test_a_revoked_space_still_cached_doesnt_hide_the_root_listing(enterprise_url, team, join, admin, monkeypatch):
+    import time
+
+    from context_graph_spaces import resolver
+
+    monkeypatch.setattr(resolver, "REVOCATION_DELAY_SECONDS", 1.0)
+    join(enterprise_url, "bob", team["bob"])
+    tool = MemoryTool()
+    tool.call({"command": "create", "path": "/memories/notes.md", "file_text": "Bob's."}, _identity.load_config())
+    assert (
+        "/memories/spaces/payments/"
+        in tool.call({"command": "view", "path": "/memories"}, _identity.load_config()).text
+    )
+
+    apply(parse_spec({"members": ["alice", "bob", "carol"], "spaces": {"payments": {"members": ["alice"]}}}), admin)
+    time.sleep(1.5)
+
+    listing = tool.call({"command": "view", "path": "/memories"}, _identity.load_config()).text
+    assert "6B\t/memories/notes.md" in listing
+    assert "/memories/spaces/payments/" not in listing
+    assert "Shared space payments is unavailable" in listing
+    assert "payments" not in tool.call({"command": "view", "path": "/memories"}, _identity.load_config()).text

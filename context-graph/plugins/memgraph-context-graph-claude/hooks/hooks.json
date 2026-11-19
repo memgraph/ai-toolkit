@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run claude-code",
+            "command": "if command -v memgraph-context-graph >/dev/null 2>&1; then memgraph-context-graph hook run claude-code; else echo 'AI Memory (the context-graph plugin) is installed, but the memgraph-context-graph tool its hooks call is not, so this session is not recorded and past sessions cannot be recalled. Tell the user, and offer to set it up with the setup skill that comes with the plugin.'; fi",
             "timeout": 30
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run claude-code",
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run claude-code",
             "timeout": 30
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run claude-code",
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run claude-code",
             "timeout": 30
           }
         ]
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run claude-code",
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run claude-code",
             "timeout": 30
           }
         ]
@@ -51,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run claude-code",
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run claude-code",
             "timeout": 30
           }
         ]
@@ -63,7 +63,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run claude-code",
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run claude-code",
             "timeout": 30
           }
         ]
@@ -75,7 +75,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run claude-code",
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run claude-code",
             "timeout": 30
           }
         ]
@@ -87,7 +87,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run claude-code",
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run claude-code",
             "timeout": 30
           }
         ]
@@ -98,7 +98,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run claude-code",
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run claude-code",
             "timeout": 30
           }
         ]
@@ -109,7 +109,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run claude-code",
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run claude-code",
             "timeout": 30
           }
         ]
@@ -120,7 +120,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run claude-code",
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run claude-code",
             "timeout": 30
           }
         ]
@@ -131,7 +131,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run claude-code",
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run claude-code",
             "timeout": 30
           }
         ]
@@ -142,7 +142,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "memgraph-context-graph hook run claude-code",
+            "command": "command -v memgraph-context-graph >/dev/null 2>&1 || exit 0; memgraph-context-graph hook run claude-code",
             "timeout": 30
           }
         ]

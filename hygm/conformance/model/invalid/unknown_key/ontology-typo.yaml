@@ -1,0 +1,5 @@
+version: 2
+ontology:
+  maintainer: [the sommelier team]
+node_types:
+  - {label: Wine, description: A wine}

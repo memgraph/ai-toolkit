@@ -112,4 +112,4 @@ For other packages, see their READMEs and the [test workflow](.github/workflows/
 
 Ask questions on [Discord](https://discord.gg/memgraph), report bugs or request features in [GitHub Issues](https://github.com/memgraph/ai-toolkit/issues), and explore the [Memgraph AI documentation](https://memgraph.com/docs/ai-ecosystem).
 
-[MIT license](LICENSE)
+[Apache License 2.0](LICENSE)

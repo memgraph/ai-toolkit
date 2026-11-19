@@ -37,15 +37,16 @@ import asyncio
 import hashlib
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from hygm import PERSON_LABEL, USER_LABEL, VALUE_LABELS, require_valid_identifier
+from hygm import require_valid_identifier
 from memgraph_toolbox.api.memgraph import Memgraph
 
 from .memgraph import Endpoint, create_nodes_from_list, link_mentions, upsert_extracted_relationships
 from .ontology import DEFAULT_ONTOLOGY, Ontology
+from .profile import PERSON_LABEL, USER_LABEL, identity_of, value_labels
 
 if TYPE_CHECKING:
     from .loaders import Chunk, Segment
@@ -214,7 +215,7 @@ class _Edge:
     confidence: float | None
 
 
-def _with_value_pass(main: Any, values: Any) -> tuple[list[_Span], list[_Edge], int]:
+def _with_value_pass(main: Any, values: Any, value_types: Sequence[str]) -> tuple[list[_Span], list[_Edge], int]:
     """A window's main-pass result with the value-only pass's value spans taking precedence (#386).
 
     In one pass every label competes for a span, and in a large learned
@@ -229,7 +230,7 @@ def _with_value_pass(main: Any, values: Any) -> tuple[list[_Span], list[_Edge], 
     Returns:
         The window's spans and edges, and how many main mentions were claimed.
     """
-    claims = [e for e in values.entities if e.type in VALUE_LABELS]
+    claims = [e for e in values.entities if e.type in value_types]
 
     def claimed(e: Any) -> bool:
         return any(e.start < v.end and v.start < e.end and e.type != v.type for v in claims)
@@ -402,7 +403,7 @@ class GLiNER2Backend:
         self._chunk_size = chunk_size
         self._chunk_overlap = chunk_overlap
         self._resolve = mention_resolver
-        self._identity = {t.label: t.identity for t in self.ontology.entity_types}
+        self._identity = {t.label: identity_of(t) for t in self.ontology.entity_types}
         self._config = self._make_config(candidate_cap)
         self._schema = self.engine.compile_schema(self._build_schema())
         value_schema = self._build_value_schema()
@@ -454,7 +455,8 @@ class GLiNER2Backend:
         never compete with the whole vocabulary again.
         """
         declared = {t.label: t for t in self.ontology.entity_types}
-        relations = [r for r in self.ontology.relation_types if r.end_labels and set(r.end_labels) <= set(VALUE_LABELS)]
+        value_types = set(value_labels(self.ontology.model))
+        relations = [r for r in self.ontology.relation_types if r.end_labels and set(r.end_labels) <= value_types]
         if not relations:
             return None
         people = tuple(label for label in (USER_LABEL, PERSON_LABEL) if label in declared)
@@ -507,7 +509,7 @@ class GLiNER2Backend:
             relations: list[Any] = list(result.relations)
             if self._value_schema is not None:
                 values = self.engine.extract(text, self._value_schema, config=self._config)
-                entities, relations, claimed = _with_value_pass(result, values)
+                entities, relations, claimed = _with_value_pass(result, values, value_labels(self.ontology.model))
                 extracted.value_spans_claimed += claimed
             local: dict[str, int] = {}
             for entity in entities:

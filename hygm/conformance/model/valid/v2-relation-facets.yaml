@@ -1,0 +1,22 @@
+version: 2
+node_types:
+  - {label: Wine, description: a wine}
+  - {label: Winery, description: a winery}
+  - {label: FrenchWinery, description: a French winery, parents: [Winery]}
+  - {label: Grape, description: a grape}
+  - label: FrenchWine
+    description: A wine from France, made by a French winery from at least one grape
+    parents: [Wine]
+    relation_restrictions:
+      - {relation: maker, end_labels: [FrenchWinery]}
+      - {relation: grape, min_count: 1}
+  - label: Bordeaux
+    description: A blend of at most three grapes
+    parents: [FrenchWine]
+    relation_restrictions:
+      - {relation: grape, min_count: 2, max_count: 3}
+relation_types:
+  - {label: maker, description: who made it, start_labels: [Wine], end_labels: [Winery], min_count: 1, max_count: 1}
+  - {label: produces, description: what it made, start_labels: [Winery], end_labels: [Wine], inverse_of: maker}
+  - {label: grape, description: made from, start_labels: [Wine], end_labels: [Grape]}
+  - {label: pairs_with, description: goes well with, start_labels: [Wine], end_labels: [Wine], symmetric: true}

@@ -1,0 +1,69 @@
+{
+  "format": "hygm-resolved",
+  "version": 1,
+  "model_version": 2,
+  "node_types": [
+    {
+      "label": "Sample",
+      "description": "one of each property type",
+      "properties": [
+        {
+          "name": "s",
+          "type": "string",
+          "declared_by": "Sample"
+        },
+        {
+          "name": "i",
+          "type": "integer",
+          "declared_by": "Sample"
+        },
+        {
+          "name": "f",
+          "type": "float",
+          "declared_by": "Sample"
+        },
+        {
+          "name": "d",
+          "type": "decimal",
+          "declared_by": "Sample"
+        },
+        {
+          "name": "b",
+          "type": "boolean",
+          "declared_by": "Sample"
+        },
+        {
+          "name": "dt",
+          "type": "date",
+          "declared_by": "Sample"
+        },
+        {
+          "name": "ts",
+          "type": "datetime",
+          "declared_by": "Sample"
+        },
+        {
+          "name": "j",
+          "type": "json",
+          "declared_by": "Sample"
+        },
+        {
+          "name": "e",
+          "type": "string",
+          "values": [
+            "a",
+            "b"
+          ],
+          "declared_by": "Sample"
+        },
+        {
+          "name": "x",
+          "type": "string",
+          "iri": "https://example.org/x",
+          "declared_by": "Sample"
+        }
+      ]
+    }
+  ],
+  "relation_types": []
+}

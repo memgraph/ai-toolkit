@@ -16,8 +16,8 @@ Setup connects to your configured Memgraph or starts its own Docker container, i
 ## Install through the marketplace
 
 ```bash
-codex plugin marketplace add memgraph/ai-toolkit --sparse .agents/plugins
-codex plugin add context-graph@context-graph-plugins
+codex plugin marketplace add memgraph/marketplace
+codex plugin add context-graph@memgraph
 ```
 
 The plugin supplies wiring; it also needs the Python CLI and connectors. From this plugin's directory, run `./scripts/bootstrap.sh` to install those and run setup, or use the [family installer](../../README.md#getting-started).
@@ -29,7 +29,7 @@ Trust the plugin's hooks in Codex's startup review or `/hooks` before using it. 
 Setup allows the plugin's MCP tools in `~/.codex/config.toml`, so recall works when approval prompts are disabled (under `approval_policy = "never"`, a prompt is a refusal). This is the entry setup writes, and uninstall removes it:
 
 ```toml
-[plugins."context-graph@context-graph-plugins".mcp_servers.context-graph]
+[plugins."context-graph@memgraph".mcp_servers.context-graph]
 default_tools_approval_mode = "approve"
 ```
 

@@ -20,7 +20,9 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Any
 
-from memgraph_context_graph.tools import Tool, ToolError, is_available, load_tools
+from memgraph_context_graph import graph_version
+from memgraph_context_graph.graph_version import GraphTooNewError
+from memgraph_context_graph.tools import Tool, ToolError, is_available, load_tools, writes_graph
 
 if TYPE_CHECKING:
     from mcp.server.lowlevel import Server
@@ -67,8 +69,8 @@ def build_server(tools: dict[str, Tool] | None = None, *, instructions: str | No
             return _error(f"Unknown tool: {name}")
         try:
             # Tools query Memgraph synchronously; a thread keeps the server responsive.
-            result = await to_thread.run_sync(tool.call, arguments or {}, config)
-        except ToolError as exc:
+            result = await to_thread.run_sync(_call_checked, tool, arguments or {}, config)
+        except (ToolError, GraphTooNewError) as exc:
             return _error(str(exc))
         return types.CallToolResult(content=[types.TextContent(type="text", text=result.text)])
 
@@ -85,6 +87,19 @@ def build_server(tools: dict[str, Tool] | None = None, *, instructions: str | No
         return await call_tool(params.name, params.arguments)
 
     return Server(SERVER_NAME, instructions=instructions, on_list_tools=on_list_tools, on_call_tool=on_call_tool)
+
+
+def _call_checked(tool: Tool, arguments: dict[str, Any], config: Any) -> Any:
+    """Call *tool* unless a newer Context Graph reshaped the graph it reads, or writes (``writes_graph``).
+
+    The server outlives package upgrades, so it checks on each call rather than once at start; the check is cached.
+    """
+    rules = graph_version.check_configured()
+    if not rules.may_read(tool.connector):
+        raise rules.refuse_read(tool.connector)
+    if writes_graph(tool) and not rules.may_write(tool.connector):
+        raise rules.refuse_write(tool.connector)
+    return tool.call(arguments, config)
 
 
 def session_instructions(tools: dict[str, Tool]) -> str | None:

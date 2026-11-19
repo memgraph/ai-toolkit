@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
+import threading
 import time
 from typing import TYPE_CHECKING, Any, NoReturn, TypedDict
 
-from memgraph_context_graph import capture_log
+from memgraph_context_graph import capture_log, graph_version, refused_events
 from memgraph_context_graph.capture_policy import CapturePolicy, policy_from_config
 from memgraph_context_graph.connectors import (
     INSTALLABLE,
@@ -20,6 +22,7 @@ from memgraph_context_graph.connectors import (
 from memgraph_context_graph.events import ToolStartEvent
 from memgraph_context_graph.link import AgentLink, ConnectorFailuresError
 from memgraph_context_graph.protocols import GraphConnector
+from memgraph_context_graph.tools import SESSION_CONTEXT_CHARS
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -35,6 +38,16 @@ if TYPE_CHECKING:
 #: (30 s in our plugins): the driver's own 30 s default let a blackholed host outlast the hook,
 #: so the runtime killed it before the failure could be logged (#378).
 HOOK_CONNECT_TIMEOUT = 5.0
+
+#: Seconds a hook runs before it logs where it was stuck, answers the runtime, and exits, for the 30 s hook
+#: timeout our plugins declare. A query waiting on Memgraph's storage access never raises, so without a deadline
+#: of its own the hook is killed at the runtime's timeout and nothing is logged.
+HOOK_DEADLINE = 25.0
+
+
+def deadline_for(timeout: float) -> float:
+    """The ``--deadline`` for a hook the runtime kills after *timeout* seconds: enough margin to log and answer."""
+    return max(timeout - 5.0, timeout / 2)
 
 
 def load_payload(stream: Any | None = None) -> dict[str, Any]:
@@ -57,6 +70,7 @@ def create_link(
     memgraph_env: dict[str, str] | None = None,
     on_error: ConnectorFailureHandler | None = None,
     policy: CapturePolicy | None = None,
+    spool_refused: bool = True,
 ) -> AgentLink:
     """Create an AgentLink with optional connectors named by CLI/config.
 
@@ -68,6 +82,13 @@ def create_link(
     Memgraph raises, since no connector could run. Without it each connector
     connects on its own, as library callers always have.
 
+    With *memgraph_env*, a connector whose part of the graph a newer Context
+    Graph has reshaped (:mod:`memgraph_context_graph.graph_version`) is not
+    added: it fails like one that can't be set up, with a
+    :class:`~memgraph_context_graph.graph_version.GraphTooNewError`, and
+    its events are spooled for ``update`` to replay
+    (:mod:`memgraph_context_graph.refused_events`).
+
     Args:
         connector_names: Connectors to enable, by distribution name.
         memgraph_env: Resolved Memgraph settings (``resolve_memgraph_env``).
@@ -75,6 +96,8 @@ def create_link(
             event, is reported here and the others still run. Without it the
             first failure raises.
         policy: The capture policy every event passes before a connector sees it.
+        spool_refused: Keep refused connectors' events for replay; off for the
+            replay itself, which keeps them on its own terms.
 
     Raises:
         ValueError: if a connector name is not supported, or Memgraph can't be reached.
@@ -87,13 +110,28 @@ def create_link(
 
     link = AgentLink(on_error=report if on_error is not None else None, policy=policy)
     shared = _hook_memgraph(memgraph_env) if names and memgraph_env is not None else None
+    rules = (
+        graph_version.check(
+            lambda: contextlib.nullcontext(shared),
+            url=memgraph_env["MEMGRAPH_URL"],
+            database=memgraph_env["MEMGRAPH_DATABASE"],
+        )
+        if shared is not None and memgraph_env is not None
+        else graph_version.Rules()
+    )
+    refused: list[str] = []
     for name in names:
         try:
+            if not rules.may_write(name):
+                refused.append(name)
+                raise rules.refuse_write(name)
             link.add_connector(_build_connector(name, memgraph_env, memgraph=shared))
         except Exception as exc:
             if on_error is None:
                 raise
             on_error(name, None, exc)
+    if refused and spool_refused:
+        link.add_connector(refused_events.Spool(refused))
     return link
 
 
@@ -161,6 +199,13 @@ def _hook_parser(plugin: RuntimeCLIPlugin) -> argparse.ArgumentParser:
     parser.add_argument("--memgraph-password", default=None, help="Memgraph password. Overrides config file value.")
     parser.add_argument("--memgraph-database", default=None, help="Memgraph database. Overrides config file value.")
     parser.add_argument(
+        "--deadline",
+        type=float,
+        default=HOOK_DEADLINE,
+        help=f"Seconds before the hook gives up, logs why, and answers the runtime (default: {HOOK_DEADLINE:g}). "
+        "Keep it under the runtime's hook timeout.",
+    )
+    parser.add_argument(
         "--strict",
         action="store_true",
         help="Return a non-zero status if the hook payload cannot be recorded.",
@@ -198,6 +243,54 @@ class _FailureReport:
             self.record("emit", exc, connector=name, event_type=event.event_type.value, session_id=event.session_id)
 
 
+class _Deadline:
+    """Answers the runtime and ends the process once a hook has run too long, logging the stage it was stuck in.
+
+    Every response goes through :meth:`respond`, so the runtime reads one
+    answer whichever of the hook and the deadline gets there first.
+    """
+
+    def __init__(self, plugin: RuntimeCLIPlugin, report: _FailureReport) -> None:
+        self._plugin = plugin
+        self._report = report
+        self._lock = threading.Lock()
+        self._responded = False
+        self._timer: threading.Timer | None = None
+
+    def start(self, seconds: float) -> None:
+        self._timer = threading.Timer(seconds, self._expire, args=(seconds,))
+        self._timer.daemon = True
+        self._timer.start()
+
+    def cancel(self) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
+
+    def respond(self, response: dict[str, Any]) -> None:
+        with self._lock:
+            if self._responded:
+                return
+            self._responded = True
+            if response:
+                print(json.dumps(response))
+
+    def _expire(self, seconds: float) -> None:
+        # Never released once answering here: the hook's own thread may still be blocked and must not answer too.
+        self._lock.acquire()
+        if self._responded:
+            self._lock.release()
+            return
+        self._report.record(
+            self._report.stage, error_type="HookDeadline", error=f"hook still running after {seconds:g} s"
+        )
+        # The plain response: the session-start text would query the graph that is holding the hook up.
+        response = self._plugin.response_for_payload(self._report.payload) or {}
+        if response:
+            print(json.dumps(response))
+        sys.stdout.flush()
+        os._exit(0)
+
+
 def _text(value: Any) -> str | None:
     return value if isinstance(value, str) else None
 
@@ -206,7 +299,8 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
     """Read one hook payload from stdin, run it through *plugin*, print a response.
 
     This is what ``memgraph-context-graph hook run <runtime>`` invokes: parse
-    the shared CLI flags, resolve Memgraph config, translate the payload via
+    the shared CLI flags, resolve Memgraph config (through the profile ``[agents]``
+    maps the runtime to, if any), translate the payload via
     ``plugin.adapter_class``, and write back whatever ``plugin.response_for_payload``
     says the runtime expects -- identical flow for every registered runtime.
 
@@ -216,14 +310,25 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
     normal response, and the exit status is 0. ``--strict`` (or the
     ``_STRICT`` env flag) re-raises after logging, for developers; a connector
     failure then raises :class:`ConnectorFailuresError` once every connector has run.
+
+    A hook that blocks, on a query waiting for Memgraph's storage access, never
+    raises: at ``--deadline`` it logs a ``HookDeadline`` failure at the stage it
+    was stuck in, prints the runtime's plain response, and exits 0 itself,
+    before the runtime's own timeout would kill it unlogged.
     """
+    from memgraph_context_graph.adapters._identity import select_agent
+
+    # Before anything reads the config: the profile [agents] maps this runtime to decides where it captures.
+    select_agent(plugin.name)
     report = _FailureReport(plugin.name)
+    deadline = _Deadline(plugin, report)
     strict = os.environ.get(f"{_env_prefix(plugin.name)}_STRICT") == "1"
     payload: dict[str, Any] = {}
     connector_names: list[str] = []
     try:
         args = _hook_parser(plugin).parse_args(argv)
         strict = strict or args.strict
+        deadline.start(args.deadline)
 
         from memgraph_context_graph.adapters._identity import load_config, resolve_memgraph_env
 
@@ -245,7 +350,7 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
         if problems := [*load_config().problems, *policy_problems]:
             report.record("config", level="warning", error_type="MalformedConfig", error="; ".join(problems))
         if policy.excludes_project(_with_cwd(payload)["cwd"]):
-            _print_response(plugin, payload, connector_names)
+            deadline.respond(_response(plugin, payload, connector_names))
             return 0
 
         report.stage = "setup"
@@ -258,7 +363,9 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
         adapter = plugin.adapter_class(link, session_id=args.session_id)
         adapter.handle_payload(payload)
         report.stage = "respond"
-        _print_response(plugin, payload, connector_names, before_tool=_context_before_tool(link, tool_starts.events))
+        deadline.respond(
+            _response(plugin, payload, connector_names, before_tool=_context_before_tool(link, tool_starts.events))
+        )
     except Exception as exc:
         if report.stage in {"args", "config"}:
             # Failed before stdin was read: read it now, so the runtime still gets the response its event expects
@@ -269,9 +376,11 @@ def run_hook(plugin: RuntimeCLIPlugin, argv: Sequence[str] | None = None) -> int
         report.record(report.stage, exc, error_type="HookArgumentError" if report.stage == "args" else None)
         if strict:
             raise
-        _print_response(plugin, payload, connector_names)
+        deadline.respond(_response(plugin, payload, connector_names))
         _debug_log(plugin.name, f"memgraph-context-graph {plugin.name} hook skipped: {exc}")
         return 0
+    finally:
+        deadline.cancel()
     if strict and report.connector_failures:
         raise ConnectorFailuresError(report.connector_failures)
     return 0
@@ -293,18 +402,22 @@ def _payload_session_id(payload: dict[str, Any]) -> str | None:
     return None
 
 
-def _print_response(
+def _response(
     plugin: RuntimeCLIPlugin, payload: dict[str, Any], connector_names: list[str], *, before_tool: Sequence[str] = ()
-) -> None:
+) -> dict[str, Any]:
     response = plugin.response_for_payload(payload) or {}
     render_session = getattr(plugin, "session_context_response", None)
     if render_session is not None:
-        response.update(render_session(payload, lambda: session_start_text(connector_names, payload)) or {})
+        limit = getattr(plugin, "session_context_limit", SESSION_CONTEXT_CHARS)
+
+        def text() -> str | None:
+            return session_start_text(connector_names, payload, max_chars=limit)
+
+        response.update(render_session(payload, text) or {})
     render = getattr(plugin, "context_before_tool_response", None)
     if before_tool and render is not None:
         response.update(render("\n".join(before_tool)) or {})
-    if response:
-        print(json.dumps(response))
+    return response
 
 
 class _ToolStarts(GraphConnector):
@@ -335,7 +448,9 @@ def _context_before_tool(link: AgentLink, events: list[ToolStartEvent]) -> list[
     return lines
 
 
-def session_start_text(connector_names: list[str], payload: dict[str, Any] | None = None) -> str | None:
+def session_start_text(
+    connector_names: list[str], payload: dict[str, Any] | None = None, *, max_chars: int = SESSION_CONTEXT_CHARS
+) -> str | None:
     """The session-start text telling the model which memory tools it has; None when there are none.
 
     Recall announces itself and adds where the user left off in this project,
@@ -344,11 +459,22 @@ def session_start_text(connector_names: list[str], payload: dict[str, Any] | Non
     its index of the user's memory files, standing in for the harness's own
     memory it replaces (#484). Each runtime wraps the text in the shape its
     session-start hook output takes (``RuntimeSpec.session_context``).
+
+    While a newer Context Graph's graph refuses this client, a notice comes first
+    (:func:`~memgraph_context_graph.graph_version.configured_notice`), so the
+    model can tell the user to update.
+
+    All of it fits in *max_chars*, what the harness shows: the tools fit
+    their own text, and anything still over is cut here at a line, with a
+    note, rather than by the harness wherever it likes.
     """
     from memgraph_context_graph.tools import session_hints
 
+    notice = graph_version.configured_notice()
+    lines = [notice] if notice else []
     try:
-        hints = session_hints(connector_names, payload=_with_cwd(payload or {}))
+        room = max_chars - len(notice) - 1 if notice else max_chars
+        lines += session_hints(connector_names, payload=_with_cwd(payload or {}), max_chars=room)
     except Exception as exc:  # A tool that fails to load must not fail the hook; the model just isn't told.
         capture_log.record_failure(
             "respond",
@@ -357,8 +483,17 @@ def session_start_text(connector_names: list[str], payload: dict[str, Any] | Non
             hook_event="SessionStart",
             session_id=_payload_session_id(payload or {}),
         )
-        return None
-    return "\n".join(hints) or None
+    return _fit("\n".join(lines), max_chars) or None
+
+
+def _fit(text: str, max_chars: int) -> str:
+    """*text*, or as many of its first lines as fit in *max_chars* with a note that the rest was cut."""
+    if len(text) <= max_chars:
+        return text
+    note = f"[Session-start text cut to the {max_chars:,} characters this agent shows.]"
+    kept = text[: max(max_chars - len(note) - 1, 0)]
+    whole_lines = kept.rpartition("\n")[0] or kept
+    return f"{whole_lines}\n{note}"
 
 
 def _with_cwd(payload: dict[str, Any]) -> dict[str, Any]:

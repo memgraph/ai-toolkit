@@ -1,0 +1,5 @@
+version: 2
+node_types:
+  - {label: Blend, description: two grapes or more, properties: [{name: grapes, min_count: 2, max_count: null}]}
+individuals:
+  - {id: b, type: Blend, properties: {grapes: [merlot]}}

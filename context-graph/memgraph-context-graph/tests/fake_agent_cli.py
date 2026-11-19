@@ -13,7 +13,8 @@ import os
 import pathlib
 import sys
 
-MARKETPLACE = "context-graph-plugins"
+#: Marketplace sources and the names they register under: the Memgraph marketplace, and the one this repo had.
+MARKETPLACES = {"memgraph/marketplace": "memgraph", "memgraph/ai-toolkit": "context-graph-plugins"}
 
 
 def main() -> int:
@@ -42,12 +43,13 @@ def _answer(agent: str, args: list[str], state: dict) -> int:
         case ["plugin", "marketplace", "list", "--json"]:
             entries = [{"name": name} for name in state["marketplaces"]]
             print(json.dumps(entries if agent == "claude" else {"marketplaces": entries}))
-        case ["plugin", "marketplace", "add", "memgraph/ai-toolkit", "--sparse", _]:
-            if MARKETPLACE in state["marketplaces"]:
-                print(f"Cannot add marketplace {MARKETPLACE}: already added", file=sys.stderr)
+        case ["plugin", "marketplace", "add", source, *_] if source in MARKETPLACES:
+            name = MARKETPLACES[source]
+            if name in state["marketplaces"]:
+                print(f"Cannot add marketplace {name}: already added", file=sys.stderr)
                 return 1
-            state["marketplaces"].append(MARKETPLACE)
-            print(f"Added marketplace {MARKETPLACE}")
+            state["marketplaces"].append(name)
+            print(f"Added marketplace {name}")
         case ["plugin", "marketplace", "remove", name]:
             state["marketplaces"].remove(name)
         case ["plugin", "install", plugin, "-y"] | ["plugin", "add", plugin]:

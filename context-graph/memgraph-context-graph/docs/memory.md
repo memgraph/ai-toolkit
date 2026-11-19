@@ -89,9 +89,15 @@ back on, since without the plugin it would have none.)
 
 Opting in does three things, in this order:
 1. Imports the existing auto-memory files from every project once:
-   - `user`/`feedback` memories go to `/memories/<type>/`;
+   - `user`/`feedback` memories go to `/memories/<type>/`. When another
+     project already put a different memory of the same name there, this one
+     goes to its own project's folder instead, so neither is lost;
    - `project`/`reference` memories go to that project's folder;
-   - `MEMORY.md` is skipped, and anything already in the graph is never overwritten.
+   - `MEMORY.md` is skipped, and anything already in the graph is never overwritten;
+   - each file remembers the project it came from and keeps its own
+     modification time, so the session-start index can still put a project's
+     `user`/`feedback` memories with that project. Running the switch again
+     records this for files an earlier import brought in.
 2. Sets `autoMemoryEnabled: false` in `~/.claude/settings.json`, the user-level
    settings file, because a plugin can't set it itself. The file is backed up
    once to `settings.json.context-graph.bak`.
@@ -100,20 +106,28 @@ Opting in does three things, in this order:
 For Codex, `setup codex --memory-backend context-graph` does the same against
 its global store, with three differences:
 - **Import.** `memory_summary.md`, the profile Codex injected each session,
-  becomes `/memories/user/codex-memory-summary.md`, and `MEMORY.md` becomes
-  `/memories/codex/memory.md`.
+  becomes `/memories/codex/memory-summary.md`, and `MEMORY.md` becomes
+  `/memories/codex/memory.md`. Both stay under `/memories/codex/` rather than
+  the user-wide root, since Codex wrote them across every project.
 - **Switch.** It turns off `features.memories`, `memories.use_memories` and
   `memories.generate_memories` in `~/.codex/config.toml` (or under
-  `$CODEX_HOME`), keeping the user's comments and layout. Handing memory back
-  restores whatever those keys were before. If the user's own
+  `$CODEX_HOME`), keeping the user's comments, layout and line endings. The
+  file is first copied to `config.toml.context-graph-memory.bak`, apart from
+  the backup setup's own writes leave. Handing memory back restores those keys
+  from it, drops a `[memories]` table the switch created, and deletes the
+  backup. Repeating the hand-back preserves the restored settings. If the
+  switch backup is missing, including on older installs, current settings stay
+  unchanged. The general `config.toml.context-graph.bak` may predate the switch
+  and is never used to guess the prior settings; the output explains how to
+  turn Codex memories on explicitly when needed. If the user's own
   `[mcp_servers.context-graph]` narrows tools with `enabled_tools`, `memory` is
   added there.
 - **Compaction.** The Codex plugin's `SessionStart` hook also fires after
   compaction (`compact`), so the memory index comes back once the context is
   summarized.
 
-Codex caps hook context at about 2,500 tokens, so pinned files come before the
-index and a long index is cut from its tail. See
+Codex caps hook context at about 2,500 tokens, so its session-start text is
+kept to 9,000 characters, with pinned files before the index. See
 [the Codex research note](research/2026-10-codex-memory.md).
 
 If the import can't run, for example because Memgraph is down, nothing is
@@ -123,20 +137,44 @@ Nothing writes to both memories: while the backend is `context-graph`, the
 graph is the only one. Handing memory back (`--memory-backend native`, or
 `uninstall`) first copies the graph's memories into Claude Code's auto memory,
 the reverse of the import, so it picks up where the graph left off:
-- a project's files go to every Claude Code project folder with that project
-  key, `user`/`feedback` ones to every folder with auto memory, each with its
-  `<type>_` prefix back;
-- the graph's copy wins over the older one there, and each folder's
-  `MEMORY.md` is rebuilt;
-- files Claude Code has no folder for (a project it never opened, another
-  agent's files) stay in the graph only, and the output lists them.
+- Claude Code keeps one memory folder per git repository, shared by its
+  worktrees and subdirectories, so a project's files go to that repository's
+  folder only, each with its `<type>_` prefix back;
+- `user`/`feedback` files go back to the folders they were imported from. One
+  first written while the graph was the backend goes to the repositories of
+  the sessions that wrote it. Claude Code has no memory that applies
+  everywhere, so these files are not copied into every project;
+- a file already there is replaced only when it is an earlier text of the
+  graph's file. Any other file, changed outside the graph, is kept, and the
+  output lists it. Each folder that changed gets its `MEMORY.md` rebuilt;
+- files with no folder to go to (a project Claude Code never opened, a
+  user-wide file no recorded session wrote, another agent's files) stay in
+  the graph only, and the output lists them.
 
-Then it removes the setting. The copy runs only while the backend is
-`context-graph`, so handing back twice never overwrites newer files. If
-Memgraph is down, `setup` switches nothing; `uninstall` turns the memory back
-on anyway, with what it held before, and warns. Codex, Copilot CLI and Grok
-Build get nothing copied back: their memory is generated or hosted by the
-agent itself.
+Then it removes the setting. If Memgraph is down, `setup` switches nothing;
+`uninstall` turns the memory back on anyway, with what it held before, and
+warns. Copilot CLI and Grok Build get nothing copied back: their memory is
+hosted by the agent, or kept in folders only it can name.
+
+Codex rewrites its own memory files at each consolidation, so handing back
+leaves each graph memory as an ad-hoc note in
+`~/.codex/memories/extensions/ad_hoc/notes/` (`memories_v2/` under
+`[memories] version = "v2"`), the one place Codex takes outside writes. Its
+next consolidation folds them into `memory_summary.md` and `MEMORY.md`, in its
+own words, so they aren't copied exactly. That runs only while
+`features.memories` and `memories.generate_memories` are on; the output says
+when they weren't before the switch. A note names its project when the memory
+had one, since Codex keeps one store for all projects. Files the import took
+from Codex and the graph never changed aren't noted, and a note already left
+isn't left again.
+
+The backend is one setting for every agent, and the copy runs only while it
+is `context-graph`. So `setup codex claude-code --memory-backend native` hands
+each named agent back first and changes the setting last. Setup stops handing
+back agents at the first failure and keeps the graph backend, so retrying the
+command can still export their memories. An agent left out
+of that command gets nothing copied back once the setting is `native`, so name
+every agent that uses the graph's memory.
 
 `doctor` fails when the backend is `context-graph` but Claude Code's own memory
 is still on, including when the project's `.claude/settings.json` or
@@ -158,9 +196,21 @@ change shows from the next session.
 At session start the hook loads the memory, the way the harness's built-in
 memory would have. It adds:
 - an index of the root and the current project's files, one line each with
-  the file's `description:` frontmatter or first line, up to 200 lines;
+  the file's `description:` frontmatter or first line, up to 200 lines. The
+  current project's files come first, then root files from this project
+  (imported from its memory, or written in its sessions by an SDK app), then
+  the rest, newest first, so an import of every project's `user`/`feedback`
+  memories can't crowd this project's out;
 - the full text of any file with `pin: true` in its frontmatter;
 - the current project's folder.
+
+All of that, with recall's "where you left off", fits in what the agent shows
+its model at session start: 10,000 characters, Claude Code's cap on a hook's
+context (past it, the model sees only a 2,000-character preview), and 9,000 for
+Codex. Pinned text takes at most half. The index lists every file by its path
+before it describes any, then gives descriptions in its order, so the current
+project's files keep theirs longest. When even the paths don't fit, it ends
+with how many it left out and where to list them.
 
 The index is generated from the graph, so the model never maintains an index
 file and it can't go stale. The project folder is keyed by the checkout's git

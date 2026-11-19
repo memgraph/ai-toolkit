@@ -542,7 +542,9 @@ def _type_descriptions(db: Any, user_id: str) -> dict[str, str]:
         mappings = [json.loads(rows[0][key]) for key in ("model", "pool") if rows[0].get(key)]
     else:
         try:
-            from hygm import default_model, model_to_mapping
+            from hygm import model_to_mapping
+
+            from .default_model import default_model
         except ImportError:
             return {}
         mappings = [model_to_mapping(default_model())]

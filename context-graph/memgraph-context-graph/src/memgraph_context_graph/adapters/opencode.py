@@ -19,6 +19,7 @@ from memgraph_context_graph.adapters._spec import (
     tool_start,
     turn_end,
 )
+from memgraph_context_graph.adapters._text_file import write_text_keeping_newlines
 from memgraph_context_graph.adapters.agent_memory import NO_BUILT_IN_MEMORY
 from memgraph_context_graph.events import ErrorOccurredEvent, MessageEvent, ToolEndEvent
 
@@ -162,7 +163,7 @@ def init(
     )
     plugin = template.replace("__MEMGRAPH_CONTEXT_GRAPH_COMMAND__", json.dumps(argv))
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(plugin, encoding="utf-8")
+    write_text_keeping_newlines(target, plugin)
     print(f"Wrote {target}")
 
 

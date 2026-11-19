@@ -7,7 +7,7 @@ per-window scoping the real engine has.
 
 from types import SimpleNamespace
 
-from hygm import VALUE_LABELS
+from unstructured2graph.profile import VALUE_LABELS
 
 
 class FakeSchema:

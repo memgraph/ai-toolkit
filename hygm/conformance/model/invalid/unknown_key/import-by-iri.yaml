@@ -1,0 +1,5 @@
+version: 2
+imports:
+  - {path: ../../imports/food.model.yaml, iri: https://example.org/food}
+node_types:
+  - {label: Wine, description: A wine}

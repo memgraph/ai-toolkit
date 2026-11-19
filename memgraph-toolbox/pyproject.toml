@@ -1,19 +1,19 @@
 [project]
 name = "memgraph-toolbox"
-version = "0.2.2"
+version = "0.2.3"
 description = "Memgraph toolbox library for Memgraph AI tools and utilities"
 readme = "README.md"
 authors = [
   { name = "antejavor", email = "ante.javor@memgraph.io" }
 ]
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 
 keywords = ["memgraph", "graph", "ai", "toolkit"]
 
 classifiers = [
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: Apache Software License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",

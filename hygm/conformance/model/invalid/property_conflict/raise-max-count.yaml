@@ -1,0 +1,4 @@
+version: 2
+node_types:
+  - {label: Wine, description: a wine, properties: [{name: awards, max_count: 3}]}
+  - {label: Champion, description: c, parents: [Wine], properties: [{name: awards, max_count: 5}]}

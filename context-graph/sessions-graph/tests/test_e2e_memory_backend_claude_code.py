@@ -6,8 +6,10 @@ import json
 import os
 import re
 import subprocess
+from datetime import datetime, timezone
 
 import pytest
+from sessions_graph.memory_index import render_index
 
 pytest.importorskip("memgraph_context_graph")
 
@@ -15,6 +17,14 @@ from memgraph_context_graph.adapters import _identity
 from memgraph_context_graph.adapters.claude_code import PLUGIN
 from memgraph_context_graph.cli import main as top_level_main
 from memgraph_context_graph.memory_backend import MemoryBackendError, use_graph_memory, use_native_memory
+
+_GIT_ENV = {
+    **os.environ,
+    "GIT_AUTHOR_NAME": "t",
+    "GIT_AUTHOR_EMAIL": "t@example.com",
+    "GIT_COMMITTER_NAME": "t",
+    "GIT_COMMITTER_EMAIL": "t@example.com",
+}
 
 
 @pytest.fixture
@@ -35,6 +45,14 @@ def home(tmp_path, monkeypatch, memgraph):
         "---\nname: trailers\ndescription: No attribution trailers\nmetadata:\n  type: feedback\n---\nNever add them.\n"
     )
     (memory / "project_map.md").write_text("---\ndescription: The map\nmetadata:\n  type: project\n---\nMap #484.\n")
+    # Claude Code keeps one memory folder per repository; a worktree's folder holds only transcripts.
+    worktree = (tmp_path / "repos" / "ai-toolkit-wt").resolve()
+    subprocess.run(
+        ["git", "-C", str(checkout), "commit", "-q", "--allow-empty", "-m", "init"], check=True, env=_GIT_ENV
+    )
+    subprocess.run(["git", "-C", str(checkout), "worktree", "add", "-q", str(worktree)], check=True)
+    (home / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(worktree))).mkdir(parents=True)
+
     gone = home / ".claude" / "projects" / "-nowhere-old-repo" / "memory"
     gone.mkdir(parents=True)
     (gone / "reference_dash.md").write_text("---\ndescription: dashboard\ntype: reference\n---\nhttps://example\n")
@@ -72,19 +90,92 @@ def test_opting_in_imports_turns_auto_memory_off_and_turns_ours_on(home, graph):
 
 
 def test_rerunning_keeps_what_the_graph_already_has(home, graph):
+    use_graph_memory(PLUGIN, home=home)
     store = graph.memory_store("alice")
-    store.create("/memories/feedback/trailers.md", "edited since import")
+    store.str_replace("/memories/feedback/trailers.md", "Never add them.", "Edited since import.")
+
+    edited_at = _updated_at(store, "/memories/feedback/trailers.md")
 
     lines = use_graph_memory(PLUGIN, home=home)
-    use_graph_memory(PLUGIN, home=home)
 
     assert "Kept existing /memories/feedback/trailers.md" in lines
-    assert {f.path: f.content for f in store.files()}["/memories/feedback/trailers.md"] == "edited since import"
+    assert store.read("/memories/feedback/trailers.md").endswith("Edited since import.\n")
+    assert _updated_at(store, "/memories/feedback/trailers.md") == edited_at
     assert len(store.files()) == 3
+
+
+def _add_project(home, tmp_path, name, files):
+    """A second checkout with its own remote and auto memory."""
+    checkout = (tmp_path / "repos" / name).resolve()
+    checkout.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+    subprocess.run(
+        ["git", "-C", str(checkout), "remote", "add", "origin", f"git@github.com:acme/{name}.git"], check=True
+    )
+    memory = home / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(checkout)) / "memory"
+    memory.mkdir(parents=True)
+    for filename, text in files.items():
+        (memory / filename).write_text(text)
+    return memory
+
+
+def test_same_named_memories_from_two_projects_are_both_kept(home, tmp_path, graph):
+    other = "---\nname: trailers\ndescription: Sign off\nmetadata:\n  type: feedback\n---\nAlways sign off.\n"
+    _add_project(home, tmp_path, "zeta", {"feedback_trailers.md": other})
+
+    use_graph_memory(PLUGIN, home=home)
+
+    files = {f.path: f.content for f in graph.memory_store("alice").files()}
+    assert files["/memories/feedback/trailers.md"].endswith("Never add them.\n")
+    assert files["/memories/projects/github.com_acme_zeta/feedback_trailers.md"] == other
 
 
 def _memory_dir(home, project):
     return next((home / ".claude" / "projects").glob(f"*{project}")) / "memory"
+
+
+_TOOLKIT = "github.com_memgraph_ai-toolkit"
+_NEW_YEAR = datetime(2026, 1, 2, tzinfo=timezone.utc)
+
+
+def _updated_at(store, path):
+    return next(file.updated_at for file in store.files() if file.path == path)
+
+
+def test_an_imported_memory_keeps_the_project_it_came_from_and_its_own_time(home, tmp_path, graph):
+    trailers = _memory_dir(home, "ai-toolkit") / "feedback_trailers.md"
+    os.utime(trailers, (_NEW_YEAR.timestamp(), _NEW_YEAR.timestamp()))
+    lint = "---\nname: lint\ndescription: Run ruff\nmetadata:\n  type: feedback\n---\nRun ruff.\n"
+    _add_project(home, tmp_path, "zeta", {"feedback_lint.md": lint, "feedback_trailers.md": trailers.read_text()})
+
+    use_graph_memory(PLUGIN, home=home)
+
+    store = graph.memory_store("alice")
+    assert store.from_project(_TOOLKIT) == {"/memories/feedback/trailers.md", f"/memories/projects/{_TOOLKIT}/map.md"}
+    # The same rule kept in two projects belongs to both.
+    assert store.from_project("github.com_acme_zeta") == {
+        "/memories/feedback/trailers.md",
+        "/memories/feedback/lint.md",
+    }
+    assert _updated_at(store, "/memories/feedback/trailers.md") == _NEW_YEAR.isoformat()
+
+
+def test_rerunning_the_switch_records_where_an_earlier_import_came_from(home, tmp_path, graph):
+    """An import from before origins were recorded left the file, stamped at import time, and nothing else."""
+    store = graph.memory_store("alice")
+    trailers = _memory_dir(home, "ai-toolkit") / "feedback_trailers.md"
+    os.utime(trailers, (_NEW_YEAR.timestamp(), _NEW_YEAR.timestamp()))
+    store.create("/memories/feedback/trailers.md", trailers.read_text())
+    _add_project(home, tmp_path, "zeta", {"feedback_lint.md": "---\nmetadata:\n  type: feedback\n---\nRun ruff.\n"})
+    store.create("/memories/feedback/lint.md", "---\nmetadata:\n  type: feedback\n---\nRun ruff.\n")
+    assert store.from_project(_TOOLKIT) == set()
+
+    use_graph_memory(PLUGIN, home=home)
+
+    assert store.from_project(_TOOLKIT) == {"/memories/feedback/trailers.md", f"/memories/projects/{_TOOLKIT}/map.md"}
+    assert _updated_at(store, "/memories/feedback/trailers.md") == _NEW_YEAR.isoformat()
+    index = render_index(store, _TOOLKIT, guidance="")
+    assert index.index("/memories/feedback/trailers.md") < index.index("/memories/feedback/lint.md")
 
 
 def test_handing_memory_back(home):
@@ -97,9 +188,22 @@ def test_handing_memory_back(home):
     assert _identity.load_config().memory_backend == "native"
 
 
+def test_a_round_trip_gives_back_a_crlf_settings_file_byte_for_byte(home):
+    settings = home / ".claude" / "settings.json"
+    original = (json.dumps({"theme": "dark"}, indent=2) + "\n").replace("\n", "\r\n").encode()
+    settings.write_bytes(original)
+
+    use_graph_memory(PLUGIN, home=home)
+    assert b"\r\n" in settings.read_bytes() and b"\n" not in settings.read_bytes().replace(b"\r\n", b"")
+    use_native_memory(PLUGIN, home=home)
+
+    assert settings.read_bytes() == original
+
+
 def test_handing_memory_back_copies_what_the_graph_learned_since(home, graph):
     use_graph_memory(PLUGIN, home=home)
-    store = graph.memory_store("alice")
+    graph.record_session_start("s-toolkit", user_id="alice", project_key="github.com_memgraph_ai-toolkit")
+    store = graph.memory_store("alice", session_id="s-toolkit")
     store.create("/memories/user/role.md", "---\nname: role\ndescription: Works on Memgraph\ntype: user\n---\nHi.\n")
     store.str_replace("/memories/projects/github.com_memgraph_ai-toolkit/map.md", "Map #484.", "Map #484 closed.")
     store.create(
@@ -107,26 +211,64 @@ def test_handing_memory_back_copies_what_the_graph_learned_since(home, graph):
     )
     store.create("/memories/projects/never-opened/x.md", "A project Claude Code has no folder for.\n")
     store.create("/memories/codex/memory.md", "Another agent's file.\n")
+    graph.memory_store("alice").create("/memories/feedback/nowhere.md", "Written by no session.\n")
 
     lines = use_native_memory(PLUGIN, home=home)
 
     toolkit, old_repo = _memory_dir(home, "ai-toolkit"), _memory_dir(home, "old-repo")
     assert (toolkit / "project_map.md").read_text().endswith("Map #484 closed.\n")
     assert (toolkit / "project_plan.md").read_text().endswith("Ship.\n")
-    # User-wide memories reach every project with auto memory, as they applied everywhere in the graph.
-    for folder in (toolkit, old_repo):
-        assert (folder / "user_role.md").read_text().endswith("Hi.\n")
-        assert (folder / "feedback_trailers.md").read_text().endswith("Never add them.\n")
-    assert (old_repo / "reference_dash.md").exists()
+    # A user-wide memory goes back where it came from, or to the repository of the session that wrote it.
+    assert (toolkit / "feedback_trailers.md").read_text().endswith("Never add them.\n")
+    assert (toolkit / "user_role.md").read_text().endswith("Hi.\n")
+    assert sorted(path.name for path in old_repo.iterdir()) == ["reference_dash.md"]
     index = (toolkit / "MEMORY.md").read_text().splitlines()
     assert "- [role](user_role.md) — Works on Memgraph" in index
     assert "- [project_plan](project_plan.md) — The plan" in index
     assert len(index) == 4
     assert "Copied back /memories/projects/github.com_memgraph_ai-toolkit/plan.md" in lines
     assert any(
-        line.startswith("Kept in Memgraph only") and "/memories/codex/memory.md" in line and "never-opened" in line
+        line.startswith("Kept in Memgraph only")
+        and "/memories/codex/memory.md" in line
+        and "never-opened" in line
+        and "/memories/feedback/nowhere.md" in line
         for line in lines
     )
+
+
+def test_handing_memory_back_writes_only_the_repository_folder(home):
+    use_graph_memory(PLUGIN, home=home)
+
+    use_native_memory(PLUGIN, home=home)
+
+    worktree = next((home / ".claude" / "projects").glob("*ai-toolkit-wt"))
+    assert not (worktree / "memory").exists()
+
+
+def test_handing_memory_back_round_trips_same_named_memories(home, tmp_path):
+    other = "---\nname: trailers\ndescription: Sign off\nmetadata:\n  type: feedback\n---\nAlways sign off.\n"
+    zeta = _add_project(home, tmp_path, "zeta", {"feedback_trailers.md": other})
+    toolkit = _memory_dir(home, "ai-toolkit")
+    before = (toolkit / "feedback_trailers.md").read_text()
+
+    use_graph_memory(PLUGIN, home=home)
+    use_native_memory(PLUGIN, home=home)
+
+    assert (zeta / "feedback_trailers.md").read_text() == other
+    assert (toolkit / "feedback_trailers.md").read_text() == before
+
+
+def test_handing_memory_back_keeps_a_native_file_the_graph_doesnt_descend_from(home, graph):
+    use_graph_memory(PLUGIN, home=home)
+    graph.memory_store("alice").str_replace("/memories/feedback/trailers.md", "Never add them.", "Never, ever.")
+    native = _memory_dir(home, "ai-toolkit") / "feedback_trailers.md"
+    native.write_text("Changed outside the graph.\n")
+
+    lines = use_native_memory(PLUGIN, home=home)
+
+    assert native.read_text() == "Changed outside the graph.\n"
+    assert any(line.startswith(f"Kept {native}") for line in lines)
+    assert "Copied back /memories/feedback/trailers.md" not in lines
 
 
 def test_handing_memory_back_again_never_overwrites_newer_native_files(home, graph):
@@ -169,7 +311,7 @@ def claude_with_plugin(tmp_path, monkeypatch):
     claude = bin_dir / "claude"
     claude.write_text(
         "#!/bin/sh\n"
-        'if [ "$*" = "plugin list --json" ]; then echo \'[{"id": "context-graph@context-graph-plugins"}]\'; exit 0; fi\n'
+        'if [ "$*" = "plugin list --json" ]; then echo \'[{"id": "context-graph@memgraph"}]\'; exit 0; fi\n'
         'if [ "$*" = "plugin marketplace list --json" ]; then echo "[]"; exit 0; fi\n'
         'if [ "$1 $2" = "plugin uninstall" ]; then exit 0; fi\n'
         "exit 1\n"
@@ -216,5 +358,49 @@ def test_uninstall_gives_claude_code_its_own_memory_back(home, claude_with_plugi
     out = capsys.readouterr().out
     assert "OK    Claude Code memory: its own memory is back on" in out
     assert _settings(home) == {"theme": "dark"}
-    assert (_memory_dir(home, "old-repo") / "feedback_trailers.md").exists()
+    assert (_memory_dir(home, "ai-toolkit") / "feedback_trailers.md").exists()
+    assert _identity.load_config().memory_backend == "native"
+
+
+def test_setup_hands_every_named_agent_back_before_the_shared_backend_changes(home, claude_with_plugin, monkeypatch):
+    """Codex first, then Claude Code: Claude Code's copy-back must still see the graph as the backend."""
+    from memgraph_context_graph.adapters.codex import PLUGIN as CODEX_PLUGIN
+
+    monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
+    use_graph_memory(PLUGIN, home=home)
+    use_graph_memory(CODEX_PLUGIN, home=home)
+    # Setup reads the graph the config names, so the file to copy back is one the import put there.
+    native = _memory_dir(home, "ai-toolkit") / "project_map.md"
+    native.unlink()
+
+    top_level_main(["setup", "codex", "claude-code", "--memory-backend", "native", "--no-tui", "--no-viewer"])
+
+    assert native.read_text().endswith("Map #484.\n")
+    assert _settings(home) == {"theme": "dark"}
+    assert _identity.load_config().memory_backend == "native"
+
+
+@pytest.mark.parametrize("runtimes", [("codex", "claude-code"), ("claude-code", "codex")])
+def test_a_failed_hand_back_keeps_the_graph_backend_until_retry(home, claude_with_plugin, monkeypatch, runtimes):
+    from memgraph_context_graph.adapters.codex import PLUGIN as CODEX_PLUGIN
+
+    monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
+    use_graph_memory(PLUGIN, home=home)
+    use_graph_memory(CODEX_PLUGIN, home=home)
+    backup = home / ".codex" / "config.toml.context-graph-memory.bak"
+    original = backup.read_bytes()
+    backup.write_text("[broken")
+    native = _memory_dir(home, "ai-toolkit") / "project_map.md"
+    native.unlink()
+    command = ["setup", *runtimes, "--memory-backend", "native", "--no-tui", "--no-viewer"]
+
+    top_level_main(command)
+
+    assert _identity.load_config().graph_memory
+    backup.write_bytes(original)
+
+    top_level_main(command)
+
+    assert native.read_text().endswith("Map #484.\n")
+    assert _settings(home) == {"theme": "dark"}
     assert _identity.load_config().memory_backend == "native"

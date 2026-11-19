@@ -1,0 +1,17 @@
+version: 2
+node_types:
+  - label: Wine
+    description: a wine
+    properties:
+      - {name: name, required: true}
+      - {name: colour, values: [red, white]}
+      - {name: vintage, type: integer, minimum: 1900}
+      - {name: grapes, max_count: null}
+  - {label: Winery, description: a winery, properties: [{name: name, required: true}]}
+  - {label: Grape, description: a grape}
+  - {label: Region, description: a region, abstract: true}
+relation_types:
+  - {label: maker, description: who made it, start_labels: [Wine], end_labels: [Winery], max_count: 1}
+  - {label: produces, description: what it made, start_labels: [Winery], end_labels: [Wine], inverse_of: maker}
+individuals:
+  - {id: w, type: Wine, propertes: {name: W}}

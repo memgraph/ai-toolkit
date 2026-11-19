@@ -21,7 +21,7 @@ so a model can't reach another user's memory.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -406,6 +406,67 @@ class MemoryStore:
         )
         return [MemoryFile(row["path"], row["content"], row["updated_at"] or "") for row in rows]
 
+    def written_in(self, path: str) -> list[str]:
+        """The project keys of the sessions that wrote the file at *path*, sorted; empty when none recorded one.
+
+        Raises:
+            MemoryValidationError: *path* is not a valid memory path.
+        """
+        rows = self._db.query(
+            """
+            MATCH (:User {user_id: $user_id})-[:HAS_MEMORY]->(m:Memory {path: $path})
+            MATCH (s:Session)-[:PRODUCED_MEMORY]->(m)
+            WHERE s.project_key IS NOT NULL
+            RETURN DISTINCT s.project_key AS project_key
+            ORDER BY project_key
+            """,
+            params={"user_id": self.user_id, "path": normalize_memory_path(path)},
+        )
+        return [row["project_key"] for row in rows]
+
+    def from_project(self, project: str) -> set[str]:
+        """The paths of this user's files a session in *project* wrote or that were imported from its memory.
+
+        One query for a whole index, where :meth:`written_in` is one per file.
+        """
+        rows = self._db.query(
+            """
+            MATCH (:User {user_id: $user_id})-[:HAS_MEMORY]->(m:Memory)
+            WHERE exists((m)<-[:PRODUCED_MEMORY]-(:Session {project_key: $project}))
+               OR exists((m)-[:IMPORTED_FROM]->(:Project {key: $project}))
+            RETURN m.path AS path
+            """,
+            params={"user_id": self.user_id, "project": project},
+        )
+        return {row["path"] for row in rows}
+
+    def mark_imported(self, path: str, project: str, *, text: str, modified: str) -> None:
+        """Record that the file at *path* came from *project*'s harness memory, last changed there at *modified*.
+
+        A user-wide import moves a project's ``user``/``feedback`` memories to
+        the root, where nothing else says which project they belong to, and
+        stamps them with the import's time. *modified* (ISO 8601, UTC) becomes
+        the file's ``updated_at`` when it is earlier and the file still holds
+        *text*, so marking a file again after an edit keeps the edit's time.
+        """
+        self._db.query(
+            """
+            MATCH (:User {user_id: $user_id})-[:HAS_MEMORY]->(m:Memory {path: $path})
+            MERGE (p:Project {key: $project})
+            MERGE (m)-[:IMPORTED_FROM]->(p)
+            WITH m
+            WHERE m.content = $text AND $modified < m.updated_at
+            SET m.updated_at = $modified
+            """,
+            params={
+                "user_id": self.user_id,
+                "path": normalize_memory_path(path),
+                "project": project,
+                "text": text,
+                "modified": modified,
+            },
+        )
+
     # ------------------------------------------------------------------
     # Graph access
     # ------------------------------------------------------------------
@@ -469,23 +530,7 @@ class MemoryStore:
         return rows[0]["path"] if rows else None
 
     def _listing(self, directory: str) -> str:
-        sizes: dict[str, int] = {}
-        total = 0
-        for file in self.files(directory):
-            relative = file.path[len(directory) + 1 :].split("/")
-            if any(segment.startswith(".") or segment == "node_modules" for segment in relative):
-                continue
-            size = len(file.content.encode("utf-8"))
-            total += size
-            for depth in range(1, min(len(relative), _LISTING_DEPTH) + 1):
-                entry = "/".join(relative[:depth]) + ("/" if depth < len(relative) else "")
-                sizes[entry] = sizes.get(entry, 0) + size
-        lines = [f"{_human_size(total)}\t{directory}"]
-        lines += [f"{_human_size(sizes[entry])}\t{directory}/{entry}" for entry in sorted(sizes)]
-        return (
-            f"Here're the files and directories up to 2 levels deep in {directory}, "
-            "excluding hidden items and node_modules:\n" + "\n".join(lines)
-        )
+        return render_listing(directory, self.files(directory))
 
     def _write(self, path: str, content: str, *, expected: str | None = None) -> None:
         """Store *content* at *path*, creating the file when *expected* is None.
@@ -663,6 +708,37 @@ def _occurrence_lines(content: str, needle: str) -> list[int]:
         lines.append(content[:position].count("\n") + 1)
         start = position + 1
     return lines
+
+
+def render_listing(directory: str, files: Iterable[MemoryFile], folders: Iterable[str] = ()) -> str:
+    """The ``view`` listing of *directory*: *files* under it, two levels deep, each entry with its size.
+
+    Args:
+        directory: The normalized directory being listed.
+        files: Files under *directory*, from one store or several.
+        folders: Folders under *directory* to list even when they hold no files, e.g. an empty shared space.
+    """
+    sizes: dict[str, int] = {}
+    for folder in folders:
+        relative = folder[len(directory) + 1 :].strip("/").split("/")
+        for depth in range(1, min(len(relative), _LISTING_DEPTH) + 1):
+            sizes.setdefault("/".join(relative[:depth]) + "/", 0)
+    total = 0
+    for file in files:
+        relative = file.path[len(directory) + 1 :].split("/")
+        if any(segment.startswith(".") or segment == "node_modules" for segment in relative):
+            continue
+        size = len(file.content.encode("utf-8"))
+        total += size
+        for depth in range(1, min(len(relative), _LISTING_DEPTH) + 1):
+            entry = "/".join(relative[:depth]) + ("/" if depth < len(relative) else "")
+            sizes[entry] = sizes.get(entry, 0) + size
+    lines = [f"{_human_size(total)}\t{directory}"]
+    lines += [f"{_human_size(sizes[entry])}\t{directory}/{entry}" for entry in sorted(sizes)]
+    return (
+        f"Here're the files and directories up to 2 levels deep in {directory}, "
+        "excluding hidden items and node_modules:\n" + "\n".join(lines)
+    )
 
 
 def _human_size(size: int) -> str:

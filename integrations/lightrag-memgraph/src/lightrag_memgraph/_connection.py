@@ -44,13 +44,13 @@ async def get_driver() -> AsyncDriver:
     return _get_client().driver
 
 
-def get_database() -> str:
-    """Return the database name bound to the current event loop's driver."""
+def get_database() -> str | None:
+    """Return the database bound to the current event loop's driver; None means the login's main database."""
     loop_id = id(asyncio.get_running_loop())
     client = _clients.get(loop_id)
     if client is not None:
         return client.database
-    return memgraph_env()["MEMGRAPH_DATABASE"]
+    return memgraph_env()["MEMGRAPH_DATABASE"] or None
 
 
 async def close_driver() -> None:

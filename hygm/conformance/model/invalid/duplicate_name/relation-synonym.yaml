@@ -1,0 +1,6 @@
+version: 2
+node_types:
+  - {label: Wine, description: a wine}
+relation_types:
+  - {label: made_by, description: made by}
+  - {label: produced_by, description: produced by, synonyms: [MADE_BY]}

@@ -1,0 +1,30 @@
+# grapes is multi-valued, so its column holds a list. A French wine's maker
+# may only be a French winery (its relation restriction); any wine's may be
+# any winery.
+version: 1
+model: ../models/cellar.model.yaml
+sources:
+  - {name: cellar, kind: table}
+nodes:
+  - type: Wine
+    source: cellar
+    table: {name: wines}
+    id: [name]
+    properties:
+      - {name: name, column: name}
+      - {name: grapes, column: grapes}
+      - {name: tannin, column: tannin}
+  - {type: FrenchWine, source: cellar, table: {name: french_wines}, id: [name]}
+  - {type: Winery, source: cellar, table: {name: wineries}, id: [name]}
+  - {type: FrenchWinery, source: cellar, table: {name: french_wineries}, id: [name]}
+relations:
+  - type: maker
+    source: cellar
+    table: {name: wines}
+    from: {type: Wine, columns: [name]}
+    to: {type: Winery, columns: [winery]}
+  - type: maker
+    source: cellar
+    table: {name: french_wines}
+    from: {type: FrenchWine, columns: [name]}
+    to: {type: FrenchWinery, columns: [winery]}

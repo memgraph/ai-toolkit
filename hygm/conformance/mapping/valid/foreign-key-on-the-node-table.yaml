@@ -1,0 +1,20 @@
+# A one-to-many foreign key: the relation's rows are the order table's own rows.
+version: 1
+model: ../models/shop.model.yaml
+sources:
+  - {name: crm, kind: table}
+nodes:
+  - type: Customer
+    source: crm
+    table: {name: customers}
+    id: [id]
+  - type: Order
+    source: crm
+    table: {name: orders}
+    id: [id]
+relations:
+  - type: placed
+    source: crm
+    table: {name: orders}
+    from: {type: Customer, columns: [customer_id]}
+    to: {type: Order, columns: [id]}

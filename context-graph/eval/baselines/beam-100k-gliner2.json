@@ -24,6 +24,8 @@
   "memgraph_version": "3.13.2",
   "rubric_judge_model": "none",
   "notes": {
+   "memgraph_context_graph": "0.6.0",
+   "sessions_graph": "0.8.1",
    "memgraph_image": "memgraph/memgraph-mage@sha256:e28eea424e4fe2af3d20435d266de14daa33466c2d492de65bda67b36a6ae3c5",
    "hardware": "AMD Ryzen 5 2600 (6 cores, 12 threads), 16 GB RAM, no GPU",
    "run_date": "2026-10-14",

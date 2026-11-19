@@ -28,11 +28,11 @@ from .gliner2_fakes import FakeEngine
 
 ONTOLOGY = Ontology(
     entity_types=(
-        EntityType("User", "the person speaking in the first person", "global"),
-        EntityType("Person", "another named individual", "global"),
-        EntityType("Location", "a place", "global"),
-        EntityType("Product", "an item", "chunk"),
-        EntityType("Quantity", "a count", "span"),
+        EntityType("User", "the person speaking in the first person", profiles={"extraction": {"identity": "global"}}),
+        EntityType("Person", "another named individual", profiles={"extraction": {"identity": "global"}}),
+        EntityType("Location", "a place", profiles={"extraction": {"identity": "global"}}),
+        EntityType("Product", "an item"),
+        EntityType("Quantity", "a count", profiles={"extraction": {"identity": "span"}}),
     ),
     relation_types=(
         RelationType("visited", "travelled to", ("User", "Person"), ("Location",)),

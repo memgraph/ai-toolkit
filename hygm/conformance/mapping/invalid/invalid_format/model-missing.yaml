@@ -1,0 +1,10 @@
+version: 1
+sources:
+  - {name: crm, kind: table}
+nodes:
+  - type: Customer
+    source: crm
+    table: {name: customers}
+    id: [customer_id]
+    properties:
+      - {name: customer_id, column: customer_id}

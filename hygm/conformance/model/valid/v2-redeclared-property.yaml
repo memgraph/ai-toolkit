@@ -1,0 +1,10 @@
+version: 2
+node_types:
+  - label: Party
+    description: a party
+    properties: [{name: email, type: string, description: any address}]
+  - label: Customer
+    description: a customer
+    parents: [Party]
+    key: [email]
+    properties: [{name: email, type: string, required: true, description: the billing address}]

@@ -1,0 +1,5 @@
+version: 2
+imports:
+  - {}
+node_types:
+  - {label: Wine, description: A wine}

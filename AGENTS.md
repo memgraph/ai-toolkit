@@ -21,9 +21,9 @@ Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable Memgraph graph.
 | `integrations/langchain-memgraph/` | LangChain graph store, QA chain, toolkit. |
 | `integrations/mcp-memgraph/` | MCP server exposing Memgraph to LLMs. |
 | `integrations/lightrag-memgraph/` | LightRAG storage backends (KV/vector/doc-status/graph) on Memgraph. |
-| `hygm/` | Shared graph schema/ontology model (`NodeType`, `RelationType` with `start_labels`/`end_labels`, `identity`), its validation gate, the generic default model (`default_model()`, core and catch-all labels), and the strategies that produce one (`ManualStrategy` YAML; `LlmRecommendationStrategy`, which grows a model from new sessions with a caller-supplied LLM and observer). Pure Python, no Memgraph. Not the same package as `agents/structured2graph`'s HyGM. |
-| `unstructured2graph/` | Chunks unstructured input (files/URLs/text) and runs entity/relation extraction through a pluggable `ExtractionBackend` (`GLiNER2Backend` by default -- local and LLM-free; `LightRAGBackend` retained -- LLM-based). Outside the Context Graph family but shares its testing conventions. |
-| `agents/structured2graph/` | MySQL/Postgres → Memgraph migration agent, published as `structured2graph`. Has its own `uv.lock`/`.python-version`; run it with `cd agents/structured2graph && uv run structured2graph`. |
+| `hygm/` | The general graph model (ontology) component, domain-free: node types with a hierarchy, properties and keys, relation types with `start_labels`/`end_labels`, its validation gate, the model file (format versions 1 and 2, JSON Schemas, conformance fixtures), profiles as a mechanism (a registry and the shape of each profile's settings; their meaning lives with their owners), mapping files binding a model's types to sources, the operations a model evolves by, OWL import and export, lint for the design guidelines, a `hygm` command line, and the Memgraph plan a model implies (`memgraph_plan`/`apply_plan`; the caller supplies the client). Knows no consumer: nothing in it mentions conversations, sessions or an extractor (`docs/contract.md`, 5.6). Not the same package as `agents/structured2graph`'s HyGM. |
+| `unstructured2graph/` | Chunks unstructured input (files/URLs/text) and runs entity/relation extraction through a pluggable `ExtractionBackend` (`GLiNER2Backend` by default -- local and LLM-free; `LightRAGBackend` retained -- LLM-based). Outside the Context Graph family but shares its testing conventions. Owns hygm's `extraction` and `conversation` profiles (`unstructured2graph.profile`: mention identity, value types, the speaker rule). |
+| `agents/structured2graph/` | MySQL/Postgres → Memgraph migration agent, published as `structured2graph`. Has its own `.python-version` but resolves from the root `uv.lock`; run it with `cd agents/structured2graph && uv run structured2graph`. |
 | `context-graph/` | The Context Graph family — see below. |
 | `scripts/dev-memgraph.sh` | Local dev lifecycle: exploration Memgraph + isolated test Memgraph for the context-graph family and unstructured2graph. |
 | `skills/release/SKILL.md` | Release process for every PyPI/Docker-published package. |
@@ -35,8 +35,8 @@ Cursor, OpenCode, Antigravity CLI, Grok Build) into a queryable Memgraph graph.
 | `memgraph-context-graph` | Event hub. Normalizes runtime hooks / SDK activity into a shared Event Protocol and routes it to graph connectors. `memgraph_context_graph.sdk` makes Context Graph the memory of a Claude Agent SDK or OpenAI Agents SDK app, in-process (capture, session context, `recall`/`memory` tools). Also serves components' read tools (e.g. sessions-graph's `recall`) to the harness's model over stdio MCP (`memgraph-context-graph mcp`), and installs the family: `setup` finds or starts Memgraph and wires every agent, and `uninstall` removes the wiring and, on the user's yes or `--all`, the graph, config and tool, both asking a few questions inline on a terminal (`context-graph/scripts/install.sh` and the plugins' `bootstrap.sh` are shims onto it). |
 | `actions-graph` | Records tool calls/results/messages/subagent activity as `(:Action)`/`(:Agent)` nodes — observability, not memory. |
 | `skills-graph` | Tracks Agent-Skills-spec `(:Skill)` usage per session. |
-| `sessions-graph` | Owns `(:User)`/`(:Session)`, durable `(:Memory)` writes/recall, and session reconciliation into extracted entities (local, no LLM). |
-| `spaces` (`context-graph-spaces`) | The Enterprise edition: personal and shared spaces for many users on one licensed Memgraph, isolated by Memgraph's own multi-tenancy and access control. Provisions from an admin's spec (`context-graph-spaces plan|apply`). Community (the default `edition`) never imports it. |
+| `sessions-graph` | Owns `(:User)`/`(:Session)`, durable `(:Memory)` writes/recall, and session reconciliation into extracted entities (local, no LLM). Owns hygm's `learning` profile, the conversational default model (`sessions_graph.default_model`) and derivation, which learns a model from sessions (`sessions_graph.derive_strategy`). |
+| `spaces` (`context-graph-spaces`) | The Enterprise edition: personal and shared spaces for many users on one licensed Memgraph, isolated by Memgraph's own multi-tenancy and access control. Prints a server to run (`context-graph-spaces compose`), makes its first admin login and checks it (`init`), and provisions from an admin's spec (`plan|apply`). Community (the default `edition`) never imports it. |
 | `viewer` (`context-graph-viewer`) | Read-only Textual terminal viewer for plugin users (`memgraph-context-graph ui`): capture health (the hooks' local capture-failure log plus the graph), pipeline state, session anatomy and the knowledge graph. Polls Memgraph, never writes; every Cypher it sends lives in `queries.py`. |
 | `resources-graph` | Remembers public GitHub resources the agent touched: hooks record private `(:Touch)` nodes, the out-of-band `resources-graph sweep` stores shared `(:Resource)`s, and the `resource` tool serves them from memory. |
 
@@ -46,6 +46,20 @@ node; only `sessions-graph` owns `(:User)` and `HAD_SESSION`. Create it through
 `session.setup`), never with a component's own `MERGE`: hooks race to create a
 new session, and only `ensure` retries the uniqueness conflict. Each component
 therefore depends on `memgraph-context-graph`, not just its connector.
+
+**Graph epochs.** Every installed client checks the graph's per-component
+`(:ContextGraphSchema)` rules before it writes or reads
+(`memgraph_context_graph/graph_version.py`, "Graph Epoch" in its `CONTEXT.md`).
+That rule is frozen into every client ever shipped, so never change what those
+properties mean. A release that changes a component's shape so that an older
+client would write it wrong or misread it must raise that component's epoch in
+`graph_version.EPOCHS` and set `min_writer_epoch`/`min_reader_epoch` in the
+graph from its migration; a purely additive change raises nothing. Two more
+records are read by releases other than the one that wrote them: the
+refused-event spool's line format (`refused_events.FORMAT_VERSION`, keep a
+reader for every version) and `Session.captured_by`, set when a session is
+created, which tells a migration that an install from before epochs is still
+capturing.
 
 Substantial design work in this family is tracked as GitHub issues labeled
 `wayfinder:map` (title `Map: ...`), broken into `wayfinder:grilling` /
@@ -253,7 +267,8 @@ A user can make Context Graph their harness memory with
 the harness's built-in memory off in its user-level config, imports what that
 memory held, and sets `[memory] backend` in the config file. Nothing writes to
 both memories; handing back (`--memory-backend native` or `uninstall`) copies
-the graph's memories into the harness's store where it has one (Claude Code). That setting is
+the graph's memories into the harness's store where it has one (Claude Code
+exactly; Codex as ad-hoc notes its consolidation folds in). That setting is
 the one source of truth that switches on the MCP `memory` tool and the
 session-start memory index. The `memory` tool writes only `(:Memory)` files;
 everything derived stays background-only.
@@ -267,6 +282,13 @@ to a subprocess it spawns, so nothing is ambient and nothing can drift. It
 exists because the config file is otherwise a single global: pointing one
 session's hooks at a different Memgraph would silently redirect every other
 session on the machine. Config *values* stay file-only.
+
+`CONTEXT_GRAPH_PROFILE` is the same kind of selector, one level down. It picks which
+`[profiles.<name>]` of that file applies (ADR 0008). Hooks (`hook run <runtime>`) and the
+MCP server (`mcp --agent <runtime>`, or `CONTEXT_GRAPH_AGENT`, which the plugins set because an
+older installed CLI would refuse the flag) pick their agent's profile from `[agents]` the same way.
+A profile holds only the destination (`edition`, `[memgraph]`, `[memory]`); keep privacy
+settings out of it.
 
 ## Releases
 

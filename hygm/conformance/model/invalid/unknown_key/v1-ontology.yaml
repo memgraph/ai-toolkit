@@ -1,0 +1,3 @@
+ontology: {name: wine}
+entity_types:
+  - {label: Wine, description: A wine}

@@ -183,7 +183,8 @@ SPEC = RuntimeSpec(
     ),
     # hooks.json is keyed by named hook groups; this runtime owns one group.
     # Only tool events take matcher groups: agy rejects the whole file if a
-    # lifecycle event is nested, so those are written as flat handlers.
+    # lifecycle event is nested, so those are written as flat handlers. On
+    # Windows agy runs each command through cmd.exe, inside its own quotes.
     config=HookConfig(
         path=".agents/hooks.json",
         layout="nested",
@@ -191,6 +192,7 @@ SPEC = RuntimeSpec(
         merge=True,
         inject_event_name=True,
         flat_hooks=frozenset({"SessionStart", "Stop"}),
+        windows_shell="cmd",
     ),
     fields=FieldMap(session_id=("conversationId",)),
     # PostToolUse requires an object; an empty PreToolUse answer leaves agy's

@@ -1,0 +1,5 @@
+version: 2
+node_types:
+  - label: Wine
+    description: a wine
+    properties: [{name: alcohol, type: float, minimum: 5, default: 2.5}]

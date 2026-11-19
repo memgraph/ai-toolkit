@@ -27,6 +27,7 @@ import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from memgraph_context_graph.adapters._text_file import write_text_keeping_newlines
 from memgraph_context_graph.memory_backend import MemoryBackendError
 
 if TYPE_CHECKING:
@@ -37,11 +38,14 @@ SERVER = "context-graph"
 _BACKUP_SUFFIX = ".context-graph.bak"
 
 
-def server_argv(*, session_context: bool = False) -> list[str]:
-    """The command an agent runs to start the server: the installed CLI, else this interpreter."""
+def server_argv(runtime: str, *, session_context: bool = False) -> list[str]:
+    """The command *runtime* runs to start the server: the installed CLI, else this interpreter.
+
+    ``--agent`` names the runtime, so the server resolves the profile ``[agents]`` maps it to.
+    """
     executable = shutil.which("memgraph-context-graph")
     base = [executable] if executable else [sys.executable, "-m", "memgraph_context_graph.cli"]
-    return [*base, "mcp", *(["--session-context"] if session_context else [])]
+    return [*base, "mcp", "--agent", runtime, *(["--session-context"] if session_context else [])]
 
 
 @dataclass(frozen=True)
@@ -62,6 +66,8 @@ class JsonMcpServers:
     the server with ``--session-context``.
     """
 
+    #: The agent this is, named to the server so it resolves that agent's profile.
+    runtime: str
     path: Callable[[Path], Path]
     entry: Callable[[list[str]], dict[str, Any]]
     servers_key: tuple[str, ...] = ("mcpServers",)
@@ -80,7 +86,9 @@ class JsonMcpServers:
         """
         path = self.path(home)
         document = _read_json(path)
-        _json_table(document, self.servers_key)[SERVER] = self.entry(server_argv(session_context=self.session_context))
+        _json_table(document, self.servers_key)[SERVER] = self.entry(
+            server_argv(self.runtime, session_context=self.session_context)
+        )
         lines = _write_json(path, document)
         if self.allow is not None:
             lines += _add_rule(self.allow, home)
@@ -115,6 +123,7 @@ class GrokMcp:
     """
 
     rule: str = f"MCPTool({SERVER}__*)"
+    runtime: str = "grok"
 
     def registered(self, home: Path) -> bool:
         """Whether the config lists a ``context-graph`` server."""
@@ -130,7 +139,7 @@ class GrokMcp:
 
         path = _grok_config(home)
         config = _read_toml(path)
-        argv = server_argv(session_context=True)
+        argv = server_argv(self.runtime, session_context=True)
         server = tomlkit.table()
         server["command"] = argv[0]
         server["args"] = argv[1:]
@@ -186,8 +195,11 @@ def _opencode_entry(argv: list[str]) -> dict[str, Any]:
 AGENT_MCP: dict[str, JsonMcpServers | GrokMcp] = {
     # Copilot keeps no allow-list between runs: an interactive user approves once, a script passes
     # --allow-tool=context-graph.
-    "copilot-cli": JsonMcpServers(path=lambda home: home / ".copilot" / "mcp-config.json", entry=_copilot_entry),
+    "copilot-cli": JsonMcpServers(
+        runtime="copilot-cli", path=lambda home: home / ".copilot" / "mcp-config.json", entry=_copilot_entry
+    ),
     "cursor": JsonMcpServers(
+        runtime="cursor",
         path=lambda home: home / ".cursor" / "mcp.json",
         entry=_stdio_entry,
         allow=JsonAllowRule(
@@ -197,6 +209,7 @@ AGENT_MCP: dict[str, JsonMcpServers | GrokMcp] = {
         ),
     ),
     "antigravity-cli": JsonMcpServers(
+        runtime="antigravity-cli",
         path=lambda home: home / ".gemini" / "config" / "mcp_config.json",
         entry=_command_entry,
         allow=JsonAllowRule(
@@ -206,6 +219,7 @@ AGENT_MCP: dict[str, JsonMcpServers | GrokMcp] = {
         ),
     ),
     "opencode": JsonMcpServers(
+        runtime="opencode",
         path=lambda home: home / ".config" / "opencode" / "opencode.json",
         entry=_opencode_entry,
         servers_key=("mcp", "servers"),
@@ -322,5 +336,5 @@ def _write(path: Path, rendered: str) -> list[str]:
     if path.exists() and not backup.exists():
         shutil.copy2(path, backup)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(rendered, encoding="utf-8")
+    write_text_keeping_newlines(path, rendered)
     return [f"Wrote {path}"]

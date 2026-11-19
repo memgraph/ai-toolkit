@@ -2,7 +2,8 @@
   "mcpServers": {
     "context-graph": {
       "command": "memgraph-context-graph",
-      "args": ["mcp"]
+      "args": ["mcp"],
+      "env": { "CONTEXT_GRAPH_AGENT": "claude-code" }
     }
   }
 }

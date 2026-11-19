@@ -1,0 +1,289 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/memgraph/ai-toolkit/hygm/schema/mapping.v1.schema.json",
+  "title": "hygm mapping, format version 1",
+  "description": "The structure of a version-1 hygm mapping file. Rules a JSON Schema can't express (declared types, sources and properties, the binding allowed for a source's kind, keys across sources, admitted endpoints, endpoint column counts) are defined in hygm/docs/contract.md, section 6.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "model"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "model": {
+      "$ref": "#/$defs/name"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node_binding"
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relation_binding"
+      }
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "names": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/name"
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "kind": {
+          "enum": [
+            "table",
+            "graph"
+          ]
+        }
+      }
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "schema": {
+          "$ref": "#/$defs/name"
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        }
+      }
+    },
+    "graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/name"
+        }
+      }
+    },
+    "property_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "column"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "column": {
+          "$ref": "#/$defs/name"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^\\$"
+        }
+      }
+    },
+    "property_bindings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/property_binding"
+      }
+    },
+    "column_endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "columns"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/name"
+        },
+        "columns": {
+          "$ref": "#/$defs/names"
+        }
+      }
+    },
+    "join_endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "property"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/name"
+        },
+        "property": {
+          "$ref": "#/$defs/name"
+        }
+      }
+    },
+    "node_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "source"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/name"
+        },
+        "source": {
+          "$ref": "#/$defs/name"
+        },
+        "table": {
+          "$ref": "#/$defs/table"
+        },
+        "graph": {
+          "$ref": "#/$defs/graph"
+        },
+        "id": {
+          "$ref": "#/$defs/names"
+        },
+        "properties": {
+          "$ref": "#/$defs/property_bindings"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "table",
+            "id"
+          ],
+          "not": {
+            "required": [
+              "graph"
+            ]
+          }
+        },
+        {
+          "required": [
+            "graph"
+          ],
+          "properties": {
+            "table": false,
+            "id": false,
+            "properties": false
+          }
+        }
+      ]
+    },
+    "relation_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/name"
+        },
+        "source": {
+          "$ref": "#/$defs/name"
+        },
+        "table": {
+          "$ref": "#/$defs/table"
+        },
+        "from": {
+          "$ref": "#/$defs/column_endpoint"
+        },
+        "to": {
+          "$ref": "#/$defs/column_endpoint"
+        },
+        "graph": {
+          "$ref": "#/$defs/graph"
+        },
+        "join": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "from",
+            "to"
+          ],
+          "properties": {
+            "from": {
+              "$ref": "#/$defs/join_endpoint"
+            },
+            "to": {
+              "$ref": "#/$defs/join_endpoint"
+            }
+          }
+        },
+        "properties": {
+          "$ref": "#/$defs/property_bindings"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "source",
+            "table",
+            "from",
+            "to"
+          ],
+          "properties": {
+            "graph": false,
+            "join": false
+          }
+        },
+        {
+          "required": [
+            "source",
+            "graph"
+          ],
+          "properties": {
+            "table": false,
+            "from": false,
+            "to": false,
+            "join": false,
+            "properties": false
+          }
+        },
+        {
+          "required": [
+            "join"
+          ],
+          "properties": {
+            "source": false,
+            "table": false,
+            "from": false,
+            "to": false,
+            "graph": false,
+            "properties": false
+          }
+        }
+      ]
+    }
+  }
+}

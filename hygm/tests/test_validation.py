@@ -27,18 +27,6 @@ def test_undeclared_endpoint_label_is_critical():
     assert result.critical_issues[0].category is ValidationCategory.STRUCTURE
 
 
-def test_user_endpoint_without_person_is_critical():
-    result = validate_model(_model(RelationType("visited", start_labels=("User",), end_labels=("Location",))))
-    assert not result.success
-    assert "'User' but not 'Person'" in result.critical_issues[0].message
-
-
-def test_unconstrained_endpoint_counts_as_every_declared_label_for_the_user_rule():
-    assert validate_model(_model(RelationType("mentions"))).success
-    result = validate_model(_model(RelationType("mentions"), labels=("User", "Location")))
-    assert len(result.critical_issues) == 2  # both sides resolve to {User, Location}
-
-
 def test_duplicate_labels_are_critical():
     model = HygmModel(
         node_types=(NodeType("Person"), NodeType("Person")),

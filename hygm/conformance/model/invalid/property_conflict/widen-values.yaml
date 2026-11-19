@@ -1,0 +1,4 @@
+version: 2
+node_types:
+  - {label: Wine, description: a wine, properties: [{name: sugar, values: [dry, sweet]}]}
+  - {label: DessertWine, description: d, parents: [Wine], properties: [{name: sugar, values: [sweet, very_sweet]}]}

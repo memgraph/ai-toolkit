@@ -1,0 +1,48 @@
+version: 2
+node_types:
+  - label: Party
+    description: Any person or organization the shop deals with
+    properties:
+      - {name: display_name, type: string}
+  - label: Customer
+    description: A party that has placed at least one order
+    parents: [Party]
+    key: [customer_id]
+    properties:
+      - {name: customer_id, type: string, required: true}
+      - {name: tier, type: string, values: [standard, gold]}
+      - {name: loyalty_points, type: integer}
+  - label: Supplier
+    description: A party that supplies products
+    parents: [Party]
+    properties:
+      - {name: supplier_id, type: integer, required: true}
+  - label: Order
+    description: A purchase a customer made
+    key: [order_id]
+    properties:
+      - {name: order_id, type: integer, required: true}
+      - {name: customer_ref, type: string}
+      - {name: total, type: decimal}
+  - label: Product
+    description: Something the shop sells, identified per region
+    properties:
+      - {name: sku, type: string}
+      - {name: region, type: string}
+relation_types:
+  - label: placed
+    description: The customer placed the order
+    start_labels: [Customer]
+    end_labels: [Order]
+    properties:
+      - {name: at, type: datetime}
+  - label: contains
+    description: The order contains the product
+    start_labels: [Order]
+    end_labels: [Product]
+    properties:
+      - {name: quantity, type: integer}
+  - label: supplies
+    description: The party supplies the product
+    start_labels: [Party]
+    end_labels: [Product]

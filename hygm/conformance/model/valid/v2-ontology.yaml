@@ -1,0 +1,16 @@
+version: 2
+ontology:
+  name: wine
+  description: Wines and the foods they pair with, for menu suggestions
+  iri: https://example.org/wine
+  version_info: "2026.11"
+  scope:
+    includes: [wine characteristics, food types, good and bad pairings]
+    excludes: [cellar inventory, restaurant staff]
+  competency_questions:
+    - Which wine characteristics should I consider when choosing a wine?
+    - Does Cabernet Sauvignon go well with seafood?
+  maintainers: [the sommelier team]
+  conventions: {node_case: upper_camel, property_case: snake, relation_case: snake, number: singular}
+node_types:
+  - {label: Wine, description: A wine}

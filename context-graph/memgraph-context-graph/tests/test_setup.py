@@ -93,7 +93,7 @@ def test_wiring_refuses_the_home_directory(setup_home):
 
 
 @pytest.mark.parametrize("runtime, binary", [("claude-code", "claude"), ("codex", "codex")])
-def test_plugin_wiring_registers_installs_and_comes_off_again(fake_agents, runtime, binary):
+def test_plugin_wiring_registers_installs_and_comes_off_again(fake_agents, setup_home, runtime, binary):
     agent = BY_RUNTIME[runtime]
     lines, log = _logged()
 
@@ -102,13 +102,86 @@ def test_plugin_wiring_registers_installs_and_comes_off_again(fake_agents, runti
     assert agents.wire_plugin(agent, log) == "plugin already installed"
     state = fake_agents.of(binary)
     assert state["plugins"] == [agents.PLUGIN_ID]
-    assert ["plugin", "marketplace", "add", "memgraph/ai-toolkit", "--sparse", agent.sparse] in state["calls"]
+    assert ["plugin", "marketplace", "add", "memgraph/marketplace"] in state["calls"]
     assert f"Installed {agents.PLUGIN_ID}" in lines
 
-    assert agents.unwire_plugin(agent, log) == "removed the plugin and marketplace"
+    # The Memgraph marketplace stays: it also serves the memgraph plugin.
+    assert agents.unwire_plugin(agent, log) == "removed the plugin"
+    assert fake_agents.of(binary)["plugins"] == []
+    assert fake_agents.of(binary)["marketplaces"] == ["memgraph"]
+    assert agents.unwire_plugin(agent, log) == "wasn't installed"
+
+
+def _install_from_legacy_marketplace(binary: str) -> None:
+    """Install the plugin the way setup did before the Memgraph marketplace, from this repo's own marketplace."""
+    install = ["install", agents.LEGACY_PLUGIN_ID, "-y"] if binary == "claude" else ["add", agents.LEGACY_PLUGIN_ID]
+    for args in (["marketplace", "add", "memgraph/ai-toolkit", "--sparse", ".claude-plugin"], install):
+        subprocess.run([binary, "plugin", *args], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize("runtime, binary", [("claude-code", "claude"), ("codex", "codex")])
+def test_setup_moves_an_install_from_the_previous_marketplace(fake_agents, setup_home, runtime, binary):
+    """Two installs would run the hooks twice, so the old one goes, with its marketplace."""
+    agent = BY_RUNTIME[runtime]
+    _install_from_legacy_marketplace(binary)
+    assert agents.installed_plugin_id(agent) == agents.LEGACY_PLUGIN_ID
+
+    assert agents.wire_plugin(agent, lambda _: None) == "plugin moved to the Memgraph marketplace"
+    assert fake_agents.of(binary)["plugins"] == [agents.PLUGIN_ID]
+    assert fake_agents.of(binary)["marketplaces"] == ["memgraph"]
+
+
+@pytest.mark.parametrize("runtime, binary", [("claude-code", "claude"), ("codex", "codex")])
+def test_update_moves_an_install_from_the_previous_marketplace(fake_agents, setup_home, runtime, binary):
+    agent = BY_RUNTIME[runtime]
+    _install_from_legacy_marketplace(binary)
+    assert agents.plugin_wired(agent)
+
+    assert agents.update_plugin(agent, lambda _: None) == "plugin moved to the Memgraph marketplace"
+    assert fake_agents.of(binary)["plugins"] == [agents.PLUGIN_ID]
+    assert fake_agents.of(binary)["marketplaces"] == ["memgraph"]
+
+
+@pytest.mark.parametrize("runtime, binary", [("claude-code", "claude"), ("codex", "codex")])
+def test_update_removes_an_old_install_kept_beside_the_new_one(fake_agents, setup_home, runtime, binary):
+    """With both installed, the new one is what gets updated, and the old one must still go: both run hooks."""
+    agent = BY_RUNTIME[runtime]
+    _install_from_legacy_marketplace(binary)
+    agents.wire_plugin(agent, lambda _: None)
+    _install_from_legacy_marketplace(binary)
+    assert sorted(fake_agents.of(binary)["plugins"]) == sorted([agents.PLUGIN_ID, agents.LEGACY_PLUGIN_ID])
+
+    assert agents.update_plugin(agent, lambda _: None) == "plugin moved to the Memgraph marketplace"
+    assert fake_agents.of(binary)["plugins"] == [agents.PLUGIN_ID]
+    assert fake_agents.of(binary)["marketplaces"] == ["memgraph"]
+
+
+@pytest.mark.parametrize("move", ["setup", "update"])
+def test_moving_a_codex_install_carries_the_approval_mode_the_user_chose(fake_agents, setup_home, move):
+    import tomlkit
+
+    config = setup_home / ".codex" / "config.toml"
+    config.parent.mkdir()
+    config.write_text(
+        f'[plugins."{agents.LEGACY_PLUGIN_ID}".mcp_servers.context-graph]\ndefault_tools_approval_mode = "prompt"\n'
+    )
+    _install_from_legacy_marketplace("codex")
+    codex = BY_RUNTIME["codex"]
+
+    (agents.wire_plugin if move == "setup" else agents.update_plugin)(codex, lambda _: None)
+
+    plugins = tomlkit.parse(config.read_text()).unwrap()["plugins"]
+    assert plugins == {agents.PLUGIN_ID: {"mcp_servers": {"context-graph": {"default_tools_approval_mode": "prompt"}}}}
+
+
+@pytest.mark.parametrize("runtime, binary", [("claude-code", "claude"), ("codex", "codex")])
+def test_uninstall_removes_an_install_from_the_previous_marketplace(fake_agents, setup_home, runtime, binary):
+    agent = BY_RUNTIME[runtime]
+    _install_from_legacy_marketplace(binary)
+
+    assert agents.unwire_plugin(agent, lambda _: None) == "removed the plugin"
     assert fake_agents.of(binary)["plugins"] == []
     assert fake_agents.of(binary)["marketplaces"] == []
-    assert agents.unwire_plugin(agent, log) == "wasn't installed"
 
 
 def test_a_failing_plugin_install_says_what_the_agent_said(fake_agents, monkeypatch):
@@ -158,6 +231,16 @@ def test_doctor_fails_until_the_plugin_is_installed_and_enabled(fake_agents, mon
     assert f"claude plugin enable {agents.PLUGIN_ID}" in check["detail"]
 
     assert _check_plugin("cursor") is None
+
+
+def test_doctor_points_an_install_from_the_previous_marketplace_to_update(fake_agents):
+    from memgraph_context_graph.cli import _check_plugin
+
+    _install_from_legacy_marketplace("claude")
+    check = _check_plugin("claude-code")
+    assert check is not None
+    assert check["ok"]
+    assert "run: memgraph-context-graph update claude-code" in check["detail"]
 
 
 def test_only_agents_on_path_are_detected(fake_agents):
@@ -350,7 +433,7 @@ def test_the_interactive_uninstall_unwires_removes_and_lists_what_it_kept(fake_a
 
     assert fake_agents.of("claude")["plugins"] == []
     assert not config_file().exists()
-    assert "✓  Claude Code      removed the plugin and marketplace" in term.text
+    assert "✓  Claude Code      removed the plugin" in term.text
     assert "the graph:   docker rm -f cg && docker volume rm cg-data" in term.text
     assert "└  Done." in term.text
 
@@ -362,7 +445,7 @@ def test_uninstall_finds_what_is_wired_and_keeps_data(fake_agents, setup_home, p
     assert main(["uninstall", "--project-dir", str(project)]) == 0
 
     out = capsys.readouterr().out
-    assert "OK    Claude Code: removed the plugin and marketplace" in out
+    assert "OK    Claude Code: removed the plugin" in out
     assert f"OK    Cursor: unwired {project.resolve()}" in out
     assert "docker rm -f context-graph-memgraph && docker volume rm context-graph-memgraph-data" in out
     assert fake_agents.of("claude")["plugins"] == []
@@ -377,6 +460,7 @@ def test_uninstall_finds_what_is_wired_and_keeps_data(fake_agents, setup_home, p
 def no_schema(monkeypatch):
     """Update's schema step and doctor checks need a Memgraph and the connectors; ``test_setup_docker.py`` has them."""
     monkeypatch.setattr("memgraph_context_graph.hooks.runner.setup_connector_schemas", lambda *a, **k: None)
+    monkeypatch.setattr("memgraph_context_graph.graph_version.setup_at", lambda memgraph_env: None)
     monkeypatch.setattr(engine, "verify", lambda runtimes: [])
 
 
@@ -458,6 +542,7 @@ def test_update_says_to_delete_duplicates_when_a_constraint_cannot_be_created(
         )
 
     monkeypatch.setattr("memgraph_context_graph.hooks.runner.setup_connector_schemas", refuse)
+    monkeypatch.setattr("memgraph_context_graph.graph_version.setup_at", lambda memgraph_env: None)
     agents.wire_plugin(BY_RUNTIME["claude-code"], lambda _: None)
 
     assert main(["update", "--no-upgrade", "--project-dir", str(project)]) == 1
@@ -485,6 +570,7 @@ def test_upgrading_asks_uv_to_refresh_every_package(monkeypatch, default_connect
             return 0
 
     monkeypatch.setattr(tool.shutil, "which", lambda _: "/bin/uv")
+    monkeypatch.setattr(tool, "_uv_dir", lambda uv, *flags: None)
     monkeypatch.setattr(tool.subprocess, "Popen", lambda argv, **_: seen.setdefault("argv", argv) and Fake())
     monkeypatch.setattr(tool, "installed", lambda package: False)
 
@@ -871,6 +957,44 @@ def test_reinstalling_the_tool_keeps_local_extraction_and_the_connectors_command
     _identity._reset_cache()
 
 
+@pytest.fixture
+def uv_tools(tmp_path, monkeypatch, default_connectors):
+    """A throwaway uv tool directory and bin, holding a standalone ``sessions-graph`` tool that owns its command.
+
+    With another install holding that command, uv refused update's install and removed the tool,
+    leaving every hook without its command.
+    """
+    import shutil
+
+    from memgraph_context_graph.setup import tool
+
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.skip("needs uv")
+    tools, bin_dir = tmp_path / "uv-tools", tmp_path / "uv-bin"
+    monkeypatch.setenv("UV_TOOL_DIR", str(tools))
+    monkeypatch.setenv("UV_TOOL_BIN_DIR", str(bin_dir))
+    monkeypatch.setattr(tool, "installed", lambda package: False)
+    # Install what PyPI holds: a release raises these floors before it publishes them.
+    requirements = tool.requirements
+    monkeypatch.setattr(tool, "requirements", lambda **kw: [re.sub(r">=[\d.]+$", "", r) for r in requirements(**kw)])
+    subprocess.run([uv, "tool", "install", "--quiet", "sessions-graph==0.12.2"], check=True)
+    return tools, bin_dir
+
+
+def test_a_connector_command_another_tool_holds_is_left_to_it_and_the_tool_still_installs(uv_tools):
+    from memgraph_context_graph.setup import tool
+
+    tools, bin_dir = uv_tools
+    logged = []
+
+    tool.install(viewer=False, log=logged.append, upgrade=True)
+
+    assert (bin_dir / tool.TOOL).resolve().is_relative_to(tools / tool.TOOL)
+    assert (bin_dir / "sessions-graph").resolve().is_relative_to(tools / "sessions-graph")
+    assert any(line.startswith("Leaving `sessions-graph` off PATH: sessions-graph has it there") for line in logged)
+
+
 def test_the_enterprise_hint_names_the_whole_install_not_just_the_spaces_package(monkeypatch, default_connectors):
     import pytest
 
@@ -1073,3 +1197,40 @@ def test_codex_wiring_keeps_an_approval_mode_the_user_chose(fake_agents, setup_h
 
     mode = tomlkit.parse(config.read_text()).unwrap()["plugins"][agents.PLUGIN_ID]["mcp_servers"]["context-graph"]
     assert mode == {"default_tools_approval_mode": "prompt"}
+
+
+def test_setup_for_agents_on_a_profile_plans_and_writes_that_profile(fake_agents, setup_home, capsys):
+    from memgraph_context_graph.adapters import _identity
+
+    _identity.write_config(memgraph_url="bolt://localhost:7687")
+
+    assert main(["setup", "--plan", "codex", "--profile", "second", "--memgraph-url", "bolt://localhost:7688"]) == 0
+    assert "Profile: second" in capsys.readouterr().out
+    _identity._reset_cache()
+    assert _identity.load_config().agents == {}, "--plan changes nothing"
+
+    _identity.select_profile("second")
+    _identity.write_config(memgraph_url="bolt://localhost:7688")
+    _identity.map_agents(["codex"], "second")
+    _identity._reset_cache()
+    assert main(["setup", "--plan", "codex"]) == 0
+    assert "Memgraph: use bolt://localhost:7688 (configured)" in capsys.readouterr().out
+
+
+def test_setup_refuses_agents_on_different_profiles_in_one_run(fake_agents, setup_home, capsys):
+    from memgraph_context_graph.adapters import _identity
+
+    _identity.select_profile("second")
+    _identity.write_config(memgraph_url="bolt://localhost:7688")
+    _identity.map_agents(["codex"], "second")
+    _identity._reset_cache()
+
+    with pytest.raises(SystemExit):
+        main(["setup", "--plan", "codex", "claude-code"])
+    assert "codex on second, claude-code on default" in capsys.readouterr().err
+
+
+def test_setup_profile_needs_the_agents_that_use_it(setup_home, capsys):
+    with pytest.raises(SystemExit):
+        main(["setup", "--plan", "--profile", "second"])
+    assert "--profile needs the agents" in capsys.readouterr().err

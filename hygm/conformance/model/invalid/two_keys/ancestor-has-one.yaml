@@ -1,0 +1,4 @@
+version: 2
+node_types:
+  - {label: A, description: a, key: [id], properties: [{name: id, required: true}]}
+  - {label: B, description: b, parents: [A], key: [code], properties: [{name: code, required: true}]}

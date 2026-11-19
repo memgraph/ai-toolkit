@@ -1,0 +1,5 @@
+version: 2
+node_types:
+  - {label: Red, description: r, properties: [{name: colour, values: [red]}]}
+  - {label: White, description: w, properties: [{name: colour, values: [white]}]}
+  - {label: Blush, description: b, parents: [Red, White]}

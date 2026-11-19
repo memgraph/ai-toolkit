@@ -1,0 +1,17 @@
+version: 1
+model: ../../models/shop.model.yaml
+sources:
+  - {name: crm, kind: table}
+  - {name: legacy, kind: graph}
+nodes:
+  - type: Customer
+    source: crm
+    table: {name: customers}
+    id: [customer_id]
+    properties:
+      - {name: customer_id, column: customer_id}
+  - type: Order
+    source: legacy
+    graph: {}
+    properties:
+      - {name: order_id, column: id}

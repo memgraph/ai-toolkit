@@ -32,6 +32,11 @@ def test_async_memgraph_resolves_config_from_env(monkeypatch):
     assert explicit.database == "arg-db"
 
 
+def test_an_empty_database_reaches_the_driver_as_none():
+    """An empty name means the login's main database; a routing driver would look up a database named ""."""
+    assert AsyncMemgraph(url="neo4j://localhost:7687", database="").database is None
+
+
 def test_async_memgraph_mirrors_sync_defaults():
     """AsyncMemgraph shares the sync client's user-agent default."""
     assert AsyncMemgraph.DEFAULT_USER_AGENT == Memgraph.DEFAULT_USER_AGENT

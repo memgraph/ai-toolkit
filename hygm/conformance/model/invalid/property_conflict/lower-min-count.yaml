@@ -1,0 +1,4 @@
+version: 2
+node_types:
+  - {label: Blend, description: b, properties: [{name: grapes, min_count: 3, max_count: null}]}
+  - {label: SimpleBlend, description: s, parents: [Blend], properties: [{name: grapes, min_count: 2}]}

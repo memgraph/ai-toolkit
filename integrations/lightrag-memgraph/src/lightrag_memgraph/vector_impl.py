@@ -144,6 +144,34 @@ class MemgraphVectorStorage(BaseVectorStorage):
             ).consume()
         logger.debug(f"[{self.workspace}] Upserted {len(entries)} vectors to {self.namespace}")
 
+    def _search_query(self) -> str:
+        """Cypher for query(): vector search, then a liveness recheck of each candidate.
+
+        Memgraph's vector index runs at READ_UNCOMMITTED isolation by design, so while
+        a concurrent transaction's delete of a matching node hasn't committed yet,
+        vector_search.search can still hand back a handle to that node -- reading a
+        property off it raises 50N42. The raw `node` handle is therefore only passed to
+        id(), which reads no property, and each candidate is re-MATCHed by that id via
+        OPTIONAL MATCH: a candidate caught mid-delete comes back as a row with
+        `id IS NULL` instead of erroring, so query() can count + log it.
+
+        `WHERE id(live) = ...` plans as ScanAllById, a direct lookup, so the recheck
+        costs O(top_k). Comparing node handles (`live = cp.node`) plans as a ScanAll
+        of every node per candidate, and reading `node.id` for an index seek on `id`
+        raises 50N42 on a mid-delete candidate.
+
+        Index name is a sanitized string literal (not accepted as a query param).
+        """
+        return f"""
+            CALL vector_search.search("{self._index_name}", $top_k, $embedding)
+            YIELD node, similarity
+            WITH collect({{gid: id(node), similarity: similarity}}) AS cand_pairs
+            UNWIND cand_pairs AS cp
+            OPTIONAL MATCH (live:`{self._label}`) WHERE id(live) = cp.gid
+            RETURN live.id AS id, cp.similarity AS similarity,
+                   CASE WHEN live IS NULL THEN NULL ELSE properties(live) END AS props
+            """
+
     async def query(self, query: str, top_k: int, query_embedding: list[float] | None = None) -> list[dict[str, Any]]:
         """Vector-search this namespace and return up to ``top_k`` live results.
 
@@ -169,27 +197,8 @@ class MemgraphVectorStorage(BaseVectorStorage):
         # default_access_mode="READ" is just a routing hint; it doesn't affect the vector index's isolation.
         async with driver.session(database=get_database(), default_access_mode="READ") as session:
             try:
-                # Memgraph's vector index runs at READ_UNCOMMITTED isolation by design, so
-                # while a concurrent transaction's delete of a matching node hasn't committed
-                # yet, vector_search.search can still hand back a handle to that node --
-                # reading a property off it raises 50N42. We never touch that raw `node`
-                # handle directly: re-MATCH each candidate by identity via OPTIONAL MATCH,
-                # so a candidate caught mid-delete comes back as a row with `id IS NULL`
-                # instead of erroring, and we can count + log it below instead of silently
-                # dropping it.
-                # Index name is a sanitized string literal (not accepted as a query param).
                 result = await session.run(
-                    as_literal_query(
-                        f"""
-                        CALL vector_search.search("{self._index_name}", $top_k, $embedding)
-                        YIELD node, similarity
-                        WITH collect({{node: node, similarity: similarity}}) AS cand_pairs
-                        UNWIND cand_pairs AS cp
-                        OPTIONAL MATCH (live:`{self._label}`) WHERE live = cp.node
-                        RETURN live.id AS id, cp.similarity AS similarity,
-                               CASE WHEN live IS NULL THEN NULL ELSE properties(live) END AS props
-                        """
-                    ),
+                    as_literal_query(self._search_query()),
                     top_k=int(top_k),
                     embedding=embedding,
                 )

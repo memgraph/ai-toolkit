@@ -46,10 +46,15 @@ class ImportReport:
 
 @dataclass
 class ExportReport:
-    """What an export wrote into the harness's store, and which graph paths it had no place for."""
+    """What an export wrote into the harness's store, which graph paths it had no place for, what it kept, and what
+    to tell."""
 
     exported: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
+    #: Native files left as they were because they differ from the graph's copy and it doesn't descend from them.
+    kept: list[str] = field(default_factory=list)
+    #: Lines for the user about how the harness takes the exported files in, when that isn't immediate.
+    notes: list[str] = field(default_factory=list)
 
 
 class StoredMemory(Protocol):
@@ -62,16 +67,35 @@ class StoredMemory(Protocol):
     def content(self) -> str: ...
 
 
+class EarlierText(Protocol):
+    """Text a write to a graph memory file replaced."""
+
+    @property
+    def content(self) -> str: ...
+
+
 class MemorySource(Protocol):
     """The part of sessions-graph's ``MemoryStore`` an export reads through."""
 
     def files(self) -> Sequence[StoredMemory]: ...
 
+    def versions(self, path: str) -> Sequence[EarlierText]: ...
+
+    def written_in(self, path: str) -> list[str]: ...
+
 
 class MemoryFiles(Protocol):
-    """The part of sessions-graph's ``MemoryStore`` an import writes through."""
+    """The part of sessions-graph's ``MemoryStore`` an import writes through.
+
+    A newer store also has ``mark_imported(path, project, *, text, modified)``,
+    recording which project's memory a file came from; an import checks for it.
+    """
 
     def view(self, path: str, view_range: tuple[int, int] | None = None) -> str: ...
+
+    def read(self, path: str) -> str | None: ...
+
+    def versions(self, path: str) -> Sequence[EarlierText]: ...
 
     def create(self, path: str, file_text: str) -> str: ...
 
@@ -144,20 +168,29 @@ def use_native_memory(plugin: RuntimeCLIPlugin, *, home: Path | None = None) -> 
     """Hand memory back to *plugin*'s own: graph memories copied into it, harness memory on, ours off.
 
     The copy runs first and only while the graph is the backend, so a failure (Memgraph down) leaves the
-    user on the graph's memory, and re-running after the switch never overwrites the harness's newer files.
+    user on the graph's memory. ``memory.backend`` is one value for every runtime, so hand the others
+    back with :func:`hand_back_memory` first: once it is native, nothing is copied.
+
+    Raises:
+        MemoryBackendError: the runtime can't switch, or the graph's memories can't be read.
+    """
+    lines = hand_back_memory(plugin, home=home)
+    write_config(memory_backend=MEMORY_BACKEND_NATIVE)
+    lines.append(
+        f"Set memory.backend = {MEMORY_BACKEND_NATIVE}; {plugin.name}'s own memory is back from its next session."
+    )
+    return lines
+
+
+def hand_back_memory(plugin: RuntimeCLIPlugin, *, home: Path | None = None) -> list[str]:
+    """Copy the graph's memories into *plugin*'s own store and turn it back on, leaving ``memory.backend`` as is.
 
     Raises:
         MemoryBackendError: the runtime can't switch, or the graph's memories can't be read.
     """
     native = _require_native(plugin)
     home = home or Path.home()
-    lines = export_graph_memory(native, plugin.name, home=home)
-    lines += native.enable(home)
-    write_config(memory_backend=MEMORY_BACKEND_NATIVE)
-    lines.append(
-        f"Set memory.backend = {MEMORY_BACKEND_NATIVE}; {plugin.name}'s own memory is back from its next session."
-    )
-    return lines
+    return export_graph_memory(native, plugin.name, home=home) + native.enable(home)
 
 
 def export_graph_memory(native: NativeMemory, name: str, *, home: Path) -> list[str]:
@@ -174,7 +207,8 @@ def export_graph_memory(native: NativeMemory, name: str, *, home: Path) -> list[
     lines = [f"Copied back {path}" for path in report.exported]
     if report.skipped:
         lines.append(f"Kept in Memgraph only, with no place in {name}'s memory: {', '.join(report.skipped)}")
-    return lines
+    lines += [f"Kept {path}: it differs from the graph's copy, which doesn't descend from it" for path in report.kept]
+    return lines + report.notes
 
 
 def keep_in_graph(source: MemorySource) -> ExportReport:

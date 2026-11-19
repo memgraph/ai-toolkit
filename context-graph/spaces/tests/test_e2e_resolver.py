@@ -27,6 +27,17 @@ def test_join_makes_the_login_the_user(enterprise_url, team, join, capsys):
     assert _identity.resolve_memgraph_env()["MEMGRAPH_DATABASE"] == ""
 
 
+def test_join_says_how_to_reach_the_shared_spaces(enterprise_url, team, join, capsys):
+    join(enterprise_url, "alice", team["alice"])
+    assert "setup <runtime> (e.g. claude-code) --memory-backend context-graph" in capsys.readouterr().out
+
+    _identity.write_config(memory_backend=_identity.MEMORY_BACKEND_GRAPH)
+    join(enterprise_url, "alice", team["alice"])
+    out = capsys.readouterr().out
+    assert "memory tool reaches them under /memories/spaces/<space>/" in out
+    assert "--memory-backend" not in out
+
+
 def test_hooks_resolve_their_target_without_connecting(config_file):
     _identity.write_config(
         edition="enterprise",

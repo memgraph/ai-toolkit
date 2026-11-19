@@ -1,6 +1,6 @@
-"""hygm's Observer over GLiNER2: what a candidate model actually extracts from a sample.
+"""Derivation's Observer over GLiNER2: what a candidate model actually extracts from a sample.
 
-Derivation (``hygm.LlmRecommendationStrategy``) observes its candidate before
+Derivation (sessions-graph's ``LlmRecommendationStrategy``) observes its candidate before
 pruning it: every type and relation is run over a sample of the user's
 sessions, and the relations' real endpoints are chosen from the type pairs
 they fired on. This runs the same extraction a GLiNER2Backend ingests with --
@@ -24,14 +24,15 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from hygm import USER_LABEL, HygmModel
-
 from .gliner2_backend import DEFAULT_CANDIDATE_CAP, GLiNER2Backend, _normalize_text
 from .loaders import Chunk
 from .ontology import Ontology
+from .profile import USER_LABEL
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from hygm import HygmModel
 
     from .loaders import Document
 
@@ -96,7 +97,7 @@ class Measurement:
 
 
 class GLiNER2Observer:
-    """Implements ``hygm.Observer`` for GLiNER2 over ``Document`` samples.
+    """Implements sessions-graph's derivation ``Observer`` for GLiNER2 over ``Document`` samples.
 
     The checkpoint loads on the first observe() and is reused by every later
     one; each call compiles the candidate's own schema.
@@ -130,7 +131,7 @@ class GLiNER2Observer:
         Returns:
             ``{"relations": {name: {"edges", "pairs"}}, "types": {label: {...}}}``
             for every relation and type `model` declares, in the shape
-            ``hygm.Observer`` documents. Mentions are counted under the type
+            derivation's ``Observer`` documents. Mentions are counted under the type
             the user resolver settles on (the user's own mentions as User,
             third parties as Person); dropped mentions aren't counted.
         """
@@ -145,7 +146,7 @@ class GLiNER2Observer:
         """Extract `sample` under `model` and score it for the adoption gate.
 
         Args:
-            catch_alls: The labels counted as catch-alls (``hygm.CATCH_ALL_LABELS``).
+            catch_alls: The labels counted as catch-alls (the ``learning`` profile's catch-alls).
         """
         extraction = self.extract(model, sample)
         mentions, edges, user_turns = extraction.mentions, extraction.edges, extraction.user_turns

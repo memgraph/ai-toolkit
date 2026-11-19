@@ -14,6 +14,7 @@ pytest.importorskip("memgraph_context_graph", reason="memgraph-context-graph not
 
 from memgraph_context_graph import AgentLink
 from memgraph_context_graph.adapters.claude_code import ClaudeCodeHooksAdapter
+from memgraph_context_graph.adapters.codex import CodexHooksAdapter
 from memgraph_context_graph.events import ToolEndEvent
 from skills_graph import Skill, SkillGraph
 from skills_graph.connector import SkillGraphConnector
@@ -307,6 +308,120 @@ def test_full_session_lifecycle(wired):
     assert len(rows) == 2
     assert rows[0]["name"] == "docker-skill"
     assert rows[1]["name"] == "git-skill"
+
+
+def _used_skills(sg):
+    return sg._db.query(
+        """
+        MATCH (:Session {session_id: $sid})-[r:USED_SKILL]->(sk:Skill)
+        RETURN sk.name AS name, sk.source_path AS source_path, r.actions AS actions
+        ORDER BY sk.name
+        """,
+        params={"sid": "test-session"},
+    )
+
+
+def _hook(adapter, tool_name, tool_input, cwd):
+    adapter.handle_payload(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+            "tool_use_id": f"tu-{tool_name}",
+            "cwd": str(cwd),
+        }
+    )
+
+
+def test_claude_code_skill_tool_call_records_used_skill(wired, tmp_path, monkeypatch):
+    """Claude Code's Skill tool is recorded, with the installed SKILL.md filling the node; its result adds nothing."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    skill_file = tmp_path / ".agents" / "skills" / "grilling" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text("---\nname: grilling\ndescription: Grill the user\n---\n", encoding="utf-8")
+    adapter = wired["adapter"]
+
+    _hook(adapter, "Skill", {"skill": "grilling"}, tmp_path)
+    adapter.handle_payload(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Skill",
+            "tool_input": {"skill": "grilling"},
+            "tool_response": {"success": True, "commandName": "grilling"},
+            "tool_use_id": "tu-Skill",
+            "cwd": str(tmp_path),
+        }
+    )
+
+    assert _used_skills(wired["sg"]) == [
+        {"name": "grilling", "source_path": str(skill_file), "actions": ["invoke_skill"]}
+    ]
+
+
+def test_every_skill_file_read_in_one_command_records_usage(wired, tmp_path):
+    for name in ("first", "second"):
+        (tmp_path / "skills" / name).mkdir(parents=True)
+        (tmp_path / "skills" / name / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: d\n---\n", encoding="utf-8"
+        )
+
+    _hook(wired["adapter"], "Bash", {"command": "cat skills/first/SKILL.md; cat skills/second/SKILL.md"}, tmp_path)
+
+    assert [row["name"] for row in _used_skills(wired["sg"])] == ["first", "second"]
+
+
+def test_codex_reading_a_skill_file_records_used_skill(sg, tmp_path):
+    """Codex has no skill tool: using a skill is a shell read of its SKILL.md, as its hooks report it."""
+    link = AgentLink()
+    link.add_connector(SkillGraphConnector(sg))
+    adapter = CodexHooksAdapter(link, session_id="test-session")
+    skill_file = tmp_path / ".agents" / "skills" / "code-review" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text("---\nname: code-review\ndescription: Review a branch\n---\n", encoding="utf-8")
+
+    for command in (
+        f"cat {skill_file} >/dev/null; rg --files -g AGENTS.md",
+        f"find {tmp_path} -path '*/code-review/SKILL.md' -print 2>/dev/null",
+    ):
+        adapter.handle_payload(
+            {
+                "hook_event_name": "PreToolUse",
+                "session_id": "test-session",
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "tool_use_id": "call-1",
+                "cwd": str(tmp_path),
+            }
+        )
+
+    assert _used_skills(sg) == [{"name": "code-review", "source_path": str(skill_file), "actions": ["read_skill_file"]}]
+
+
+def test_activity_that_is_not_skill_usage_records_nothing(wired, tmp_path):
+    """Memory files, staging, searching, authoring and delegating a SKILL.md path are not Skill Usage."""
+    memory_file = tmp_path / "memory" / "feedback.md"
+    memory_file.parent.mkdir()
+    memory_file.write_text("---\nname: feedback\ndescription: Prefer small PRs\n---\n", encoding="utf-8")
+    adapter = wired["adapter"]
+
+    _hook(adapter, "Read", {"file_path": str(memory_file)}, tmp_path)
+    adapter.handle_payload(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Read",
+            "tool_input": {"file_path": str(memory_file)},
+            "tool_response": {"type": "text", "file": {"content": memory_file.read_text(encoding="utf-8")}},
+            "tool_use_id": "tu-Read",
+            "cwd": str(tmp_path),
+        }
+    )
+    _hook(adapter, "Bash", {"command": "git add skills/release/SKILL.md"}, tmp_path)
+    _hook(adapter, "Bash", {"command": "git diff -- skills/release/SKILL.md"}, tmp_path)
+    _hook(adapter, "Bash", {"command": "rg -n name skills/release/SKILL.md"}, tmp_path)
+    _hook(adapter, "Write", {"file_path": "skills/release/SKILL.md", "content": "---"}, tmp_path)
+    _hook(adapter, "Agent", {"prompt": "read skills/release/SKILL.md", "subagent_type": "Explore"}, tmp_path)
+
+    assert _used_skills(wired["sg"]) == []
 
 
 # ------------------------------------------------------------------

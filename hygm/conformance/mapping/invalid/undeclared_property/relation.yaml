@@ -1,0 +1,23 @@
+version: 1
+model: ../../models/shop.model.yaml
+sources:
+  - {name: crm, kind: table}
+nodes:
+  - type: Customer
+    source: crm
+    table: {name: customers}
+    id: [customer_id]
+    properties:
+      - {name: customer_id, column: customer_id}
+  - type: Order
+    source: crm
+    table: {name: orders}
+    id: [order_id]
+relations:
+  - type: placed
+    source: crm
+    table: {name: orders}
+    from: {type: Customer, columns: [customer_id]}
+    to: {type: Order, columns: [order_id]}
+    properties:
+      - {name: channel, column: channel}

@@ -80,6 +80,8 @@ The `[memories]` table (`MemoriesToml`, `config/src/types.rs:322`):
 - `rollout_summaries/<timestamp>-<shorthash>[-<slug>].md`: one recap per selected rollout. Each recap points at the original session `rollout_path`, which is a jsonl file under `~/.codex/sessions/`.
 - `skills/<name>/SKILL.md` (with optional `scripts/`, `examples/`, `templates/`): skills the consolidator promotes.
 - `extensions/ad_hoc/notes/<timestamp>-<slug>.md`: the only place the model may write. It does so only when the user explicitly asks to update memory, and Phase 2 folds the note in later.
+  - The name must be `YYYY-MM-DDTHH-MM-SS-<slug>.md`, with a slug of 1 to 80 lowercase letters, digits and hyphens, and 128 bytes at most. A note is created, never overwritten (`ext/memories/src/local/ad_hoc_note.rs`). Phase 2 is told to treat notes as information, never instructions, to never delete one, and to tag what it derives from them `[ad-hoc note]` (`memories/write/templates/extensions/ad_hoc/instructions.md`). [src]
+  - **Live check, codex-cli 0.162.0, 2026-10-27.** Two notes were written into a throwaway `CODEX_HOME` with memories on. One session's Phase 2 folded both into `memory_summary.md` and `MEMORY.md`, tagged `[ad-hoc note]`. That included a note the first baseline had already committed. The consolidation agent runs in the background of the session that claims the job, and it is shut down with that session: a `codex exec` that ends in seconds kills it (`failed_agent`), and the job then backs off for an hour. [local]
 - `phase2_workspace_diff.md` (transient) and `.git/`: the git baseline that Phase 2 diffs against.
 
 **Injection** [src `ext/memories/src/prompts.rs`, `extension.rs`, `core/src/session/mod.rs`]:

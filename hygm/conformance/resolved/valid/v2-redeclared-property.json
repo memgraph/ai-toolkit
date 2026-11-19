@@ -1,0 +1,42 @@
+{
+  "format": "hygm-resolved",
+  "version": 1,
+  "model_version": 2,
+  "node_types": [
+    {
+      "label": "Party",
+      "description": "a party",
+      "properties": [
+        {
+          "name": "email",
+          "type": "string",
+          "description": "any address",
+          "declared_by": "Party"
+        }
+      ]
+    },
+    {
+      "label": "Customer",
+      "description": "a customer",
+      "parents": [
+        "Party"
+      ],
+      "ancestors": [
+        "Party"
+      ],
+      "key": [
+        "email"
+      ],
+      "properties": [
+        {
+          "name": "email",
+          "type": "string",
+          "description": "the billing address",
+          "required": true,
+          "declared_by": "Party"
+        }
+      ]
+    }
+  ],
+  "relation_types": []
+}

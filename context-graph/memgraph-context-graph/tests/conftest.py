@@ -30,11 +30,23 @@ def _no_real_config(monkeypatch, tmp_path):
     config = tmp_path / "isolated-config.toml"
     config.write_text('[capture]\nconnectors = ""\n')
     monkeypatch.setenv(_identity.CONFIG_PATH_ENV, str(config))
+    monkeypatch.delenv(_identity.PROFILE_ENV, raising=False)
     _identity._reset_cache()
     spaces._reset_cache()
     yield
     _identity._reset_cache()
     spaces._reset_cache()
+
+
+@pytest.fixture(autouse=True)
+def _graph_version_offline(monkeypatch):
+    """The check that reads the config's graph allows everything: that graph defaults to the user's real Memgraph.
+
+    Checks through a connection a test made itself (``graph_version.check``) still run.
+    """
+    from memgraph_context_graph import graph_version
+
+    monkeypatch.setattr(graph_version, "check_configured", lambda **_: graph_version.Rules())
 
 
 @pytest.fixture

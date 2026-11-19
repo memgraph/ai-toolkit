@@ -240,6 +240,7 @@ class MemgraphDocStatusStorage(MemgraphCrudMixin, DocStatusStorage):
 
         where = "" if status_values is None else "WHERE n.status IN $statuses"
         sort_expr = "n.id" if sort_field == "id" else f"n.{sort_field}"
+        order_by = f"{sort_expr} {order}" if sort_field == "id" else f"n.{sort_field} {order}, n.id {order}"
         params: dict[str, Any] = {"skip": skip, "limit": page_size}
         filter_params: dict[str, Any] = {}
         if status_values is not None:
@@ -265,7 +266,7 @@ class MemgraphDocStatusStorage(MemgraphCrudMixin, DocStatusStorage):
                         f"""
                         MATCH (n:`{self._label}`) {where}
                         RETURN n.id AS id, n.data AS data
-                        ORDER BY {sort_expr} {order}
+                        ORDER BY {order_by}
                         SKIP $skip LIMIT $limit
                         """
                     ),

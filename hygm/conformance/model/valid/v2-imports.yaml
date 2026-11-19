@@ -1,0 +1,12 @@
+version: 2
+imports:
+  - {path: ../imports/drink.model.yaml}
+node_types:
+  - label: Wine
+    description: A drink made from grapes
+    parents: [Drink]
+relation_types:
+  - label: served_with
+    description: The wine is served with the seafood
+    start_labels: [Wine]
+    end_labels: [Seafood]

@@ -9,14 +9,17 @@ only declares what differs about it.
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import shutil
+import subprocess
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 from memgraph_context_graph.adapters._identity import resolve_user_id
+from memgraph_context_graph.adapters._text_file import write_text_keeping_newlines
 from memgraph_context_graph.events import (
     AgentEndEvent,
     AgentStartEvent,
@@ -28,6 +31,7 @@ from memgraph_context_graph.events import (
     TurnEndEvent,
 )
 from memgraph_context_graph.protocols import RuntimeAdapter
+from memgraph_context_graph.tools import SESSION_CONTEXT_CHARS
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -69,6 +73,9 @@ class FieldMap:
     reply: tuple[str, ...] = ("last_assistant_message",)
 
 
+_ON_WINDOWS = os.name == "nt"
+
+
 @dataclass(frozen=True)
 class HookConfig:
     """Describe how a runtime represents and stores command hooks.
@@ -78,6 +85,9 @@ class HookConfig:
     ``flat_hooks`` names events written with the flat layout even when
     ``layout`` is nested, for runtimes that only accept matcher groups on some
     events.
+    ``windows_shell`` is the shell the runtime hands hook commands to on
+    Windows. ``cmd.exe`` doesn't read POSIX single quotes, so a ``"cmd"``
+    runtime's commands are quoted for it instead.
     """
 
     layout: Literal["nested", "flat"]
@@ -89,6 +99,7 @@ class HookConfig:
     inject_event_name: bool = False
     matchers: Mapping[str, str] = field(default_factory=dict)
     flat_hooks: frozenset[str] = frozenset()
+    windows_shell: Literal["posix", "cmd"] = "posix"
 
 
 @dataclass(frozen=True)
@@ -106,7 +117,8 @@ class RuntimeSpec:
     modifying the call. ``session_context`` renders the stdout JSON that puts
     the session-start text (memory index, where the user left off) in front of
     the model when ``session_context_event`` fires; None where no hook output
-    reaches the model at session start.
+    reaches the model at session start. ``session_context_limit`` is how many
+    characters of that text the runtime shows its model.
     """
 
     name: str
@@ -124,6 +136,7 @@ class RuntimeSpec:
     context_before_tool: Callable[[str], Mapping[str, Any]] | None = None
     session_context: Callable[[str], Mapping[str, Any]] | None = None
     session_context_event: str = "SessionStart"
+    session_context_limit: int = SESSION_CONTEXT_CHARS
 
     def event_name(self, payload: Mapping[str, Any]) -> str:
         """Return *payload*'s canonical event name."""
@@ -243,6 +256,11 @@ class SpecPlugin:
         return self.spec.name
 
     @property
+    def session_context_limit(self) -> int:
+        """Return how many characters of session-start text the runtime shows its model."""
+        return self.spec.session_context_limit
+
+    @property
     def probe_payload(self) -> Mapping[str, Any]:
         """Return the payload ``doctor`` replays to smoke-test the runtime."""
         return self.spec.probe_payload
@@ -300,7 +318,7 @@ def build_hooks_config(spec: RuntimeSpec, command: str, *, timeout: int = 30) ->
     for hook_name in spec.hooks:
         hook_command = command
         if spec.config.inject_event_name:
-            hook_command = f"{command} --event-name {shlex.quote(hook_name)}"
+            hook_command = f"{command} --event-name {_quote(hook_name, spec.config.windows_shell)}"
         command_entry: dict[str, Any] = {"command": hook_command, "type": "command"}
         if spec.config.timeout_key is not None:
             command_entry[spec.config.timeout_key] = timeout
@@ -343,7 +361,11 @@ def write_hook_config(
     if config_path.exists() and not spec.config.merge and not force:
         raise FileExistsError(f"Refusing to overwrite existing {spec.name} config: {config_path} (pass force=True)")
 
-    command = hook_command or hook_command_for(spec.name, connectors)
+    command = hook_command or hook_command_for(spec.name, connectors, windows_shell=spec.config.windows_shell)
+    if hook_command is None and timeout != 30:
+        from memgraph_context_graph.hooks.runner import deadline_for
+
+        command = f"{command} --deadline {deadline_for(timeout):g}"
     hooks = build_hooks_config(spec, command, timeout=timeout)
     document: dict[str, Any]
     if config_path.exists() and spec.config.merge:
@@ -364,7 +386,7 @@ def write_hook_config(
     document[spec.config.root_key] = merged
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    write_text_keeping_newlines(config_path, json.dumps(document, indent=2) + "\n")
     return config_path
 
 
@@ -395,7 +417,7 @@ def remove_hook_config(spec: RuntimeSpec, project_dir: Path) -> bool:
     if set(document) <= {"version"}:
         config_path.unlink()
     else:
-        config_path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+        write_text_keeping_newlines(config_path, json.dumps(document, indent=2) + "\n")
     return True
 
 
@@ -444,9 +466,24 @@ def hook_command_argv(runtime: str, connectors: list[str]) -> list[str]:
     return argv
 
 
-def hook_command_for(runtime: str, connectors: list[str]) -> str:
-    """Build the installed hook command for *runtime* and *connectors* as a shell string."""
-    return shlex.join(hook_command_argv(runtime, connectors))
+def hook_command_for(runtime: str, connectors: list[str], *, windows_shell: Literal["posix", "cmd"] = "posix") -> str:
+    """Build the installed hook command for *runtime* and *connectors* as a shell string.
+
+    On Windows a ``"cmd"`` *windows_shell* gets ``cmd.exe`` quoting, which
+    leaves a path without spaces bare; elsewhere the command is POSIX-quoted.
+    """
+    argv = hook_command_argv(runtime, connectors)
+    if _uses_cmd(windows_shell):
+        return subprocess.list2cmdline(argv)
+    return shlex.join(argv)
+
+
+def _uses_cmd(windows_shell: Literal["posix", "cmd"]) -> bool:
+    return windows_shell == "cmd" and _ON_WINDOWS
+
+
+def _quote(word: str, windows_shell: Literal["posix", "cmd"]) -> str:
+    return subprocess.list2cmdline([word]) if _uses_cmd(windows_shell) else shlex.quote(word)
 
 
 def _metadata_from_payload(payload: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:

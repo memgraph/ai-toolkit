@@ -466,7 +466,7 @@ cmd_test() {
           pytest context-graph/resources-graph/tests/ -v) || failed+=("$pkg")
         ;;
       hygm)
-        (cd "$REPO_ROOT" && uv run --package hygm --extra test pytest hygm/tests/ -v) || failed+=("$pkg")
+        (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package hygm --extra test pytest hygm/tests/ -v) || failed+=("$pkg")
         ;;
       context-graph-eval)
         (cd "$REPO_ROOT" && "${with_local_memgraph[@]}" uv run --package context-graph-eval --extra test --extra pipeline \
@@ -583,7 +583,7 @@ from memgraph_context_graph.adapters.claude_code import PLUGIN
 # this code. This form always resolves to the exact checkout being verified,
 # in CI or locally, regardless of what else is installed. --connector flags
 # match the installed marketplace plugin's own generated command
-# (context-graph-plugins/context-graph/*/hooks/hooks.json) -- without them,
+# (memgraph/context-graph/*/hooks/hooks.json) -- without them,
 # `hook run` does nothing (a second real, silent gap this verification
 # tripped over).
 command = (
@@ -630,15 +630,8 @@ PYEOF
   # call (rather than a second session) so this still costs exactly one LLM
   # call while also exercising skills-graph's Agent-scoped USED_SKILL.
   #
-  # Deliberately does NOT spell out the skill's literal path here: Claude
-  # Code propagates this top-level prompt into the parent "Agent" tool
-  # call's own metadata, and SkillGraphConnector scans metadata for any
-  # string that looks like a resolvable SKILL.md path -- so a literal path
-  # in THIS prompt gets mistaken for a top-level skill read, even though
-  # nothing at this level actually read anything (a real, pre-existing
-  # false-positive in SkillGraphConnector's detection, caught by this exact
-  # verification -- tracked separately, not fixed here). Making the
-  # subagent locate the file itself keeps the path out of this prompt.
+  # The subagent locates the file itself, so the read it records is its
+  # own -- not a path handed down in this prompt.
   local prompt="Use the Task tool to launch exactly one subagent (subagent_type: Explore) to do two things: (1) find this repository's 'release' skill (look for a directory under skills/ containing a SKILL.md describing it), read that file, and note what it's for, and (2) search this repository for the string 'TODO'. Report back a short summary combining both. Do not do either yourself -- delegate the entire thing to that one subagent."
 
   local output_file

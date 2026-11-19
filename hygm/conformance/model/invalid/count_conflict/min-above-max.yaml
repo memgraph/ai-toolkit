@@ -1,0 +1,5 @@
+version: 2
+node_types:
+  - label: Wine
+    description: a wine
+    properties: [{name: grapes, min_count: 3, max_count: 2}]

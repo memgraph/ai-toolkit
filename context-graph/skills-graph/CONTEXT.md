@@ -39,8 +39,10 @@ _Avoid_: Mined Skill, Skill candidate (implies sharing Skill's namespace/guarant
 - **Skill Definition** can be represented as a **Skill Node**.
 - **Skill Usage** links Session or subagent **Agent Node** to a **Skill** via `USED_SKILL`. `SkillGraphConnector` uses event's `agent_name` to pick container. Same relationship also used for **Skill Surfacing**; `actions` records whether evidence = list/search result or direct use.
 - **Skills Graph** consumes relevant **Event Protocol** events via `SkillGraphConnector`.
-- **Skills Graph** treats activity as skill usage when it refs a known skill or local `SKILL.md` file.
-- Reading a local path ending `SKILL.md` creates **Skill Usage**. Readable file -> its metadata populates Skill Node; else fallback metadata used. Reading other Markdown or mentioning a skill in prose doesn't count.
+- **Skills Graph** treats activity as skill usage when it invokes a skill (a skill tool, Claude Code's `Skill` tool) or reads a local `SKILL.md` file.
+- Claude Code `Skill` tool call creates **Skill Usage** keyed on `tool_input.skill`; `plugin:name` reduces to `name`. The `SKILL.md` Claude Code would load (project `.claude/skills`, `~/.claude/skills`, `~/.agents/skills`, plugin cache) populates the Skill Node when found.
+- Reading a local `SKILL.md` creates **Skill Usage**, only when the call itself reads it: a file-read tool's argument, or a read program's (`cat`, `sed`, `head`, ...) argument in a shell command. Every such file in one command counts. Readable file -> its metadata populates Skill Node; else fallback metadata used.
+- Not **Skill Usage**: staging, diffing, searching or writing a `SKILL.md`; a path in a subagent prompt or other metadata; unexpanded shell paths (`$D/SKILL.md`, globs); any other Markdown with `name`/`description` frontmatter (Claude Code memory files have that shape). Injected skill content counts only with Claude Code's `Base directory for this skill:` marker.
 - Skill in search/list output creates **Skill Surfacing** evidence on same `USED_SKILL` relationship, distinct `actions` value.
 - **Procedure** and **Skill Node** never share identity or relationship types. Future promotion from Procedure to curated Skill must be explicit.
 

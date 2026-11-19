@@ -1,9 +1,10 @@
 """Tests for the OpenAI Codex hooks adapter."""
 
 import io
+import json
 
 from memgraph_context_graph import AgentLink
-from memgraph_context_graph.adapters.codex import PLUGIN, CodexHooksAdapter
+from memgraph_context_graph.adapters.codex import PLUGIN, CodexHooksAdapter, init
 from memgraph_context_graph.events import (
     Event,
     EventType,
@@ -130,6 +131,113 @@ def test_post_tool_use_error_result_marks_error():
     assert event.error_message == "nope"
 
 
+_TURN = "turn-1"
+# item_completed records as Codex 0.162 writes them to its rollout (trimmed).
+_FAILED_BASH = {
+    "type": "CommandExecution",
+    "id": "exec-bash-3",
+    "command": ["/bin/zsh", "-lc", "exit 3"],
+    "status": "failed",
+    "aggregated_output": "",
+    "exit_code": 3,
+}
+_PASSED_BASH = {
+    **_FAILED_BASH,
+    "id": "exec-bash-0",
+    "status": "completed",
+    "aggregated_output": "hello\n",
+    "exit_code": 0,
+}
+_MCP_ERROR_CONTENT = [{"type": "text", "text": "The path /memories/x.md does not exist."}]
+_FAILED_MCP = {
+    "type": "McpToolCall",
+    "id": "exec-mcp",
+    "server": "context-graph",
+    "tool": "memory",
+    "status": "failed",
+    "result": {"content": _MCP_ERROR_CONTENT, "isError": True},
+}
+_PATCH = {"type": "FileChange", "id": "exec-patch", "status": "completed", "stdout": "Success.\n", "stderr": ""}
+
+
+def _rollout(tmp_path, *items, turn_id=_TURN):
+    path = tmp_path / "rollout.jsonl"
+    with path.open("a") as file:
+        file.write(json.dumps({"type": "event_msg", "payload": {"type": "task_started"}}) + "\n")
+        for item in items:
+            record = {"type": "item_completed", "turn_id": turn_id, "item": item}
+            file.write(json.dumps({"type": "event_msg", "payload": record}) + "\n")
+    return str(path)
+
+
+def _handle(payload) -> list[Event]:
+    rec = _RecordingConnector()
+    link = AgentLink()
+    link.add_connector(rec)
+    CodexHooksAdapter(link).handle_payload({"session_id": "s1", "turn_id": _TURN, **payload})
+    return rec.events
+
+
+def _bash_end(transcript_path, tool_use_id) -> ToolEndEvent:
+    (event,) = _handle(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_use_id": tool_use_id,
+            "tool_response": "",
+            "transcript_path": transcript_path,
+        }
+    )
+    assert isinstance(event, ToolEndEvent)
+    return event
+
+
+def test_a_bash_call_the_rollout_records_as_failed_is_an_error(tmp_path):
+    event = _bash_end(_rollout(tmp_path, _FAILED_BASH), "exec-bash-3")
+
+    assert event.is_error
+    assert event.error_message == "exit code 3"
+
+
+def test_a_bash_call_the_rollout_records_as_completed_is_a_success(tmp_path):
+    event = _bash_end(_rollout(tmp_path, _FAILED_BASH, _PASSED_BASH), "exec-bash-0")
+
+    assert not event.is_error
+
+
+def test_a_bash_call_missing_from_the_rollout_stays_a_success(tmp_path, monkeypatch):
+    monkeypatch.setattr("memgraph_context_graph.adapters.codex._ITEM_WAIT_SECONDS", 0)
+
+    assert not _bash_end(_rollout(tmp_path, _PASSED_BASH), "exec-other").is_error
+    assert not _bash_end(str(tmp_path / "missing.jsonl"), "exec-bash-3").is_error
+
+
+def test_stop_records_every_tool_that_finished_in_the_turn_before_ending_it(tmp_path):
+    reply = {"type": "AgentMessage", "id": "msg-1", "text": "Done."}
+    path = _rollout(tmp_path, _FAILED_MCP, _PATCH, reply, _FAILED_BASH, _PASSED_BASH)
+
+    events = _handle({"hook_event_name": "Stop", "transcript_path": path})
+
+    ends = [event for event in events if isinstance(event, ToolEndEvent)]
+    assert [(e.tool_use_id, e.tool_name, e.is_error) for e in ends] == [
+        ("exec-mcp", "mcp__context_graph__memory", True),
+        ("exec-patch", "apply_patch", False),
+        ("exec-bash-3", "Bash", True),
+        ("exec-bash-0", "Bash", False),
+    ]
+    assert ends[0].error_message == "The path /memories/x.md does not exist."
+    assert ends[0].result == _MCP_ERROR_CONTENT
+    assert (ends[3].result, ends[3].error_message) == ("hello\n", None)
+    assert events[-1].event_type == EventType.TURN_END
+
+
+def test_stop_ignores_tools_from_other_turns(tmp_path):
+    _rollout(tmp_path, _FAILED_MCP, turn_id="turn-0")
+    events = _handle({"hook_event_name": "Stop", "transcript_path": _rollout(tmp_path, _PATCH)})
+
+    assert [event.tool_use_id for event in events if isinstance(event, ToolEndEvent)] == ["exec-patch"]
+
+
 def test_stop_ends_the_turn_with_the_reply_and_keeps_the_session_open():
     link = AgentLink()
     rec = _RecordingConnector()
@@ -212,3 +320,14 @@ def test_load_payload_requires_json_object():
     payload = load_payload(io.StringIO('{"hook_event_name": "Stop"}'))
 
     assert payload == {"hook_event_name": "Stop"}
+
+
+def test_init_with_a_shorter_timeout_gives_the_hook_a_deadline_inside_it(tmp_path):
+    init(tmp_path, ["actions-graph"], timeout=10)
+    init(tmp_path / "default", ["actions-graph"])
+
+    def stop_command(project):
+        return json.loads((project / ".codex" / "hooks.json").read_text())["hooks"]["Stop"][0]["hooks"][0]["command"]
+
+    assert stop_command(tmp_path).endswith("--connector actions-graph --deadline 5")
+    assert stop_command(tmp_path / "default").endswith("--connector actions-graph")

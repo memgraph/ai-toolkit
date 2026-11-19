@@ -1,0 +1,4 @@
+version: 2
+ontology: [wine]
+node_types:
+  - {label: Wine, description: A wine}

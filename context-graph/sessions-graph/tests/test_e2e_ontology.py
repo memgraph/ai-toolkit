@@ -10,8 +10,10 @@ pytest.importorskip("hygm", reason="hygm not installed")
 
 from sessions_graph import ontology
 from sessions_graph.cli import main
+from sessions_graph.default_model import default_model
+from sessions_graph.learning import CORE_LABELS
 
-from hygm import CORE_LABELS, HygmModel, NodeType, RelationType, default_model
+from hygm import HygmModel, NodeType, RelationType
 
 CODING = """
 entity_types:
@@ -89,6 +91,72 @@ def test_an_invalid_schema_writes_nothing(graph, memgraph, tmp_path):
     assert _chain(memgraph, "alice") == []
 
 
+HIERARCHY = """
+version: 2
+node_types:
+  - {label: Artifact, description: a thing made or used}
+  - {label: Library, description: a code library, parents: [Artifact]}
+"""
+
+
+def _schema_rule(memgraph, component="sessions-graph"):
+    rows = memgraph.query(
+        "MATCH (s:ContextGraphSchema {component: $component}) "
+        "RETURN s.epoch AS epoch, s.min_reader_epoch AS reader, s.min_writer_epoch AS writer",
+        params={"component": component},
+    )
+    return rows[0] if rows else None
+
+
+def test_a_format_2_schema_is_stored_and_raises_the_epoch_older_clients_check(graph, memgraph, tmp_path, monkeypatch):
+    from memgraph_context_graph import graph_version
+
+    path = tmp_path / "hierarchy.yaml"
+    path.write_text(HIERARCHY)
+
+    version = graph.supply_ontology_file("alice", path, derive="off")
+
+    assert ontology.adopted(memgraph, "alice").model == version.model
+    assert version.model.ancestors("Library") == ("Artifact",)
+    assert _schema_rule(memgraph) == {"epoch": 2, "reader": 2, "writer": 2}
+    rules = graph_version.read_rules(memgraph)
+    assert rules.may_read("sessions-graph") and rules.may_write("sessions-graph")
+    monkeypatch.setattr(graph_version, "EPOCHS", {})  # a release from before format 2
+    assert not rules.may_read("sessions-graph")
+    assert not rules.may_write("sessions-graph")
+
+
+def test_a_format_1_schema_leaves_the_graph_open_to_older_clients(graph, memgraph, schema):
+    graph.supply_ontology_file("alice", schema)
+
+    assert _schema_rule(memgraph) is None
+
+
+def test_a_graph_a_later_release_moved_further_keeps_its_rule(graph, memgraph, tmp_path):
+    memgraph.query(
+        "CREATE (:ContextGraphSchema {component: 'sessions-graph', epoch: 5, min_reader_epoch: 4, min_writer_epoch: 5})"
+    )
+    path = tmp_path / "hierarchy.yaml"
+    path.write_text(HIERARCHY)
+
+    graph.supply_ontology_file("alice", path, derive="off")
+
+    assert _schema_rule(memgraph) == {"epoch": 5, "reader": 4, "writer": 5}
+
+
+def test_a_format_2_schema_is_refused_by_a_hub_that_cannot_protect_it(graph, memgraph, tmp_path, monkeypatch):
+    from memgraph_context_graph import graph_version
+
+    monkeypatch.setattr(graph_version, "EPOCHS", {})
+    path = tmp_path / "hierarchy.yaml"
+    path.write_text(HIERARCHY)
+
+    with pytest.raises(ValueError, match="model format 2"):
+        graph.supply_ontology_file("alice", path, derive="off")
+    assert _chain(memgraph, "alice") == []
+    assert _schema_rule(memgraph) is None
+
+
 def test_sync_adopts_a_file_only_when_its_content_or_mode_changes(graph, schema):
     assert graph.sync_ontology_file("alice", schema).version == 1
     assert graph.sync_ontology_file("alice", schema) is None
@@ -102,10 +170,11 @@ def test_sync_adopts_a_file_only_when_its_content_or_mode_changes(graph, schema)
 def test_extend_carries_learned_types_that_do_not_clash(graph, memgraph, schema):
     """Types derivation learned survive a newly supplied schema, unless the schema declares the same label."""
     learned = HygmModel(
+        profiles=default_model().profiles,
         node_types=(
             *default_model().node_types,
-            NodeType("Library", "learned: a dependency", "global"),
-            NodeType("Bug", "a defect", "chunk"),
+            NodeType("Library", "learned: a dependency", profiles={"extraction": {"identity": "global"}}),
+            NodeType("Bug", "a defect"),
         ),
         relation_types=(
             *default_model().relation_types,

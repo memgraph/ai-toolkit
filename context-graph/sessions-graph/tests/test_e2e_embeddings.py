@@ -126,6 +126,15 @@ def test_cli_embeds_pending_sessions(graph, session, capsys):
     assert graph.reconciler.pending_embeddings() == []
 
 
+def test_cli_embeds_while_another_client_holds_the_storage(graph, session, busy_storage, capsys):
+    """Every turn spawns an embed; one that set up the schema failed whenever any other client had a query open."""
+    with busy_storage():
+        assert main(["embed", "--session", session, "--model", DEFAULT_EMBEDDING_MODEL]) == 0
+
+    assert "OK s1: 2 messages, 1 entities, 1 edges" in capsys.readouterr().out
+    assert graph.reconciler.pending_embeddings() == []
+
+
 def test_cli_reports_a_failure_and_exits_nonzero(session, capsys):
     assert main(["embed", "--session", session, "--model", "no-such-org/no-such-model"]) == 1
 

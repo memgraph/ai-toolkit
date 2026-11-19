@@ -1,0 +1,5 @@
+version: 2
+ontology:
+  conventions: {node_case: kebab}
+node_types:
+  - {label: Wine, description: A wine}

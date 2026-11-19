@@ -9,7 +9,6 @@ through the :class:`SessionsGraph` API, not the event stream.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from typing import TYPE_CHECKING
@@ -159,10 +158,12 @@ def _project_key(cwd: object) -> str | None:
 
 
 def _spawn_detached(args: list[str], *, env: dict[str, str]) -> None:
-    """Start ``sessions-graph <args>`` in its own session, never waited on; a failure to start is logged."""
-    executable = shutil.which("sessions-graph")
-    command = [executable] if executable else [sys.executable, "-m", "sessions_graph.cli"]
-    command += args
+    """Start ``sessions-graph <args>`` in its own session, never waited on; a failure to start is logged.
+
+    The child runs on this process's own Python, so it is the release the hook is. A ``sessions-graph``
+    found on PATH may belong to another install, and older code would write to the graph unchecked.
+    """
+    command = [sys.executable, "-m", "sessions_graph.cli", *args]
     try:
         subprocess.Popen(
             command,

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/memgraph/ai-toolkit/hygm/schema/model.v1.schema.json",
+  "title": "hygm model, format version 1",
+  "description": "The structure of a version-1 hygm model file. Rules a JSON Schema can't express (unique labels, declared endpoints) are defined in hygm/docs/contract.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity_types"],
+  "properties": {
+    "version": {"const": 1},
+    "entity_types": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "description"],
+        "properties": {
+          "label": {"$ref": "#/$defs/identifier"},
+          "description": {"type": "string"},
+          "identity": {"enum": ["global", "chunk", "span"]}
+        }
+      }
+    },
+    "relation_types": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "description"],
+        "properties": {
+          "label": {"$ref": "#/$defs/identifier"},
+          "description": {"type": "string"},
+          "start_labels": {"$ref": "#/$defs/labels"},
+          "end_labels": {"$ref": "#/$defs/labels"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+    "labels": {"type": "array", "items": {"$ref": "#/$defs/identifier"}}
+  }
+}

@@ -135,6 +135,7 @@ For custom event wiring, register `SessionsGraphConnector` with an `AgentLink`; 
 (:User)-[:HAS_MEMORY]->(:Memory)
 (:Session)-[:PRODUCED_MEMORY]->(:Memory)
 (:Memory)-[:ABOUT]->(:Project)
+(:Memory)-[:IMPORTED_FROM]->(:Project)
 (:Session)-[:HAS_ACTION]->(:Action)-[:HAS_CHUNK]->(:Chunk)
 (:Memory)-[:HAS_CHUNK]->(:Chunk)<-[:MENTIONED_IN]-(:Entity)
 ```

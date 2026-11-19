@@ -14,7 +14,9 @@ memgraph-context-graph finds :class:`EnterpriseSpaces` through the
 - Shared spaces are read from the ``(:SpaceMembership)`` catalog that
   ``context-graph-spaces apply`` writes into the personal database. That is the
   one query, made only by long-lived readers (the MCP server's recall and
-  memory tools), and cached until :meth:`EnterpriseSpaces.refresh`.
+  memory tools) and ``join``, and cached until :meth:`EnterpriseSpaces.refresh`.
+  Before it, a check that the main database is ``u_<login>``: a login ``apply``
+  never provisioned is refused rather than given the server's default database.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 from memgraph_context_graph.spaces import EDITION_ENTERPRISE, PERSONAL, MemgraphTarget, Space, SpaceError
 
-from .provision import MEMBERSHIP_LABEL
+from .provision import MEMBERSHIP_LABEL, personal_database
 
 if TYPE_CHECKING:
     from memgraph_context_graph.adapters._identity import HookConfig
@@ -111,6 +113,15 @@ class EnterpriseSpaces:
         target = self._personal.target
         client = Memgraph(**target.client_kwargs(), user_agent="context-graph-spaces")
         try:
+            (current,) = client.query("SHOW CURRENT DATABASE")
+            # A login apply never provisioned still connects, to whatever main database it has (often the shared
+            # default); its memory and recall would quietly live there. Only apply makes u_<login> the main database.
+            if current["Current"] != personal_database(self._login):
+                raise SpaceError(
+                    f"The login {self._login!r} has no personal space: its main database is {current['Current']!r}, "
+                    f"not {personal_database(self._login)!r}. Ask your admin to add {self._login} to the spaces "
+                    "spec's members and run context-graph-spaces apply."
+                )
             rows = client.query(f"MATCH (m:{MEMBERSHIP_LABEL}) RETURN m.space AS space, m.database AS database")
         finally:
             client.close()

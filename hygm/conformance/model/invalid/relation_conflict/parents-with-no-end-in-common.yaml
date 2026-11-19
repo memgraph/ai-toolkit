@@ -1,0 +1,11 @@
+version: 2
+node_types:
+  - {label: Wine, description: a wine}
+  - {label: Winery, description: a winery}
+  - {label: FrenchWinery, description: a French winery, parents: [Winery]}
+  - {label: Grape, description: a grape}
+  - {label: Sweet, description: s, parents: [Wine], relation_restrictions: [{relation: made_from, end_labels: [Grape]}]}
+  - {label: Cider, description: c, parents: [Wine], relation_restrictions: [{relation: made_from, end_labels: [Winery]}]}
+  - {label: Oddity, description: o, parents: [Sweet, Cider]}
+relation_types:
+  - {label: made_from, description: m, start_labels: [Wine]}

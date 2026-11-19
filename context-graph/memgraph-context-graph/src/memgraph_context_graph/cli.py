@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from importlib import metadata
@@ -160,6 +161,8 @@ def _forget(argv: list[str]) -> int:
 def _config(argv: list[str]) -> int:
     """Get or set persistent config values in ~/.config/context-graph/config.toml."""
     from memgraph_context_graph.adapters._identity import (
+        DEFAULT_PROFILE,
+        PROFILE_ENV,
         config_file,
         load_config,
         set_config_value,
@@ -171,7 +174,8 @@ def _config(argv: list[str]) -> int:
     usage = (
         "usage: memgraph-context-graph config set <key> <value>\n"
         "       memgraph-context-graph config get <key>\n"
-        "       memgraph-context-graph config show"
+        "       memgraph-context-graph config show\n"
+        f"A profile's values: set {PROFILE_ENV}=<profile> (or {DEFAULT_PROFILE} for the top level) first."
     )
 
     if not argv or argv[0] in {"-h", "--help"}:
@@ -187,6 +191,8 @@ def _config(argv: list[str]) -> int:
     if action == "show":
         config = load_config()
         print(f"# {config_path}")
+        if config.profile:
+            print(f"# profile {config.profile}: edition, memgraph.* and memory.backend come from it")
         for problem in config.problems:
             print(f"# WARNING: malformed config, {problem}; values it meant to set are defaults below")
         for key in CONFIG_KEYS:
@@ -199,6 +205,8 @@ def _config(argv: list[str]) -> int:
                 print(f"{key.name} = {_display(key, value)}")
         for name in config.redact_patterns:
             print(f"redact.{name} = {config.redact_patterns[name]!r}")
+        for runtime, profile in config.agents.items():
+            print(f"agents.{runtime} = {profile!r}")
         return 0
 
     if action not in {"set", "get"}:
@@ -259,7 +267,17 @@ def _mcp(argv: list[str]) -> int:
         help="send the session-start text (memory index, where you left off) as the server's instructions, "
         "for an agent whose hooks can't show the model anything at session start (Grok Build)",
     )
+    parser.add_argument(
+        "--agent",
+        metavar="RUNTIME",
+        help="the agent that started the server: its tools use the profile [agents] maps it to "
+        "(default: $CONTEXT_GRAPH_AGENT)",
+    )
     args = parser.parse_args(argv)
+    from memgraph_context_graph.adapters._identity import AGENT_ENV, select_agent
+
+    if agent := args.agent or os.environ.get(AGENT_ENV):
+        select_agent(agent)
     try:
         from memgraph_context_graph.mcp_server import serve
     except ImportError as exc:
@@ -308,10 +326,21 @@ def _recall(argv: list[str]) -> int:
 
 
 def _join(argv: list[str]) -> int:
-    """Point the config file at an Enterprise Memgraph as one login, then prove the login works."""
+    """Point the config file, or one agent's profile in it, at an Enterprise Memgraph as one login; prove it works."""
     import getpass
 
-    from memgraph_context_graph.adapters._identity import config_file, reload_config, write_config
+    import neo4j
+
+    from memgraph_context_graph.adapters._identity import (
+        MEMORY_BACKEND_GRAPH,
+        check_profile_name,
+        config_file,
+        map_agents,
+        reload_config,
+        select_profile,
+        write_config,
+    )
+    from memgraph_context_graph.setup.agents import AGENTS
     from memgraph_context_graph.spaces import EDITION_ENTERPRISE, SpaceError, spaces_for
 
     parser = argparse.ArgumentParser(
@@ -320,13 +349,33 @@ def _join(argv: list[str]) -> int:
     parser.add_argument("url", help="The Memgraph Bolt URL, e.g. bolt://memgraph.corp:7687.")
     parser.add_argument("login", help="Your Memgraph login; it is also who you are in Context Graph.")
     parser.add_argument("--password", default=None, help="Prompted for when omitted.")
+    parser.add_argument(
+        "--agent",
+        action="append",
+        default=[],
+        choices=[agent.runtime for agent in AGENTS],
+        metavar="RUNTIME",
+        help="Use it for this agent only (repeatable): the login goes into a profile the agent is mapped to, "
+        "and every other agent keeps its Memgraph. Default: every agent.",
+    )
+    parser.add_argument("--profile", default=None, help="The profile's name; default: the URL's host.")
     args = parser.parse_args(argv)
+    profile = None
+    if args.agent or args.profile:
+        try:
+            profile = check_profile_name(args.profile or _profile_from_url(args.url))
+        except ValueError as exc:
+            parser.error(str(exc))
     password = args.password if args.password is not None else getpass.getpass(f"Password for {args.login}: ")
     _ensure_enterprise_package()
 
+    select_profile(profile)
     write_config(
         edition=EDITION_ENTERPRISE, memgraph_url=args.url, memgraph_user=args.login, memgraph_password=password
     )
+    if profile is not None and args.agent:
+        map_agents(args.agent, profile)
+    where = f" in profile {profile!r}" + (f" for {', '.join(args.agent)}" if args.agent else "") if profile else ""
     try:
         spaces = spaces_for(reload_config())
         from memgraph_toolbox.api.memgraph import Memgraph
@@ -340,10 +389,33 @@ def _join(argv: list[str]) -> int:
     except (SpaceError, ValueError) as exc:
         print(f"Wrote {config_file()}, but the login doesn't work yet: {exc}", file=sys.stderr)
         return 1
-    print(f"Wrote {config_file()}: edition = enterprise, login {args.login!r}.")
+    except neo4j.exceptions.Neo4jError as exc:
+        refused = "Unauthenticated" in str(exc.code)
+        reason = f"Memgraph refused the login {args.login!r}; check its password" if refused else exc.message
+        print(f"Wrote {config_file()}, but the login doesn't work yet: {reason}", file=sys.stderr)
+        return 1
+    print(f"Wrote {config_file()}{where}: edition = enterprise, login {args.login!r}.")
     print(f"Personal space: {row['Current']}. Shared spaces: {', '.join(shared) or 'none yet'}.")
-    print("Next: memgraph-context-graph setup <runtime> (e.g. claude-code) if this machine isn't set up yet.")
+    if reload_config().memory_backend == MEMORY_BACKEND_GRAPH:
+        print("Your agents' memory tool reaches them under /memories/spaces/<space>/.")
+    else:
+        # Shared spaces are only reachable through the memory tool, and that is on only with this backend (ADR 0006).
+        runtimes = " ".join(args.agent) or "<runtime> (e.g. claude-code)"
+        rest = "" if args.agent or not profile else f" --profile {profile}"
+        print(
+            f"Next: memgraph-context-graph setup {runtimes}{rest} --memory-backend context-graph\n"
+            "  Shared spaces are reached through the memory tool, which only that backend turns on."
+        )
     return 0
+
+
+def _profile_from_url(url: str) -> str:
+    """A profile name for the Memgraph at *url*: its host, with anything a name can't hold as ``-``."""
+    import re
+    from urllib.parse import urlparse
+
+    host = urlparse(url).hostname or ""
+    return re.sub(r"[^A-Za-z0-9_-]+", "-", host).strip("-") or "enterprise"
 
 
 def _ensure_enterprise_package() -> None:
@@ -369,7 +441,7 @@ def _doctor(argv: list[str]) -> int:
         "--runtime",
         choices=sorted(load_runtime_plugins()),
         default="claude-code",
-        help="Runtime hook adapter to smoke test.",
+        help="Runtime hook adapter to smoke test, against the Memgraph its profile names.",
     )
     parser.add_argument(
         "--connector",
@@ -383,7 +455,10 @@ def _doctor(argv: list[str]) -> int:
         help="Print machine-readable JSON.",
     )
     args = parser.parse_args(argv)
+    from memgraph_context_graph.adapters._identity import select_agent
 
+    # The runtime's own destination: the profile [agents] maps it to, if any.
+    select_agent(args.runtime)
     checks = doctor_checks([args.runtime], args.connector or configured_connectors())
     ok = all(check["ok"] for check in checks)
     payload: _DoctorPayload = {"ok": ok, "checks": checks}
@@ -405,6 +480,7 @@ def doctor_checks(runtimes: Sequence[str], connectors: Sequence[str]) -> list[_C
     # produce one, the config check already says why, and the rest would only repeat it.
     if _edition_resolves():
         checks.append(_check_memgraph())
+        checks.append(_check_graph_version(connectors))
         for connector in connectors:
             checks.append(_check_connector(connector))
         if any(normalize_connector_name(connector) == "sessions-graph" for connector in connectors):
@@ -471,7 +547,8 @@ def _check_config() -> _CheckResult:
     except SpaceError as exc:
         return {"name": "config", "ok": False, "detail": f"{path} — {exc}"}
     user_id = spaces.user_id()
-    parts = [f"edition={spaces.edition}"]
+    parts = [f"profile={config.profile}"] if config.profile else []
+    parts.append(f"edition={spaces.edition}")
     if user_id:
         parts.append(f"user_id={user_id!r}")
     else:
@@ -501,6 +578,19 @@ def _check_memgraph() -> _CheckResult:
         return {"name": "memgraph", "ok": False, "detail": f"{url} — {type(exc).__name__}: {exc}"}
     finally:
         _close(db)
+
+
+def _check_graph_version(connectors: Sequence[str]) -> _CheckResult:
+    """Whether a newer Context Graph has reshaped the graph past what this install can write or read."""
+    from memgraph_context_graph import graph_version
+
+    rules = graph_version.check_configured(fresh=True)
+    components = [graph_version.HUB, *(normalize_connector_name(connector) for connector in connectors)]
+    refused = [rules.refuse_write(c) for c in components if not rules.may_write(c)]
+    refused += [rules.refuse_read(c) for c in components if not rules.may_read(c)]
+    if refused:
+        return {"name": "graph version", "ok": False, "detail": "; ".join(dict.fromkeys(map(str, refused)))}
+    return {"name": "graph version", "ok": True, "detail": "this install can write and read the graph"}
 
 
 def _close(db: Any) -> None:
@@ -675,14 +765,22 @@ def _check_plugin(runtime: str) -> _CheckResult | None:
         return {"name": name, "ok": False, "detail": f"{' or '.join(agent.binaries)} isn't on PATH"}
     if not agents.plugin_wired(agent):
         return {"name": name, "ok": False, "detail": f"not installed, so {agent.label} records nothing — {fix}"}
+    plugin_id = agents.installed_plugin_id(agent)
     if not agents.plugin_enabled(agent):
         return {
             "name": name,
             "ok": False,
             "detail": f"installed but disabled, so {agent.label} records nothing — "
-            f"run: {agent.binaries[0]} plugin enable {agents.PLUGIN_ID}",
+            f"run: {agent.binaries[0]} plugin enable {plugin_id}",
         }
-    return {"name": name, "ok": True, "detail": f"{agents.PLUGIN_ID} installed and enabled"}
+    if plugin_id == agents.LEGACY_PLUGIN_ID:
+        return {
+            "name": name,
+            "ok": True,
+            "detail": f"{plugin_id} installed and enabled, from the previous marketplace — "
+            f"run: memgraph-context-graph update {runtime} to move it to the Memgraph marketplace",
+        }
+    return {"name": name, "ok": True, "detail": f"{plugin_id} installed and enabled"}
 
 
 def _check_runtime(runtime: str, connectors: list[str]) -> _CheckResult:

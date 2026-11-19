@@ -1,0 +1,4 @@
+version: 2
+node_types:
+  - {label: Wine, description: a wine, properties: [{name: name, required: true}]}
+  - {label: HouseWine, description: h, parents: [Wine], properties: [{name: name, required: false}]}

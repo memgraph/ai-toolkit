@@ -1,0 +1,252 @@
+{
+  "format": "hygm-resolved",
+  "version": 1,
+  "model_version": 2,
+  "node_types": [
+    {
+      "label": "Wine",
+      "description": "A wine",
+      "properties": [
+        {
+          "name": "sugar",
+          "type": "string",
+          "description": "How sweet it tastes",
+          "values": [
+            "dry",
+            "off_dry",
+            "sweet"
+          ],
+          "declared_by": "Wine"
+        },
+        {
+          "name": "tannin_level",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "alcohol",
+          "type": "decimal",
+          "minimum": 5,
+          "maximum": 22.5,
+          "unit": "%",
+          "declared_by": "Wine"
+        },
+        {
+          "name": "grapes",
+          "type": "string",
+          "max_count": null,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "region",
+          "type": "string",
+          "declared_by": "Wine"
+        }
+      ]
+    },
+    {
+      "label": "DessertWine",
+      "description": "Every dessert wine is sweet",
+      "parents": [
+        "Wine"
+      ],
+      "ancestors": [
+        "Wine"
+      ],
+      "properties": [
+        {
+          "name": "sugar",
+          "type": "string",
+          "description": "How sweet it tastes",
+          "values": [
+            "sweet"
+          ],
+          "value": "sweet",
+          "declared_by": "Wine"
+        },
+        {
+          "name": "tannin_level",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "alcohol",
+          "type": "decimal",
+          "minimum": 5,
+          "maximum": 22.5,
+          "unit": "%",
+          "declared_by": "Wine"
+        },
+        {
+          "name": "grapes",
+          "type": "string",
+          "max_count": null,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "region",
+          "type": "string",
+          "declared_by": "Wine"
+        }
+      ]
+    },
+    {
+      "label": "WhiteWine",
+      "description": "White wines have no tannin level",
+      "parents": [
+        "Wine"
+      ],
+      "ancestors": [
+        "Wine"
+      ],
+      "properties": [
+        {
+          "name": "sugar",
+          "type": "string",
+          "description": "How sweet it tastes",
+          "values": [
+            "dry",
+            "off_dry",
+            "sweet"
+          ],
+          "declared_by": "Wine"
+        },
+        {
+          "name": "tannin_level",
+          "type": "integer",
+          "max_count": 0,
+          "minimum": 0,
+          "maximum": 10,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "alcohol",
+          "type": "decimal",
+          "minimum": 5,
+          "maximum": 22.5,
+          "unit": "%",
+          "declared_by": "Wine"
+        },
+        {
+          "name": "grapes",
+          "type": "string",
+          "max_count": null,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "region",
+          "type": "string",
+          "declared_by": "Wine"
+        }
+      ]
+    },
+    {
+      "label": "FortifiedWine",
+      "description": "Stronger, with a narrower range and a default",
+      "parents": [
+        "Wine"
+      ],
+      "ancestors": [
+        "Wine"
+      ],
+      "properties": [
+        {
+          "name": "sugar",
+          "type": "string",
+          "description": "How sweet it tastes",
+          "values": [
+            "dry",
+            "off_dry",
+            "sweet"
+          ],
+          "declared_by": "Wine"
+        },
+        {
+          "name": "tannin_level",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "alcohol",
+          "type": "decimal",
+          "description": "Alcohol by volume after fortifying",
+          "default": 19.5,
+          "minimum": 15,
+          "maximum": 22,
+          "unit": "%",
+          "declared_by": "Wine"
+        },
+        {
+          "name": "grapes",
+          "type": "string",
+          "max_count": 3,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "region",
+          "type": "string",
+          "required": true,
+          "declared_by": "Wine"
+        }
+      ]
+    },
+    {
+      "label": "Blend",
+      "description": "A wine from at least two grapes",
+      "parents": [
+        "Wine"
+      ],
+      "ancestors": [
+        "Wine"
+      ],
+      "properties": [
+        {
+          "name": "sugar",
+          "type": "string",
+          "description": "How sweet it tastes",
+          "values": [
+            "dry",
+            "off_dry",
+            "sweet"
+          ],
+          "declared_by": "Wine"
+        },
+        {
+          "name": "tannin_level",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "alcohol",
+          "type": "decimal",
+          "minimum": 5,
+          "maximum": 22.5,
+          "unit": "%",
+          "declared_by": "Wine"
+        },
+        {
+          "name": "grapes",
+          "type": "string",
+          "required": true,
+          "min_count": 2,
+          "max_count": null,
+          "declared_by": "Wine"
+        },
+        {
+          "name": "region",
+          "type": "string",
+          "declared_by": "Wine"
+        }
+      ]
+    }
+  ],
+  "relation_types": []
+}

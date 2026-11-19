@@ -1,0 +1,40 @@
+# The contract's example (section 6.1): one type in two sources, merged by its key.
+version: 1
+model: ../models/shop.model.yaml
+
+sources:
+  - {name: crm, kind: table}
+  - {name: orders_db, kind: table}
+  - {name: graph, kind: graph}
+
+nodes:
+  - type: Customer
+    source: crm
+    table: {schema: public, name: customers}
+    id: [customer_id]
+    properties:
+      - {name: customer_id, column: customer_id}
+      - {name: display_name, column: full_name}
+      - {name: tier, column: tier}
+      - {name: loyalty_points, column: attributes, path: $.points}
+
+  - type: Customer
+    source: graph
+    graph: {label: Client}
+
+  - type: Order
+    source: orders_db
+    table: {name: orders}
+    id: [order_id]
+    properties:
+      - {name: order_id, column: order_id}
+      - {name: total, column: total_eur}
+
+relations:
+  - type: placed
+    source: orders_db
+    table: {name: order_events}
+    from: {type: Customer, columns: [customer_id]}
+    to: {type: Order, columns: [order_id]}
+    properties:
+      - {name: at, column: placed_at}

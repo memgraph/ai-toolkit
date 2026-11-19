@@ -1,0 +1,23 @@
+# supplies starts at Party, so it admits Party's descendant Supplier.
+version: 1
+model: ../models/shop.model.yaml
+sources:
+  - {name: erp, kind: table}
+nodes:
+  - type: Supplier
+    source: erp
+    table: {name: suppliers}
+    id: [supplier_id]
+    properties:
+      - {name: supplier_id, column: supplier_id}
+      - {name: display_name, column: name}
+  - type: Product
+    source: erp
+    table: {name: products}
+    id: [sku, region]
+relations:
+  - type: supplies
+    source: erp
+    table: {name: supply}
+    from: {type: Supplier, columns: [supplier_id]}
+    to: {type: Product, columns: [sku, region]}

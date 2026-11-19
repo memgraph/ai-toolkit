@@ -1,0 +1,33 @@
+version: 2
+node_types:
+  - label: Winery
+    description: Makes wine
+    key: [name]
+    properties:
+      - {name: name, required: true}
+  - label: FrenchWinery
+    description: A winery in France
+    parents: [Winery]
+  - label: Wine
+    description: A wine
+    key: [name]
+    properties:
+      - {name: name, required: true}
+      - {name: grapes, max_count: null}
+      - {name: tannin, type: integer}
+  - label: WhiteWine
+    description: A white wine, which has no tannin level
+    parents: [Wine]
+    properties:
+      - {name: tannin, max_count: 0}
+  - label: FrenchWine
+    description: A wine from France, made by a French winery
+    parents: [Wine]
+    relation_restrictions:
+      - {relation: maker, end_labels: [FrenchWinery]}
+relation_types:
+  - label: maker
+    description: Who made the wine
+    start_labels: [Wine]
+    end_labels: [Winery]
+    max_count: 1

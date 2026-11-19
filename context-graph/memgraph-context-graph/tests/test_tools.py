@@ -206,3 +206,61 @@ def test_session_hints_skip_tools_the_user_has_not_turned_on(monkeypatch):
     assert session_hints(["sessions-graph"]) == []
     _identity.write_config(memory_backend="context-graph")
     assert session_hints(["sessions-graph"], _identity.load_config()) == ["Use `memory`."]
+
+
+@dataclass
+class _FittingTool(_EchoTool):
+    """Lists as many files as fit in what it is offered, and records the offer."""
+
+    offered: list[int | None] | None = None
+
+    def session_context(
+        self, config: _identity.HookConfig, payload: dict[str, Any], *, max_chars: int | None = None
+    ) -> str:
+        assert self.offered is not None and max_chars is not None
+        self.offered.append(max_chars)
+        return "\n".join(f"- /memories/{n:04d}.md" for n in range(max_chars // 20))
+
+
+@dataclass
+class _OldLongTool(_EchoTool):
+    """A tool from before session-start budgets: no ``max_chars``."""
+
+    def session_context(self, config: _identity.HookConfig, payload: dict[str, Any]) -> str:
+        return "\n".join(f"- /memories/{n:04d}.md" for n in range(2_000))
+
+
+def _session_start(runtime: str, monkeypatch, capsys) -> str:
+    monkeypatch.setattr("memgraph_context_graph.hooks.runner.create_link", lambda *args, **kwargs: AgentLink())
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"hook_event_name":"SessionStart","session_id":"s1"}'))
+    assert hook_main(["run", runtime, "--connector", "sessions-graph"]) == 0
+    return json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+
+
+@pytest.mark.parametrize(("runtime", "limit"), [("claude-code", 10_000), ("codex", 9_000)])
+def test_session_start_text_fits_what_the_harness_shows(runtime, limit, monkeypatch, capsys):
+    """A tool that fits its text gets what the fixed ones leave, wherever it is registered."""
+    offered: list[int | None] = []
+    monkeypatch.setattr(
+        "memgraph_context_graph.tools.load_tools",
+        lambda: {"memory": _FittingTool(name="memory", offered=offered), "recall": _EchoTool()},
+    )
+
+    context = _session_start(runtime, monkeypatch, capsys)
+
+    hint = "Call `recall` for past sessions."
+    assert offered == [limit - len(hint) - 1]
+    assert len(context) <= limit
+    assert context.startswith("- /memories/0000.md\n")
+    assert context.endswith("\n" + hint)
+
+
+def test_a_tool_without_a_budget_is_cut_at_a_line(monkeypatch, capsys):
+    monkeypatch.setattr("memgraph_context_graph.tools.load_tools", lambda: {"memory": _OldLongTool()})
+
+    context = _session_start("claude-code", monkeypatch, capsys)
+
+    *listed, note = context.split("\n")
+    assert len(context) <= 10_000
+    assert all(line.startswith("- /memories/") and line.endswith(".md") for line in listed)
+    assert note == "[Session-start text cut to the 10,000 characters this agent shows.]"

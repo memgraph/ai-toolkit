@@ -1,0 +1,3 @@
+entity_types:
+  - {label: A, description: a}
+  - {label: A, description: again}

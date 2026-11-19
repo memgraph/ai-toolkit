@@ -1,0 +1,114 @@
+{
+  "format": "hygm-resolved",
+  "version": 1,
+  "model_version": 2,
+  "node_types": [
+    {
+      "label": "Party",
+      "description": "Any person or organization the shop deals with",
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "description": "Display name",
+          "declared_by": "Party"
+        }
+      ]
+    },
+    {
+      "label": "Customer",
+      "description": "A party that has placed at least one order",
+      "parents": [
+        "Party"
+      ],
+      "ancestors": [
+        "Party"
+      ],
+      "key": [
+        "customer_id"
+      ],
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "description": "Display name",
+          "declared_by": "Party"
+        },
+        {
+          "name": "customer_id",
+          "type": "string",
+          "description": "Customer id, stable across systems",
+          "required": true,
+          "declared_by": "Customer"
+        },
+        {
+          "name": "tier",
+          "type": "string",
+          "values": [
+            "standard",
+            "gold",
+            "platinum"
+          ],
+          "declared_by": "Customer"
+        },
+        {
+          "name": "loyalty_points",
+          "type": "integer",
+          "declared_by": "Customer"
+        }
+      ],
+      "iri": "https://example.org/shop#Customer"
+    },
+    {
+      "label": "Order",
+      "description": "A purchase a customer made",
+      "key": [
+        "order_id"
+      ],
+      "properties": [
+        {
+          "name": "order_id",
+          "type": "string",
+          "required": true,
+          "declared_by": "Order"
+        },
+        {
+          "name": "customer_ref",
+          "type": "string",
+          "declared_by": "Order"
+        },
+        {
+          "name": "total",
+          "type": "decimal",
+          "declared_by": "Order"
+        }
+      ],
+      "identity": "chunk"
+    }
+  ],
+  "relation_types": [
+    {
+      "label": "placed",
+      "description": "The customer placed the order",
+      "start_labels": [
+        "Customer"
+      ],
+      "end_labels": [
+        "Order"
+      ],
+      "start_types": [
+        "Customer"
+      ],
+      "end_types": [
+        "Order"
+      ],
+      "properties": [
+        {
+          "name": "at",
+          "type": "datetime",
+          "declared_by": "placed"
+        }
+      ]
+    }
+  ]
+}

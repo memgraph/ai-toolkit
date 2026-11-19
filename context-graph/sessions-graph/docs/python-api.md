@@ -37,7 +37,10 @@ store.execute({"command": "view", "path": "/memories/feedback/testing.md"})  # a
 - **Provenance and projects.** With `session_id`, every write records
   `(:Session)-[:PRODUCED_MEMORY]->(:Memory)`. A file under
   `/memories/projects/<key>/` is linked `-[:ABOUT]->(:Project {key})`, and a
-  rename re-links it.
+  rename re-links it. `store.mark_imported(path, key, text=..., modified=...)`
+  links a file a harness-memory import brought in `-[:IMPORTED_FROM]->(:Project {key})`
+  and keeps the source file's time; `store.from_project(key)` lists the paths
+  written in that project's sessions or imported from it.
 
 Apps built on the Claude API get the same files through the SDK's tool
 runner (`pip install 'sessions-graph[anthropic]'`). The application supplies
